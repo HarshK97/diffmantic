@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/odvcencio/gotreesitter"
@@ -11,7 +12,6 @@ type ASTNode struct {
 	Label    string
 	Children []*ASTNode
 	Parent   *ASTNode
-	SrcNode  *gotreesitter.Node
 }
 
 func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode) *ASTNode {
@@ -20,9 +20,8 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	}
 
 	node := &ASTNode{
-		Type:    n.Type(lang),
-		Parent:  parent,
-		SrcNode: n,
+		Type:   n.Type(lang),
+		Parent: parent,
 	}
 
 	// label only for leave nodes
@@ -38,4 +37,19 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	}
 
 	return node
+}
+
+func PrintAST(n *ASTNode, depth int) {
+	if n == nil {
+		return
+	}
+	indent := strings.Repeat("  ", depth)
+	if n.Label != "" {
+		fmt.Printf("%s(%s) %q\n", indent, n.Type, n.Label)
+	} else {
+		fmt.Printf("%s(%s)\n", indent, n.Type)
+	}
+	for _, child := range n.Children {
+		PrintAST(child, depth+1)
+	}
 }

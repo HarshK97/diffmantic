@@ -23,7 +23,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 )
 
@@ -45,10 +47,35 @@ Examples:
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
-		format, _ := cmd.Flags().GetString("format")
-		lang, _ := cmd.Flags().GetString("lang")
+		// lang, _ := cmd.Flags().GetString("lang")
+		// format, _ := cmd.Flags().GetString("format")
 
-		fmt.Printf("diffing %s vs %s (format=%s, lang=%s)\n", fileA, fileB, format, lang)
+		srcA, err := os.ReadFile(fileA)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", fileA, err)
+			os.Exit(1)
+		}
+		srcB, err := os.ReadFile(fileB)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", fileB, err)
+			os.Exit(1)
+		}
+
+		astA, err := treesitter.Parse(srcA, fileA)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error parsing %s: %v\n", fileA, err)
+			os.Exit(1)
+		}
+		astB, err := treesitter.Parse(srcB, fileB)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error parsing %s: %v\n", fileB, err)
+			os.Exit(1)
+		}
+
+		fmt.Println("=== AST A ===")
+		treesitter.PrintAST(astA, 0)
+		fmt.Println("=== AST B ===")
+		treesitter.PrintAST(astB, 0)
 	},
 }
 
