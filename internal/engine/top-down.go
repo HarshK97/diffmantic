@@ -222,7 +222,7 @@ func TopDown(
 
 	for min(PeekMax(l1), PeekMax(l2)) >= minHeight {
 		if PeekMax(l1) != PeekMax(l2) {
-			if PeekMax(l2) > PeekMax(l2) {
+			if PeekMax(l1) > PeekMax(l2) {
 				for _, t := range Pop(l1) {
 					Open(t, l1)
 				}
