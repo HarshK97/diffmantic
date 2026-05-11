@@ -25,7 +25,7 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	}
 
 	// label only for leave nodes
-	if n.ChildCount() == 0 {
+	if n.NamedChildCount() == 0 {
 		node.Label = strings.TrimSpace(string(src[n.StartByte():n.EndByte()]))
 	}
 
