@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 )
@@ -72,10 +73,15 @@ Examples:
 			os.Exit(1)
 		}
 
-		fmt.Println("=== AST A ===")
-		treesitter.PrintAST(astA, 0)
-		fmt.Println("=== AST B ===")
-		treesitter.PrintAST(astB, 0)
+		// fmt.Println("=== AST A ===")
+		// treesitter.PrintAST(astA, 0)
+		// fmt.Println("=== AST B ===")
+		// treesitter.PrintAST(astB, 0)
+
+		fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
+
+		result := engine.Match(astA, astB, 2)
+		engine.PrintMappings(result)
 	},
 }
 
