@@ -206,7 +206,7 @@ func addIsomorphicPairs(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	}
 }
 
-// Topdown imploments the Gumtree top-down matching phase.
+// TopDown imploments the Gumtree Top-Down matching phase.
 //
 // It takes:
 //
@@ -218,7 +218,7 @@ func addIsomorphicPairs(t1, t2 *treesitter.ASTNode, m *Mapping) {
 func TopDown(
 	t1Root, t2Root *treesitter.ASTNode,
 	minHeight int,
-) (*Mapping, [][2]*treesitter.ASTNode) {
+) *Mapping {
 	l1 := NewPriorityList()
 	l2 := NewPriorityList()
 	var A [][2]*treesitter.ASTNode // canditdate mappings
@@ -337,5 +337,5 @@ func TopDown(
 		A = filtered
 	}
 
-	return m, A
+	return m
 }

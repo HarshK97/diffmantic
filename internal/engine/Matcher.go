@@ -11,7 +11,7 @@ type MatchResult struct {
 }
 
 func Match(t1, t2 *treesitter.ASTNode, minHeight int) *MatchResult {
-	mappings, _ := TopDown(t1, t2, minHeight)
+	mappings := TopDown(t1, t2, minHeight)
 	return &MatchResult{Mappings: mappings}
 }
 
