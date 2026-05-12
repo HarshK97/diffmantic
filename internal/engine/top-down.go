@@ -7,14 +7,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-// helper
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // MappingPair is a single src→dst node mapping, kept for deterministic ordering.
 type MappingPair struct {
 	Src *treesitter.ASTNode
