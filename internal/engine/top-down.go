@@ -15,10 +15,18 @@ func min(a, b int) int {
 	return b
 }
 
+// MappingPair is a single src→dst node mapping, kept for deterministic ordering.
+type MappingPair struct {
+	Src *treesitter.ASTNode
+	Dst *treesitter.ASTNode
+}
+
 // Mapping is a 1-1 node mapping between T1 nodes and T2 nodes.
+// Pairs preserves insertion order for deterministic iteration.
 type Mapping struct {
-	src map[*treesitter.ASTNode]*treesitter.ASTNode
-	dst map[*treesitter.ASTNode]*treesitter.ASTNode
+	src   map[*treesitter.ASTNode]*treesitter.ASTNode
+	dst   map[*treesitter.ASTNode]*treesitter.ASTNode
+	Pairs []MappingPair
 }
 
 func NewMapping() *Mapping {
@@ -165,6 +173,9 @@ func Isomorphic(a, b *treesitter.ASTNode) bool {
 }
 
 func (m *Mapping) Add(t1, t2 *treesitter.ASTNode) {
+	if _, exists := m.src[t1]; !exists {
+		m.Pairs = append(m.Pairs, MappingPair{Src: t1, Dst: t2})
+	}
 	m.src[t1] = t2
 	m.dst[t2] = t1
 }

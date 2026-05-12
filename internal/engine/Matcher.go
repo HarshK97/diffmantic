@@ -21,8 +21,8 @@ func PrintMappings(r *MatchResult) {
 		return
 	}
 
-	src := r.Mappings.Src()
-	if len(src) == 0 {
+	pairs := r.Mappings.Pairs
+	if len(pairs) == 0 {
 		fmt.Println("(no mappings found)")
 		return
 	}
@@ -31,19 +31,17 @@ func PrintMappings(r *MatchResult) {
 		"#", "T1 Type", "T1 Label", "T2 Type", "T2 Label")
 	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────")
 
-	i := 1
-	for t1, t2 := range src {
-		t1Label := t1.Label
+	for i, p := range pairs {
+		t1Label := p.Src.Label
 		if t1Label == "" {
 			t1Label = "-"
 		}
-		t2Label := t2.Label
+		t2Label := p.Dst.Label
 		if t2Label == "" {
 			t2Label = "-"
 		}
 		fmt.Printf("%-4d  %-30s %-20s  →  %-30s %-20s\n",
-			i, t1.Type, t1Label, t2.Type, t2Label)
-		i++
+			i+1, p.Src.Type, t1Label, p.Dst.Type, t2Label)
 	}
-	fmt.Printf("\nTotal mappings: %d\n", len(src))
+	fmt.Printf("\nTotal mappings: %d\n", len(pairs))
 }
