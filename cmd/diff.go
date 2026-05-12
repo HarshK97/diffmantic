@@ -80,7 +80,7 @@ Examples:
 
 		fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 
-		result := engine.Match(astA, astB, 2)
+		result := engine.Match(astA, astB)
 		engine.PrintMappings(result)
 	},
 }
