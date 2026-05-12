@@ -142,6 +142,10 @@ func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTN
 	return 2.0 * float64(common) / denom
 }
 
+// TODO: replace the O(n) algorithm with O(1) hash comparison from
+// M. Chilowicz, E. Duris, and G. Roussel. Syntax tree
+// fingerprinting for source code similarity detection.
+//
 // Isomorphic returns true when two subtrees are structurally
 // and label-wise identical.
 func Isomorphic(a, b *treesitter.ASTNode) bool {
