@@ -51,6 +51,14 @@ func (m *Mapping) Remove(t1 *treesitter.ASTNode) {
 // Src exposes the T1->T2 map for use in Dice calculations.
 func (m *Mapping) Src() map[*treesitter.ASTNode]*treesitter.ASTNode { return m.src }
 
+// Dst exposes the T2->T1 map.
+func (m *Mapping) Dst() map[*treesitter.ASTNode]*treesitter.ASTNode { return m.dst }
+
+// DiceSrc computes dice(t1, t2) using the internal src mapping.
+func (m *Mapping) DiceSrc(t1, t2 *treesitter.ASTNode) float64 {
+	return Dice(t1, t2, m.src)
+}
+
 // addIsomorphicPairs add all the pairs of isomorphic descendants of t1/t2 to m.
 func addIsomorphicPairs(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	d1 := append([]*treesitter.ASTNode{t1}, Descendants(t1)...)
