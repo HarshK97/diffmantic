@@ -89,3 +89,49 @@ func Isomorphic(a, b *treesitter.ASTNode) bool {
 
 	return true
 }
+
+// PostOrder returns all nodes in the subtree rooted at n
+// in post-order (children before parent).
+func PostOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
+	var out []*treesitter.ASTNode
+	for _, c := range n.Children {
+		out = append(out, PostOrder(c)...)
+	}
+	out = append(out, n)
+	return out
+}
+
+// PreOrder returns all nodes in the subtree rooted at n
+// in pre-order (parent before children). Used for deterministic
+// mapping output.
+func PreOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
+	out := []*treesitter.ASTNode{n}
+	for _, c := range n.Children {
+		out = append(out, PreOrder(c)...)
+	}
+	return out
+}
+
+// StructureIsomorphic returns true when two subtrees are structurally
+// identical (same Type, same shape) but ignores leaf labels.
+//
+// TODO: replace with O(1) hash comparison alongside Isomorphic.
+func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Type != b.Type || len(a.Children) != len(b.Children) {
+		return false
+	}
+
+	for i := range a.Children {
+		if !StructureIsomorphic(a.Children[i], b.Children[i]) {
+			return false
+		}
+	}
+
+	return true
+}
