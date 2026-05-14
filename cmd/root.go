@@ -29,7 +29,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "diffmantic",
+	Use:   "diffm",
 	Short: "Semantic diff engine powered by Tree-sitter",
 	Long: `diffmantic is a structural source code diff engine.
 
