@@ -118,6 +118,9 @@ Examples:
 
 		result := engine.Match(astA, astB)
 		engine.PrintMappings(result)
+
+		actions := engine.GenerateActions(astA, astB, result.Mappings)
+		engine.PrintActions(actions)
 	},
 }
 
