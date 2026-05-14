@@ -28,6 +28,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // diffCmd represents the diff command
@@ -51,25 +52,60 @@ Examples:
 		// lang, _ := cmd.Flags().GetString("lang")
 		// format, _ := cmd.Flags().GetString("format")
 
-		srcA, err := os.ReadFile(fileA)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", fileA, err)
-			os.Exit(1)
-		}
-		srcB, err := os.ReadFile(fileB)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", fileB, err)
+		var (
+			srcA []byte
+			srcB []byte
+			astA *treesitter.ASTNode
+			astB *treesitter.ASTNode
+		)
+
+		g := new(errgroup.Group)
+
+		g.Go(func() error {
+			data, err := os.ReadFile(fileA)
+			if err != nil {
+				return fmt.Errorf("error reading %s: %w", fileA, err)
+			}
+			srcA = data
+			return nil
+		})
+
+		g.Go(func() error {
+			data, err := os.ReadFile(fileB)
+			if err != nil {
+				return fmt.Errorf("error reading %s: %w", fileB, err)
+			}
+			srcB = data
+			return nil
+		})
+
+		if err := g.Wait(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
-		astA, err := treesitter.Parse(srcA, fileA)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error parsing %s: %v\n", fileA, err)
-			os.Exit(1)
-		}
-		astB, err := treesitter.Parse(srcB, fileB)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error parsing %s: %v\n", fileB, err)
+		g = new(errgroup.Group)
+
+		g.Go(func() error {
+			parsed, err := treesitter.Parse(srcA, fileA)
+			if err != nil {
+				return fmt.Errorf("error parsing %s: %w", fileA, err)
+			}
+			astA = parsed
+			return nil
+		})
+
+		g.Go(func() error {
+			parsed, err := treesitter.Parse(srcB, fileB)
+			if err != nil {
+				return fmt.Errorf("error parsing %s: %w", fileB, err)
+			}
+			astB = parsed
+			return nil
+		})
+
+		if err := g.Wait(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
