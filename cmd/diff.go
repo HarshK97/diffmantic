@@ -26,6 +26,7 @@ import (
 	"os"
 
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -50,7 +51,7 @@ Examples:
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
 		// lang, _ := cmd.Flags().GetString("lang")
-		// format, _ := cmd.Flags().GetString("format")
+		format, _ := cmd.Flags().GetString("format")
 
 		var (
 			srcA []byte
@@ -114,13 +115,23 @@ Examples:
 		// fmt.Println("=== AST B ===")
 		// treesitter.PrintAST(astB, 0)
 
-		fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
-
 		result := engine.Match(astA, astB)
-		engine.PrintMappings(result)
-
 		actions := engine.GenerateActions(astA, astB, result.Mappings)
-		engine.PrintActions(actions)
+		hunks := output.Classify(actions)
+		hunks = output.Coalesce(hunks)
+
+		switch format {
+		case "json":
+			if err := output.PrintHunksJSON(hunks); err != nil {
+				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
+				os.Exit(1)
+			}
+		default:
+			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
+			engine.PrintMappings(result)
+			engine.PrintActions(actions)
+			output.PrintHunks(hunks)
+		}
 	},
 }
 
