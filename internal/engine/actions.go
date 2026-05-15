@@ -41,6 +41,13 @@ type Action struct {
 	T2Ref    *treesitter.ASTNode
 }
 
+// EditScript bundles the raw actions with the copy→original node map
+// so downstream consumers can resolve source positions.
+type EditScript struct {
+	Actions    []Action
+	CopyToOrig map[*treesitter.ASTNode]*treesitter.ASTNode
+}
+
 // copyResult holds the copied tree root and bidirectional maps between
 // original and copied nodes.
 type copyResult struct {
@@ -65,9 +72,15 @@ func deepCopyNode(
 		return nil
 	}
 	cp := &treesitter.ASTNode{
-		Type:   n.Type,
-		Label:  n.Label,
-		Parent: parent,
+		Type:      n.Type,
+		Label:     n.Label,
+		Parent:    parent,
+		StartByte: n.StartByte,
+		EndByte:   n.EndByte,
+		StartRow:  n.StartRow,
+		StartCol:  n.StartCol,
+		EndRow:    n.EndRow,
+		EndCol:    n.EndCol,
 	}
 	o2c[n] = cp
 	c2o[cp] = n
@@ -285,7 +298,7 @@ func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
 func GenerateActions(
 	t1Root, t2Root *treesitter.ASTNode,
 	m *Mapping,
-) []Action {
+) *EditScript {
 	// 0. Deep-copy T1 so we never mutate the original.
 	cr := deepCopyTree(t1Root)
 	t1Copy := cr.Root
@@ -399,12 +412,15 @@ func GenerateActions(
 		}
 	}
 
-	return script
+	return &EditScript{
+		Actions:    script,
+		CopyToOrig: cr.copyToOrig,
+	}
 }
 
 // PrintActions prints the edit script in a human-readable table.
-func PrintActions(actions []Action) {
-	if len(actions) == 0 {
+func PrintActions(es *EditScript) {
+	if es == nil || len(es.Actions) == 0 {
 		fmt.Println("(no edit actions)")
 		return
 	}
@@ -413,7 +429,7 @@ func PrintActions(actions []Action) {
 		"#", "Op", "Node Type", "Node Label", "Parent Type", "Details")
 	fmt.Println("──────────────────────────────────────────────────────────────────────────────────────────────────────")
 
-	for i, a := range actions {
+	for i, a := range es.Actions {
 		nodeType := a.Node.Type
 		nodeLabel := a.Node.Label
 		if nodeLabel == "" {
@@ -443,5 +459,5 @@ func PrintActions(actions []Action) {
 		fmt.Printf("%-4d  %-4s  %-25s %-20s  %-25s  %s\n",
 			i+1, a.Kind, nodeType, nodeLabel, parentType, detail)
 	}
-	fmt.Printf("\nTotal actions: %d\n", len(actions))
+	fmt.Printf("\nTotal actions: %d\n", len(es.Actions))
 }
