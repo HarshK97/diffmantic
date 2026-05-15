@@ -350,7 +350,7 @@ func GenerateActions(
 		}
 
 		// (c) x is not the root and has a partner
-		w, _ := mPrime.Dst()[x]
+		w := mPrime.Dst()[x]
 		v := w.Parent
 
 		// (c.ii) If v(w) ≠ v(x) → UPDATE (only for leaf nodes)
