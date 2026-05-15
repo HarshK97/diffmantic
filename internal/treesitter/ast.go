@@ -8,10 +8,16 @@ import (
 )
 
 type ASTNode struct {
-	Type     string
-	Label    string
-	Children []*ASTNode
-	Parent   *ASTNode
+	Type      string
+	Label     string
+	Children  []*ASTNode
+	Parent    *ASTNode
+	StartByte uint32
+	EndByte   uint32
+	StartRow  uint32 // 0-indexed
+	StartCol  uint32
+	EndRow    uint32
+	EndCol    uint32
 }
 
 func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode) *ASTNode {
@@ -20,8 +26,14 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	}
 
 	node := &ASTNode{
-		Type:   n.Type(lang),
-		Parent: parent,
+		Type:      n.Type(lang),
+		Parent:    parent,
+		StartByte: n.StartByte(),
+		EndByte:   n.EndByte(),
+		StartRow:  n.StartPoint().Row,
+		StartCol:  n.StartPoint().Column,
+		EndRow:    n.EndPoint().Row,
+		EndCol:    n.EndPoint().Column,
 	}
 
 	// label only for leave nodes
