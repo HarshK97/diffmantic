@@ -318,10 +318,13 @@ func GenerateActions(
 	for _, x := range bfs(t2Root) {
 		y := x.Parent // p(x) in T2
 
-		// The root of T2 must be matched; skip it for insert/move logic.
+		// w will hold the partner of x in the copied T1 for alignChildren.
+		var w *treesitter.ASTNode
+
 		if y == nil {
-			// x is the root of T2 – handle update if needed.
-			if w, ok := mPrime.Dst()[x]; ok {
+			// (a) x is the root of T2 – handle update if needed.
+			if partner, ok := mPrime.Dst()[x]; ok {
+				w = partner
 				if len(x.Children) == 0 && w.Label != x.Label {
 					script = append(script, Action{
 						Kind:  ActionUpdate,
@@ -332,77 +335,75 @@ func GenerateActions(
 					w.Label = x.Label
 				}
 			}
-			continue
-		}
+		} else {
+			z, hasZ := mPrime.Dst()[y]
 
-		// z = partner of y in M' (y's partner in T1-copy)
-		z, hasZ := mPrime.Dst()[y]
+			// (b) If x has no partner in M' → INSERT
+			if !mPrime.HasDst(x) {
+				if !hasZ {
+					continue
+				}
 
-		// (b) If x has no partner in M' → INSERT
-		if !mPrime.HasDst(x) {
-			if !hasZ {
-				continue
+				k := findPos(x, mPrime, io)
+				w = &treesitter.ASTNode{
+					Type:  x.Type,
+					Label: x.Label,
+				}
+
+				script = append(script, Action{
+					Kind:     ActionInsert,
+					Node:     w,
+					Parent:   z,
+					Position: k,
+					Value:    x.Label,
+					T2Ref:    x,
+				})
+
+				insertChild(z, w, k)
+
+				mPrime.Add(w, x)
+
+				if len(x.Children) == 0 {
+					continue
+				}
+			} else {
+				// (c) x is not the root and has a partner
+				w = mPrime.Dst()[x]
+				v := w.Parent
+
+				// (c.ii) If v(w) ≠ v(x) → UPDATE (only for leaf nodes)
+				if len(x.Children) == 0 && w.Label != x.Label {
+					script = append(script, Action{
+						Kind:  ActionUpdate,
+						Node:  w,
+						Value: x.Label,
+						T2Ref: x,
+					})
+					w.Label = x.Label
+				}
+
+				// (c.iii) If (y, v) ∉ M' → MOVE
+				if hasZ && v != z {
+					k := findPos(x, mPrime, io)
+
+					script = append(script, Action{
+						Kind:     ActionMove,
+						Node:     w,
+						Parent:   z,
+						Position: k,
+						T2Ref:    x,
+					})
+
+					removeChild(w)
+					insertChild(z, w, k)
+				}
 			}
-
-			k := findPos(x, mPrime, io)
-			w := &treesitter.ASTNode{
-				Type:  x.Type,
-				Label: x.Label,
-			}
-
-			script = append(script, Action{
-				Kind:     ActionInsert,
-				Node:     w,
-				Parent:   z,
-				Position: k,
-				Value:    x.Label,
-				T2Ref:    x,
-			})
-
-			// Apply INS to T1-copy
-			insertChild(z, w, k)
-
-			// Add (w, x) to M'
-			mPrime.Add(w, x)
-
-			continue
-		}
-
-		// (c) x is not the root and has a partner
-		w := mPrime.Dst()[x]
-		v := w.Parent
-
-		// (c.ii) If v(w) ≠ v(x) → UPDATE (only for leaf nodes)
-		if len(x.Children) == 0 && w.Label != x.Label {
-			script = append(script, Action{
-				Kind:  ActionUpdate,
-				Node:  w,
-				Value: x.Label,
-				T2Ref: x,
-			})
-			w.Label = x.Label
-		}
-
-		// (c.iii) If (y, v) ∉ M' → MOVE
-		if hasZ && v != z {
-			// The parent relationship disagrees with the matching.
-			k := findPos(x, mPrime, io)
-
-			script = append(script, Action{
-				Kind:     ActionMove,
-				Node:     w,
-				Parent:   z,
-				Position: k,
-				T2Ref:    x,
-			})
-
-			// Apply MOV(w, z, k) to T1-copy
-			removeChild(w)
-			insertChild(z, w, k)
 		}
 
 		// (d) AlignChildren(w, x)
-		alignChildren(w, x, mPrime, io, &script)
+		if w != nil {
+			alignChildren(w, x, mPrime, io, &script)
+		}
 	}
 
 	// 3. Post-order traversal of T1-copy – DELETE phase.
