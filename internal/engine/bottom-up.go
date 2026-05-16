@@ -67,6 +67,9 @@ func candidate(
 
 	var best *treesitter.ASTNode
 	bestDice := -1.0
+	bestLabelScore := -1
+
+	t1Labels := leafLabels(t1)
 
 	for _, c := range PostOrder(t2Root) {
 		if c.Type != t1.Type {
@@ -84,9 +87,49 @@ func candidate(
 		if d > bestDice {
 			bestDice = d
 			best = c
+			bestLabelScore = labelOverlap(t1Labels, c)
+		} else if d == bestDice {
+			// Tie-break: prefer candidate with more matching leaf labels.
+			ls := labelOverlap(t1Labels, c)
+			if ls > bestLabelScore {
+				best = c
+				bestLabelScore = ls
+			}
 		}
 	}
 	return best
+}
+
+// leafLabels collects all non-empty labels from leaf nodes in the subtree.
+func leafLabels(n *treesitter.ASTNode) map[string]int {
+	labels := make(map[string]int)
+	for _, d := range Descendants(n) {
+		if len(d.Children) == 0 && d.Label != "" {
+			labels[d.Label]++
+		}
+	}
+	if len(n.Children) == 0 && n.Label != "" {
+		labels[n.Label]++
+	}
+	return labels
+}
+
+// labelOverlap counts how many leaf labels in t2's subtree also appear in t1Labels.
+func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
+	count := 0
+	for _, d := range Descendants(t2) {
+		if len(d.Children) == 0 && d.Label != "" {
+			if t1Labels[d.Label] > 0 {
+				count++
+			}
+		}
+	}
+	if len(t2.Children) == 0 && t2.Label != "" {
+		if t1Labels[t2.Label] > 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // hasCommonDescendant returns true if some descendant of c (in T2) is
