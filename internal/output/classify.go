@@ -23,8 +23,12 @@ func Classify(es *engine.EditScript) []Hunk {
 		switch a.Kind {
 		case engine.ActionInsert:
 			h = classifyInsert(a)
+		case engine.ActionInsertTree:
+			h = classifyInsertTree(a)
 		case engine.ActionDelete:
 			h = classifyDelete(a, es.CopyToOrig)
+		case engine.ActionDeleteTree:
+			h = classifyDeleteTree(a, es.CopyToOrig)
 		case engine.ActionUpdate:
 			h = classifyUpdate(a, es.CopyToOrig)
 		case engine.ActionMove:
@@ -53,8 +57,33 @@ func classifyInsert(a engine.Action) Hunk {
 	}
 }
 
+// classifyInsertTree maps an INS_TREE action to a Hunk.
+// Uses the T2Ref which spans the full subtree.
+func classifyInsertTree(a engine.Action) Hunk {
+	dst := a.T2Ref
+	return Hunk{
+		Kind:         ChangeInsert,
+		DstStartLine: rowToLine(dst.StartRow),
+		DstEndLine:   rowToLine(dst.EndRow),
+		Summary:      fmt.Sprintf("inserted %s %s", dst.Type, labelStr(dst)),
+		NodeType:     dst.Type,
+	}
+}
+
 // classifyDelete maps a DEL action to a Hunk.
 func classifyDelete(a engine.Action, c2o map[*treesitter.ASTNode]*treesitter.ASTNode) Hunk {
+	src := resolveOriginal(a.Node, c2o)
+	return Hunk{
+		Kind:         ChangeDelete,
+		SrcStartLine: rowToLine(src.StartRow),
+		SrcEndLine:   rowToLine(src.EndRow),
+		Summary:      fmt.Sprintf("deleted %s %s", src.Type, labelStr(src)),
+		NodeType:     src.Type,
+	}
+}
+
+// classifyDeleteTree maps a DEL_TREE action to a Hunk.
+func classifyDeleteTree(a engine.Action, c2o map[*treesitter.ASTNode]*treesitter.ASTNode) Hunk {
 	src := resolveOriginal(a.Node, c2o)
 	return Hunk{
 		Kind:         ChangeDelete,
