@@ -14,6 +14,8 @@ const (
 	ActionDelete
 	ActionUpdate
 	ActionMove
+	ActionInsertTree
+	ActionDeleteTree
 )
 
 func (k ActionKind) String() string {
@@ -26,6 +28,10 @@ func (k ActionKind) String() string {
 		return "UPD"
 	case ActionMove:
 		return "MOV"
+	case ActionInsertTree:
+		return "INS_TREE"
+	case ActionDeleteTree:
+		return "DEL_TREE"
 	default:
 		return "???"
 	}
@@ -413,7 +419,7 @@ func GenerateActions(
 	}
 
 	return &EditScript{
-		Actions:    script,
+		Actions:    CompressTreeActions(script),
 		CopyToOrig: cr.copyToOrig,
 	}
 }
@@ -454,10 +460,90 @@ func PrintActions(es *EditScript) {
 				parentType = a.Parent.Type
 			}
 			detail = fmt.Sprintf("pos=%d", a.Position)
+		case ActionInsertTree:
+			if a.Parent != nil {
+				parentType = a.Parent.Type
+			}
+			detail = fmt.Sprintf("pos=%d", a.Position)
+		case ActionDeleteTree:
+			// no extra detail
 		}
 
-		fmt.Printf("%-4d  %-4s  %-25s %-20s  %-25s  %s\n",
+		fmt.Printf("%-4d  %-8s  %-25s %-20s  %-25s  %s\n",
 			i+1, a.Kind, nodeType, nodeLabel, parentType, detail)
 	}
 	fmt.Printf("\nTotal actions: %d\n", len(es.Actions))
+}
+
+// CompressTreeActions collapses chains of per-node INS or DEL actions
+// into INS_TREE / DEL_TREE when a node and ALL its descendants in the
+// edit script share the same action kind.
+func CompressTreeActions(actions []Action) []Action {
+	inserted := make(map[*treesitter.ASTNode]*Action)
+	deleted := make(map[*treesitter.ASTNode]*Action)
+	for i := range actions {
+		a := &actions[i]
+		switch a.Kind {
+		case ActionInsert:
+			inserted[a.Node] = a
+		case ActionDelete:
+			deleted[a.Node] = a
+		}
+	}
+
+	insRoots := make(map[*treesitter.ASTNode]bool)
+	for node := range inserted {
+		if node.Parent == nil || inserted[node.Parent] == nil {
+			insRoots[node] = true
+		}
+	}
+
+	delRoots := make(map[*treesitter.ASTNode]bool)
+	for node := range deleted {
+		if node.Parent == nil || deleted[node.Parent] == nil {
+			delRoots[node] = true
+		}
+	}
+
+	suppressed := make(map[*treesitter.ASTNode]bool)
+	for root := range insRoots {
+		markDescendants(root, inserted, suppressed)
+	}
+	for root := range delRoots {
+		markDescendants(root, deleted, suppressed)
+	}
+
+	var out []Action
+	for _, a := range actions {
+		if suppressed[a.Node] {
+			continue
+		}
+		if a.Kind == ActionInsert && insRoots[a.Node] {
+			a.Kind = ActionInsertTree
+			out = append(out, a)
+			continue
+		}
+		if a.Kind == ActionDelete && delRoots[a.Node] {
+			a.Kind = ActionDeleteTree
+			out = append(out, a)
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// markDescendants marks all children of root that are in the actionSet
+// as suppressed (they'll be absorbed into the tree action).
+func markDescendants(
+	root *treesitter.ASTNode,
+	actionSet map[*treesitter.ASTNode]*Action,
+	suppressed map[*treesitter.ASTNode]bool,
+) {
+	for _, c := range root.Children {
+		if actionSet[c] != nil {
+			suppressed[c] = true
+			markDescendants(c, actionSet, suppressed)
+		}
+	}
 }
