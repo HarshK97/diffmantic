@@ -154,18 +154,22 @@ func Coalesce(hunks []Hunk) []Hunk {
 		}
 	}
 
-	// Pass 2: Line-level fallback - merge any remaining overlapping hunks
-	// regardless of kind.
+	// Pass 2: Line-level fallback - merge same-kind hunks that overlap
+	// when sorted by position (catches hunks that weren't adjacent in
+	// the kind-sorted pass 1).
 	sort.SliceStable(merged, func(i, j int) bool {
 		si := effectiveStart(merged[i])
 		sj := effectiveStart(merged[j])
-		return si < sj
+		if si != sj {
+			return si < sj
+		}
+		return merged[i].Kind < merged[j].Kind
 	})
 
 	final := []Hunk{merged[0]}
 	for _, h := range merged[1:] {
 		last := &final[len(final)-1]
-		if rangesOverlap(last, &h) {
+		if last.Kind == h.Kind && rangesOverlap(last, &h) {
 			mergeInto(last, &h)
 		} else {
 			final = append(final, h)
@@ -232,7 +236,17 @@ func mergeInto(dst, src *Hunk) {
 			dst.DstEndLine = src.DstEndLine
 		}
 	}
-	if len(src.Summary) > len(dst.Summary) {
+	srcSpan := func(h *Hunk) int {
+		if h.SrcEndLine > 0 && h.SrcStartLine > 0 {
+			return h.SrcEndLine - h.SrcStartLine
+		}
+		if h.DstEndLine > 0 && h.DstStartLine > 0 {
+			return h.DstEndLine - h.DstStartLine
+		}
+		return 0
+	}
+	if srcSpan(src) > srcSpan(dst) {
 		dst.Summary = src.Summary
+		dst.NodeType = src.NodeType
 	}
 }
