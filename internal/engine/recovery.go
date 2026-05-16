@@ -74,8 +74,15 @@ func uniqueTypePairs(
 		count2[c.Type] = append(count2[c.Type], c)
 	}
 
+	seen := make(map[string]bool)
 	var pairs [][2]*treesitter.ASTNode
-	for typ, nodes1 := range count1 {
+	for _, c := range uc1 {
+		typ := c.Type
+		if seen[typ] {
+			continue
+		}
+		seen[typ] = true
+		nodes1 := count1[typ]
 		nodes2 := count2[typ]
 		if len(nodes1) == 1 && len(nodes2) == 1 {
 			pairs = append(pairs, [2]*treesitter.ASTNode{nodes1[0], nodes2[0]})
