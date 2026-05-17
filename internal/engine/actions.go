@@ -415,7 +415,6 @@ func GenerateActions(
 				Kind: ActionDelete,
 				Node: w,
 			})
-			removeChild(w)
 		}
 	}
 
