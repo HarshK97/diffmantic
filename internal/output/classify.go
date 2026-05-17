@@ -220,6 +220,19 @@ func effectiveStart(h Hunk) int {
 }
 
 func mergeInto(dst, src *Hunk) {
+	srcSpan := func(h *Hunk) int {
+		if h.SrcEndLine > 0 && h.SrcStartLine > 0 {
+			return h.SrcEndLine - h.SrcStartLine
+		}
+		if h.DstEndLine > 0 && h.DstStartLine > 0 {
+			return h.DstEndLine - h.DstStartLine
+		}
+		return 0
+	}
+
+	spanSrc := srcSpan(src)
+	spanDst := srcSpan(dst)
+
 	if src.SrcStartLine > 0 {
 		if dst.SrcStartLine == 0 || src.SrcStartLine < dst.SrcStartLine {
 			dst.SrcStartLine = src.SrcStartLine
@@ -236,16 +249,8 @@ func mergeInto(dst, src *Hunk) {
 			dst.DstEndLine = src.DstEndLine
 		}
 	}
-	srcSpan := func(h *Hunk) int {
-		if h.SrcEndLine > 0 && h.SrcStartLine > 0 {
-			return h.SrcEndLine - h.SrcStartLine
-		}
-		if h.DstEndLine > 0 && h.DstStartLine > 0 {
-			return h.DstEndLine - h.DstStartLine
-		}
-		return 0
-	}
-	if srcSpan(src) > srcSpan(dst) {
+
+	if spanSrc > spanDst {
 		dst.Summary = src.Summary
 		dst.NodeType = src.NodeType
 	}
