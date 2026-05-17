@@ -17,9 +17,45 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 	mappings := TopDown(t1, t2, minHeight)
 	BottomUp(t1, t2, mappings, minDice)
 
+	MatchUnmatchedLeaves(t1, t2, mappings)
+
 	sortMappingsByPreOrder(t1, mappings)
 
 	return &MatchResult{Mappings: mappings}
+}
+
+// MatchUnmatchedLeaves performs a final greedy pass to map any unmatched leaf nodes
+// that have the exact same type and label, using the Dice coefficient of their
+// parents to break ties and select the most structurally similar context.
+func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	for _, t1 := range PostOrder(t1Root) {
+		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" {
+			continue
+		}
+
+		var bestT2 *treesitter.ASTNode
+		bestDice := -1.0
+
+		for _, t2 := range PostOrder(t2Root) {
+			if m.HasDst(t2) || t2.Type != t1.Type || t2.Label != t1.Label || len(t2.Children) > 0 {
+				continue
+			}
+
+			d := 0.0
+			if t1.Parent != nil && t2.Parent != nil {
+				d = Dice(t1.Parent, t2.Parent, m.Src())
+			}
+
+			if d > bestDice {
+				bestDice = d
+				bestT2 = t2
+			}
+		}
+
+		if bestT2 != nil {
+			m.Add(t1, bestT2)
+		}
+	}
 }
 
 // sortMappingsByPreOrder sorts m.Pairs by the pre-order index of each
