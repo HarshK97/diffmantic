@@ -1,9 +1,12 @@
 package tui
-
 import (
+	"math"
+	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/output"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
-
+// DiffFile is the TUI-facing representation of a single semantic diff.
+// The slice shape is intentionally multi-file ready for future git diffs.
 type DiffFile struct {
 	OldPath     string
 	NewPath     string
@@ -14,16 +17,6 @@ type DiffFile struct {
 	LeftSpans   []visualSpan
 	RightSpans  []visualSpan
 }
-
-type visualSpan struct {
-	Kind      output.ChangeKind
-	StartLine int
-	EndLine   int
-	StartCol  int
-	EndCol    int
-	Priority  int
-}
-
 func NewDiffFile(oldPath, newPath string, oldSrc, newSrc []byte, hunks []output.Hunk) DiffFile {
 	return DiffFile{
 		OldPath:     oldPath,
@@ -34,12 +27,47 @@ func NewDiffFile(oldPath, newPath string, oldSrc, newSrc []byte, hunks []output.
 		VisualHunks: hunks,
 	}
 }
-
+func NewDiffFileWithDetails(
+	oldPath, newPath string,
+	oldSrc, newSrc []byte,
+	hunks []output.Hunk,
+	actions *engine.EditScript,
+	mappings *engine.Mapping,
+) DiffFile {
+	file := NewDiffFile(oldPath, newPath, oldSrc, newSrc, hunks)
+	file.VisualHunks = normalizeVisualHunks(hunks, mappings)
+	file.LeftSpans, file.RightSpans = buildVisualSpans(actions, mappings)
+	return file
+}
+type lineAnnotation struct {
+	Kind     output.ChangeKind
+	Priority int
+	Spans    []visualSpan
+}
+type visualSpan struct {
+	Kind      output.ChangeKind
+	StartLine int
+	EndLine   int
+	StartCol  int
+	EndCol    int
+	Priority  int
+}
+func annotationPriority(kind output.ChangeKind) int {
+	switch kind {
+	case output.ChangeUpdate:
+		return 4
+	case output.ChangeMove:
+		return 3
+	case output.ChangeInsert, output.ChangeDelete:
+		return 2
+	default:
+		return 1
+	}
+}
 func splitSourceLines(src []byte) []string {
 	if len(src) == 0 {
 		return nil
 	}
-
 	lines := make([]string, 0)
 	start := 0
 	for i, b := range src {
@@ -61,4 +89,129 @@ func splitSourceLines(src []byte) []string {
 		lines = append(lines, line)
 	}
 	return lines
+}
+func (f DiffFile) displayHunks() []output.Hunk {
+	if f.VisualHunks != nil {
+		return f.VisualHunks
+	}
+	return f.Hunks
+}
+func buildLineAnnotations(file DiffFile) (map[int]lineAnnotation, map[int]lineAnnotation) {
+	left := make(map[int]lineAnnotation)
+	right := make(map[int]lineAnnotation)
+	for _, h := range file.displayHunks() {
+		switch h.Kind {
+		case output.ChangeInsert:
+			applyAnnotation(right, h.DstStartLine, h.DstEndLine, h.Kind)
+		case output.ChangeDelete:
+			applyAnnotation(left, h.SrcStartLine, h.SrcEndLine, h.Kind)
+		case output.ChangeUpdate:
+			applyAnnotation(left, h.SrcStartLine, h.SrcEndLine, h.Kind)
+			applyAnnotation(right, h.DstStartLine, h.DstEndLine, h.Kind)
+		case output.ChangeMove:
+			applyAnnotation(left, h.SrcStartLine, h.SrcEndLine, h.Kind)
+			applyAnnotation(right, h.DstStartLine, h.DstEndLine, h.Kind)
+		}
+	}
+	applySpans(left, file.LeftSpans)
+	applySpans(right, file.RightSpans)
+	return left, right
+}
+func applyAnnotation(dst map[int]lineAnnotation, start, end int, kind output.ChangeKind) {
+	if start <= 0 || end <= 0 {
+		return
+	}
+	if end < start {
+		start, end = end, start
+	}
+	for line := start; line <= end; line++ {
+		next := lineAnnotation{Kind: kind, Priority: annotationPriority(kind)}
+		current, ok := dst[line]
+		if !ok || next.Priority >= current.Priority {
+			next.Spans = current.Spans
+			dst[line] = next
+		}
+	}
+}
+func applySpans(dst map[int]lineAnnotation, spans []visualSpan) {
+	for _, span := range spans {
+		if span.StartLine <= 0 || span.EndLine <= 0 {
+			continue
+		}
+		for line := span.StartLine; line <= span.EndLine; line++ {
+			ann := dst[line]
+			ann.Spans = append(ann.Spans, span.lineSpan(line))
+			if ann.Priority == 0 {
+				ann.Kind = span.Kind
+				ann.Priority = span.Priority
+			}
+			dst[line] = ann
+		}
+	}
+}
+func (s visualSpan) lineSpan(line int) visualSpan {
+	out := s
+	out.StartLine = line
+	out.EndLine = line
+	if line > s.StartLine {
+		out.StartCol = 0
+	}
+	if line < s.EndLine {
+		out.EndCol = math.MaxInt
+	}
+	return out
+}
+func buildVisualSpans(es *engine.EditScript, mappings *engine.Mapping) ([]visualSpan, []visualSpan) {
+	var left, right []visualSpan
+	if es != nil {
+		for _, action := range es.Actions {
+			switch action.Kind {
+			case engine.ActionInsert, engine.ActionInsertTree:
+				if span, ok := spanFromNode(action.T2Ref, output.ChangeInsert); ok {
+					right = append(right, span)
+				}
+			case engine.ActionDelete, engine.ActionDeleteTree:
+				node := resolveActionOriginal(action.Node, es.CopyToOrig)
+				if span, ok := spanFromNode(node, output.ChangeDelete); ok {
+					left = append(left, span)
+				}
+			case engine.ActionUpdate:
+				node := resolveActionOriginal(action.Node, es.CopyToOrig)
+				if span, ok := spanFromNode(node, output.ChangeUpdate); ok {
+					left = append(left, span)
+				}
+				if span, ok := spanFromNode(action.T2Ref, output.ChangeUpdate); ok {
+					right = append(right, span)
+				}
+			}
+		}
+	}
+	for _, pair := range normalizedVisualMovePairs(mappings) {
+		if span, ok := spanFromNode(pair.Src, output.ChangeMove); ok {
+			left = append(left, span)
+		}
+		if span, ok := spanFromNode(pair.Dst, output.ChangeMove); ok {
+			right = append(right, span)
+		}
+	}
+	return left, right
+}
+func spanFromNode(n *treesitter.ASTNode, kind output.ChangeKind) (visualSpan, bool) {
+	if n == nil {
+		return visualSpan{}, false
+	}
+	return visualSpan{
+		Kind:      kind,
+		StartLine: int(n.StartRow) + 1,
+		EndLine:   int(n.EndRow) + 1,
+		StartCol:  int(n.StartCol),
+		EndCol:    int(n.EndCol),
+		Priority:  annotationPriority(kind),
+	}, true
+}
+func resolveActionOriginal(n *treesitter.ASTNode, c2o map[*treesitter.ASTNode]*treesitter.ASTNode) *treesitter.ASTNode {
+	if orig, ok := c2o[n]; ok {
+		return orig
+	}
+	return n
 }
