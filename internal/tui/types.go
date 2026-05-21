@@ -8,14 +8,16 @@ import (
 // DiffFile is the TUI-facing representation of a single semantic diff.
 // The slice shape is intentionally multi-file ready for future git diffs.
 type DiffFile struct {
-	OldPath     string
-	NewPath     string
-	OldLines    []string
-	NewLines    []string
-	Hunks       []output.Hunk
-	VisualHunks []output.Hunk
-	LeftSpans   []visualSpan
-	RightSpans  []visualSpan
+	OldPath      string
+	NewPath      string
+	OldLines     []string
+	NewLines     []string
+	Hunks        []output.Hunk
+	VisualHunks  []output.Hunk
+	LeftSpans    []visualSpan
+	RightSpans   []visualSpan
+	RelPath      string
+	NeedsCompute bool
 }
 func NewDiffFile(oldPath, newPath string, oldSrc, newSrc []byte, hunks []output.Hunk) DiffFile {
 	return DiffFile{
