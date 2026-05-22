@@ -20,7 +20,8 @@ func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 	for i := 1; i <= n; i++ {
 		for j := 1; j <= m; j++ {
 			if eq(seq1[i-1], seq2[j-1]) {
-				dp[i][j] = dp[i-1][j-1] + 1
+				weight := seq1[i-1].Size()
+				dp[i][j] = dp[i-1][j-1] + weight
 			} else {
 				dp[i][j] = max(dp[i-1][j], dp[i][j-1])
 			}
@@ -34,7 +35,7 @@ func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 			pairs = append(pairs, [2]*treesitter.ASTNode{seq1[i-1], seq2[j-1]})
 			i--
 			j--
-		} else if dp[i-1][j] > dp[i][j-1] {
+		} else if dp[i-1][j] >= dp[i][j-1] {
 			i--
 		} else {
 			j--

@@ -65,3 +65,14 @@ func PrintAST(n *ASTNode, depth int) {
 		PrintAST(child, depth+1)
 	}
 }
+// Size returns the total number of nodes in the subtree rooted at n.
+func (n *ASTNode) Size() int {
+	if n == nil {
+		return 0
+	}
+	size := 1
+	for _, child := range n.Children {
+		size += child.Size()
+	}
+	return size
+}
