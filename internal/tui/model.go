@@ -3,9 +3,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/output"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 type focusArea int
 const (
@@ -17,7 +21,7 @@ const (
 	minHeight     = 8
 	minTreeWidth  = 28
 	maxTreeWidth  = 36
-	statusRows    = 2
+	statusRows    = 1
 	separatorCols = 1
 )
 type model struct {
@@ -37,6 +41,47 @@ type model struct {
 	diffWidth   int
 	contentRows int
 	ready       bool
+	loading     bool
+	frame       int
+}
+type tickMsg time.Time
+func tickCmd() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+type engineDoneMsg struct {
+	Result []DiffFile
+	Err    error
+}
+func computeDiffsCmd(files []DiffFile) tea.Cmd {
+	return func() tea.Msg {
+		// Sleep for 2 seconds to showcase the premium shimmering loading screen
+		time.Sleep(2 * time.Second)
+		finalized := make([]DiffFile, len(files))
+		for i, f := range files {
+			oldSrc := []byte(strings.Join(f.OldLines, "\n"))
+			newSrc := []byte(strings.Join(f.NewLines, "\n"))
+			astA, err := treesitter.Parse(oldSrc, f.OldPath)
+			if err != nil {
+				return engineDoneMsg{Err: err}
+			}
+			astB, err := treesitter.Parse(newSrc, f.NewPath)
+			if err != nil {
+				return engineDoneMsg{Err: err}
+			}
+			result := engine.Match(astA, astB)
+			actions := engine.GenerateActions(astA, astB, result.Mappings)
+			hunks := output.Classify(actions)
+			hunks = output.Coalesce(hunks)
+			finalized[i] = NewDiffFileWithDetails(
+				f.OldPath, f.NewPath,
+				oldSrc, newSrc,
+				hunks, actions, result.Mappings,
+			)
+		}
+		return engineDoneMsg{Result: finalized}
+	}
 }
 func Run(files []DiffFile) error {
 	if len(files) == 0 {
@@ -46,6 +91,10 @@ func Run(files []DiffFile) error {
 	return err
 }
 func newModel(files []DiffFile) model {
+	loading := false
+	if len(files) > 0 && files[0].NeedsCompute {
+		loading = true
+	}
 	root := buildFileTree(files)
 	rows := flattenTree(root)
 	cursor := firstVisibleFile(rows)
@@ -58,20 +107,43 @@ func newModel(files []DiffFile) model {
 		root:        root,
 		rows:        rows,
 		treeCursor:  cursor,
-		treeVisible: true,
+		treeVisible: false,
 		selected:    selected,
 		focus:       focusDiff,
 		viewport:    viewport.New(viewport.WithWidth(1), viewport.WithHeight(1)),
 		styles:      newStyles(),
+		loading:     loading,
 	}
 }
 func (m model) Init() tea.Cmd {
+	if m.loading {
+		return tea.Batch(
+			tea.RequestWindowSize,
+			tickCmd(),
+			computeDiffsCmd(m.files),
+		)
+	}
 	return tea.RequestWindowSize
 }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
+		return m, nil
+	case tickMsg:
+		if m.loading {
+			m.frame++
+			return m, tickCmd()
+		}
+		return m, nil
+	case engineDoneMsg:
+		m.loading = false
+		if msg.Err == nil {
+			m.files = msg.Result
+			m.root = buildFileTree(m.files)
+			m.rows = flattenTree(m.root)
+			m.reflowViewport(true)
+		}
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
@@ -95,9 +167,8 @@ func (m model) View() tea.View {
 	if m.treeVisible {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, tree, m.styles.Separator.Render("|"), diff)
 	}
-	status := m.renderStatus()
 	help := m.renderHelp()
-	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, body, status, help))
+	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, body, help))
 	v.AltScreen = true
 	v.WindowTitle = "diffmantic"
 	return v
@@ -309,10 +380,141 @@ func (m model) renderTreeRow(index int, row treeRow) string {
 	return style.Width(m.treeWidth).Render(text)
 }
 func (m model) renderDiff() string {
+	if m.loading {
+		title := "Comparing..."
+		if len(m.files) > 0 {
+			title = filepath.Base(m.files[m.selected].OldPath) + " ↔ " + filepath.Base(m.files[m.selected].NewPath)
+		}
+		header := m.header(title, m.diffWidth, false)
+		
+		skeletonH := maxInt(1, m.contentRows-1)
+		skeletonLines := m.renderSkeletonLines(m.diffWidth, skeletonH)
+		return lipgloss.JoinVertical(lipgloss.Left, header, skeletonLines)
+	}
 	file := m.files[m.selected]
 	title := filepath.Base(displayPath(file))
 	header := m.header(title, m.diffWidth, m.focus == focusDiff)
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.viewport.View())
+}
+var shimmerColors = []string{
+	"#1e1e2e",
+	"#252538",
+	"#2c2c42",
+	"#34344d",
+	"#3b3b57",
+	"#434362",
+	"#3b3b57",
+	"#34344d",
+	"#2c2c42",
+	"#252538",
+}
+func (m model) shimmerBlock(width int, rowIdx int) string {
+	if width <= 0 {
+		return ""
+	}
+	colorIdx := (m.frame + rowIdx) % len(shimmerColors)
+	colorHex := shimmerColors[colorIdx]
+	style := lipgloss.NewStyle().
+		Background(lipgloss.Color(colorHex)).
+		Foreground(lipgloss.Color(colorHex))
+	return style.Render(strings.Repeat(" ", width))
+}
+func (m model) renderSkeletonLines(width, height int) string {
+	if len(m.files) == 0 || m.selected >= len(m.files) {
+		return ""
+	}
+	file := m.files[m.selected]
+	panelW := maxInt(1, (width-1)/2)
+	rightW := maxInt(1, width-panelW-1)
+	totalLines := maxInt(len(file.OldLines), len(file.NewLines))
+	if totalLines == 0 {
+		return ""
+	}
+	var lines []string
+	limit := minInt(totalLines, height)
+	for i := 1; i <= limit; i++ {
+		// --- Left Panel ---
+		leftOut := ""
+		if i <= len(file.OldLines) {
+			lineText := file.OldLines[i-1]
+			// Measure indentation
+			indentStr := ""
+			contentStart := 0
+			for idx, r := range lineText {
+				if r == '\t' {
+					indentStr += "    " // Expand tabs to 4 spaces
+					contentStart = idx + 1
+				} else if r == ' ' {
+					indentStr += " "
+					contentStart = idx + 1
+				} else {
+					break
+				}
+			}
+			contentLen := lipgloss.Width(lineText[contentStart:])
+			lineNoStr := m.styles.LineNumber.Render(fmt.Sprintf(" %4d ", i))
+			prefix := lineNoStr + "   " + indentStr
+			prefixW := lipgloss.Width(prefix)
+			// Cap the shimmer if it exceeds panel width
+			shimmerW := contentLen
+			if prefixW+shimmerW > panelW {
+				shimmerW = maxInt(0, panelW-prefixW)
+			}
+			leftOut = prefix + m.shimmerBlock(shimmerW, i)
+			// Pad the rest of the panel
+			if pad := panelW - lipgloss.Width(leftOut); pad > 0 {
+				leftOut += strings.Repeat(" ", pad)
+			}
+		} else {
+			leftOut = strings.Repeat(" ", panelW)
+		}
+		// --- Separator ---
+		sep := m.styles.Separator.Render("|")
+		// --- Right Panel ---
+		rightOut := ""
+		if i <= len(file.NewLines) {
+			lineText := file.NewLines[i-1]
+			// Measure indentation
+			indentStr := ""
+			contentStart := 0
+			for idx, r := range lineText {
+				if r == '\t' {
+					indentStr += "    " // Expand tabs to 4 spaces
+					contentStart = idx + 1
+				} else if r == ' ' {
+					indentStr += " "
+					contentStart = idx + 1
+				} else {
+					break
+				}
+			}
+			contentLen := lipgloss.Width(lineText[contentStart:])
+			lineNoStr := m.styles.LineNumber.Render(fmt.Sprintf(" %4d ", i))
+			prefix := lineNoStr + "   " + indentStr
+			prefixW := lipgloss.Width(prefix)
+			// Cap the shimmer if it exceeds panel width
+			shimmerW := contentLen
+			if prefixW+shimmerW > rightW {
+				shimmerW = maxInt(0, rightW-prefixW)
+			}
+			rightOut = prefix + m.shimmerBlock(shimmerW, i)
+			// Pad the rest of the panel
+			if pad := rightW - lipgloss.Width(rightOut); pad > 0 {
+				rightOut += strings.Repeat(" ", pad)
+			}
+		} else {
+			rightOut = strings.Repeat(" ", rightW)
+		}
+		lines = append(lines, leftOut+sep+rightOut)
+	}
+	// Pad empty lines if the viewport is taller than the files
+	for len(lines) < height {
+		leftPad := strings.Repeat(" ", panelW)
+		sep := m.styles.Separator.Render("|")
+		rightPad := strings.Repeat(" ", rightW)
+		lines = append(lines, leftPad+sep+rightPad)
+	}
+	return strings.Join(lines, "\n")
 }
 func (m model) header(title string, width int, focused bool) string {
 	if focused {
@@ -321,15 +523,6 @@ func (m model) header(title string, width int, focused bool) string {
 		title = "  " + title
 	}
 	return m.styles.Header.Width(width).Render(truncateToWidth(title, maxInt(0, width-2)))
-}
-func (m model) renderStatus() string {
-	file := m.files[m.selected]
-	focus := "diff"
-	if m.focus == focusTree {
-		focus = "files"
-	}
-	text := fmt.Sprintf(" %d files  %d hunks  %s  focus:%s", len(m.files), len(file.Hunks), displayPath(file), focus)
-	return m.styles.Status.Width(m.width).Render(truncateToWidth(text, m.width))
 }
 func (m model) renderHelp() string {
 	pairs := []struct {
