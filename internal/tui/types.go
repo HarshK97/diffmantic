@@ -6,7 +6,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 // DiffFile is the TUI-facing representation of a single semantic diff.
-// The slice shape is intentionally multi-file ready for future git diffs.
 type DiffFile struct {
 	OldPath      string
 	NewPath      string
@@ -56,11 +55,11 @@ type visualSpan struct {
 }
 func annotationPriority(kind output.ChangeKind) int {
 	switch kind {
-	case output.ChangeUpdate:
+	case output.ChangeInsert, output.ChangeDelete:
 		return 4
 	case output.ChangeMove:
-		return 3
-	case output.ChangeInsert, output.ChangeDelete:
+		return 3 // Move has priority over Update to keep move backgrounds contiguous
+	case output.ChangeUpdate:
 		return 2
 	default:
 		return 1
@@ -169,22 +168,16 @@ func buildVisualSpans(es *engine.EditScript, mappings *engine.Mapping) ([]visual
 		for _, action := range es.Actions {
 			switch action.Kind {
 			case engine.ActionInsert, engine.ActionInsertTree:
-				if span, ok := spanFromNode(action.T2Ref, output.ChangeInsert); ok {
-					right = append(right, span)
-				}
+				checkMatches := !isStatementOrDeclaration(action.T2Ref.Type)
+				addLeafSpans(action.T2Ref, output.ChangeInsert, mappings, false, checkMatches, &right)
 			case engine.ActionDelete, engine.ActionDeleteTree:
 				node := resolveActionOriginal(action.Node, es.CopyToOrig)
-				if span, ok := spanFromNode(node, output.ChangeDelete); ok {
-					left = append(left, span)
-				}
+				checkMatches := !isStatementOrDeclaration(node.Type)
+				addLeafSpans(node, output.ChangeDelete, mappings, true, checkMatches, &left)
 			case engine.ActionUpdate:
 				node := resolveActionOriginal(action.Node, es.CopyToOrig)
-				if span, ok := spanFromNode(node, output.ChangeUpdate); ok {
-					left = append(left, span)
-				}
-				if span, ok := spanFromNode(action.T2Ref, output.ChangeUpdate); ok {
-					right = append(right, span)
-				}
+				addLeafSpans(node, output.ChangeUpdate, mappings, true, false, &left)
+				addLeafSpans(action.T2Ref, output.ChangeUpdate, mappings, false, false, &right)
 			}
 		}
 	}
@@ -198,6 +191,46 @@ func buildVisualSpans(es *engine.EditScript, mappings *engine.Mapping) ([]visual
 	}
 	return left, right
 }
+
+func addLeafSpans(n *treesitter.ASTNode, kind output.ChangeKind, mappings *engine.Mapping, isSrc bool, checkMatches bool, spans *[]visualSpan) {
+	if n == nil {
+		return
+	}
+	if len(n.Children) == 0 {
+		if checkMatches && mappings != nil {
+			matched := false
+			if isSrc {
+				matched = mappings.Has(n)
+			} else {
+				matched = mappings.HasDst(n)
+			}
+			if matched {
+				return
+			}
+		}
+		if span, ok := spanFromNode(n, kind); ok {
+			*spans = append(*spans, span)
+		}
+		return
+	}
+	for _, child := range n.Children {
+		addLeafSpans(child, kind, mappings, isSrc, checkMatches, spans)
+	}
+}
+
+func isStatementOrDeclaration(nodeType string) bool {
+	if isDeclarationLike(nodeType) {
+		return true
+	}
+	switch nodeType {
+	case "short_var_declaration", "assignment_statement", "expression_statement",
+		"if_statement", "for_statement", "return_statement", "import_declaration",
+		"package_clause", "comment":
+		return true
+	}
+	return false
+}
+
 func spanFromNode(n *treesitter.ASTNode, kind output.ChangeKind) (visualSpan, bool) {
 	if n == nil {
 		return visualSpan{}, false
