@@ -2,13 +2,15 @@ package treesitter
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
 )
 
 func DetectLanguage(filename string) (*gotreesitter.Language, error) {
-	entry := grammars.DetectLanguage(filename)
+	base := filepath.Base(filename)
+	entry := grammars.DetectLanguage(base)
 	if entry == nil {
 		return nil, fmt.Errorf("unsupported language for file: %s", filename)
 	}
