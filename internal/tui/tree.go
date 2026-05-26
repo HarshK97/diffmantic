@@ -26,6 +26,9 @@ func buildFileTree(files []DiffFile) *treeNode {
 	return root
 }
 func displayPath(file DiffFile) string {
+	if file.RelPath != "" {
+		return file.RelPath
+	}
 	if file.NewPath != "" {
 		return file.NewPath
 	}
