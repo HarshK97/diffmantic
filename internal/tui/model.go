@@ -3,6 +3,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -56,29 +57,51 @@ type engineDoneMsg struct {
 }
 func computeDiffsCmd(files []DiffFile) tea.Cmd {
 	return func() tea.Msg {
-		// Sleep for 2 seconds to showcase the premium shimmering loading screen
-		time.Sleep(2 * time.Second)
 		finalized := make([]DiffFile, len(files))
+		var wg sync.WaitGroup
+		errs := make([]error, len(files))
 		for i, f := range files {
-			oldSrc := []byte(strings.Join(f.OldLines, "\n"))
-			newSrc := []byte(strings.Join(f.NewLines, "\n"))
-			astA, err := treesitter.Parse(oldSrc, f.OldPath)
+			wg.Add(1)
+			go func(idx int, file DiffFile) {
+				defer wg.Done()
+				oldSrc := []byte(strings.Join(file.OldLines, "\n"))
+				newSrc := []byte(strings.Join(file.NewLines, "\n"))
+				// Detect language path fallback for insertions/deletions
+				detectPathA := file.OldPath
+				if detectPathA == "" {
+					detectPathA = file.NewPath
+				}
+				detectPathB := file.NewPath
+				if detectPathB == "" {
+					detectPathB = file.OldPath
+				}
+				astA, errA := treesitter.Parse(oldSrc, detectPathA)
+				astB, errB := treesitter.Parse(newSrc, detectPathB)
+				if errA != nil || errB != nil {
+					// Fallback gracefully for unsupported files (like go.mod, go.sum, LICENSE)
+					// We build a standard DiffFile without detail mappings (rendered as raw plain text comparison).
+					finalized[idx] = NewDiffFile(file.OldPath, file.NewPath, oldSrc, newSrc, nil)
+					finalized[idx].RelPath = file.RelPath
+					return
+				}
+				result := engine.Match(astA, astB)
+				actions := engine.GenerateActions(astA, astB, result.Mappings)
+				hunks := output.Classify(actions)
+				hunks = output.Coalesce(hunks)
+				finalized[idx] = NewDiffFileWithDetails(
+					file.OldPath, file.NewPath,
+					oldSrc, newSrc,
+					hunks, actions, result.Mappings,
+				)
+				finalized[idx].RelPath = file.RelPath
+			}(i, f)
+		}
+		wg.Wait()
+		// Check if any error occurred
+		for _, err := range errs {
 			if err != nil {
 				return engineDoneMsg{Err: err}
 			}
-			astB, err := treesitter.Parse(newSrc, f.NewPath)
-			if err != nil {
-				return engineDoneMsg{Err: err}
-			}
-			result := engine.Match(astA, astB)
-			actions := engine.GenerateActions(astA, astB, result.Mappings)
-			hunks := output.Classify(actions)
-			hunks = output.Coalesce(hunks)
-			finalized[i] = NewDiffFileWithDetails(
-				f.OldPath, f.NewPath,
-				oldSrc, newSrc,
-				hunks, actions, result.Mappings,
-			)
 		}
 		return engineDoneMsg{Result: finalized}
 	}
@@ -107,7 +130,7 @@ func newModel(files []DiffFile) model {
 		root:        root,
 		rows:        rows,
 		treeCursor:  cursor,
-		treeVisible: false,
+		treeVisible: true,
 		selected:    selected,
 		focus:       focusDiff,
 		viewport:    viewport.New(viewport.WithWidth(1), viewport.WithHeight(1)),
@@ -142,6 +165,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.files = msg.Result
 			m.root = buildFileTree(m.files)
 			m.rows = flattenTree(m.root)
+			m.treeVisible = true
 			m.reflowViewport(true)
 		}
 		return m, nil
@@ -366,6 +390,19 @@ func (m model) renderTreeRow(index int, row treeRow) string {
 		name = filepath.Base(displayPath(m.files[node.fileIndex]))
 	}
 	text := prefix + icon + name
+	if m.loading {
+		length := len(name)
+		if length < 6 {
+			length = 6
+		}
+		if length > 15 {
+			length = 15
+		}
+		colorIdx := (m.frame + index) % len(shimmerColors)
+		color := shimmerColors[colorIdx]
+		shimmerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+		text = prefix + icon + shimmerStyle.Render(strings.Repeat("█", length))
+	}
 	text = truncateToWidth(text, m.treeWidth)
 	style := m.styles.Tree
 	if index == m.treeCursor {
