@@ -5,15 +5,34 @@ import (
 	"strings"
 	"charm.land/lipgloss/v2"
 	"github.com/HarshK97/diffmantic/internal/output"
+	"github.com/alecthomas/chroma/v2"
+	chromastyles "github.com/alecthomas/chroma/v2/styles"
 )
 const lineNumberWidth = 4
+type moveConnection struct {
+	srcMid int
+	dstMid int
+}
 func renderDiffContent(file DiffFile, width int, s styles) string {
-	if width < 8 {
-		width = 8
+	if width < 12 {
+		width = 12
 	}
 	leftAnn, rightAnn := buildLineAnnotations(file)
-	panelW := maxInt(1, (width-1)/2)
-	rightW := maxInt(1, width-panelW-1)
+	// Collect move connections for drawing curve lines in the middle panel
+	var moves []moveConnection
+	for _, h := range file.displayHunks() {
+		if h.Kind == output.ChangeMove {
+			srcMid := (h.SrcStartLine + h.SrcEndLine) / 2
+			dstMid := (h.DstStartLine + h.DstEndLine) / 2
+			if srcMid > 0 && dstMid > 0 {
+				moves = append(moves, moveConnection{srcMid: srcMid, dstMid: dstMid})
+			}
+		}
+	}
+	middleW := 3 // Width of the connection curve area
+	// Border separators: left border is 1, right border is 1. Total = 2 columns.
+	panelW := maxInt(1, (width-middleW-2)/2)
+	rightW := maxInt(1, width-panelW-middleW-2)
 	total := maxInt(len(file.OldLines), len(file.NewLines))
 	if total == 0 {
 		return s.Help.Render("(empty files)")
@@ -22,16 +41,66 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	for i := 1; i <= total; i++ {
 		leftLine, leftOK := lineAt(file.OldLines, i)
 		rightLine, rightOK := lineAt(file.NewLines, i)
+		leftToks := tokensAt(file.OldTokens, i)
+		rightToks := tokensAt(file.NewTokens, i)
 		leftAnnotation, leftAnnotated := leftAnn[i]
 		rightAnnotation, rightAnnotated := rightAnn[i]
-		b.WriteString(renderSideLine(i, leftLine, leftOK, leftAnnotation, leftAnnotated, panelW, s))
-		b.WriteString(s.Separator.Render("|"))
-		b.WriteString(renderSideLine(i, rightLine, rightOK, rightAnnotation, rightAnnotated, rightW, s))
+		leftOut := renderSideLine(i, leftLine, leftToks, leftOK, leftAnnotation, leftAnnotated, panelW, s)
+		middleContent := renderMiddlePart(i, moves, middleW, s)
+		rightOut := renderSideLine(i, rightLine, rightToks, rightOK, rightAnnotation, rightAnnotated, rightW, s)
+		b.WriteString(leftOut)
+		b.WriteString(s.Separator.Render("│"))
+		b.WriteString(middleContent)
+		b.WriteString(s.Separator.Render("│"))
+		b.WriteString(rightOut)
 		if i < total {
 			b.WriteByte('\n')
 		}
 	}
 	return b.String()
+}
+func renderMiddlePart(line int, moves []moveConnection, width int, s styles) string {
+	if width <= 0 {
+		return ""
+	}
+	for _, m := range moves {
+		if line == m.srcMid {
+			if m.srcMid < m.dstMid {
+				return s.Move.Render("─╮" + strings.Repeat(" ", maxInt(0, width-2)))
+			} else if m.srcMid > m.dstMid {
+				return s.Move.Render("─╯" + strings.Repeat(" ", maxInt(0, width-2)))
+			} else {
+				if width > 1 {
+					return s.Move.Render(strings.Repeat("─", width-1) + ">")
+				}
+				return s.Move.Render(">")
+			}
+		}
+		if line == m.dstMid {
+			if m.srcMid < m.dstMid {
+				// Coming from above: e.g. " ╰>"
+				if width >= 3 {
+					return s.Move.Render(" " + "╰" + strings.Repeat("─", width-3) + ">")
+				}
+				return s.Move.Render("╰" + strings.Repeat("─", maxInt(0, width-2)) + ">")
+			} else if m.srcMid > m.dstMid {
+				// Coming from below: e.g. " ╭>"
+				if width >= 3 {
+					return s.Move.Render(" " + "╭" + strings.Repeat("─", width-3) + ">")
+				}
+				return s.Move.Render("╭" + strings.Repeat("─", maxInt(0, width-2)) + ">")
+			}
+		}
+		// Vertical connecting line
+		minL := minInt(m.srcMid, m.dstMid)
+		maxL := maxInt(m.srcMid, m.dstMid)
+		if line > minL && line < maxL {
+			leftSpace := maxInt(0, (width-1)/2)
+			rightSpace := maxInt(0, width-leftSpace-1)
+			return strings.Repeat(" ", leftSpace) + s.Move.Render("│") + strings.Repeat(" ", rightSpace)
+		}
+	}
+	return strings.Repeat(" ", width)
 }
 func lineAt(lines []string, line int) (string, bool) {
 	if line <= 0 || line > len(lines) {
@@ -39,7 +108,13 @@ func lineAt(lines []string, line int) (string, bool) {
 	}
 	return lines[line-1], true
 }
-func renderSideLine(line int, content string, ok bool, ann lineAnnotation, annotated bool, width int, s styles) string {
+func tokensAt(tokens [][]chroma.Token, line int) []chroma.Token {
+	if line <= 0 || line > len(tokens) {
+		return nil
+	}
+	return tokens[line-1]
+}
+func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, ann lineAnnotation, annotated bool, width int, s styles) string {
 	if width <= 0 {
 		return ""
 	}
@@ -78,17 +153,18 @@ func renderSideLine(line int, content string, ok bool, ann lineAnnotation, annot
 	}
 	prefix := numStyle.Render(lineNo) + " " + indicatorStyle.Render(indicator) + " "
 	contentW := maxInt(0, width-lipgloss.Width(prefix))
-	rendered := renderTokenizedContent(sanitizeLine(content), ann.Spans, contentW, baseStyle, s)
+	spans := ann.Spans
+	if annotated && (ann.Kind == output.ChangeInsert || ann.Kind == output.ChangeDelete) {
+		spans = nil
+	}
+	rendered := renderTokenizedContent(content, tokens, spans, contentW, baseStyle, s)
 	padding := ""
 	if pad := contentW - lipgloss.Width(rendered); pad > 0 {
 		padding = fillStyle.Render(strings.Repeat(" ", pad))
 	}
 	return prefix + rendered + padding
 }
-func sanitizeLine(line string) string {
-	return strings.ReplaceAll(line, "\t", "    ")
-}
-func renderTokenizedContent(content string, spans []visualSpan, width int, baseStyle lipgloss.Style, s styles) string {
+func renderTokenizedContent(originalContent string, tokens []chroma.Token, spans []visualSpan, width int, baseStyle lipgloss.Style, s styles) string {
 	if width <= 0 {
 		return ""
 	}
@@ -98,22 +174,106 @@ func renderTokenizedContent(content string, spans []visualSpan, width int, baseS
 		}
 		return spans[i].Priority > spans[j].Priority
 	})
+	if len(tokens) > 0 {
+		var b strings.Builder
+		used := 0
+		byteIndex := 0
+		monokaiStyle := chromastyles.Get("monokai")
+		if monokaiStyle == nil {
+			monokaiStyle = chromastyles.Fallback
+		}
+		for _, tok := range tokens {
+			chromaEntry := monokaiStyle.Get(tok.Type)
+			for _, r := range tok.Value {
+				style := baseStyle
+				if chromaEntry.Colour.IsSet() {
+					style = style.Foreground(lipgloss.Color(chromaEntry.Colour.String()))
+				}
+				if chromaEntry.Bold == chroma.Yes {
+					style = style.Bold(true)
+				}
+				if chromaEntry.Italic == chroma.Yes {
+					style = style.Italic(true)
+				}
+				if chromaEntry.Underline == chroma.Yes {
+					style = style.Underline(true)
+				}
+				if kind, ok := spanKindAt(spans, byteIndex); ok {
+					spanStyle := tokenStyleForKind(kind, s)
+					style = style.Inherit(spanStyle)
+				}
+				runeLen := len(string(r))
+				if r == '\t' {
+					// Tab is expanded to 4 spaces
+					for k := 0; k < 4; k++ {
+						rw := 1
+						if used+rw > width {
+							if used < width {
+								b.WriteString(baseStyle.Render("."))
+								used += rw
+							}
+							break
+						}
+						b.WriteString(style.Render(" "))
+						used += rw
+					}
+					if used >= width {
+						break
+					}
+				} else {
+					rw := lipgloss.Width(string(r))
+					if used+rw > width {
+						if used < width {
+							b.WriteString(baseStyle.Render("."))
+						}
+						break
+					}
+					b.WriteString(style.Render(string(r)))
+					used += rw
+				}
+				byteIndex += runeLen
+			}
+			if used >= width {
+				break
+			}
+		}
+		return b.String()
+	}
+	// Fallback to raw plain text rendering
 	var b strings.Builder
 	used := 0
-	for byteIndex, r := range content {
-		rw := lipgloss.Width(string(r))
-		if used+rw > width {
-			if used < width {
-				b.WriteString(baseStyle.Render("."))
-			}
-			break
-		}
+	for byteIndex, r := range originalContent {
 		style := baseStyle
 		if kind, ok := spanKindAt(spans, byteIndex); ok {
 			style = tokenStyleForKind(kind, s)
 		}
-		b.WriteString(style.Render(string(r)))
-		used += rw
+		if r == '\t' {
+			for k := 0; k < 4; k++ {
+				rw := 1
+				if used+rw > width {
+					if used < width {
+						b.WriteString(baseStyle.Render("."))
+						used += rw
+					}
+					break
+				}
+				b.WriteString(style.Render(" "))
+				used += rw
+			}
+			if used >= width {
+				break
+			}
+		} else {
+			rw := lipgloss.Width(string(r))
+			if used+rw > width {
+				if used < width {
+					b.WriteString(baseStyle.Render("."))
+				}
+				break
+			}
+			b.WriteString(style.Render(string(r)))
+			used += rw
+		}
 	}
 	return b.String()
 }
