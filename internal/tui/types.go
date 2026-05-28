@@ -1,9 +1,12 @@
 package tui
 import (
 	"math"
+	"strings"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
 )
 // DiffFile is the TUI-facing representation of a single semantic diff.
 type DiffFile struct {
@@ -12,6 +15,8 @@ type DiffFile struct {
 	RelPath      string
 	OldLines     []string
 	NewLines     []string
+	OldTokens    [][]chroma.Token
+	NewTokens    [][]chroma.Token
 	Hunks        []output.Hunk
 	VisualHunks  []output.Hunk
 	LeftSpans    []visualSpan
@@ -26,7 +31,48 @@ func NewDiffFile(oldPath, newPath string, oldSrc, newSrc []byte, hunks []output.
 		NewLines:    splitSourceLines(newSrc),
 		Hunks:       hunks,
 		VisualHunks: hunks,
+		OldTokens:   tokenizeFile(oldPath, oldSrc),
+		NewTokens:   tokenizeFile(newPath, newSrc),
 	}
+}
+func tokenizeFile(path string, src []byte) [][]chroma.Token {
+	if len(src) == 0 {
+		return nil
+	}
+	lexer := lexers.Match(path)
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+	iterator, err := lexer.Tokenise(nil, string(src))
+	if err != nil {
+		return nil
+	}
+	var lines [][]chroma.Token
+	var currentLine []chroma.Token
+	for _, tok := range iterator.Tokens() {
+		val := tok.Value
+		for {
+			idx := strings.IndexByte(val, '\n')
+			if idx == -1 {
+				if len(val) > 0 {
+					currentLine = append(currentLine, chroma.Token{Type: tok.Type, Value: val})
+				}
+				break
+			}
+			part := val[:idx]
+			if len(part) > 0 {
+				currentLine = append(currentLine, chroma.Token{Type: tok.Type, Value: part})
+			}
+			lines = append(lines, currentLine)
+			currentLine = nil
+			val = val[idx+1:]
+		}
+	}
+	if len(currentLine) > 0 || len(lines) == 0 {
+		lines = append(lines, currentLine)
+	}
+	return lines
 }
 func NewDiffFileWithDetails(
 	oldPath, newPath string,
