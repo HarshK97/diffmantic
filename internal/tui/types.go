@@ -104,8 +104,20 @@ func annotationPriority(kind output.ChangeKind) int {
 	case output.ChangeInsert, output.ChangeDelete:
 		return 4
 	case output.ChangeMove:
-		return 3 // Move has priority over Update to keep move backgrounds contiguous
+		return 3 // Move has priority over Update for full line-level backgrounds to keep them contiguous
 	case output.ChangeUpdate:
+		return 2
+	default:
+		return 1
+	}
+}
+func visualSpanPriority(kind output.ChangeKind) int {
+	switch kind {
+	case output.ChangeInsert, output.ChangeDelete:
+		return 4
+	case output.ChangeUpdate:
+		return 3 // Update has priority over Move for token-level highlight visibility
+	case output.ChangeMove:
 		return 2
 	default:
 		return 1
@@ -190,7 +202,7 @@ func applySpans(dst map[int]lineAnnotation, spans []visualSpan) {
 			ann.Spans = append(ann.Spans, span.lineSpan(line))
 			if ann.Priority == 0 {
 				ann.Kind = span.Kind
-				ann.Priority = span.Priority
+				ann.Priority = annotationPriority(span.Kind)
 			}
 			dst[line] = ann
 		}
@@ -287,7 +299,7 @@ func spanFromNode(n *treesitter.ASTNode, kind output.ChangeKind) (visualSpan, bo
 		EndLine:   int(n.EndRow) + 1,
 		StartCol:  int(n.StartCol),
 		EndCol:    int(n.EndCol),
-		Priority:  annotationPriority(kind),
+		Priority:  visualSpanPriority(kind),
 	}, true
 }
 func resolveActionOriginal(n *treesitter.ASTNode, c2o map[*treesitter.ASTNode]*treesitter.ASTNode) *treesitter.ASTNode {
