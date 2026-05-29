@@ -122,22 +122,17 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 	if !ok {
 		lineNo = strings.Repeat(" ", lineNumberWidth)
 	}
-	indicator := " "
 	fillStyle := lipgloss.NewStyle()
 	baseStyle := s.Context
 	if annotated {
 		switch ann.Kind {
 		case output.ChangeInsert:
-			indicator = "+"
 			fillStyle = s.InsertFill
 		case output.ChangeDelete:
-			indicator = "-"
 			fillStyle = s.DeleteFill
 		case output.ChangeUpdate:
-			indicator = "~"
 			fillStyle = s.UpdateFill
 		case output.ChangeMove:
-			indicator = ">"
 			fillStyle = s.MoveFill
 		}
 		baseStyle = fillStyle
@@ -146,12 +141,10 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 		return strings.Repeat(" ", width)
 	}
 	numStyle := s.LineNumber
-	indicatorStyle := s.Context
 	if annotated {
-		numStyle = fillStyle.Inherit(s.LineNumber)
-		indicatorStyle = fillStyle
+		numStyle = s.LineNumber.Foreground(fillStyle.GetForeground())
 	}
-	prefix := numStyle.Render(lineNo) + " " + indicatorStyle.Render(indicator) + " "
+	prefix := numStyle.Render(lineNo) + " "
 	contentW := maxInt(0, width-lipgloss.Width(prefix))
 	spans := ann.Spans
 	if annotated && (ann.Kind == output.ChangeInsert || ann.Kind == output.ChangeDelete) {
@@ -200,7 +193,7 @@ func renderTokenizedContent(originalContent string, tokens []chroma.Token, spans
 				}
 				if kind, ok := spanKindAt(spans, byteIndex); ok {
 					spanStyle := tokenStyleForKind(kind, s)
-					style = style.Inherit(spanStyle)
+					style = spanStyle.Inherit(style)
 				}
 				runeLen := len(string(r))
 				if r == '\t' {
@@ -245,7 +238,7 @@ func renderTokenizedContent(originalContent string, tokens []chroma.Token, spans
 	for byteIndex, r := range originalContent {
 		style := baseStyle
 		if kind, ok := spanKindAt(spans, byteIndex); ok {
-			style = tokenStyleForKind(kind, s)
+			style = tokenStyleForKind(kind, s).Inherit(baseStyle)
 		}
 		if r == '\t' {
 			for k := 0; k < 4; k++ {
