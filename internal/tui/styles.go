@@ -61,29 +61,28 @@ func newStyles() styles {
 		Separator: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#4B5563")),
 		Insert: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#DCFCE7")).
-			Background(lipgloss.Color("#166534")).
+			Background(lipgloss.Color("#364143")).
 			Bold(true),
 		Delete: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FEE2E2")).
-			Background(lipgloss.Color("#7F1D1D")).
+			Background(lipgloss.Color("#443244")).
 			Bold(true),
 		Update: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FEF3C7")).
-			Background(lipgloss.Color("#92400E")).
+			Background(lipgloss.Color("#3e4b6b")).
 			Bold(true),
 		Move: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#DBEAFE")).
-			Background(lipgloss.Color("#1D4ED8")).
+			Background(lipgloss.Color("#25293c")).
 			Bold(true),
 		InsertFill: lipgloss.NewStyle().
-			Background(lipgloss.Color("#052E16")),
+			Foreground(lipgloss.Color("#49d17d")).
+			Background(lipgloss.Color("#364143")),
 		DeleteFill: lipgloss.NewStyle().
-			Background(lipgloss.Color("#450A0A")),
+			Foreground(lipgloss.Color("#ff6b6b")).
+			Background(lipgloss.Color("#443244")),
 		UpdateFill: lipgloss.NewStyle().
-			Background(lipgloss.Color("#422006")),
+			Foreground(lipgloss.Color("#f9e2af")),
 		MoveFill: lipgloss.NewStyle().
-			Background(lipgloss.Color("#172554")),
+			Foreground(lipgloss.Color("#89dceb")).
+			Background(lipgloss.Color("#25293c")),
 		SelectedFocus: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F9FAFB")).
 			Background(lipgloss.Color("#1D4ED8")).
