@@ -23,6 +23,7 @@ type styles struct {
 	DeleteFill    lipgloss.Style
 	UpdateFill    lipgloss.Style
 	MoveFill      lipgloss.Style
+	MoveArrow     lipgloss.Style
 	SelectedFocus lipgloss.Style
 }
 
@@ -83,6 +84,9 @@ func newStyles() styles {
 		MoveFill: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#89dceb")).
 			Background(lipgloss.Color("#25293c")),
+		MoveArrow: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#89dceb")).
+			Bold(true),
 		SelectedFocus: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F9FAFB")).
 			Background(lipgloss.Color("#1D4ED8")).

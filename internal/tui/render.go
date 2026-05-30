@@ -1,18 +1,23 @@
 package tui
+
 import (
 	"fmt"
 	"sort"
 	"strings"
+
 	"charm.land/lipgloss/v2"
 	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 )
+
 const lineNumberWidth = 4
+
 type moveConnection struct {
 	srcMid int
 	dstMid int
 }
+
 func renderDiffContent(file DiffFile, width int, s styles) string {
 	if width < 12 {
 		width = 12
@@ -59,6 +64,7 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	}
 	return b.String()
 }
+
 func renderMiddlePart(line int, moves []moveConnection, width int, s styles) string {
 	if width <= 0 {
 		return ""
@@ -66,29 +72,31 @@ func renderMiddlePart(line int, moves []moveConnection, width int, s styles) str
 	for _, m := range moves {
 		if line == m.srcMid {
 			if m.srcMid < m.dstMid {
-				return s.Move.Render("─╮" + strings.Repeat(" ", maxInt(0, width-2)))
+				// Bends down: e.g. "─╮"
+				return s.MoveArrow.Render("─╮" + strings.Repeat(" ", maxInt(0, width-2)))
 			} else if m.srcMid > m.dstMid {
-				return s.Move.Render("─╯" + strings.Repeat(" ", maxInt(0, width-2)))
+				// Bends up: e.g. "─╯"
+				return s.MoveArrow.Render("─╯" + strings.Repeat(" ", maxInt(0, width-2)))
 			} else {
 				if width > 1 {
-					return s.Move.Render(strings.Repeat("─", width-1) + ">")
+					return s.MoveArrow.Render(strings.Repeat("─", width-1) + ">")
 				}
-				return s.Move.Render(">")
+				return s.MoveArrow.Render(">")
 			}
 		}
 		if line == m.dstMid {
 			if m.srcMid < m.dstMid {
 				// Coming from above: e.g. " ╰>"
 				if width >= 3 {
-					return s.Move.Render(" " + "╰" + strings.Repeat("─", width-3) + ">")
+					return s.MoveArrow.Render(" " + "╰" + strings.Repeat("─", width-3) + ">")
 				}
-				return s.Move.Render("╰" + strings.Repeat("─", maxInt(0, width-2)) + ">")
+				return s.MoveArrow.Render("╰" + strings.Repeat("─", maxInt(0, width-2)) + ">")
 			} else if m.srcMid > m.dstMid {
 				// Coming from below: e.g. " ╭>"
 				if width >= 3 {
-					return s.Move.Render(" " + "╭" + strings.Repeat("─", width-3) + ">")
+					return s.MoveArrow.Render(" " + "╭" + strings.Repeat("─", width-3) + ">")
 				}
-				return s.Move.Render("╭" + strings.Repeat("─", maxInt(0, width-2)) + ">")
+				return s.MoveArrow.Render("╭" + strings.Repeat("─", maxInt(0, width-2)) + ">")
 			}
 		}
 		// Vertical connecting line
@@ -97,23 +105,26 @@ func renderMiddlePart(line int, moves []moveConnection, width int, s styles) str
 		if line > minL && line < maxL {
 			leftSpace := maxInt(0, (width-1)/2)
 			rightSpace := maxInt(0, width-leftSpace-1)
-			return strings.Repeat(" ", leftSpace) + s.Move.Render("│") + strings.Repeat(" ", rightSpace)
+			return strings.Repeat(" ", leftSpace) + s.MoveArrow.Render("│") + strings.Repeat(" ", rightSpace)
 		}
 	}
 	return strings.Repeat(" ", width)
 }
+
 func lineAt(lines []string, line int) (string, bool) {
 	if line <= 0 || line > len(lines) {
 		return "", false
 	}
 	return lines[line-1], true
 }
+
 func tokensAt(tokens [][]chroma.Token, line int) []chroma.Token {
 	if line <= 0 || line > len(tokens) {
 		return nil
 	}
 	return tokens[line-1]
 }
+
 func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, ann lineAnnotation, annotated bool, width int, s styles) string {
 	if width <= 0 {
 		return ""
@@ -157,6 +168,7 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 	}
 	return prefix + rendered + padding
 }
+
 func renderTokenizedContent(originalContent string, tokens []chroma.Token, spans []visualSpan, width int, baseStyle lipgloss.Style, s styles) string {
 	if width <= 0 {
 		return ""
@@ -270,6 +282,7 @@ func renderTokenizedContent(originalContent string, tokens []chroma.Token, spans
 	}
 	return b.String()
 }
+
 func spanKindAt(spans []visualSpan, col int) (output.ChangeKind, bool) {
 	bestPriority := 0
 	var kind output.ChangeKind
@@ -285,6 +298,7 @@ func spanKindAt(spans []visualSpan, col int) (output.ChangeKind, bool) {
 	}
 	return kind, bestPriority > 0
 }
+
 func tokenStyleForKind(kind output.ChangeKind, s styles) lipgloss.Style {
 	switch kind {
 	case output.ChangeInsert:
@@ -299,6 +313,7 @@ func tokenStyleForKind(kind output.ChangeKind, s styles) lipgloss.Style {
 		return s.Context
 	}
 }
+
 func truncateToWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
@@ -318,12 +333,14 @@ func truncateToWidth(s string, width int) string {
 	}
 	return b.String() + "."
 }
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
 	return b
 }
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
