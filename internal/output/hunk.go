@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -52,17 +53,20 @@ type Hunk struct {
 	NodeType string `json:"node_type"`
 }
 
-// PrintHunks displays the coalesced hunks in a human-readable table.
+// PrintHunks displays the coalesced hunks to stdout.
 func PrintHunks(hunks []Hunk) {
+	FprintHunks(os.Stdout, hunks)
+}
+
+// FprintHunks displays the coalesced hunks to the given writer.
+func FprintHunks(w io.Writer, hunks []Hunk) {
 	if len(hunks) == 0 {
-		fmt.Println("\n(no hunks)")
+		fmt.Fprintln(w, "\n(no hunks)")
 		return
 	}
-
-	fmt.Printf("\n%-4s  %-8s  %-15s  %-15s  %s\n",
+	fmt.Fprintf(w, "\n%-4s  %-8s  %-15s  %-15s  %s\n",
 		"#", "Kind", "File A Lines", "File B Lines", "Summary")
-	fmt.Println("────────────────────────────────────────────────────────────────────────────────────")
-
+	fmt.Fprintln(w, "────────────────────────────────────────────────────────────────────────────────────")
 	for i, h := range hunks {
 		srcRange := "-"
 		if h.SrcStartLine > 0 {
@@ -81,11 +85,10 @@ func PrintHunks(hunks []Hunk) {
 				dstRange = fmt.Sprintf("L%d–L%d", h.DstStartLine, h.DstEndLine)
 			}
 		}
-
-		fmt.Printf("%-4d  %-8s  %-15s  %-15s  %s\n",
+		fmt.Fprintf(w, "%-4d  %-8s  %-15s  %-15s  %s\n",
 			i+1, h.Kind, srcRange, dstRange, h.Summary)
 	}
-	fmt.Printf("\nTotal hunks: %d\n", len(hunks))
+	fmt.Fprintf(w, "\nTotal hunks: %d\n", len(hunks))
 }
 
 // PrintHunksJSON writes the hunks as a JSON array to stdout.

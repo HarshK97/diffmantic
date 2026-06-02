@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -128,7 +130,7 @@ func (io *inOrderSet) isInOrder(n *treesitter.ASTNode) bool { return io.s[n] }
 // and sets child.Parent.
 func insertChild(parent, child *treesitter.ASTNode, k int) {
 	child.Parent = parent
-	idx := max(k-1, 0) // convert to 0-based
+	idx := max(k-1, 0)
 	if idx >= len(parent.Children) {
 		parent.Children = append(parent.Children, child)
 	} else {
@@ -424,17 +426,20 @@ func GenerateActions(
 	}
 }
 
-// PrintActions prints the edit script in a human-readable table.
+// PrintActions prints the edit script to stdout.
 func PrintActions(es *EditScript) {
+	FprintActions(os.Stdout, es)
+}
+
+// FprintActions prints the edit script to the given writer.
+func FprintActions(w io.Writer, es *EditScript) {
 	if es == nil || len(es.Actions) == 0 {
-		fmt.Println("(no edit actions)")
+		fmt.Fprintln(w, "(no edit actions)")
 		return
 	}
-
-	fmt.Printf("\n%-4s  %-4s  %-25s %-20s  %-25s  %s\n",
+	fmt.Fprintf(w, "\n%-4s  %-4s  %-25s %-20s  %-25s  %s\n",
 		"#", "Op", "Node Type", "Node Label", "Parent Type", "Details")
-	fmt.Println("──────────────────────────────────────────────────────────────────────────────────────────────────────")
-
+	fmt.Fprintln(w, "──────────────────────────────────────────────────────────────────────────────────────────────────────")
 	for i, a := range es.Actions {
 		nodeType := a.Node.Type
 		nodeLabel := a.Node.Label
@@ -468,11 +473,10 @@ func PrintActions(es *EditScript) {
 		case ActionDeleteTree:
 			// no extra detail
 		}
-
-		fmt.Printf("%-4d  %-8s  %-25s %-20s  %-25s  %s\n",
+		fmt.Fprintf(w, "%-4d  %-8s  %-25s %-20s  %-25s  %s\n",
 			i+1, a.Kind, nodeType, nodeLabel, parentType, detail)
 	}
-	fmt.Printf("\nTotal actions: %d\n", len(es.Actions))
+	fmt.Fprintf(w, "\nTotal actions: %d\n", len(es.Actions))
 }
 
 // CompressTreeActions collapses chains of per-node INS or DEL actions

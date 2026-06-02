@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -72,21 +74,23 @@ func sortMappingsByPreOrder(t1Root *treesitter.ASTNode, m *Mapping) {
 }
 
 func PrintMappings(r *MatchResult) {
+	FprintMappings(os.Stdout, r)
+}
+
+func FprintMappings(w io.Writer, r *MatchResult) {
 	if r == nil || r.Mappings == nil {
-		fmt.Println("(no mappings)")
+		fmt.Fprintln(w, "(no mappings)")
 		return
 	}
 
 	pairs := r.Mappings.Pairs
 	if len(pairs) == 0 {
-		fmt.Println("(no mappings found)")
+		fmt.Fprintln(w, "(no mappings found)")
 		return
 	}
-
-	fmt.Printf("%-4s  %-30s %-20s  →  %-30s %-20s\n",
+	fmt.Fprintf(w, "%-4s  %-30s %-20s  →  %-30s %-20s\n",
 		"#", "T1 Type", "T1 Label", "T2 Type", "T2 Label")
-	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────")
-
+	fmt.Fprintln(w, "─────────────────────────────────────────────────────────────────────────────────────")
 	for i, p := range pairs {
 		t1Label := p.Src.Label
 		if t1Label == "" {
@@ -96,8 +100,8 @@ func PrintMappings(r *MatchResult) {
 		if t2Label == "" {
 			t2Label = "-"
 		}
-		fmt.Printf("%-4d  %-30s %-20s  →  %-30s %-20s\n",
+		fmt.Fprintf(w, "%-4d  %-30s %-20s  →  %-30s %-20s\n",
 			i+1, p.Src.Type, t1Label, p.Dst.Type, t2Label)
 	}
-	fmt.Printf("\nTotal mappings: %d\n", len(pairs))
+	fmt.Fprintf(w, "\nTotal mappings: %d\n", len(pairs))
 }
