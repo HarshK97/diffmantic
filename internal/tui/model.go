@@ -119,7 +119,7 @@ func computeDiffsCmd(files []DiffFile) tea.Cmd {
 					engine.FprintMappings(&buf, r)
 					engine.FprintActions(&buf, act)
 					output.FprintHunks(&buf, h)
-					fmt.Fprintln(&buf, "====================\n")
+					fmt.Fprintln(&buf, "====================")
 					log.Printf("\n%s", buf.String())
 				}(file.RelPath, result, actions, hunks)
 			}(i, f)
