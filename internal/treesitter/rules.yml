@@ -1,0 +1,54 @@
+go:
+  flattened:
+    - interpreted_string_literal
+  ignored:
+    - "\n"
+    - "("
+    - ")"
+    - "{"
+    - "}"
+    - "."
+  aliased: {}
+  label_ignored: []
+
+python:
+  flattened:
+    - string
+  aliased:
+    "==": comparison_operator_literal
+    "<=": comparison_operator_literal
+    ">=": comparison_operator_literal
+    "!=": comparison_operator_literal
+    "<": comparison_operator_literal
+    ">": comparison_operator_literal
+    "<>": comparison_operator_literal
+    "and": logical_operator_literal
+    "or": logical_operator_literal
+    "augmented_assignment": assignment
+    "=": assignment_operator_literal
+    "-=": assignment_operator_literal
+    "+=": assignment_operator_literal
+    "*=": assignment_operator_literal
+    "/=": assignment_operator_literal
+    "//=": assignment_operator_literal
+    "%=": assignment_operator_literal
+    "**=": assignment_operator_literal
+  ignored:
+    - "("
+    - ")"
+    - "{"
+    - "}"
+    - "["
+    - "]"
+    - "."
+    - ":"
+    - ","
+    - "default_parameter ="
+    - "wildcard_import *"
+    - "def"
+    - "for"
+    - "in"
+    - "if"
+    - "with"
+    - "return"
+  label_ignored: []
