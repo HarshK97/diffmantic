@@ -21,6 +21,10 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 
 	MatchUnmatchedLeaves(t1, t2, mappings)
 
+	if !mappings.Has(t1) && !mappings.HasDst(t2) {
+		mappings.Add(t1, t2)
+	}
+
 	sortMappingsByPreOrder(t1, mappings)
 
 	return &MatchResult{Mappings: mappings}
