@@ -25,7 +25,26 @@ func BottomUp(
 	minDice float64,
 ) {
 	for _, t1 := range PostOrder(t1Root) {
+		if t1 == t1Root {
+			if !m.Has(t1) && !m.HasDst(t2Root) {
+				m.Add(t1, t2Root)
+			}
+			t2 := m.Src()[t1]
+			if t2 != nil && hasUnmappedChildrenSrc(t1, m) && hasUnmappedChildrenDst(t2, m) {
+				SimpleRecovery(t1, t2, m)
+			}
+			break
+		}
+
 		if m.Has(t1) {
+			t2 := m.Src()[t1]
+			if t2 != nil && hasUnmappedChildrenSrc(t1, m) && hasUnmappedChildrenDst(t2, m) {
+				SimpleRecovery(t1, t2, m)
+			}
+			continue
+		}
+
+		if len(t1.Children) == 0 {
 			continue
 		}
 
@@ -46,6 +65,24 @@ func BottomUp(
 			SimpleRecovery(t1, t2, m)
 		}
 	}
+}
+
+func hasUnmappedChildrenSrc(t *treesitter.ASTNode, m *Mapping) bool {
+	for _, c := range t.Children {
+		if !m.Has(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUnmappedChildrenDst(t *treesitter.ASTNode, m *Mapping) bool {
+	for _, c := range t.Children {
+		if !m.HasDst(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasMatchedChild returns true if any direct child of t1 is in the
