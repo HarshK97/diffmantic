@@ -24,15 +24,31 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	return buildASTWithRules(n, src, lang, parent, GetRules(lang.Name))
 }
 
-func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) *ASTNode {
-	if !n.IsNamed() {
-		return nil
-	}
+func isStringLiteralType(t string) bool {
+	return t == "string" ||
+		t == "string_literal" ||
+		t == "interpreted_string_literal" ||
+		t == "raw_string_literal" ||
+		t == "template_string"
+}
 
+func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) *ASTNode {
 	nodeType := n.Type(lang)
 
+	if !n.IsNamed() {
+		isAliased := false
+		if rules != nil {
+			if _, ok := rules.Aliased[nodeType]; ok {
+				isAliased = true
+			}
+		}
+		if !isAliased {
+			return nil
+		}
+	}
+
 	var label string
-	if n.NamedChildCount() == 0 {
+	if n.NamedChildCount() == 0 || isStringLiteralType(nodeType) {
 		label = strings.TrimSpace(string(src[n.StartByte():n.EndByte()]))
 	}
 
@@ -53,8 +69,8 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		EndCol:    n.EndPoint().Column,
 	}
 
-	// label only for leave nodes
-	if n.NamedChildCount() == 0 {
+	// label only for leave nodes or string literals
+	if n.NamedChildCount() == 0 || isStringLiteralType(nodeType) {
 		node.Label = label
 	}
 
