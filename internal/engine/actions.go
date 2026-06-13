@@ -327,7 +327,7 @@ func GenerateActions(
 			// (a) x is the root of T2 – handle update if needed.
 			if partner, ok := mPrime.Dst()[x]; ok {
 				w = partner
-				if len(x.Children) == 0 && w.Label != x.Label {
+				if w.Label != x.Label {
 					script = append(script, Action{
 						Kind:  ActionUpdate,
 						Node:  w,
@@ -373,8 +373,8 @@ func GenerateActions(
 				w = mPrime.Dst()[x]
 				v := w.Parent
 
-				// (c.ii) If v(w) ≠ v(x) → UPDATE (only for leaf nodes)
-				if len(x.Children) == 0 && w.Label != x.Label {
+				// (c.ii) If v(w) ≠ v(x) → UPDATE
+				if w.Label != x.Label {
 					script = append(script, Action{
 						Kind:  ActionUpdate,
 						Node:  w,
