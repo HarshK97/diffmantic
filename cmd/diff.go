@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
@@ -42,15 +43,18 @@ algorithm to detect inserts, deletes, updates, moves, and renames at the syntax
 node level, not just changed lines.
 
 Examples:
-  diffmantic diff before.go after.go                Interactive side-by-side viewer
-  diffmantic diff before.go after.go -f json        JSON output for editor plugins
-  diffmantic diff before.go after.go -f unified     Unified diff for scripts/CI
-  diffmantic diff before.go after.go --lang go      Override language detection`,
+  diffm diff before.go after.go -f json        JSON output for editor plugins
+  diffm diff before.go after.go -f actions     Print structural actions list
+  diffm diff before.go after.go --lang go      Override language detection`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
 		// lang, _ := cmd.Flags().GetString("lang")
-		// format, _ := cmd.Flags().GetString("format")
+		format, _ := cmd.Flags().GetString("format")
+		if format != "json" && format != "actions" {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions\n", format)
+			os.Exit(1)
+		}
 
 		var (
 			srcA []byte
@@ -109,20 +113,26 @@ Examples:
 			os.Exit(1)
 		}
 
-		// fmt.Println("=== AST A ===")
-		// treesitter.PrintAST(astA, 0)
-		// fmt.Println("=== AST B ===")
-		// treesitter.PrintAST(astB, 0)
-
-		fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
-
 		result := engine.Match(astA, astB)
-		engine.PrintMappings(result)
+		es := actions.GenerateEditScript(astA, astB, result.Mappings)
+		es = actions.Simplify(es)
+
+		switch format {
+		case "json":
+			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
+				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
+				os.Exit(1)
+			}
+		case "actions":
+			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
+			engine.PrintMappings(result)
+			actions.PrintActions(es)
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(diffCmd)
-	diffCmd.Flags().StringP("format", "f", "tui", "Output format: tui, json, unified")
+	diffCmd.Flags().StringP("format", "f", "json", "Output format: json, actions")
 	diffCmd.Flags().StringP("lang", "l", "", "Override language detection (e.g., go, python, c)")
 }
