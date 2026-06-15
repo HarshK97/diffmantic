@@ -78,7 +78,7 @@ func NewDiffFileWithDetails(
 	oldPath, newPath string,
 	oldSrc, newSrc []byte,
 	hunks []output.Hunk,
-	actions *engine.EditScript,
+	actions any,
 	mappings *engine.Mapping,
 ) DiffFile {
 	file := NewDiffFile(oldPath, newPath, oldSrc, newSrc, hunks)
@@ -220,34 +220,9 @@ func (s visualSpan) lineSpan(line int) visualSpan {
 	}
 	return out
 }
-func buildVisualSpans(es *engine.EditScript, mappings *engine.Mapping) ([]visualSpan, []visualSpan) {
-	var left, right []visualSpan
-	if es != nil {
-		for _, action := range es.Actions {
-			switch action.Kind {
-			case engine.ActionInsert, engine.ActionInsertTree:
-				checkMatches := !isStatementOrDeclaration(action.T2Ref.Type)
-				addLeafSpans(action.T2Ref, output.ChangeInsert, mappings, false, checkMatches, &right)
-			case engine.ActionDelete, engine.ActionDeleteTree:
-				node := resolveActionOriginal(action.Node, es.CopyToOrig)
-				checkMatches := !isStatementOrDeclaration(node.Type)
-				addLeafSpans(node, output.ChangeDelete, mappings, true, checkMatches, &left)
-			case engine.ActionUpdate:
-				node := resolveActionOriginal(action.Node, es.CopyToOrig)
-				addLeafSpans(node, output.ChangeUpdate, mappings, true, false, &left)
-				addLeafSpans(action.T2Ref, output.ChangeUpdate, mappings, false, false, &right)
-			}
-		}
-	}
-	for _, pair := range normalizedVisualMovePairs(mappings) {
-		if span, ok := spanFromNode(pair.Src, output.ChangeMove); ok {
-			left = append(left, span)
-		}
-		if span, ok := spanFromNode(pair.Dst, output.ChangeMove); ok {
-			right = append(right, span)
-		}
-	}
-	return left, right
+func buildVisualSpans(es any, mappings *engine.Mapping) ([]visualSpan, []visualSpan) {
+	// TODO: fix after v0.1.0 — TUI needs to be updated to use the new actions.EditScript type instead of engine.EditScript.
+	return nil, nil
 }
 
 func addLeafSpans(n *treesitter.ASTNode, kind output.ChangeKind, mappings *engine.Mapping, isSrc bool, checkMatches bool, spans *[]visualSpan) {
@@ -274,6 +249,19 @@ func addLeafSpans(n *treesitter.ASTNode, kind output.ChangeKind, mappings *engin
 	for _, child := range n.Children {
 		addLeafSpans(child, kind, mappings, isSrc, checkMatches, spans)
 	}
+}
+
+func isStatementOrDeclarationNode(n *treesitter.ASTNode) bool {
+	if n == nil {
+		return false
+	}
+	if isStatementOrDeclaration(n.Type) {
+		return true
+	}
+	if n.Parent != nil && (n.Parent.Type == "block" || n.Parent.Type == "module") {
+		return true
+	}
+	return false
 }
 
 func isStatementOrDeclaration(nodeType string) bool {

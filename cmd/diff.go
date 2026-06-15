@@ -27,8 +27,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/spf13/cobra"
@@ -160,27 +160,27 @@ Examples:
 		// treesitter.PrintAST(astB, 0)
 
 		result := engine.Match(astA, astB)
-		actions := engine.GenerateActions(astA, astB, result.Mappings)
-		hunks := output.Classify(actions)
-		hunks = output.Coalesce(hunks)
+		es := actions.GenerateEditScript(astA, astB, result.Mappings)
 
 		switch format {
 		case "json":
-			if err := output.PrintHunksJSON(hunks); err != nil {
+			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
 				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
 				os.Exit(1)
 			}
-		case "tui":
-			file := tui.NewDiffFileWithDetails(fileA, fileB, srcA, srcB, hunks, actions, result.Mappings)
-			if err := tui.Run([]tui.DiffFile{file}); err != nil {
-				fmt.Fprintf(os.Stderr, "error running TUI: %v\n", err)
-				os.Exit(1)
-			}
-		default:
+		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 			engine.PrintMappings(result)
-			engine.PrintActions(actions)
-			output.PrintHunks(hunks)
+			actions.PrintActions(es)
+		case "tui":
+			fmt.Fprintln(os.Stderr, "TUI mode is temporarily disabled during action generation refactor.")
+			fmt.Fprintln(os.Stderr, "Use -f json or -f actions instead.")
+			os.Exit(1)
+		default:
+			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
+				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	},
 }

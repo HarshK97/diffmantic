@@ -1,6 +1,5 @@
 package tui
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -12,9 +11,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/output"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 type focusArea int
@@ -80,48 +76,10 @@ func computeDiffsCmd(files []DiffFile) tea.Cmd {
 				oldSrc := []byte(strings.Join(file.OldLines, "\n"))
 				newSrc := []byte(strings.Join(file.NewLines, "\n"))
 
-				detectPathA := file.OldPath
-				if detectPathA == "" {
-					detectPathA = file.NewPath
-				}
-				detectPathB := file.NewPath
-				if detectPathB == "" {
-					detectPathB = file.OldPath
-				}
-
-				astA, errA := treesitter.Parse(oldSrc, detectPathA)
-				astB, errB := treesitter.Parse(newSrc, detectPathB)
-
-				if errA != nil || errB != nil {
-					// Fallback gracefully for unsupported files (like go.mod, go.sum, LICENSE)
-					// We build a standard DiffFile without detail mappings (rendered as raw plain text comparison).
-					finalized[idx] = NewDiffFile(file.OldPath, file.NewPath, oldSrc, newSrc, nil)
-					finalized[idx].RelPath = file.RelPath
-					return
-				}
-
-				result := engine.Match(astA, astB)
-				actions := engine.GenerateActions(astA, astB, result.Mappings)
-				hunks := output.Classify(actions)
-				hunks = output.Coalesce(hunks)
-
-				finalized[idx] = NewDiffFileWithDetails(
-					file.OldPath, file.NewPath,
-					oldSrc, newSrc,
-					hunks, actions, result.Mappings,
-				)
+				// TODO: fix after v0.1.0 — TUI needs to be updated to use the new actions.EditScript type instead of engine.EditScript.
+				// For now, TUI detail mode is disabled during action generation refactor.
+				finalized[idx] = NewDiffFile(file.OldPath, file.NewPath, oldSrc, newSrc, nil)
 				finalized[idx].RelPath = file.RelPath
-
-				// Async background logging
-				go func(relPath string, r *engine.MatchResult, act *engine.EditScript, h []output.Hunk) {
-					var buf bytes.Buffer
-					fmt.Fprintf(&buf, "=== Diffing %s ===\n\n", relPath)
-					engine.FprintMappings(&buf, r)
-					engine.FprintActions(&buf, act)
-					output.FprintHunks(&buf, h)
-					fmt.Fprintln(&buf, "====================")
-					log.Printf("\n%s", buf.String())
-				}(file.RelPath, result, actions, hunks)
 			}(i, f)
 		}
 
