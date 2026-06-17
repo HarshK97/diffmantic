@@ -44,12 +44,14 @@ func Simplify(es *EditScript) *EditScript {
 	}
 
 	suppressed := make(map[int]bool)
+	subtreeMarked := make(map[int]bool)
+
 	for node, idx := range inserted {
 		parent := node.Parent
 		if parent != nil && isInSet(parent, inserted) && allDescendantsInSet(parent, inserted) {
 			suppressed[idx] = true
 		} else if len(node.Children) > 0 && allDescendantsInSet(node, inserted) {
-			es.actions[idx].Subtree = true
+			subtreeMarked[idx] = true
 		}
 	}
 
@@ -58,14 +60,18 @@ func Simplify(es *EditScript) *EditScript {
 		if parent != nil && isInSet(parent, deleted) && allDescendantsInSet(parent, deleted) {
 			suppressed[idx] = true
 		} else if len(node.Children) > 0 && allDescendantsInSet(node, deleted) {
-			es.actions[idx].Subtree = true
+			subtreeMarked[idx] = true
 		}
 	}
 
 	result := NewEditScript()
 	for i, a := range es.actions {
 		if !suppressed[i] {
-			result.Add(a)
+			copied := a
+			if subtreeMarked[i] {
+				copied.Subtree = true
+			}
+			result.Add(copied)
 		}
 	}
 	return result
