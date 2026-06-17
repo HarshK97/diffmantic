@@ -364,6 +364,9 @@ func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
 }
 
 func postOrder(root *treesitter.ASTNode) []*treesitter.ASTNode {
+	if root == nil {
+		return nil
+	}
 	var out []*treesitter.ASTNode
 	for _, c := range root.Children {
 		out = append(out, postOrder(c)...)

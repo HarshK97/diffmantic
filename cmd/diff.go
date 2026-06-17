@@ -173,10 +173,6 @@ Examples:
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 			engine.PrintMappings(result)
 			actions.PrintActions(es)
-		case "tui":
-			fmt.Fprintln(os.Stderr, "TUI mode is temporarily disabled during action generation refactor.")
-			fmt.Fprintln(os.Stderr, "Use -f json or -f actions instead.")
-			os.Exit(1)
 		default:
 			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
 				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
