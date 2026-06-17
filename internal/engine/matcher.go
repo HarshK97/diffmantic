@@ -40,7 +40,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 
 		var bestT2 *treesitter.ASTNode
-		bestDice := -1.0
+		bestDice := 0.0
 
 		for _, t2 := range PostOrder(t2Root) {
 			if m.HasDst(t2) || t2.Type != t1.Type || t2.Label != t1.Label || len(t2.Children) > 0 {
