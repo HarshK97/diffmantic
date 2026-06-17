@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -57,7 +58,9 @@ func BottomUp(
 			continue
 		}
 
-		if m.DiceSrc(t1, t2) >= minDice {
+		sim := ChawatheSimilarity(t1, t2, m.Src())
+		threshold := 1.0 / (1.0 + math.Log(float64(len(Descendants(t1))+len(Descendants(t2)))))
+		if m.DiceSrc(t1, t2) >= minDice || sim >= threshold {
 			m.Add(t1, t2)
 			// TODO: Use Hybrid Approach for recovery
 			// - subtree size < maxSize → run optimal (RTED) -> To be implemented
@@ -121,17 +124,36 @@ func candidate(
 		}
 
 		d := Dice(t1, c, m.Src())
+		
+		anc1 := NearestMatchedAncestor(t1, m, false)
+		anc2 := NearestMatchedAncestor(c, m, true)
+		cMatches := (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
+
+		ancBest1 := NearestMatchedAncestor(t1, m, false)
+		var ancBest2 *treesitter.ASTNode
+		if best != nil {
+			ancBest2 = NearestMatchedAncestor(best, m, true)
+		}
+		bestCMatches := best == nil || (ancBest1 == nil && ancBest2 == nil) || (ancBest1 != nil && ancBest2 != nil && m.Src()[ancBest1] == ancBest2)
+
+		isBetter := false
 		if d > bestDice {
+			isBetter = true
+		} else if d == bestDice {
+			if cMatches && !bestCMatches {
+				isBetter = true
+			} else if cMatches == bestCMatches {
+				ls := labelOverlap(t1Labels, c)
+				if ls > bestLabelScore {
+					isBetter = true
+				}
+			}
+		}
+
+		if isBetter {
 			bestDice = d
 			best = c
 			bestLabelScore = labelOverlap(t1Labels, c)
-		} else if d == bestDice {
-			// Tie-break: prefer candidate with more matching leaf labels.
-			ls := labelOverlap(t1Labels, c)
-			if ls > bestLabelScore {
-				best = c
-				bestLabelScore = ls
-			}
 		}
 	}
 	return best
