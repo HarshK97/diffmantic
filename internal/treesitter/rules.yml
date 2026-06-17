@@ -50,4 +50,5 @@ python:
     - 'if'
     - 'with'
     - 'return'
+    - 'escape_sequence'
   label_ignored: []
