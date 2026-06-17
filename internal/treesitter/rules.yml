@@ -1,178 +1,53 @@
 go:
   flattened:
     - interpreted_string_literal
-  aliased:
-    # Comparison
-    "==": comparison_operator_literal
-    "!=": comparison_operator_literal
-    "<":  comparison_operator_literal
-    ">":  comparison_operator_literal
-    "<=": comparison_operator_literal
-    ">=": comparison_operator_literal
-    # Logical
-    "&&": logical_operator_literal
-    "||": logical_operator_literal
-    "!":  logical_operator_literal
-    # Arithmetic
-    "+":  arithmetic_operator_literal
-    "-":  arithmetic_operator_literal
-    "*":  arithmetic_operator_literal
-    "/":  arithmetic_operator_literal
-    "%":  arithmetic_operator_literal
-    # Bitwise
-    "&":   bitwise_operator_literal
-    "|":   bitwise_operator_literal
-    "^":   bitwise_operator_literal
-    "<<":  bitwise_operator_literal
-    ">>":  bitwise_operator_literal
-    "&^":  bitwise_operator_literal
-    # Assignment
-    "=":   assignment_operator_literal
-    "+=":  assignment_operator_literal
-    "-=":  assignment_operator_literal
-    "*=":  assignment_operator_literal
-    "/=":  assignment_operator_literal
-    "%=":  assignment_operator_literal
-    "&=":  assignment_operator_literal
-    "|=":  assignment_operator_literal
-    "^=":  assignment_operator_literal
-    "<<=": assignment_operator_literal
-    ">>=": assignment_operator_literal
-    ":=":  assignment_operator_literal
-    "&^=": assignment_operator_literal
   ignored:
-    - "("
-    - ")"
-    - "{"
-    - "}"
-    - "["
-    - "]"
-    - "."
-    - ","
-    - ";"
-    - "\""
-    - "`"
-    - "..."
-    - "<-"
-    - "package"
-    - "import"
-    - "func"
-    - "var"
-    - "const"
-    - "type"
-    - "return"
-    - "if"
-    - "else"
-    - "for"
-    - "range"
-    - "switch"
-    - "case"
-    - "default"
-    - "break"
-    - "continue"
-    - "goto"
-    - "fallthrough"
-    - "go"
-    - "defer"
-    - "select"
-    - "chan"
-    - "map"
-    - "interface"
-    - "struct"
+    - "\n"
+    - (
+    - )
+    - '{'
+    - '}'
+    - '.'
+  aliased: {}
   label_ignored: []
-
 python:
   flattened:
     - string
   aliased:
-    # Comparison
-    "==":  comparison_operator_literal
-    "<=":  comparison_operator_literal
-    ">=":  comparison_operator_literal
-    "!=":  comparison_operator_literal
-    "<":   comparison_operator_literal
-    ">":   comparison_operator_literal
-    "<>":  comparison_operator_literal
-    # is/not in same group: is→is not = delete(is)+insert(not) within the group
-    "is":  comparison_operator_literal
-    "not": comparison_operator_literal
-    # Logical
-    "and": logical_operator_literal
-    "or":  logical_operator_literal
-    # Assignment
-    "augmented_assignment": assignment
-    "=":   assignment_operator_literal
-    "-=":  assignment_operator_literal
-    "+=":  assignment_operator_literal
-    "*=":  assignment_operator_literal
-    "/=":  assignment_operator_literal
-    "//=": assignment_operator_literal
-    "%=":  assignment_operator_literal
-    "**=": assignment_operator_literal
-    "|=":  assignment_operator_literal
-    "&=":  assignment_operator_literal
-    "^=":  assignment_operator_literal
-    "<<=": assignment_operator_literal
-    ">>=": assignment_operator_literal
-    "@=":  assignment_operator_literal
-    # Arithmetic (* is semantic for both multiplication and splat/unpack)
-    "+":   arithmetic_operator_literal
-    "-":   arithmetic_operator_literal
-    "*":   arithmetic_operator_literal
-    "/":   arithmetic_operator_literal
-    "//":  arithmetic_operator_literal
-    "%":   arithmetic_operator_literal
-    "**":  arithmetic_operator_literal
-    "@":   arithmetic_operator_literal
-    # Bitwise
-    "&":   bitwise_operator_literal
-    "|":   bitwise_operator_literal
-    "^":   bitwise_operator_literal
-    "~":   bitwise_operator_literal
-    "<<":  bitwise_operator_literal
-    ">>":  bitwise_operator_literal
+    '==': comparison_operator_literal
+    '<=': comparison_operator_literal
+    '>=': comparison_operator_literal
+    '!=': comparison_operator_literal
+    '<': comparison_operator_literal
+    '>': comparison_operator_literal
+    '<>': comparison_operator_literal
+    'and': logical_operator_literal
+    'or': logical_operator_literal
+    'augmented_assignment': assignment
+    '=': assignment_operator_literal
+    '-=': assignment_operator_literal
+    '+=': assignment_operator_literal
+    '*=': assignment_operator_literal
+    '/=': assignment_operator_literal
+    '//=': assignment_operator_literal
+    '%=': assignment_operator_literal
+    '**=': assignment_operator_literal
   ignored:
-    - "("
-    - ")"
-    - "{"
-    - "}"
-    - "["
-    - "]"
-    - "."
-    - ":"
-    - ","
-    - "default_parameter ="
-    - "wildcard_import *"
-    # Structural keywords — meaning captured at node-type level, not token level
-    - "def"
-    - "for"
-    - "in"
-    - "if"
-    - "with"
-    - "return"
-    - "elif"
-    - "else"
-    - "try"
-    - "except"
-    - "finally"
-    - "raise"
-    - "import"
-    - "from"
-    - "as"
-    - "pass"
-    - "break"
-    - "continue"
-    - "global"
-    - "nonlocal"
-    - "yield"
-    - "async"
-    - "await"
-    - "lambda"
-    - "class"
-    - "del"
-    - "->"
-    - ":="
-    # String delimiters (named nodes, purely punctuation)
-    - "string_start"
-    - "string_end"
+    - '('
+    - ')'
+    - '{'
+    - '}'
+    - '['
+    - ']'
+    - '.'
+    - ':'
+    - ','
+    - 'default_parameter ='
+    - 'wildcard_import *'
+    - 'def'
+    - 'for'
+    - 'in'
+    - 'if'
+    - 'with'
+    - 'return'
   label_ignored: []
