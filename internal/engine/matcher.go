@@ -51,8 +51,27 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			if t1.Parent != nil && t2.Parent != nil {
 				d = Dice(t1.Parent, t2.Parent, m.Src())
 			}
+			anc1 := NearestMatchedAncestor(t1, m, false)
+			anc2 := NearestMatchedAncestor(t2, m, true)
+			cMatches := (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
 
+			ancBest1 := NearestMatchedAncestor(t1, m, false)
+			var ancBest2 *treesitter.ASTNode
+			if bestT2 != nil {
+				ancBest2 = NearestMatchedAncestor(bestT2, m, true)
+			}
+			bestCMatches := bestT2 == nil || (ancBest1 == nil && ancBest2 == nil) || (ancBest1 != nil && ancBest2 != nil && m.Src()[ancBest1] == ancBest2)
+
+			isBetter := false
 			if d > bestDice {
+				isBetter = true
+			} else if d == bestDice && d > 0.0 {
+				if cMatches && !bestCMatches {
+					isBetter = true
+				}
+			}
+
+			if isBetter {
 				bestDice = d
 				bestT2 = t2
 			}

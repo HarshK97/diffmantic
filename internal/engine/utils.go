@@ -135,3 +135,54 @@ func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
 
 	return true
 }
+
+// NearestMatchedAncestor finds the closest ancestor of n that is present in the mapping.
+// If isDst is true, it checks m.HasDst; otherwise it checks m.Has.
+func NearestMatchedAncestor(n *treesitter.ASTNode, m *Mapping, isDst bool) *treesitter.ASTNode {
+	curr := n.Parent
+	for curr != nil {
+		if isDst {
+			if m.HasDst(curr) {
+				return curr
+			}
+		} else {
+			if m.Has(curr) {
+				return curr
+			}
+		}
+		curr = curr.Parent
+	}
+	return nil
+}
+
+// AncestorNameSimilarity calculates the number of matching identifier labels
+// among the ancestors of t1 and t2. This helps break ties in top-down matching
+// by preferring pairs located in similarly named functions or classes.
+func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
+	labels1 := make(map[string]bool)
+	curr := t1.Parent
+	for curr != nil {
+		for _, child := range curr.Children {
+			if child.Type == "identifier" && child.Label != "" {
+				labels1[child.Label] = true
+			}
+		}
+		curr = curr.Parent
+	}
+
+	overlap := 0
+	curr = t2.Parent
+	for curr != nil {
+		for _, child := range curr.Children {
+			if child.Type == "identifier" && child.Label != "" {
+				if labels1[child.Label] {
+					overlap++
+				}
+			}
+		}
+		curr = curr.Parent
+	}
+	return overlap
+}
+
+

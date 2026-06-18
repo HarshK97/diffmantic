@@ -118,7 +118,12 @@ func TopDown(
 	sort.SliceStable(A, func(i, j int) bool {
 		di := Dice(A[i][0].Parent, A[i][1].Parent, m.Src())
 		dj := Dice(A[j][0].Parent, A[j][1].Parent, m.Src())
-		return di > dj
+		if di != dj {
+			return di > dj
+		}
+		si := AncestorNameSimilarity(A[i][0], A[i][1])
+		sj := AncestorNameSimilarity(A[j][0], A[j][1])
+		return si > sj
 	})
 
 	for len(A) > 0 {
