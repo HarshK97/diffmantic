@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -57,7 +58,9 @@ func BottomUp(
 			continue
 		}
 
-		if m.DiceSrc(t1, t2) >= minDice {
+		sim := ChawatheSimilarity(t1, t2, m.Src())
+		threshold := 1.0 / (1.0 + math.Log(float64(len(Descendants(t1))+len(Descendants(t2)))))
+		if m.DiceSrc(t1, t2) >= minDice || sim >= threshold {
 			m.Add(t1, t2)
 			// TODO: Use Hybrid Approach for recovery
 			// - subtree size < maxSize → run optimal (RTED) -> To be implemented

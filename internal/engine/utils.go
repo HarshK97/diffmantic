@@ -64,6 +64,33 @@ func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTN
 	return 2.0 * float64(common) / denom
 }
 
+// ChawatheSimilarity computes the Chawathe similarity coefficient between two subtrees
+// given the current mapping set m (maps T1 nodes -> T2 nodes).
+//
+// chawathe(t1, t2, m) = |{t ∈ s(t1) | (t, t2') ∈ m for some t2'}| / max(|s(t1)|, |s(t2)|)
+func ChawatheSimilarity(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) float64 {
+	s1 := Descendants(t1)
+	s2 := descendantSet(t2)
+
+	maxDesc := len(s1)
+	if len(Descendants(t2)) > maxDesc {
+		maxDesc = len(Descendants(t2))
+	}
+	if maxDesc == 0 {
+		return 0
+	}
+
+	common := 0
+	for _, d := range s1 {
+		if mapped, ok := m[d]; ok {
+			if _, inS2 := s2[mapped]; inS2 {
+				common++
+			}
+		}
+	}
+	return float64(common) / float64(maxDesc)
+}
+
 // TODO: replace the O(n) algorithm with O(1) hash comparison from
 // M. Chilowicz, E. Duris, and G. Roussel. Syntax tree
 // fingerprinting for source code similarity detection.
