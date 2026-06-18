@@ -32,6 +32,8 @@ python:
     '//=': assignment_operator_literal
     '%=': assignment_operator_literal
     '**=': assignment_operator_literal
+    'is': is_operator
+    'is not': is_not_operator
   ignored:
     - '('
     - ')'
