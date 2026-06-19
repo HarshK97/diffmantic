@@ -166,6 +166,9 @@ func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
 // NearestMatchedAncestor finds the closest ancestor of n that is present in the mapping.
 // If isDst is true, it checks m.HasDst; otherwise it checks m.Has.
 func NearestMatchedAncestor(n *treesitter.ASTNode, m *Mapping, isDst bool) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
 	curr := n.Parent
 	for curr != nil {
 		if isDst {
@@ -186,6 +189,9 @@ func NearestMatchedAncestor(n *treesitter.ASTNode, m *Mapping, isDst bool) *tree
 // among the ancestors of t1 and t2. This helps break ties in top-down matching
 // by preferring pairs located in similarly named functions or classes.
 func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
+	if t1 == nil || t2 == nil {
+		return 0
+	}
 	labels1 := make(map[string]bool)
 	curr := t1.Parent
 	for curr != nil {
