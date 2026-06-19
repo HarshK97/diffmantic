@@ -3,7 +3,6 @@ import (
 	"math"
 	"strings"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -17,13 +16,13 @@ type DiffFile struct {
 	NewLines     []string
 	OldTokens    [][]chroma.Token
 	NewTokens    [][]chroma.Token
-	Hunks        []output.Hunk
-	VisualHunks  []output.Hunk
+	Hunks        []Hunk
+	VisualHunks  []Hunk
 	LeftSpans    []visualSpan
 	RightSpans   []visualSpan
 	NeedsCompute bool
 }
-func NewDiffFile(oldPath, newPath string, oldSrc, newSrc []byte, hunks []output.Hunk) DiffFile {
+func NewDiffFile(oldPath, newPath string, oldSrc, newSrc []byte, hunks []Hunk) DiffFile {
 	return DiffFile{
 		OldPath:     oldPath,
 		NewPath:     newPath,
@@ -77,7 +76,7 @@ func tokenizeFile(path string, src []byte) [][]chroma.Token {
 func NewDiffFileWithDetails(
 	oldPath, newPath string,
 	oldSrc, newSrc []byte,
-	hunks []output.Hunk,
+	hunks []Hunk,
 	actions any,
 	mappings *engine.Mapping,
 ) DiffFile {
@@ -87,37 +86,37 @@ func NewDiffFileWithDetails(
 	return file
 }
 type lineAnnotation struct {
-	Kind     output.ChangeKind
+	Kind     ChangeKind
 	Priority int
 	Spans    []visualSpan
 }
 type visualSpan struct {
-	Kind      output.ChangeKind
+	Kind      ChangeKind
 	StartLine int
 	EndLine   int
 	StartCol  int
 	EndCol    int
 	Priority  int
 }
-func annotationPriority(kind output.ChangeKind) int {
+func annotationPriority(kind ChangeKind) int {
 	switch kind {
-	case output.ChangeInsert, output.ChangeDelete:
+	case ChangeInsert, ChangeDelete:
 		return 4
-	case output.ChangeMove:
+	case ChangeMove:
 		return 3 // Move has priority over Update for full line-level backgrounds to keep them contiguous
-	case output.ChangeUpdate:
+	case ChangeUpdate:
 		return 2
 	default:
 		return 1
 	}
 }
-func visualSpanPriority(kind output.ChangeKind) int {
+func visualSpanPriority(kind ChangeKind) int {
 	switch kind {
-	case output.ChangeInsert, output.ChangeDelete:
+	case ChangeInsert, ChangeDelete:
 		return 4
-	case output.ChangeUpdate:
+	case ChangeUpdate:
 		return 3 // Update has priority over Move for token-level highlight visibility
-	case output.ChangeMove:
+	case ChangeMove:
 		return 2
 	default:
 		return 1
@@ -149,7 +148,7 @@ func splitSourceLines(src []byte) []string {
 	}
 	return lines
 }
-func (f DiffFile) displayHunks() []output.Hunk {
+func (f DiffFile) displayHunks() []Hunk {
 	if f.VisualHunks != nil {
 		return f.VisualHunks
 	}
@@ -160,14 +159,14 @@ func buildLineAnnotations(file DiffFile) (map[int]lineAnnotation, map[int]lineAn
 	right := make(map[int]lineAnnotation)
 	for _, h := range file.displayHunks() {
 		switch h.Kind {
-		case output.ChangeInsert:
+		case ChangeInsert:
 			applyAnnotation(right, h.DstStartLine, h.DstEndLine, h.Kind)
-		case output.ChangeDelete:
+		case ChangeDelete:
 			applyAnnotation(left, h.SrcStartLine, h.SrcEndLine, h.Kind)
-		case output.ChangeUpdate:
+		case ChangeUpdate:
 			applyAnnotation(left, h.SrcStartLine, h.SrcEndLine, h.Kind)
 			applyAnnotation(right, h.DstStartLine, h.DstEndLine, h.Kind)
-		case output.ChangeMove:
+		case ChangeMove:
 			applyAnnotation(left, h.SrcStartLine, h.SrcEndLine, h.Kind)
 			applyAnnotation(right, h.DstStartLine, h.DstEndLine, h.Kind)
 		}
@@ -176,7 +175,7 @@ func buildLineAnnotations(file DiffFile) (map[int]lineAnnotation, map[int]lineAn
 	applySpans(right, file.RightSpans)
 	return left, right
 }
-func applyAnnotation(dst map[int]lineAnnotation, start, end int, kind output.ChangeKind) {
+func applyAnnotation(dst map[int]lineAnnotation, start, end int, kind ChangeKind) {
 	if start <= 0 || end <= 0 {
 		return
 	}
@@ -225,7 +224,7 @@ func buildVisualSpans(es any, mappings *engine.Mapping) ([]visualSpan, []visualS
 	return nil, nil
 }
 
-func addLeafSpans(n *treesitter.ASTNode, kind output.ChangeKind, mappings *engine.Mapping, isSrc bool, checkMatches bool, spans *[]visualSpan) {
+func addLeafSpans(n *treesitter.ASTNode, kind ChangeKind, mappings *engine.Mapping, isSrc bool, checkMatches bool, spans *[]visualSpan) {
 	if n == nil {
 		return
 	}
@@ -277,7 +276,7 @@ func isStatementOrDeclaration(nodeType string) bool {
 	return false
 }
 
-func spanFromNode(n *treesitter.ASTNode, kind output.ChangeKind) (visualSpan, bool) {
+func spanFromNode(n *treesitter.ASTNode, kind ChangeKind) (visualSpan, bool) {
 	if n == nil {
 		return visualSpan{}, false
 	}

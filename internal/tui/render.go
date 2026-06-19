@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 )
@@ -30,14 +29,14 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	newChanged := make([]bool, len(file.NewLines)+1)
 
 	for _, h := range file.displayHunks() {
-		if h.Kind == output.ChangeDelete || h.Kind == output.ChangeUpdate || h.Kind == output.ChangeMove {
+		if h.Kind == ChangeDelete || h.Kind == ChangeUpdate || h.Kind == ChangeMove {
 			for l := h.SrcStartLine; l <= h.SrcEndLine; l++ {
 				if l > 0 && l < len(oldChanged) {
 					oldChanged[l] = true
 				}
 			}
 		}
-		if h.Kind == output.ChangeInsert || h.Kind == output.ChangeUpdate || h.Kind == output.ChangeMove {
+		if h.Kind == ChangeInsert || h.Kind == ChangeUpdate || h.Kind == ChangeMove {
 			for r := h.DstStartLine; r <= h.DstEndLine; r++ {
 				if r > 0 && r < len(newChanged) {
 					newChanged[r] = true
@@ -99,11 +98,11 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	}
 
 	// 4. Identify unmatched destination context lines and add them as virtual Insert hunks
-	var extraHunks []output.Hunk
+	var extraHunks []Hunk
 	for _, r := range newContext {
 		if matchRightToLeft[r] == 0 {
-			extraHunks = append(extraHunks, output.Hunk{
-				Kind:         output.ChangeInsert,
+			extraHunks = append(extraHunks, Hunk{
+				Kind:         ChangeInsert,
 				DstStartLine: r,
 				DstEndLine:   r,
 			})
@@ -113,7 +112,7 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	// 5. Gather and sort all hunks by boundary position.
 	// For ChangeMove hunks, we split them into a left-only source hunk and a right-only destination hunk.
 	type hunkWithVirtual struct {
-		hunk         output.Hunk
+		hunk         Hunk
 		srcBoundary  int // The old-file line number after which this hunk belongs
 		subOrder     int // 1 for left-only, 2 for update, 3 for right-only
 		dstStartLine int // To preserve stable sort order
@@ -127,7 +126,7 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	var hunksWithV []hunkWithVirtual
 
 	for _, h := range file.displayHunks() {
-		if h.Kind == output.ChangeMove {
+		if h.Kind == ChangeMove {
 			// Source block (left-only)
 			srcH := h
 			srcH.DstStartLine = 0
@@ -344,7 +343,7 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	// 7. Collect move connections in terms of aligned row indices
 	var moves []moveConnection
 	for _, h := range file.displayHunks() {
-		if h.Kind == output.ChangeMove {
+		if h.Kind == ChangeMove {
 			srcRawMid := (h.SrcStartLine + h.SrcEndLine) / 2
 			dstRawMid := (h.DstStartLine + h.DstEndLine) / 2
 
@@ -542,13 +541,13 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 
 	if annotated {
 		switch ann.Kind {
-		case output.ChangeInsert:
+		case ChangeInsert:
 			fillStyle = s.InsertFill
-		case output.ChangeDelete:
+		case ChangeDelete:
 			fillStyle = s.DeleteFill
-		case output.ChangeUpdate:
+		case ChangeUpdate:
 			fillStyle = s.UpdateFill
-		case output.ChangeMove:
+		case ChangeMove:
 			fillStyle = s.MoveFill
 		}
 		baseStyle = fillStyle
@@ -572,7 +571,7 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 	prefix := numStyle.Render(lineNo) + " "
 	contentW := maxInt(0, width-lipgloss.Width(prefix))
 	spans := ann.Spans
-	if annotated && (ann.Kind == output.ChangeInsert || ann.Kind == output.ChangeDelete) {
+	if annotated && (ann.Kind == ChangeInsert || ann.Kind == ChangeDelete) {
 		spans = nil
 	}
 	rendered := renderTokenizedContent(content, tokens, spans, contentW, baseStyle, s)
@@ -710,9 +709,9 @@ func renderTokenizedContent(originalContent string, tokens []chroma.Token, spans
 	return b.String()
 }
 
-func spanKindAt(spans []visualSpan, col int) (output.ChangeKind, bool) {
+func spanKindAt(spans []visualSpan, col int) (ChangeKind, bool) {
 	bestPriority := 0
-	var kind output.ChangeKind
+	var kind ChangeKind
 	for _, span := range spans {
 		end := span.EndCol
 		if end <= 0 {
@@ -726,15 +725,15 @@ func spanKindAt(spans []visualSpan, col int) (output.ChangeKind, bool) {
 	return kind, bestPriority > 0
 }
 
-func tokenStyleForKind(kind output.ChangeKind, s styles) lipgloss.Style {
+func tokenStyleForKind(kind ChangeKind, s styles) lipgloss.Style {
 	switch kind {
-	case output.ChangeInsert:
+	case ChangeInsert:
 		return s.Insert
-	case output.ChangeDelete:
+	case ChangeDelete:
 		return s.Delete
-	case output.ChangeUpdate:
+	case ChangeUpdate:
 		return s.Update
-	case output.ChangeMove:
+	case ChangeMove:
 		return s.Move
 	default:
 		return s.Context
