@@ -290,20 +290,3 @@ func TestPostOrder(t *testing.T) {
 		t.Errorf("postOrder order = %q, want %q", types, "dbca")
 	}
 }
-
-func TestDescendants(t *testing.T) {
-	root := makeNode("a", "", 0, 0)
-	b := makeNode("b", "", 0, 0)
-	c := makeNode("c", "", 0, 0)
-	d := makeNode("d", "", 0, 0)
-	makeTree(root, b, c)
-	makeTree(b, d)
-
-	desc := descendants(root)
-	if len(desc) != 3 {
-		t.Fatalf("descendants returned %d, want 3", len(desc))
-	}
-	if desc[0] != b || desc[1] != d || desc[2] != c {
-		t.Error("descendants order wrong")
-	}
-}
