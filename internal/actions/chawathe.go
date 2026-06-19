@@ -392,12 +392,3 @@ func removeFromSlice(slice []*treesitter.ASTNode, target *treesitter.ASTNode) []
 	}
 	return slice
 }
-
-func descendants(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	var out []*treesitter.ASTNode
-	for _, c := range n.Children {
-		out = append(out, c)
-		out = append(out, descendants(c)...)
-	}
-	return out
-}
