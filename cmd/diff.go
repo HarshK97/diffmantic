@@ -27,8 +27,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/spf13/cobra"
@@ -48,13 +48,17 @@ node level, not just changed lines.
 Examples:
   diffmantic diff before.go after.go                Interactive side-by-side viewer
   diffmantic diff before.go after.go -f json        JSON output for editor plugins
-  diffmantic diff before.go after.go -f unified     Unified diff for scripts/CI
+  diffmantic diff before.go after.go -f actions     Print structural actions list
   diffmantic diff before.go after.go --lang go      Override language detection`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
 		// lang, _ := cmd.Flags().GetString("lang")
 		format, _ := cmd.Flags().GetString("format")
+		if format != "tui" && format != "json" && format != "actions" {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: tui, json, actions\n", format)
+			os.Exit(1)
+		}
 
 		infoA, err := os.Stat(fileA)
 		if err != nil {
@@ -160,34 +164,29 @@ Examples:
 		// treesitter.PrintAST(astB, 0)
 
 		result := engine.Match(astA, astB)
-		actions := engine.GenerateActions(astA, astB, result.Mappings)
-		hunks := output.Classify(actions)
-		hunks = output.Coalesce(hunks)
+		es := actions.GenerateEditScript(astA, astB, result.Mappings)
+		es = actions.Simplify(es)
 
 		switch format {
 		case "json":
-			if err := output.PrintHunksJSON(hunks); err != nil {
+			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
 				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
 				os.Exit(1)
 			}
-		case "tui":
-			file := tui.NewDiffFileWithDetails(fileA, fileB, srcA, srcB, hunks, actions, result.Mappings)
-			if err := tui.Run([]tui.DiffFile{file}); err != nil {
-				fmt.Fprintf(os.Stderr, "error running TUI: %v\n", err)
-				os.Exit(1)
-			}
-		default:
+		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 			engine.PrintMappings(result)
-			engine.PrintActions(actions)
-			output.PrintHunks(hunks)
+			actions.PrintActions(es)
+		default:
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: tui, json, actions\n", format)
+			os.Exit(1)
 		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(diffCmd)
-	diffCmd.Flags().StringP("format", "f", "tui", "Output format: tui, json, unified")
+	diffCmd.Flags().StringP("format", "f", "tui", "Output format: tui, json, actions")
 	diffCmd.Flags().StringP("lang", "l", "", "Override language detection (e.g., go, python, c)")
 }
 

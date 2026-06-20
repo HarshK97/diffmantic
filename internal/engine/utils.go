@@ -64,6 +64,33 @@ func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTN
 	return 2.0 * float64(common) / denom
 }
 
+// ChawatheSimilarity computes the Chawathe similarity coefficient between two subtrees
+// given the current mapping set m (maps T1 nodes -> T2 nodes).
+//
+// chawathe(t1, t2, m) = |{t ∈ s(t1) | (t, t2') ∈ m for some t2'}| / max(|s(t1)|, |s(t2)|)
+func ChawatheSimilarity(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) float64 {
+	s1 := Descendants(t1)
+	s2 := descendantSet(t2)
+
+	maxDesc := len(s1)
+	if len(Descendants(t2)) > maxDesc {
+		maxDesc = len(Descendants(t2))
+	}
+	if maxDesc == 0 {
+		return 0
+	}
+
+	common := 0
+	for _, d := range s1 {
+		if mapped, ok := m[d]; ok {
+			if _, inS2 := s2[mapped]; inS2 {
+				common++
+			}
+		}
+	}
+	return float64(common) / float64(maxDesc)
+}
+
 // TODO: replace the O(n) algorithm with O(1) hash comparison from
 // M. Chilowicz, E. Duris, and G. Roussel. Syntax tree
 // fingerprinting for source code similarity detection.
@@ -135,3 +162,60 @@ func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
 
 	return true
 }
+
+// NearestMatchedAncestor finds the closest ancestor of n that is present in the mapping.
+// If isDst is true, it checks m.HasDst; otherwise it checks m.Has.
+func NearestMatchedAncestor(n *treesitter.ASTNode, m *Mapping, isDst bool) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	curr := n.Parent
+	for curr != nil {
+		if isDst {
+			if m.HasDst(curr) {
+				return curr
+			}
+		} else {
+			if m.Has(curr) {
+				return curr
+			}
+		}
+		curr = curr.Parent
+	}
+	return nil
+}
+
+// AncestorNameSimilarity calculates the number of matching identifier labels
+// among the ancestors of t1 and t2. This helps break ties in top-down matching
+// by preferring pairs located in similarly named functions or classes.
+func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
+	if t1 == nil || t2 == nil {
+		return 0
+	}
+	labels1 := make(map[string]bool)
+	curr := t1.Parent
+	for curr != nil {
+		for _, child := range curr.Children {
+			if child.Type == "identifier" && child.Label != "" {
+				labels1[child.Label] = true
+			}
+		}
+		curr = curr.Parent
+	}
+
+	overlap := 0
+	curr = t2.Parent
+	for curr != nil {
+		for _, child := range curr.Children {
+			if child.Type == "identifier" && child.Label != "" {
+				if labels1[child.Label] {
+					overlap++
+				}
+			}
+		}
+		curr = curr.Parent
+	}
+	return overlap
+}
+
+

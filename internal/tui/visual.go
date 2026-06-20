@@ -2,13 +2,12 @@ package tui
 import (
 	"sort"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/output"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
-func normalizeVisualHunks(hunks []output.Hunk, mappings *engine.Mapping) []output.Hunk {
-	visual := make([]output.Hunk, 0, len(hunks)+1)
+func normalizeVisualHunks(hunks []Hunk, mappings *engine.Mapping) []Hunk {
+	visual := make([]Hunk, 0, len(hunks)+1)
 	for _, h := range hunks {
-		if h.Kind == output.ChangeMove && h.SrcStartLine == h.DstStartLine {
+		if h.Kind == ChangeMove && h.SrcStartLine == h.DstStartLine {
 			continue
 		}
 		visual = append(visual, h)
@@ -17,8 +16,8 @@ func normalizeVisualHunks(hunks []output.Hunk, mappings *engine.Mapping) []outpu
 		if hasMoveForPair(visual, pair) {
 			continue
 		}
-		visual = append(visual, output.Hunk{
-			Kind:         output.ChangeMove,
+		visual = append(visual, Hunk{
+			Kind:         ChangeMove,
 			SrcStartLine: int(pair.Src.StartRow) + 1,
 			SrcEndLine:   int(pair.Src.EndRow) + 1,
 			DstStartLine: int(pair.Dst.StartRow) + 1,
@@ -36,17 +35,17 @@ func normalizeVisualHunks(hunks []output.Hunk, mappings *engine.Mapping) []outpu
 	})
 	return visual
 }
-func effectiveVisualStart(h output.Hunk) int {
+func effectiveVisualStart(h Hunk) int {
 	if h.SrcStartLine > 0 {
 		return h.SrcStartLine
 	}
 	return h.DstStartLine
 }
-func hasMoveForPair(hunks []output.Hunk, pair engine.MappingPair) bool {
+func hasMoveForPair(hunks []Hunk, pair engine.MappingPair) bool {
 	srcStart, srcEnd := int(pair.Src.StartRow)+1, int(pair.Src.EndRow)+1
 	dstStart, dstEnd := int(pair.Dst.StartRow)+1, int(pair.Dst.EndRow)+1
 	for _, h := range hunks {
-		if h.Kind != output.ChangeMove {
+		if h.Kind != ChangeMove {
 			continue
 		}
 		if h.SrcStartLine == srcStart && h.SrcEndLine == srcEnd &&
