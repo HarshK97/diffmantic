@@ -83,6 +83,25 @@ python:
     '**=': assignment_operator_literal
     'is': is_operator
     'is not': is_not_operator
+
+    # Arithmetic operators
+    '+': arithmetic_operator_literal
+    '-': arithmetic_operator_literal
+    '*': arithmetic_operator_literal
+    '/': arithmetic_operator_literal
+    '//': arithmetic_operator_literal
+    '%': arithmetic_operator_literal
+    '**': arithmetic_operator_literal
+
+    # Bitwise operators
+    '&': bitwise_operator_literal
+    '|': bitwise_operator_literal
+    '^': bitwise_operator_literal
+    '<<': bitwise_operator_literal
+    '>>': bitwise_operator_literal
+
+    # Unary operators
+    'not': unary_operator_literal
   ignored:
     - '('
     - ')'
