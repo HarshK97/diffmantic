@@ -26,7 +26,7 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	uc2 = unmatchedChildrenDst(t2, m)
 
 	for _, pair := range LCSStructure(uc1, uc2) {
-		addDescendantPairsStructure(pair[0], pair[1], m)
+		addIsomorphicPairs(pair[0], pair[1], m)
 	}
 
 	uc1 = unmatchedChildrenSrc(t1, m)
@@ -91,11 +91,4 @@ func uniqueTypePairs(
 	return pairs
 }
 
-// addDescendantPairsStructure maps descendants of two structurally
-// isomorphic subtrees by walking both in lockstep.
-func addDescendantPairsStructure(t1, t2 *treesitter.ASTNode, m *Mapping) {
-	m.Add(t1, t2)
-	for i := range t1.Children {
-		addDescendantPairsStructure(t1.Children[i], t2.Children[i], m)
-	}
-}
+

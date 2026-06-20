@@ -85,9 +85,6 @@ func computeDiffsCmd(files []DiffFile) tea.Cmd {
 
 		wg.Wait()
 
-		// Add 2 second timer to show the shimmering skeleton loading screen for demo/testing
-		time.Sleep(2 * time.Second)
-
 		for _, err := range errs {
 			if err != nil {
 				return engineDoneMsg{Err: err}
@@ -102,10 +99,7 @@ func Run(files []DiffFile) error {
 	if len(files) == 0 {
 		return nil
 	}
-	logPath := "/tmp/diffmantic.log"
-	if os.PathSeparator == '\\' {
-		logPath = filepath.Join(os.TempDir(), "diffmantic.log")
-	}
+	logPath := filepath.Join(os.TempDir(), "diffmantic.log")
 	os.Remove(logPath)
 
 	f, err := tea.LogToFile(logPath, "debug")
@@ -215,7 +209,7 @@ func (m model) View() tea.View {
 func (m *model) resize(width, height int) {
 	m.width = width
 	m.height = height
-	m.contentRows = maxInt(1, height-statusRows)
+	m.contentRows = max(1, height-statusRows)
 	m.reflowViewport(true)
 	m.ready = true
 	m.ensureTreeCursorVisible()
@@ -263,16 +257,16 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) reflowViewport(reset bool) {
 	if m.treeVisible {
-		m.treeWidth = minInt(maxTreeWidth, maxInt(minTreeWidth, m.width/4))
-		m.diffWidth = maxInt(1, m.width-m.treeWidth-separatorCols)
+		m.treeWidth = min(maxTreeWidth, max(minTreeWidth, m.width/4))
+		m.diffWidth = max(1, m.width-m.treeWidth-separatorCols)
 	} else {
 		m.treeWidth = 0
-		m.diffWidth = maxInt(1, m.width)
+		m.diffWidth = max(1, m.width)
 	}
 	offset := m.viewport.YOffset()
 	m.viewport = viewport.New(
 		viewport.WithWidth(m.diffWidth),
-		viewport.WithHeight(maxInt(1, m.contentRows-1)),
+		viewport.WithHeight(max(1, m.contentRows-1)),
 	)
 	m.setViewportContent(reset)
 	if !reset {
@@ -289,7 +283,7 @@ func (m model) updateTreeKey(msg tea.KeyPressMsg) model {
 	case "g":
 		m.treeCursor = 0
 	case "G":
-		m.treeCursor = maxInt(0, len(m.rows)-1)
+		m.treeCursor = max(0, len(m.rows)-1)
 	case "enter", "space":
 		m.activateTreeRow()
 	case "left":
@@ -390,8 +384,8 @@ func (m *model) setViewportContent(reset bool) {
 
 func (m model) renderTree() string {
 	header := m.header("Files", m.treeWidth, m.focus == focusTree)
-	visibleRows := maxInt(0, m.contentRows-1)
-	end := minInt(len(m.rows), m.treeOffset+visibleRows)
+	visibleRows := max(0, m.contentRows-1)
+	end := min(len(m.rows), m.treeOffset+visibleRows)
 	var lines []string
 	for i := m.treeOffset; i < end; i++ {
 		lines = append(lines, m.renderTreeRow(i, m.rows[i]))
@@ -453,7 +447,7 @@ func (m model) renderDiff() string {
 		}
 		header := m.header(title, m.diffWidth, false)
 		
-		skeletonH := maxInt(1, m.contentRows-1)
+		skeletonH := max(1, m.contentRows-1)
 		skeletonLines := m.renderSkeletonLines(m.diffWidth, skeletonH)
 		return lipgloss.JoinVertical(lipgloss.Left, header, skeletonLines)
 	}
@@ -495,14 +489,14 @@ func (m model) renderSkeletonLines(width, height int) string {
 	}
 	file := m.files[m.selected]
 	middleW := 3
-	panelW := maxInt(1, (width-middleW-2)/2)
-	rightW := maxInt(1, width-panelW-middleW-2)
-	totalLines := maxInt(len(file.OldLines), len(file.NewLines))
+	panelW := max(1, (width-middleW-2)/2)
+	rightW := max(1, width-panelW-middleW-2)
+	totalLines := max(len(file.OldLines), len(file.NewLines))
 	if totalLines == 0 {
 		return ""
 	}
 	var lines []string
-	limit := minInt(totalLines, height)
+	limit := min(totalLines, height)
 	for i := 1; i <= limit; i++ {
 		// --- Left Panel ---
 		leftOut := ""
@@ -529,7 +523,7 @@ func (m model) renderSkeletonLines(width, height int) string {
 			// Cap the shimmer if it exceeds panel width
 			shimmerW := contentLen
 			if prefixW+shimmerW > panelW {
-				shimmerW = maxInt(0, panelW-prefixW)
+				shimmerW = max(0, panelW-prefixW)
 			}
 			leftOut = prefix + m.shimmerBlock(shimmerW, i)
 			// Pad the rest of the panel
@@ -564,7 +558,7 @@ func (m model) renderSkeletonLines(width, height int) string {
 			// Cap the shimmer if it exceeds panel width
 			shimmerW := contentLen
 			if prefixW+shimmerW > rightW {
-				shimmerW = maxInt(0, rightW-prefixW)
+				shimmerW = max(0, rightW-prefixW)
 			}
 			rightOut = prefix + m.shimmerBlock(shimmerW, i)
 			// Pad the rest of the panel
@@ -592,7 +586,7 @@ func (m model) header(title string, width int, focused bool) string {
 	} else {
 		title = "  " + title
 	}
-	return m.styles.Header.Width(width).Render(truncateToWidth(title, maxInt(0, width-2)))
+	return m.styles.Header.Width(width).Render(truncateToWidth(title, max(0, width-2)))
 }
 
 func (m model) renderHelp() string {

@@ -1,8 +1,10 @@
 package actions
 
 import (
+	"slices"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -227,6 +229,13 @@ func TestInsertChild(t *testing.T) {
 }
 
 func TestPositionInParent(t *testing.T) {
+	positionInParent := func(n *treesitter.ASTNode) int {
+		if n == nil || n.Parent == nil {
+			return -1
+		}
+		return slices.Index(n.Parent.Children, n)
+	}
+
 	parent := makeNode("block", "", 0, 0)
 	c1 := makeNode("a", "", 0, 0)
 	c2 := makeNode("b", "", 0, 0)
@@ -278,7 +287,7 @@ func TestPostOrder(t *testing.T) {
 	makeTree(root, b, c)
 	makeTree(b, d)
 
-	nodes := postOrder(root)
+	nodes := engine.PostOrder(root)
 	if len(nodes) != 4 {
 		t.Fatalf("postOrder returned %d nodes, want 4", len(nodes))
 	}

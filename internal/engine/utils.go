@@ -48,7 +48,7 @@ func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTN
 	s1 := Descendants(t1)
 	s2 := descendantSet(t2)
 
-	denom := float64(len(s1) + len(Descendants(t2)))
+	denom := float64(len(s1) + len(s2))
 	if denom == 0 {
 		return 0
 	}
@@ -73,8 +73,8 @@ func ChawatheSimilarity(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*t
 	s2 := descendantSet(t2)
 
 	maxDesc := len(s1)
-	if len(Descendants(t2)) > maxDesc {
-		maxDesc = len(Descendants(t2))
+	if len(s2) > maxDesc {
+		maxDesc = len(s2)
 	}
 	if maxDesc == 0 {
 		return 0

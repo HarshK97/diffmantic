@@ -1,5 +1,6 @@
 package tui
 import (
+	"slices"
 	"sort"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -129,10 +130,8 @@ func childIndex(n *treesitter.ASTNode) int {
 	if n == nil || n.Parent == nil {
 		return 0
 	}
-	for i, child := range n.Parent.Children {
-		if child == n {
-			return i
-		}
+	if idx := slices.Index(n.Parent.Children, n); idx != -1 {
+		return idx
 	}
 	return 0
 }

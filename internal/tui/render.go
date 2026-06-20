@@ -68,10 +68,10 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	for i := 1; i <= len(oldContext); i++ {
 		for j := 1; j <= len(newContext); j++ {
 			if file.OldLines[oldContext[i-1]-1] == file.NewLines[newContext[j-1]-1] {
-				score := baseScore - absVal(oldContext[i-1]-newContext[j-1])
+				score := baseScore - absInt(oldContext[i-1]-newContext[j-1])
 				dp[i][j] = dp[i-1][j-1] + score
 			} else {
-				dp[i][j] = maxInt(dp[i-1][j], dp[i][j-1])
+				dp[i][j] = max(dp[i-1][j], dp[i][j-1])
 			}
 		}
 	}
@@ -81,7 +81,7 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 	i, j := len(oldContext), len(newContext)
 	for i > 0 && j > 0 {
 		if file.OldLines[oldContext[i-1]-1] == file.NewLines[newContext[j-1]-1] {
-			score := baseScore - absVal(oldContext[i-1]-newContext[j-1])
+			score := baseScore - absInt(oldContext[i-1]-newContext[j-1])
 			if dp[i][j] == dp[i-1][j-1]+score {
 				matchLeftToRight[oldContext[i-1]] = newContext[j-1]
 				matchRightToLeft[newContext[j-1]] = oldContext[i-1]
@@ -292,7 +292,7 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 				// Side-by-side (Update)
 				numSrc := h.SrcEndLine - h.SrcStartLine + 1
 				numDst := h.DstEndLine - h.DstStartLine + 1
-				maxLines := maxInt(numSrc, numDst)
+				maxLines := max(numSrc, numDst)
 				for k := 0; k < maxLines; k++ {
 					srcLine := 0
 					if k < numSrc {
@@ -368,8 +368,8 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 
 	middleW := 3 // Width of the connection curve area
 	// Border separators: left border is 1, right border is 1. Total = 2 columns.
-	panelW := maxInt(1, (width-middleW-2)/2)
-	rightW := maxInt(1, width-panelW-middleW-2)
+	panelW := max(1, (width-middleW-2)/2)
+	rightW := max(1, width-panelW-middleW-2)
 	if len(alignedRows) == 0 {
 		return s.Help.Render("(empty files)")
 	}
@@ -384,22 +384,22 @@ func renderDiffContent(file DiffFile, width int, s styles) string {
 		if row.ghostText != "" {
 			var leftOut, rightOut string
 			if row.isGhostLeft {
-				contentW := maxInt(0, panelW-lipgloss.Width(prefixSpaces))
+				contentW := max(0, panelW-lipgloss.Width(prefixSpaces))
 				truncatedGhost := truncateToWidth(row.ghostText, contentW)
 				renderedGhost := ghostStyle.Render(truncatedGhost)
-				padding := strings.Repeat(" ", maxInt(0, contentW-lipgloss.Width(truncatedGhost)))
+				padding := strings.Repeat(" ", max(0, contentW-lipgloss.Width(truncatedGhost)))
 				leftOut = prefixSpaces + renderedGhost + padding
 
-				rightContentW := maxInt(0, rightW-lipgloss.Width(prefixSpaces))
+				rightContentW := max(0, rightW-lipgloss.Width(prefixSpaces))
 				rightOut = prefixSpaces + s.Separator.Render(strings.Repeat("╱", rightContentW))
 			} else {
-				leftContentW := maxInt(0, panelW-lipgloss.Width(prefixSpaces))
+				leftContentW := max(0, panelW-lipgloss.Width(prefixSpaces))
 				leftOut = prefixSpaces + s.Separator.Render(strings.Repeat("╱", leftContentW))
 
-				contentW := maxInt(0, rightW-lipgloss.Width(prefixSpaces))
+				contentW := max(0, rightW-lipgloss.Width(prefixSpaces))
 				truncatedGhost := truncateToWidth(row.ghostText, contentW)
 				renderedGhost := ghostStyle.Render(truncatedGhost)
-				padding := strings.Repeat(" ", maxInt(0, contentW-lipgloss.Width(truncatedGhost)))
+				padding := strings.Repeat(" ", max(0, contentW-lipgloss.Width(truncatedGhost)))
 				rightOut = prefixSpaces + renderedGhost + padding
 			}
 
@@ -449,10 +449,10 @@ func renderMiddlePart(line int, moves []moveConnection, width int, s styles) str
 		if line == m.srcMid {
 			if m.srcMid < m.dstMid {
 				// Bends down: e.g. "─╮"
-				return s.MoveArrow.Render("─╮" + strings.Repeat(" ", maxInt(0, width-2)))
+				return s.MoveArrow.Render("─╮" + strings.Repeat(" ", max(0, width-2)))
 			} else if m.srcMid > m.dstMid {
 				// Bends up: e.g. "─╯"
-				return s.MoveArrow.Render("─╯" + strings.Repeat(" ", maxInt(0, width-2)))
+				return s.MoveArrow.Render("─╯" + strings.Repeat(" ", max(0, width-2)))
 			} else {
 				// Straight: e.g. "──❯"
 				if width > 1 {
@@ -468,27 +468,27 @@ func renderMiddlePart(line int, moves []moveConnection, width int, s styles) str
 				if width >= 3 {
 					return s.MoveArrow.Render(" " + "╰" + strings.Repeat("─", width-3) + "❯")
 				}
-				return s.MoveArrow.Render("╰" + strings.Repeat("─", maxInt(0, width-2)) + "❯")
+				return s.MoveArrow.Render("╰" + strings.Repeat("─", max(0, width-2)) + "❯")
 			} else if m.srcMid > m.dstMid {
 				// Coming from below: e.g. " ╭❯"
 				if width >= 3 {
 					return s.MoveArrow.Render(" " + "╭" + strings.Repeat("─", width-3) + "❯")
 				}
-				return s.MoveArrow.Render("╭" + strings.Repeat("─", maxInt(0, width-2)) + "❯")
+				return s.MoveArrow.Render("╭" + strings.Repeat("─", max(0, width-2)) + "❯")
 			}
 		}
 	}
 
 	// Second pass: check if any move has a vertical connecting line on this line
 	for _, m := range moves {
-		minL := minInt(m.srcMid, m.dstMid)
-		maxL := maxInt(m.srcMid, m.dstMid)
+		minL := min(m.srcMid, m.dstMid)
+		maxL := max(m.srcMid, m.dstMid)
 		if line > minL && line < maxL {
-			leftSpace := maxInt(0, (width-1)/2)
-			rightSpace := maxInt(0, width-leftSpace-1)
+			leftSpace := max(0, (width-1)/2)
+			rightSpace := max(0, width-leftSpace-1)
 
-			distSource := absVal(line - m.srcMid)
-			distDest := absVal(line - m.dstMid)
+			distSource := absInt(line - m.srcMid)
+			distDest := absInt(line - m.dstMid)
 
 			var char string
 			if distSource == 1 || distDest == 1 {
@@ -503,13 +503,6 @@ func renderMiddlePart(line int, moves []moveConnection, width int, s styles) str
 	}
 
 	return strings.Repeat(" ", width)
-}
-
-func absVal(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 func lineAt(lines []string, line int) (string, bool) {
@@ -556,7 +549,7 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 	if !ok {
 		numStyle := s.LineNumber
 		prefix := numStyle.Render(lineNo) + " "
-		contentW := maxInt(0, width-lipgloss.Width(prefix))
+		contentW := max(0, width-lipgloss.Width(prefix))
 		if contentW <= 0 {
 			return prefix
 		}
@@ -569,7 +562,7 @@ func renderSideLine(line int, content string, tokens []chroma.Token, ok bool, an
 		numStyle = s.LineNumber.Foreground(fillStyle.GetForeground())
 	}
 	prefix := numStyle.Render(lineNo) + " "
-	contentW := maxInt(0, width-lipgloss.Width(prefix))
+	contentW := max(0, width-lipgloss.Width(prefix))
 	spans := ann.Spans
 	if annotated && (ann.Kind == ChangeInsert || ann.Kind == ChangeDelete) {
 		spans = nil
@@ -760,16 +753,4 @@ func truncateToWidth(s string, width int) string {
 	return b.String() + "."
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
