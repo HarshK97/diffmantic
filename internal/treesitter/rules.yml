@@ -8,7 +8,56 @@ go:
     - '{'
     - '}'
     - '.'
-  aliased: {}
+  aliased:
+    # Arithmetic operators
+    '+': arithmetic_operator_literal
+    '-': arithmetic_operator_literal
+    '*': arithmetic_operator_literal
+    '/': arithmetic_operator_literal
+    '%': arithmetic_operator_literal
+
+    # Comparison operators
+    '==': comparison_operator_literal
+    '!=': comparison_operator_literal
+    '<': comparison_operator_literal
+    '<=': comparison_operator_literal
+    '>': comparison_operator_literal
+    '>=': comparison_operator_literal
+
+    # Logical operators
+    '&&': logical_operator_literal
+    '||': logical_operator_literal
+
+    # Assignment operators
+    '=': assignment_operator_literal
+    ':=': assignment_operator_literal
+    '+=': assignment_operator_literal
+    '-=': assignment_operator_literal
+    '*=': assignment_operator_literal
+    '/=': assignment_operator_literal
+    '%=': assignment_operator_literal
+    '&=': assignment_operator_literal
+    '|=': assignment_operator_literal
+    '^=': assignment_operator_literal
+    '<<=': assignment_operator_literal
+    '>>=': assignment_operator_literal
+    '&^=': assignment_operator_literal
+
+    # Bitwise and other operators
+    '&': bitwise_operator_literal
+    '|': bitwise_operator_literal
+    '^': bitwise_operator_literal
+    '<<': bitwise_operator_literal
+    '>>': bitwise_operator_literal
+    '&^': bitwise_operator_literal
+
+    # Unary/Channel operators
+    '!': unary_operator_literal
+    '<-': channel_operator_literal
+
+    # Increment/Decrement operators
+    '++': update_operator_literal
+    '--': update_operator_literal
   label_ignored: []
 python:
   flattened:
