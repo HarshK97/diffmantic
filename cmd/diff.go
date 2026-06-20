@@ -48,13 +48,17 @@ node level, not just changed lines.
 Examples:
   diffmantic diff before.go after.go                Interactive side-by-side viewer
   diffmantic diff before.go after.go -f json        JSON output for editor plugins
-  diffmantic diff before.go after.go -f unified     Unified diff for scripts/CI
+  diffmantic diff before.go after.go -f actions     Print structural actions list
   diffmantic diff before.go after.go --lang go      Override language detection`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
 		// lang, _ := cmd.Flags().GetString("lang")
 		format, _ := cmd.Flags().GetString("format")
+		if format != "tui" && format != "json" && format != "actions" {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: tui, json, actions\n", format)
+			os.Exit(1)
+		}
 
 		infoA, err := os.Stat(fileA)
 		if err != nil {
@@ -174,17 +178,15 @@ Examples:
 			engine.PrintMappings(result)
 			actions.PrintActions(es)
 		default:
-			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
-				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
-				os.Exit(1)
-			}
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: tui, json, actions\n", format)
+			os.Exit(1)
 		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(diffCmd)
-	diffCmd.Flags().StringP("format", "f", "tui", "Output format: tui, json, unified")
+	diffCmd.Flags().StringP("format", "f", "tui", "Output format: tui, json, actions")
 	diffCmd.Flags().StringP("lang", "l", "", "Override language detection (e.g., go, python, c)")
 }
 
