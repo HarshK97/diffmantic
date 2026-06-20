@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/HarshK97/diffmantic/internal/treesitter"
+import (
+	"slices"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+)
 
 type eqFunc func(a, b *treesitter.ASTNode) bool
 
@@ -42,9 +46,7 @@ func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 		}
 	}
 
-	for l, r := 0, len(pairs)-1; l < r; l, r = l+1, r-1 {
-		pairs[l], pairs[r] = pairs[r], pairs[l]
-	}
+	slices.Reverse(pairs)
 	return pairs
 }
 

@@ -136,14 +136,17 @@ func candidate(
 		}
 		bestCMatches := best == nil || (ancBest1 == nil && ancBest2 == nil) || (ancBest1 != nil && ancBest2 != nil && m.Src()[ancBest1] == ancBest2)
 
+		var ls int
 		isBetter := false
 		if d > bestDice {
 			isBetter = true
+			ls = labelOverlap(t1Labels, c)
 		} else if d == bestDice {
 			if cMatches && !bestCMatches {
 				isBetter = true
+				ls = labelOverlap(t1Labels, c)
 			} else if cMatches == bestCMatches {
-				ls := labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c)
 				if ls > bestLabelScore {
 					isBetter = true
 				}
@@ -153,7 +156,7 @@ func candidate(
 		if isBetter {
 			bestDice = d
 			best = c
-			bestLabelScore = labelOverlap(t1Labels, c)
+			bestLabelScore = ls
 		}
 	}
 	return best

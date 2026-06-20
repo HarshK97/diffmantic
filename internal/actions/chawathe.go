@@ -1,6 +1,8 @@
 package actions
 
 import (
+	"slices"
+
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -104,7 +106,7 @@ func (s *chawatheState) generate() *EditScript {
 						Position: k,
 					})
 
-					oldk := positionInParent(w)
+					oldk := slices.Index(w.Parent.Children, w)
 					if oldk >= 0 {
 						w.Parent.Children = append(
 							w.Parent.Children[:oldk],
@@ -121,7 +123,7 @@ func (s *chawatheState) generate() *EditScript {
 		s.alignChildren(w, x)
 	}
 
-	for _, w := range postOrder(s.cpySrc) {
+	for _, w := range engine.PostOrder(s.cpySrc) {
 		if !s.cpyMappings.Has(w) {
 			s.script.Add(Action{
 				Type: Delete,
@@ -146,7 +148,7 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 		}
 	}
 
-	xpos := positionInParent(x)
+	xpos := slices.Index(siblings, x)
 	var v *treesitter.ASTNode
 	for i := 0; i < xpos; i++ {
 		c := siblings[i]
@@ -160,7 +162,7 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 	}
 
 	u := s.cpyMappings.Dst()[v]
-	upos := positionInParent(u)
+	upos := slices.Index(u.Parent.Children, u)
 	return upos + 1
 }
 
@@ -176,7 +178,7 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 	for _, c := range w.Children {
 		if s.cpyMappings.Has(c) {
 			dst := s.cpyMappings.Src()[c]
-			if containsChild(x, dst) {
+			if slices.Contains(x.Children, dst) {
 				s1 = append(s1, c)
 			}
 		}
@@ -186,7 +188,7 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 	for _, c := range x.Children {
 		if s.cpyMappings.HasDst(c) {
 			src := s.cpyMappings.Dst()[c]
-			if containsChild(w, src) {
+			if slices.Contains(w.Children, src) {
 				s2 = append(s2, c)
 			}
 		}
@@ -205,7 +207,9 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 		for _, a := range s1 {
 			if s.cpyMappings.Has(a) && s.cpyMappings.Src()[a] == b {
 				if !lcsSet[a] {
-					a.Parent.Children = removeFromSlice(a.Parent.Children, a)
+					if idx := slices.Index(a.Parent.Children, a); idx != -1 {
+						a.Parent.Children = slices.Delete(a.Parent.Children, idx, idx+1)
+					}
 
 					k := s.findPos(b)
 					s.script.Add(Action{
@@ -324,28 +328,8 @@ func newEmptyFakeTree() *treesitter.ASTNode {
 
 func insertChild(parent, child *treesitter.ASTNode, k int) {
 	child.Parent = parent
-	if k >= len(parent.Children) {
-		parent.Children = append(parent.Children, child)
-	} else {
-		if k < 0 {
-			k = 0
-		}
-		parent.Children = append(parent.Children, nil)
-		copy(parent.Children[k+1:], parent.Children[k:])
-		parent.Children[k] = child
-	}
-}
-
-func positionInParent(n *treesitter.ASTNode) int {
-	if n == nil || n.Parent == nil {
-		return -1
-	}
-	for i, c := range n.Parent.Children {
-		if c == n {
-			return i
-		}
-	}
-	return -1
+	k = max(0, min(k, len(parent.Children)))
+	parent.Children = slices.Insert(parent.Children, k, child)
 }
 
 func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
@@ -361,34 +345,4 @@ func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
 		queue = append(queue, n.Children...)
 	}
 	return out
-}
-
-func postOrder(root *treesitter.ASTNode) []*treesitter.ASTNode {
-	if root == nil {
-		return nil
-	}
-	var out []*treesitter.ASTNode
-	for _, c := range root.Children {
-		out = append(out, postOrder(c)...)
-	}
-	out = append(out, root)
-	return out
-}
-
-func containsChild(parent, child *treesitter.ASTNode) bool {
-	for _, c := range parent.Children {
-		if c == child {
-			return true
-		}
-	}
-	return false
-}
-
-func removeFromSlice(slice []*treesitter.ASTNode, target *treesitter.ASTNode) []*treesitter.ASTNode {
-	for i, c := range slice {
-		if c == target {
-			return append(slice[:i], slice[i+1:]...)
-		}
-	}
-	return slice
 }
