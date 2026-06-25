@@ -97,7 +97,11 @@ func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
 }
 
 // candidate finds the best unmatched node in T2 to pair with t1.
-// Among all valid candidates, we return the one with the highest dice.
+// Among all valid candidates, we prefer one that sits at the same child index
+// within its parent, then the one with the highest Chawathe similarity,
+// then Dice as a tie-breaker. Positional prior counters the case where an
+// inserted wrapper node (e.g. an added `if`-guard) makes a nested inner block
+// score higher on similarity metrics even though it's not the sibling-level partner.
 func candidate(
 	t1 *treesitter.ASTNode,
 	t2Root *treesitter.ASTNode,
@@ -106,8 +110,10 @@ func candidate(
 	s1 := descendantSet(t1)
 
 	var best *treesitter.ASTNode
+	bestSim := -1.0
 	bestDice := -1.0
 	bestLabelScore := -1
+	var bestSamePositional bool
 
 	t1Labels := leafLabels(t1)
 
@@ -123,8 +129,16 @@ func candidate(
 			continue
 		}
 
+		sim := ChawatheSimilarity(t1, c, m.Src())
 		d := Dice(t1, c, m.Src())
-		
+
+		samePositional := false
+		if t1.Parent != nil && c.Parent != nil {
+			t1Idx := childIndexWithin(t1, t1.Parent)
+			cIdx := childIndexWithin(c, c.Parent)
+			samePositional = t1Idx == cIdx
+		}
+
 		anc1 := NearestMatchedAncestor(t1, m, false)
 		anc2 := NearestMatchedAncestor(c, m, true)
 		cMatches := (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
@@ -138,25 +152,37 @@ func candidate(
 
 		var ls int
 		isBetter := false
-		if d > bestDice {
+		switch {
+		case samePositional && !bestSamePositional:
 			isBetter = true
 			ls = labelOverlap(t1Labels, c)
-		} else if d == bestDice {
-			if cMatches && !bestCMatches {
+		case !samePositional && bestSamePositional:
+		case sim > bestSim:
+			isBetter = true
+			ls = labelOverlap(t1Labels, c)
+		case sim == bestSim:
+			if d > bestDice {
 				isBetter = true
 				ls = labelOverlap(t1Labels, c)
-			} else if cMatches == bestCMatches {
-				ls = labelOverlap(t1Labels, c)
-				if ls > bestLabelScore {
+			} else if d == bestDice {
+				if cMatches && !bestCMatches {
 					isBetter = true
+					ls = labelOverlap(t1Labels, c)
+				} else if cMatches == bestCMatches {
+					ls = labelOverlap(t1Labels, c)
+					if ls > bestLabelScore {
+						isBetter = true
+					}
 				}
 			}
 		}
 
 		if isBetter {
+			bestSim = sim
 			bestDice = d
 			best = c
 			bestLabelScore = ls
+			bestSamePositional = samePositional
 		}
 	}
 	return best
@@ -192,6 +218,18 @@ func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
 		}
 	}
 	return count
+}
+
+func childIndexWithin(child, parent *treesitter.ASTNode) int {
+	if parent == nil {
+		return -1
+	}
+	for i, c := range parent.Children {
+		if c == child {
+			return i
+		}
+	}
+	return -1
 }
 
 // hasCommonDescendant returns true if some descendant of c (in T2) is
