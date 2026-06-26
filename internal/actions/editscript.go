@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 type EditScript struct {
@@ -30,69 +29,6 @@ func (es *EditScript) Actions() []Action {
 	return es.actions
 }
 
-func Simplify(es *EditScript) *EditScript {
-	inserted := make(map[*treesitter.ASTNode]int)
-	deleted := make(map[*treesitter.ASTNode]int)
-
-	for i, a := range es.actions {
-		switch a.Type {
-		case Insert:
-			inserted[a.Node] = i
-		case Delete:
-			deleted[a.Node] = i
-		}
-	}
-
-	suppressed := make(map[int]bool)
-	subtreeMarked := make(map[int]bool)
-
-	for node, idx := range inserted {
-		parent := node.Parent
-		if parent != nil && isInSet(parent, inserted) && allDescendantsInSet(parent, inserted) {
-			suppressed[idx] = true
-		} else if len(node.Children) > 0 && allDescendantsInSet(node, inserted) {
-			subtreeMarked[idx] = true
-		}
-	}
-
-	for node, idx := range deleted {
-		parent := node.Parent
-		if parent != nil && isInSet(parent, deleted) && allDescendantsInSet(parent, deleted) {
-			suppressed[idx] = true
-		} else if len(node.Children) > 0 && allDescendantsInSet(node, deleted) {
-			subtreeMarked[idx] = true
-		}
-	}
-
-	result := NewEditScript()
-	for i, a := range es.actions {
-		if !suppressed[i] {
-			copied := a
-			if subtreeMarked[i] {
-				copied.Subtree = true
-			}
-			result.Add(copied)
-		}
-	}
-	return result
-}
-
-func isInSet(node *treesitter.ASTNode, set map[*treesitter.ASTNode]int) bool {
-	_, ok := set[node]
-	return ok
-}
-
-func allDescendantsInSet(node *treesitter.ASTNode, set map[*treesitter.ASTNode]int) bool {
-	for _, child := range node.Children {
-		if !isInSet(child, set) {
-			return false
-		}
-		if !allDescendantsInSet(child, set) {
-			return false
-		}
-	}
-	return true
-}
 
 type jsonOutput struct {
 	Matches []jsonMatch  `json:"matches"`

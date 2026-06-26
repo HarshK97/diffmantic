@@ -119,12 +119,6 @@ func (s *chawatheState) generate() *EditScript {
 						if pos == -1 {
 							pos = 0
 						}
-						// Action.Parent here MUST be derived from the node's actual
-						// mapped destination's parent (D.Parent) for postprocess.Collapse's
-						// parent-equality check to remain a valid substitute for explicit
-						// mapping-depth-consistency validation -- do not change this without
-						// re-running TestCollapseDivergence and checking internal/postprocess's
-						// Move-loop logic.
 						s.script.Add(Action{
 							Type:     Move,
 							Node:     s.copyToOrig[descSrc],
@@ -254,12 +248,6 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 						if pos == -1 {
 							pos = 0
 						}
-						// Action.Parent here MUST be derived from the node's actual
-						// mapped destination's parent (D.Parent) for postprocess.Collapse's
-						// parent-equality check to remain a valid substitute for explicit
-						// mapping-depth-consistency validation -- do not change this without
-						// re-running TestCollapseDivergence and checking internal/postprocess's
-						// Move-loop logic.
 						s.script.Add(Action{
 							Type:     Move,
 							Node:     s.copyToOrig[descSrc],
