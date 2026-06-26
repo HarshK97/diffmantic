@@ -31,6 +31,7 @@ type Action struct {
 	OldValue    string   `json:"old_value,omitempty"`
 	NewValue    string   `json:"new_value,omitempty"`
 	Subtree     *bool    `json:"subtree,omitempty"`
+	DestNode    *NodeRef `json:"dest_node,omitempty"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -110,6 +111,17 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			ja.Node = nodeRef
 			ja.OldValue = a.Node.Label
 			ja.NewValue = a.Value
+
+			// Resolve mapped destination node in target (after) tree
+			if ms != nil {
+				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
+					destRef, err := makeNodeRef(destNodeDst, "after")
+					if err != nil {
+						return nil, fmt.Errorf("failed to build dest reference for update: %w", err)
+					}
+					ja.DestNode = destRef
+				}
+			}
 
 		case actions.Move:
 			if a.Node == nil {

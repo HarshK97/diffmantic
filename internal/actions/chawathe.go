@@ -13,6 +13,11 @@ func GenerateEditScript(
 ) *EditScript {
 	s := &chawatheState{}
 	s.init(src, dst, ms)
+	defer func() {
+		if dst != nil {
+			dst.Parent = nil
+		}
+	}()
 	return s.generate()
 }
 
