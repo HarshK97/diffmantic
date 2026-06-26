@@ -166,7 +166,6 @@ Examples:
 
 		result := engine.Match(astA, astB)
 		es := actions.GenerateEditScript(astA, astB, result.Mappings)
-		es = actions.Simplify(es)
 
 		switch format {
 		case "json":
