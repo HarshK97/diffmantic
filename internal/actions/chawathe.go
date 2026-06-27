@@ -13,6 +13,11 @@ func GenerateEditScript(
 ) *EditScript {
 	s := &chawatheState{}
 	s.init(src, dst, ms)
+	defer func() {
+		if dst != nil {
+			dst.Parent = nil
+		}
+	}()
 	return s.generate()
 }
 
@@ -105,6 +110,28 @@ func (s *chawatheState) generate() *EditScript {
 						Parent:   s.copyToOrig[z],
 						Position: k,
 					})
+
+					// Generate explicit Move actions for all mapped descendants
+					for _, pair := range s.collectMappedDescendants(w) {
+						descSrc := pair[0]
+						descDst := pair[1]
+						pos := slices.Index(descDst.Parent.Children, descDst)
+						if pos == -1 {
+							pos = 0
+						}
+						// Action.Parent here MUST be derived from the node's actual
+						// mapped destination's parent (D.Parent) for postprocess.Collapse's
+						// parent-equality check to remain a valid substitute for explicit
+						// mapping-depth-consistency validation -- do not change this without
+						// re-running TestCollapseDivergence and checking internal/postprocess's
+						// Move-loop logic.
+						s.script.Add(Action{
+							Type:     Move,
+							Node:     s.copyToOrig[descSrc],
+							Parent:   descDst.Parent,
+							Position: pos,
+						})
+					}
 
 					oldk := slices.Index(w.Parent.Children, w)
 					if oldk >= 0 {
@@ -218,6 +245,29 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 						Parent:   s.copyToOrig[w],
 						Position: k,
 					})
+
+					// Generate explicit Move actions for all mapped descendants
+					for _, pair := range s.collectMappedDescendants(a) {
+						descSrc := pair[0]
+						descDst := pair[1]
+						pos := slices.Index(descDst.Parent.Children, descDst)
+						if pos == -1 {
+							pos = 0
+						}
+						// Action.Parent here MUST be derived from the node's actual
+						// mapped destination's parent (D.Parent) for postprocess.Collapse's
+						// parent-equality check to remain a valid substitute for explicit
+						// mapping-depth-consistency validation -- do not change this without
+						// re-running TestCollapseDivergence and checking internal/postprocess's
+						// Move-loop logic.
+						s.script.Add(Action{
+							Type:     Move,
+							Node:     s.copyToOrig[descSrc],
+							Parent:   descDst.Parent,
+							Position: pos,
+						})
+					}
+
 					insertChild(w, a, k)
 
 					s.srcInOrder[a] = true
@@ -345,4 +395,20 @@ func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
 		queue = append(queue, n.Children...)
 	}
 	return out
+}
+
+func (s *chawatheState) collectMappedDescendants(n *treesitter.ASTNode) [][2]*treesitter.ASTNode {
+	var result [][2]*treesitter.ASTNode
+	var traverse func(curr *treesitter.ASTNode)
+	traverse = func(curr *treesitter.ASTNode) {
+		for _, child := range curr.Children {
+			if s.cpyMappings.Has(child) {
+				dst := s.cpyMappings.Src()[child]
+				result = append(result, [2]*treesitter.ASTNode{child, dst})
+			}
+			traverse(child)
+		}
+	}
+	traverse(n)
+	return result
 }

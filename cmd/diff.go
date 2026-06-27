@@ -27,7 +27,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -116,17 +116,14 @@ Examples:
 
 		result := engine.Match(astA, astB)
 		es := actions.GenerateEditScript(astA, astB, result.Mappings)
-		es = actions.Simplify(es)
+		es = postprocess.Run(es, result.Mappings, astA, astB)
 
 		switch format {
 		case "json":
-			jsonData, err := serialize.Marshal(es, result.Mappings, astA, astB)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error serializing JSON: %v\n", err)
+			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
+				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
 				os.Exit(1)
 			}
-			os.Stdout.Write(jsonData)
-			os.Stdout.Write([]byte("\n"))
 		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 			engine.PrintMappings(result)
