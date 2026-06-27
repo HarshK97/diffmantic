@@ -87,24 +87,59 @@ func Collapse(
 	// Collapse/Clean Moves bottom-up on the source tree
 	for _, parentSrc := range postOrder(srcRoot) {
 		if act, ok := moved[parentSrc]; ok && len(parentSrc.Children) > 0 {
-			allChildrenMovedTogether := true
-			for _, childSrc := range parentSrc.Children {
-				childAct, ok := moved[childSrc]
-				if !ok || suppressed[childAct] {
-					allChildrenMovedTogether = false
-					break
-				}
-				dstParent := ms.Src()[parentSrc]
-				if dstParent == nil || childAct.Parent != dstParent {
-					allChildrenMovedTogether = false
-					break
+			allChildrenMovedToSameParent := true
+			dstParent := ms.Src()[parentSrc]
+			if dstParent == nil {
+				allChildrenMovedToSameParent = false
+			} else {
+				for _, childSrc := range parentSrc.Children {
+					childAct, ok := moved[childSrc]
+					if !ok || suppressed[childAct] {
+						allChildrenMovedToSameParent = false
+						break
+					}
+					if childAct.Parent != dstParent {
+						allChildrenMovedToSameParent = false
+						break
+					}
 				}
 			}
 
-			if allChildrenMovedTogether {
-				KillChildren(parentSrc, moved, suppressed)
-				act.Subtree = true
+			if allChildrenMovedToSameParent {
+				// Children all move under the same destination parent.
+				// Now verify if their destination positions are contiguous.
+				var destPositions []int
+				for _, childSrc := range parentSrc.Children {
+					childDst := ms.Src()[childSrc]
+					pos := -1
+					for idx, child := range dstParent.Children {
+						if child == childDst {
+							pos = idx
+							break
+						}
+					}
+					destPositions = append(destPositions, pos)
+				}
+
+				contiguous := true
+				for i := 0; i < len(destPositions)-1; i++ {
+					if destPositions[i+1] != destPositions[i]+1 {
+						contiguous = false
+						break
+					}
+				}
+
+				if contiguous {
+					// Pass both parent-equality and contiguity -> collapse
+					KillChildren(parentSrc, moved, suppressed)
+					act.Subtree = true
+				} else {
+					// Pass parent-equality but FAIL contiguity -> do NOT collapse.
+					// Both parent move and children moves survive without suppression.
+					act.Subtree = false
+				}
 			} else {
+				// FAIL parent-equality -> Kill parent's move, children survive
 				KillParent(act, suppressed)
 			}
 		}

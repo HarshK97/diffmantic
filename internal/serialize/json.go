@@ -140,14 +140,39 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			}
 
 			// Resolve parent in the destination (after) tree.
-			// a.Parent in memory could be in the before tree (if it was an existing parent)
-			// or already in the after tree (if it was a newly inserted parent node).
 			var newParentDst *treesitter.ASTNode
-			if findRoot(a.Parent) == findRoot(dstRoot) {
-				newParentDst = a.Parent
-			} else if ms != nil {
-				newParentDst = ms.Src()[a.Parent]
+			var pos int
+			resolved := false
+
+			if ms != nil {
+				destNodeDst := ms.Src()[a.Node]
+				if destNodeDst != nil {
+					newParentDst = destNodeDst.Parent
+					if newParentDst != nil {
+						pos = -1
+						for idx, child := range newParentDst.Children {
+							if child == destNodeDst {
+								pos = idx
+								break
+							}
+						}
+						if pos != -1 {
+							resolved = true
+						}
+					}
+				}
 			}
+
+			if !resolved {
+				// Fallback to old behavior
+				if findRoot(a.Parent) == findRoot(dstRoot) {
+					newParentDst = a.Parent
+				} else if ms != nil {
+					newParentDst = ms.Src()[a.Parent]
+				}
+				pos = a.Position
+			}
+
 			if newParentDst == nil {
 				return nil, fmt.Errorf("failed to resolve move parent %s in destination tree", a.Parent.Type)
 			}
@@ -157,7 +182,6 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 				return nil, fmt.Errorf("failed to build parent reference for move: %w", err)
 			}
 			ja.Parent = parentRef
-			pos := a.Position
 			ja.Position = &pos
 
 			// Old parent is a.Node.Parent in the before tree.
