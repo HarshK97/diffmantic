@@ -57,8 +57,6 @@ func Collapse(
 			if allChildrenInserted {
 				KillChildren(parent, inserted, suppressed)
 				act.Subtree = true
-			} else {
-				KillParent(act, suppressed)
 			}
 		}
 	}
@@ -78,8 +76,6 @@ func Collapse(
 			if allChildrenDeleted {
 				KillChildren(parent, deleted, suppressed)
 				act.Subtree = true
-			} else {
-				KillParent(act, suppressed)
 			}
 		}
 	}
@@ -139,7 +135,13 @@ func Collapse(
 					act.Subtree = false
 				}
 			} else {
-				// FAIL parent-equality -> Kill parent's move, children survive
+				// FAIL parent-equality -> Kill parent's move, children survive.
+				// NOTE: This assumes parent-equality failure indicates a dissolved/rewrapped
+				// identity (e.g. boolean operator nesting shifts) where suppressing the parent
+				// move avoids misleading highlights of newly inserted sibling elements as moved.
+				// This has only been validated against cases where parent-equality failure
+				// correctly indicated a dissolved/rewrapped identity, not yet against a case
+				// where it might fragment a legitimately-coherent parent-level container move.
 				KillParent(act, suppressed)
 			}
 		}
