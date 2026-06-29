@@ -165,6 +165,9 @@ func KillChildren(
 		if act, ok := actionMap[child]; ok {
 			suppressed[act] = true
 		}
+		if child.IsScaffolding() {
+			KillChildren(child, actionMap, suppressed)
+		}
 	}
 }
 

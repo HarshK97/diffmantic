@@ -59,6 +59,28 @@ go:
     '++': update_operator_literal
     '--': update_operator_literal
   label_ignored: []
+  scaffolding:
+    - source_file
+    - block
+    - argument_list
+    - parameter_list
+    - parenthesized_expression
+    - expression_list
+    - literal_value
+    - statement_list
+    - import_spec_list
+    - function_declaration
+    - method_declaration
+    - if_statement
+    - for_statement
+    - expression_switch_statement
+    - type_switch_statement
+    - select_statement
+    - select_case
+    - communication_case
+    - default_case
+    - expression_case
+    - type_case
 python:
   flattened:
     - string
@@ -120,3 +142,28 @@ python:
     - 'return'
     - 'escape_sequence'
   label_ignored: []
+  scaffolding:
+    - module
+    - block
+    - argument_list
+    - list_comprehension
+    - parenthesized_expression
+    - boolean_operator
+    - expression_list
+    - pattern_list
+    - list
+    - dictionary
+    - for_in_clause
+    - parameters
+    - try_statement
+    - except_clause
+    - finally_clause
+    - function_definition
+    - class_definition
+    - with_statement
+    - for_statement
+    - while_statement
+    - if_statement
+    - elif_clause
+    - else_clause
+

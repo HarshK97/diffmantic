@@ -12,6 +12,7 @@ type Rules struct {
 	Ignored      []string          `yaml:"ignored"`
 	Aliased      map[string]string `yaml:"aliased"`
 	LabelIgnored []string          `yaml:"label_ignored"`
+	Scaffolding  []string          `yaml:"scaffolding"`
 }
 
 type RulesConfig struct {

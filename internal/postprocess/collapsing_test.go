@@ -12,18 +12,20 @@ func TestCollapseDivergence(t *testing.T) {
 	// Construct source tree:
 	// P (block)
 	//   C (identifier)
-	cSrc := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 20}
+	cSrc := &treesitter.ASTNode{Type: "block", StartByte: 10, EndByte: 20}
 	pSrc := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100, Children: []*treesitter.ASTNode{cSrc}}
+	pSrc.Language = "python"
 	cSrc.Parent = pSrc
 
 	// Construct destination tree:
 	// Q (block)
 	//   R (block)
-	//     D (identifier)
-	dDst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 60, EndByte: 70}
+	//     D (block)
+	dDst := &treesitter.ASTNode{Type: "block", StartByte: 60, EndByte: 70}
 	rDst := &treesitter.ASTNode{Type: "block", StartByte: 50, EndByte: 150, Children: []*treesitter.ASTNode{dDst}}
 	dDst.Parent = rDst
 	qDst := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 200, Children: []*treesitter.ASTNode{rDst}}
+	qDst.Language = "python"
 	rDst.Parent = qDst
 
 	// Mappings:

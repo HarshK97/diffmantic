@@ -18,10 +18,15 @@ type ASTNode struct {
 	StartCol  uint32
 	EndRow    uint32
 	EndCol    uint32
+	Language  string // Set on root node only
 }
 
 func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode) *ASTNode {
-	return buildASTWithRules(n, src, lang, parent, GetRules(lang.Name))
+	node := buildASTWithRules(n, src, lang, parent, GetRules(lang.Name))
+	if node != nil && parent == nil {
+		node.Language = lang.Name
+	}
+	return node
 }
 
 func isStringLiteralType(t string) bool {
@@ -153,3 +158,28 @@ func (n *ASTNode) Size() int {
 	}
 	return size
 }
+
+// GetLanguage walks up to the root to retrieve the language of the AST.
+func (n *ASTNode) GetLanguage() string {
+	curr := n
+	for curr.Parent != nil {
+		curr = curr.Parent
+	}
+	return curr.Language
+}
+
+// IsScaffolding checks rules.yml to see if this node type is a variable-arity container.
+func (n *ASTNode) IsScaffolding() bool {
+	lang := n.GetLanguage()
+	rules := GetRules(lang)
+	if rules == nil {
+		return false
+	}
+	for _, t := range rules.Scaffolding {
+		if n.Type == t {
+			return true
+		}
+	}
+	return false
+}
+
