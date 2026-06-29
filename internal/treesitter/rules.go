@@ -51,6 +51,13 @@ func GetRules(lang string) *Rules {
 	return &r
 }
 
+func SetRules(lang string, r Rules) {
+	if rulesCache == nil {
+		rulesCache = make(map[string]Rules)
+	}
+	rulesCache[lang] = r
+}
+
 func init() {
 	if err := LoadRules(); err != nil {
 		panic("failed to load rules.yml: " + err.Error())

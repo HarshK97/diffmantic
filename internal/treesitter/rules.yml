@@ -124,6 +124,7 @@ python:
 
     # Unary operators
     'not': unary_operator_literal
+    'try': 'try'
   ignored:
     - '('
     - ')'
