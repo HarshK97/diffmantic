@@ -75,3 +75,156 @@ func TestCollapseDivergence(t *testing.T) {
 	// This demonstrates the divergence: the mapping was depth-inconsistent (dDst.Parent != qDst),
 	// but the check passed and collapsed them anyway because the edit script had C's Parent set to Q.
 }
+
+func TestRefinedParentSuppression(t *testing.T) {
+	// (a) boolean operator suppression (real Move child triggers suppression)
+	t.Run("boolean-operator-suppression", func(t *testing.T) {
+		// Destination Tree:
+		// Parent: boolean_operator (Insert)
+		//   Child 1: not_operator (Insert)
+		//   Child 2: logical_operator_literal (Insert)
+		//   Child 3: not_operator (Move)
+		
+		parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
+		parent.Language = "python"
+		
+		c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
+		c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
+		c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
+		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
+		
+		// Source Tree:
+		// We have an old node for c3 to map from
+		c3Src := &treesitter.ASTNode{Type: "not_operator", StartByte: 50, EndByte: 105}
+		c3Src.Language = "python"
+		
+		ms := engine.NewMapping()
+		ms.Add(c3Src, c3)
+		
+		es := actions.NewEditScript()
+		// Parent, c1, and c2 are inserted
+		pAct := actions.Action{Type: actions.Insert, Node: parent}
+		c1Act := actions.Action{Type: actions.Insert, Node: c1}
+		c2Act := actions.Action{Type: actions.Insert, Node: c2}
+		// c3 is moved
+		c3Act := actions.Action{Type: actions.Move, Node: c3Src, Parent: parent}
+		
+		es.Add(pAct)
+		es.Add(c1Act)
+		es.Add(c2Act)
+		es.Add(c3Act)
+		
+		collapsed := Collapse(es, ms, c3Src, parent)
+		
+		// We expect the parent's Insert action to be suppressed.
+		// c1, c2, and c3 actions should survive.
+		// So total actions = 3 (c1, c2, c3).
+		if collapsed.Size() != 3 {
+			t.Errorf("expected 3 actions, got %d", collapsed.Size())
+		}
+		
+		// Ensure the parent action is suppressed (not in the script)
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent {
+				t.Error("expected parent boolean_operator Insert action to be suppressed, but it is not")
+			}
+		}
+	})
+
+	// (b) assignment no suppression (only bare aliased-literal Move child, must NOT trigger suppression)
+	t.Run("assignment-no-suppression", func(t *testing.T) {
+		// Destination Tree:
+		// Parent: assignment (Insert)
+		//   Child 1: identifier (Insert)
+		//   Child 2: assignment_operator_literal (Move)
+		//   Child 3: call (Insert)
+		
+		parent := &treesitter.ASTNode{Type: "assignment", StartByte: 0, EndByte: 100}
+		parent.Language = "python"
+		
+		c1 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: parent}
+		c2 := &treesitter.ASTNode{Type: "assignment_operator_literal", StartByte: 11, EndByte: 12, Parent: parent}
+		c3 := &treesitter.ASTNode{Type: "call", StartByte: 13, EndByte: 100, Parent: parent}
+		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
+		
+		// Source Tree:
+		c2Src := &treesitter.ASTNode{Type: "assignment_operator_literal", StartByte: 20, EndByte: 21}
+		c2Src.Language = "python"
+		
+		ms := engine.NewMapping()
+		ms.Add(c2Src, c2)
+		
+		es := actions.NewEditScript()
+		pAct := actions.Action{Type: actions.Insert, Node: parent}
+		c1Act := actions.Action{Type: actions.Insert, Node: c1}
+		c2Act := actions.Action{Type: actions.Move, Node: c2Src, Parent: parent}
+		c3Act := actions.Action{Type: actions.Insert, Node: c3}
+		
+		es.Add(pAct)
+		es.Add(c1Act)
+		es.Add(c2Act)
+		es.Add(c3Act)
+		
+		collapsed := Collapse(es, ms, c2Src, parent)
+		
+		// We expect parent action to survive un-suppressed.
+		// All 4 actions should survive.
+		if collapsed.Size() != 4 {
+			t.Errorf("expected 4 actions, got %d", collapsed.Size())
+		}
+		
+		foundParent := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent {
+				foundParent = true
+			}
+		}
+		if !foundParent {
+			t.Error("expected parent assignment Insert action to survive un-suppressed")
+		}
+	})
+
+	// (c) case with zero Move/Update children at all (existing allChildrenInserted=true path)
+	t.Run("allChildrenInserted-true", func(t *testing.T) {
+		// Destination Tree:
+		// Parent: boolean_operator (Insert)
+		//   Child 1: not_operator (Insert)
+		//   Child 2: logical_operator_literal (Insert)
+		//   Child 3: not_operator (Insert)
+		
+		parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
+		parent.Language = "python"
+		
+		c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
+		c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
+		c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
+		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
+		
+		ms := engine.NewMapping()
+		
+		es := actions.NewEditScript()
+		pAct := actions.Action{Type: actions.Insert, Node: parent}
+		c1Act := actions.Action{Type: actions.Insert, Node: c1}
+		c2Act := actions.Action{Type: actions.Insert, Node: c2}
+		c3Act := actions.Action{Type: actions.Insert, Node: c3}
+		
+		es.Add(pAct)
+		es.Add(c1Act)
+		es.Add(c2Act)
+		es.Add(c3Act)
+		
+		collapsed := Collapse(es, ms, nil, parent)
+		
+		// All children Insert actions should be suppressed, parent Insert action survives with Subtree = true.
+		// Total actions = 1
+		if collapsed.Size() != 1 {
+			t.Errorf("expected 1 action (parent subtree), got %d", collapsed.Size())
+		}
+		
+		collapsedActions := collapsed.Actions()
+		if collapsedActions[0].Node != parent || !collapsedActions[0].Subtree {
+			t.Errorf("expected parent action to survive with Subtree: true, got %+v", collapsedActions[0])
+		}
+	})
+}
+

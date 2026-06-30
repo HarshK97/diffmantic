@@ -20,6 +20,7 @@ func Collapse(
 	inserted := make(map[*treesitter.ASTNode]*actions.Action)
 	deleted := make(map[*treesitter.ASTNode]*actions.Action)
 	moved := make(map[*treesitter.ASTNode]*actions.Action)
+	updated := make(map[*treesitter.ASTNode]*actions.Action)
 	suppressed := make(map[*actions.Action]bool)
 
 	for _, a := range actionPtrs {
@@ -39,6 +40,11 @@ func Collapse(
 				suppressed[prev] = true
 			}
 			moved[a.Node] = a
+		case actions.Update:
+			if prev, ok := updated[a.Node]; ok {
+				suppressed[prev] = true
+			}
+			updated[a.Node] = a
 		}
 	}
 
@@ -57,6 +63,51 @@ func Collapse(
 			if allChildrenInserted {
 				KillChildren(parent, inserted, suppressed)
 				act.Subtree = true
+			} else {
+				// Refined parent-suppression check:
+				// 1. The parent itself must carry real, renderable content as a direct child (via the aliased mechanism).
+				//    So it must have at least one child that is a bare aliased literal.
+				hasAliasedChild := false
+				for _, child := range parent.Children {
+					if isBareAliasedLiteral(child) {
+						hasAliasedChild = true
+						break
+					}
+				}
+
+				if hasAliasedChild {
+					// 2. Check if at least one direct child is a Move or Update action of a non-literal content node.
+					hasMoveOrUpdateChild := false
+					for _, child := range parent.Children {
+						if isBareAliasedLiteral(child) {
+							continue
+						}
+						if _, isInserted := inserted[child]; !isInserted {
+							srcNode := ms.Dst()[child]
+							if srcNode != nil {
+								isMove := false
+								if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
+									isMove = true
+								}
+								isUpdate := false
+								if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
+									isUpdate = true
+								}
+
+								if isMove || isUpdate {
+									if nodeSimilarity(srcNode, child, ms) >= 0.5 {
+										hasMoveOrUpdateChild = true
+										break
+									}
+								}
+							}
+						}
+					}
+
+					if hasMoveOrUpdateChild {
+						suppressed[act] = true
+					}
+				}
 			}
 		}
 	}
@@ -185,4 +236,28 @@ func postOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	}
 	res = append(res, n)
 	return res
+}
+
+func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
+	lang := node.GetLanguage()
+	rules := treesitter.GetRules(lang)
+	if rules == nil {
+		return false
+	}
+	for _, val := range rules.Aliased {
+		if node.Type == val {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeSimilarity(src, dst *treesitter.ASTNode, ms *engine.Mapping) float64 {
+	if len(src.Children) == 0 && len(dst.Children) == 0 {
+		if src.Type == dst.Type && src.Label == dst.Label {
+			return 1.0
+		}
+		return 0.0
+	}
+	return ms.DiceSrc(src, dst)
 }
