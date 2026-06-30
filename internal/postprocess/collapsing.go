@@ -11,6 +11,9 @@ func Collapse(
 	ms *engine.Mapping,
 	srcRoot, dstRoot *treesitter.ASTNode,
 ) *actions.EditScript {
+	es = normalizeBareLiteralMoves(es, ms)
+	es = normalizeCommentMoves(es, ms)
+
 	actionsSlice := es.Actions()
 	actionPtrs := make([]*actions.Action, len(actionsSlice))
 	for i := range actionsSlice {
@@ -20,7 +23,9 @@ func Collapse(
 	inserted := make(map[*treesitter.ASTNode]*actions.Action)
 	deleted := make(map[*treesitter.ASTNode]*actions.Action)
 	moved := make(map[*treesitter.ASTNode]*actions.Action)
+	updated := make(map[*treesitter.ASTNode]*actions.Action)
 	suppressed := make(map[*actions.Action]bool)
+	contentMoveSuppressed := make(map[*actions.Action]bool)
 
 	for _, a := range actionPtrs {
 		switch a.Type {
@@ -39,6 +44,11 @@ func Collapse(
 				suppressed[prev] = true
 			}
 			moved[a.Node] = a
+		case actions.Update:
+			if prev, ok := updated[a.Node]; ok {
+				suppressed[prev] = true
+			}
+			updated[a.Node] = a
 		}
 	}
 
@@ -48,15 +58,83 @@ func Collapse(
 			allChildrenInserted := true
 			for _, child := range parent.Children {
 				childAct, ok := inserted[child]
-				if !ok || suppressed[childAct] {
+				if !ok {
 					allChildrenInserted = false
 					break
+				}
+				if suppressed[childAct] {
+					if contentMoveSuppressed[childAct] {
+						hasActiveInsertChildren := false
+						for _, gc := range child.Children {
+							if gcAct, gcIns := inserted[gc]; gcIns && !suppressed[gcAct] {
+								hasActiveInsertChildren = true
+								break
+							}
+						}
+						if hasActiveInsertChildren {
+							allChildrenInserted = false
+							break
+						}
+					} else {
+						allChildrenInserted = false
+						break
+					}
 				}
 			}
 
 			if allChildrenInserted {
 				KillChildren(parent, inserted, suppressed)
 				act.Subtree = true
+			} else {
+				// Check if at least one direct child is a Move or Update action of a non-literal content node.
+				hasMoveOrUpdateChild := false
+				for _, child := range parent.Children {
+					if isBareAliasedLiteral(child) {
+						continue
+					}
+					if _, isInserted := inserted[child]; !isInserted {
+						srcNode := ms.Dst()[child]
+						if srcNode != nil {
+							isMove := false
+							if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
+								isMove = true
+							}
+							isUpdate := false
+							if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
+								isUpdate = true
+							}
+
+							if isMove || isUpdate {
+								if nodeSimilarity(srcNode, child, ms) >= 0.5 {
+									hasMoveOrUpdateChild = true
+									break
+								}
+							}
+						}
+					}
+				}
+
+				if hasMoveOrUpdateChild {
+					suppressed[act] = true
+					contentMoveSuppressed[act] = true
+				}
+			}
+		}
+
+	}
+
+	// Suppress redundant scaffolding Insert actions in a second pass, after
+	// all Subtree:true/KillChildren determinations are finalized. This avoids
+	// a cascade bug where prematurely suppressing a scaffolding child's Insert
+	// prevents its parent from reaching Subtree:true.
+	for _, node := range postOrder(dstRoot) {
+		if node.IsScaffolding() {
+			if sAct, ok := inserted[node]; ok && !suppressed[sAct] && !sAct.Subtree {
+				if node.Parent != nil {
+					if pAct, ok := inserted[node.Parent]; ok && !suppressed[pAct] {
+						suppressed[sAct] = true
+					}
+				}
 			}
 		}
 	}
@@ -147,6 +225,8 @@ func Collapse(
 		}
 	}
 
+	suppressInlineParentRedundancy(actionPtrs, inserted, deleted, suppressed)
+
 	result := actions.NewEditScript()
 	for _, a := range actionPtrs {
 		if !suppressed[a] {
@@ -175,6 +255,52 @@ func KillParent(act *actions.Action, suppressed map[*actions.Action]bool) {
 	suppressed[act] = true
 }
 
+// suppressInlineParentRedundancy kills a parent Insert/Delete when an inline
+// child of the same type already covers the same line. Subtree:true parents
+// are never killed (they cover more than the line). Looks one level up only.
+func suppressInlineParentRedundancy(
+	actionPtrs []*actions.Action,
+	inserted, deleted map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+) {
+	for _, a := range actionPtrs {
+		if suppressed[a] || a.Node == nil {
+			continue
+		}
+		if a.Type != actions.Insert && a.Type != actions.Delete {
+			continue
+		}
+		node := a.Node
+		if node.StartRow != node.EndRow {
+			continue
+		}
+		parent := node.Parent
+		if parent == nil {
+			continue
+		}
+		var parentAct *actions.Action
+		switch a.Type {
+		case actions.Insert:
+			parentAct = inserted[parent]
+		case actions.Delete:
+			parentAct = deleted[parent]
+		}
+		if parentAct == nil || suppressed[parentAct] {
+			continue
+		}
+		if parentAct.Subtree {
+			continue
+		}
+		if parent.StartRow != parent.EndRow {
+			continue
+		}
+		if parent.StartRow != node.StartRow {
+			continue
+		}
+		KillParent(parentAct, suppressed)
+	}
+}
+
 func postOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	if n == nil {
 		return nil
@@ -185,4 +311,31 @@ func postOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	}
 	res = append(res, n)
 	return res
+}
+
+var genuineBareOperatorLiterals = map[string]bool{
+	"comparison_operator_literal": true,
+	"logical_operator_literal":    true,
+	"assignment_operator_literal": true,
+	"arithmetic_operator_literal": true,
+	"bitwise_operator_literal":    true,
+	"unary_operator_literal":     true,
+	"channel_operator_literal":   true,
+	"update_operator_literal":    true,
+	"is_operator":                true,
+	"is_not_operator":            true,
+}
+
+func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
+	return genuineBareOperatorLiterals[node.Type]
+}
+
+func nodeSimilarity(src, dst *treesitter.ASTNode, ms *engine.Mapping) float64 {
+	if len(src.Children) == 0 && len(dst.Children) == 0 {
+		if src.Type == dst.Type && src.Label == dst.Label {
+			return 1.0
+		}
+		return 0.0
+	}
+	return ms.DiceSrc(src, dst)
 }
