@@ -11,6 +11,8 @@ func Collapse(
 	ms *engine.Mapping,
 	srcRoot, dstRoot *treesitter.ASTNode,
 ) *actions.EditScript {
+	es = normalizeBareLiteralMoves(es, ms)
+
 	actionsSlice := es.Actions()
 	actionPtrs := make([]*actions.Action, len(actionsSlice))
 	for i := range actionsSlice {
@@ -22,6 +24,7 @@ func Collapse(
 	moved := make(map[*treesitter.ASTNode]*actions.Action)
 	updated := make(map[*treesitter.ASTNode]*actions.Action)
 	suppressed := make(map[*actions.Action]bool)
+
 
 	for _, a := range actionPtrs {
 		switch a.Type {

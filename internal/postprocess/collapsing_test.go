@@ -167,20 +167,27 @@ func TestRefinedParentSuppression(t *testing.T) {
 		
 		collapsed := Collapse(es, ms, c2Src, parent)
 		
-		// We expect parent action to survive un-suppressed.
-		// All 4 actions should survive.
-		if collapsed.Size() != 4 {
-			t.Errorf("expected 4 actions, got %d", collapsed.Size())
+		// Normalizing the c2 Move action allows the parent assignment to collapse.
+		// Expected surviving actions: parent Insert (Subtree: true) and source child c2Src Delete.
+		if collapsed.Size() != 2 {
+			t.Errorf("expected 2 actions, got %d", collapsed.Size())
 		}
 		
-		foundParent := false
+		foundParentSubtree := false
+		foundSourceDelete := false
 		for _, a := range collapsed.Actions() {
-			if a.Node == parent {
-				foundParent = true
+			if a.Node == parent && a.Type == actions.Insert && a.Subtree {
+				foundParentSubtree = true
+			}
+			if a.Node == c2Src && a.Type == actions.Delete {
+				foundSourceDelete = true
 			}
 		}
-		if !foundParent {
-			t.Error("expected parent assignment Insert action to survive un-suppressed")
+		if !foundParentSubtree {
+			t.Error("expected parent assignment Insert action to survive with Subtree: true")
+		}
+		if !foundSourceDelete {
+			t.Error("expected source child c2Src Delete action to survive")
 		}
 	})
 
