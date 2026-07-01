@@ -53,7 +53,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	}
 
 	var label string
-	if n.NamedChildCount() == 0 || isStringLiteralType(nodeType) {
+	if n.ChildCount() == 0 || isStringLiteralType(nodeType) {
 		label = strings.TrimSpace(string(src[n.StartByte():n.EndByte()]))
 	}
 
@@ -75,7 +75,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	}
 
 	// label only for leave nodes or string literals
-	if n.NamedChildCount() == 0 || isStringLiteralType(nodeType) {
+	if n.ChildCount() == 0 || isStringLiteralType(nodeType) {
 		node.Label = label
 	}
 
