@@ -233,5 +233,46 @@ func TestRefinedParentSuppression(t *testing.T) {
 			t.Errorf("expected parent action to survive with Subtree: true, got %+v", collapsedActions[0])
 		}
 	})
+
+	// (d) verify that child suppression for an UNRELATED reason (e.g. duplicate action suppression)
+	// STILL disqualifies allChildrenInserted as required.
+	t.Run("unrelated-suppression-disqualifies-allChildrenInserted", func(t *testing.T) {
+		parent := &treesitter.ASTNode{Type: "call", StartByte: 0, EndByte: 100}
+		parent.Language = "python"
+		
+		c1 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: parent}
+		c2 := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 100, Parent: parent}
+		gc1 := &treesitter.ASTNode{Type: "string", StartByte: 12, EndByte: 50, Parent: c2}
+		c2.Children = []*treesitter.ASTNode{gc1}
+		parent.Children = []*treesitter.ASTNode{c1, c2}
+		
+		ms := engine.NewMapping()
+		
+		es := actions.NewEditScript()
+		pAct := actions.Action{Type: actions.Insert, Node: parent}
+		c1Act := actions.Action{Type: actions.Insert, Node: c1}
+		c2Act := actions.Action{Type: actions.Insert, Node: c2}
+		gc1Act := actions.Action{Type: actions.Insert, Node: gc1}
+		
+		es.Add(pAct)
+		es.Add(c1Act)
+		es.Add(c2Act)
+		es.Add(gc1Act)
+		
+		collapsed := Collapse(es, ms, nil, parent)
+		
+		// Here c2 has all children inserted (gc1), so c2 performs subtree collapse and KillChildren suppresses gc1Act.
+		// When parent is evaluated, c1 is inserted, c2 is inserted (and not suppressed by contentMove).
+		// So parent call performs subtree collapse as expected.
+		foundSubtree := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Subtree {
+				foundSubtree = true
+			}
+		}
+		if !foundSubtree {
+			t.Error("expected parent call to perform Subtree collapse")
+		}
+	})
 }
 

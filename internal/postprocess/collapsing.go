@@ -24,7 +24,7 @@ func Collapse(
 	moved := make(map[*treesitter.ASTNode]*actions.Action)
 	updated := make(map[*treesitter.ASTNode]*actions.Action)
 	suppressed := make(map[*actions.Action]bool)
-
+	contentMoveSuppressed := make(map[*actions.Action]bool)
 
 	for _, a := range actionPtrs {
 		switch a.Type {
@@ -57,7 +57,7 @@ func Collapse(
 			allChildrenInserted := true
 			for _, child := range parent.Children {
 				childAct, ok := inserted[child]
-				if !ok || suppressed[childAct] {
+				if !ok || (suppressed[childAct] && !contentMoveSuppressed[childAct]) {
 					allChildrenInserted = false
 					break
 				}
@@ -67,49 +67,37 @@ func Collapse(
 				KillChildren(parent, inserted, suppressed)
 				act.Subtree = true
 			} else {
-				// Refined parent-suppression check:
-				// 1. The parent itself must carry real, renderable content as a direct child (via the aliased mechanism).
-				//    So it must have at least one child that is a bare aliased literal.
-				hasAliasedChild := false
+				// Check if at least one direct child is a Move or Update action of a non-literal content node.
+				hasMoveOrUpdateChild := false
 				for _, child := range parent.Children {
 					if isBareAliasedLiteral(child) {
-						hasAliasedChild = true
-						break
+						continue
 					}
-				}
+					if _, isInserted := inserted[child]; !isInserted {
+						srcNode := ms.Dst()[child]
+						if srcNode != nil {
+							isMove := false
+							if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
+								isMove = true
+							}
+							isUpdate := false
+							if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
+								isUpdate = true
+							}
 
-				if hasAliasedChild {
-					// 2. Check if at least one direct child is a Move or Update action of a non-literal content node.
-					hasMoveOrUpdateChild := false
-					for _, child := range parent.Children {
-						if isBareAliasedLiteral(child) {
-							continue
-						}
-						if _, isInserted := inserted[child]; !isInserted {
-							srcNode := ms.Dst()[child]
-							if srcNode != nil {
-								isMove := false
-								if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
-									isMove = true
-								}
-								isUpdate := false
-								if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
-									isUpdate = true
-								}
-
-								if isMove || isUpdate {
-									if nodeSimilarity(srcNode, child, ms) >= 0.5 {
-										hasMoveOrUpdateChild = true
-										break
-									}
+							if isMove || isUpdate {
+								if nodeSimilarity(srcNode, child, ms) >= 0.5 {
+									hasMoveOrUpdateChild = true
+									break
 								}
 							}
 						}
 					}
+				}
 
-					if hasMoveOrUpdateChild {
-						suppressed[act] = true
-					}
+				if hasMoveOrUpdateChild {
+					suppressed[act] = true
+					contentMoveSuppressed[act] = true
 				}
 			}
 		}
