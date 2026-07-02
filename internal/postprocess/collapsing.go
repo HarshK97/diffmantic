@@ -229,18 +229,21 @@ func postOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	return res
 }
 
+var genuineBareOperatorLiterals = map[string]bool{
+	"comparison_operator_literal": true,
+	"logical_operator_literal":    true,
+	"assignment_operator_literal": true,
+	"arithmetic_operator_literal": true,
+	"bitwise_operator_literal":    true,
+	"unary_operator_literal":     true,
+	"channel_operator_literal":   true,
+	"update_operator_literal":    true,
+	"is_operator":                true,
+	"is_not_operator":            true,
+}
+
 func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
-	lang := node.GetLanguage()
-	rules := treesitter.GetRules(lang)
-	if rules == nil {
-		return false
-	}
-	for _, val := range rules.Aliased {
-		if node.Type == val {
-			return true
-		}
-	}
-	return false
+	return genuineBareOperatorLiterals[node.Type]
 }
 
 func nodeSimilarity(src, dst *treesitter.ASTNode, ms *engine.Mapping) float64 {
