@@ -102,3 +102,79 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 	return result
 }
 
+// normalizeCommentMoves converts any Move action on a comment node into a Delete
+// action for the source comment and an Insert action for the destination comment.
+// It also suppresses paired Update actions on comment nodes whose Move was converted.
+func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if ms == nil {
+		return es
+	}
+
+	commentMovedSrc := make(map[*treesitter.ASTNode]bool)
+	commentMovedDst := make(map[*treesitter.ASTNode]bool)
+
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil && a.Node.Type == "comment" {
+			commentMovedSrc[a.Node] = true
+			if ms.Src() != nil {
+				if dstNode := ms.Src()[a.Node]; dstNode != nil {
+					commentMovedDst[dstNode] = true
+				}
+			}
+		}
+	}
+
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		if a.Node == nil {
+			result.Add(a)
+			continue
+		}
+
+		if a.Type == actions.Update && a.Node.Type == "comment" {
+			if commentMovedSrc[a.Node] || commentMovedDst[a.Node] {
+				continue
+			}
+		}
+
+		if a.Type == actions.Move && a.Node.Type == "comment" {
+			var dstNode *treesitter.ASTNode
+			if ms.Src() != nil {
+				dstNode = ms.Src()[a.Node]
+			}
+
+			removeSubtreeMappings(a.Node, ms)
+
+			delAct := actions.Action{
+				Type: actions.Delete,
+				Node: a.Node,
+			}
+			result.Add(delAct)
+
+			if dstNode != nil {
+				pos := -1
+				if dstNode.Parent != nil {
+					for idx, child := range dstNode.Parent.Children {
+						if child == dstNode {
+							pos = idx
+							break
+						}
+					}
+				}
+				insAct := actions.Action{
+					Type:     actions.Insert,
+					Node:     dstNode,
+					Parent:   dstNode.Parent,
+					Position: pos,
+				}
+				result.Add(insAct)
+			}
+			continue
+		}
+
+		result.Add(a)
+	}
+	return result
+}
+
+

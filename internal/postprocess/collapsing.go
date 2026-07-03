@@ -12,6 +12,7 @@ func Collapse(
 	srcRoot, dstRoot *treesitter.ASTNode,
 ) *actions.EditScript {
 	es = normalizeBareLiteralMoves(es, ms)
+	es = normalizeCommentMoves(es, ms)
 
 	actionsSlice := es.Actions()
 	actionPtrs := make([]*actions.Action, len(actionsSlice))
