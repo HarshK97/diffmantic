@@ -37,7 +37,9 @@ type Action struct {
 	Position int
 	Value    string
 	Subtree  bool
+	GroupID  string
 }
+
 
 func (a Action) String() string {
 	switch a.Type {

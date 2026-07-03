@@ -34,6 +34,7 @@ type Action struct {
 	DestNode      *NodeRef `json:"dest_node,omitempty"`
 	DestStartByte *uint32  `json:"dest_start_byte,omitempty"`
 	DestEndByte   *uint32  `json:"dest_end_byte,omitempty"`
+	GroupID       string   `json:"group_id,omitempty"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -223,6 +224,10 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			}
 		}
 
+		if a.GroupID != "" {
+			ja.GroupID = a.GroupID
+		}
+
 		env.Actions = append(env.Actions, ja)
 	}
 
@@ -298,6 +303,10 @@ func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.Edit
 		// Resolve Subtree
 		if ja.Subtree != nil {
 			a.Subtree = *ja.Subtree
+		}
+
+		if ja.GroupID != "" {
+			a.GroupID = ja.GroupID
 		}
 
 		es.Add(a)
