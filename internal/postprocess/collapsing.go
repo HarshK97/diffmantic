@@ -58,9 +58,27 @@ func Collapse(
 			allChildrenInserted := true
 			for _, child := range parent.Children {
 				childAct, ok := inserted[child]
-				if !ok || (suppressed[childAct] && !contentMoveSuppressed[childAct]) {
+				if !ok {
 					allChildrenInserted = false
 					break
+				}
+				if suppressed[childAct] {
+					if contentMoveSuppressed[childAct] {
+						hasActiveInsertChildren := false
+						for _, gc := range child.Children {
+							if gcAct, gcIns := inserted[gc]; gcIns && !suppressed[gcAct] {
+								hasActiveInsertChildren = true
+								break
+							}
+						}
+						if hasActiveInsertChildren {
+							allChildrenInserted = false
+							break
+						}
+					} else {
+						allChildrenInserted = false
+						break
+					}
 				}
 			}
 

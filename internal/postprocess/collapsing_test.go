@@ -276,3 +276,96 @@ func TestRefinedParentSuppression(t *testing.T) {
 	})
 }
 
+func TestContentMoveSuppressedChildResolution(t *testing.T) {
+	// 1. Structural pattern with active sibling inserts: P (parenthesized_expression) -> A (boolean_operator) -> [B (Move), C1 (Insert), C2 (Insert)]
+	// Must NOT grant the pass to P because A has active Insert children C1, C2.
+	t.Run("multi-child-wrapper-denies-pass", func(t *testing.T) {
+		p := &treesitter.ASTNode{Type: "parenthesized_expression", StartByte: 0, EndByte: 200}
+		p.Language = "python"
+
+		a := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 10, EndByte: 190, Parent: p}
+		p.Children = []*treesitter.ASTNode{a}
+
+		bSrc := &treesitter.ASTNode{Type: "comparison_operator", StartByte: 1000, EndByte: 1020}
+		bSrc.Language = "python"
+		bDst := &treesitter.ASTNode{Type: "comparison_operator", StartByte: 10, EndByte: 50, Parent: a}
+
+		c1 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 51, EndByte: 55, Parent: a, Label: "or"}
+		c2 := &treesitter.ASTNode{Type: "comparison_operator", StartByte: 56, EndByte: 190, Parent: a}
+
+		a.Children = []*treesitter.ASTNode{bDst, c1, c2}
+
+		ms := engine.NewMapping()
+		ms.Add(bSrc, bDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: p})
+		es.Add(actions.Action{Type: actions.Insert, Node: a})
+		es.Add(actions.Action{Type: actions.Move, Node: bSrc, Parent: a, Position: 0})
+		es.Add(actions.Action{Type: actions.Insert, Node: c1})
+		es.Add(actions.Action{Type: actions.Insert, Node: c2})
+
+		collapsed := Collapse(es, ms, bSrc, p)
+
+		// p must NOT claim Subtree = true, and c1, c2 must survive as active insert actions!
+		pSubtree := false
+		c1Found := false
+		c2Found := false
+		for _, act := range collapsed.Actions() {
+			if act.Node == p && act.Subtree {
+				pSubtree = true
+			}
+			if act.Node == c1 {
+				c1Found = true
+			}
+			if act.Node == c2 {
+				c2Found = true
+			}
+		}
+		if pSubtree {
+			t.Errorf("expected parenthesized_expression NOT to claim Subtree: true")
+		}
+		if !c1Found || !c2Found {
+			t.Errorf("expected c1 ('or') and c2 ('comparison_operator') to survive, got c1Found=%v, c2Found=%v", c1Found, c2Found)
+		}
+	})
+
+	// 2. Pure structural wrapper pattern: P (generic_type) -> A (type_parameter) -> [B (Move)]
+	// Must STILL GRANT the pass to P because A has NO active Insert children.
+	t.Run("single-child-wrapper-grants-pass", func(t *testing.T) {
+		p := &treesitter.ASTNode{Type: "generic_type", StartByte: 0, EndByte: 100}
+		p.Language = "python"
+
+		c0 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: p, Label: "List"}
+		a := &treesitter.ASTNode{Type: "type_parameter", StartByte: 11, EndByte: 100, Parent: p}
+		p.Children = []*treesitter.ASTNode{c0, a}
+
+		bSrc := &treesitter.ASTNode{Type: "type", StartByte: 500, EndByte: 520}
+		bSrc.Language = "python"
+		bDst := &treesitter.ASTNode{Type: "type", StartByte: 12, EndByte: 99, Parent: a}
+		a.Children = []*treesitter.ASTNode{bDst}
+
+		ms := engine.NewMapping()
+		ms.Add(bSrc, bDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: p})
+		es.Add(actions.Action{Type: actions.Insert, Node: c0})
+		es.Add(actions.Action{Type: actions.Insert, Node: a})
+		es.Add(actions.Action{Type: actions.Move, Node: bSrc, Parent: a, Position: 0})
+
+		collapsed := Collapse(es, ms, bSrc, p)
+
+		pSubtree := false
+		for _, act := range collapsed.Actions() {
+			if act.Node == p && act.Subtree {
+				pSubtree = true
+			}
+		}
+		if !pSubtree {
+			t.Errorf("expected generic_type to grant pass and claim Subtree: true")
+		}
+	})
+}
+
+
