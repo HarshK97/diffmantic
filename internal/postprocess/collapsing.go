@@ -120,6 +120,23 @@ func Collapse(
 				}
 			}
 		}
+
+	}
+
+	// Suppress redundant scaffolding Insert actions in a second pass, after
+	// all Subtree:true/KillChildren determinations are finalized. This avoids
+	// a cascade bug where prematurely suppressing a scaffolding child's Insert
+	// prevents its parent from reaching Subtree:true.
+	for _, node := range postOrder(dstRoot) {
+		if node.IsScaffolding() {
+			if sAct, ok := inserted[node]; ok && !suppressed[sAct] && !sAct.Subtree {
+				if node.Parent != nil {
+					if pAct, ok := inserted[node.Parent]; ok && !suppressed[pAct] {
+						suppressed[sAct] = true
+					}
+				}
+			}
+		}
 	}
 
 	// Collapse/Clean Deletes bottom-up on the source tree
