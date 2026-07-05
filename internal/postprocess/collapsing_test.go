@@ -593,4 +593,234 @@ func TestContentMoveSuppressedChildResolution(t *testing.T) {
 	})
 }
 
+// TestInlineParentSuppression covers suppressInlineParentRedundancy: when a
+// parent Insert/Delete and a child Insert/Delete both live on the same source
+// line, the parent action is redundant and must be suppressed. The child
+// action (more specific) survives.
+func TestInlineParentSuppression(t *testing.T) {
+	// (a) go_4_error_handling L26 delete shape:
+	// binary_expression (Delete, inline) with children identifier (Delete,
+	// inline) and comparison_operator_literal (Delete, inline). A third child
+	// is a Move, so allChildrenDeleted fails and the parent Delete survives
+	// the existing collapse pass. The inline-redundancy pass must kill the
+	// parent binary_expression Delete; the two leaf Deletes survive.
+	t.Run("binary_expression-delete-kills-parent", func(t *testing.T) {
+		ident := &treesitter.ASTNode{Type: "identifier", Label: "err", StartByte: 608, EndByte: 611, StartRow: 25, EndRow: 25}
+		op := &treesitter.ASTNode{Type: "comparison_operator_literal", Label: "==", StartByte: 612, EndByte: 614, StartRow: 25, EndRow: 25}
+		// third child is the source of a Move (not deleted), so allChildrenDeleted fails
+		selSrc := &treesitter.ASTNode{Type: "selector_expression", StartByte: 615, EndByte: 628, StartRow: 25, EndRow: 25}
+		selSrc.Language = "go"
+		selDst := &treesitter.ASTNode{Type: "selector_expression", StartByte: 634, EndByte: 647, StartRow: 25, EndRow: 25}
+		binExpr := &treesitter.ASTNode{
+			Type:      "binary_expression",
+			StartByte: 608, EndByte: 628,
+			StartRow:  25, EndRow: 25,
+			Children:  []*treesitter.ASTNode{ident, op, selSrc},
+		}
+		binExpr.Language = "go"
+		ident.Parent = binExpr
+		op.Parent = binExpr
+		selSrc.Parent = binExpr
+
+		ms := engine.NewMapping()
+		ms.Add(selSrc, selDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Delete, Node: ident})
+		es.Add(actions.Action{Type: actions.Delete, Node: op})
+		es.Add(actions.Action{Type: actions.Delete, Node: binExpr})
+		es.Add(actions.Action{Type: actions.Move, Node: selSrc, Parent: selDst, Position: 0})
+
+		collapsed := Collapse(es, ms, binExpr, selDst)
+
+		binSurvives := false
+		identSurvives := false
+		opSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == binExpr && a.Type == actions.Delete {
+				binSurvives = true
+			}
+			if a.Node == ident && a.Type == actions.Delete {
+				identSurvives = true
+			}
+			if a.Node == op && a.Type == actions.Delete {
+				opSurvives = true
+			}
+			if a.Node == selSrc && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if binSurvives {
+			t.Error("expected inline parent binary_expression Delete to be suppressed")
+		}
+		if !identSurvives || !opSurvives {
+			t.Errorf("expected child identifier and operator Deletes to survive; ident=%v op=%v", identSurvives, opSurvives)
+		}
+		if !moveSurvives {
+			t.Error("expected unrelated Move to survive")
+		}
+	})
+
+	// (b) go_4_error_handling L26 insert shape:
+	// call_expression (Insert, inline, no subtree) with direct children
+	// selector_expression (Insert, inline, subtree:true — the "errors.Is"
+	// function part) and argument_list (scaffolding). Inside argument_list
+	// there is an inserted identifier "err" AND a Move destination
+	// selector_expression (for "sql.ErrNoRows"). The Move grandchild makes
+	// allChildrenInserted fail for argument_list, and because it is a
+	// grandchild (not a direct child of call_expression) the existing
+	// hasMoveOrUpdateChild check does not fire on call_expression either —
+	// so call_expression survives as a non-subtree Insert. The inline pass
+	// must then kill call_expression because its direct child sel is an
+	// inline Insert on the same line.
+	t.Run("call_expression-insert-kills-parent", func(t *testing.T) {
+		sel := &treesitter.ASTNode{Type: "selector_expression", StartByte: 619, EndByte: 628, StartRow: 25, EndRow: 25}
+		argList := &treesitter.ASTNode{Type: "argument_list", StartByte: 628, EndByte: 648, StartRow: 25, EndRow: 25}
+		call := &treesitter.ASTNode{
+			Type:      "call_expression",
+			StartByte: 619, EndByte: 648,
+			StartRow:  25, EndRow: 25,
+			Children:  []*treesitter.ASTNode{sel, argList},
+		}
+		call.Language = "go"
+		sel.Parent = call
+		argList.Parent = call
+
+		// Inside argument_list: an inserted identifier AND a Move destination.
+		// The Move destination is what prevents the existing collapse pass from
+		// collapsing call_expression to subtree:true.
+		argIdent := &treesitter.ASTNode{Type: "identifier", Label: "err", StartByte: 629, EndByte: 632, StartRow: 25, EndRow: 25, Parent: argList}
+		movedSelDst := &treesitter.ASTNode{Type: "selector_expression", StartByte: 634, EndByte: 647, StartRow: 25, EndRow: 25, Parent: argList}
+		argList.Children = []*treesitter.ASTNode{argIdent, movedSelDst}
+
+		// Source-side node for the Move (sql.ErrNoRows selector_expression).
+		movedSelSrc := &treesitter.ASTNode{Type: "selector_expression", StartByte: 615, EndByte: 628, StartRow: 25, EndRow: 25}
+		movedSelSrc.Language = "go"
+
+		ms := engine.NewMapping()
+		ms.Add(movedSelSrc, movedSelDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: call})
+		es.Add(actions.Action{Type: actions.Insert, Node: sel, Subtree: true})
+		es.Add(actions.Action{Type: actions.Insert, Node: argList})
+		es.Add(actions.Action{Type: actions.Insert, Node: argIdent})
+		es.Add(actions.Action{Type: actions.Move, Node: movedSelSrc, Parent: argList, Position: 1})
+
+		collapsed := Collapse(es, ms, movedSelSrc, call)
+
+		callSurvives := false
+		selSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == call && a.Type == actions.Insert {
+				callSurvives = true
+			}
+			if a.Node == sel && a.Type == actions.Insert {
+				selSurvives = true
+			}
+		}
+		if callSurvives {
+			t.Error("expected inline parent call_expression Insert to be suppressed")
+		}
+		if !selSurvives {
+			t.Error("expected child selector_expression Insert (subtree:true) to survive")
+		}
+	})
+
+	// (c) Guard: parent with Subtree:true must NEVER be killed, even if it is
+	// inline and a child action exists on the same line.
+	t.Run("subtree-true-parent-not-killed", func(t *testing.T) {
+		child := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 5, EndByte: 6, StartRow: 10, EndRow: 10}
+		parent := &treesitter.ASTNode{
+			Type:      "call",
+			StartByte: 0, EndByte: 10,
+			StartRow:  10, EndRow: 10,
+			Children:  []*treesitter.ASTNode{child},
+		}
+		parent.Language = "python"
+		child.Parent = parent
+
+		ms := engine.NewMapping()
+		es := actions.NewEditScript()
+		// Manually mark parent as Subtree:true to test the guard directly.
+		es.Add(actions.Action{Type: actions.Insert, Node: parent, Subtree: true})
+		es.Add(actions.Action{Type: actions.Insert, Node: child})
+
+		collapsed := Collapse(es, ms, nil, parent)
+
+		parentSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Type == actions.Insert {
+				parentSurvives = true
+			}
+		}
+		if !parentSurvives {
+			t.Error("expected Subtree:true parent Insert to survive (never killed by inline pass)")
+		}
+	})
+
+	// (d) Guard: multi-line parent with an inline child on one of its lines
+	// must NOT be killed.
+	t.Run("multiline-parent-not-killed", func(t *testing.T) {
+		child := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 5, EndByte: 6, StartRow: 10, EndRow: 10}
+		parent := &treesitter.ASTNode{
+			Type:      "function_definition",
+			StartByte: 0, EndByte: 200,
+			StartRow:  9, EndRow: 15, // spans lines 9-15
+			Children:  []*treesitter.ASTNode{child},
+		}
+		parent.Language = "python"
+		child.Parent = parent
+
+		ms := engine.NewMapping()
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: parent})
+		es.Add(actions.Action{Type: actions.Insert, Node: child})
+
+		collapsed := Collapse(es, ms, nil, parent)
+
+		parentSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Type == actions.Insert {
+				parentSurvives = true
+			}
+		}
+		if !parentSurvives {
+			t.Error("expected multi-line parent Insert to survive (inline pass must not kill it)")
+		}
+	})
+
+	// (e) Guard: inline parent on a DIFFERENT line than the child must NOT be
+	// killed.
+	t.Run("different-line-parent-not-killed", func(t *testing.T) {
+		child := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 50, EndByte: 51, StartRow: 11, EndRow: 11}
+		parent := &treesitter.ASTNode{
+			Type:      "call",
+			StartByte: 0, EndByte: 10,
+			StartRow:  10, EndRow: 10, // inline, but on a different line
+			Children:  []*treesitter.ASTNode{child},
+		}
+		parent.Language = "python"
+		child.Parent = parent
+
+		ms := engine.NewMapping()
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: parent})
+		es.Add(actions.Action{Type: actions.Insert, Node: child})
+
+		collapsed := Collapse(es, ms, nil, parent)
+
+		parentSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Type == actions.Insert {
+				parentSurvives = true
+			}
+		}
+		if !parentSurvives {
+			t.Error("expected parent Insert on a different line to survive")
+		}
+	})
+}
+
 

@@ -225,6 +225,8 @@ func Collapse(
 		}
 	}
 
+	suppressInlineParentRedundancy(actionPtrs, inserted, deleted, suppressed)
+
 	result := actions.NewEditScript()
 	for _, a := range actionPtrs {
 		if !suppressed[a] {
@@ -251,6 +253,52 @@ func KillChildren(
 
 func KillParent(act *actions.Action, suppressed map[*actions.Action]bool) {
 	suppressed[act] = true
+}
+
+// suppressInlineParentRedundancy kills a parent Insert/Delete when an inline
+// child of the same type already covers the same line. Subtree:true parents
+// are never killed (they cover more than the line). Looks one level up only.
+func suppressInlineParentRedundancy(
+	actionPtrs []*actions.Action,
+	inserted, deleted map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+) {
+	for _, a := range actionPtrs {
+		if suppressed[a] || a.Node == nil {
+			continue
+		}
+		if a.Type != actions.Insert && a.Type != actions.Delete {
+			continue
+		}
+		node := a.Node
+		if node.StartRow != node.EndRow {
+			continue
+		}
+		parent := node.Parent
+		if parent == nil {
+			continue
+		}
+		var parentAct *actions.Action
+		switch a.Type {
+		case actions.Insert:
+			parentAct = inserted[parent]
+		case actions.Delete:
+			parentAct = deleted[parent]
+		}
+		if parentAct == nil || suppressed[parentAct] {
+			continue
+		}
+		if parentAct.Subtree {
+			continue
+		}
+		if parent.StartRow != parent.EndRow {
+			continue
+		}
+		if parent.StartRow != node.StartRow {
+			continue
+		}
+		KillParent(parentAct, suppressed)
+	}
 }
 
 func postOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
