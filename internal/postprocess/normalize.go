@@ -6,16 +6,16 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+const commentSimilarityThreshold = 0.7
+
 // normalizeBareLiteralMoves finds all Move actions in the edit script where the
 // moved node is a bare aliased literal (such as "=", "and", "is not", "+") and
 // converts them into a Delete action for the source node and an Insert action for
 // the destination node.
 //
-// Refinement: We ONLY convert the Move if the match is spurious (i.e., the node
-// was matched across unrelated parent contexts). If the node and its parent
-// both moved coherently to the same destination context (a.Parent == ms.Src()[a.Node.Parent]),
-// we preserve the Move so that parent Move-collapsing continues to work cleanly
-// and avoids fragmenting coherent subtrees.
+// Only convert when the match is spurious — the node was matched across unrelated
+// parent contexts. If the node and its parent both moved coherently (a.Parent ==
+// ms.Src()[a.Node.Parent]), keep the Move so parent Move-collapsing still works.
 func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
 	if isBareAliasedLiteral(node) {
 		return true
@@ -102,24 +102,76 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 	return result
 }
 
-// normalizeCommentMoves converts any Move action on a comment node into a Delete
-// action for the source comment and an Insert action for the destination comment.
-// It also suppresses paired Update actions on comment nodes whose Move was converted.
+// commentTextSimilarity returns a 0..1 Levenshtein ratio for two strings.
+func commentTextSimilarity(s1, s2 string) float64 {
+	if s1 == s2 {
+		return 1.0
+	}
+	if s1 == "" || s2 == "" {
+		return 0.0
+	}
+
+	r1 := []rune(s1)
+	r2 := []rune(s2)
+
+	if len(r1) > len(r2) {
+		r1, r2 = r2, r1
+	}
+
+	m := len(r1)
+	n := len(r2)
+
+	prev := make([]int, m+1)
+	for j := 0; j <= m; j++ {
+		prev[j] = j
+	}
+
+	for i := 1; i <= n; i++ {
+		curr := make([]int, m+1)
+		curr[0] = i
+		for j := 1; j <= m; j++ {
+			cost := 1
+			if r1[j-1] == r2[i-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev = curr
+	}
+
+	distance := prev[m]
+	maxLen := n
+	return 1.0 - float64(distance)/float64(maxLen)
+}
+
+// normalizeCommentMoves turns comment Moves into Delete+Insert, but only when
+// the text differs enough (below commentSimilarityThreshold). Similar comments
+// keep their Move and any paired Update.
 func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
 	if ms == nil {
 		return es
 	}
 
-	commentMovedSrc := make(map[*treesitter.ASTNode]bool)
-	commentMovedDst := make(map[*treesitter.ASTNode]bool)
+	commentMovedFuzzy := make(map[*treesitter.ASTNode]bool)
+	commentMovedConverted := make(map[*treesitter.ASTNode]bool)
+	commentMovedConvertedDst := make(map[*treesitter.ASTNode]bool)
 
 	for _, a := range es.Actions() {
 		if a.Type == actions.Move && a.Node != nil && a.Node.Type == "comment" {
-			commentMovedSrc[a.Node] = true
 			if ms.Src() != nil {
 				if dstNode := ms.Src()[a.Node]; dstNode != nil {
-					commentMovedDst[dstNode] = true
+					sim := commentTextSimilarity(a.Node.Label, dstNode.Label)
+					if sim >= commentSimilarityThreshold {
+						commentMovedFuzzy[a.Node] = true
+					} else {
+						commentMovedConverted[a.Node] = true
+						commentMovedConvertedDst[dstNode] = true
+					}
+				} else {
+					commentMovedConverted[a.Node] = true
 				}
+			} else {
+				commentMovedConverted[a.Node] = true
 			}
 		}
 	}
@@ -132,44 +184,51 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 		}
 
 		if a.Type == actions.Update && a.Node.Type == "comment" {
-			if commentMovedSrc[a.Node] || commentMovedDst[a.Node] {
+			if commentMovedConverted[a.Node] || commentMovedConvertedDst[a.Node] {
 				continue
 			}
 		}
 
 		if a.Type == actions.Move && a.Node.Type == "comment" {
-			var dstNode *treesitter.ASTNode
-			if ms.Src() != nil {
-				dstNode = ms.Src()[a.Node]
+			if commentMovedFuzzy[a.Node] {
+				result.Add(a)
+				continue
 			}
 
-			removeSubtreeMappings(a.Node, ms)
+			if commentMovedConverted[a.Node] {
+				var dstNode *treesitter.ASTNode
+				if ms.Src() != nil {
+					dstNode = ms.Src()[a.Node]
+				}
 
-			delAct := actions.Action{
-				Type: actions.Delete,
-				Node: a.Node,
-			}
-			result.Add(delAct)
+				removeSubtreeMappings(a.Node, ms)
 
-			if dstNode != nil {
-				pos := -1
-				if dstNode.Parent != nil {
-					for idx, child := range dstNode.Parent.Children {
-						if child == dstNode {
-							pos = idx
-							break
+				delAct := actions.Action{
+					Type: actions.Delete,
+					Node: a.Node,
+				}
+				result.Add(delAct)
+
+				if dstNode != nil {
+					pos := -1
+					if dstNode.Parent != nil {
+						for idx, child := range dstNode.Parent.Children {
+							if child == dstNode {
+								pos = idx
+								break
+							}
 						}
 					}
+					insAct := actions.Action{
+						Type:     actions.Insert,
+						Node:     dstNode,
+						Parent:   dstNode.Parent,
+						Position: pos,
+					}
+					result.Add(insAct)
 				}
-				insAct := actions.Action{
-					Type:     actions.Insert,
-					Node:     dstNode,
-					Parent:   dstNode.Parent,
-					Position: pos,
-				}
-				result.Add(insAct)
+				continue
 			}
-			continue
 		}
 
 		result.Add(a)
