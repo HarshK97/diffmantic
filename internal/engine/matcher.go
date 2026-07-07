@@ -61,6 +61,11 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 
+			// No matched parent on destination leaf -> it belongs to an inserted subtree.
+			if t2.Parent != nil && !m.HasDst(t2.Parent) {
+				continue
+			}
+
 			d := 0.0
 			if t1.Parent != nil && t2.Parent != nil {
 				d = Dice(t1.Parent, t2.Parent, m.Src())

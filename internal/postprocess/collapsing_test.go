@@ -56,24 +56,20 @@ func TestCollapseDivergence(t *testing.T) {
 	// Run Collapse
 	collapsed := Collapse(es, ms, pSrc, qDst)
 
-	// Since we set C's Parent to qDst, it matches dstParent (qDst) in the parent-equality check.
-	// Therefore, Collapse thinks they moved to the same parent and collapses them!
-	// C's Move action is suppressed, and P's Move action is marked as Subtree: true.
+	// Since C's mapped destination dDst.Parent (rDst) != dstParent (qDst),
+	// parent-equality should fail. Thus, P's Move is suppressed, and C's Move survives.
 	if collapsed.Size() != 1 {
 		t.Fatalf("expected collapsed edit script to have size 1, got %d", collapsed.Size())
 	}
 
 	collapsedActions := collapsed.Actions()
-	pAction := collapsedActions[0]
-	if pAction.Node != pSrc {
-		t.Errorf("expected action node to be pSrc, got %v", pAction.Node)
+	survivingAction := collapsedActions[0]
+	if survivingAction.Node != cSrc {
+		t.Errorf("expected surviving action node to be cSrc, got %v", survivingAction.Node)
 	}
-	if !pAction.Subtree {
-		t.Errorf("expected action to be a subtree move, but Subtree is false")
+	if survivingAction.Subtree {
+		t.Errorf("expected surviving action to not be a subtree move, but Subtree is true")
 	}
-
-	// This demonstrates the divergence: the mapping was depth-inconsistent (dDst.Parent != qDst),
-	// but the check passed and collapsed them anyway because the edit script had C's Parent set to Q.
 }
 
 func TestRefinedParentSuppression(t *testing.T) {

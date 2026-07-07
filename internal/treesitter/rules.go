@@ -52,6 +52,7 @@ func GetRules(lang string) *Rules {
 }
 
 func SetRules(lang string, r Rules) {
+	_ = LoadRules()
 	if rulesCache == nil {
 		rulesCache = make(map[string]Rules)
 	}

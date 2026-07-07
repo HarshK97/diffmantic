@@ -69,8 +69,11 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 
 	result := actions.NewEditScript()
 	for i, act := range actionsSlice {
-		if gid, ok := groupIDMap[i]; ok {
-			act.GroupID = gid
+		if act.Type == actions.Move {
+			act.GroupID = ""
+			if gid, ok := groupIDMap[i]; ok {
+				act.GroupID = gid
+			}
 		}
 		result.Add(act)
 	}

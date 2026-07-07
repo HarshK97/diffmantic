@@ -6,6 +6,13 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+func actionCoversSubtree(act *actions.Action) bool {
+	if act == nil || act.Node == nil {
+		return false
+	}
+	return len(act.Node.Children) == 0 || act.Subtree
+}
+
 func Collapse(
 	es *actions.EditScript,
 	ms *engine.Mapping,
@@ -172,7 +179,12 @@ func Collapse(
 						allChildrenMovedToSameParent = false
 						break
 					}
-					if childAct.Parent != dstParent {
+					childDst := ms.Src()[childSrc]
+					if childDst == nil || childDst.Parent != dstParent || childAct.Parent != dstParent {
+						allChildrenMovedToSameParent = false
+						break
+					}
+					if !actionCoversSubtree(childAct) {
 						allChildrenMovedToSameParent = false
 						break
 					}
@@ -196,10 +208,18 @@ func Collapse(
 				}
 
 				contiguous := true
-				for i := 0; i < len(destPositions)-1; i++ {
-					if destPositions[i+1] != destPositions[i]+1 {
+				for _, pos := range destPositions {
+					if pos < 0 {
 						contiguous = false
 						break
+					}
+				}
+				if contiguous {
+					for i := 0; i < len(destPositions)-1; i++ {
+						if destPositions[i+1] != destPositions[i]+1 {
+							contiguous = false
+							break
+						}
 					}
 				}
 
