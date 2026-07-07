@@ -43,9 +43,11 @@ func TestActionNames(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := tt.aType.String(); got != tt.want {
-			t.Errorf("ActionType.String() = %q, want %q", got, tt.want)
-		}
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.aType.String(); got != tt.want {
+				t.Errorf("ActionType.String() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
