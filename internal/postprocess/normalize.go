@@ -43,8 +43,37 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 	if ms == nil {
 		return es
 	}
+
+	convertedSrc := make(map[*treesitter.ASTNode]bool)
+	convertedDst := make(map[*treesitter.ASTNode]bool)
+
+	// First pass: identify Move actions that will become Delete+Insert so paired
+	// Update actions can be suppressed regardless of action ordering.
+	for _, a := range es.Actions() {
+		if a.Type != actions.Move || a.Node == nil || !isSpuriousMoveCandidate(a.Node) || a.Node.Type == "assignment" {
+			continue
+		}
+		if ms.Src() == nil || ms.Src()[a.Node] == nil {
+			continue
+		}
+		dstNode := ms.Src()[a.Node]
+		srcParent := a.Node.Parent
+		var dstParentMapped *treesitter.ASTNode
+		if srcParent != nil {
+			dstParentMapped = ms.Src()[srcParent]
+		}
+		if dstParentMapped == nil || a.Parent != dstParentMapped {
+			convertedSrc[a.Node] = true
+			convertedDst[dstNode] = true
+		}
+	}
+
 	result := actions.NewEditScript()
 	for _, a := range es.Actions() {
+		if a.Node != nil && a.Type == actions.Update && (convertedSrc[a.Node] || convertedDst[a.Node]) {
+			continue
+		}
+
 		if a.Type == actions.Move {
 			if a.Node == nil || ms.Src() == nil || ms.Src()[a.Node] == nil {
 				// The node is unmapped (e.g. because its ancestor was normalized and broke the mapping),
