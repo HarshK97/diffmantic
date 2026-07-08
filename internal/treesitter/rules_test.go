@@ -4,55 +4,83 @@ import (
 	"testing"
 )
 
-func TestGoRulesAliased(t *testing.T) {
-	rules := GetRules("go")
-	if rules == nil {
-		t.Fatal("expected rules for go to be loaded")
+func TestRulesAliased(t *testing.T) {
+	tests := []struct {
+		lang      string
+		operators []string
+	}{
+		{
+			lang: "go",
+			operators: []string{
+				"+", "-", "*", "/", "%",
+				"==", "!=", "<", "<=", ">", ">=",
+				"&&", "||",
+				"=", ":=", "+=", "-=", "*=", "/=", "%=",
+				"&", "|", "^", "<<", ">>", "&^",
+				"!", "<-", "++", "--",
+			},
+		},
+		{
+			lang: "python",
+			operators: []string{
+				"==", "<=", ">=", "!=", "<", ">", "<>",
+				"and", "or",
+				"=", "-=", "+=", "*=", "/=", "//=", "%=", "**=",
+				"is", "is not",
+				"+", "-", "*", "/", "//", "%", "**",
+				"&", "|", "^", "<<", ">>",
+				"not",
+			},
+		},
+		{
+			lang: "javascript",
+			operators: []string{
+				"+", "-", "*", "/", "%", "**",
+				"==", "!=", "===", "!==", "<", "<=", ">", ">=",
+				"&&", "||", "??",
+				"=", "+=", "-=", "*=", "/=", "%=", "**=",
+				"&&=", "||=", "??=",
+				"&", "|", "^", "<<", ">>", ">>>",
+				"!", "~", "++", "--",
+				"=>",
+			},
+		},
+		{
+			lang: "typescript",
+			operators: []string{
+				"+", "-", "*", "/", "%", "**",
+				"==", "!=", "===", "!==", "<", "<=", ">", ">=",
+				"&&", "||", "??",
+				"=", "+=", "-=", "*=", "/=", "%=", "**=",
+				"&&=", "||=", "??=",
+				"&", "|", "^", "<<", ">>", ">>>",
+				"!", "~", "++", "--",
+				"=>",
+				"type", "interface", "namespace", "enum", "abstract", "readonly",
+			},
+		},
 	}
 
-	expectedOperators := []string{
-		"+", "-", "*", "/", "%",
-		"==", "!=", "<", "<=", ">", ">=",
-		"&&", "||",
-		"=", ":=", "+=", "-=", "*=", "/=", "%=",
-		"&", "|", "^", "<<", ">>", "&^",
-		"!", "<-", "++", "--",
-	}
+	for _, tt := range tests {
+		t.Run(tt.lang, func(t *testing.T) {
+			rules := GetRules(tt.lang)
+			if rules == nil {
+				t.Fatalf("expected rules for %s to be loaded", tt.lang)
+			}
 
-	for _, op := range expectedOperators {
-		alias, ok := rules.Aliased[op]
-		if !ok {
-			t.Errorf("expected operator %q to be aliased, but it was not", op)
-		}
-		if alias == "" {
-			t.Errorf("expected non-empty alias for operator %q", op)
-		}
-	}
-}
+			for _, op := range tt.operators {
+				alias, ok := rules.Aliased[op]
+				if !ok {
+					t.Errorf("expected operator %q to be aliased, but it was not", op)
+				}
+				if alias == "" {
+					t.Errorf("expected non-empty alias for operator %q", op)
+				}
+			}
 
-func TestPythonRulesAliased(t *testing.T) {
-	rules := GetRules("python")
-	if rules == nil {
-		t.Fatal("expected rules for python to be loaded")
-	}
-
-	expectedOperators := []string{
-		"==", "<=", ">=", "!=", "<", ">", "<>",
-		"and", "or",
-		"=", "-=", "+=", "*=", "/=", "//=", "%=", "**=",
-		"is", "is not",
-		"+", "-", "*", "/", "//", "%", "**",
-		"&", "|", "^", "<<", ">>",
-		"not",
-	}
-
-	for _, op := range expectedOperators {
-		alias, ok := rules.Aliased[op]
-		if !ok {
-			t.Errorf("expected operator %q to be aliased, but it was not", op)
-		}
-		if alias == "" {
-			t.Errorf("expected non-empty alias for operator %q", op)
-		}
+			if len(rules.Scaffolding) == 0 {
+				t.Errorf("expected non-empty scaffolding list for %s", tt.lang)
+			}
+		})
 	}
 }

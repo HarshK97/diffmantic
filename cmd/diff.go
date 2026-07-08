@@ -29,6 +29,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/tui"
@@ -166,6 +167,7 @@ Examples:
 
 		result := engine.Match(astA, astB)
 		es := actions.GenerateEditScript(astA, astB, result.Mappings)
+		es = postprocess.Run(es, result.Mappings, astA, astB)
 
 		switch format {
 		case "json":

@@ -30,8 +30,11 @@ type Action struct {
 	OldPosition *int     `json:"old_position,omitempty"`
 	OldValue    string   `json:"old_value,omitempty"`
 	NewValue    string   `json:"new_value,omitempty"`
-	Subtree     *bool    `json:"subtree,omitempty"`
-	DestNode    *NodeRef `json:"dest_node,omitempty"`
+	Subtree       *bool    `json:"subtree,omitempty"`
+	DestNode      *NodeRef `json:"dest_node,omitempty"`
+	DestStartByte *uint32  `json:"dest_start_byte,omitempty"`
+	DestEndByte   *uint32  `json:"dest_end_byte,omitempty"`
+	GroupID       string   `json:"group_id,omitempty"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -138,14 +141,39 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			}
 
 			// Resolve parent in the destination (after) tree.
-			// a.Parent in memory could be in the before tree (if it was an existing parent)
-			// or already in the after tree (if it was a newly inserted parent node).
 			var newParentDst *treesitter.ASTNode
-			if findRoot(a.Parent) == findRoot(dstRoot) {
-				newParentDst = a.Parent
-			} else if ms != nil {
-				newParentDst = ms.Src()[a.Parent]
+			var pos int
+			resolved := false
+
+			if ms != nil {
+				destNodeDst := ms.Src()[a.Node]
+				if destNodeDst != nil {
+					newParentDst = destNodeDst.Parent
+					if newParentDst != nil {
+						pos = -1
+						for idx, child := range newParentDst.Children {
+							if child == destNodeDst {
+								pos = idx
+								break
+							}
+						}
+						if pos != -1 {
+							resolved = true
+						}
+					}
+				}
 			}
+
+			if !resolved {
+				// Fallback to old behavior
+				if findRoot(a.Parent) == findRoot(dstRoot) {
+					newParentDst = a.Parent
+				} else if ms != nil {
+					newParentDst = ms.Src()[a.Parent]
+				}
+				pos = a.Position
+			}
+
 			if newParentDst == nil {
 				return nil, fmt.Errorf("failed to resolve move parent %s in destination tree", a.Parent.Type)
 			}
@@ -155,7 +183,6 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 				return nil, fmt.Errorf("failed to build parent reference for move: %w", err)
 			}
 			ja.Parent = parentRef
-			pos := a.Position
 			ja.Position = &pos
 
 			// Old parent is a.Node.Parent in the before tree.
@@ -185,6 +212,20 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 				st := true
 				ja.Subtree = &st
 			}
+
+			// Resolve mapped destination node in target (after) tree for byte location
+			if ms != nil {
+				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
+					startByte := destNodeDst.StartByte
+					endByte := destNodeDst.EndByte
+					ja.DestStartByte = &startByte
+					ja.DestEndByte = &endByte
+				}
+			}
+		}
+
+		if a.GroupID != "" {
+			ja.GroupID = a.GroupID
 		}
 
 		env.Actions = append(env.Actions, ja)
@@ -262,6 +303,10 @@ func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.Edit
 		// Resolve Subtree
 		if ja.Subtree != nil {
 			a.Subtree = *ja.Subtree
+		}
+
+		if ja.GroupID != "" {
+			a.GroupID = ja.GroupID
 		}
 
 		es.Add(a)
