@@ -47,13 +47,11 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 	convertedSrc := make(map[*treesitter.ASTNode]bool)
 	convertedDst := make(map[*treesitter.ASTNode]bool)
 
-	// First pass: identify Move actions that will become Delete+Insert so paired
-	// Update actions can be suppressed regardless of action ordering.
 	for _, a := range es.Actions() {
-		if a.Type != actions.Move || a.Node == nil || !isSpuriousMoveCandidate(a.Node) || a.Node.Type == "assignment" {
+		if a.Type != actions.Move || a.Node == nil || !isSpuriousMoveCandidate(a.Node) {
 			continue
 		}
-		if ms.Src() == nil || ms.Src()[a.Node] == nil {
+		if ms.Src()[a.Node] == nil {
 			continue
 		}
 		dstNode := ms.Src()[a.Node]
@@ -75,7 +73,7 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 		}
 
 		if a.Type == actions.Move {
-			if a.Node == nil || ms.Src() == nil || ms.Src()[a.Node] == nil {
+			if a.Node == nil || ms.Src()[a.Node] == nil {
 				// The node is unmapped (e.g. because its ancestor was normalized and broke the mapping),
 				// so any Move action on it is invalid/redundant and should be dropped.
 				continue
@@ -84,18 +82,15 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 
 		// Normalize candidate spurious moves (operators, literals, types, identifiers)
 		// when matched across unrelated parent contexts.
-		if a.Type == actions.Move && isSpuriousMoveCandidate(a.Node) && a.Node.Type != "assignment" {
+		if a.Type == actions.Move && isSpuriousMoveCandidate(a.Node) {
 			srcParent := a.Node.Parent
 			var dstParentMapped *treesitter.ASTNode
-			if srcParent != nil && ms.Src() != nil {
+			if srcParent != nil {
 				dstParentMapped = ms.Src()[srcParent]
 			}
 
 			if dstParentMapped == nil || a.Parent != dstParentMapped {
-				var dstNode *treesitter.ASTNode
-				if ms.Src() != nil {
-					dstNode = ms.Src()[a.Node]
-				}
+				dstNode := ms.Src()[a.Node]
 				if dstNode != nil {
 					// Break mappings for this subtree so they don't generate spurious move actions.
 					removeSubtreeMappings(a.Node, ms)
@@ -187,17 +182,13 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 
 	for _, a := range es.Actions() {
 		if a.Type == actions.Move && a.Node != nil && a.Node.Type == "comment" {
-			if ms.Src() != nil {
-				if dstNode := ms.Src()[a.Node]; dstNode != nil {
-					sim := commentTextSimilarity(a.Node.Label, dstNode.Label)
-					if sim >= commentSimilarityThreshold {
-						commentMovedFuzzy[a.Node] = true
-					} else {
-						commentMovedConverted[a.Node] = true
-						commentMovedConvertedDst[dstNode] = true
-					}
+			if dstNode := ms.Src()[a.Node]; dstNode != nil {
+				sim := commentTextSimilarity(a.Node.Label, dstNode.Label)
+				if sim >= commentSimilarityThreshold {
+					commentMovedFuzzy[a.Node] = true
 				} else {
 					commentMovedConverted[a.Node] = true
+					commentMovedConvertedDst[dstNode] = true
 				}
 			} else {
 				commentMovedConverted[a.Node] = true
@@ -225,10 +216,7 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 			}
 
 			if commentMovedConverted[a.Node] {
-				var dstNode *treesitter.ASTNode
-				if ms.Src() != nil {
-					dstNode = ms.Src()[a.Node]
-				}
+				dstNode := ms.Src()[a.Node]
 
 				removeSubtreeMappings(a.Node, ms)
 
