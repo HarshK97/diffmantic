@@ -37,6 +37,7 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 // Leaves with an unmatched parent are skipped — they belong to deleted or
 // inserted subtrees and have no real counterpart.
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	t2Nodes := PostOrder(t2Root)
 	for _, t1 := range PostOrder(t1Root) {
 		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" {
 			continue
@@ -56,7 +57,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			t1Idx = childIndexWithin(t1, t1.Parent)
 		}
 
-		for _, t2 := range PostOrder(t2Root) {
+		for _, t2 := range t2Nodes {
 			if m.HasDst(t2) || t2.Type != t1.Type || t2.Label != t1.Label || len(t2.Children) > 0 {
 				continue
 			}

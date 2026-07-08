@@ -47,20 +47,30 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 	convertedSrc := make(map[*treesitter.ASTNode]bool)
 	convertedDst := make(map[*treesitter.ASTNode]bool)
 
+	type moveDecision struct {
+		shouldNormalize bool
+		dstNode         *treesitter.ASTNode
+	}
+	decisions := make(map[*treesitter.ASTNode]moveDecision)
+
 	for _, a := range es.Actions() {
 		if a.Type != actions.Move || a.Node == nil || !isSpuriousMoveCandidate(a.Node) {
 			continue
 		}
-		if ms.Src()[a.Node] == nil {
+		dstNode := ms.Src()[a.Node]
+		if dstNode == nil {
 			continue
 		}
-		dstNode := ms.Src()[a.Node]
 		srcParent := a.Node.Parent
 		var dstParentMapped *treesitter.ASTNode
 		if srcParent != nil {
 			dstParentMapped = ms.Src()[srcParent]
 		}
 		if dstParentMapped == nil || a.Parent != dstParentMapped {
+			decisions[a.Node] = moveDecision{
+				shouldNormalize: true,
+				dstNode:         dstNode,
+			}
 			convertedSrc[a.Node] = true
 			convertedDst[dstNode] = true
 		}
@@ -78,47 +88,36 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 				// so any Move action on it is invalid/redundant and should be dropped.
 				continue
 			}
-		}
 
-		// Normalize candidate spurious moves (operators, literals, types, identifiers)
-		// when matched across unrelated parent contexts.
-		if a.Type == actions.Move && isSpuriousMoveCandidate(a.Node) {
-			srcParent := a.Node.Parent
-			var dstParentMapped *treesitter.ASTNode
-			if srcParent != nil {
-				dstParentMapped = ms.Src()[srcParent]
-			}
+			// Normalize candidate spurious moves (operators, literals, types, identifiers)
+			// when matched across unrelated parent contexts.
+			if dec, ok := decisions[a.Node]; ok && dec.shouldNormalize {
+				// Break mappings for this subtree so they don't generate spurious move actions.
+				removeSubtreeMappings(a.Node, ms)
 
-			if dstParentMapped == nil || a.Parent != dstParentMapped {
-				dstNode := ms.Src()[a.Node]
-				if dstNode != nil {
-					// Break mappings for this subtree so they don't generate spurious move actions.
-					removeSubtreeMappings(a.Node, ms)
+				delAct := actions.Action{
+					Type: actions.Delete,
+					Node: a.Node,
+				}
+				result.Add(delAct)
 
-					delAct := actions.Action{
-						Type: actions.Delete,
-						Node: a.Node,
-					}
-					result.Add(delAct)
-
-					pos := -1
-					if dstNode.Parent != nil {
-						for idx, child := range dstNode.Parent.Children {
-							if child == dstNode {
-								pos = idx
-								break
-							}
+				pos := -1
+				if dec.dstNode.Parent != nil {
+					for idx, child := range dec.dstNode.Parent.Children {
+						if child == dec.dstNode {
+							pos = idx
+							break
 						}
 					}
-					insAct := actions.Action{
-						Type:     actions.Insert,
-						Node:     dstNode,
-						Parent:   dstNode.Parent,
-						Position: pos,
-					}
-					result.Add(insAct)
-					continue
 				}
+				insAct := actions.Action{
+					Type:     actions.Insert,
+					Node:     dec.dstNode,
+					Parent:   dec.dstNode.Parent,
+					Position: pos,
+				}
+				result.Add(insAct)
+				continue
 			}
 		}
 		result.Add(a)

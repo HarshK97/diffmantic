@@ -32,6 +32,33 @@ func TestRulesAliased(t *testing.T) {
 				"not",
 			},
 		},
+		{
+			lang: "javascript",
+			operators: []string{
+				"+", "-", "*", "/", "%", "**",
+				"==", "!=", "===", "!==", "<", "<=", ">", ">=",
+				"&&", "||", "??",
+				"=", "+=", "-=", "*=", "/=", "%=", "**=",
+				"&&=", "||=", "??=",
+				"&", "|", "^", "<<", ">>", ">>>",
+				"!", "~", "++", "--",
+				"=>",
+			},
+		},
+		{
+			lang: "typescript",
+			operators: []string{
+				"+", "-", "*", "/", "%", "**",
+				"==", "!=", "===", "!==", "<", "<=", ">", ">=",
+				"&&", "||", "??",
+				"=", "+=", "-=", "*=", "/=", "%=", "**=",
+				"&&=", "||=", "??=",
+				"&", "|", "^", "<<", ">>", ">>>",
+				"!", "~", "++", "--",
+				"=>",
+				"type", "interface", "namespace", "enum", "abstract", "readonly",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -49,6 +76,10 @@ func TestRulesAliased(t *testing.T) {
 				if alias == "" {
 					t.Errorf("expected non-empty alias for operator %q", op)
 				}
+			}
+
+			if len(rules.Scaffolding) == 0 {
+				t.Errorf("expected non-empty scaffolding list for %s", tt.lang)
 			}
 		})
 	}
