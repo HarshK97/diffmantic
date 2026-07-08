@@ -6,12 +6,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-func actionCoversSubtree(act *actions.Action) bool {
-	if act == nil || act.Node == nil {
-		return false
-	}
-	return len(act.Node.Children) == 0 || act.Subtree
-}
 
 func Collapse(
 	es *actions.EditScript,
@@ -184,7 +178,7 @@ func Collapse(
 						allChildrenMovedToSameParent = false
 						break
 					}
-					if !actionCoversSubtree(childAct) {
+					if len(childAct.Node.Children) > 0 && !childAct.Subtree {
 						allChildrenMovedToSameParent = false
 						break
 					}
@@ -240,7 +234,7 @@ func Collapse(
 				// This has only been validated against cases where parent-equality failure
 				// correctly indicated a dissolved/rewrapped identity, not yet against a case
 				// where it might fragment a legitimately-coherent parent-level container move.
-				KillParent(act, suppressed)
+				suppressed[act] = true
 			}
 		}
 	}
@@ -271,9 +265,6 @@ func KillChildren(
 	}
 }
 
-func KillParent(act *actions.Action, suppressed map[*actions.Action]bool) {
-	suppressed[act] = true
-}
 
 // suppressInlineParentRedundancy kills a parent Insert/Delete when an inline
 // child of the same type already covers the same line. Subtree:true parents
@@ -317,7 +308,7 @@ func suppressInlineParentRedundancy(
 		if parent.StartRow != node.StartRow {
 			continue
 		}
-		KillParent(parentAct, suppressed)
+		suppressed[parentAct] = true
 	}
 }
 
