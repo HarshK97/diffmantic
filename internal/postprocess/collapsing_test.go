@@ -819,4 +819,97 @@ func TestInlineParentSuppression(t *testing.T) {
 	})
 }
 
+func TestParentMoveWithDeletedDescendant(t *testing.T) {
+	// Construct source tree:
+	// pSrc (block)
+	//   c1Src (identifier)
+	//   c2Src (identifier)
+	c1Src := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 15}
+	c2Src := &treesitter.ASTNode{Type: "identifier", Label: "y", StartByte: 16, EndByte: 20}
+	pSrc := &treesitter.ASTNode{
+		Type:      "block",
+		StartByte: 0, EndByte: 100,
+		Children: []*treesitter.ASTNode{c1Src, c2Src},
+	}
+	pSrc.Language = "python"
+	c1Src.Parent = pSrc
+	c2Src.Parent = pSrc
+
+	// Construct destination tree:
+	// qDst (parent container)
+	//   pDst (block)
+	//     c1Dst (identifier)
+	c1Dst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 15}
+	pDst := &treesitter.ASTNode{
+		Type:      "block",
+		StartByte: 0, EndByte: 50,
+		Children: []*treesitter.ASTNode{c1Dst},
+	}
+	qDst := &treesitter.ASTNode{
+		Type:      "block",
+		StartByte: 0, EndByte: 150,
+		Children: []*treesitter.ASTNode{pDst},
+	}
+	pDst.Parent = qDst
+	c1Dst.Parent = pDst
+	qDst.Language = "python"
+
+	// Mappings:
+	// pSrc -> pDst
+	// c1Src -> c1Dst
+	// c2Src is unmapped (deleted)
+	ms := engine.NewMapping()
+	ms.Add(pSrc, pDst)
+	ms.Add(c1Src, c1Dst)
+
+	// Construct EditScript:
+	// - pSrc moves under qDst
+	// - c1Src moves under pDst
+	// - c2Src is deleted
+	es := actions.NewEditScript()
+	pMove := actions.Action{
+		Type:     actions.Move,
+		Node:     pSrc,
+		Parent:   qDst,
+		Position: 0,
+	}
+	c1Move := actions.Action{
+		Type:     actions.Move,
+		Node:     c1Src,
+		Parent:   pDst,
+		Position: 0,
+	}
+	c2Delete := actions.Action{
+		Type: actions.Delete,
+		Node: c2Src,
+	}
+	es.Add(pMove)
+	es.Add(c1Move)
+	es.Add(c2Delete)
+
+	// Run Collapse
+	collapsed := Collapse(es, ms, pSrc, qDst)
+
+	// Since c2Src is deleted, it doesn't have a Move action in 'moved' map.
+	// So parent-equality check for pSrc will fail (allChildrenMovedToSameParent is false).
+	// This triggers the else branch: P's Move is suppressed, but c1Src's Move survives.
+	pMoveSurvives := false
+	c1MoveSurvives := false
+	for _, act := range collapsed.Actions() {
+		if act.Node == pSrc && act.Type == actions.Move {
+			pMoveSurvives = true
+		}
+		if act.Node == c1Src && act.Type == actions.Move {
+			c1MoveSurvives = true
+		}
+	}
+
+	if pMoveSurvives {
+		t.Error("expected parent block Move to be suppressed since one child (c2Src) was deleted")
+	}
+	if !c1MoveSurvives {
+		t.Error("expected child c1Src Move to survive")
+	}
+}
+
 

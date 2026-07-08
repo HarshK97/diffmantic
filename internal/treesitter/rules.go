@@ -26,6 +26,7 @@ var (
 	rulesCache map[string]Rules
 	rulesOnce  sync.Once
 	rulesErr   error
+	rulesMu    sync.RWMutex
 )
 
 func LoadRules() error {
@@ -41,6 +42,8 @@ func LoadRules() error {
 }
 
 func GetRules(lang string) *Rules {
+	rulesMu.RLock()
+	defer rulesMu.RUnlock()
 	if rulesCache == nil {
 		return nil
 	}
@@ -53,6 +56,8 @@ func GetRules(lang string) *Rules {
 
 func SetRules(lang string, r Rules) {
 	_ = LoadRules()
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
 	if rulesCache == nil {
 		rulesCache = make(map[string]Rules)
 	}
