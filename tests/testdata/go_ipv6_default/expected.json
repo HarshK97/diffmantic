@@ -1,0 +1,51 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          34,
+          3,
+          0,
+          1,
+          2,
+          0,
+          1,
+          1,
+          15,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "literal_element",
+        "start_byte": 6811,
+        "end_byte": 6817
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          34,
+          3,
+          0,
+          1,
+          2,
+          0,
+          1,
+          1,
+          15,
+          1,
+          0,
+          1
+        ],
+        "type": "literal_value",
+        "start_byte": 6797,
+        "end_byte": 6818
+      },
+      "position": 1,
+      "subtree": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "5f458dd1a6d631f324e4af9a4f5429ffdf199342",
+  "commit": "646312aef6a34095476ac846b0920db5fb24b2ea",
+  "message": "fix: protect Context.Keys map when call Copy method (#3873)",
+  "author": "qingmu",
+  "date": "2024-03-11T22:24:36+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 0
+}

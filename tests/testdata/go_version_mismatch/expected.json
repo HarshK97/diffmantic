@@ -1,0 +1,36 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          5,
+          1,
+          2,
+          0
+        ],
+        "type": "int_literal",
+        "label": "23",
+        "start_byte": 291,
+        "end_byte": 293
+      },
+      "old_value": "23",
+      "new_value": "24",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          5,
+          1,
+          2,
+          0
+        ],
+        "type": "int_literal",
+        "label": "24",
+        "start_byte": 291,
+        "end_byte": 293
+      }
+    }
+  ]
+}

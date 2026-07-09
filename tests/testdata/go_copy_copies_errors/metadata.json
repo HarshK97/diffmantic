@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "2e4d4f38962a6f15ae496d59b294f307eef95429",
+  "commit": "293ad7edebb3ae30369288bd6416ca0d78474727",
+  "message": "fix(context): Copy() copies Errors and Accepted fields (#4695)\n\n* Previously, Copy() only copied Keys and Params, leaving Errors and",
+  "author": "Amirhf",
+  "date": "2026-06-22T14:39:26+03:30",
+  "language": "go",
+  "files_changed": 2,
+  "insertions": 54,
+  "deletions": 0
+}

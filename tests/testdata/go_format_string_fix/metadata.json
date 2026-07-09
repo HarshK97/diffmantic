@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "4867ff9634d1889156587d5add70d2b29c447542",
+  "commit": "b4f51559825a055dcec93fa282c20018d073aaaa",
+  "message": "Fix not to pass formatted string to Fprintf's format specifier parameter (#1747)",
+  "author": "Sai",
+  "date": "2019-01-20T09:39:09+09:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

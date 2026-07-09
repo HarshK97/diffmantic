@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "b917b14ff9d189f16a7492be79d123a47806ee19",
+  "commit": "2a794cd0b0faa7d829291375b27a3467ea972b0d",
+  "message": "fix(debug): version mismatch (#4403)\n\nCo-authored-by: Bo-Yi Wu <appleboy.tw@gmail.com>",
+  "author": "OHZEKI Naoki",
+  "date": "2025-12-04T11:49:37+09:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

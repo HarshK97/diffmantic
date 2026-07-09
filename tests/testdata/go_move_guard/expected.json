@@ -1,0 +1,88 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          4,
+          0,
+          2,
+          2,
+          2
+        ],
+        "type": "statement_list",
+        "start_byte": 1202,
+        "end_byte": 1333
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          4,
+          0,
+          2,
+          2
+        ],
+        "type": "expression_case",
+        "start_byte": 1182,
+        "end_byte": 1333
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          4,
+          0,
+          2,
+          2,
+          2
+        ],
+        "type": "statement_list",
+        "start_byte": 1202,
+        "end_byte": 1252
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          4,
+          0,
+          2,
+          2,
+          2,
+          0,
+          2
+        ],
+        "type": "block",
+        "start_byte": 1243,
+        "end_byte": 1301
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          4,
+          0,
+          2,
+          2
+        ],
+        "type": "expression_case",
+        "start_byte": 1182,
+        "end_byte": 1252
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 1248,
+      "dest_end_byte": 1298
+    }
+  ]
+}
