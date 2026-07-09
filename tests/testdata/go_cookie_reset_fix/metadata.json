@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "888b14ab283f3623174e99b6ae7555060731cd89",
+  "commit": "68542126982eb2275ea0447c58b38cb38cff8ddc",
+  "message": "Fix: missing `sameSite` when do context.reset() (#3123)",
+  "author": "ahuigo",
+  "date": "2022-04-17T12:41:59+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

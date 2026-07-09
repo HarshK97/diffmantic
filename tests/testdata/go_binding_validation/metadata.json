@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "4ccfa7c275c449990818e46759d5974a953cc1c1",
+  "commit": "e737e3e267beb4dc3bab16cc8be59e3902d98a94",
+  "message": "fix(binding): prevent duplicate decoding and add validation in decodeToml (#4193)",
+  "author": "revevide",
+  "date": "2025-03-20T23:35:49+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

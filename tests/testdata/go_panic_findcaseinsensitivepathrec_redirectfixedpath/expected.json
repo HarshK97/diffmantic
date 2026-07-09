@@ -1,0 +1,286 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          8
+        ],
+        "type": "comment",
+        "label": "// When wildChild is true, try static children first (via indices)",
+        "start_byte": 21378,
+        "end_byte": 21444
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1
+        ],
+        "type": "statement_list",
+        "start_byte": 18560,
+        "end_byte": 24044
+      },
+      "position": 8
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          9
+        ],
+        "type": "comment",
+        "label": "// before falling back to the wildcard child. This ensures that",
+        "start_byte": 21447,
+        "end_byte": 21510
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1
+        ],
+        "type": "statement_list",
+        "start_byte": 18560,
+        "end_byte": 24044
+      },
+      "position": 9
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          10
+        ],
+        "type": "comment",
+        "label": "// case-insensitive lookups prefer static routes over param routes",
+        "start_byte": 21513,
+        "end_byte": 21579
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1
+        ],
+        "type": "statement_list",
+        "start_byte": 18560,
+        "end_byte": 24044
+      },
+      "position": 10
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          11
+        ],
+        "type": "comment",
+        "label": "// (e.g., /PREFIX/XXX should resolve to /prefix/xxx, not match :id).",
+        "start_byte": 21582,
+        "end_byte": 21650
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1
+        ],
+        "type": "statement_list",
+        "start_byte": 18560,
+        "end_byte": 24044
+      },
+      "position": 11
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          12
+        ],
+        "type": "if_statement",
+        "start_byte": 21653,
+        "end_byte": 22956
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1
+        ],
+        "type": "statement_list",
+        "start_byte": 18560,
+        "end_byte": 24044
+      },
+      "position": 12,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          13
+        ],
+        "type": "comment",
+        "label": "// Fall back to wildcard child, which is always at the end of the array",
+        "start_byte": 22960,
+        "end_byte": 23031
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1
+        ],
+        "type": "statement_list",
+        "start_byte": 18560,
+        "end_byte": 24044
+      },
+      "position": 13
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          14,
+          2,
+          0,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 23049,
+        "end_byte": 23066
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          14,
+          2,
+          0
+        ],
+        "type": "index_expression",
+        "start_byte": 23038,
+        "end_byte": 23067
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          54,
+          4,
+          0,
+          1,
+          2,
+          2,
+          1,
+          8,
+          2,
+          0,
+          1
+        ],
+        "type": "int_literal",
+        "label": "0",
+        "start_byte": 21393,
+        "end_byte": 21394
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "acc55e049e33b401e810dbd8c0d6dcb6b3ba2b05",
+  "commit": "c3d5a28ed6d3849da820195b6774d212bcc038a9",
+  "message": "fix(gin): close os.File in RunFd to prevent resource leak (#4422)\n\nCo-authored-by: 1911860538 <alxps1911@gmail.com>",
+  "author": "Name",
+  "date": "2025-11-07T12:01:19+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

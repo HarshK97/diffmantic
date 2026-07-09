@@ -1,0 +1,30 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          275
+        ],
+        "type": "comment",
+        "label": "// BindXML is a shortcut for c.MustBindWith(obj, binding.BindXML).",
+        "start_byte": 24303,
+        "end_byte": 24369
+      },
+      "old_value": "// BindXML is a shortcut for c.MustBindWith(obj, binding.BindXML).",
+      "new_value": "// BindXML is a shortcut for c.MustBindWith(obj, binding.XML).",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          275
+        ],
+        "type": "comment",
+        "label": "// BindXML is a shortcut for c.MustBindWith(obj, binding.XML).",
+        "start_byte": 24303,
+        "end_byte": 24365
+      }
+    }
+  ]
+}

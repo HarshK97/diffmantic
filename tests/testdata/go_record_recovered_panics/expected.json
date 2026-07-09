@@ -1,0 +1,148 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          21,
+          1,
+          2,
+          0
+        ],
+        "type": "identifier",
+        "label": "_",
+        "start_byte": 3366,
+        "end_byte": 3367
+      },
+      "old_value": "_",
+      "new_value": "err",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          21,
+          1,
+          2,
+          0
+        ],
+        "type": "identifier",
+        "label": "err",
+        "start_byte": 3366,
+        "end_byte": 3369
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0,
+          0
+        ],
+        "type": "short_var_declaration",
+        "start_byte": 3378,
+        "end_byte": 3398
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3378,
+        "end_byte": 3522
+      },
+      "position": 0,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0,
+          1
+        ],
+        "type": "if_statement",
+        "start_byte": 3400,
+        "end_byte": 3439
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3378,
+        "end_byte": 3522
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0,
+          2
+        ],
+        "type": "expression_statement",
+        "start_byte": 3441,
+        "end_byte": 3451
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3378,
+        "end_byte": 3522
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0,
+          3
+        ],
+        "type": "comment",
+        "label": "//nolint: errcheck",
+        "start_byte": 3452,
+        "end_byte": 3470
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          2,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3378,
+        "end_byte": 3522
+      },
+      "position": 3
+    }
+  ]
+}
