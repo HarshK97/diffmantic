@@ -11,7 +11,7 @@ import (
 )
 
 // SchemaVersion defines the stable, versioned JSON output format version.
-const SchemaVersion = "1.0.0"
+const SchemaVersion = "v1"
 
 // Envelope wraps the serialized actions list with a schema version.
 type Envelope struct {
