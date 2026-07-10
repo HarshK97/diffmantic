@@ -1,0 +1,356 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          0
+        ],
+        "type": "identifier",
+        "label": "mixin",
+        "start_byte": 585,
+        "end_byte": 590
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0
+        ],
+        "type": "call_expression",
+        "start_byte": 630,
+        "end_byte": 654
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0
+        ],
+        "type": "call_expression",
+        "start_byte": 585,
+        "end_byte": 602
+      },
+      "old_position": 0,
+      "dest_start_byte": 630,
+      "dest_end_byte": 635,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 602
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0
+        ],
+        "type": "call_expression",
+        "start_byte": 630,
+        "end_byte": 654
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0
+        ],
+        "type": "call_expression",
+        "start_byte": 585,
+        "end_byte": 602
+      },
+      "old_position": 1,
+      "dest_start_byte": 635,
+      "dest_end_byte": 654,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "opening_paren",
+        "label": "(",
+        "start_byte": 590,
+        "end_byte": 591
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 602
+      },
+      "old_position": 0,
+      "dest_start_byte": 635,
+      "dest_end_byte": 636,
+      "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "identifier",
+        "label": "app",
+        "start_byte": 591,
+        "end_byte": 594
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 602
+      },
+      "old_position": 1,
+      "dest_start_byte": 636,
+      "dest_end_byte": 639,
+      "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1,
+          2
+        ],
+        "type": "identifier",
+        "label": "proto",
+        "start_byte": 596,
+        "end_byte": 601
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 602
+      },
+      "old_position": 2,
+      "dest_start_byte": 641,
+      "dest_end_byte": 646,
+      "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1,
+          3
+        ],
+        "type": "closing_paren",
+        "label": ")",
+        "start_byte": 601,
+        "end_byte": 602
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 4,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 602
+      },
+      "old_position": 3,
+      "dest_start_byte": 653,
+      "dest_end_byte": 654,
+      "group_id": "group-2"
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1,
+          3
+        ],
+        "type": "false",
+        "label": "false",
+        "start_byte": 620,
+        "end_byte": 625
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 626
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1,
+          3
+        ],
+        "type": "false",
+        "label": "false",
+        "start_byte": 648,
+        "end_byte": 653
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 3
+    }
+  ]
+}

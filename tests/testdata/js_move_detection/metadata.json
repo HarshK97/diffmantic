@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "1faf228935aa0a13111f92c28ee795be64ce3f0f",
+  "commit": "20415843f457648b6b69d7511479ba58bf83375e",
+  "message": "fix(examples): improve readability of user assignment (#6190)\n\nEdit assignment inside condition check to a separate step",
+  "author": "Shahan Arshad",
+  "date": "2024-12-17T20:59:55+05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 1
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "a479419b16f5b97eb20f5dbae5848708ff30ce2d",
+  "commit": "c9ecf7b658388ccaa2b8470aabad92aabde458a2",
+  "message": "feat: Allow passing null or undefined as the value for options in app.render (#6903)\n\n* fix: allow null options in app.render",
+  "author": "AkaHarshit",
+  "date": "2026-02-01T08:21:17+05:30",
+  "language": "javascript",
+  "files_changed": 3,
+  "insertions": 25,
+  "deletions": 1
+}

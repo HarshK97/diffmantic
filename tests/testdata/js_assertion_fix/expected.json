@@ -1,0 +1,76 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          5,
+          0,
+          1,
+          2,
+          2,
+          3,
+          0,
+          1,
+          2,
+          2,
+          0,
+          0,
+          1,
+          2,
+          2,
+          2,
+          0,
+          1,
+          1,
+          2,
+          0,
+          0,
+          1,
+          3
+        ],
+        "type": "identifier",
+        "label": "done",
+        "start_byte": 2503,
+        "end_byte": 2507
+      },
+      "old_value": "done",
+      "new_value": "cb",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          5,
+          0,
+          1,
+          2,
+          2,
+          3,
+          0,
+          1,
+          2,
+          2,
+          0,
+          0,
+          1,
+          2,
+          2,
+          2,
+          0,
+          1,
+          1,
+          2,
+          0,
+          0,
+          1,
+          3
+        ],
+        "type": "identifier",
+        "label": "cb",
+        "start_byte": 2503,
+        "end_byte": 2505
+      }
+    }
+  ]
+}

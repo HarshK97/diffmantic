@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "cf9f662655ec8e2b90c5e5d561e0daa083908aa0",
+  "commit": "d0e166c3c6eaf80871b7f38839ea90e048452844",
+  "message": "docs: fix typo in private api jsdoc\n\ncloses #4843",
+  "author": "apeltop",
+  "date": "2022-02-28T16:38:06+09:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

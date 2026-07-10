@@ -1,0 +1,133 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          3,
+          2,
+          1,
+          2,
+          1,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "||",
+        "start_byte": 1457,
+        "end_byte": 1459
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          3,
+          2,
+          1,
+          2,
+          1,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "||",
+        "start_byte": 1448,
+        "end_byte": 1450
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          3,
+          2,
+          1,
+          2,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 1427,
+        "end_byte": 1472
+      },
+      "position": 1
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          3,
+          2,
+          1,
+          2,
+          1,
+          0
+        ],
+        "type": "member_expression",
+        "start_byte": 1427,
+        "end_byte": 1448
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          3,
+          2,
+          1,
+          2,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 1427,
+        "end_byte": 1472
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          3,
+          2,
+          1,
+          2,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 1427,
+        "end_byte": 1480
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 1451,
+      "dest_end_byte": 1472
+    }
+  ]
+}

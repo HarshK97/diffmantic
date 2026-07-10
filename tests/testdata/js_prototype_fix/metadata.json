@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "7ee56bbe9cadd25a64e900c52d2cc6287d73ba9b",
+  "commit": "31cb541b881d40cb0a16de2aab3799785a138357",
+  "message": "Fix constructing application with non-configurable prototype properties\n\nfixes #2561",
+  "author": "Douglas Christopher Wilson",
+  "date": "2015-03-01T16:33:09-05:00",
+  "language": "javascript",
+  "files_changed": 3,
+  "insertions": 5,
+  "deletions": 3
+}
