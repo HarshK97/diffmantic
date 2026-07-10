@@ -1,0 +1,129 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          3,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "rb\"^[^:\\s][^:\\r\\n]*$\"",
+        "start_byte": 266,
+        "end_byte": 287
+      },
+      "old_value": "rb\"^[^:\\s][^:\\r\\n]*$\"",
+      "new_value": "rb\"^[^:\\s][^:\\r\\n]*\\Z\"",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          3,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "rb\"^[^:\\s][^:\\r\\n]*\\Z\"",
+        "start_byte": 266,
+        "end_byte": 288
+      }
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          4,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "r\"^[^:\\s][^:\\r\\n]*$\"",
+        "start_byte": 328,
+        "end_byte": 348
+      },
+      "old_value": "r\"^[^:\\s][^:\\r\\n]*$\"",
+      "new_value": "r\"^[^:\\s][^:\\r\\n]*\\Z\"",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          4,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "r\"^[^:\\s][^:\\r\\n]*\\Z\"",
+        "start_byte": 329,
+        "end_byte": 350
+      }
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          5,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "rb\"^\\S[^\\r\\n]*$|^$\"",
+        "start_byte": 391,
+        "end_byte": 410
+      },
+      "old_value": "rb\"^\\S[^\\r\\n]*$|^$\"",
+      "new_value": "rb\"^\\S[^\\r\\n]*\\Z|^\\Z\"",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          5,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "rb\"^\\S[^\\r\\n]*\\Z|^\\Z\"",
+        "start_byte": 393,
+        "end_byte": 414
+      }
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "r\"^\\S[^\\r\\n]*$|^$\"",
+        "start_byte": 452,
+        "end_byte": 470
+      },
+      "old_value": "r\"^\\S[^\\r\\n]*$|^$\"",
+      "new_value": "r\"^\\S[^\\r\\n]*\\Z|^\\Z\"",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          6,
+          2,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "r\"^\\S[^\\r\\n]*\\Z|^\\Z\"",
+        "start_byte": 456,
+        "end_byte": 476
+      }
+    }
+  ]
+}

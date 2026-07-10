@@ -1,0 +1,61 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          31,
+          2,
+          3,
+          1,
+          7,
+          1,
+          1,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 7161,
+        "end_byte": 7183
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          31,
+          2,
+          3,
+          1,
+          7,
+          1,
+          1
+        ],
+        "type": "if_statement",
+        "start_byte": 7158,
+        "end_byte": 7331
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          31,
+          2,
+          3,
+          1,
+          7,
+          1,
+          1,
+          1
+        ],
+        "type": "identifier",
+        "label": "_netrc",
+        "start_byte": 7161,
+        "end_byte": 7167
+      }
+    }
+  ]
+}

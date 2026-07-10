@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "661970d171d9c3e12e4c789c4768db647d8c4da0",
+  "commit": "6f205ff422bccd5e4c4fc0b64c5f3e7df5181db6",
+  "message": "Fix `_encode_files` detection for `__getattr__`-based file wrappers (#7502)",
+  "author": "Lo\u00efc Pernod",
+  "date": "2026-06-08T22:52:51+02:00",
+  "language": "python",
+  "files_changed": 2,
+  "insertions": 14,
+  "deletions": 1
+}

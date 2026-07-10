@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "0b401c76b6e80a4eecf3c690085b2553f6e261ca",
+  "commit": "6404f345e562d962abe6700a1c357ec1e7e18232",
+  "message": "Fix `prepare_body` stream detection for `__getattr__`-based file wrappers (#7433)\n\n---------",
+  "author": "Kaeun Kim",
+  "date": "2026-05-12T18:51:01+01:00",
+  "language": "python",
+  "files_changed": 2,
+  "insertions": 18,
+  "deletions": 3
+}
