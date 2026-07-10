@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "1b40fdd004bfc8ba5301bcf8a6908264e9b6b877",
+  "commit": "47914226c2968802f2cdee3f6f0f6e06e4472f64",
+  "message": "Fix empty netrc entry usage (#7205)",
+  "author": "Nate Prewitt",
+  "date": "2026-02-12T19:07:05-07:00",
+  "language": "python",
+  "files_changed": 2,
+  "insertions": 11,
+  "deletions": 1
+}

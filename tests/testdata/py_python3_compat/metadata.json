@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "b8561cda5e2bf9cb0129c2863ff52754e837ad85",
+  "commit": "cb8f9756e3cf57a12ea5619609460f29f930fd3d",
+  "message": "Fixes python3 compatibility issue",
+  "author": "Mher Movsisyan",
+  "date": "2012-05-28T14:11:59+05:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 2
+}

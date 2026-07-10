@@ -1,0 +1,814 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3
+        ],
+        "type": "comment",
+        "label": "# Skip any null responses",
+        "start_byte": 28522,
+        "end_byte": 28547
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2
+        ],
+        "type": "for_statement",
+        "start_byte": 28384,
+        "end_byte": 29599
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          0
+        ],
+        "type": "if_statement",
+        "start_byte": 28560,
+        "end_byte": 28598
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 0,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          1
+        ],
+        "type": "comment",
+        "label": "# Consume any pending data",
+        "start_byte": 28612,
+        "end_byte": 28638
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          3
+        ],
+        "type": "comment",
+        "label": "# Either split on a line, or split on a specified delimiter",
+        "start_byte": 28759,
+        "end_byte": 28818
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          5
+        ],
+        "type": "comment",
+        "label": "# The split(delimiter) will always end with whatever remains past",
+        "start_byte": 28966,
+        "end_byte": 29031
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 5
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          6
+        ],
+        "type": "comment",
+        "label": "# the delimiter ('' if nothing more).  However splitlines() will",
+        "start_byte": 29044,
+        "end_byte": 29108
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 6
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          7
+        ],
+        "type": "comment",
+        "label": "# not end with a '' if the final text is a line delimiter.",
+        "start_byte": 29121,
+        "end_byte": 29179
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 7
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          8
+        ],
+        "type": "comment",
+        "label": "# Therefore, if we're in delimiter mode, always pop the final",
+        "start_byte": 29193,
+        "end_byte": 29254
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 8
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          9
+        ],
+        "type": "comment",
+        "label": "# item to prepend to the next chunk. However, only do this for",
+        "start_byte": 29267,
+        "end_byte": 29329
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 9
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          10
+        ],
+        "type": "comment",
+        "label": "# non-delimiter mode if the chunk does not match the end of the",
+        "start_byte": 29342,
+        "end_byte": 29405
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 10
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          11
+        ],
+        "type": "comment",
+        "label": "# last line.",
+        "start_byte": 29418,
+        "end_byte": 29430
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 28560,
+        "end_byte": 29599
+      },
+      "position": 11
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          3,
+          0,
+          0
+        ],
+        "type": "assignment",
+        "start_byte": 28833,
+        "end_byte": 28847
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          2,
+          2
+        ],
+        "type": "block",
+        "start_byte": 28691,
+        "end_byte": 28745
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          3,
+          0
+        ],
+        "type": "block",
+        "start_byte": 28833,
+        "end_byte": 28847
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 28731,
+      "dest_end_byte": 28745
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "delimiter",
+        "start_byte": 29446,
+        "end_byte": 29455
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29446,
+        "end_byte": 29501
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "or",
+        "start_byte": 29456,
+        "end_byte": 29458
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29446,
+        "end_byte": 29501
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2,
+          0
+        ],
+        "type": "opening_paren",
+        "label": "(",
+        "start_byte": 29459,
+        "end_byte": 29460
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2
+        ],
+        "type": "parenthesized_expression",
+        "start_byte": 29459,
+        "end_byte": 29501
+      },
+      "position": 0
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "and",
+        "start_byte": 28729,
+        "end_byte": 28732
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29460,
+        "end_byte": 29500
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28759
+      },
+      "old_position": 1,
+      "dest_start_byte": 29470,
+      "dest_end_byte": 29473
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1,
+          2
+        ],
+        "type": "comparison_operator",
+        "start_byte": 28733,
+        "end_byte": 28759
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29460,
+        "end_byte": 29500
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28759
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 29474,
+      "dest_end_byte": 29500
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2,
+          2
+        ],
+        "type": "closing_paren",
+        "label": ")",
+        "start_byte": 29500,
+        "end_byte": 29501
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2
+        ],
+        "type": "parenthesized_expression",
+        "start_byte": 29459,
+        "end_byte": 29501
+      },
+      "position": 2
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1,
+          0,
+          0,
+          2
+        ],
+        "type": "subscript",
+        "start_byte": 28709,
+        "end_byte": 28718
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          4,
+          12,
+          1,
+          2,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29460,
+        "end_byte": 29500
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1,
+          0,
+          0
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28718
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 29460,
+      "dest_end_byte": 29469
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          1,
+          0
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28728
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          2,
+          12,
+          2,
+          2,
+          3,
+          2,
+          3
+        ],
+        "type": "else_clause",
+        "start_byte": 28811,
+        "end_byte": 28847
+      },
+      "subtree": true
+    }
+  ]
+}

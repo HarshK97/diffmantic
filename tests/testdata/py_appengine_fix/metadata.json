@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "25f86f13476e5fc2394dd0ef5152d34c62252042",
+  "commit": "a501b0ca81e340fb2c968e1cabc37565187006f7",
+  "message": "Fix for AppEngine",
+  "author": "Samuel Hug",
+  "date": "2013-10-28T09:51:56-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 1
+}

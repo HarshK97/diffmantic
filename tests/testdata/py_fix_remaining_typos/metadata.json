@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "6ec76b4a36fba4a32fb72f5f9ba04e632635e477",
+  "commit": "27e0981962d355b9532256f4dcb3d42f64b04d9c",
+  "message": "Fix remaining typos (#7395)",
+  "author": "Dimitri Papadopoulos Orfanos",
+  "date": "2026-04-30T16:35:13+02:00",
+  "language": "python",
+  "files_changed": 2,
+  "insertions": 2,
+  "deletions": 2
+}

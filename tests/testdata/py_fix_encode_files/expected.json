@@ -1,0 +1,247 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          3
+        ],
+        "type": "comment",
+        "label": "# data that proxies attributes to underlying objects needs hasattr",
+        "start_byte": 6862,
+        "end_byte": 6928
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3
+        ],
+        "type": "if_statement",
+        "start_byte": 6779,
+        "end_byte": 7221
+      },
+      "position": 3
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          3,
+          2
+        ],
+        "type": "comment",
+        "label": "# defensive check for untyped callers",
+        "start_byte": 6899,
+        "end_byte": 6936
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3
+        ],
+        "type": "if_statement",
+        "start_byte": 6779,
+        "end_byte": 7221
+      },
+      "position": 4,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          3
+        ],
+        "type": "elif_clause",
+        "start_byte": 6862,
+        "end_byte": 6970
+      },
+      "old_position": 2,
+      "dest_start_byte": 6941,
+      "dest_end_byte": 6978
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          3,
+          1
+        ],
+        "type": "call",
+        "start_byte": 6867,
+        "end_byte": 6896
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          5,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 6996,
+        "end_byte": 7048
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          3
+        ],
+        "type": "elif_clause",
+        "start_byte": 6862,
+        "end_byte": 6970
+      },
+      "old_position": 1,
+      "subtree": true,
+      "dest_start_byte": 6996,
+      "dest_end_byte": 7025
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          5,
+          1,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "or",
+        "start_byte": 7026,
+        "end_byte": 7028
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          5,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 6996,
+        "end_byte": 7048
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          5,
+          1,
+          2
+        ],
+        "type": "call",
+        "start_byte": 7029,
+        "end_byte": 7048
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          35,
+          1,
+          7,
+          1,
+          3,
+          6,
+          4,
+          3,
+          5,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 6996,
+        "end_byte": 7048
+      },
+      "position": 2,
+      "subtree": true
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          19,
+          2,
+          1,
+          4,
+          28
+        ],
+        "type": "assignment",
+        "start_byte": 2933,
+        "end_byte": 2950
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          19,
+          2,
+          1,
+          4
+        ],
+        "type": "block",
+        "start_byte": 1492,
+        "end_byte": 3725
+      },
+      "position": 28,
+      "subtree": true
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          19,
+          2,
+          4,
+          2,
+          4,
+          2,
+          0,
+          1,
+          11,
+          2,
+          1,
+          7,
+          2,
+          1
+        ],
+        "type": "identifier",
+        "label": "auth",
+        "start_byte": 7085,
+        "end_byte": 7089
+      },
+      "old_value": "auth",
+      "new_value": "_auth",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          19,
+          2,
+          4,
+          2,
+          4,
+          2,
+          0,
+          1,
+          11,
+          2,
+          1,
+          7,
+          2,
+          1
+        ],
+        "type": "identifier",
+        "label": "_auth",
+        "start_byte": 7111,
+        "end_byte": 7116
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          19,
+          2,
+          7,
+          2,
+          9,
+          2,
+          3
+        ],
+        "type": "assignment",
+        "start_byte": 10207,
+        "end_byte": 10228
+      },
+      "subtree": true
+    }
+  ]
+}

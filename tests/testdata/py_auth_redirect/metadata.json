@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "eaf1264879d8aebfc160a385889e9e0483810456",
+  "commit": "3efd5dbab42fb6fe7d4825bbd575d989574c1505",
+  "message": "A cleaner and more complete fix for auth/redirects",
+  "author": "David Fischer",
+  "date": "2011-11-03T08:05:55-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 2
+}

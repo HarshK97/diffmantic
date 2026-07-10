@@ -1,0 +1,65 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          29,
+          3,
+          0,
+          2,
+          7
+        ],
+        "type": "comment",
+        "label": "# filter out empty strings to avoid re.match all true.",
+        "start_byte": 2588,
+        "end_byte": 2642
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          29,
+          3,
+          0,
+          2
+        ],
+        "type": "block",
+        "start_byte": 1644,
+        "end_byte": 3171
+      },
+      "position": 7
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          29,
+          3,
+          0,
+          2,
+          8
+        ],
+        "type": "assignment",
+        "start_byte": 2651,
+        "end_byte": 2694
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          29,
+          3,
+          0,
+          2
+        ],
+        "type": "block",
+        "start_byte": 1644,
+        "end_byte": 3171
+      },
+      "position": 8,
+      "subtree": true
+    }
+  ]
+}

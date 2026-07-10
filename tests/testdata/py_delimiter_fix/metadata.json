@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "02031e3e14eecab831c7aeb62befbe9ada3ad641",
+  "commit": "9174925916b797e30d1f402ced4d835149af9efe",
+  "message": "Fix bug when delimiter is split between responses",
+  "author": "Ian Epperson",
+  "date": "2015-01-30T19:23:04-08:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 18,
+  "deletions": 5
+}
