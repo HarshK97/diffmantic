@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "ae265a90c7f6534231b621a846be6c60c54658f5",
+  "commit": "28cb20ec1de55427063f28503407cd10ca4000b6",
+  "message": "fix: prefer Referer header over Referrer",
+  "author": "Sebastian Beltran",
+  "date": "2026-01-16T21:45:52-05:00",
+  "language": "javascript",
+  "files_changed": 2,
+  "insertions": 15,
+  "deletions": 2
+}

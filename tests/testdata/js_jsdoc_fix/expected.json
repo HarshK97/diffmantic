@@ -1,0 +1,30 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          27
+        ],
+        "type": "comment",
+        "label": "/**\n * Parse accept params `str` returning an\n * object with `.value`, `.quality` and `.params`.\n * also includes `.originalIndex` for stable sorting\n *\n * @param {String} str\n * @return {Object}\n * @api private\n */",
+        "start_byte": 2505,
+        "end_byte": 2720
+      },
+      "old_value": "/**\n * Parse accept params `str` returning an\n * object with `.value`, `.quality` and `.params`.\n * also includes `.originalIndex` for stable sorting\n *\n * @param {String} str\n * @return {Object}\n * @api private\n */",
+      "new_value": "/**\n * Parse accept params `str` returning an\n * object with `.value`, `.quality` and `.params`.\n * also includes `.originalIndex` for stable sorting\n *\n * @param {String} str\n * @param {Number} index\n * @return {Object}\n * @api private\n */",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          27
+        ],
+        "type": "comment",
+        "label": "/**\n * Parse accept params `str` returning an\n * object with `.value`, `.quality` and `.params`.\n * also includes `.originalIndex` for stable sorting\n *\n * @param {String} str\n * @param {Number} index\n * @return {Object}\n * @api private\n */",
+        "start_byte": 2505,
+        "end_byte": 2745
+      }
+    }
+  ]
+}
