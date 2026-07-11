@@ -1,0 +1,48 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          2,
+          1,
+          3,
+          0,
+          2,
+          0,
+          0,
+          1,
+          1,
+          2
+        ],
+        "type": "template_string",
+        "label": "`already exist and it now has an active connection session.`",
+        "start_byte": 422,
+        "end_byte": 482
+      },
+      "old_value": "`already exist and it now has an active connection session.`",
+      "new_value": "`already exists and it now has an active connection session.`",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          2,
+          1,
+          3,
+          0,
+          2,
+          0,
+          0,
+          1,
+          1,
+          2
+        ],
+        "type": "template_string",
+        "label": "`already exists and it now has an active connection session.`",
+        "start_byte": 422,
+        "end_byte": 483
+      }
+    }
+  ]
+}

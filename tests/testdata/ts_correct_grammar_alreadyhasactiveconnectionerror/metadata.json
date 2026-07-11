@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "7c26654f430a7190c331242d68e75111fb334ea3",
+  "commit": "304d1290a4b6bd47d7d38269bae6a8514f378c9c",
+  "message": "fix: correct grammar in AlreadyHasActiveConnectionError message (#12554)",
+  "author": "Minh L\u00ea",
+  "date": "2026-06-11T01:45:42+07:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

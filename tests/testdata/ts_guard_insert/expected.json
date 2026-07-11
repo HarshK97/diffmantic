@@ -1,0 +1,201 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          3
+        ],
+        "type": "comment",
+        "label": "// Entity class instances (and other non-plain objects) are passed through",
+        "start_byte": 21228,
+        "end_byte": 21302
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 20754,
+        "end_byte": 23581
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          4
+        ],
+        "type": "comment",
+        "label": "// unchanged: their set columns — including nullable foreign keys that happen",
+        "start_byte": 21311,
+        "end_byte": 21390
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 20754,
+        "end_byte": 23581
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          5
+        ],
+        "type": "comment",
+        "label": "// to be null — are intentionally part of the where condition and must not be",
+        "start_byte": 21399,
+        "end_byte": 21478
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 20754,
+        "end_byte": 23581
+      },
+      "position": 5
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          6
+        ],
+        "type": "comment",
+        "label": "// validated or stripped. Only plain objects (FindOptionsWhere) are normalized.",
+        "start_byte": 21487,
+        "end_byte": 21566
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 20754,
+        "end_byte": 23581
+      },
+      "position": 6
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          7
+        ],
+        "type": "if_statement",
+        "start_byte": 21575,
+        "end_byte": 21653
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 20754,
+        "end_byte": 23581
+      },
+      "position": 7,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          9,
+          6,
+          0
+        ],
+        "type": "if_statement",
+        "start_byte": 21771,
+        "end_byte": 21804
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          47,
+          4,
+          9,
+          6
+        ],
+        "type": "statement_block",
+        "start_byte": 21757,
+        "end_byte": 23552
+      },
+      "position": 0,
+      "subtree": true
+    }
+  ]
+}

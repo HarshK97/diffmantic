@@ -1,0 +1,112 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          2,
+          0,
+          5,
+          4,
+          3
+        ],
+        "type": "identifier",
+        "label": "fileExport",
+        "start_byte": 1086,
+        "end_byte": 1096
+      },
+      "old_value": "fileExport",
+      "new_value": "fileExportKey",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          2,
+          0,
+          5,
+          4,
+          3
+        ],
+        "type": "identifier",
+        "label": "fileExportKey",
+        "start_byte": 1086,
+        "end_byte": 1099
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          2,
+          0,
+          5,
+          4,
+          4
+        ],
+        "type": "in",
+        "label": "in",
+        "start_byte": 1100,
+        "end_byte": 1102
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          2,
+          0,
+          5,
+          4
+        ],
+        "type": "for_in_statement",
+        "start_byte": 1075,
+        "end_byte": 1656
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          2,
+          0,
+          5,
+          4,
+          7,
+          0
+        ],
+        "type": "lexical_declaration",
+        "start_byte": 1140,
+        "end_byte": 1195
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          2,
+          0,
+          5,
+          4,
+          7
+        ],
+        "type": "statement_block",
+        "start_byte": 1126,
+        "end_byte": 1656
+      },
+      "position": 0,
+      "subtree": true
+    }
+  ]
+}
