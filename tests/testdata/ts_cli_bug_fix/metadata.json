@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "68e8f2289487ad21c18fb7b93754788a02199ee4",
+  "commit": "03317a3873641d3dff050d47f71dfa7efc7a4648",
+  "message": "fix: bug introduced in CLI (#9332)\n\n* fix: #9330",
+  "author": "rbnayax",
+  "date": "2022-08-28T21:14:24+03:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 1
+}

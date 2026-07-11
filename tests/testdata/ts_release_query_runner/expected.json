@@ -1,0 +1,138 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4,
+          4
+        ],
+        "type": "try_statement",
+        "start_byte": 9271,
+        "end_byte": 11203
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 8316,
+        "end_byte": 11209
+      },
+      "position": 4,
+      "subtree": true
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4,
+          4
+        ],
+        "type": "if_statement",
+        "start_byte": 9271,
+        "end_byte": 10890
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4,
+          4,
+          1
+        ],
+        "type": "statement_block",
+        "start_byte": 9275,
+        "end_byte": 11082
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 8316,
+        "end_byte": 10986
+      },
+      "old_position": 4,
+      "subtree": true,
+      "dest_start_byte": 9289,
+      "dest_end_byte": 11072
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4,
+          5
+        ],
+        "type": "if_statement",
+        "start_byte": 10900,
+        "end_byte": 10980
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4,
+          4,
+          2,
+          1
+        ],
+        "type": "statement_block",
+        "start_byte": 11091,
+        "end_byte": 11203
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          9,
+          1,
+          3,
+          24,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 8316,
+        "end_byte": 10986
+      },
+      "old_position": 5,
+      "subtree": true,
+      "dest_start_byte": 11105,
+      "dest_end_byte": 11193
+    }
+  ]
+}

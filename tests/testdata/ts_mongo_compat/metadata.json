@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "90a8deb6383c31686965893cdea96151f40be396",
+  "commit": "531013b2f8dfb8d04b0bfb844dc83a5ba6404569",
+  "message": "fix: mongodb@4 compatibility support (#8412)\n\nAdd support for mongodb 4.2",
+  "author": "Corky3892",
+  "date": "2021-12-11T03:01:17-05:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 1
+}

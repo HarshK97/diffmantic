@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "df7c06948cc53efda8b2d519338c8a5dc5159607",
+  "commit": "7adbc9bdc7e3e5a4bd3db9c5cf980b71c74fc8fa",
+  "message": "fix: add missing export for View class (#10261)",
+  "author": "Matthias Lindinger",
+  "date": "2023-08-19T14:56:54+02:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

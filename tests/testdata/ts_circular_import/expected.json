@@ -1,0 +1,68 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          2
+        ],
+        "type": "import_statement",
+        "start_byte": 182,
+        "end_byte": 259
+      },
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "program",
+        "start_byte": 0,
+        "end_byte": 29477
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          1,
+          1,
+          0,
+          1
+        ],
+        "type": "import_specifier",
+        "start_byte": 67,
+        "end_byte": 90
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          2,
+          1,
+          0
+        ],
+        "type": "named_imports",
+        "start_byte": 189,
+        "end_byte": 216
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          1,
+          1,
+          0
+        ],
+        "type": "named_imports",
+        "start_byte": 45,
+        "end_byte": 197
+      },
+      "old_position": 1,
+      "subtree": true,
+      "dest_start_byte": 191,
+      "dest_end_byte": 214
+    }
+  ]
+}
