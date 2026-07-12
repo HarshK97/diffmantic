@@ -175,7 +175,9 @@ func TestPipeline(t *testing.T) {
 	}
 
 	for _, name := range fixtures {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
@@ -341,7 +343,9 @@ func TestPipelineEmptyNew(t *testing.T) {
 // TestRoundTripMarshalUnmarshal checks that Marshal followed by Unmarshal is lossless.
 func TestRoundTripMarshalUnmarshal(t *testing.T) {
 	for _, name := range allFixtures(t) {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
@@ -407,7 +411,9 @@ func TestCrossLanguageParsing(t *testing.T) {
 // TestActionSemantics checks action-specific invariants on real diffs.
 func TestActionSemantics(t *testing.T) {
 	for _, name := range allFixtures(t) {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
@@ -455,7 +461,9 @@ func TestActionSemantics(t *testing.T) {
 // TestActionCountNonZero checks that real bug-fix diffs produce at least one action.
 func TestActionCountNonZero(t *testing.T) {
 	for _, name := range allFixtures(t) {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 

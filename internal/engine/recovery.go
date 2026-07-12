@@ -90,5 +90,3 @@ func uniqueTypePairs(
 	}
 	return pairs
 }
-
-

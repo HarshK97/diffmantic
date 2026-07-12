@@ -156,4 +156,3 @@ func init() {
 	diffCmd.Flags().StringP("format", "f", "json", "Output format: json, actions")
 	diffCmd.Flags().StringP("lang", "l", "", "Override language detection (e.g., go, python, c)")
 }
-

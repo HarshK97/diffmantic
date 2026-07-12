@@ -80,23 +80,23 @@ func TestRefinedParentSuppression(t *testing.T) {
 		//   Child 1: not_operator (Insert)
 		//   Child 2: logical_operator_literal (Insert)
 		//   Child 3: not_operator (Move)
-		
+
 		parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
 		parent.Language = "python"
-		
+
 		c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
 		c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
 		c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
 		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
-		
+
 		// Source Tree:
 		// We have an old node for c3 to map from
 		c3Src := &treesitter.ASTNode{Type: "not_operator", StartByte: 50, EndByte: 105}
 		c3Src.Language = "python"
-		
+
 		ms := engine.NewMapping()
 		ms.Add(c3Src, c3)
-		
+
 		es := actions.NewEditScript()
 		// Parent, c1, and c2 are inserted
 		pAct := actions.Action{Type: actions.Insert, Node: parent}
@@ -104,21 +104,21 @@ func TestRefinedParentSuppression(t *testing.T) {
 		c2Act := actions.Action{Type: actions.Insert, Node: c2}
 		// c3 is moved
 		c3Act := actions.Action{Type: actions.Move, Node: c3Src, Parent: parent}
-		
+
 		es.Add(pAct)
 		es.Add(c1Act)
 		es.Add(c2Act)
 		es.Add(c3Act)
-		
+
 		collapsed := Collapse(es, ms, c3Src, parent)
-		
+
 		// We expect the parent's Insert action to be suppressed.
 		// c1, c2, and c3 actions should survive.
 		// So total actions = 3 (c1, c2, c3).
 		if collapsed.Size() != 3 {
 			t.Errorf("expected 3 actions, got %d", collapsed.Size())
 		}
-		
+
 		// Ensure the parent action is suppressed (not in the script)
 		for _, a := range collapsed.Actions() {
 			if a.Node == parent {
@@ -134,41 +134,41 @@ func TestRefinedParentSuppression(t *testing.T) {
 		//   Child 1: identifier (Insert)
 		//   Child 2: assignment_operator_literal (Move)
 		//   Child 3: call (Insert)
-		
+
 		parent := &treesitter.ASTNode{Type: "assignment", StartByte: 0, EndByte: 100}
 		parent.Language = "python"
-		
+
 		c1 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: parent}
 		c2 := &treesitter.ASTNode{Type: "assignment_operator_literal", StartByte: 11, EndByte: 12, Parent: parent}
 		c3 := &treesitter.ASTNode{Type: "call", StartByte: 13, EndByte: 100, Parent: parent}
 		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
-		
+
 		// Source Tree:
 		c2Src := &treesitter.ASTNode{Type: "assignment_operator_literal", StartByte: 20, EndByte: 21}
 		c2Src.Language = "python"
-		
+
 		ms := engine.NewMapping()
 		ms.Add(c2Src, c2)
-		
+
 		es := actions.NewEditScript()
 		pAct := actions.Action{Type: actions.Insert, Node: parent}
 		c1Act := actions.Action{Type: actions.Insert, Node: c1}
 		c2Act := actions.Action{Type: actions.Move, Node: c2Src, Parent: parent}
 		c3Act := actions.Action{Type: actions.Insert, Node: c3}
-		
+
 		es.Add(pAct)
 		es.Add(c1Act)
 		es.Add(c2Act)
 		es.Add(c3Act)
-		
+
 		collapsed := Collapse(es, ms, c2Src, parent)
-		
+
 		// Normalizing the c2 Move action allows the parent assignment to collapse.
 		// Expected surviving actions: parent Insert (Subtree: true) and source child c2Src Delete.
 		if collapsed.Size() != 2 {
 			t.Errorf("expected 2 actions, got %d", collapsed.Size())
 		}
-		
+
 		foundParentSubtree := false
 		foundSourceDelete := false
 		for _, a := range collapsed.Actions() {
@@ -194,36 +194,36 @@ func TestRefinedParentSuppression(t *testing.T) {
 		//   Child 1: not_operator (Insert)
 		//   Child 2: logical_operator_literal (Insert)
 		//   Child 3: not_operator (Insert)
-		
+
 		parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
 		parent.Language = "python"
-		
+
 		c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
 		c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
 		c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
 		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
-		
+
 		ms := engine.NewMapping()
-		
+
 		es := actions.NewEditScript()
 		pAct := actions.Action{Type: actions.Insert, Node: parent}
 		c1Act := actions.Action{Type: actions.Insert, Node: c1}
 		c2Act := actions.Action{Type: actions.Insert, Node: c2}
 		c3Act := actions.Action{Type: actions.Insert, Node: c3}
-		
+
 		es.Add(pAct)
 		es.Add(c1Act)
 		es.Add(c2Act)
 		es.Add(c3Act)
-		
+
 		collapsed := Collapse(es, ms, nil, parent)
-		
+
 		// All children Insert actions should be suppressed, parent Insert action survives with Subtree = true.
 		// Total actions = 1
 		if collapsed.Size() != 1 {
 			t.Errorf("expected 1 action (parent subtree), got %d", collapsed.Size())
 		}
-		
+
 		collapsedActions := collapsed.Actions()
 		if collapsedActions[0].Node != parent || !collapsedActions[0].Subtree {
 			t.Errorf("expected parent action to survive with Subtree: true, got %+v", collapsedActions[0])
@@ -235,28 +235,28 @@ func TestRefinedParentSuppression(t *testing.T) {
 	t.Run("unrelated-suppression-disqualifies-allChildrenInserted", func(t *testing.T) {
 		parent := &treesitter.ASTNode{Type: "call", StartByte: 0, EndByte: 100}
 		parent.Language = "python"
-		
+
 		c1 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: parent}
 		c2 := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 100, Parent: parent}
 		gc1 := &treesitter.ASTNode{Type: "string", StartByte: 12, EndByte: 50, Parent: c2}
 		c2.Children = []*treesitter.ASTNode{gc1}
 		parent.Children = []*treesitter.ASTNode{c1, c2}
-		
+
 		ms := engine.NewMapping()
-		
+
 		es := actions.NewEditScript()
 		pAct := actions.Action{Type: actions.Insert, Node: parent}
 		c1Act := actions.Action{Type: actions.Insert, Node: c1}
 		c2Act := actions.Action{Type: actions.Insert, Node: c2}
 		gc1Act := actions.Action{Type: actions.Insert, Node: gc1}
-		
+
 		es.Add(pAct)
 		es.Add(c1Act)
 		es.Add(c2Act)
 		es.Add(gc1Act)
-		
+
 		collapsed := Collapse(es, ms, nil, parent)
-		
+
 		// Here c2 has all children inserted (gc1), so c2 performs subtree collapse and KillChildren suppresses gc1Act.
 		// When parent is evaluated, c1 is inserted, c2 is inserted (and not suppressed by contentMove).
 		// So parent call performs subtree collapse as expected.
@@ -610,8 +610,8 @@ func TestInlineParentSuppression(t *testing.T) {
 		binExpr := &treesitter.ASTNode{
 			Type:      "binary_expression",
 			StartByte: 608, EndByte: 628,
-			StartRow:  25, EndRow: 25,
-			Children:  []*treesitter.ASTNode{ident, op, selSrc},
+			StartRow: 25, EndRow: 25,
+			Children: []*treesitter.ASTNode{ident, op, selSrc},
 		}
 		binExpr.Language = "go"
 		ident.Parent = binExpr
@@ -676,8 +676,8 @@ func TestInlineParentSuppression(t *testing.T) {
 		call := &treesitter.ASTNode{
 			Type:      "call_expression",
 			StartByte: 619, EndByte: 648,
-			StartRow:  25, EndRow: 25,
-			Children:  []*treesitter.ASTNode{sel, argList},
+			StartRow: 25, EndRow: 25,
+			Children: []*treesitter.ASTNode{sel, argList},
 		}
 		call.Language = "go"
 		sel.Parent = call
@@ -731,8 +731,8 @@ func TestInlineParentSuppression(t *testing.T) {
 		parent := &treesitter.ASTNode{
 			Type:      "call",
 			StartByte: 0, EndByte: 10,
-			StartRow:  10, EndRow: 10,
-			Children:  []*treesitter.ASTNode{child},
+			StartRow: 10, EndRow: 10,
+			Children: []*treesitter.ASTNode{child},
 		}
 		parent.Language = "python"
 		child.Parent = parent
@@ -763,8 +763,8 @@ func TestInlineParentSuppression(t *testing.T) {
 		parent := &treesitter.ASTNode{
 			Type:      "function_definition",
 			StartByte: 0, EndByte: 200,
-			StartRow:  9, EndRow: 15, // spans lines 9-15
-			Children:  []*treesitter.ASTNode{child},
+			StartRow: 9, EndRow: 15, // spans lines 9-15
+			Children: []*treesitter.ASTNode{child},
 		}
 		parent.Language = "python"
 		child.Parent = parent
@@ -794,8 +794,8 @@ func TestInlineParentSuppression(t *testing.T) {
 		parent := &treesitter.ASTNode{
 			Type:      "call",
 			StartByte: 0, EndByte: 10,
-			StartRow:  10, EndRow: 10, // inline, but on a different line
-			Children:  []*treesitter.ASTNode{child},
+			StartRow: 10, EndRow: 10, // inline, but on a different line
+			Children: []*treesitter.ASTNode{child},
 		}
 		parent.Language = "python"
 		child.Parent = parent
@@ -911,5 +911,3 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 		t.Error("expected child c1Src Move to survive")
 	}
 }
-
-

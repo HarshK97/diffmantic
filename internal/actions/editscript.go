@@ -29,7 +29,6 @@ func (es *EditScript) Actions() []Action {
 	return es.actions
 }
 
-
 type jsonOutput struct {
 	Matches []jsonMatch  `json:"matches"`
 	Actions []jsonAction `json:"actions"`

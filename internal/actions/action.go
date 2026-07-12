@@ -40,7 +40,6 @@ type Action struct {
 	GroupID  string
 }
 
-
 func (a Action) String() string {
 	switch a.Type {
 	case Insert:
