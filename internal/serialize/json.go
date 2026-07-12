@@ -22,14 +22,14 @@ type Envelope struct {
 // Action represents a serialized edit-script action.
 // The absence of the "subtree" field always indicates false.
 type Action struct {
-	Action      string   `json:"action"` // "insert", "delete", "update", "move"
-	Node        *NodeRef `json:"node"`
-	Parent      *NodeRef `json:"parent,omitempty"`
-	Position    *int     `json:"position,omitempty"`
-	OldParent   *NodeRef `json:"old_parent,omitempty"`
-	OldPosition *int     `json:"old_position,omitempty"`
-	OldValue    string   `json:"old_value,omitempty"`
-	NewValue    string   `json:"new_value,omitempty"`
+	Action        string   `json:"action"` // "insert", "delete", "update", "move"
+	Node          *NodeRef `json:"node"`
+	Parent        *NodeRef `json:"parent,omitempty"`
+	Position      *int     `json:"position,omitempty"`
+	OldParent     *NodeRef `json:"old_parent,omitempty"`
+	OldPosition   *int     `json:"old_position,omitempty"`
+	OldValue      string   `json:"old_value,omitempty"`
+	NewValue      string   `json:"new_value,omitempty"`
 	Subtree       *bool    `json:"subtree,omitempty"`
 	DestNode      *NodeRef `json:"dest_node,omitempty"`
 	DestStartByte *uint32  `json:"dest_start_byte,omitempty"`
@@ -263,11 +263,12 @@ func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.Edit
 		// Resolve Node
 		if ja.Node != nil {
 			var err error
-			if ja.Node.Tree == "before" {
+			switch ja.Node.Tree {
+			case "before":
 				a.Node, err = findNodeByPath(srcRoot, ja.Node.Path)
-			} else if ja.Node.Tree == "after" {
+			case "after":
 				a.Node, err = findNodeByPath(dstRoot, ja.Node.Path)
-			} else {
+			default:
 				return nil, fmt.Errorf("unknown tree name for node: %q", ja.Node.Tree)
 			}
 			if err != nil {
@@ -278,11 +279,12 @@ func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.Edit
 		// Resolve Parent (if present)
 		if ja.Parent != nil {
 			var err error
-			if ja.Parent.Tree == "before" {
+			switch ja.Parent.Tree {
+			case "before":
 				a.Parent, err = findNodeByPath(srcRoot, ja.Parent.Path)
-			} else if ja.Parent.Tree == "after" {
+			case "after":
 				a.Parent, err = findNodeByPath(dstRoot, ja.Parent.Path)
-			} else {
+			default:
 				return nil, fmt.Errorf("unknown tree name for parent: %q", ja.Parent.Tree)
 			}
 			if err != nil {

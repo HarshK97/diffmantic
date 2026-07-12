@@ -6,7 +6,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-
 func Collapse(
 	es *actions.EditScript,
 	ms *engine.Mapping,
@@ -265,7 +264,6 @@ func KillChildren(
 	}
 }
 
-
 // suppressInlineParentRedundancy kills a parent Insert/Delete when an inline
 // child of the same type already covers the same line. Subtree:true parents
 // are never killed (they cover more than the line). Looks one level up only.
@@ -330,11 +328,11 @@ var genuineBareOperatorLiterals = map[string]bool{
 	"assignment_operator_literal": true,
 	"arithmetic_operator_literal": true,
 	"bitwise_operator_literal":    true,
-	"unary_operator_literal":     true,
-	"channel_operator_literal":   true,
-	"update_operator_literal":    true,
-	"is_operator":                true,
-	"is_not_operator":            true,
+	"unary_operator_literal":      true,
+	"channel_operator_literal":    true,
+	"update_operator_literal":     true,
+	"is_operator":                 true,
+	"is_not_operator":             true,
 }
 
 func isBareAliasedLiteral(node *treesitter.ASTNode) bool {

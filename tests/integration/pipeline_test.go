@@ -175,7 +175,9 @@ func TestPipeline(t *testing.T) {
 	}
 
 	for _, name := range fixtures {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
@@ -289,7 +291,9 @@ func TestPipelineEmptyOld(t *testing.T) {
 	// Create a minimal empty file for the old side.
 	ext := filepath.Ext(f.OldPath)
 	emptyFile := filepath.Join(t.TempDir(), "empty"+ext)
-	os.WriteFile(emptyFile, []byte{}, 0644)
+	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
 
 	f.OldPath = emptyFile
 	f.OldSrc = []byte{}
@@ -319,7 +323,9 @@ func TestPipelineEmptyNew(t *testing.T) {
 	f := loadFixture(t, fixtures[0])
 	ext := filepath.Ext(f.NewPath)
 	emptyFile := filepath.Join(t.TempDir(), "empty"+ext)
-	os.WriteFile(emptyFile, []byte{}, 0644)
+	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
 
 	f.NewPath = emptyFile
 	f.NewSrc = []byte{}
@@ -341,7 +347,9 @@ func TestPipelineEmptyNew(t *testing.T) {
 // TestRoundTripMarshalUnmarshal checks that Marshal followed by Unmarshal is lossless.
 func TestRoundTripMarshalUnmarshal(t *testing.T) {
 	for _, name := range allFixtures(t) {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
@@ -407,7 +415,9 @@ func TestCrossLanguageParsing(t *testing.T) {
 // TestActionSemantics checks action-specific invariants on real diffs.
 func TestActionSemantics(t *testing.T) {
 	for _, name := range allFixtures(t) {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
@@ -455,7 +465,9 @@ func TestActionSemantics(t *testing.T) {
 // TestActionCountNonZero checks that real bug-fix diffs produce at least one action.
 func TestActionCountNonZero(t *testing.T) {
 	for _, name := range allFixtures(t) {
+		name := name
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 

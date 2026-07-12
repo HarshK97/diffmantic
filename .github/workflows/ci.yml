@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 # Group runs by workflow and ref/PR number.
 # Cancel in-progress runs on pull requests, but always let runs on 'main' complete.
@@ -54,5 +55,15 @@ jobs:
           version: v2.12
           args: --timeout=5m
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
       - name: Run test suite
-        run: go test -v ./...
+        run: gotestsum --format pkgname --junitfile unit-tests.xml -- ./...
+
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/unit-tests.xml'
+          check_name: 'Test Report (${{ matrix.os }})'

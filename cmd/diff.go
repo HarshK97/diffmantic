@@ -58,6 +58,21 @@ Examples:
 			os.Exit(1)
 		}
 
+		infoA, err := os.Stat(fileA)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error stating %s: %v\n", fileA, err)
+			os.Exit(1)
+		}
+		infoB, err := os.Stat(fileB)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error stating %s: %v\n", fileB, err)
+			os.Exit(1)
+		}
+		if infoA.IsDir() || infoB.IsDir() {
+			fmt.Fprintln(os.Stderr, "Error: Directory diffing is not supported yet")
+			os.Exit(1)
+		}
+
 		var (
 			srcA []byte
 			srcB []byte
