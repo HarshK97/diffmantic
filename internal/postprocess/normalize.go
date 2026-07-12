@@ -251,5 +251,3 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 	}
 	return result
 }
-
-

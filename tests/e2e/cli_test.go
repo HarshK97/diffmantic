@@ -203,5 +203,3 @@ func TestCLI_OneArg(t *testing.T) {
 		t.Errorf("expected arg count error, got: %s", stderr)
 	}
 }
-
-

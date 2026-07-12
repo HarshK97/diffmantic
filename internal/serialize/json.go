@@ -22,14 +22,14 @@ type Envelope struct {
 // Action represents a serialized edit-script action.
 // The absence of the "subtree" field always indicates false.
 type Action struct {
-	Action      string   `json:"action"` // "insert", "delete", "update", "move"
-	Node        *NodeRef `json:"node"`
-	Parent      *NodeRef `json:"parent,omitempty"`
-	Position    *int     `json:"position,omitempty"`
-	OldParent   *NodeRef `json:"old_parent,omitempty"`
-	OldPosition *int     `json:"old_position,omitempty"`
-	OldValue    string   `json:"old_value,omitempty"`
-	NewValue    string   `json:"new_value,omitempty"`
+	Action        string   `json:"action"` // "insert", "delete", "update", "move"
+	Node          *NodeRef `json:"node"`
+	Parent        *NodeRef `json:"parent,omitempty"`
+	Position      *int     `json:"position,omitempty"`
+	OldParent     *NodeRef `json:"old_parent,omitempty"`
+	OldPosition   *int     `json:"old_position,omitempty"`
+	OldValue      string   `json:"old_value,omitempty"`
+	NewValue      string   `json:"new_value,omitempty"`
 	Subtree       *bool    `json:"subtree,omitempty"`
 	DestNode      *NodeRef `json:"dest_node,omitempty"`
 	DestStartByte *uint32  `json:"dest_start_byte,omitempty"`

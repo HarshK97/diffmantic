@@ -330,11 +330,11 @@ var genuineBareOperatorLiterals = map[string]bool{
 	"assignment_operator_literal": true,
 	"arithmetic_operator_literal": true,
 	"bitwise_operator_literal":    true,
-	"unary_operator_literal":     true,
-	"channel_operator_literal":   true,
-	"update_operator_literal":    true,
-	"is_operator":                true,
-	"is_not_operator":            true,
+	"unary_operator_literal":      true,
+	"channel_operator_literal":    true,
+	"update_operator_literal":     true,
+	"is_operator":                 true,
+	"is_not_operator":             true,
 }
 
 func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
