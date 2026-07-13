@@ -263,11 +263,12 @@ func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.Edit
 		// Resolve Node
 		if ja.Node != nil {
 			var err error
-			if ja.Node.Tree == "before" {
+			switch ja.Node.Tree {
+			case "before":
 				a.Node, err = findNodeByPath(srcRoot, ja.Node.Path)
-			} else if ja.Node.Tree == "after" {
+			case "after":
 				a.Node, err = findNodeByPath(dstRoot, ja.Node.Path)
-			} else {
+			default:
 				return nil, fmt.Errorf("unknown tree name for node: %q", ja.Node.Tree)
 			}
 			if err != nil {
@@ -278,11 +279,12 @@ func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.Edit
 		// Resolve Parent (if present)
 		if ja.Parent != nil {
 			var err error
-			if ja.Parent.Tree == "before" {
+			switch ja.Parent.Tree {
+			case "before":
 				a.Parent, err = findNodeByPath(srcRoot, ja.Parent.Path)
-			} else if ja.Parent.Tree == "after" {
+			case "after":
 				a.Parent, err = findNodeByPath(dstRoot, ja.Parent.Path)
-			} else {
+			default:
 				return nil, fmt.Errorf("unknown tree name for parent: %q", ja.Parent.Tree)
 			}
 			if err != nil {
