@@ -217,5 +217,3 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 	}
 	return overlap
 }
-
-

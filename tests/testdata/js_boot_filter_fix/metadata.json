@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "dc48f27f607f59b187bd21ab3a84a82d2638f1eb",
+  "commit": "6b506d801a731eb079fc0f442d25a7398b5f1a5b",
+  "message": "examples: fix mvc example to ignore files in controllers dir\n\nfixes #3182",
+  "author": "Douglas Christopher Wilson",
+  "date": "2017-01-26T22:33:52-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

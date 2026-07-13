@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "d39e8ad1778a0b8a606a5a7b17096d0cc5ec722d",
+  "commit": "8d09bfe6d88983da5c3e12cfdd54782c4dc675db",
+  "message": "fix: restore array parsing for req.query repeated keys (#7181)\n\nfix: restore array parsing for `req.query` repeated keys (#7147)",
+  "author": "Sai Asish Y",
+  "date": "2026-05-08T12:55:02-07:00",
+  "language": "javascript",
+  "files_changed": 2,
+  "insertions": 16,
+  "deletions": 1
+}

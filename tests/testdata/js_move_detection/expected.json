@@ -1,0 +1,94 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          10,
+          0,
+          1,
+          2,
+          2,
+          0,
+          1,
+          1
+        ],
+        "type": "assignment_expression",
+        "start_byte": 634,
+        "end_byte": 654
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1,
+          2,
+          2,
+          0
+        ],
+        "type": "expression_statement",
+        "start_byte": 630,
+        "end_byte": 651
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          10,
+          0,
+          1,
+          2,
+          2,
+          0,
+          1
+        ],
+        "type": "parenthesized_expression",
+        "start_byte": 633,
+        "end_byte": 655
+      },
+      "old_position": 1,
+      "subtree": true,
+      "dest_start_byte": 630,
+      "dest_end_byte": 650
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1,
+          2,
+          2,
+          1,
+          1,
+          1
+        ],
+        "type": "member_expression",
+        "start_byte": 658,
+        "end_byte": 666
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1,
+          2,
+          2,
+          1,
+          1
+        ],
+        "type": "parenthesized_expression",
+        "start_byte": 657,
+        "end_byte": 667
+      },
+      "position": 1,
+      "subtree": true
+    }
+  ]
+}

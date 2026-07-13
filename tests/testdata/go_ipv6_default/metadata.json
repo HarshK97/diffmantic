@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "f1e942889abdab773538f215ec6aa242f994c6d0",
+  "commit": "87811a97bddbe552ddd7f5ae2fa7bb949e787862",
+  "message": "fix: the trusted proxies should support ipv6 address by default (#3033)",
+  "author": "Eric_Lee",
+  "date": "2022-05-28T08:14:35+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

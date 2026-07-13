@@ -1,0 +1,74 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          23,
+          2,
+          10,
+          3,
+          19,
+          2,
+          1,
+          1
+        ],
+        "type": "lambda",
+        "start_byte": 16625,
+        "end_byte": 16643
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          23,
+          2,
+          10,
+          3,
+          19,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 16624,
+        "end_byte": 16683
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          4
+        ],
+        "type": "import_statement",
+        "start_byte": 151,
+        "end_byte": 164
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          24,
+          2,
+          10,
+          3,
+          19,
+          2,
+          1,
+          1
+        ],
+        "type": "attribute",
+        "start_byte": 16639,
+        "end_byte": 16651
+      },
+      "subtree": true
+    }
+  ]
+}

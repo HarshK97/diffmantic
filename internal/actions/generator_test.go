@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -153,75 +152,7 @@ func TestChawatheUpdateLeaf(t *testing.T) {
 	}
 }
 
-// --- JSON output tests ---
 
-func TestToJSON(t *testing.T) {
-	src := &treesitter.ASTNode{Type: "module"}
-	srcId := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: src, StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 1}
-	src.Children = []*treesitter.ASTNode{srcId}
-
-	dst := &treesitter.ASTNode{Type: "module"}
-	dstId := &treesitter.ASTNode{Type: "identifier", Label: "y", Parent: dst, StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 1}
-	dst.Children = []*treesitter.ASTNode{dstId}
-
-	ms := engine.NewMapping()
-	ms.Add(src, dst)
-	ms.Add(srcId, dstId)
-
-	es := GenerateEditScript(src, dst, ms)
-
-	data, err := ToJSON(es, ms)
-	if err != nil {
-		t.Fatalf("ToJSON error: %v", err)
-	}
-
-	var out map[string]interface{}
-	if err := json.Unmarshal(data, &out); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-
-	if _, ok := out["matches"]; !ok {
-		t.Error("JSON missing 'matches' key")
-	}
-	if _, ok := out["actions"]; !ok {
-		t.Error("JSON missing 'actions' key")
-	}
-
-	actionsArr := out["actions"].([]interface{})
-	found := false
-	for _, raw := range actionsArr {
-		act := raw.(map[string]interface{})
-		if act["action"] == "update" {
-			found = true
-			if _, ok := act["label"]; !ok {
-				t.Error("update action missing 'label' field")
-			}
-		}
-	}
-	if !found {
-		t.Error("expected update action in JSON output")
-	}
-}
-
-func TestWriteJSON(t *testing.T) {
-	src := &treesitter.ASTNode{Type: "module"}
-	dst := &treesitter.ASTNode{Type: "module"}
-
-	ms := engine.NewMapping()
-	ms.Add(src, dst)
-
-	es := GenerateEditScript(src, dst, ms)
-
-	var buf strings.Builder
-	if err := WriteJSON(&buf, es, ms); err != nil {
-		t.Fatalf("WriteJSON error: %v", err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "matches") || !strings.Contains(output, "actions") {
-		t.Error("WriteJSON output missing expected keys")
-	}
-}
 
 // --- PrintActions test ---
 

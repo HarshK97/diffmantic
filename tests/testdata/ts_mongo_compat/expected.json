@@ -1,0 +1,168 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          0
+        ],
+        "type": "comment",
+        "label": "// mongdb-3.7 exports Cursor, mongodb-4.2 exports FindCursor, provide support for both.",
+        "start_byte": 32912,
+        "end_byte": 32999
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 32902,
+        "end_byte": 35647
+      },
+      "position": 0
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          0,
+          1,
+          2
+        ],
+        "type": "member_expression",
+        "start_byte": 32933,
+        "end_byte": 32969
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          1,
+          1,
+          2
+        ],
+        "type": "binary_expression",
+        "start_byte": 33029,
+        "end_byte": 33109
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          0,
+          1
+        ],
+        "type": "variable_declarator",
+        "start_byte": 32918,
+        "end_byte": 32969
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 33029,
+      "dest_end_byte": 33065
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          1,
+          1,
+          2,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "||",
+        "start_byte": 33066,
+        "end_byte": 33068
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          1,
+          1,
+          2
+        ],
+        "type": "binary_expression",
+        "start_byte": 33029,
+        "end_byte": 33109
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          1,
+          1,
+          2,
+          2
+        ],
+        "type": "member_expression",
+        "start_byte": 33069,
+        "end_byte": 33109
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          20,
+          1,
+          3,
+          112,
+          4,
+          1,
+          1,
+          2
+        ],
+        "type": "binary_expression",
+        "start_byte": 33029,
+        "end_byte": 33109
+      },
+      "position": 2,
+      "subtree": true
+    }
+  ]
+}

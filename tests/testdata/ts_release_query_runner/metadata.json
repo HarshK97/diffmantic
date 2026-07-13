@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "883ed8eb7efaf4dc3068632563b72c7317d7c82a",
+  "commit": "a84b9b3d39c44cc0e5809b4680a5f046bda602cd",
+  "message": "fix(cache): release query runner on error in storeInCache (#12545)",
+  "author": "Frank Johnston",
+  "date": "2026-06-04T20:29:23+01:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 47,
+  "deletions": 45
+}

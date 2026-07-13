@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "7de850e8858fd47372dbc615871d5dea576b54a0",
+  "commit": "ad22c10e2995ff53ad08e692810857b99ec2b90d",
+  "message": "fix: copy cordova query rows affected into query result (#10873)",
+  "author": "jacobg",
+  "date": "2026-01-04T10:14:13-05:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "2f7f6a57f35f204685840eb57d29ef454e45ba30",
+  "commit": "fb1971778f0a199e65193af4bbd0a040fd3808f8",
+  "message": "Bug fix: field uri in digest authentication should not be empty when encounter http redirections",
+  "author": "Zhaoyu Luo",
+  "date": "2015-01-25T18:11:22-06:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 1
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "12d66cfc41505e595db787c1c26fd6cddf26e7e5",
+  "commit": "9cdc8325ae8ace6fe3b09eb78751d6912410e9cc",
+  "message": "Fix Setting a cookie on redirect",
+  "author": "Ian Cordasco",
+  "date": "2013-02-10T17:43:37-05:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "e57b5bf05c4e39281b5547b1bd05a5074dc96df3",
+  "commit": "3f07f990ac74f1e1691ba17ef8c14007f05846ab",
+  "message": "Fix typo in documentation for verify",
+  "author": "Jonas Fonseca",
+  "date": "2024-10-04T09:18:45-04:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

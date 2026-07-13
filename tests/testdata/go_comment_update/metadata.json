@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "03f3e420a3c370659359fb4deb99a474229b215a",
+  "commit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+  "message": "docs: fix `BindXML` comment referencing nonexistent `binding.BindXML` (#4717)\n\nThe doc comment on line 790 read:",
+  "author": "greymoth",
+  "date": "2026-06-27T01:48:16+09:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "d513f227337077dd6aa53ae890020cfa2bb165ae",
+  "commit": "324c46cd8669270dd5f22173cd78a7cab591349c",
+  "message": "fix(persistence): preserve select false columns on the in-memory entity after save() (#12501)",
+  "author": "Peter",
+  "date": "2026-06-03T19:28:44+02:00",
+  "language": "typescript",
+  "files_changed": 7,
+  "insertions": 160,
+  "deletions": 22
+}

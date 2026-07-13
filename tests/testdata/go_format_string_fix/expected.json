@@ -1,0 +1,58 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          29,
+          4,
+          0,
+          9,
+          1,
+          0,
+          2,
+          1,
+          6,
+          3,
+          0,
+          10,
+          0,
+          0,
+          1
+        ],
+        "type": "field_identifier",
+        "label": "Fprintf",
+        "start_byte": 5254,
+        "end_byte": 5261
+      },
+      "old_value": "Fprintf",
+      "new_value": "Fprint",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          29,
+          4,
+          0,
+          9,
+          1,
+          0,
+          2,
+          1,
+          6,
+          3,
+          0,
+          10,
+          0,
+          0,
+          1
+        ],
+        "type": "field_identifier",
+        "label": "Fprint",
+        "start_byte": 5254,
+        "end_byte": 5260
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "2a7417dd84025b62c4207bf018ae8826dc0be629",
+  "commit": "bf4c3ee00f3b95a329fc1dd4dd0cd17c74178121",
+  "message": "docs: fix incomplete JSDoc comment\n\ncloses #4867",
+  "author": "Hashen",
+  "date": "2022-03-20T20:13:23+05:30",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

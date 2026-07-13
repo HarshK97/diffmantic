@@ -1,0 +1,58 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          9,
+          4,
+          0,
+          2,
+          1,
+          0,
+          0
+        ],
+        "type": "identifier",
+        "label": "validate",
+        "start_byte": 682,
+        "end_byte": 690
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          9,
+          4,
+          0,
+          2,
+          1,
+          0
+        ],
+        "type": "call_expression",
+        "start_byte": 682,
+        "end_byte": 695
+      },
+      "position": 0
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          9,
+          4,
+          0,
+          2,
+          1,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 682,
+        "end_byte": 696
+      },
+      "subtree": true
+    }
+  ]
+}

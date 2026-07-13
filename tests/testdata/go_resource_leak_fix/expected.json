@@ -1,0 +1,33 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          120,
+          5,
+          0,
+          4
+        ],
+        "type": "defer_statement",
+        "start_byte": 20203,
+        "end_byte": 20218
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          120,
+          5,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 19791,
+        "end_byte": 20354
+      },
+      "position": 4,
+      "subtree": true
+    }
+  ]
+}

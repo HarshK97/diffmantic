@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "3b774f1c780dadb2c9abdb74f481b342dfaa48ce",
+  "commit": "ba0b147bafb0204810110beb07fdeb4027c546e7",
+  "message": "fix(query-builder): only normalize plain-object where criteria, guard __proto__\n\nnormalizeWhereCriteria() iterated any object whose criteria were being",
+  "author": "Naor Peled",
+  "date": "2026-06-27T02:06:41+03:00",
+  "language": "typescript",
+  "files_changed": 3,
+  "insertions": 79,
+  "deletions": 0
+}

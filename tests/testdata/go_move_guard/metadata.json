@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "86ff4a64c7efe1a1c875529835eeef9e15de1e86",
+  "commit": "82bcd6d39bfe9c22032764ff3b0b6f8ef1673e49",
+  "message": "fix(binding): dereference pointer to struct (#3199)",
+  "author": "Alonso Villegas",
+  "date": "2024-02-07T06:44:11-05:00",
+  "language": "go",
+  "files_changed": 2,
+  "insertions": 28,
+  "deletions": 1
+}

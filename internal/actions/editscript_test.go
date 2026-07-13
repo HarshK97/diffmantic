@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -57,31 +56,4 @@ func TestFprintActionsContainsDetails(t *testing.T) {
 	}
 }
 
-func TestBuildJSONSubtreeFlag(t *testing.T) {
-	es := NewEditScript()
-	node := &treesitter.ASTNode{Type: "block"}
-	es.Add(Action{Type: Insert, Node: node, Parent: &treesitter.ASTNode{Type: "func"}, Position: 0, Subtree: true})
 
-	ms := engine.NewMapping()
-	out := buildJSONOutput(es, ms)
-
-	if len(out.Actions) != 1 {
-		t.Fatalf("want 1 action, got %d", len(out.Actions))
-	}
-	if out.Actions[0].Subtree == nil || !*out.Actions[0].Subtree {
-		t.Error("subtree flag should be set to true")
-	}
-}
-
-func TestBuildJSONNoSubtreeOmitted(t *testing.T) {
-	es := NewEditScript()
-	node := &treesitter.ASTNode{Type: "id", Label: "x"}
-	es.Add(Action{Type: Delete, Node: node, Subtree: false})
-
-	ms := engine.NewMapping()
-	out := buildJSONOutput(es, ms)
-
-	if out.Actions[0].Subtree != nil {
-		t.Error("subtree=false should be omitted (nil pointer)")
-	}
-}

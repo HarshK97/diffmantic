@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "9d0976229d48c22e8f47dee6349bc4531035657f",
+  "commit": "2585f209f98f91da68739bdb33b599df45b3a6e6",
+  "message": "tests: fix test missing assertion",
+  "author": "Douglas Christopher Wilson",
+  "date": "2022-02-04T21:18:47-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}
