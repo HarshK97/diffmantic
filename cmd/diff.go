@@ -28,6 +28,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -120,10 +121,13 @@ Examples:
 
 		switch format {
 		case "json":
-			if err := actions.WriteJSON(os.Stdout, es, result.Mappings); err != nil {
-				fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
+			jsonData, err := serialize.Marshal(es, result.Mappings, astA, astB)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error serializing JSON: %v\n", err)
 				os.Exit(1)
 			}
+			_, _ = os.Stdout.Write(jsonData)
+			_, _ = os.Stdout.Write([]byte("\n"))
 		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 			engine.PrintMappings(result)

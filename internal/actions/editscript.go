@@ -1,12 +1,9 @@
 package actions
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/HarshK97/diffmantic/internal/engine"
 )
 
 type EditScript struct {
@@ -29,83 +26,6 @@ func (es *EditScript) Actions() []Action {
 	return es.actions
 }
 
-
-type jsonOutput struct {
-	Matches []jsonMatch  `json:"matches"`
-	Actions []jsonAction `json:"actions"`
-}
-
-type jsonMatch struct {
-	Src  string `json:"src"`
-	Dest string `json:"dest"`
-}
-
-type jsonAction struct {
-	Action  string `json:"action"`
-	Tree    string `json:"tree"`
-	Parent  string `json:"parent,omitempty"`
-	At      *int   `json:"at,omitempty"`
-	Label   string `json:"label,omitempty"`
-	Subtree *bool  `json:"subtree,omitempty"`
-}
-
-func ToJSON(es *EditScript, ms *engine.Mapping) ([]byte, error) {
-	out := buildJSONOutput(es, ms)
-	return json.MarshalIndent(out, "", "  ")
-}
-
-func WriteJSON(w io.Writer, es *EditScript, ms *engine.Mapping) error {
-	out := buildJSONOutput(es, ms)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
-}
-
-func PrintJSON(es *EditScript, ms *engine.Mapping) error {
-	return WriteJSON(os.Stdout, es, ms)
-}
-
-func buildJSONOutput(es *EditScript, ms *engine.Mapping) jsonOutput {
-	out := jsonOutput{
-		Matches: make([]jsonMatch, 0, len(ms.Pairs)),
-		Actions: make([]jsonAction, 0, es.Size()),
-	}
-
-	for _, p := range ms.Pairs {
-		out.Matches = append(out.Matches, jsonMatch{
-			Src:  NodeToString(p.Src),
-			Dest: NodeToString(p.Dst),
-		})
-	}
-
-	for _, a := range es.Actions() {
-		ja := jsonAction{
-			Action: a.Type.String(),
-			Tree:   NodeToString(a.Node),
-		}
-
-		switch a.Type {
-		case Insert, Move:
-			if a.Parent != nil {
-				ja.Parent = NodeToString(a.Parent)
-			}
-			pos := a.Position
-			ja.At = &pos
-		case Update:
-			ja.Label = a.Value
-		case Delete:
-		}
-
-		if a.Subtree {
-			st := true
-			ja.Subtree = &st
-		}
-
-		out.Actions = append(out.Actions, ja)
-	}
-
-	return out
-}
 
 func PrintActions(es *EditScript) {
 	FprintActions(os.Stdout, es)
