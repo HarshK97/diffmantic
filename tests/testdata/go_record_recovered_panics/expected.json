@@ -7,7 +7,7 @@
         "tree": "before",
         "path": [
           21,
-          1,
+          2,
           2,
           0
         ],
@@ -22,7 +22,7 @@
         "tree": "after",
         "path": [
           21,
-          1,
+          2,
           2,
           0
         ],
@@ -38,7 +38,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0,
           0
         ],
@@ -50,7 +50,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0
         ],
         "type": "statement_list",
@@ -66,7 +66,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0,
           1
         ],
@@ -78,7 +78,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0
         ],
         "type": "statement_list",
@@ -94,7 +94,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0,
           2
         ],
@@ -106,7 +106,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0
         ],
         "type": "statement_list",
@@ -122,7 +122,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0,
           3
         ],
@@ -135,7 +135,7 @@
         "tree": "after",
         "path": [
           21,
-          2,
+          3,
           0
         ],
         "type": "statement_list",
