@@ -23,7 +23,7 @@ func TestEditScriptActionsSlice(t *testing.T) {
 
 func TestFprintActionsNil(t *testing.T) {
 	var buf bytes.Buffer
-	FprintActions(&buf, nil)
+	_ = FprintActions(&buf, nil)
 	if buf.String() != "(no edit actions)\n" {
 		t.Errorf("nil script output = %q", buf.String())
 	}
@@ -39,7 +39,7 @@ func TestFprintActionsContainsDetails(t *testing.T) {
 	es.Add(Action{Type: Update, Node: &treesitter.ASTNode{Type: "id", Label: "old"}, Value: "new"})
 
 	var buf bytes.Buffer
-	FprintActions(&buf, es)
+	_ = FprintActions(&buf, es)
 	out := buf.String()
 
 	if !bytes.Contains([]byte(out), []byte("[subtree]")) {
@@ -55,5 +55,3 @@ func TestFprintActionsContainsDetails(t *testing.T) {
 		t.Error("should show total count")
 	}
 }
-
-

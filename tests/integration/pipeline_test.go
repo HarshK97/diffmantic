@@ -291,7 +291,9 @@ func TestPipelineEmptyOld(t *testing.T) {
 	// Create a minimal empty file for the old side.
 	ext := filepath.Ext(f.OldPath)
 	emptyFile := filepath.Join(t.TempDir(), "empty"+ext)
-	os.WriteFile(emptyFile, []byte{}, 0644)
+	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
 
 	f.OldPath = emptyFile
 	f.OldSrc = []byte{}
@@ -321,7 +323,9 @@ func TestPipelineEmptyNew(t *testing.T) {
 	f := loadFixture(t, fixtures[0])
 	ext := filepath.Ext(f.NewPath)
 	emptyFile := filepath.Join(t.TempDir(), "empty"+ext)
-	os.WriteFile(emptyFile, []byte{}, 0644)
+	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
 
 	f.NewPath = emptyFile
 	f.NewSrc = []byte{}

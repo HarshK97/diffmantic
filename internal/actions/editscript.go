@@ -26,19 +26,22 @@ func (es *EditScript) Actions() []Action {
 	return es.actions
 }
 
-
 func PrintActions(es *EditScript) {
-	FprintActions(os.Stdout, es)
+	_ = FprintActions(os.Stdout, es)
 }
 
-func FprintActions(w io.Writer, es *EditScript) {
+func FprintActions(w io.Writer, es *EditScript) error {
 	if es == nil || es.Size() == 0 {
-		fmt.Fprintln(w, "(no edit actions)")
-		return
+		_, err := fmt.Fprintln(w, "(no edit actions)")
+		return err
 	}
-	fmt.Fprintf(w, "\n%-4s  %-14s  %-25s %-20s  %-25s  %s\n",
-		"#", "Op", "Node Type", "Node Label", "Parent Type", "Details")
-	fmt.Fprintln(w, "──────────────────────────────────────────────────────────────────────────────────────────────────────────")
+	if _, err := fmt.Fprintf(w, "\n%-4s  %-14s  %-25s %-20s  %-25s  %s\n",
+		"#", "Op", "Node Type", "Node Label", "Parent Type", "Details"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "──────────────────────────────────────────────────────────────────────────────────────────────────────────"); err != nil {
+		return err
+	}
 	for i, a := range es.Actions() {
 		nodeType := ""
 		nodeLabel := "-"
@@ -73,8 +76,11 @@ func FprintActions(w io.Writer, es *EditScript) {
 		}
 
 		op := a.Type.String()
-		fmt.Fprintf(w, "%-4d  %-14s  %-25s %-20s  %-25s  %s\n",
-			i+1, op, nodeType, nodeLabel, parentType, detail)
+		if _, err := fmt.Fprintf(w, "%-4d  %-14s  %-25s %-20s  %-25s  %s\n",
+			i+1, op, nodeType, nodeLabel, parentType, detail); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(w, "\nTotal actions: %d\n", es.Size())
+	_, err := fmt.Fprintf(w, "\nTotal actions: %d\n", es.Size())
+	return err
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-
 func Collapse(
 	es *actions.EditScript,
 	ms *engine.Mapping,
@@ -264,7 +263,6 @@ func KillChildren(
 		}
 	}
 }
-
 
 // suppressInlineParentRedundancy kills a parent Insert/Delete when an inline
 // child of the same type already covers the same line. Subtree:true parents

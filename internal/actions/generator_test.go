@@ -152,8 +152,6 @@ func TestChawatheUpdateLeaf(t *testing.T) {
 	}
 }
 
-
-
 // --- PrintActions test ---
 
 func TestPrintActions(t *testing.T) {
@@ -165,7 +163,7 @@ func TestPrintActions(t *testing.T) {
 	es.Add(Action{Type: Update, Node: node, Value: "bar"})
 
 	var buf strings.Builder
-	FprintActions(&buf, es)
+	_ = FprintActions(&buf, es)
 	output := buf.String()
 
 	if !strings.Contains(output, "insert") {
@@ -184,7 +182,7 @@ func TestPrintActions(t *testing.T) {
 
 func TestPrintActionsEmpty(t *testing.T) {
 	var buf strings.Builder
-	FprintActions(&buf, NewEditScript())
+	_ = FprintActions(&buf, NewEditScript())
 	if !strings.Contains(buf.String(), "no edit actions") {
 		t.Error("empty script should print 'no edit actions'")
 	}

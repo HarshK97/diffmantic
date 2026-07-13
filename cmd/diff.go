@@ -141,8 +141,8 @@ Examples:
 				fmt.Fprintf(os.Stderr, "error serializing JSON: %v\n", err)
 				os.Exit(1)
 			}
-			os.Stdout.Write(jsonData)
-			os.Stdout.Write([]byte("\n"))
+			_, _ = os.Stdout.Write(jsonData)
+			_, _ = os.Stdout.Write([]byte("\n"))
 		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
 			engine.PrintMappings(result)
