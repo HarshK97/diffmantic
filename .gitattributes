@@ -1,0 +1,3 @@
+# Collapse expected.json files in testdata in Pull Request diffs on GitHub and GitLab,
+# but keep the code snippet inputs (old/new files) visible for easier review.
+**/testdata/**/expected.json linguist-generated=true
