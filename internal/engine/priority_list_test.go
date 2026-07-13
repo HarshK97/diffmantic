@@ -13,9 +13,9 @@ func TestPriorityListPushAndPeek(t *testing.T) {
 		t.Errorf("empty PeekMax = %d, want MinInt32", got)
 	}
 
-	leaf := mkLeaf("id", "x")           // height 1
-	inner := mkNode("call", "", leaf)    // height 2
-	root := mkNode("func", "", inner)    // height 3
+	leaf := mkLeaf("id", "x")         // height 1
+	inner := mkNode("call", "", leaf) // height 2
+	root := mkNode("func", "", inner) // height 3
 
 	Push(leaf, l)
 	Push(root, l)

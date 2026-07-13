@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "ed1f0b95c6a246c785fb9d40a1b2c65b53c3fac3",
+  "commit": "e3aac270319006069b37f574c6e41a1fcfe7c5b1",
+  "message": "fix: prototype pollution issue",
+  "author": "Umed Khudoiberdiev",
+  "date": "2022-08-29T23:22:58+05:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

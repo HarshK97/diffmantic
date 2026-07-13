@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "db309081bc5c137b2aa15701ef53f7f19788da25",
+  "commit": "5c00df8afadd06cc5be530dde00fe6d9fa4a2e4a",
+  "message": "fix(render): write content length in Data.Render (#4206)\n\n* init test",
+  "author": "Denis Galeev",
+  "date": "2026-02-28T09:07:31+07:00",
+  "language": "go",
+  "files_changed": 2,
+  "insertions": 38,
+  "deletions": 1
+}

@@ -1,0 +1,252 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          7
+        ],
+        "type": "comment",
+        "label": "# data that proxies attributes to underlying objects needs hasattr",
+        "start_byte": 19434,
+        "end_byte": 19500
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4
+        ],
+        "type": "block",
+        "start_byte": 18711,
+        "end_byte": 21731
+      },
+      "position": 7
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          0
+        ],
+        "type": "identifier",
+        "label": "is_iterable",
+        "start_byte": 19509,
+        "end_byte": 19520
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8
+        ],
+        "type": "assignment",
+        "start_byte": 19509,
+        "end_byte": 19578
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          1
+        ],
+        "type": "assignment_operator_literal",
+        "label": "=",
+        "start_byte": 19521,
+        "end_byte": 19522
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8
+        ],
+        "type": "assignment",
+        "start_byte": 19509,
+        "end_byte": 19578
+      },
+      "position": 1
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          7,
+          1,
+          0
+        ],
+        "type": "call",
+        "start_byte": 19437,
+        "end_byte": 19463
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          2
+        ],
+        "type": "boolean_operator",
+        "start_byte": 19523,
+        "end_byte": 19578
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          7,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 19437,
+        "end_byte": 19546
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 19523,
+      "dest_end_byte": 19549
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          2,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "or",
+        "start_byte": 19550,
+        "end_byte": 19552
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          2
+        ],
+        "type": "boolean_operator",
+        "start_byte": 19523,
+        "end_byte": 19578
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          2,
+          2
+        ],
+        "type": "call",
+        "start_byte": 19553,
+        "end_byte": 19578
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          8,
+          2
+        ],
+        "type": "boolean_operator",
+        "start_byte": 19523,
+        "end_byte": 19578
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          9,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "is_iterable",
+        "start_byte": 19590,
+        "end_byte": 19601
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          2,
+          16,
+          4,
+          9,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 19590,
+        "end_byte": 19662
+      },
+      "position": 0
+    }
+  ]
+}

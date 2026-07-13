@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "3910323d09809f3b553af47ffd7b568d8dfd9fd6",
+  "commit": "b0ed15b4525cd68d4a94d1a71d1a34da6f2961d3",
+  "message": "chore: fix typo (#6609)\n\nSigned-off-by: mountdisk <mountdisk@icloud.com.>",
+  "author": "mountdisk",
+  "date": "2025-07-04T23:47:31+09:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

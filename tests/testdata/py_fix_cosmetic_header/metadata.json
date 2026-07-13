@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "4443b1a847b190010c2972a658924b98b5db6360",
+  "commit": "bc7dd0fc4d56e808bcdd85ac2d797b3107c89259",
+  "message": "Fix cosmetic header validity parsing regex (#7308)",
+  "author": "Nate Prewitt",
+  "date": "2026-03-30T09:24:49-06:00",
+  "language": "python",
+  "files_changed": 2,
+  "insertions": 9,
+  "deletions": 4
+}

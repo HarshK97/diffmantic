@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "353348a83e6874db7ded27102e91e7b6cad7e89c",
+  "commit": "a1dbb113779c45a10f56a910de1bc5f7e750eaea",
+  "message": "Fix res.jsonp(obj, status) deprecation message\n\ncloses #4155",
+  "author": "Kim",
+  "date": "2020-01-08T10:56:45+09:00",
+  "language": "javascript",
+  "files_changed": 2,
+  "insertions": 3,
+  "deletions": 2
+}

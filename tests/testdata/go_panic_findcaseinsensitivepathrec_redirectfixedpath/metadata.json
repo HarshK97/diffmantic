@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "fb2583442c4d9bccb75e6d26f1aa6e7c01950db6",
+  "commit": "472d086af2acd924cb4b9d7be0525f7d790f69bc",
+  "message": "fix(tree): panic in findCaseInsensitivePathRec with RedirectFixedPath (#4535)\n\n* fix(tree): panic in findCaseInsensitivePathRec with RedirectFixedPath enabled",
+  "author": "Varun Chawla",
+  "date": "2026-02-27T19:15:27-08:00",
+  "language": "go",
+  "files_changed": 2,
+  "insertions": 159,
+  "deletions": 1
+}

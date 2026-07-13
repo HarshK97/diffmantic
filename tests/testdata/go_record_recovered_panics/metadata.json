@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "293ad7edebb3ae30369288bd6416ca0d78474727",
+  "commit": "4a3eb31fb15b2a2d78b4bdbe0c31a2c564b1977a",
+  "message": "fix(recovery): record recovered panics in c.Errors (#4698)\n\n* fix: record recovered panic errors",
+  "author": "DadaVinqi",
+  "date": "2026-06-22T20:56:28+08:00",
+  "language": "go",
+  "files_changed": 2,
+  "insertions": 50,
+  "deletions": 1
+}

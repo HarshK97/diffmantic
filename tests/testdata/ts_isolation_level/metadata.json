@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "7e7e3e83f768b34cf74689a5952e870f8ffbf11e",
+  "commit": "94e45285480a531534c25cd3717e887ca2a90c1a",
+  "message": "fix(mssql): throw on unknown isolation level instead of silent fallback",
+  "author": "Piotr Kuczynski",
+  "date": "2026-03-27T22:27:24Z",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 1
+}

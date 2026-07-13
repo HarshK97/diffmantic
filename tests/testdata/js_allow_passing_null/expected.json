@@ -1,0 +1,58 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          52,
+          0,
+          2,
+          3,
+          3,
+          1,
+          2
+        ],
+        "type": "binary_expression",
+        "start_byte": 11544,
+        "end_byte": 11557
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          52,
+          0,
+          2,
+          3,
+          3,
+          1
+        ],
+        "type": "variable_declarator",
+        "start_byte": 11537,
+        "end_byte": 11557
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          52,
+          0,
+          2,
+          3,
+          3,
+          1,
+          2
+        ],
+        "type": "identifier",
+        "label": "options",
+        "start_byte": 11544,
+        "end_byte": 11551
+      }
+    }
+  ]
+}

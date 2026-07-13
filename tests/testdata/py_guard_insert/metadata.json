@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "eeafb6ab3a54ab01cbf864d452ea30f5fdb67ce8",
+  "commit": "1604e20fc87ce212cf3a02474a6d7509b640cbbb",
+  "message": "Fix the proxy_bypass_registry function all returning true in some cases.",
+  "author": "flysee",
+  "date": "2022-12-07T11:24:22Z",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 0
+}

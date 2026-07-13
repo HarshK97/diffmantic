@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "90ec6206d3275fdf2787f2028c6f48a2d92e8042",
+  "commit": "9d8223d92ee81137a50a28eb6ad55a096791091d",
+  "message": "fix: replace deprecated trimRight() with trimEnd() (#7265)",
+  "author": "TEJ",
+  "date": "2026-06-16T08:04:06+05:30",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

@@ -1,0 +1,41 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          10
+        ],
+        "type": "import_from_statement",
+        "start_byte": 283,
+        "end_byte": 323
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          1
+        ],
+        "type": "block",
+        "start_byte": 1489,
+        "end_byte": 2400
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": null,
+        "type": "module",
+        "start_byte": 0,
+        "end_byte": 17198
+      },
+      "old_position": 10,
+      "subtree": true,
+      "dest_start_byte": 1489,
+      "dest_end_byte": 1529
+    }
+  ]
+}

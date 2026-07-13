@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "9e27326d6843e7c26e9847776159eeb68a999675",
+  "commit": "19cff44ec1b8eeec99459b504a681aa440f6344c",
+  "message": "fix response with utf8 bom",
+  "author": "Eduardo Rodrigues",
+  "date": "2019-02-09T22:14:22+01:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 0
+}

@@ -1,0 +1,33 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          19,
+          1,
+          2,
+          58,
+          4,
+          0,
+          0,
+          1,
+          1,
+          2,
+          2,
+          0,
+          1,
+          1,
+          2,
+          8
+        ],
+        "type": "if_statement",
+        "start_byte": 43859,
+        "end_byte": 44305
+      },
+      "subtree": true
+    }
+  ]
+}

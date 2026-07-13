@@ -1,0 +1,30 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          75
+        ],
+        "type": "comment",
+        "label": "/**\n * Stringify JSON, like JSON.stringify, but v8 optimized, with the\n * ability to escape characters that can trigger HTML sniffing.\n *\n * @param {*} value\n * @param {function} replaces\n * @param {number} spaces\n * @param {boolean} escape\n * @returns {string}\n * @private\n */",
+        "start_byte": 26336,
+        "end_byte": 26613
+      },
+      "old_value": "/**\n * Stringify JSON, like JSON.stringify, but v8 optimized, with the\n * ability to escape characters that can trigger HTML sniffing.\n *\n * @param {*} value\n * @param {function} replaces\n * @param {number} spaces\n * @param {boolean} escape\n * @returns {string}\n * @private\n */",
+      "new_value": "/**\n * Stringify JSON, like JSON.stringify, but v8 optimized, with the\n * ability to escape characters that can trigger HTML sniffing.\n *\n * @param {*} value\n * @param {function} replacer\n * @param {number} spaces\n * @param {boolean} escape\n * @returns {string}\n * @private\n */",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          75
+        ],
+        "type": "comment",
+        "label": "/**\n * Stringify JSON, like JSON.stringify, but v8 optimized, with the\n * ability to escape characters that can trigger HTML sniffing.\n *\n * @param {*} value\n * @param {function} replacer\n * @param {number} spaces\n * @param {boolean} escape\n * @returns {string}\n * @private\n */",
+        "start_byte": 26336,
+        "end_byte": 26613
+      }
+    }
+  ]
+}

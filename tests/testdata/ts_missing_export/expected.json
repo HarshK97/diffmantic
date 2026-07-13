@@ -1,0 +1,26 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          118
+        ],
+        "type": "export_statement",
+        "start_byte": 5462,
+        "end_byte": 5504
+      },
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "program",
+        "start_byte": 0,
+        "end_byte": 9561
+      },
+      "position": 118,
+      "subtree": true
+    }
+  ]
+}

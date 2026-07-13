@@ -1,0 +1,152 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          13
+        ],
+        "type": "comment",
+        "label": "#: path is request-uri defined in RFC 2616 which should not be empty",
+        "start_byte": 2961,
+        "end_byte": 3029
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3
+        ],
+        "type": "block",
+        "start_byte": 1898,
+        "end_byte": 4651
+      },
+      "position": 13
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          13,
+          2
+        ],
+        "type": "attribute",
+        "start_byte": 2968,
+        "end_byte": 2981
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          14,
+          2
+        ],
+        "type": "boolean_operator",
+        "start_byte": 3045,
+        "end_byte": 3065
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          13
+        ],
+        "type": "assignment",
+        "start_byte": 2961,
+        "end_byte": 2981
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 3045,
+      "dest_end_byte": 3058
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          14,
+          2,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "or",
+        "start_byte": 3059,
+        "end_byte": 3061
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          14,
+          2
+        ],
+        "type": "boolean_operator",
+        "start_byte": 3045,
+        "end_byte": 3065
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          14,
+          2,
+          2
+        ],
+        "type": "string",
+        "label": "\"/\"",
+        "start_byte": 3062,
+        "end_byte": 3065
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          17,
+          2,
+          2,
+          3,
+          14,
+          2
+        ],
+        "type": "boolean_operator",
+        "start_byte": 3045,
+        "end_byte": 3065
+      },
+      "position": 2
+    }
+  ]
+}

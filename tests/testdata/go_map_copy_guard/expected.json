@@ -1,0 +1,61 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          22,
+          5,
+          0,
+          8
+        ],
+        "type": "expression_statement",
+        "start_byte": 3344,
+        "end_byte": 3356
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          5,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3059,
+        "end_byte": 3522
+      },
+      "position": 8,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          22,
+          5,
+          0,
+          10
+        ],
+        "type": "expression_statement",
+        "start_byte": 3405,
+        "end_byte": 3419
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          5,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3059,
+        "end_byte": 3522
+      },
+      "position": 10,
+      "subtree": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "f6707042d8b18d2a3737380bf58ff020872fb07b",
+  "commit": "3fd309a5c14e4cfbd96bea6c8e71b4958fe090bb",
+  "message": "Enhance `super_len` to count encoded bytes for str\n\nThis fixes issue #6586",
+  "author": "Bruce Adams",
+  "date": "2023-11-28T13:17:49-05:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 0
+}

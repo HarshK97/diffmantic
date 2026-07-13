@@ -1,0 +1,89 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          39,
+          0,
+          2,
+          3,
+          2,
+          2,
+          0
+        ],
+        "type": "comment",
+        "label": "// res.json(body, status) backwards compat",
+        "start_byte": 6497,
+        "end_byte": 6539
+      },
+      "old_value": "// res.json(body, status) backwards compat",
+      "new_value": "// res.jsonp(body, status) backwards compat",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          39,
+          0,
+          2,
+          3,
+          2,
+          2,
+          0
+        ],
+        "type": "comment",
+        "label": "// res.jsonp(body, status) backwards compat",
+        "start_byte": 6497,
+        "end_byte": 6540
+      }
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          39,
+          0,
+          2,
+          3,
+          2,
+          2,
+          1,
+          2,
+          0,
+          0,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "'res.jsonp(obj, status): Use res.status(status).json(obj) instead'",
+        "start_byte": 6600,
+        "end_byte": 6666
+      },
+      "old_value": "'res.jsonp(obj, status): Use res.status(status).json(obj) instead'",
+      "new_value": "'res.jsonp(obj, status): Use res.status(status).jsonp(obj) instead'",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          39,
+          0,
+          2,
+          3,
+          2,
+          2,
+          1,
+          2,
+          0,
+          0,
+          1,
+          1
+        ],
+        "type": "string",
+        "label": "'res.jsonp(obj, status): Use res.status(status).jsonp(obj) instead'",
+        "start_byte": 6601,
+        "end_byte": 6668
+      }
+    }
+  ]
+}

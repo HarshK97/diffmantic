@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/typeorm/typeorm",
+  "parent": "6381c8d519742c445db7fb20682ea40464d82665",
+  "commit": "bed79136230d4ab26cce8cf79071134c75527857",
+  "message": "fix: circular import in SapDriver.ts (#11750)",
+  "author": "Arvo Bendi",
+  "date": "2025-11-10T07:42:10+02:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

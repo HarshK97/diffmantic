@@ -1,0 +1,56 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          44,
+          0,
+          1,
+          3,
+          3,
+          2,
+          3,
+          0,
+          2,
+          2,
+          0,
+          2,
+          0,
+          1
+        ],
+        "type": "property_identifier",
+        "label": "trimRight",
+        "start_byte": 10319,
+        "end_byte": 10328
+      },
+      "old_value": "trimRight",
+      "new_value": "trimEnd",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          44,
+          0,
+          1,
+          3,
+          3,
+          2,
+          3,
+          0,
+          2,
+          2,
+          0,
+          2,
+          0,
+          1
+        ],
+        "type": "property_identifier",
+        "label": "trimEnd",
+        "start_byte": 10319,
+        "end_byte": 10326
+      }
+    }
+  ]
+}

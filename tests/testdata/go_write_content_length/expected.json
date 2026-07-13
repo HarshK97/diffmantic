@@ -1,0 +1,148 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          4,
+          1,
+          0
+        ],
+        "type": "opening_paren",
+        "label": "(",
+        "start_byte": 190,
+        "end_byte": 191
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          4,
+          1
+        ],
+        "type": "import_spec_list",
+        "start_byte": 190,
+        "end_byte": 216
+      },
+      "position": 0
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          4,
+          1
+        ],
+        "type": "import_spec",
+        "start_byte": 190,
+        "end_byte": 200
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          4,
+          1
+        ],
+        "type": "import_spec_list",
+        "start_byte": 190,
+        "end_byte": 216
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          4
+        ],
+        "type": "import_declaration",
+        "start_byte": 183,
+        "end_byte": 200
+      },
+      "old_position": 1,
+      "subtree": true,
+      "dest_start_byte": 193,
+      "dest_end_byte": 203
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          4,
+          1,
+          2
+        ],
+        "type": "import_spec",
+        "start_byte": 205,
+        "end_byte": 214
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          4,
+          1
+        ],
+        "type": "import_spec_list",
+        "start_byte": 190,
+        "end_byte": 216
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          4,
+          1,
+          3
+        ],
+        "type": "closing_paren",
+        "label": ")",
+        "start_byte": 215,
+        "end_byte": 216
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          4,
+          1
+        ],
+        "type": "import_spec_list",
+        "start_byte": 190,
+        "end_byte": 216
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          5,
+          0,
+          1
+        ],
+        "type": "if_statement",
+        "start_byte": 461,
+        "end_byte": 546
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          5,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 438,
+        "end_byte": 581
+      },
+      "position": 1,
+      "subtree": true
+    }
+  ]
+}
