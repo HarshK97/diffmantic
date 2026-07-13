@@ -1,56 +1,66 @@
 # Diffmantic
 
-Semantic Diff Engine Using Tree-sitter.
+A semantic diff engine using Tree-sitter.
 
-Diffmantic is a standalone semantic diff engine written in Go. It understands code structure to detect moved functions, updated blocks, and real changes—not just line differences.
+Diffmantic is a structural diff tool written in Go. Instead of showing line-by-line differences, it parses your code into ASTs and matches nodes. This lets it track moved functions, in-place updates, and structural shifts, not just added or deleted lines.
 
-> **Note:** The UI (TUI + editor integrations) is still in progress.
+> **Note:** The editor integrations (VS Code, Neovim) and TUI are under active development.
+
+## Supported Languages
+
+* Go
+* JavaScript / TypeScript
+* Python
 
 ## Features
 
-- **Move detection** — Knows when code blocks are moved, not deleted and re-added  
-- **Update detection** — Highlights modified code in place  
-- **Insert/Delete detection** — Shows new and removed code  
-- **Language agnostic** — Works with languages that have Tree-sitter parsers and Diffmantic query support  
-
-## Coming Soon (Work in Progress)
-
-- **Terminal TUI** — Side-by-side diff viewer built with Bubble Tea  
-- **git difftool** — Drop-in replacement: `git difftool -t diffmantic`  
-- **Editor backends** — JSON output for Neovim and VS Code clients  
-- **CI / scripts** — Unified diff format for automation  
+* **Move Detection**: Knows when you move a block of code, instead of showing it as deleted and re-added.
+* **Update Detection**: Shows when you change part of a node (like a string label or variable name).
+* **Insert / Delete**: Pinpoints exactly where structure was added or removed.
+* **Stable Paths**: The JSON output points to nodes using child-index paths (e.g. `[0, 2, 1]`) instead of line numbers, so editor plugins don't lose track of highlights as you edit.
 
 ## Installation
 
-> CLI packaging and install instructions are in progress.  
-> This section will be updated once the binary release flow is finalized.
+Install the CLI using the install script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh
+```
+
+By default, this installs the `diffm` binary to `~/.local/bin`. Make sure that folder is in your `$PATH`.
 
 ## Usage
 
-> CLI interface is under active development.  
-> Examples will be added once the core API stabilizes.
+Diff two files using:
+
+```bash
+diffm diff before.go after.go
+```
+
+By default, this outputs structured JSON (schema version `v1`) designed for editor plugins and automation.
+
+If you want a human-readable list of edit actions, run:
+
+```bash
+diffm diff before.go after.go -f actions
+```
 
 ## How It Works
 
-Diffmantic follows a multi-phase AST matching pipeline:
+Diffmantic matches ASTs in four main steps:
 
-1. **Pre-match** — Seeds stable mappings from unchanged lines  
-2. **Top-down matching** — Finds identical/high-confidence subtree pairs  
-3. **Bottom-up matching** — Expands matches using mapped descendants  
-4. **Recovery matching** — Iteratively recovers remaining valid mappings  
-5. **Action generation + analysis** — Produces move/update/insert/delete actions and refined hunks  
-
-## Requirements
-
-- Go (for building the engine)
-- Tree-sitter parser for the language you’re diffing  
+1. **Top-Down Matching**: We look for identical subtrees of the same height first. When we find an exact match, we map those nodes and their children recursively.
+2. **Bottom-Up Matching**: For unmatched nodes, we look for counterparts of the same type that share already-matched children. We match them if their similarity score is high enough.
+3. **Recovery**: Inside matched containers, we run Longest Common Subsequence (LCS) on unmatched children. We do this twice: once using exact labels, and once using structure only.
+4. **Action Generation & Post-Processing**: We generate a raw edit script (insert, delete, update, move) and refine it. We collapse child edits into clean subtree edits (like a whole folder/block insert), normalize comment updates, and group moved elements together.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT License - see [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-- GumTree repository: https://github.com/GumTreeDiff/gumtree  
-- GumTree paper: https://hal.science/hal-04855170v1/file/GumTree_simple__fine_grained__accurate_and_scalable_source_differencing.pdf  
-- Beyond GumTree paper: https://www.researchgate.net/publication/335498580_Beyond_GumTree_A_Hybrid_Approach_to_Generate_Edit_Scripts  
+Our engine is based on the GumTree matching algorithm. You can check out the details here:
+* [GumTree GitHub Repository](https://github.com/GumTreeDiff/gumtree)
+* [GumTree Paper](https://hal.science/hal-04855170v1/file/GumTree_simple__fine_grained__accurate_and_scalable_source_differencing.pdf)
+* [Beyond GumTree Paper](https://www.researchgate.net/publication/335498580_Beyond_GumTree_A_Hybrid_Approach_to_Generate_Edit_Scripts)

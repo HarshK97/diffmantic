@@ -34,13 +34,13 @@ var rootCmd = &cobra.Command{
 	Long: `diffmantic is a structural source code diff engine.
 
 It parses source files into ASTs using Tree-sitter and computes semantic
-differences — detecting not just what lines changed, but what code structures
+differences. It detects not just what lines changed, but what code structures
 were inserted, deleted, updated, moved, or renamed.
 
 Works as a standalone CLI, a git difftool, or a backend engine for editor
 plugins (Neovim, VS Code) via JSON output.
 
-Supported languages: C, C++, Go, JavaScript, TypeScript, Python, Lua.`,
+Supported languages: Go, JavaScript, TypeScript, Python.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
