@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -28,9 +29,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
-	binaryPath = filepath.Join(tmp, "diffm")
+	binaryName := "diffm"
+	if runtime.GOOS == "windows" {
+		binaryName = "diffm.exe"
+	}
+	binaryPath = filepath.Join(tmp, binaryName)
 	cmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/diffm")
 	cmd.Dir, _ = os.Getwd()
 	if out, err := cmd.CombinedOutput(); err != nil {

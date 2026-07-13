@@ -147,23 +147,27 @@ func sortMappingsByPreOrder(t1Root *treesitter.ASTNode, m *Mapping) {
 }
 
 func PrintMappings(r *MatchResult) {
-	FprintMappings(os.Stdout, r)
+	_ = FprintMappings(os.Stdout, r)
 }
 
-func FprintMappings(w io.Writer, r *MatchResult) {
+func FprintMappings(w io.Writer, r *MatchResult) error {
 	if r == nil || r.Mappings == nil {
-		fmt.Fprintln(w, "(no mappings)")
-		return
+		_, err := fmt.Fprintln(w, "(no mappings)")
+		return err
 	}
 
 	pairs := r.Mappings.Pairs
 	if len(pairs) == 0 {
-		fmt.Fprintln(w, "(no mappings found)")
-		return
+		_, err := fmt.Fprintln(w, "(no mappings found)")
+		return err
 	}
-	fmt.Fprintf(w, "%-4s  %-30s %-20s  →  %-30s %-20s\n",
-		"#", "T1 Type", "T1 Label", "T2 Type", "T2 Label")
-	fmt.Fprintln(w, "─────────────────────────────────────────────────────────────────────────────────────")
+	if _, err := fmt.Fprintf(w, "%-4s  %-30s %-20s  →  %-30s %-20s\n",
+		"#", "T1 Type", "T1 Label", "T2 Type", "T2 Label"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "─────────────────────────────────────────────────────────────────────────────────────"); err != nil {
+		return err
+	}
 	for i, p := range pairs {
 		t1Label := p.Src.Label
 		if t1Label == "" {
@@ -173,8 +177,11 @@ func FprintMappings(w io.Writer, r *MatchResult) {
 		if t2Label == "" {
 			t2Label = "-"
 		}
-		fmt.Fprintf(w, "%-4d  %-30s %-20s  →  %-30s %-20s\n",
-			i+1, p.Src.Type, t1Label, p.Dst.Type, t2Label)
+		if _, err := fmt.Fprintf(w, "%-4d  %-30s %-20s  →  %-30s %-20s\n",
+			i+1, p.Src.Type, t1Label, p.Dst.Type, t2Label); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(w, "\nTotal mappings: %d\n", len(pairs))
+	_, err := fmt.Fprintf(w, "\nTotal mappings: %d\n", len(pairs))
+	return err
 }

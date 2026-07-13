@@ -88,7 +88,7 @@ func TestMatchPairsPreOrder(t *testing.T) {
 
 func TestFprintMappingsNil(t *testing.T) {
 	var buf bytes.Buffer
-	FprintMappings(&buf, nil)
+	_ = FprintMappings(&buf, nil)
 	if buf.String() != "(no mappings)\n" {
 		t.Errorf("unexpected output for nil: %q", buf.String())
 	}
@@ -97,7 +97,7 @@ func TestFprintMappingsNil(t *testing.T) {
 func TestFprintMappingsEmpty(t *testing.T) {
 	var buf bytes.Buffer
 	r := &MatchResult{Mappings: NewMapping()}
-	FprintMappings(&buf, r)
+	_ = FprintMappings(&buf, r)
 	if buf.String() != "(no mappings found)\n" {
 		t.Errorf("unexpected output for empty: %q", buf.String())
 	}

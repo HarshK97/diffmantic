@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  checks: write
+
+# Group runs by workflow and ref/PR number.
+# Cancel in-progress runs on pull requests, but always let runs on 'main' complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: 'go.sum'
+
+      - name: Verify formatting (gofmt)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          UNFORMATTED_FILES=$(gofmt -s -l cmd internal tests/e2e tests/integration)
+          if [ -n "$UNFORMATTED_FILES" ]; then
+            echo "Error: The following files are not formatted properly:"
+            echo "$UNFORMATTED_FILES"
+            echo "Please run: gofmt -s -w cmd internal tests/e2e tests/integration"
+            exit 1
+          fi
+
+      - name: Lint (golangci-lint)
+        if: matrix.os == 'ubuntu-latest'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          args: --timeout=5m
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
+      - name: Run test suite
+        run: gotestsum --format pkgname --junitfile unit-tests.xml -- ./...
+
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/unit-tests.xml'
+          check_name: 'Test Report (${{ matrix.os }})'
