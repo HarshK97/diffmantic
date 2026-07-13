@@ -1,0 +1,6 @@
+# Collapse expected.json files in testdata in Pull Request diffs on GitHub and GitLab,
+# but keep the code snippet inputs (old/new files) visible for easier review.
+**/testdata/**/expected.json linguist-generated=true
+
+# Ensure test fixtures always use LF line endings on all platforms (including Windows)
+tests/testdata/** text eol=lf
