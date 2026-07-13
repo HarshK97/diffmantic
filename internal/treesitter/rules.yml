@@ -17,6 +17,7 @@ go:
     "type": "type"
     "struct": "struct"
     "interface": "interface"
+    "func": "func"
     "package": "package"
     "import": "import"
     "map": "map"
@@ -90,7 +91,6 @@ go:
     - ":"
     - ","
     - ";"
-    - "func"
   label_ignored: []
   scaffolding:
     - source_file
@@ -157,6 +157,9 @@ python:
 
     # Unary operators
     "not": unary_operator_literal
+
+    # Container keywords
+    "def": "def"
     "try": "try"
     "for": "for"
     "if": "condition_declaration"
@@ -166,11 +169,8 @@ python:
     "with": "with"
     "(": "opening_paren"
     ")": "closing_paren"
-    # ":": "colon"
 
   ignored:
-    # - "("
-    # - ")"
     - "{"
     - "}"
     - "["
@@ -179,7 +179,6 @@ python:
     - ":"
     - ","
     - "in"
-    - "def"
     - "escape_sequence"
   label_ignored: []
   scaffolding:
