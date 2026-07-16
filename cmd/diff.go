@@ -27,14 +27,12 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/tui"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 )
 
-// diffCmd represents the diff command
 var diffCmd = &cobra.Command{
 	Use:   "diff [file-a] [file-b]",
 	Short: "Compute semantic diff between two files",
@@ -45,16 +43,17 @@ algorithm to detect inserts, deletes, updates, moves, and renames at the syntax
 node level, not just changed lines.
 
 Examples:
-  diffm diff before.go after.go -f json        JSON output for editor plugins
-  diffm diff before.go after.go -f actions     Print structural actions list
-  diffm diff before.go after.go --lang go      Override language detection`,
+  diffm diff before.go after.go                 Interactive TUI (default)
+  diffm diff before.go after.go -f json         JSON output for editor plugins
+  diffm diff before.go after.go -f actions      Print structural actions list
+  diffm diff before.go after.go --lang go       Override language detection`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
 		// lang, _ := cmd.Flags().GetString("lang")
 		format, _ := cmd.Flags().GetString("format")
-		if format != "json" && format != "actions" {
-			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions\n", format)
+		if format != "" && format != "json" && format != "actions" && format != "tui" {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, tui\n", format)
 			os.Exit(1)
 		}
 
@@ -73,70 +72,23 @@ Examples:
 			os.Exit(1)
 		}
 
-		var (
-			srcA []byte
-			srcB []byte
-			astA *treesitter.ASTNode
-			astB *treesitter.ASTNode
-		)
-
-		g := new(errgroup.Group)
-
-		g.Go(func() error {
-			data, err := os.ReadFile(fileA)
-			if err != nil {
-				return fmt.Errorf("error reading %s: %w", fileA, err)
-			}
-			srcA = data
-			return nil
-		})
-
-		g.Go(func() error {
-			data, err := os.ReadFile(fileB)
-			if err != nil {
-				return fmt.Errorf("error reading %s: %w", fileB, err)
-			}
-			srcB = data
-			return nil
-		})
-
-		if err := g.Wait(); err != nil {
+		dr, err := computeDiff(fileA, fileB)
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
-		g = new(errgroup.Group)
-
-		g.Go(func() error {
-			parsed, err := treesitter.Parse(srcA, fileA)
-			if err != nil {
-				return fmt.Errorf("error parsing %s: %w", fileA, err)
+		if format == "" {
+			if isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
+				format = "tui"
+			} else {
+				format = "json"
 			}
-			astA = parsed
-			return nil
-		})
-
-		g.Go(func() error {
-			parsed, err := treesitter.Parse(srcB, fileB)
-			if err != nil {
-				return fmt.Errorf("error parsing %s: %w", fileB, err)
-			}
-			astB = parsed
-			return nil
-		})
-
-		if err := g.Wait(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
 		}
-
-		result := engine.Match(astA, astB)
-		es := actions.GenerateEditScript(astA, astB, result.Mappings)
-		es = postprocess.Run(es, result.Mappings, astA, astB)
 
 		switch format {
 		case "json":
-			jsonData, err := serialize.Marshal(es, result.Mappings, astA, astB)
+			jsonData, err := serialize.Marshal(dr.EditScript, dr.MatchResult.Mappings, dr.SrcAST, dr.DstAST)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error serializing JSON: %v\n", err)
 				os.Exit(1)
@@ -145,14 +97,19 @@ Examples:
 			_, _ = os.Stdout.Write([]byte("\n"))
 		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
-			engine.PrintMappings(result)
-			actions.PrintActions(es)
+			engine.PrintMappings(dr.MatchResult)
+			actions.PrintActions(dr.EditScript)
+		case "tui":
+			if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes); err != nil {
+				fmt.Fprintf(os.Stderr, "error running TUI: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(diffCmd)
-	diffCmd.Flags().StringP("format", "f", "json", "Output format: json, actions")
+	diffCmd.Flags().StringP("format", "f", "", "Output format: json, actions, tui (default: tui if interactive, json otherwise)")
 	diffCmd.Flags().StringP("lang", "l", "", "Override language detection (e.g., go, python, js)")
 }

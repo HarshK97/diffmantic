@@ -5,7 +5,7 @@ import (
 )
 
 func TestDiffCmdRegistered(t *testing.T) {
-	// Verify the diff subcommand exists on rootCmd.
+	// Make sure the diff subcommand is registered on the root command.
 	found := false
 	for _, c := range rootCmd.Commands() {
 		if c.Name() == "diff" {
@@ -23,8 +23,8 @@ func TestDiffCmdFlags(t *testing.T) {
 	if f == nil {
 		t.Fatal("format flag not registered")
 	}
-	if f.DefValue != "json" {
-		t.Errorf("format default = %q, want %q", f.DefValue, "json")
+	if f.DefValue != "" {
+		t.Errorf("format default = %q, want %q", f.DefValue, "")
 	}
 
 	l := diffCmd.Flags().Lookup("lang")
