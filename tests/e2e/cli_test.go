@@ -115,18 +115,18 @@ func TestCLI_JSONFormat_ValidOutput(t *testing.T) {
 	}
 }
 
-func TestCLI_JSONFormat_Default(t *testing.T) {
-	// JSON should be the default format when no -f flag is provided.
+func TestCLI_NonInteractive_DefaultsToJSON(t *testing.T) {
+	// Our test harness runs diffm via exec.Command, meaning stdin and stdout aren't
+	// terminals (like in a CI runner or pipe). The CLI should fall back to JSON
+	// output here. The TUI remains the default in actual interactive terminal sessions.
 	oldPath, newPath := fixtureFiles(t, "go_comment_update")
-
 	stdout, stderr, err := runDiffm("diff", oldPath, newPath)
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
-
 	var envelope serialize.Envelope
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
-		t.Fatalf("default format is not valid JSON: %v", err)
+		t.Fatalf("non-interactive default format is not valid JSON: %v", err)
 	}
 }
 
