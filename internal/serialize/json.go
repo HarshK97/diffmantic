@@ -47,8 +47,8 @@ type NodeRef struct {
 	EndByte   uint32 `json:"end_byte"`
 }
 
-// Marshal converts an actions.EditScript and the matching engine.Mapping into a JSON byte slice.
-func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) ([]byte, error) {
+// BuildEnvelope packs the edit script, mappings, and metadata into an Envelope struct.
+func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) (*Envelope, error) {
 	if es == nil {
 		return nil, fmt.Errorf("edit script is nil")
 	}
@@ -70,6 +70,9 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			nodeRef, err := makeNodeRef(a.Node, "after")
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node reference for insert: %w", err)
+			}
+			if !a.Subtree {
+				adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
 			}
 			ja.Node = nodeRef
 
@@ -96,6 +99,9 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			nodeRef, err := makeNodeRef(a.Node, "before")
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node reference for delete: %w", err)
+			}
+			if !a.Subtree {
+				adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
 			}
 			ja.Node = nodeRef
 			if a.Subtree {
@@ -133,6 +139,9 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 			nodeRef, err := makeNodeRef(a.Node, "before")
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node reference for move: %w", err)
+			}
+			if !a.Subtree {
+				adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
 			}
 			ja.Node = nodeRef
 
@@ -218,6 +227,9 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 					startByte := destNodeDst.StartByte
 					endByte := destNodeDst.EndByte
+					if !a.Subtree {
+						adjustRangeForHeader(destNodeDst, &startByte, &endByte)
+					}
 					ja.DestStartByte = &startByte
 					ja.DestEndByte = &endByte
 				}
@@ -231,6 +243,15 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 		env.Actions = append(env.Actions, ja)
 	}
 
+	return &env, nil
+}
+
+// Marshal converts the diff result to indented JSON.
+func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) ([]byte, error) {
+	env, err := BuildEnvelope(es, ms, srcRoot, dstRoot)
+	if err != nil {
+		return nil, err
+	}
 	return json.MarshalIndent(env, "", "  ")
 }
 
@@ -376,4 +397,19 @@ func findRoot(n *treesitter.ASTNode) *treesitter.ASTNode {
 		curr = curr.Parent
 	}
 	return curr
+}
+
+// adjustRangeForHeader limits the node's range to its header by cutting off at the first code block.
+func adjustRangeForHeader(n *treesitter.ASTNode, start, end *uint32) {
+	if n == nil || start == nil || end == nil {
+		return
+	}
+	for _, child := range n.Children {
+		if child.Type == "block" || child.Type == "statement_block" {
+			if child.StartByte > *start && child.StartByte < *end {
+				*end = child.StartByte
+				break
+			}
+		}
+	}
 }

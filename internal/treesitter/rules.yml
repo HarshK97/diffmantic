@@ -169,6 +169,7 @@ python:
     "with": "with"
     "(": "opening_paren"
     ")": "closing_paren"
+    "in": "in"
 
   ignored:
     - "{"
@@ -178,7 +179,6 @@ python:
     - "."
     - ":"
     - ","
-    - "in"
     - "escape_sequence"
   label_ignored: []
   scaffolding:

@@ -14,6 +14,10 @@ type model struct {
 	scrollXLeft  int
 	scrollXRight int
 
+	srcHighlights *highlights
+	dstHighlights *highlights
+	allChanges    []int // Sorted list of modified lines so we can jump between them using n/N
+
 	digitBuffer string // count prefix for Vim keys
 }
 

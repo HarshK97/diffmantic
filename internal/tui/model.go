@@ -5,23 +5,35 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
 // Run launches the side-by-side terminal diff viewer.
-func Run(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
-	m := newModel(srcFile, dstFile, srcBytes, dstBytes)
+func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) error {
+	m := newModel(srcFile, dstFile, srcBytes, dstBytes, env)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
 
-func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte) model {
-	return model{
+func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) model {
+	m := model{
 		srcFile:  srcFile,
 		dstFile:  dstFile,
 		srcLines: strings.Split(string(srcBytes), "\n"),
 		dstLines: strings.Split(string(dstBytes), "\n"),
 	}
+
+	if env != nil && len(env.Actions) > 0 {
+		m.srcHighlights, m.dstHighlights = buildHighlights(srcBytes, dstBytes, env.Actions)
+		m.allChanges = mergedChangeLines(m.srcHighlights, m.dstHighlights)
+	} else {
+		m.srcHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+		m.dstHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+	}
+
+	return m
 }
 
 func (m model) contentHeight() int {

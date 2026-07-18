@@ -62,6 +62,10 @@ func Collapse(
 					allChildrenInserted = false
 					break
 				}
+				if len(child.Children) > 0 && !childAct.Subtree {
+					allChildrenInserted = false
+					break
+				}
 				if suppressed[childAct] {
 					if contentMoveSuppressed[childAct] {
 						hasActiveInsertChildren := false
@@ -146,6 +150,10 @@ func Collapse(
 			for _, child := range parent.Children {
 				childAct, ok := deleted[child]
 				if !ok || suppressed[childAct] {
+					allChildrenDeleted = false
+					break
+				}
+				if len(child.Children) > 0 && !childAct.Subtree {
 					allChildrenDeleted = false
 					break
 				}

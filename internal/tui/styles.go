@@ -29,3 +29,32 @@ var (
 	dividerStyle = lipgloss.NewStyle().
 			Foreground(colorSurface1)
 )
+
+var (
+	bgDeleteTint = lipgloss.Color("#5f242a")
+	bgInsertTint = lipgloss.Color("#245f32")
+	bgUpdateTint = lipgloss.Color("#5f5224")
+	bgMoveTint   = lipgloss.Color("#1e4a70")
+)
+
+var (
+	hlDeleteStyle = lipgloss.NewStyle().Background(bgDeleteTint)
+	hlInsertStyle = lipgloss.NewStyle().Background(bgInsertTint)
+	hlUpdateStyle = lipgloss.NewStyle().Background(bgUpdateTint)
+	hlMoveStyle   = lipgloss.NewStyle().Background(bgMoveTint)
+)
+
+func hlStyle(kind actionKind) lipgloss.Style {
+	switch kind {
+	case kindDelete:
+		return hlDeleteStyle
+	case kindInsert:
+		return hlInsertStyle
+	case kindUpdate:
+		return hlUpdateStyle
+	case kindMove:
+		return hlMoveStyle
+	default:
+		return contentStyle
+	}
+}

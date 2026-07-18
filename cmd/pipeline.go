@@ -7,6 +7,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,6 +21,7 @@ type diffResult struct {
 	DstAST      *treesitter.ASTNode
 	MatchResult *engine.MatchResult
 	EditScript  *actions.EditScript
+	Envelope    *serialize.Envelope
 }
 
 func computeDiff(fileA, fileB string) (*diffResult, error) {
@@ -76,6 +78,11 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
 
+	env, err := serialize.BuildEnvelope(es, matchResult.Mappings, srcAST, dstAST)
+	if err != nil {
+		return nil, fmt.Errorf("building envelope: %w", err)
+	}
+
 	return &diffResult{
 		SrcBytes:    srcBytes,
 		DstBytes:    dstBytes,
@@ -85,5 +92,6 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 		DstAST:      dstAST,
 		MatchResult: matchResult,
 		EditScript:  es,
+		Envelope:    env,
 	}, nil
 }
