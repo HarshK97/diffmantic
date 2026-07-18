@@ -22,12 +22,12 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -88,7 +88,7 @@ Examples:
 
 		switch format {
 		case "json":
-			jsonData, err := serialize.Marshal(dr.EditScript, dr.MatchResult.Mappings, dr.SrcAST, dr.DstAST)
+			jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error serializing JSON: %v\n", err)
 				os.Exit(1)
@@ -100,7 +100,7 @@ Examples:
 			engine.PrintMappings(dr.MatchResult)
 			actions.PrintActions(dr.EditScript)
 		case "tui":
-			if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes); err != nil {
+			if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes, dr.Envelope); err != nil {
 				fmt.Fprintf(os.Stderr, "error running TUI: %v\n", err)
 				os.Exit(1)
 			}

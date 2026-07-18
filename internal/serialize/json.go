@@ -47,8 +47,8 @@ type NodeRef struct {
 	EndByte   uint32 `json:"end_byte"`
 }
 
-// Marshal converts an actions.EditScript and the matching engine.Mapping into a JSON byte slice.
-func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) ([]byte, error) {
+// BuildEnvelope packs the edit script, mappings, and metadata into an Envelope struct.
+func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) (*Envelope, error) {
 	if es == nil {
 		return nil, fmt.Errorf("edit script is nil")
 	}
@@ -231,6 +231,15 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 		env.Actions = append(env.Actions, ja)
 	}
 
+	return &env, nil
+}
+
+// Marshal converts the diff result to indented JSON.
+func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) ([]byte, error) {
+	env, err := BuildEnvelope(es, ms, srcRoot, dstRoot)
+	if err != nil {
+		return nil, err
+	}
 	return json.MarshalIndent(env, "", "  ")
 }
 

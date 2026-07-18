@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,13 +48,20 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G", "end":
 		m.scrollY = m.maxScrollY()
 
+	case "n":
+		for i := 0; i < count; i++ {
+			m.scrollY = m.nextChange()
+		}
+	case "N":
+		for i := 0; i < count; i++ {
+			m.scrollY = m.prevChange()
+		}
 	case "h", "left":
 		m.scrollXLeft = clamp(m.scrollXLeft-(4*count), 0, maxScrollX(m.srcLines, m.textWidth()))
 		m.scrollXRight = clamp(m.scrollXRight-(4*count), 0, maxScrollX(m.dstLines, m.textWidth()))
 	case "l", "right":
 		m.scrollXLeft = clamp(m.scrollXLeft+(4*count), 0, maxScrollX(m.srcLines, m.textWidth()))
 		m.scrollXRight = clamp(m.scrollXRight+(4*count), 0, maxScrollX(m.dstLines, m.textWidth()))
-
 	case "0":
 		m.scrollXLeft = 0
 		m.scrollXRight = 0
@@ -70,4 +78,26 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m model) nextChange() int {
+	if len(m.allChanges) == 0 {
+		return m.scrollY
+	}
+	idx := sort.SearchInts(m.allChanges, m.scrollY+1)
+	if idx < len(m.allChanges) {
+		return clamp(m.allChanges[idx], 0, m.maxScrollY())
+	}
+	return clamp(m.allChanges[0], 0, m.maxScrollY())
+}
+
+func (m model) prevChange() int {
+	if len(m.allChanges) == 0 {
+		return m.scrollY
+	}
+	idx := sort.SearchInts(m.allChanges, m.scrollY) - 1
+	if idx >= 0 {
+		return clamp(m.allChanges[idx], 0, m.maxScrollY())
+	}
+	return clamp(m.allChanges[len(m.allChanges)-1], 0, m.maxScrollY())
 }
