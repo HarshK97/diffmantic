@@ -34,7 +34,7 @@ var (
 	bgDeleteTint = lipgloss.Color("#5f242a")
 	bgInsertTint = lipgloss.Color("#245f32")
 	bgUpdateTint = lipgloss.Color("#5f5224")
-	bgMoveTint   = lipgloss.Color("#244b5f")
+	bgMoveTint   = lipgloss.Color("#1e4a70")
 )
 
 var (
