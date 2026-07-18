@@ -30,7 +30,112 @@
         "start_byte": 1182,
         "end_byte": 1333
       },
-      "position": 2,
+      "position": 2
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          0,
+          2,
+          2,
+          2,
+          1
+        ],
+        "type": "return_statement",
+        "start_byte": 1304,
+        "end_byte": 1332
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          0,
+          2,
+          2,
+          2
+        ],
+        "type": "statement_list",
+        "start_byte": 1202,
+        "end_byte": 1333
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          0,
+          2,
+          2,
+          2,
+          0,
+          0
+        ],
+        "type": "condition_declaration",
+        "label": "if",
+        "start_byte": 1202,
+        "end_byte": 1204
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          0,
+          2,
+          2,
+          2,
+          0
+        ],
+        "type": "if_statement",
+        "start_byte": 1202,
+        "end_byte": 1301
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          0,
+          2,
+          2,
+          2,
+          0,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 1205,
+        "end_byte": 1242
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          0,
+          2,
+          2,
+          2,
+          0
+        ],
+        "type": "if_statement",
+        "start_byte": 1202,
+        "end_byte": 1301
+      },
+      "position": 1,
       "subtree": true
     },
     {

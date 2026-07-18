@@ -71,6 +71,9 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node reference for insert: %w", err)
 			}
+			if !a.Subtree {
+				adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
+			}
 			ja.Node = nodeRef
 
 			if a.Node.Parent == nil {
@@ -96,6 +99,9 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			nodeRef, err := makeNodeRef(a.Node, "before")
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node reference for delete: %w", err)
+			}
+			if !a.Subtree {
+				adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
 			}
 			ja.Node = nodeRef
 			if a.Subtree {
@@ -133,6 +139,9 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			nodeRef, err := makeNodeRef(a.Node, "before")
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node reference for move: %w", err)
+			}
+			if !a.Subtree {
+				adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
 			}
 			ja.Node = nodeRef
 
@@ -218,6 +227,9 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 					startByte := destNodeDst.StartByte
 					endByte := destNodeDst.EndByte
+					if !a.Subtree {
+						adjustRangeForHeader(destNodeDst, &startByte, &endByte)
+					}
 					ja.DestStartByte = &startByte
 					ja.DestEndByte = &endByte
 				}
@@ -385,4 +397,19 @@ func findRoot(n *treesitter.ASTNode) *treesitter.ASTNode {
 		curr = curr.Parent
 	}
 	return curr
+}
+
+// adjustRangeForHeader limits the node's range to its header by cutting off at the first code block.
+func adjustRangeForHeader(n *treesitter.ASTNode, start, end *uint32) {
+	if n == nil || start == nil || end == nil {
+		return
+	}
+	for _, child := range n.Children {
+		if child.Type == "block" || child.Type == "statement_block" {
+			if child.StartByte > *start && child.StartByte < *end {
+				*end = child.StartByte
+				break
+			}
+		}
+	}
 }
