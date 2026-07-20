@@ -59,8 +59,8 @@ func (m model) renderContent() string {
 		tw = 1
 	}
 
-	leftLines := m.renderPane(m.srcLines, m.srcHighlights, m.scrollXLeft, height, pw, gw, tw)
-	rightLines := m.renderPane(m.dstLines, m.dstHighlights, m.scrollXRight, height, pw, gw, tw)
+	leftLines := m.renderPane(m.srcLines, m.srcHighlights, m.scrollXLeft, height, pw, gw, tw, true)
+	rightLines := m.renderPane(m.dstLines, m.dstHighlights, m.scrollXRight, height, pw, gw, tw, false)
 
 	div := dividerStyle.Render("│")
 
@@ -69,46 +69,114 @@ func (m model) renderContent() string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(leftLines[i])
-		b.WriteString(div)
-		b.WriteString(rightLines[i])
+		// Check if this row is a fold marker — render a unified fold line across the divider.
+		vIdx := m.scrollY + i
+		if vIdx < len(m.virtualLines) && m.virtualLines[vIdx].foldIdx >= 0 {
+			b.WriteString(leftLines[i])
+			b.WriteString(dividerStyle.Background(colorSurface0).Render("│"))
+			b.WriteString(rightLines[i])
+		} else {
+			b.WriteString(leftLines[i])
+			b.WriteString(div)
+			b.WriteString(rightLines[i])
+		}
 	}
 
 	return b.String()
 }
 
-// renderPane formats and renders the content for a single side of the diff.
-func (m model) renderPane(lines []string, hl *highlights, scrollX, height, paneWidth, gutterW, textW int) []string {
+func (m model) renderPane(lines []string, hl *highlights, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
 	result := make([]string, height)
 
 	for i := 0; i < height; i++ {
-		lineIdx := m.scrollY + i
+		vIdx := m.scrollY + i
 
+		// Past the end of virtual lines.
+		if vIdx >= len(m.virtualLines) {
+			gutter := lineNumStyle.Render(padRight("~", gutterW))
+			content := contentStyle.Render(strings.Repeat(" ", textW))
+			result[i] = gutter + content
+			continue
+		}
+
+		vl := m.virtualLines[vIdx]
+		isCursorRow := vIdx == m.cursorY
+		isActivePane := (isLeftPane && m.activePane == "left") || (!isLeftPane && m.activePane == "right")
+		isCursor := isCursorRow && isActivePane
+
+		// Fold marker row.
+		if vl.foldIdx >= 0 {
+			result[i] = m.renderFoldLine(vl.foldIdx, paneWidth, isCursor)
+			continue
+		}
+
+		// Real line.
+		lineIdx := vl.realLine
 		if lineIdx < len(lines) {
 			lineSpans := hl.spans[lineIdx]
 
 			lineNum := fmt.Sprintf("%*d ", gutterW-gutterPadding, lineIdx+1)
-			gutter := lineNumStyle.Render(lineNum)
+			var gutter string
+			if isCursorRow && isActivePane {
+				runes := []rune(lineNum)
+				if len(runes) > 0 {
+					runes[0] = '█'
+				}
+				gutter = cursorGutterStyle.Render(string(runes))
+			} else {
+				gutter = lineNumStyle.Render(lineNum)
+			}
 
 			rawLine := lines[lineIdx]
 			var content string
+			cursorCol := -1
+			if isCursorRow && isActivePane {
+				cursorCol = m.cursorX
+			}
+
 			if len(lineSpans) > 0 {
-				content = m.renderHighlightedLine(rawLine, lineSpans, scrollX, textW)
+				content = m.renderHighlightedLine(rawLine, lineSpans, scrollX, textW, cursorCol)
 			} else {
 				line := strings.ReplaceAll(rawLine, "\t", "    ")
 				runes := []rune(line)
-				if scrollX > 0 && scrollX < len(runes) {
-					runes = runes[scrollX:]
-				} else if scrollX >= len(runes) {
-					runes = nil
+				runeLen := len(runes)
+
+				style := contentStyle
+				if isCursor {
+					style = cursorContentStyle
+				} else if kind, ok := hl.tinted[lineIdx]; ok {
+					style = hlStyle(kind)
 				}
-				line = string(runes)
-				line = truncateStr(line, textW)
-				content = contentStyle.Render(padRight(line, textW))
+
+				padStyle := lipgloss.NewStyle()
+				if isCursor {
+					padStyle = padStyle.Background(colorSurface0)
+				}
+
+				var b strings.Builder
+				for idx := 0; idx < textW; idx++ {
+					col := scrollX + idx
+					var r rune
+					var s lipgloss.Style
+					if col < runeLen {
+						r = runes[col]
+						s = style
+					} else {
+						r = ' '
+						s = padStyle
+					}
+
+					if col == cursorCol {
+						b.WriteString(s.Reverse(true).Blink(true).Render(string(r)))
+					} else {
+						b.WriteString(s.Render(string(r)))
+					}
+				}
+				content = b.String()
 			}
 			result[i] = gutter + content
 		} else {
-			// Draw tildes past EOF, like Vim.
+			// EOF for this side (the other side might still have lines).
 			gutter := lineNumStyle.Render(padRight("~", gutterW))
 			content := contentStyle.Render(strings.Repeat(" ", textW))
 			result[i] = gutter + content
@@ -118,49 +186,54 @@ func (m model) renderPane(lines []string, hl *highlights, scrollX, height, paneW
 	return result
 }
 
-func (m model) renderHighlightedLine(rawLine string, lineSpans []span, scrollX, textW int) string {
+func (m model) renderFoldLine(foldIdx, paneWidth int, isCursor bool) string {
+	f := m.folds[foldIdx]
+	count := f.endLine - f.startLine + 1
+	label := fmt.Sprintf("⋯ %d lines hidden ⋯", count)
+	style := foldStyle
+	if isCursor {
+		style = cursorFoldStyle
+	}
+	return style.Render(centerPad(label, paneWidth))
+}
+
+func centerPad(s string, width int) string {
+	runes := []rune(s)
+	if len(runes) >= width {
+		return string(runes[:width])
+	}
+	totalPad := width - len(runes)
+	leftPad := totalPad / 2
+	rightPad := totalPad - leftPad
+	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
+}
+
+func (m model) renderHighlightedLine(rawLine string, lineSpans []span, scrollX, textW int, cursorCol int) string {
 	expanded, byteToVisual := expandLine(rawLine)
 
 	visualSpans := make([]span, 0, len(lineSpans))
 	for _, s := range lineSpans {
-		vs := span{kind: s.kind}
-		if s.startCol < len(byteToVisual) {
-			vs.startCol = byteToVisual[s.startCol]
+		startCol := -1
+		if int(s.startCol) < len(byteToVisual) {
+			startCol = byteToVisual[s.startCol]
+		}
+		var endCol int
+		if int(s.endCol) < len(byteToVisual) {
+			endCol = byteToVisual[s.endCol]
 		} else {
-			vs.startCol = len([]rune(expanded))
+			endCol = len(expanded)
 		}
-		if s.endCol < len(byteToVisual) {
-			vs.endCol = byteToVisual[s.endCol]
-		} else {
-			vs.endCol = len([]rune(expanded))
-		}
-		if vs.endCol > vs.startCol {
-			visualSpans = append(visualSpans, vs)
+		if startCol != -1 && endCol != -1 {
+			visualSpans = append(visualSpans, span{
+				startCol: startCol,
+				endCol:   endCol,
+				kind:     s.kind,
+			})
 		}
 	}
 
-	runes := []rune(expanded)
-	if scrollX > 0 && scrollX < len(runes) {
-		runes = runes[scrollX:]
-		for i := range visualSpans {
-			visualSpans[i].startCol -= scrollX
-			visualSpans[i].endCol -= scrollX
-			if visualSpans[i].startCol < 0 {
-				visualSpans[i].startCol = 0
-			}
-		}
-	} else if scrollX >= len(runes) {
-		runes = nil
-		visualSpans = nil
-	}
-
-	if len(runes) > textW {
-		runes = runes[:textW]
-	}
-
-	runeLen := len(runes)
-
-	// Resolve overlaps (highest priority wins).
+	// Resolve overlapping highlights using priority precedence.
+	runeLen := len([]rune(expanded))
 	colHighlight := make([]int, runeLen)
 	for i := range colHighlight {
 		colHighlight[i] = -1
@@ -169,107 +242,48 @@ func (m model) renderHighlightedLine(rawLine string, lineSpans []span, scrollX, 
 	for _, vs := range visualSpans {
 		sc := vs.startCol
 		ec := vs.endCol
-		if sc < 0 {
-			sc = 0
-		}
-		if ec > runeLen {
-			ec = runeLen
-		}
 		for col := sc; col < ec; col++ {
-			if colHighlight[col] == -1 || vs.kind < actionKind(colHighlight[col]) {
+			if col < runeLen && (colHighlight[col] == -1 || vs.kind < actionKind(colHighlight[col])) {
 				colHighlight[col] = int(vs.kind)
 			}
 		}
 	}
 
-	// Merge adjacent characters with the same style.
-	var cleanSpans []span
-	inSpan := false
-	var start int
-	var currentKind actionKind
-
-	for col := 0; col < runeLen; col++ {
-		kind := colHighlight[col]
-		if inSpan {
-			if kind == -1 || actionKind(kind) != currentKind {
-				cleanSpans = append(cleanSpans, span{
-					startCol: start,
-					endCol:   col,
-					kind:     currentKind,
-				})
-				if kind != -1 {
-					start = col
-					currentKind = actionKind(kind)
-				} else {
-					inSpan = false
-				}
-			}
-		} else {
-			if kind != -1 {
-				inSpan = true
-				start = col
-				currentKind = actionKind(kind)
-			}
-		}
-	}
-	if inSpan {
-		cleanSpans = append(cleanSpans, span{
-			startCol: start,
-			endCol:   runeLen,
-			kind:     currentKind,
-		})
-	}
-	visualSpans = cleanSpans
-
 	baseStyle := contentStyle
 	basePadStyle := lipgloss.NewStyle()
-
-	if len(visualSpans) == 0 {
-		text := string(runes)
-		text = padRight(text, textW)
-		return baseStyle.Render(text)
+	if cursorCol >= 0 {
+		baseStyle = cursorContentStyle
+		basePadStyle = basePadStyle.Background(colorSurface0)
 	}
 
 	var b strings.Builder
-	pos := 0
+	for idx := 0; idx < textW; idx++ {
+		col := scrollX + idx
+		var style lipgloss.Style
+		var r rune
 
-	for _, vs := range visualSpans {
-		if vs.startCol >= runeLen || vs.endCol <= 0 {
-			continue
-		}
-		sc := vs.startCol
-		ec := vs.endCol
-		if sc < 0 {
-			sc = 0
-		}
-		if ec > runeLen {
-			ec = runeLen
-		}
-
-		if pos < sc {
-			b.WriteString(baseStyle.Render(string(runes[pos:sc])))
+		if col < runeLen {
+			r = []rune(expanded)[col]
+			kind := colHighlight[col]
+			if kind == -1 {
+				style = baseStyle
+			} else {
+				style = hlStyle(actionKind(kind))
+			}
+		} else {
+			r = ' '
+			style = basePadStyle
 		}
 
-		style := hlStyle(vs.kind)
-		b.WriteString(style.Render(string(runes[sc:ec])))
-
-		pos = ec
+		if col == cursorCol {
+			b.WriteString(style.Reverse(true).Blink(true).Render(string(r)))
+		} else {
+			b.WriteString(style.Render(string(r)))
+		}
 	}
-
-	if pos < runeLen {
-		b.WriteString(baseStyle.Render(string(runes[pos:])))
-	}
-
-	rendered := b.String()
-	visualLen := runeLen
-	if visualLen < textW {
-		rendered += basePadStyle.Render(strings.Repeat(" ", textW-visualLen))
-	}
-
-	return rendered
+	return b.String()
 }
 
-// expandLine replaces tabs with 4 spaces and tracks where byte offsets land visually.
 func expandLine(line string) (string, []int) {
 	byteToVisual := make([]int, len(line)+1)
 	var expanded strings.Builder
@@ -291,9 +305,12 @@ func expandLine(line string) (string, []int) {
 }
 
 func (m model) renderStatusBar() string {
-	keys := " ↑/k: up • ↓/j: down • ←/h →/l: scroll • n/N: next/prev change • g/G: top/bottom • q: quit"
+	keys := " j/k: scroll • n/N: change • za: fold • zR/zM: all • q: quit"
 
 	prefix := m.digitBuffer
+	if m.pendingZ {
+		prefix += "z"
+	}
 	prefixLen := len([]rune(prefix))
 
 	var bar string
