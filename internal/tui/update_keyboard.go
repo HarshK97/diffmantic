@@ -115,6 +115,44 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursorX = 0
 		m.keepCursorInViewport()
 
+	case "$":
+		runes := m.lineVisualRunes(m.cursorY)
+		if len(runes) > 0 {
+			m.cursorX = len(runes) - 1
+		} else {
+			m.cursorX = 0
+		}
+		m.keepCursorInViewport()
+
+	case "^":
+		runes := m.lineVisualRunes(m.cursorY)
+		m.cursorX = 0
+		for i, r := range runes {
+			if r != ' ' {
+				m.cursorX = i
+				break
+			}
+		}
+		m.keepCursorInViewport()
+
+	case "w":
+		for i := 0; i < count; i++ {
+			m.moveWordForward()
+		}
+		m.keepCursorInViewport()
+
+	case "b":
+		for i := 0; i < count; i++ {
+			m.moveWordBackward()
+		}
+		m.keepCursorInViewport()
+
+	case "e":
+		for i := 0; i < count; i++ {
+			m.moveWordEnd()
+		}
+		m.keepCursorInViewport()
+
 	case "tab":
 		if m.activePane == "left" {
 			m.activePane = "right"
@@ -242,4 +280,128 @@ func (m model) prevChange() int {
 		return m.vchanges[idx]
 	}
 	return m.vchanges[len(m.vchanges)-1]
+}
+
+func isWordChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+}
+
+func (m *model) moveWordForward() {
+	runes := m.lineVisualRunes(m.cursorY)
+	if len(runes) == 0 || m.cursorX >= len(runes)-1 {
+		m.moveToNextLineStart()
+		return
+	}
+
+	idx := m.cursorX
+	curIsWord := isWordChar(runes[idx])
+
+	for idx < len(runes) && isWordChar(runes[idx]) == curIsWord && runes[idx] != ' ' {
+		idx++
+	}
+	for idx < len(runes) && runes[idx] == ' ' {
+		idx++
+	}
+
+	if idx >= len(runes) {
+		m.moveToNextLineStart()
+	} else {
+		m.cursorX = idx
+	}
+}
+
+func (m *model) moveToNextLineStart() {
+	if m.cursorY < len(m.virtualLines)-1 {
+		m.cursorY++
+		m.cursorX = 0
+		runes := m.lineVisualRunes(m.cursorY)
+		for i, r := range runes {
+			if r != ' ' {
+				m.cursorX = i
+				break
+			}
+		}
+	}
+}
+
+func (m *model) moveWordBackward() {
+	runes := m.lineVisualRunes(m.cursorY)
+	if len(runes) == 0 || m.cursorX <= 0 {
+		m.moveToPrevLineEnd()
+		return
+	}
+
+	idx := m.cursorX - 1
+	for idx >= 0 && runes[idx] == ' ' {
+		idx--
+	}
+	if idx < 0 {
+		m.moveToPrevLineEnd()
+		return
+	}
+
+	isWord := isWordChar(runes[idx])
+	for idx >= 0 && isWordChar(runes[idx]) == isWord && runes[idx] != ' ' {
+		idx--
+	}
+	m.cursorX = idx + 1
+}
+
+func (m *model) moveToPrevLineEnd() {
+	if m.cursorY > 0 {
+		m.cursorY--
+		runes := m.lineVisualRunes(m.cursorY)
+		if len(runes) > 0 {
+			m.cursorX = len(runes) - 1
+		} else {
+			m.cursorX = 0
+		}
+	}
+}
+
+func (m *model) moveWordEnd() {
+	runes := m.lineVisualRunes(m.cursorY)
+	if len(runes) == 0 || m.cursorX >= len(runes)-1 {
+		m.moveToNextLineWordEnd()
+		return
+	}
+
+	idx := m.cursorX + 1
+	for idx < len(runes) && runes[idx] == ' ' {
+		idx++
+	}
+	if idx >= len(runes) {
+		m.moveToNextLineWordEnd()
+		return
+	}
+
+	isWord := isWordChar(runes[idx])
+	for idx < len(runes) && isWordChar(runes[idx]) == isWord && runes[idx] != ' ' {
+		idx++
+	}
+	m.cursorX = idx - 1
+}
+
+func (m *model) moveToNextLineWordEnd() {
+	if m.cursorY < len(m.virtualLines)-1 {
+		m.cursorY++
+		runes := m.lineVisualRunes(m.cursorY)
+		if len(runes) > 0 {
+			idx := 0
+			for idx < len(runes) && runes[idx] == ' ' {
+				idx++
+			}
+			if idx < len(runes) {
+				isWord := isWordChar(runes[idx])
+				for idx < len(runes) && isWordChar(runes[idx]) == isWord && runes[idx] != ' ' {
+					idx++
+				}
+				m.cursorX = idx - 1
+			} else {
+				m.cursorX = 0
+			}
+		} else {
+			m.cursorX = 0
+		}
+	}
 }

@@ -153,6 +153,29 @@ func (m model) lineVisualLength(vIdx int) int {
 	return len([]rune(expanded))
 }
 
+func (m model) lineVisualRunes(vIdx int) []rune {
+	if vIdx < 0 || vIdx >= len(m.virtualLines) {
+		return nil
+	}
+	vl := m.virtualLines[vIdx]
+	if vl.foldIdx >= 0 {
+		return nil
+	}
+
+	var rawLine string
+	if m.activePane == "left" {
+		if vl.realLine < len(m.srcLines) {
+			rawLine = m.srcLines[vl.realLine]
+		}
+	} else {
+		if vl.realLine < len(m.dstLines) {
+			rawLine = m.dstLines[vl.realLine]
+		}
+	}
+	expanded := strings.ReplaceAll(rawLine, "\t", "    ")
+	return []rune(expanded)
+}
+
 func (m *model) keepCursorInViewport() {
 	h := m.contentHeight()
 	if h <= 0 {
