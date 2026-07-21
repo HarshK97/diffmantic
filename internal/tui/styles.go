@@ -28,6 +28,25 @@ var (
 
 	dividerStyle = lipgloss.NewStyle().
 			Foreground(colorSurface1)
+
+	foldStyle = lipgloss.NewStyle().
+			Foreground(colorOverlay0).
+			Background(colorSurface0).
+			Italic(true)
+
+	cursorGutterStyle = lipgloss.NewStyle().
+				Foreground(colorLavender).
+				Background(colorSurface1).
+				Blink(true)
+
+	cursorContentStyle = lipgloss.NewStyle().
+				Background(colorSurface0)
+
+	cursorFoldStyle = lipgloss.NewStyle().
+			Foreground(colorText).
+			Background(colorSurface1).
+			Italic(true).
+			Blink(true)
 )
 
 var (

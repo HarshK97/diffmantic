@@ -18,12 +18,22 @@ type model struct {
 	dstHighlights *highlights
 	allChanges    []int // Sorted list of modified lines so we can jump between them using n/N
 
-	digitBuffer string // count prefix for Vim keys
+	digitBuffer string // Buffer for vim-style count prefixes
+	pendingZ    bool   // Waiting for the second key in a 'z' combo
+
+	folds        []fold
+	virtualLines []virtualLine
+	vchanges     []int // Change indices mapped to visible virtual lines
+
+	cursorY    int
+	cursorX    int
+	activePane string
 }
 
 const (
 	titleBarHeight  = 1
 	statusBarHeight = 1
-	gutterPadding   = 1 // padding between line numbers and text
-	dividerWidth    = 1 // width of the vertical pane separator
+	gutterPadding   = 1
+	dividerWidth    = 1
+	foldContext     = 3 // Unchanged lines to keep visible around changes
 )
