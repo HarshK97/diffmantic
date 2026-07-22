@@ -3,11 +3,21 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorSurface0 = lipgloss.Color("#313244")
-	colorSurface1 = lipgloss.Color("#45475a")
-	colorOverlay0 = lipgloss.Color("#6c7086")
-	colorText     = lipgloss.Color("#cdd6f4")
-	colorLavender = lipgloss.Color("#b4befe")
+	colorSurface0  = lipgloss.Color("#313244")
+	colorSurface1  = lipgloss.Color("#45475a")
+	colorOverlay0  = lipgloss.Color("#6c7086")
+	colorText      = lipgloss.Color("#cdd6f4")
+	colorBlue      = lipgloss.Color("#89b4fa")
+	colorLavender  = lipgloss.Color("#b4befe")
+	colorMauve     = lipgloss.Color("#cba6f7")
+	colorGreen     = lipgloss.Color("#a6e3a1")
+	colorPeach     = lipgloss.Color("#fab387")
+	colorSky       = lipgloss.Color("#89dceb")
+	colorYellow    = lipgloss.Color("#f9e2af")
+	colorPink      = lipgloss.Color("#f5c2e7")
+	colorRed       = lipgloss.Color("#f38ba8")
+	colorTeal      = lipgloss.Color("#94e2d5")
+	colorRosewater = lipgloss.Color("#f5e0dc")
 )
 
 var (

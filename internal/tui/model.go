@@ -42,6 +42,10 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	m.folds = computeFolds(m.allChanges, totalLines, foldContext)
 	m.rebuildVirtualLines()
 
+	// Pre-compute syntax colors upfront so rendering stays fast on scroll.
+	m.srcSyntax = highlightSyntax(srcFile, srcBytes)
+	m.dstSyntax = highlightSyntax(dstFile, dstBytes)
+
 	return m
 }
 

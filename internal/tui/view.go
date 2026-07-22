@@ -59,8 +59,8 @@ func (m model) renderContent() string {
 		tw = 1
 	}
 
-	leftLines := m.renderPane(m.srcLines, m.srcHighlights, m.scrollXLeft, height, pw, gw, tw, true)
-	rightLines := m.renderPane(m.dstLines, m.dstHighlights, m.scrollXRight, height, pw, gw, tw, false)
+	leftLines := m.renderPane(m.srcLines, m.srcHighlights, m.srcSyntax, m.scrollXLeft, height, pw, gw, tw, true)
+	rightLines := m.renderPane(m.dstLines, m.dstHighlights, m.dstSyntax, m.scrollXRight, height, pw, gw, tw, false)
 
 	div := dividerStyle.Render("│")
 
@@ -85,7 +85,7 @@ func (m model) renderContent() string {
 	return b.String()
 }
 
-func (m model) renderPane(lines []string, hl *highlights, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
+func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]syntaxSpan, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
 	result := make([]string, height)
 
 	for i := 0; i < height; i++ {
@@ -134,9 +134,12 @@ func (m model) renderPane(lines []string, hl *highlights, scrollX, height, paneW
 				cursorCol = m.cursorX
 			}
 
-			if len(lineSpans) > 0 {
-				content = m.renderHighlightedLine(rawLine, lineSpans, scrollX, textW, cursorCol)
+			syntaxSpans := syntax[lineIdx]
+
+			if len(lineSpans) > 0 || len(syntaxSpans) > 0 {
+				content = m.renderStyledLine(rawLine, lineSpans, syntaxSpans, scrollX, textW, cursorCol)
 			} else {
+				// Fast path: no highlights and no syntax
 				line := strings.ReplaceAll(rawLine, "\t", "    ")
 				runes := []rune(line)
 				runeLen := len(runes)
@@ -208,54 +211,63 @@ func centerPad(s string, width int) string {
 	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
 }
 
-func (m model) renderHighlightedLine(rawLine string, lineSpans []span, scrollX, textW int, cursorCol int) string {
+// Combine diff action highlights (background) with syntax colors (foreground).
+func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syntaxSpan, scrollX, textW int, cursorCol int) string {
+	// Expand tabs and map original byte offsets to visual column positions.
 	expanded, byteToVisual := expandLine(rawLine)
-
-	visualSpans := make([]span, 0, len(lineSpans))
-	for _, s := range lineSpans {
-		startCol := -1
-		if int(s.startCol) < len(byteToVisual) {
-			startCol = byteToVisual[s.startCol]
-		}
-		var endCol int
-		if int(s.endCol) < len(byteToVisual) {
-			endCol = byteToVisual[s.endCol]
-		} else {
-			endCol = len(expanded)
-		}
-		if startCol != -1 && endCol != -1 {
-			visualSpans = append(visualSpans, span{
-				startCol: startCol,
-				endCol:   endCol,
-				kind:     s.kind,
-			})
-		}
-	}
-
-	// Resolve overlapping highlights using priority precedence.
 	runeLen := len([]rune(expanded))
+
 	colHighlight := make([]int, runeLen)
 	for i := range colHighlight {
 		colHighlight[i] = -1
 	}
-
-	for _, vs := range visualSpans {
-		sc := vs.startCol
-		ec := vs.endCol
-		for col := sc; col < ec; col++ {
-			if col < runeLen && (colHighlight[col] == -1 || vs.kind < actionKind(colHighlight[col])) {
-				colHighlight[col] = int(vs.kind)
+	for _, s := range lineSpans {
+		sc := -1
+		if s.startCol < len(byteToVisual) {
+			sc = byteToVisual[s.startCol]
+		}
+		var ec int
+		if s.endCol < len(byteToVisual) {
+			ec = byteToVisual[s.endCol]
+		} else {
+			ec = runeLen
+		}
+		if sc >= 0 && ec > sc {
+			for col := sc; col < ec && col < runeLen; col++ {
+				if colHighlight[col] == -1 || s.kind < actionKind(colHighlight[col]) {
+					colHighlight[col] = int(s.kind)
+				}
 			}
 		}
 	}
 
-	baseStyle := contentStyle
+	colSyntax := make([]lipgloss.Color, runeLen)
+	for _, s := range synSpans {
+		sc := -1
+		if s.startCol < len(byteToVisual) {
+			sc = byteToVisual[s.startCol]
+		}
+		var ec int
+		if s.endCol < len(byteToVisual) {
+			ec = byteToVisual[s.endCol]
+		} else {
+			ec = runeLen
+		}
+		if sc >= 0 && ec > sc {
+			for col := sc; col < ec && col < runeLen; col++ {
+				if colSyntax[col] == "" {
+					colSyntax[col] = s.color
+				}
+			}
+		}
+	}
+
 	basePadStyle := lipgloss.NewStyle()
 	if cursorCol >= 0 {
-		baseStyle = cursorContentStyle
 		basePadStyle = basePadStyle.Background(colorSurface0)
 	}
 
+	expRunes := []rune(expanded)
 	var b strings.Builder
 	for idx := 0; idx < textW; idx++ {
 		col := scrollX + idx
@@ -263,12 +275,27 @@ func (m model) renderHighlightedLine(rawLine string, lineSpans []span, scrollX, 
 		var r rune
 
 		if col < runeLen {
-			r = []rune(expanded)[col]
-			kind := colHighlight[col]
-			if kind == -1 {
-				style = baseStyle
+			r = expRunes[col]
+			actionIdx := colHighlight[col]
+			synColor := colSyntax[col]
+
+			if actionIdx >= 0 {
+				style = hlStyle(actionKind(actionIdx))
+				if synColor != "" {
+					style = style.Foreground(synColor)
+				}
+			} else if synColor != "" {
+				if cursorCol >= 0 {
+					style = cursorContentStyle.Foreground(synColor)
+				} else {
+					style = contentStyle.Foreground(synColor)
+				}
 			} else {
-				style = hlStyle(actionKind(kind))
+				if cursorCol >= 0 {
+					style = cursorContentStyle
+				} else {
+					style = contentStyle
+				}
 			}
 		} else {
 			r = ' '

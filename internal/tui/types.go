@@ -25,9 +25,12 @@ type model struct {
 	virtualLines []virtualLine
 	vchanges     []int // Change indices mapped to visible virtual lines
 
-	cursorY    int
-	cursorX    int
-	activePane string
+	cursorY    int    // index of active virtual line (0-indexed)
+	cursorX    int    // horizontal column position in visual spaces (0-indexed)
+	activePane string // "left" or "right"
+
+	srcSyntax map[int][]syntaxSpan
+	dstSyntax map[int][]syntaxSpan
 }
 
 const (
