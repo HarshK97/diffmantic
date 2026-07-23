@@ -31,29 +31,6 @@
         "tree": "after",
         "path": [
           2,
-          1
-        ],
-        "type": "import_clause",
-        "start_byte": 189,
-        "end_byte": 216
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          2
-        ],
-        "type": "import_statement",
-        "start_byte": 182,
-        "end_byte": 259
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          2,
           2
         ],
         "type": "from",

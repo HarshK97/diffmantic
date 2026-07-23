@@ -858,45 +858,6 @@
         "start_byte": 28723,
         "end_byte": 28728
       }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          36,
-          2,
-          12,
-          3,
-          2,
-          4,
-          2,
-          3,
-          0
-        ],
-        "type": "block",
-        "start_byte": 28833,
-        "end_byte": 28847
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          36,
-          2,
-          12,
-          3,
-          2,
-          4,
-          2,
-          3
-        ],
-        "type": "else_clause",
-        "start_byte": 28811,
-        "end_byte": 28833
-      }
     }
   ],
   "line_alignment": [
