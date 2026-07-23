@@ -89,39 +89,9 @@ func Collapse(
 			if allChildrenInserted {
 				KillChildren(parent, inserted, suppressed)
 				act.Subtree = true
-			} else {
-				// Check if at least one direct child is a Move or Update action of a non-literal content node.
-				hasMoveOrUpdateChild := false
-				for _, child := range parent.Children {
-					if isBareAliasedLiteral(child) {
-						continue
-					}
-					if _, isInserted := inserted[child]; !isInserted {
-						srcNode := ms.Dst()[child]
-						if srcNode != nil {
-							isMove := false
-							if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
-								isMove = true
-							}
-							isUpdate := false
-							if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
-								isUpdate = true
-							}
-
-							if isMove || isUpdate {
-								if nodeSimilarity(srcNode, child, ms) >= 0.5 {
-									hasMoveOrUpdateChild = true
-									break
-								}
-							}
-						}
-					}
-				}
-
-				if hasMoveOrUpdateChild {
-					suppressed[act] = true
-					contentMoveSuppressed[act] = true
-				}
+			} else if hasMovedOrUpdatedDescendant(parent, moved, updated, suppressed, ms, true) {
+				suppressed[act] = true
+				contentMoveSuppressed[act] = true
 			}
 		}
 
@@ -162,6 +132,9 @@ func Collapse(
 			if allChildrenDeleted {
 				KillChildren(parent, deleted, suppressed)
 				act.Subtree = true
+			} else if hasMovedOrUpdatedDescendant(parent, moved, updated, suppressed, ms, false) {
+				suppressed[act] = true
+				contentMoveSuppressed[act] = true
 			}
 		}
 	}
@@ -355,4 +328,57 @@ func nodeSimilarity(src, dst *treesitter.ASTNode, ms *engine.Mapping) float64 {
 		return 0.0
 	}
 	return ms.DiceSrc(src, dst)
+}
+
+func hasMovedOrUpdatedDescendant(
+	node *treesitter.ASTNode,
+	moved, updated map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+	ms *engine.Mapping,
+	isInsert bool,
+) bool {
+	var check func(*treesitter.ASTNode) bool
+	check = func(n *treesitter.ASTNode) bool {
+		for _, child := range n.Children {
+			if isBareAliasedLiteral(child) {
+				continue
+			}
+			if isInsert {
+				srcNode := ms.Dst()[child]
+				if srcNode != nil {
+					isMove := false
+					if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
+						isMove = true
+					}
+					isUpdate := false
+					if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
+						isUpdate = true
+					}
+					if (isMove || isUpdate) && nodeSimilarity(srcNode, child, ms) >= 0.5 {
+						return true
+					}
+				}
+			} else {
+				dstNode := ms.Src()[child]
+				if dstNode != nil {
+					isMove := false
+					if moveAct, ok := moved[child]; ok && !suppressed[moveAct] {
+						isMove = true
+					}
+					isUpdate := false
+					if updateAct, ok := updated[child]; ok && !suppressed[updateAct] {
+						isUpdate = true
+					}
+					if (isMove || isUpdate) && nodeSimilarity(child, dstNode, ms) >= 0.5 {
+						return true
+					}
+				}
+			}
+			if check(child) {
+				return true
+			}
+		}
+		return false
+	}
+	return check(node)
 }
