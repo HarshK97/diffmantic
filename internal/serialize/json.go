@@ -13,10 +13,18 @@ import (
 // SchemaVersion defines the stable, versioned JSON output format version.
 const SchemaVersion = "v1"
 
+// LineAlignmentPair matches a source file line to a destination file line.
+// A line index of -1 indicates a filler line.
+type LineAlignmentPair struct {
+	LeftLine  int `json:"left_line"`
+	RightLine int `json:"right_line"`
+}
+
 // Envelope wraps the serialized actions list with a schema version.
 type Envelope struct {
-	Version string   `json:"version"`
-	Actions []Action `json:"actions"`
+	Version       string              `json:"version"`
+	Actions       []Action            `json:"actions"`
+	LineAlignment []LineAlignmentPair `json:"line_alignment,omitempty"`
 }
 
 // Action represents a serialized edit-script action.
@@ -47,15 +55,16 @@ type NodeRef struct {
 	EndByte   uint32 `json:"end_byte"`
 }
 
-// BuildEnvelope packs the edit script, mappings, and metadata into an Envelope struct.
-func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) (*Envelope, error) {
+// BuildEnvelope bundles the edit script, AST mappings, and metadata into a unified envelope.
+func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode, srcBytes, dstBytes []byte) (*Envelope, error) {
 	if es == nil {
 		return nil, fmt.Errorf("edit script is nil")
 	}
 
 	env := Envelope{
-		Version: SchemaVersion,
-		Actions: make([]Action, 0, es.Size()),
+		Version:       SchemaVersion,
+		Actions:       make([]Action, 0, es.Size()),
+		LineAlignment: AlignLines(srcBytes, dstBytes, es, ms, srcRoot, dstRoot),
 	}
 
 	for _, a := range es.Actions() {
@@ -246,9 +255,9 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 	return &env, nil
 }
 
-// Marshal converts the diff result to indented JSON.
-func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) ([]byte, error) {
-	env, err := BuildEnvelope(es, ms, srcRoot, dstRoot)
+// Marshal serializes the diff result into an indented JSON byte slice.
+func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode, srcBytes, dstBytes []byte) ([]byte, error) {
+	env, err := BuildEnvelope(es, ms, srcRoot, dstRoot, srcBytes, dstBytes)
 	if err != nil {
 		return nil, err
 	}

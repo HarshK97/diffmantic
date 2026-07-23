@@ -34,7 +34,7 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 // and label. Dice of parents picks the best candidate; ties are broken by a
 // positional score (parent mapped > parent same slot in matched ancestor >
 // same child index > matched ancestor pair).
-// Leaves with an unmatched parent are skipped — they belong to deleted or
+// Leaves with an unmatched parent are skipped: they belong to deleted or
 // inserted subtrees and have no real counterpart.
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	t2Nodes := PostOrder(t2Root)

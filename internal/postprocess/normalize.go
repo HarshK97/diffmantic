@@ -13,7 +13,7 @@ const commentSimilarityThreshold = 0.7
 // converts them into a Delete action for the source node and an Insert action for
 // the destination node.
 //
-// Only convert when the match is spurious — the node was matched across unrelated
+// Only convert when the match is spurious: the node was matched across unrelated
 // parent contexts. If the node and its parent both moved coherently (a.Parent ==
 // ms.Src()[a.Node.Parent]), keep the Move so parent Move-collapsing still works.
 func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {

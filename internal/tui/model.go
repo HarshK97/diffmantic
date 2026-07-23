@@ -26,20 +26,54 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 		activePane: "left",
 	}
 
+	if env == nil || len(env.LineAlignment) == 0 {
+		total := len(m.srcLines)
+		if len(m.dstLines) > total {
+			total = len(m.dstLines)
+		}
+		m.lineAlignment = make([]serialize.LineAlignmentPair, total)
+		for i := 0; i < total; i++ {
+			left := -1
+			if i < len(m.srcLines) {
+				left = i
+			}
+			right := -1
+			if i < len(m.dstLines) {
+				right = i
+			}
+			m.lineAlignment[i] = serialize.LineAlignmentPair{LeftLine: left, RightLine: right}
+		}
+	} else {
+		m.lineAlignment = env.LineAlignment
+	}
+
 	if env != nil {
 		m.srcHighlights, m.dstHighlights = buildHighlights(srcBytes, dstBytes, env.Actions)
-		m.allChanges = mergedChangeLines(m.srcHighlights, m.dstHighlights)
+		var changeRows []int
+		for r, pair := range m.lineAlignment {
+			isChange := false
+			if pair.LeftLine == -1 || pair.RightLine == -1 {
+				isChange = true
+			} else {
+				if _, ok := m.srcHighlights.tinted[pair.LeftLine]; ok {
+					isChange = true
+				}
+				if _, ok := m.dstHighlights.tinted[pair.RightLine]; ok {
+					isChange = true
+				}
+			}
+			if isChange {
+				changeRows = append(changeRows, r)
+			}
+		}
+		m.allChanges = changeRows
 	} else {
 		m.srcHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
 		m.dstHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
 	}
 
 	// Build collapsible folds from unchanged lines.
-	totalLines := len(m.srcLines)
-	if len(m.dstLines) > totalLines {
-		totalLines = len(m.dstLines)
-	}
-	m.folds = computeFolds(m.allChanges, totalLines, foldContext)
+	m.folds = computeFolds(m.allChanges, len(m.lineAlignment), foldContext)
 	m.rebuildVirtualLines()
 
 	// Pre-compute syntax colors upfront so rendering stays fast on scroll.
@@ -51,16 +85,12 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 
 // rebuildVirtualLines updates display mappings and virtual change indices after folding/unfolding.
 func (m *model) rebuildVirtualLines() {
-	totalLines := len(m.srcLines)
-	if len(m.dstLines) > totalLines {
-		totalLines = len(m.dstLines)
-	}
-	m.virtualLines = buildVirtualLines(m.folds, totalLines)
+	m.virtualLines = buildVirtualLines(m.folds, len(m.lineAlignment), m.lineAlignment)
 
 	// Map physical change lines to their display rows.
 	m.vchanges = make([]int, 0, len(m.allChanges))
 	for _, rl := range m.allChanges {
-		vi := realToVirtual(m.virtualLines, rl)
+		vi := realToVirtual(m.virtualLines, m.folds, rl)
 		if vi >= 0 {
 			m.vchanges = append(m.vchanges, vi)
 		}
@@ -145,12 +175,12 @@ func (m model) lineVisualLength(vIdx int) int {
 
 	var rawLine string
 	if m.activePane == "left" {
-		if vl.realLine < len(m.srcLines) {
-			rawLine = m.srcLines[vl.realLine]
+		if vl.leftLine >= 0 && vl.leftLine < len(m.srcLines) {
+			rawLine = m.srcLines[vl.leftLine]
 		}
 	} else {
-		if vl.realLine < len(m.dstLines) {
-			rawLine = m.dstLines[vl.realLine]
+		if vl.rightLine >= 0 && vl.rightLine < len(m.dstLines) {
+			rawLine = m.dstLines[vl.rightLine]
 		}
 	}
 	expanded := strings.ReplaceAll(rawLine, "\t", "    ")
@@ -168,12 +198,12 @@ func (m model) lineVisualRunes(vIdx int) []rune {
 
 	var rawLine string
 	if m.activePane == "left" {
-		if vl.realLine < len(m.srcLines) {
-			rawLine = m.srcLines[vl.realLine]
+		if vl.leftLine >= 0 && vl.leftLine < len(m.srcLines) {
+			rawLine = m.srcLines[vl.leftLine]
 		}
 	} else {
-		if vl.realLine < len(m.dstLines) {
-			rawLine = m.dstLines[vl.realLine]
+		if vl.rightLine >= 0 && vl.rightLine < len(m.dstLines) {
+			rawLine = m.dstLines[vl.rightLine]
 		}
 	}
 	expanded := strings.ReplaceAll(rawLine, "\t", "    ")

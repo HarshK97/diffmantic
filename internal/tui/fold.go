@@ -1,43 +1,50 @@
 package tui
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/HarshK97/diffmantic/internal/serialize"
+)
 
 // A single visible row on the screen.
 type virtualLine struct {
-	realLine int // Real line number, 0-indexed. Set to -1 if this is a fold marker.
-	foldIdx  int // Index into model.folds. Set to -1 if this is a real line.
+	alignedRow int // index in LineAlignment grid (-1 if fold marker)
+	leftLine   int // 0-indexed line number in source file (-1 if filler or fold marker)
+	rightLine  int // 0-indexed line number in dest file (-1 if filler or fold marker)
+	foldIdx    int // index into model.folds (-1 if real line)
 }
 
-// A group of unchanged lines that can be collapsed.
+// fold is a collapsible group of unchanged aligned grid rows.
 type fold struct {
-	startLine int
-	endLine   int
-	open      bool
+	startLine int  // first grid row index in the fold (inclusive)
+	endLine   int  // last grid row index in the fold (inclusive)
+	open      bool // true = expanded, false = collapsed
 }
 
-// Find unchanged code blocks that are far enough away from any changes.
-func computeFolds(changeLines []int, totalLines, context int) []fold {
-	if totalLines == 0 {
+// computeFolds identifies unchanged code blocks outside of context windows around changes.
+func computeFolds(changeRows []int, totalRows, context int) []fold {
+	if totalRows == 0 {
 		return nil
 	}
-	if len(changeLines) == 0 {
-		if totalLines > 1 {
-			return []fold{{startLine: 0, endLine: totalLines - 1}}
+	if len(changeRows) == 0 {
+		// Fold the entire file if nothing changed.
+		if totalRows > 1 {
+			return []fold{{startLine: 0, endLine: totalRows - 1}}
 		}
 		return nil
 	}
 
-	// Create visible padding windows around the changed lines.
+	// Keep context lines visible around each change.
 	type window struct{ lo, hi int }
-	windows := make([]window, 0, len(changeLines))
-	for _, cl := range changeLines {
+	windows := make([]window, 0, len(changeRows))
+	for _, cl := range changeRows {
 		lo := cl - context
 		hi := cl + context
 		if lo < 0 {
 			lo = 0
 		}
-		if hi >= totalLines {
-			hi = totalLines - 1
+		if hi >= totalRows {
+			hi = totalRows - 1
 		}
 		windows = append(windows, window{lo, hi})
 	}
@@ -71,11 +78,11 @@ func computeFolds(changeLines []int, totalLines, context int) []fold {
 	}
 
 	lastHi := merged[len(merged)-1].hi
-	if lastHi < totalLines-1 {
-		folds = append(folds, fold{startLine: lastHi + 1, endLine: totalLines - 1})
+	if lastHi < totalRows-1 {
+		folds = append(folds, fold{startLine: lastHi + 1, endLine: totalRows - 1})
 	}
 
-	// Ignore tiny folds of only 1 line.
+	// Skip single-line folds: not worth collapsing.
 	var result []fold
 	for _, f := range folds {
 		if f.endLine-f.startLine+1 >= 2 {
@@ -86,9 +93,9 @@ func computeFolds(changeLines []int, totalLines, context int) []fold {
 	return result
 }
 
-// Build the list of visible lines and fold markers we want to show.
-func buildVirtualLines(folds []fold, totalLines int) []virtualLine {
-	if totalLines == 0 {
+// buildVirtualLines creates a list of visible lines and fold markers to display.
+func buildVirtualLines(folds []fold, totalRows int, lineAlignment []serialize.LineAlignmentPair) []virtualLine {
+	if totalRows == 0 {
 		return nil
 	}
 
@@ -104,31 +111,58 @@ func buildVirtualLines(folds []fold, totalLines int) []virtualLine {
 	}
 
 	var vlines []virtualLine
-	line := 0
-	for line < totalLines {
-		if fi, ok := foldByStart[line]; ok {
+	row := 0
+	for row < totalRows {
+		if fi, ok := foldByStart[row]; ok {
 			f := folds[fi]
 			if f.open {
-				for rl := f.startLine; rl <= f.endLine; rl++ {
-					vlines = append(vlines, virtualLine{realLine: rl, foldIdx: -1})
+				// Emit lines normally for open folds.
+				for r := f.startLine; r <= f.endLine; r++ {
+					pair := lineAlignment[r]
+					vlines = append(vlines, virtualLine{
+						alignedRow: r,
+						leftLine:   pair.LeftLine,
+						rightLine:  pair.RightLine,
+						foldIdx:    -1,
+					})
 				}
 			} else {
-				vlines = append(vlines, virtualLine{realLine: -1, foldIdx: fi})
+				// Emit a single fold marker for collapsed folds.
+				vlines = append(vlines, virtualLine{
+					alignedRow: -1,
+					leftLine:   -1,
+					rightLine:  -1,
+					foldIdx:    fi,
+				})
 			}
-			line = f.endLine + 1
+			row = f.endLine + 1
 		} else {
-			vlines = append(vlines, virtualLine{realLine: line, foldIdx: -1})
-			line++
+			pair := lineAlignment[row]
+			vlines = append(vlines, virtualLine{
+				alignedRow: row,
+				leftLine:   pair.LeftLine,
+				rightLine:  pair.RightLine,
+				foldIdx:    -1,
+			})
+			row++
 		}
 	}
 
 	return vlines
 }
 
-func realToVirtual(vlines []virtualLine, realLine int) int {
+// realToVirtual maps an aligned grid row index to its display index.
+func realToVirtual(vlines []virtualLine, folds []fold, alignedRow int) int {
 	for i, vl := range vlines {
-		if vl.realLine == realLine {
-			return i
+		if vl.foldIdx >= 0 {
+			f := folds[vl.foldIdx]
+			if alignedRow >= f.startLine && alignedRow <= f.endLine {
+				return i
+			}
+		} else {
+			if vl.alignedRow == alignedRow {
+				return i
+			}
 		}
 	}
 	return -1
@@ -142,9 +176,9 @@ func foldAtVirtual(vlines []virtualLine, folds []fold, idx int) int {
 	if vl.foldIdx >= 0 {
 		return vl.foldIdx
 	}
-	if vl.realLine >= 0 {
+	if vl.alignedRow >= 0 {
 		for i, f := range folds {
-			if vl.realLine >= f.startLine && vl.realLine <= f.endLine {
+			if vl.alignedRow >= f.startLine && vl.alignedRow <= f.endLine {
 				return i
 			}
 		}

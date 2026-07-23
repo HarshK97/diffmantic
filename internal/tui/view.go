@@ -69,7 +69,7 @@ func (m model) renderContent() string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		// Check if this row is a fold marker — render a unified fold line across the divider.
+		// Check if this row is a fold marker: render a unified fold line across the divider.
 		vIdx := m.scrollY + i
 		if vIdx < len(m.virtualLines) && m.virtualLines[vIdx].foldIdx >= 0 {
 			b.WriteString(leftLines[i])
@@ -111,7 +111,34 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 		}
 
 		// Real line.
-		lineIdx := vl.realLine
+		var lineIdx int
+		if isLeftPane {
+			lineIdx = vl.leftLine
+		} else {
+			lineIdx = vl.rightLine
+		}
+
+		if lineIdx == -1 {
+			var gutter string
+			if isCursorRow && isActivePane {
+				gutter = cursorGutterStyle.Render(strings.Repeat(" ", gutterW))
+			} else {
+				gutter = lineNumStyle.Render(strings.Repeat(" ", gutterW))
+			}
+
+			var content string
+			fillerText := strings.Repeat("╱", textW)
+
+			if isCursor {
+				content = cursorContentStyle.Render(fillerText)
+			} else {
+				content = lineNumStyle.Render(fillerText)
+			}
+
+			result[i] = gutter + content
+			continue
+		}
+
 		if lineIdx < len(lines) {
 			lineSpans := hl.spans[lineIdx]
 

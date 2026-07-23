@@ -194,7 +194,7 @@ func (m *model) toggleFoldAt(virtualIdx int) {
 		}
 	} else {
 		for i, vl := range m.virtualLines {
-			if vl.realLine == m.folds[fi].startLine {
+			if vl.alignedRow == m.folds[fi].startLine {
 				m.cursorY = i
 				break
 			}
@@ -215,7 +215,7 @@ func (m *model) openFoldAt(virtualIdx int) {
 	m.folds[fi].open = true
 	m.rebuildVirtualLines()
 	for i, vl := range m.virtualLines {
-		if vl.realLine == m.folds[fi].startLine {
+		if vl.alignedRow == m.folds[fi].startLine {
 			m.cursorY = i
 			break
 		}
