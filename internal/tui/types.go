@@ -1,5 +1,9 @@
 package tui
 
+import (
+	"github.com/HarshK97/diffmantic/internal/serialize"
+)
+
 type model struct {
 	width  int
 	height int
@@ -16,7 +20,8 @@ type model struct {
 
 	srcHighlights *highlights
 	dstHighlights *highlights
-	allChanges    []int // Sorted list of modified lines so we can jump between them using n/N
+	lineAlignment []serialize.LineAlignmentPair
+	allChanges    []int // Sorted list of all changed lines for n/N jumping
 
 	digitBuffer string // Buffer for vim-style count prefixes
 	pendingZ    bool   // Waiting for the second key in a 'z' combo

@@ -54,5 +54,151 @@
       },
       "subtree": true
     }
+  ],
+  "line_alignment": [
+    {
+      "left_line": 0,
+      "right_line": 0
+    },
+    {
+      "left_line": 1,
+      "right_line": 1
+    },
+    {
+      "left_line": 2,
+      "right_line": 2
+    },
+    {
+      "left_line": 3,
+      "right_line": 3
+    },
+    {
+      "left_line": 4,
+      "right_line": 4
+    },
+    {
+      "left_line": 5,
+      "right_line": 5
+    },
+    {
+      "left_line": 6,
+      "right_line": 6
+    },
+    {
+      "left_line": 7,
+      "right_line": 7
+    },
+    {
+      "left_line": 8,
+      "right_line": 8
+    },
+    {
+      "left_line": 9,
+      "right_line": 9
+    },
+    {
+      "left_line": 10,
+      "right_line": 10
+    },
+    {
+      "left_line": 11,
+      "right_line": 11
+    },
+    {
+      "left_line": 12,
+      "right_line": 12
+    },
+    {
+      "left_line": 13,
+      "right_line": 13
+    },
+    {
+      "left_line": 14,
+      "right_line": 14
+    },
+    {
+      "left_line": 15,
+      "right_line": 15
+    },
+    {
+      "left_line": 16,
+      "right_line": 16
+    },
+    {
+      "left_line": 17,
+      "right_line": 17
+    },
+    {
+      "left_line": 18,
+      "right_line": 18
+    },
+    {
+      "left_line": 19,
+      "right_line": 19
+    },
+    {
+      "left_line": 20,
+      "right_line": 20
+    },
+    {
+      "left_line": 21,
+      "right_line": 21
+    },
+    {
+      "left_line": 22,
+      "right_line": 22
+    },
+    {
+      "left_line": 23,
+      "right_line": 23
+    },
+    {
+      "left_line": 24,
+      "right_line": 24
+    },
+    {
+      "left_line": 25,
+      "right_line": 25
+    },
+    {
+      "left_line": 26,
+      "right_line": 26
+    },
+    {
+      "left_line": 27,
+      "right_line": 27
+    },
+    {
+      "left_line": 28,
+      "right_line": 28
+    },
+    {
+      "left_line": 29,
+      "right_line": 29
+    },
+    {
+      "left_line": 30,
+      "right_line": 30
+    },
+    {
+      "left_line": 31,
+      "right_line": 31
+    },
+    {
+      "left_line": 32,
+      "right_line": 32
+    },
+    {
+      "left_line": 33,
+      "right_line": 33
+    },
+    {
+      "left_line": 34,
+      "right_line": 34
+    },
+    {
+      "left_line": 35,
+      "right_line": 35
+    }
   ]
 }

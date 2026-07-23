@@ -77,7 +77,7 @@ func TestGroupMovesSerialization(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Move, Node: n2, Parent: newParent})
 
 	grouped := GroupMoves(es)
-	data, err := serialize.Marshal(grouped, nil, srcRoot, dstRoot)
+	data, err := serialize.Marshal(grouped, nil, srcRoot, dstRoot, make([]byte, srcRoot.EndByte), make([]byte, dstRoot.EndByte))
 	if err != nil {
 		t.Fatalf("Marshal failed: %v", err)
 	}

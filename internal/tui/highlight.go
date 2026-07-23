@@ -166,23 +166,6 @@ func sortedKeys(m map[int]actionKind) []int {
 	return keys
 }
 
-// mergedChangeLines combines and sorts edited lines from both files to let us step through them.
-func mergedChangeLines(src, dst *highlights) []int {
-	seen := make(map[int]bool)
-	for _, l := range src.changeLines {
-		seen[l] = true
-	}
-	for _, l := range dst.changeLines {
-		seen[l] = true
-	}
-	merged := make([]int, 0, len(seen))
-	for l := range seen {
-		merged = append(merged, l)
-	}
-	sort.Ints(merged)
-	return merged
-}
-
 func mergeAllSpans(hl *highlights, fileBytes []byte) {
 	lineIndex := buildLineIndex(fileBytes)
 	for line, lineSpans := range hl.spans {

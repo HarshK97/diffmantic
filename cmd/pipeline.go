@@ -78,7 +78,7 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
 
-	env, err := serialize.BuildEnvelope(es, matchResult.Mappings, srcAST, dstAST)
+	env, err := serialize.BuildEnvelope(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes)
 	if err != nil {
 		return nil, fmt.Errorf("building envelope: %w", err)
 	}

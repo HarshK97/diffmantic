@@ -320,7 +320,7 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 	// (b) information-loss guard case:
 	// P=function_definition (Insert, Subtree:false, fails due to unrelated sibling)
 	// S=block (Insert, Subtree:true, all S's own children are clean Inserts)
-	// S's Insert MUST survive with Subtree:true — NOT suppressed by the new rule.
+	// S's Insert MUST survive with Subtree:true (NOT suppressed by the new rule).
 	t.Run("scaffolding-insert-survives-when-subtree-true", func(t *testing.T) {
 		unrelatedChild := &treesitter.ASTNode{Type: "decorator", StartByte: 0, EndByte: 10}
 		sChild := &treesitter.ASTNode{Type: "expression_statement", StartByte: 30, EndByte: 50}
@@ -378,7 +378,7 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 	// (c) 2-level scaffolding depth case:
 	// P=call (Insert) -> S=argument_list (Insert, Subtree:false, scaffolding)
 	//   -> S2=argument_list (Insert, Subtree:false, scaffolding)
-	// Both S and S2 should be suppressed — independently evaluated at each level.
+	// Both S and S2 should be suppressed: independently evaluated at each level.
 	t.Run("scaffolding-insert-suppressed-recursive-depth", func(t *testing.T) {
 		mappedChild := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 9}
 		mappedChild2 := &treesitter.ASTNode{Type: "identifier", StartByte: 10, EndByte: 19}
@@ -660,13 +660,13 @@ func TestInlineParentSuppression(t *testing.T) {
 
 	// (b) go_4_error_handling L26 insert shape:
 	// call_expression (Insert, inline, no subtree) with direct children
-	// selector_expression (Insert, inline, subtree:true — the "errors.Is"
+	// selector_expression (Insert, inline, subtree:true, the "errors.Is"
 	// function part) and argument_list (scaffolding). Inside argument_list
 	// there is an inserted identifier "err" AND a Move destination
 	// selector_expression (for "sql.ErrNoRows"). The Move grandchild makes
 	// allChildrenInserted fail for argument_list, and because it is a
 	// grandchild (not a direct child of call_expression) the existing
-	// hasMoveOrUpdateChild check does not fire on call_expression either —
+	// hasMoveOrUpdateChild check does not fire on call_expression either,
 	// so call_expression survives as a non-subtree Insert. The inline pass
 	// must then kill call_expression because its direct child sel is an
 	// inline Insert on the same line.

@@ -116,7 +116,7 @@ func runPipeline(t *testing.T, f fixture) pipelineResult {
 	es := actions.GenerateEditScript(astA, astB, result.Mappings)
 	es = postprocess.Run(es, result.Mappings, astA, astB)
 
-	jsonData, err := serialize.Marshal(es, result.Mappings, astA, astB)
+	jsonData, err := serialize.Marshal(es, result.Mappings, astA, astB, f.OldSrc, f.NewSrc)
 	if err != nil {
 		t.Fatalf("serializing JSON: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestActionCountNonZero(t *testing.T) {
 			}
 
 			if len(envelope.Actions) == 0 {
-				t.Error("real bug-fix diff produced zero actions — something is wrong")
+				t.Error("real bug-fix diff produced zero actions: something is wrong")
 			}
 
 			// Log a summary for visibility.

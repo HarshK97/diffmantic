@@ -110,7 +110,7 @@ func TestRoundTrip(t *testing.T) {
 	})
 
 	// Perform serialization
-	jsonData, err := Marshal(es, ms, src, dst)
+	jsonData, err := Marshal(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte))
 	if err != nil {
 		t.Fatalf("Marshal failed: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestNilEditScript(t *testing.T) {
-	_, err := Marshal(nil, nil, nil, nil)
+	_, err := Marshal(nil, nil, nil, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "edit script is nil") {
 		t.Errorf("expected error for nil edit script, got %v", err)
 	}
@@ -295,7 +295,7 @@ func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
 		Position: 0,
 	})
 
-	_, err := Marshal(es, ms, src, dst)
+	_, err := Marshal(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte))
 	if err == nil {
 		t.Fatal("expected Marshal to fail due to unmapped move parent, but it succeeded")
 	}
