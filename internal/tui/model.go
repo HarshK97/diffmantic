@@ -98,7 +98,14 @@ func (m *model) rebuildVirtualLines() {
 }
 
 func (m model) contentHeight() int {
-	return m.height - titleBarHeight - statusBarHeight
+	h := m.height - titleBarHeight - statusBarHeight
+	if m.inspectOpen {
+		h -= inspectPanelHeight
+	}
+	if h < 1 {
+		h = 1
+	}
+	return h
 }
 
 func (m model) paneWidth() int {

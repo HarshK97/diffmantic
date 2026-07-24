@@ -6,6 +6,7 @@ var (
 	colorSurface0  = lipgloss.Color("#313244")
 	colorSurface1  = lipgloss.Color("#45475a")
 	colorOverlay0  = lipgloss.Color("#6c7086")
+	colorSubtext0  = lipgloss.Color("#a6adc8")
 	colorText      = lipgloss.Color("#cdd6f4")
 	colorBlue      = lipgloss.Color("#89b4fa")
 	colorLavender  = lipgloss.Color("#b4befe")
@@ -85,5 +86,49 @@ func hlStyle(kind actionKind) lipgloss.Style {
 		return hlMoveStyle
 	default:
 		return contentStyle
+	}
+}
+
+// Inspect panel styles.
+var (
+	inspectDetailStyle = lipgloss.NewStyle().
+				Foreground(colorSubtext0)
+
+	inspectDimStyle = lipgloss.NewStyle().
+			Foreground(colorOverlay0)
+
+	inspectPanelStyle = lipgloss.NewStyle().
+				Background(colorSurface0)
+)
+
+// actionFg returns the foreground color for an action kind.
+func actionFg(kind actionKind) lipgloss.Color {
+	switch kind {
+	case kindDelete:
+		return colorRed
+	case kindInsert:
+		return colorGreen
+	case kindUpdate:
+		return colorYellow
+	case kindMove:
+		return colorBlue
+	default:
+		return colorText
+	}
+}
+
+// actionIcon returns a unicode icon for an action kind.
+func actionIcon(kind actionKind) string {
+	switch kind {
+	case kindDelete:
+		return "✘"
+	case kindInsert:
+		return "✚"
+	case kindUpdate:
+		return "✎"
+	case kindMove:
+		return "➤"
+	default:
+		return "•"
 	}
 }

@@ -26,6 +26,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "M":
 			m.closeAllFolds()
 		}
+		m.updateInspectActions()
 		return m, nil
 	}
 
@@ -162,6 +163,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clampCursor()
 		m.keepCursorInViewport()
 
+	case "i":
+		m.inspectOpen = !m.inspectOpen
+		m.keepCursorInViewport()
+
+	case "enter":
+		m.jumpToMoveCounterpart()
+
 	default:
 		// Keep the buffer if we're still typing a count.
 		if len(keyStr) == 1 && keyStr[0] >= '0' && keyStr[0] <= '9' {
@@ -172,6 +180,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if resetBuffer {
 		m.digitBuffer = ""
 	}
+
+	m.updateInspectActions()
 
 	return m, nil
 }
