@@ -19,6 +19,11 @@ func (m model) View() string {
 
 	b.WriteString(m.renderContent())
 
+	if m.inspectOpen {
+		b.WriteByte('\n')
+		b.WriteString(m.renderInspectPanel())
+	}
+
 	b.WriteByte('\n')
 	b.WriteString(m.renderStatusBar())
 
@@ -359,7 +364,7 @@ func expandLine(line string) (string, []int) {
 }
 
 func (m model) renderStatusBar() string {
-	keys := " j/k: scroll • n/N: change • za: fold • zR/zM: all • q: quit"
+	keys := " j/k: scroll • n/N: change • za: fold • i: inspect • q: quit"
 
 	prefix := m.digitBuffer
 	if m.pendingZ {
@@ -367,17 +372,36 @@ func (m model) renderStatusBar() string {
 	}
 	prefixLen := len([]rune(prefix))
 
-	var bar string
+	var keysPart string
 	if prefixLen > 0 {
-		avail := m.width - prefixLen - 2
-		if avail > 0 {
-			bar = truncateStr(keys, avail)
-			bar = padRight(bar, avail) + " " + prefix + " "
+		keysPart = keys + " (" + prefix + ")"
+	} else {
+		keysPart = keys
+	}
+
+	keysWidth := lipgloss.Width(keysPart)
+
+	// Get the action preview.
+	var preview string
+	if len(m.inspectActions) > 0 {
+		availForPreview := m.width - keysWidth - 2
+		if availForPreview > 10 {
+			preview = formatActionPreview(m.inspectActions, availForPreview)
+		}
+	}
+
+	var bar string
+	if preview != "" {
+		previewWidth := lipgloss.Width(preview)
+		padding := m.width - keysWidth - previewWidth
+		if padding >= 0 {
+			bar = keysPart + strings.Repeat(" ", padding) + preview
 		} else {
-			bar = prefix
+			bar = truncateStr(keysPart, m.width)
+			bar = padRight(bar, m.width)
 		}
 	} else {
-		bar = truncateStr(keys, m.width)
+		bar = truncateStr(keysPart, m.width)
 		bar = padRight(bar, m.width)
 	}
 	return statusStyle.Render(bar)

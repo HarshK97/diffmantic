@@ -36,12 +36,16 @@ type model struct {
 
 	srcSyntax map[int][]syntaxSpan
 	dstSyntax map[int][]syntaxSpan
+
+	inspectOpen    bool                // whether the expanded inspect panel is visible
+	inspectActions []*serialize.Action // actions at the current cursor position
 }
 
 const (
-	titleBarHeight  = 1
-	statusBarHeight = 1
-	gutterPadding   = 1
-	dividerWidth    = 1
-	foldContext     = 3 // Unchanged lines to keep visible around changes
+	titleBarHeight     = 1
+	statusBarHeight    = 1
+	gutterPadding      = 1
+	dividerWidth       = 1
+	foldContext        = 3 // Unchanged lines to keep visible around changes
+	inspectPanelHeight = 4
 )
