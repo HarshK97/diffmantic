@@ -47,6 +47,8 @@ type model struct {
 	searchMatches  []searchMatch
 	searchMatchIdx int
 	textinput      textinput.Model
+
+	helpOpen bool
 }
 
 const (

@@ -3,6 +3,7 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
+	colorBase      = lipgloss.Color("#1e1e2e")
 	colorSurface0  = lipgloss.Color("#313244")
 	colorSurface1  = lipgloss.Color("#45475a")
 	colorOverlay0  = lipgloss.Color("#6c7086")

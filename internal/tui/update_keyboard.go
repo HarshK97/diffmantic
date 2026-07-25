@@ -10,7 +10,18 @@ import (
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyStr := msg.String()
 
-	// Handle the second key of a folding command.
+	// Dismiss help modal on key press unless it's a quit key.
+	if m.helpOpen {
+		switch keyStr {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		default:
+			m.helpOpen = false
+			return m, nil
+		}
+	}
+
+	// Handle second key of a folding shortcut (e.g. za, zo).
 	if m.pendingZ {
 		m.pendingZ = false
 		m.digitBuffer = ""
@@ -188,6 +199,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textinput.Focus()
 		m.textinput.SetValue(m.searchQuery)
 		m.textinput.CursorEnd()
+
+	case "?":
+		m.helpOpen = true
 
 	default:
 		// Keep the buffer if we're still typing a count.
