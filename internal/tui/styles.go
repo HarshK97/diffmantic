@@ -34,6 +34,10 @@ var (
 	lineNumStyle = lipgloss.NewStyle().
 			Foreground(colorOverlay0)
 
+	gutterFoldStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorLavender)
+
 	contentStyle = lipgloss.NewStyle().
 			Foreground(colorText)
 

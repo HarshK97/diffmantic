@@ -147,16 +147,26 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 		if lineIdx < len(lines) {
 			lineSpans := hl.spans[lineIdx]
 
-			lineNum := fmt.Sprintf("%*d ", gutterW-gutterPadding, lineIdx+1)
+			symbol := " "
+			symStyle := lineNumStyle
+			if m.foldStartingAt(vl.alignedRow) >= 0 {
+				symbol = "▼"
+				symStyle = gutterFoldStyle
+			} else if m.foldContaining(vl.alignedRow) >= 0 {
+				symbol = "·"
+				symStyle = lineNumStyle
+			}
+
+			lineNumStr := fmt.Sprintf("%*d", gutterW-gutterPadding, lineIdx+1)
 			var gutter string
 			if isCursorRow && isActivePane {
-				runes := []rune(lineNum)
+				runes := []rune(lineNumStr + symbol)
 				if len(runes) > 0 {
 					runes[0] = '█'
 				}
 				gutter = cursorGutterStyle.Render(string(runes))
 			} else {
-				gutter = lineNumStyle.Render(lineNum)
+				gutter = lineNumStyle.Render(lineNumStr) + symStyle.Render(symbol)
 			}
 
 			rawLine := lines[lineIdx]

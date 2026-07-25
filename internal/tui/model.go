@@ -12,7 +12,7 @@ import (
 // Run launches the side-by-side terminal diff viewer.
 func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) error {
 	m := newModel(srcFile, dstFile, srcBytes, dstBytes, env)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
