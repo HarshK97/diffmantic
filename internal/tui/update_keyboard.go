@@ -84,19 +84,32 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.keepCursorInViewport()
 
 	case "n":
-		for i := 0; i < count; i++ {
-			m.cursorY = m.nextChange()
+		if m.searchQuery != "" && len(m.searchMatches) > 0 {
+			m.searchMatchIdx = (m.searchMatchIdx + count) % len(m.searchMatches)
+			m.jumpToSearchMatch()
+		} else {
+			for i := 0; i < count; i++ {
+				m.cursorY = m.nextChange()
+			}
+			m.cursorX = 0
+			m.scrollY = clamp(m.cursorY-m.contentHeight()/2, 0, m.maxScrollY())
+			m.keepCursorInViewport()
 		}
-		m.cursorX = 0
-		m.scrollY = clamp(m.cursorY-m.contentHeight()/2, 0, m.maxScrollY())
-		m.keepCursorInViewport()
 	case "N":
-		for i := 0; i < count; i++ {
-			m.cursorY = m.prevChange()
+		if m.searchQuery != "" && len(m.searchMatches) > 0 {
+			m.searchMatchIdx = (m.searchMatchIdx - count) % len(m.searchMatches)
+			if m.searchMatchIdx < 0 {
+				m.searchMatchIdx += len(m.searchMatches)
+			}
+			m.jumpToSearchMatch()
+		} else {
+			for i := 0; i < count; i++ {
+				m.cursorY = m.prevChange()
+			}
+			m.cursorX = 0
+			m.scrollY = clamp(m.cursorY-m.contentHeight()/2, 0, m.maxScrollY())
+			m.keepCursorInViewport()
 		}
-		m.cursorX = 0
-		m.scrollY = clamp(m.cursorY-m.contentHeight()/2, 0, m.maxScrollY())
-		m.keepCursorInViewport()
 
 	case "z":
 		m.pendingZ = true
@@ -169,6 +182,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		m.jumpToMoveCounterpart()
+
+	case "/":
+		m.searchActive = true
+		m.textinput.Focus()
+		m.textinput.SetValue(m.searchQuery)
+		m.textinput.CursorEnd()
 
 	default:
 		// Keep the buffer if we're still typing a count.

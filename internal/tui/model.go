@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
@@ -79,6 +80,14 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	// Pre-compute syntax colors upfront so rendering stays fast on scroll.
 	m.srcSyntax = highlightSyntax(srcFile, srcBytes)
 	m.dstSyntax = highlightSyntax(dstFile, dstBytes)
+
+	// Initialize search text input
+	ti := textinput.New()
+	ti.Placeholder = "Search..."
+	ti.Prompt = " / "
+	ti.CharLimit = 50
+	ti.Width = 30
+	m.textinput = ti
 
 	return m
 }

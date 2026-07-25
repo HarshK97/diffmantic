@@ -176,12 +176,17 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 				cursorCol = m.cursorX
 			}
 
+			paneStr := "left"
+			if !isLeftPane {
+				paneStr = "right"
+			}
+			matches := m.searchMatchesFor(vIdx, paneStr)
 			syntaxSpans := syntax[lineIdx]
 
-			if len(lineSpans) > 0 || len(syntaxSpans) > 0 {
-				content = m.renderStyledLine(rawLine, lineSpans, syntaxSpans, scrollX, textW, cursorCol)
+			if len(lineSpans) > 0 || len(syntaxSpans) > 0 || len(matches) > 0 {
+				content = m.renderStyledLine(rawLine, lineSpans, syntaxSpans, matches, scrollX, textW, cursorCol, paneStr, vIdx)
 			} else {
-				// Fast path: no highlights and no syntax
+				// Fast path: no highlights, no syntax, and no search matches
 				line := strings.ReplaceAll(rawLine, "\t", "    ")
 				runes := []rune(line)
 				runeLen := len(runes)
@@ -253,8 +258,7 @@ func centerPad(s string, width int) string {
 	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
 }
 
-// Combine diff action highlights (background) with syntax colors (foreground).
-func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syntaxSpan, scrollX, textW int, cursorCol int) string {
+func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syntaxSpan, matches []searchMatch, scrollX, textW int, cursorCol int, pane string, virtualRow int) string {
 	// Expand tabs and map original byte offsets to visual column positions.
 	expanded, byteToVisual := expandLine(rawLine)
 	runeLen := len([]rune(expanded))
@@ -318,25 +322,46 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 
 		if col < runeLen {
 			r = expRunes[col]
-			actionIdx := colHighlight[col]
-			synColor := colSyntax[col]
 
-			if actionIdx >= 0 {
-				style = hlStyle(actionKind(actionIdx))
-				if synColor != "" {
-					style = style.Foreground(synColor)
+			searchStyleState := -1
+			for _, match := range matches {
+				if col >= match.startCol && col < match.endCol {
+					searchStyleState = 0
 				}
-			} else if synColor != "" {
-				if cursorCol >= 0 {
-					style = cursorContentStyle.Foreground(synColor)
-				} else {
-					style = contentStyle.Foreground(synColor)
+			}
+			if searchStyleState == 0 && m.searchMatchIdx >= 0 && m.searchMatchIdx < len(m.searchMatches) {
+				active := m.searchMatches[m.searchMatchIdx]
+				if active.virtualRow == virtualRow && active.pane == pane && col >= active.startCol && col < active.endCol {
+					searchStyleState = 1
 				}
-			} else {
-				if cursorCol >= 0 {
-					style = cursorContentStyle
+			}
+
+			switch searchStyleState {
+			case 1:
+				style = searchActiveHlStyle
+			case 0:
+				style = searchHlStyle
+			default:
+				actionIdx := colHighlight[col]
+				synColor := colSyntax[col]
+
+				if actionIdx >= 0 {
+					style = hlStyle(actionKind(actionIdx))
+					if synColor != "" {
+						style = style.Foreground(synColor)
+					}
+				} else if synColor != "" {
+					if cursorCol >= 0 {
+						style = cursorContentStyle.Foreground(synColor)
+					} else {
+						style = contentStyle.Foreground(synColor)
+					}
 				} else {
-					style = contentStyle
+					if cursorCol >= 0 {
+						style = cursorContentStyle
+					} else {
+						style = contentStyle
+					}
 				}
 			}
 		} else {
@@ -374,6 +399,10 @@ func expandLine(line string) (string, []int) {
 }
 
 func (m model) renderStatusBar() string {
+	if m.searchActive {
+		return statusStyle.Render(padRight(m.textinput.View(), m.width))
+	}
+
 	keys := " j/k: scroll • n/N: change • za: fold • i: inspect • q: quit"
 
 	prefix := m.digitBuffer

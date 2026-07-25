@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/textinput"
+
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
@@ -39,6 +41,12 @@ type model struct {
 
 	inspectOpen    bool                // whether the expanded inspect panel is visible
 	inspectActions []*serialize.Action // actions at the current cursor position
+
+	searchActive   bool
+	searchQuery    string
+	searchMatches  []searchMatch
+	searchMatchIdx int
+	textinput      textinput.Model
 }
 
 const (
