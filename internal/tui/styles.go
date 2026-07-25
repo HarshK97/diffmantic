@@ -41,6 +41,15 @@ var (
 	contentStyle = lipgloss.NewStyle().
 			Foreground(colorText)
 
+	searchHlStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#fab387")).
+			Foreground(lipgloss.Color("#11111b"))
+
+	searchActiveHlStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#a6e3a1")).
+				Foreground(lipgloss.Color("#11111b")).
+				Bold(true)
+
 	dividerStyle = lipgloss.NewStyle().
 			Foreground(colorSurface1)
 

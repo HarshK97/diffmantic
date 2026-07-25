@@ -17,6 +17,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollXRight = clamp(m.scrollXRight, 0, maxScrollX(m.dstLines, m.textWidth()))
 		return m, nil
 	case tea.KeyMsg:
+		if m.searchActive {
+			var cmd tea.Cmd
+			m.textinput, cmd = m.textinput.Update(msg)
+
+			switch msg.String() {
+			case "enter":
+				m.searchQuery = m.textinput.Value()
+				m.searchActive = false
+				m.computeSearchMatches()
+				m.jumpToSearchMatch()
+			case "esc":
+				m.searchActive = false
+				m.textinput.Blur()
+			default:
+				m.searchQuery = m.textinput.Value()
+				m.computeSearchMatches()
+			}
+			return m, cmd
+		}
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
