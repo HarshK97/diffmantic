@@ -12,6 +12,10 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
+	if m.helpOpen {
+		return m.renderHelpModal()
+	}
+
 	var b strings.Builder
 
 	b.WriteString(m.renderTitleBar())
@@ -403,7 +407,7 @@ func (m model) renderStatusBar() string {
 		return statusStyle.Render(padRight(m.textinput.View(), m.width))
 	}
 
-	keys := " j/k: scroll • n/N: change • za: fold • i: inspect • q: quit"
+	keys := " j/k: scroll • za: fold • i: inspect • ?: help • q: quit"
 
 	prefix := m.digitBuffer
 	if m.pendingZ {
