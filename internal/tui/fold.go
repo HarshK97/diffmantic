@@ -185,3 +185,23 @@ func foldAtVirtual(vlines []virtualLine, folds []fold, idx int) int {
 	}
 	return -1
 }
+
+// foldStartingAt returns the open fold starting at the given row, or -1.
+func (m model) foldStartingAt(alignedRow int) int {
+	for fi, f := range m.folds {
+		if f.open && f.startLine == alignedRow {
+			return fi
+		}
+	}
+	return -1
+}
+
+// foldContaining returns the open fold containing the given row, or -1.
+func (m model) foldContaining(alignedRow int) int {
+	for fi, f := range m.folds {
+		if f.open && alignedRow >= f.startLine && alignedRow <= f.endLine {
+			return fi
+		}
+	}
+	return -1
+}
