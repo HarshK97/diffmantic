@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"github.com/HarshK97/diffmantic/internal/testutil"
+
 	"math"
 	"testing"
 )
@@ -8,14 +10,14 @@ import (
 func TestPriorityListPushAndPeek(t *testing.T) {
 	l := NewPriorityList()
 
-	// Empty list should return MinInt32.
+	// PeekMax returns MinInt32 for an empty list.
 	if got := PeekMax(l); got != math.MinInt32 {
 		t.Errorf("empty PeekMax = %d, want MinInt32", got)
 	}
 
-	leaf := mkLeaf("id", "x")         // height 1
-	inner := mkNode("call", "", leaf) // height 2
-	root := mkNode("func", "", inner) // height 3
+	leaf := testutil.Leaf("id", "x")         // height 1
+	inner := testutil.Node("call", "", leaf) // height 2
+	root := testutil.Node("func", "", inner) // height 3
 
 	Push(leaf, l)
 	Push(root, l)
@@ -29,25 +31,25 @@ func TestPriorityListPushAndPeek(t *testing.T) {
 func TestPriorityListPop(t *testing.T) {
 	l := NewPriorityList()
 
-	leaf := mkLeaf("id", "x")
-	root := mkNode("func", "", mkNode("call", "", leaf))
+	leaf := testutil.Leaf("id", "x")
+	root := testutil.Node("func", "", testutil.Node("call", "", leaf))
 
 	Push(root, l)
 	Push(leaf, l)
 
-	// Pop should return the highest-height nodes.
+	// Pop returns nodes with the highest height.
 	popped := Pop(l)
 	if len(popped) != 1 || popped[0] != root {
 		t.Error("Pop should return root (height 3)")
 	}
 
-	// Next pop should be the leaf.
+	// Second Pop returns the leaf.
 	popped = Pop(l)
 	if len(popped) != 1 || popped[0] != leaf {
 		t.Error("second Pop should return leaf (height 1)")
 	}
 
-	// Empty pop returns nil.
+	// Pop returns nil when empty.
 	if Pop(l) != nil {
 		t.Error("Pop on empty list should return nil")
 	}
@@ -55,8 +57,8 @@ func TestPriorityListPop(t *testing.T) {
 
 func TestPriorityListSameHeight(t *testing.T) {
 	l := NewPriorityList()
-	a := mkLeaf("id", "x")
-	b := mkLeaf("id", "y")
+	a := testutil.Leaf("id", "x")
+	b := testutil.Leaf("id", "y")
 
 	Push(a, l)
 	Push(b, l)
@@ -69,9 +71,9 @@ func TestPriorityListSameHeight(t *testing.T) {
 
 func TestOpen(t *testing.T) {
 	l := NewPriorityList()
-	c1 := mkLeaf("id", "x")
-	c2 := mkLeaf("id", "y")
-	root := mkNode("call", "", c1, c2)
+	c1 := testutil.Leaf("id", "x")
+	c2 := testutil.Leaf("id", "y")
+	root := testutil.Node("call", "", c1, c2)
 
 	Open(root, l)
 

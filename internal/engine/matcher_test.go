@@ -1,22 +1,24 @@
 package engine
 
 import (
+	"github.com/HarshK97/diffmantic/internal/testutil"
+
 	"bytes"
 	"testing"
 )
 
 func TestMatchIdenticalTrees(t *testing.T) {
-	// Identical trees → all nodes mapped, no structural changes.
-	src := mkNode("func", "main",
-		mkNode("block", "",
-			mkLeaf("id", "x"),
-			mkLeaf("id", "y"),
+	// Identical trees map all nodes without structural changes.
+	src := testutil.Node("func", "main",
+		testutil.Node("block", "",
+			testutil.Leaf("id", "x"),
+			testutil.Leaf("id", "y"),
 		),
 	)
-	dst := mkNode("func", "main",
-		mkNode("block", "",
-			mkLeaf("id", "x"),
-			mkLeaf("id", "y"),
+	dst := testutil.Node("func", "main",
+		testutil.Node("block", "",
+			testutil.Leaf("id", "x"),
+			testutil.Leaf("id", "y"),
 		),
 	)
 
@@ -34,9 +36,9 @@ func TestMatchIdenticalTrees(t *testing.T) {
 }
 
 func TestMatchDifferentLeafLabels(t *testing.T) {
-	// Same structure, one leaf label differs → should still map structurally.
-	src := mkNode("func", "main", mkLeaf("id", "x"))
-	dst := mkNode("func", "main", mkLeaf("id", "y"))
+	// Changing one leaf label still maps the structure.
+	src := testutil.Node("func", "main", testutil.Leaf("id", "x"))
+	dst := testutil.Node("func", "main", testutil.Leaf("id", "y"))
 
 	r := Match(src, dst)
 	if r == nil {
@@ -48,9 +50,9 @@ func TestMatchDifferentLeafLabels(t *testing.T) {
 }
 
 func TestMatchRootAlwaysMapped(t *testing.T) {
-	// Even completely different trees should map roots.
-	src := mkNode("func", "a", mkLeaf("id", "x"))
-	dst := mkNode("func", "b", mkLeaf("str", "hello"))
+	// Match always maps root nodes, even for different trees.
+	src := testutil.Node("func", "a", testutil.Leaf("id", "x"))
+	dst := testutil.Node("func", "b", testutil.Leaf("str", "hello"))
 
 	r := Match(src, dst)
 	if !r.Mappings.Has(src) {
@@ -62,8 +64,8 @@ func TestMatchRootAlwaysMapped(t *testing.T) {
 }
 
 func TestMatchSingleLeaves(t *testing.T) {
-	src := mkLeaf("id", "x")
-	dst := mkLeaf("id", "x")
+	src := testutil.Leaf("id", "x")
+	dst := testutil.Leaf("id", "x")
 	r := Match(src, dst)
 	if !r.Mappings.Has(src) || r.Mappings.Src()[src] != dst {
 		t.Error("single identical leaves should be mapped")
@@ -71,11 +73,11 @@ func TestMatchSingleLeaves(t *testing.T) {
 }
 
 func TestMatchPairsPreOrder(t *testing.T) {
-	// Mappings.Pairs should be in pre-order of the src tree.
-	c1 := mkLeaf("id", "x")
-	c2 := mkLeaf("id", "y")
-	src := mkNode("block", "", c1, c2)
-	dst := mkNode("block", "", mkLeaf("id", "x"), mkLeaf("id", "y"))
+	// Mappings.Pairs follows pre-order traversal.
+	c1 := testutil.Leaf("id", "x")
+	c2 := testutil.Leaf("id", "y")
+	src := testutil.Node("block", "", c1, c2)
+	dst := testutil.Node("block", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))
 
 	r := Match(src, dst)
 	if len(r.Mappings.Pairs) < 3 {
@@ -104,12 +106,12 @@ func TestFprintMappingsEmpty(t *testing.T) {
 }
 
 func TestTopDownUnambiguous(t *testing.T) {
-	// Unique isomorphic subtree → directly mapped in top-down.
-	src := mkNode("root", "",
-		mkNode("call", "", mkLeaf("id", "f")),
+	// TopDown directly maps unique isomorphic subtrees.
+	src := testutil.Node("root", "",
+		testutil.Node("call", "", testutil.Leaf("id", "f")),
 	)
-	dst := mkNode("root", "",
-		mkNode("call", "", mkLeaf("id", "f")),
+	dst := testutil.Node("root", "",
+		testutil.Node("call", "", testutil.Leaf("id", "f")),
 	)
 
 	m := TopDown(src, dst, 2)
@@ -120,14 +122,14 @@ func TestTopDownUnambiguous(t *testing.T) {
 }
 
 func TestBottomUpWithPriorMapping(t *testing.T) {
-	// BottomUp should match containers with matched children.
-	srcLeaf := mkLeaf("id", "x")
-	srcBlock := mkNode("block", "", srcLeaf)
-	srcRoot := mkNode("func", "", srcBlock)
+	// BottomUp maps parents of mapped children.
+	srcLeaf := testutil.Leaf("id", "x")
+	srcBlock := testutil.Node("block", "", srcLeaf)
+	srcRoot := testutil.Node("func", "", srcBlock)
 
-	dstLeaf := mkLeaf("id", "x")
-	dstBlock := mkNode("block", "", dstLeaf)
-	dstRoot := mkNode("func", "", dstBlock)
+	dstLeaf := testutil.Leaf("id", "x")
+	dstBlock := testutil.Node("block", "", dstLeaf)
+	dstRoot := testutil.Node("func", "", dstBlock)
 
 	m := NewMapping()
 	m.Add(srcLeaf, dstLeaf)

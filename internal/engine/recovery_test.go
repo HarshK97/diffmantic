@@ -1,17 +1,19 @@
 package engine
 
 import (
+	"github.com/HarshK97/diffmantic/internal/testutil"
+
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestSimpleRecoveryLabelMatch(t *testing.T) {
-	// Parent pair matched; children are isomorphic → should be recovered.
-	srcChild := mkLeaf("id", "x")
-	srcRoot := mkNode("block", "", srcChild)
-	dstChild := mkLeaf("id", "x")
-	dstRoot := mkNode("block", "", dstChild)
+	// SimpleRecovery maps isomorphic children of mapped parents.
+	srcChild := testutil.Leaf("id", "x")
+	srcRoot := testutil.Node("block", "", srcChild)
+	dstChild := testutil.Leaf("id", "x")
+	dstRoot := testutil.Node("block", "", dstChild)
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -26,11 +28,11 @@ func TestSimpleRecoveryLabelMatch(t *testing.T) {
 }
 
 func TestSimpleRecoveryStructureMatch(t *testing.T) {
-	// Same structure, different labels → structure LCS should recover.
-	srcChild := mkNode("call", "", mkLeaf("id", "a"))
-	srcRoot := mkNode("block", "", srcChild)
-	dstChild := mkNode("call", "", mkLeaf("id", "b"))
-	dstRoot := mkNode("block", "", dstChild)
+	// SimpleRecovery maps children with matching structures but different labels.
+	srcChild := testutil.Node("call", "", testutil.Leaf("id", "a"))
+	srcRoot := testutil.Node("block", "", srcChild)
+	dstChild := testutil.Node("call", "", testutil.Leaf("id", "b"))
+	dstRoot := testutil.Node("block", "", dstChild)
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -42,14 +44,14 @@ func TestSimpleRecoveryStructureMatch(t *testing.T) {
 }
 
 func TestSimpleRecoveryUniqueType(t *testing.T) {
-	// Unique-type pairing: only one "if_stmt" on each side.
-	srcIf := mkNode("if_stmt", "", mkLeaf("cond", "a"))
-	srcLet := mkLeaf("let", "x")
-	srcRoot := mkNode("block", "", srcIf, srcLet)
+	// SimpleRecovery pairs nodes with unique types.
+	srcIf := testutil.Node("if_stmt", "", testutil.Leaf("cond", "a"))
+	srcLet := testutil.Leaf("let", "x")
+	srcRoot := testutil.Node("block", "", srcIf, srcLet)
 
-	dstIf := mkNode("if_stmt", "", mkLeaf("cond", "b"))
-	dstLet := mkLeaf("let", "y")
-	dstRoot := mkNode("block", "", dstIf, dstLet)
+	dstIf := testutil.Node("if_stmt", "", testutil.Leaf("cond", "b"))
+	dstLet := testutil.Leaf("let", "y")
+	dstRoot := testutil.Node("block", "", dstIf, dstLet)
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -64,8 +66,8 @@ func TestSimpleRecoveryUniqueType(t *testing.T) {
 }
 
 func TestSimpleRecoveryNoChildren(t *testing.T) {
-	a := mkLeaf("id", "x")
-	b := mkLeaf("id", "y")
+	a := testutil.Leaf("id", "x")
+	b := testutil.Leaf("id", "y")
 	m := NewMapping()
 	m.Add(a, b)
 	SimpleRecovery(a, b, m)
@@ -76,10 +78,10 @@ func TestSimpleRecoveryNoChildren(t *testing.T) {
 }
 
 func TestUniqueTypePairs(t *testing.T) {
-	a1 := mkLeaf("id", "x")
-	a2 := mkLeaf("str", "hello")
-	b1 := mkLeaf("id", "y")
-	b2 := mkLeaf("str", "world")
+	a1 := testutil.Leaf("id", "x")
+	a2 := testutil.Leaf("str", "hello")
+	b1 := testutil.Leaf("id", "y")
+	b2 := testutil.Leaf("str", "world")
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{a1, a2},
@@ -91,9 +93,9 @@ func TestUniqueTypePairs(t *testing.T) {
 }
 
 func TestUniqueTypePairsAmbiguous(t *testing.T) {
-	a1 := mkLeaf("id", "x")
-	a2 := mkLeaf("id", "y")
-	b1 := mkLeaf("id", "z")
+	a1 := testutil.Leaf("id", "x")
+	a2 := testutil.Leaf("id", "y")
+	b1 := testutil.Leaf("id", "z")
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{a1, a2},

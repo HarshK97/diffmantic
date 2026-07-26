@@ -1,14 +1,16 @@
 package engine
 
 import (
+	"github.com/HarshK97/diffmantic/internal/testutil"
+
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestLCSLabelIdentical(t *testing.T) {
-	a := []*treesitter.ASTNode{mkLeaf("id", "x"), mkLeaf("id", "y")}
-	b := []*treesitter.ASTNode{mkLeaf("id", "x"), mkLeaf("id", "y")}
+	a := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "y")}
+	b := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "y")}
 
 	pairs := LCSLabel(a, b)
 	if len(pairs) != 2 {
@@ -17,8 +19,8 @@ func TestLCSLabelIdentical(t *testing.T) {
 }
 
 func TestLCSLabelPartial(t *testing.T) {
-	a := []*treesitter.ASTNode{mkLeaf("id", "x"), mkLeaf("id", "y"), mkLeaf("id", "z")}
-	b := []*treesitter.ASTNode{mkLeaf("id", "x"), mkLeaf("id", "z")}
+	a := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "y"), testutil.Leaf("id", "z")}
+	b := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "z")}
 
 	pairs := LCSLabel(a, b)
 	if len(pairs) != 2 {
@@ -30,7 +32,7 @@ func TestLCSLabelPartial(t *testing.T) {
 }
 
 func TestLCSLabelEmpty(t *testing.T) {
-	a := []*treesitter.ASTNode{mkLeaf("id", "x")}
+	a := []*treesitter.ASTNode{testutil.Leaf("id", "x")}
 
 	if pairs := LCSLabel(nil, a); pairs != nil {
 		t.Error("nil seq1 should return nil")
@@ -41,8 +43,8 @@ func TestLCSLabelEmpty(t *testing.T) {
 }
 
 func TestLCSLabelNoMatch(t *testing.T) {
-	a := []*treesitter.ASTNode{mkLeaf("id", "x")}
-	b := []*treesitter.ASTNode{mkLeaf("id", "y")}
+	a := []*treesitter.ASTNode{testutil.Leaf("id", "x")}
+	b := []*treesitter.ASTNode{testutil.Leaf("id", "y")}
 
 	pairs := LCSLabel(a, b)
 	if len(pairs) != 0 {
@@ -51,9 +53,9 @@ func TestLCSLabelNoMatch(t *testing.T) {
 }
 
 func TestLCSStructureBasic(t *testing.T) {
-	// Same structure, different labels → should match.
-	a := []*treesitter.ASTNode{mkNode("call", "", mkLeaf("id", "x"))}
-	b := []*treesitter.ASTNode{mkNode("call", "", mkLeaf("id", "y"))}
+	// Matches same structure even if labels differ.
+	a := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"))}
+	b := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "y"))}
 
 	pairs := LCSStructure(a, b)
 	if len(pairs) != 1 {
@@ -62,8 +64,8 @@ func TestLCSStructureBasic(t *testing.T) {
 }
 
 func TestLCSStructureDiffShape(t *testing.T) {
-	a := []*treesitter.ASTNode{mkNode("call", "", mkLeaf("id", "x"))}
-	b := []*treesitter.ASTNode{mkNode("call", "", mkLeaf("id", "x"), mkLeaf("id", "y"))}
+	a := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"))}
+	b := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))}
 
 	pairs := LCSStructure(a, b)
 	if len(pairs) != 0 {
@@ -72,9 +74,9 @@ func TestLCSStructureDiffShape(t *testing.T) {
 }
 
 func TestChildIndex(t *testing.T) {
-	c1 := mkLeaf("id", "x")
-	c2 := mkLeaf("id", "y")
-	mkNode("call", "", c1, c2)
+	c1 := testutil.Leaf("id", "x")
+	c2 := testutil.Leaf("id", "y")
+	testutil.Node("call", "", c1, c2)
 
 	if got := childIndex(c1); got != 0 {
 		t.Errorf("childIndex(c1) = %d, want 0", got)
@@ -85,7 +87,7 @@ func TestChildIndex(t *testing.T) {
 }
 
 func TestChildIndexNoParent(t *testing.T) {
-	n := mkLeaf("id", "x")
+	n := testutil.Leaf("id", "x")
 	if got := childIndex(n); got != -1 {
 		t.Errorf("orphan childIndex = %d, want -1", got)
 	}
@@ -95,10 +97,10 @@ func TestChildIndexNoParent(t *testing.T) {
 }
 
 func TestScorePartner(t *testing.T) {
-	src := mkLeaf("id", "x")
-	dst := mkLeaf("id", "x")
-	mkNode("call", "", src)
-	mkNode("call", "", dst)
+	src := testutil.Leaf("id", "x")
+	dst := testutil.Leaf("id", "x")
+	testutil.Node("call", "", src)
+	testutil.Node("call", "", dst)
 
 	score := scorePartner(src, dst, 0, false)
 	if score < 100 {
