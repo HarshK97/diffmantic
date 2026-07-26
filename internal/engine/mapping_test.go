@@ -1,11 +1,14 @@
 package engine
 
-import "testing"
+import (
+	"github.com/HarshK97/diffmantic/internal/testutil"
+	"testing"
+)
 
 func TestMappingAddAndLookup(t *testing.T) {
 	m := NewMapping()
-	a := mkLeaf("id", "x")
-	b := mkLeaf("id", "y")
+	a := testutil.Leaf("id", "x")
+	b := testutil.Leaf("id", "y")
 
 	m.Add(a, b)
 
@@ -25,10 +28,10 @@ func TestMappingAddAndLookup(t *testing.T) {
 
 func TestMappingPairsOrder(t *testing.T) {
 	m := NewMapping()
-	a1 := mkLeaf("id", "x")
-	b1 := mkLeaf("id", "x")
-	a2 := mkLeaf("id", "y")
-	b2 := mkLeaf("id", "y")
+	a1 := testutil.Leaf("id", "x")
+	b1 := testutil.Leaf("id", "x")
+	a2 := testutil.Leaf("id", "y")
+	b2 := testutil.Leaf("id", "y")
 
 	m.Add(a1, b1)
 	m.Add(a2, b2)
@@ -42,11 +45,11 @@ func TestMappingPairsOrder(t *testing.T) {
 }
 
 func TestMappingDuplicateAdd(t *testing.T) {
-	// Re-adding same src should not create duplicate pair.
+	// Re-adding the same source doesn't duplicate the pair.
 	m := NewMapping()
-	a := mkLeaf("id", "x")
-	b1 := mkLeaf("id", "y")
-	b2 := mkLeaf("id", "z")
+	a := testutil.Leaf("id", "x")
+	b1 := testutil.Leaf("id", "y")
+	b2 := testutil.Leaf("id", "z")
 
 	m.Add(a, b1)
 	m.Add(a, b2)
@@ -61,8 +64,8 @@ func TestMappingDuplicateAdd(t *testing.T) {
 
 func TestMappingRemove(t *testing.T) {
 	m := NewMapping()
-	a := mkLeaf("id", "x")
-	b := mkLeaf("id", "y")
+	a := testutil.Leaf("id", "x")
+	b := testutil.Leaf("id", "y")
 
 	m.Add(a, b)
 	m.Remove(a)
@@ -76,16 +79,16 @@ func TestMappingRemove(t *testing.T) {
 }
 
 func TestMappingRemoveNonexistent(t *testing.T) {
-	// Removing a key that doesn't exist should not panic.
+	// Removing missing keys won't panic.
 	m := NewMapping()
-	m.Remove(mkLeaf("id", "x"))
+	m.Remove(testutil.Leaf("id", "x"))
 }
 
 func TestMappingDiceSrc(t *testing.T) {
-	a1 := mkLeaf("id", "x")
-	rootA := mkNode("call", "", a1)
-	b1 := mkLeaf("id", "x")
-	rootB := mkNode("call", "", b1)
+	a1 := testutil.Leaf("id", "x")
+	rootA := testutil.Node("call", "", a1)
+	b1 := testutil.Leaf("id", "x")
+	rootB := testutil.Node("call", "", b1)
 
 	m := NewMapping()
 	m.Add(a1, b1)
@@ -97,10 +100,10 @@ func TestMappingDiceSrc(t *testing.T) {
 }
 
 func TestAddIsomorphicPairs(t *testing.T) {
-	a1 := mkLeaf("id", "x")
-	rootA := mkNode("call", "", a1)
-	b1 := mkLeaf("id", "x")
-	rootB := mkNode("call", "", b1)
+	a1 := testutil.Leaf("id", "x")
+	rootA := testutil.Node("call", "", a1)
+	b1 := testutil.Leaf("id", "x")
+	rootB := testutil.Node("call", "", b1)
 
 	m := NewMapping()
 	addIsomorphicPairs(rootA, rootB, m)

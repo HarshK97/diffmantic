@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"github.com/HarshK97/diffmantic/internal/testutil"
+
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -13,10 +15,10 @@ func TestHeight(t *testing.T) {
 		want int
 	}{
 		{"nil node", nil, 0},
-		{"single leaf", mkLeaf("id", "x"), 1},
-		{"parent with leaf", mkNode("call", "", mkLeaf("id", "f")), 2},
-		{"deep tree", mkNode("a", "", mkNode("b", "", mkLeaf("c", ""))), 3},
-		{"wide tree", mkNode("a", "", mkLeaf("b", ""), mkLeaf("c", "")), 2},
+		{"single leaf", testutil.Leaf("id", "x"), 1},
+		{"parent with leaf", testutil.Node("call", "", testutil.Leaf("id", "f")), 2},
+		{"deep tree", testutil.Node("a", "", testutil.Node("b", "", testutil.Leaf("c", ""))), 3},
+		{"wide tree", testutil.Node("a", "", testutil.Leaf("b", ""), testutil.Leaf("c", "")), 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -28,9 +30,9 @@ func TestHeight(t *testing.T) {
 }
 
 func TestDescendants(t *testing.T) {
-	c1 := mkLeaf("id", "a")
-	c2 := mkLeaf("id", "b")
-	root := mkNode("call", "", c1, c2)
+	c1 := testutil.Leaf("id", "a")
+	c2 := testutil.Leaf("id", "b")
+	root := testutil.Node("call", "", c1, c2)
 
 	desc := Descendants(root)
 	if len(desc) != 2 {
@@ -42,9 +44,9 @@ func TestDescendants(t *testing.T) {
 }
 
 func TestDescendantsNested(t *testing.T) {
-	leaf := mkLeaf("id", "x")
-	mid := mkNode("call", "", leaf)
-	root := mkNode("func", "", mid)
+	leaf := testutil.Leaf("id", "x")
+	mid := testutil.Node("call", "", leaf)
+	root := testutil.Node("func", "", mid)
 
 	desc := Descendants(root)
 	if len(desc) != 2 {
@@ -53,14 +55,14 @@ func TestDescendantsNested(t *testing.T) {
 }
 
 func TestDice(t *testing.T) {
-	// Two identical trees with full mapping → dice = 1.0.
-	a1 := mkLeaf("id", "x")
-	a2 := mkLeaf("id", "y")
-	rootA := mkNode("call", "", a1, a2)
+	// Identical mapped trees have a Dice coefficient of 1.0.
+	a1 := testutil.Leaf("id", "x")
+	a2 := testutil.Leaf("id", "y")
+	rootA := testutil.Node("call", "", a1, a2)
 
-	b1 := mkLeaf("id", "x")
-	b2 := mkLeaf("id", "y")
-	rootB := mkNode("call", "", b1, b2)
+	b1 := testutil.Leaf("id", "x")
+	b2 := testutil.Leaf("id", "y")
+	rootB := testutil.Node("call", "", b1, b2)
 
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{a1: b1, a2: b2}
 	d := Dice(rootA, rootB, m)
@@ -70,8 +72,8 @@ func TestDice(t *testing.T) {
 }
 
 func TestDiceNoMapping(t *testing.T) {
-	rootA := mkNode("call", "", mkLeaf("id", "x"))
-	rootB := mkNode("call", "", mkLeaf("id", "y"))
+	rootA := testutil.Node("call", "", testutil.Leaf("id", "x"))
+	rootB := testutil.Node("call", "", testutil.Leaf("id", "y"))
 
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{}
 	d := Dice(rootA, rootB, m)
@@ -81,11 +83,11 @@ func TestDiceNoMapping(t *testing.T) {
 }
 
 func TestDiceEmptyTrees(t *testing.T) {
-	a := mkLeaf("id", "x")
-	b := mkLeaf("id", "y")
+	a := testutil.Leaf("id", "x")
+	b := testutil.Leaf("id", "y")
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{}
 
-	// Leaves have no descendants, so denom = 0.
+	// Dice is 0.0 for leaves because they have no descendants.
 	d := Dice(a, b, m)
 	if d != 0.0 {
 		t.Errorf("leaf dice = %f, want 0.0", d)
@@ -93,10 +95,10 @@ func TestDiceEmptyTrees(t *testing.T) {
 }
 
 func TestChawatheSimilarity(t *testing.T) {
-	a1 := mkLeaf("id", "x")
-	rootA := mkNode("call", "", a1)
-	b1 := mkLeaf("id", "x")
-	rootB := mkNode("call", "", b1)
+	a1 := testutil.Leaf("id", "x")
+	rootA := testutil.Node("call", "", a1)
+	b1 := testutil.Leaf("id", "x")
+	rootB := testutil.Node("call", "", b1)
 
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{a1: b1}
 	sim := ChawatheSimilarity(rootA, rootB, m)
@@ -106,8 +108,8 @@ func TestChawatheSimilarity(t *testing.T) {
 }
 
 func TestChawatheSimilarityEmpty(t *testing.T) {
-	a := mkLeaf("id", "x")
-	b := mkLeaf("id", "y")
+	a := testutil.Leaf("id", "x")
+	b := testutil.Leaf("id", "y")
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{}
 	sim := ChawatheSimilarity(a, b, m)
 	if sim != 0.0 {
@@ -122,21 +124,21 @@ func TestIsomorphic(t *testing.T) {
 		want bool
 	}{
 		{"both nil", nil, nil, true},
-		{"a nil", nil, mkLeaf("id", "x"), false},
-		{"b nil", mkLeaf("id", "x"), nil, false},
-		{"same leaf", mkLeaf("id", "x"), mkLeaf("id", "x"), true},
-		{"diff label", mkLeaf("id", "x"), mkLeaf("id", "y"), false},
-		{"diff type", mkLeaf("id", "x"), mkLeaf("str", "x"), false},
+		{"a nil", nil, testutil.Leaf("id", "x"), false},
+		{"b nil", testutil.Leaf("id", "x"), nil, false},
+		{"same leaf", testutil.Leaf("id", "x"), testutil.Leaf("id", "x"), true},
+		{"diff label", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"), false},
+		{"diff type", testutil.Leaf("id", "x"), testutil.Leaf("str", "x"), false},
 		{
 			"same tree",
-			mkNode("call", "", mkLeaf("id", "f")),
-			mkNode("call", "", mkLeaf("id", "f")),
+			testutil.Node("call", "", testutil.Leaf("id", "f")),
+			testutil.Node("call", "", testutil.Leaf("id", "f")),
 			true,
 		},
 		{
 			"diff children count",
-			mkNode("call", "", mkLeaf("id", "f")),
-			mkNode("call", "", mkLeaf("id", "f"), mkLeaf("id", "g")),
+			testutil.Node("call", "", testutil.Leaf("id", "f")),
+			testutil.Node("call", "", testutil.Leaf("id", "f"), testutil.Leaf("id", "g")),
 			false,
 		},
 	}
@@ -150,23 +152,23 @@ func TestIsomorphic(t *testing.T) {
 }
 
 func TestStructureIsomorphic(t *testing.T) {
-	// Same structure, different labels → true.
-	a := mkNode("call", "", mkLeaf("id", "x"))
-	b := mkNode("call", "", mkLeaf("id", "y"))
+	// StructureIsomorphic ignores label differences.
+	a := testutil.Node("call", "", testutil.Leaf("id", "x"))
+	b := testutil.Node("call", "", testutil.Leaf("id", "y"))
 	if !StructureIsomorphic(a, b) {
 		t.Error("same structure should be StructureIsomorphic")
 	}
 
-	// Different structure → false.
-	c := mkNode("call", "", mkLeaf("id", "x"), mkLeaf("id", "y"))
+	// StructureIsomorphic returns false for different structures.
+	c := testutil.Node("call", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))
 	if StructureIsomorphic(a, c) {
 		t.Error("different structure should not be StructureIsomorphic")
 	}
 }
 
 func TestPostOrder(t *testing.T) {
-	leaf := mkLeaf("id", "x")
-	root := mkNode("call", "", leaf)
+	leaf := testutil.Leaf("id", "x")
+	root := testutil.Node("call", "", leaf)
 	order := PostOrder(root)
 
 	if len(order) != 2 {
@@ -178,8 +180,8 @@ func TestPostOrder(t *testing.T) {
 }
 
 func TestPreOrder(t *testing.T) {
-	leaf := mkLeaf("id", "x")
-	root := mkNode("call", "", leaf)
+	leaf := testutil.Leaf("id", "x")
+	root := testutil.Node("call", "", leaf)
 	order := PreOrder(root)
 
 	if len(order) != 2 {
@@ -191,12 +193,12 @@ func TestPreOrder(t *testing.T) {
 }
 
 func TestNearestMatchedAncestor(t *testing.T) {
-	grandchild := mkLeaf("id", "x")
-	child := mkNode("call", "", grandchild)
-	root := mkNode("func", "", child)
+	grandchild := testutil.Leaf("id", "x")
+	child := testutil.Node("call", "", grandchild)
+	root := testutil.Node("func", "", child)
 
 	m := NewMapping()
-	m.Add(root, mkLeaf("func", ""))
+	m.Add(root, testutil.Leaf("func", ""))
 
 	// Grandchild's nearest matched ancestor should be root.
 	got := NearestMatchedAncestor(grandchild, m, false)
@@ -212,12 +214,12 @@ func TestNearestMatchedAncestor(t *testing.T) {
 }
 
 func TestNearestMatchedAncestorDst(t *testing.T) {
-	grandchild := mkLeaf("id", "x")
-	child := mkNode("call", "", grandchild)
-	root := mkNode("func", "", child)
+	grandchild := testutil.Leaf("id", "x")
+	child := testutil.Node("call", "", grandchild)
+	root := testutil.Node("func", "", child)
 
 	m := NewMapping()
-	m.Add(mkLeaf("func", ""), root)
+	m.Add(testutil.Leaf("func", ""), root)
 
 	got := NearestMatchedAncestor(grandchild, m, true)
 	if got != root {
@@ -226,9 +228,9 @@ func TestNearestMatchedAncestorDst(t *testing.T) {
 }
 
 func TestAncestorNameSimilarity(t *testing.T) {
-	// Build two trees with overlapping identifier children.
-	a := mkNode("func", "", mkLeaf("identifier", "foo"), mkLeaf("id", "x"))
-	b := mkNode("func", "", mkLeaf("identifier", "foo"), mkLeaf("id", "y"))
+	// Trees share overlapping identifier children.
+	a := testutil.Node("func", "", testutil.Leaf("identifier", "foo"), testutil.Leaf("id", "x"))
+	b := testutil.Node("func", "", testutil.Leaf("identifier", "foo"), testutil.Leaf("id", "y"))
 	leaf1 := a.Children[1]
 	leaf2 := b.Children[1]
 
@@ -239,7 +241,7 @@ func TestAncestorNameSimilarity(t *testing.T) {
 }
 
 func TestAncestorNameSimilarityNil(t *testing.T) {
-	if AncestorNameSimilarity(nil, mkLeaf("id", "x")) != 0 {
+	if AncestorNameSimilarity(nil, testutil.Leaf("id", "x")) != 0 {
 		t.Error("nil input should return 0")
 	}
 }
