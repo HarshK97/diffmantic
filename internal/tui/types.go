@@ -49,6 +49,27 @@ type model struct {
 	textinput      textinput.Model
 
 	helpOpen bool
+
+	// Git integration fields
+	gitMode            bool
+	gitItems           []gitTreeItem
+	gitCursorY         int
+	gitTreeOpen        bool
+	gitCommitOpen      bool
+	gitCommitInput     textinput.Model
+	gitSelectedFileIdx int
+	repoPath           string
+}
+
+type gitTreeItem struct {
+	isHeader   bool
+	headerText string
+
+	// File details (if not header)
+	path     string
+	oldPath  string
+	status   string
+	isStaged bool
 }
 
 const (

@@ -22,8 +22,11 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"fmt"
 	"os"
 
+	"github.com/HarshK97/diffmantic/internal/git"
+	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +44,16 @@ Works as a standalone CLI, a git difftool, or a backend engine for editor
 plugins (Neovim, VS Code) via JSON output.
 
 Supported languages: Go, JavaScript, TypeScript, Python.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if git.IsGitRepository(".") {
+			if err := tui.RunGit("."); err != nil {
+				fmt.Fprintf(os.Stderr, "error running Git interactive diff: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			_ = cmd.Help()
+		}
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
