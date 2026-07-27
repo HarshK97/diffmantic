@@ -17,6 +17,7 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 	minHeight := 2
 	minDice := 0.5
 	mappings := TopDown(t1, t2, minHeight)
+	matchDeclarations(t1, t2, mappings)
 	BottomUp(t1, t2, mappings, minDice)
 
 	MatchUnmatchedLeaves(t1, t2, mappings)
@@ -184,4 +185,103 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 	}
 	_, err := fmt.Fprintf(w, "\nTotal mappings: %d\n", len(pairs))
 	return err
+}
+
+func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	t1Decs := findDeclarations(t1Root)
+	t2Decs := findDeclarations(t2Root)
+
+	for _, d1 := range t1Decs {
+		if m.Has(d1) {
+			continue
+		}
+		name1 := getDeclarationName(d1)
+		if name1 == "" {
+			continue
+		}
+		rec1 := getReceiverTypeName(d1)
+
+		var bestMatch *treesitter.ASTNode
+		matchCount := 0
+
+		for _, d2 := range t2Decs {
+			if m.HasDst(d2) {
+				continue
+			}
+			if d2.Type == d1.Type && getDeclarationName(d2) == name1 && getReceiverTypeName(d2) == rec1 {
+				bestMatch = d2
+				matchCount++
+			}
+		}
+
+		if matchCount == 1 {
+			m.Add(d1, bestMatch)
+		}
+	}
+}
+
+var declarationTypes = map[string]bool{
+	"function_declaration": true,
+	"method_declaration":   true,
+	"function_definition":  true,
+	"class_definition":     true,
+	"class_declaration":    true,
+	"method_definition":    true,
+}
+
+func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
+	var decs []*treesitter.ASTNode
+	var traverse func(*treesitter.ASTNode)
+	traverse = func(n *treesitter.ASTNode) {
+		if n == nil {
+			return
+		}
+		if declarationTypes[n.Type] {
+			decs = append(decs, n)
+		}
+		for _, child := range n.Children {
+			traverse(child)
+		}
+	}
+	traverse(root)
+	return decs
+}
+
+func getDeclarationName(n *treesitter.ASTNode) string {
+	if n == nil {
+		return ""
+	}
+	for _, child := range n.Children {
+		if child.Type == "identifier" || child.Type == "field_identifier" {
+			return child.Label
+		}
+	}
+	return ""
+}
+
+func getReceiverTypeName(n *treesitter.ASTNode) string {
+	if n == nil || n.Type != "method_declaration" {
+		return ""
+	}
+	for _, child := range n.Children {
+		if child.Type == "parameter_list" {
+			for _, p := range child.Children {
+				if p.Type == "parameter_declaration" {
+					for _, t := range p.Children {
+						if t.Type == "type_identifier" {
+							return t.Label
+						}
+						if t.Type == "pointer_type" {
+							for _, pt := range t.Children {
+								if pt.Type == "type_identifier" {
+									return pt.Label
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
