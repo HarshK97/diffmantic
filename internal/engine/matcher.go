@@ -195,7 +195,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		if m.Has(d1) {
 			continue
 		}
-		name1 := GetDeclarationName(d1)
+		name1 := getDeclarationName(d1)
 		if name1 == "" {
 			continue
 		}
@@ -208,7 +208,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			if m.HasDst(d2) {
 				continue
 			}
-			if d2.Type == d1.Type && GetDeclarationName(d2) == name1 && getReceiverTypeName(d2) == rec1 {
+			if d2.Type == d1.Type && getDeclarationName(d2) == name1 && getReceiverTypeName(d2) == rec1 {
 				bestMatch = d2
 				matchCount++
 			}
@@ -247,7 +247,7 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	return decs
 }
 
-func GetDeclarationName(n *treesitter.ASTNode) string {
+func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
 	}
@@ -260,7 +260,7 @@ func GetDeclarationName(n *treesitter.ASTNode) string {
 }
 
 func getReceiverTypeName(n *treesitter.ASTNode) string {
-	if n.Type != "method_declaration" {
+	if n == nil || n.Type != "method_declaration" {
 		return ""
 	}
 	for _, child := range n.Children {
