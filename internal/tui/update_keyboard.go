@@ -5,10 +5,63 @@ import (
 	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/HarshK97/diffmantic/internal/git"
 )
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	keyStr := msg.String()
+
+	// If git status tree is open, intercept input
+	if m.gitMode && m.gitTreeOpen {
+		switch keyStr {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "esc", "t":
+			m.gitTreeOpen = false
+			return m, nil
+		case "j", "down":
+			m.gitCursorDown()
+			return m, nil
+		case "k", "up":
+			m.gitCursorUp()
+			return m, nil
+		case "enter":
+			if len(m.gitItems) > 0 && m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) {
+				if !m.gitItems[m.gitCursorY].isHeader {
+					_ = m.loadGitFileDiff(m.gitCursorY)
+					m.gitTreeOpen = false // Close on select to read the diff
+				}
+			}
+			return m, nil
+		case "s":
+			if len(m.gitItems) > 0 && m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) {
+				item := m.gitItems[m.gitCursorY]
+				if !item.isHeader && !item.isStaged {
+					_ = git.StageFile(m.repoPath, item.path)
+					m.refreshGitStatus()
+					m.syncGitCursorAndDiff()
+				}
+			}
+			return m, nil
+		case "u":
+			if len(m.gitItems) > 0 && m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) {
+				item := m.gitItems[m.gitCursorY]
+				if !item.isHeader && item.isStaged {
+					_ = git.UnstageFile(m.repoPath, item.path)
+					m.refreshGitStatus()
+					m.syncGitCursorAndDiff()
+				}
+			}
+			return m, nil
+		case "c":
+			m.gitCommitOpen = true
+			m.gitCommitInput.Focus()
+			m.gitCommitInput.SetValue("")
+			return m, nil
+		}
+		return m, nil
+	}
 
 	// Dismiss help modal on key press unless it's a quit key.
 	if m.helpOpen {
@@ -186,6 +239,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.clampCursor()
 		m.keepCursorInViewport()
+
+	case "t":
+		if m.gitMode {
+			m.gitTreeOpen = true
+		}
 
 	case "i":
 		m.inspectOpen = !m.inspectOpen
@@ -446,5 +504,63 @@ func (m *model) moveToNextLineWordEnd() {
 		} else {
 			m.cursorX = 0
 		}
+	}
+}
+
+func (m *model) gitCursorDown() {
+	if len(m.gitItems) == 0 {
+		return
+	}
+	originalY := m.gitCursorY
+	for {
+		m.gitCursorY++
+		if m.gitCursorY >= len(m.gitItems) {
+			m.gitCursorY = len(m.gitItems) - 1
+			break
+		}
+		if !m.gitItems[m.gitCursorY].isHeader {
+			break
+		}
+	}
+	if m.gitItems[m.gitCursorY].isHeader {
+		m.gitCursorY = originalY
+	}
+}
+
+func (m *model) gitCursorUp() {
+	if len(m.gitItems) == 0 {
+		return
+	}
+	originalY := m.gitCursorY
+	for {
+		m.gitCursorY--
+		if m.gitCursorY < 0 {
+			m.gitCursorY = 0
+			break
+		}
+		if !m.gitItems[m.gitCursorY].isHeader {
+			break
+		}
+	}
+	if m.gitItems[m.gitCursorY].isHeader {
+		m.gitCursorY = originalY
+	}
+}
+
+func (m *model) syncGitCursorAndDiff() {
+	if len(m.gitItems) == 0 {
+		m.setupEmptyPlaceholder()
+		return
+	}
+	if m.gitCursorY >= len(m.gitItems) {
+		m.gitCursorY = len(m.gitItems) - 1
+	}
+	for m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) && m.gitItems[m.gitCursorY].isHeader {
+		m.gitCursorY--
+	}
+	if m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) && !m.gitItems[m.gitCursorY].isHeader {
+		_ = m.loadGitFileDiff(m.gitCursorY)
+	} else {
+		m.setupEmptyPlaceholder()
 	}
 }

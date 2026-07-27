@@ -7,7 +7,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/HarshK97/diffmantic/internal/actions"
+	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/git"
+	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 // Run launches the side-by-side terminal diff viewer.
@@ -18,14 +23,95 @@ func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Enve
 	return err
 }
 
+// RunGit starts the TUI in Git mode inside the specified repository path.
+func RunGit(repoPath string) error {
+	m := newGitModel(repoPath)
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	_, err := p.Run()
+	return err
+}
+
 func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) model {
 	m := model{
-		srcFile:    srcFile,
-		dstFile:    dstFile,
-		srcLines:   strings.Split(string(srcBytes), "\n"),
-		dstLines:   strings.Split(string(dstBytes), "\n"),
 		activePane: "left",
 	}
+
+	m.setupDiff(srcFile, dstFile, srcBytes, dstBytes, env)
+
+	ti := textinput.New()
+	ti.Placeholder = "Search..."
+	ti.Prompt = " / "
+	ti.CharLimit = 50
+	ti.Width = 30
+	m.textinput = ti
+
+	return m
+}
+
+func newGitModel(repoPath string) model {
+	m := model{
+		gitMode:     true,
+		gitTreeOpen: true,
+		repoPath:    repoPath,
+		activePane:  "left",
+	}
+
+	ti := textinput.New()
+	ti.Placeholder = "Search..."
+	ti.Prompt = " / "
+	ti.CharLimit = 50
+	ti.Width = 30
+	m.textinput = ti
+
+	ci := textinput.New()
+	ci.Placeholder = "Commit message..."
+	ci.Prompt = " Commit: "
+	ci.CharLimit = 100
+	ci.Width = 60
+	m.gitCommitInput = ci
+
+	m.refreshGitStatus()
+
+	if len(m.gitItems) > 0 {
+		firstFileIdx := -1
+		for i, item := range m.gitItems {
+			if !item.isHeader {
+				firstFileIdx = i
+				break
+			}
+		}
+		if firstFileIdx != -1 {
+			m.gitCursorY = firstFileIdx
+			_ = m.loadGitFileDiff(firstFileIdx)
+		} else {
+			m.setupEmptyPlaceholder()
+		}
+	} else {
+		m.setupEmptyPlaceholder()
+	}
+
+	return m
+}
+
+func (m *model) setupEmptyPlaceholder() {
+	m.srcFile = "No changes"
+	m.dstFile = "No changes"
+	m.srcLines = []string{""}
+	m.dstLines = []string{""}
+	m.lineAlignment = []serialize.LineAlignmentPair{{LeftLine: 0, RightLine: 0}}
+	m.srcHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+	m.dstHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+	m.folds = nil
+	m.rebuildVirtualLines()
+	m.srcSyntax = nil
+	m.dstSyntax = nil
+}
+
+func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) {
+	m.srcFile = srcFile
+	m.dstFile = dstFile
+	m.srcLines = strings.Split(string(srcBytes), "\n")
+	m.dstLines = strings.Split(string(dstBytes), "\n")
 
 	if env == nil || len(env.LineAlignment) == 0 {
 		total := len(m.srcLines)
@@ -71,6 +157,7 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	} else {
 		m.srcHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
 		m.dstHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+		m.allChanges = nil
 	}
 
 	// Build collapsible folds from unchanged lines.
@@ -81,15 +168,176 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	m.srcSyntax = highlightSyntax(srcFile, srcBytes)
 	m.dstSyntax = highlightSyntax(dstFile, dstBytes)
 
-	// Initialize search text input
-	ti := textinput.New()
-	ti.Placeholder = "Search..."
-	ti.Prompt = " / "
-	ti.CharLimit = 50
-	ti.Width = 30
-	m.textinput = ti
+	// Reset scroll and cursor.
+	m.cursorY = 0
+	m.cursorX = 0
+	m.scrollY = 0
+	m.scrollXLeft = 0
+	m.scrollXRight = 0
+	m.clampCursor()
+	m.keepCursorInViewport()
+}
 
-	return m
+func (m *model) refreshGitStatus() {
+	files, err := git.GetStatus(m.repoPath)
+	if err != nil {
+		m.gitItems = nil
+		return
+	}
+
+	var staged []gitTreeItem
+	var unstaged []gitTreeItem
+
+	for _, f := range files {
+		if f.Staged {
+			staged = append(staged, gitTreeItem{
+				path:     f.Path,
+				oldPath:  f.OldPath,
+				status:   string(f.Status[0]) + " ",
+				isStaged: true,
+			})
+		}
+		if f.Unstaged {
+			status := " " + string(f.Status[1])
+			if f.Status == "??" {
+				status = "??"
+			}
+			unstaged = append(unstaged, gitTreeItem{
+				path:     f.Path,
+				oldPath:  f.OldPath,
+				status:   status,
+				isStaged: false,
+			})
+		}
+	}
+
+	var items []gitTreeItem
+	if len(staged) > 0 {
+		items = append(items, gitTreeItem{isHeader: true, headerText: "Staged Changes"})
+		items = append(items, staged...)
+	}
+	if len(unstaged) > 0 {
+		items = append(items, gitTreeItem{isHeader: true, headerText: "Unstaged Changes"})
+		items = append(items, unstaged...)
+	}
+
+	if len(items) == 0 {
+		items = append(items, gitTreeItem{isHeader: true, headerText: "No changes in repository"})
+	}
+
+	m.gitItems = items
+
+	if m.gitCursorY >= len(m.gitItems) {
+		m.gitCursorY = len(m.gitItems) - 1
+	}
+	if m.gitCursorY < 0 {
+		m.gitCursorY = 0
+	}
+}
+
+func (m *model) loadGitFileDiff(idx int) error {
+	if idx < 0 || idx >= len(m.gitItems) {
+		return fmt.Errorf("file index out of bounds")
+	}
+	item := m.gitItems[idx]
+	if item.isHeader {
+		return fmt.Errorf("cannot diff a header")
+	}
+
+	m.gitSelectedFileIdx = idx
+
+	beforeFile := item.path
+	if item.oldPath != "" {
+		beforeFile = item.oldPath
+	}
+	afterFile := item.path
+
+	var srcBytes, dstBytes []byte
+	var err error
+
+	if item.isStaged {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
+		if err != nil {
+			return err
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, ":")
+		if err != nil {
+			return err
+		}
+	} else {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, ":")
+		if err != nil || len(srcBytes) == 0 {
+			srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
+			if err != nil {
+				return err
+			}
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
+		if err != nil {
+			return err
+		}
+	}
+
+	if isBinary(srcBytes) || isBinary(dstBytes) {
+		m.srcFile = beforeFile
+		m.dstFile = afterFile
+		m.srcLines = []string{"[Binary File Diff Not Supported]"}
+		m.dstLines = []string{"[Binary File Diff Not Supported]"}
+		m.lineAlignment = []serialize.LineAlignmentPair{{LeftLine: 0, RightLine: 0}}
+		m.srcHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+		m.dstHighlights = &highlights{spans: map[int][]span{}, tinted: map[int]actionKind{}}
+		m.folds = nil
+		m.rebuildVirtualLines()
+		m.srcSyntax = nil
+		m.dstSyntax = nil
+		m.cursorY = 0
+		m.cursorX = 0
+		m.scrollY = 0
+		return nil
+	}
+
+	if len(srcBytes) == 0 && len(dstBytes) == 0 {
+		m.setupEmptyPlaceholder()
+		return nil
+	}
+
+	env, err := computeBytesDiff(srcBytes, dstBytes, beforeFile, afterFile)
+	if err != nil {
+		env = &serialize.Envelope{}
+	}
+
+	m.setupDiff(beforeFile, afterFile, srcBytes, dstBytes, env)
+	return nil
+}
+
+func isBinary(data []byte) bool {
+	limit := len(data)
+	if limit > 8000 {
+		limit = 8000
+	}
+	for i := 0; i < limit; i++ {
+		if data[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string) (*serialize.Envelope, error) {
+	srcAST, err := treesitter.Parse(srcBytes, srcFile)
+	if err != nil {
+		return nil, err
+	}
+	dstAST, err := treesitter.Parse(dstBytes, dstFile)
+	if err != nil {
+		return nil, err
+	}
+
+	matchResult := engine.Match(srcAST, dstAST)
+	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
+
+	return serialize.BuildEnvelope(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes)
 }
 
 // rebuildVirtualLines updates display mappings and virtual change indices after folding/unfolding.
@@ -110,6 +358,9 @@ func (m model) contentHeight() int {
 	h := m.height - titleBarHeight - statusBarHeight
 	if m.inspectOpen {
 		h -= inspectPanelHeight
+	}
+	if m.gitCommitOpen {
+		h -= 1 // 1 line for the commit input bar
 	}
 	if h < 1 {
 		h = 1

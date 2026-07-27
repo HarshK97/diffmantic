@@ -28,6 +28,11 @@ func (m model) View() string {
 		b.WriteString(m.renderInspectPanel())
 	}
 
+	if m.gitCommitOpen {
+		b.WriteByte('\n')
+		b.WriteString(m.renderCommitPanel())
+	}
+
 	b.WriteByte('\n')
 	b.WriteString(m.renderStatusBar())
 
@@ -37,7 +42,11 @@ func (m model) View() string {
 func (m model) renderTitleBar() string {
 	pw := m.paneWidth()
 
-	left := truncateStr(" "+m.srcFile, pw)
+	leftTitle := m.srcFile
+	if m.gitTreeOpen {
+		leftTitle = "Changed Files"
+	}
+	left := truncateStr(" "+leftTitle, pw)
 	right := truncateStr(" "+m.dstFile, pw)
 
 	leftRendered := titleStyle.Render(padRight(left, pw))
@@ -71,6 +80,55 @@ func (m model) renderContent() string {
 	leftLines := m.renderPane(m.srcLines, m.srcHighlights, m.srcSyntax, m.scrollXLeft, height, pw, gw, tw, true)
 	rightLines := m.renderPane(m.dstLines, m.dstHighlights, m.dstSyntax, m.scrollXRight, height, pw, gw, tw, false)
 
+	if m.gitTreeOpen {
+		treeWidth := 38
+		if treeWidth > pw-4 {
+			treeWidth = pw - 4
+		}
+		if treeWidth < 20 {
+			treeWidth = 20
+		}
+
+		treeHeight := len(m.gitItems) + 2
+		maxHeight := height - 4
+		if maxHeight < 5 {
+			maxHeight = 5
+		}
+		if treeHeight > maxHeight {
+			treeHeight = maxHeight
+		}
+
+		innerWidth := treeWidth - 2
+		innerHeight := treeHeight - 2
+		if innerWidth < 1 {
+			innerWidth = 1
+		}
+		if innerHeight < 1 {
+			innerHeight = 1
+		}
+		treeHeight = innerHeight + 2
+
+		boxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorLavender).
+			Background(colorBase)
+
+		treeContentLines := m.renderGitTreeOverlay(innerHeight, innerWidth)
+		treeContent := strings.Join(treeContentLines, "\n")
+		boxedTree := boxStyle.Width(innerWidth).Height(innerHeight).Render(treeContent)
+		boxedTreeLines := strings.Split(boxedTree, "\n")
+
+		offsetX := 0
+		offsetY := 0
+
+		for i := 0; i < treeHeight; i++ {
+			row := offsetY + i
+			if row < height && i < len(boxedTreeLines) {
+				leftLines[row] = overlayAnsi(leftLines[row], boxedTreeLines[i], offsetX)
+			}
+		}
+	}
+
 	div := dividerStyle.Render("│")
 
 	var b strings.Builder
@@ -80,7 +138,7 @@ func (m model) renderContent() string {
 		}
 		// Check if this row is a fold marker: render a unified fold line across the divider.
 		vIdx := m.scrollY + i
-		if vIdx < len(m.virtualLines) && m.virtualLines[vIdx].foldIdx >= 0 {
+		if !m.gitTreeOpen && vIdx < len(m.virtualLines) && m.virtualLines[vIdx].foldIdx >= 0 {
 			b.WriteString(leftLines[i])
 			b.WriteString(dividerStyle.Background(colorSurface0).Render("│"))
 			b.WriteString(rightLines[i])
@@ -407,7 +465,16 @@ func (m model) renderStatusBar() string {
 		return statusStyle.Render(padRight(m.textinput.View(), m.width))
 	}
 
-	keys := " j/k: scroll • za: fold • i: inspect • ?: help • q: quit"
+	var keys string
+	if m.gitMode {
+		if m.gitTreeOpen {
+			keys = " j/k: scroll • s/u: stage/unstage • c: commit • t: toggle tree • enter: open diff • q: quit"
+		} else {
+			keys = " j/k: scroll • t: toggle tree • za: fold • i: inspect • ?: help • q: quit"
+		}
+	} else {
+		keys = " j/k: scroll • za: fold • i: inspect • ?: help • q: quit"
+	}
 
 	prefix := m.digitBuffer
 	if m.pendingZ {
@@ -470,4 +537,187 @@ func padRight(s string, width int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", width-len(runes))
+}
+
+func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
+	result := make([]string, height)
+
+	scrollY := 0
+	if m.gitCursorY >= height {
+		scrollY = m.gitCursorY - height + 1
+	}
+	if scrollY < 0 {
+		scrollY = 0
+	}
+
+	for i := 0; i < height; i++ {
+		idx := scrollY + i
+		if idx >= len(m.gitItems) {
+			result[i] = lipgloss.NewStyle().Background(colorBase).Render(strings.Repeat(" ", paneWidth))
+			continue
+		}
+
+		item := m.gitItems[idx]
+		isCursorRow := idx == m.gitCursorY
+
+		var line string
+		if item.isHeader {
+			headerStyle := lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorMauve).
+				Background(colorBase)
+			line = headerStyle.Render(" " + item.headerText)
+		} else {
+			statusColor := colorSubtext0
+			statusChar := item.status
+			cleanStatus := strings.TrimSpace(statusChar)
+			switch cleanStatus {
+			case "M":
+				statusColor = colorYellow
+			case "A", "??":
+				statusColor = colorGreen
+			case "D":
+				statusColor = colorRed
+			case "R":
+				statusColor = colorBlue
+			}
+
+			statusStyle := lipgloss.NewStyle().
+				Bold(true).
+				Foreground(statusColor).
+				Background(colorBase)
+
+			if isCursorRow {
+				statusStyle = statusStyle.Background(colorSurface1)
+			}
+
+			cursorStr := "  "
+			itemStyle := contentStyle.Background(colorBase)
+			if isCursorRow {
+				cursorStr = "█ "
+				itemStyle = lipgloss.NewStyle().
+					Background(colorSurface1).
+					Foreground(colorText)
+			}
+
+			renderedStatus := statusStyle.Render(statusChar)
+
+			pathStr := item.path
+			if item.oldPath != "" {
+				pathStr = item.oldPath + " -> " + item.path
+			}
+
+			maxPathWidth := paneWidth - 7
+			if maxPathWidth < 5 {
+				maxPathWidth = 5
+			}
+			truncatedPath := truncateStr(pathStr, maxPathWidth)
+
+			lineContent := renderedStatus + " " + itemStyle.Render(truncatedPath)
+
+			if isCursorRow {
+				cursorStyle := lipgloss.NewStyle().Background(colorSurface1).Foreground(colorText)
+				line = cursorStyle.Render(cursorStr) + lineContent
+			} else {
+				normalStyle := lipgloss.NewStyle().Background(colorBase).Foreground(colorOverlay0)
+				line = normalStyle.Render(cursorStr) + lineContent
+			}
+		}
+
+		// Ensure the line has exact paneWidth
+		lineLen := lipgloss.Width(line)
+		if lineLen < paneWidth {
+			bgStyle := lipgloss.NewStyle()
+			if isCursorRow {
+				bgStyle = bgStyle.Background(colorSurface1)
+			} else {
+				bgStyle = bgStyle.Background(colorBase)
+			}
+			line += bgStyle.Render(strings.Repeat(" ", paneWidth-lineLen))
+		}
+
+		result[i] = line
+	}
+
+	return result
+}
+
+func (m model) renderCommitPanel() string {
+	pw := m.width
+	inputView := m.gitCommitInput.View()
+	panelStyle := lipgloss.NewStyle().
+		Background(colorSurface0).
+		Foreground(colorText)
+	return panelStyle.Render(padRight(inputView, pw))
+}
+
+type ansiCell struct {
+	char  rune
+	style string
+}
+
+func parseAnsi(s string) []ansiCell {
+	var cells []ansiCell
+	var currentStyle string
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			start := i
+			i += 2
+			for i < len(runes) && runes[i] != 'm' {
+				i++
+			}
+			if i < len(runes) {
+				style := string(runes[start : i+1])
+				if style == "\x1b[0m" {
+					currentStyle = ""
+				} else {
+					currentStyle += style
+				}
+			}
+		} else {
+			cells = append(cells, ansiCell{
+				char:  runes[i],
+				style: currentStyle,
+			})
+		}
+	}
+	return cells
+}
+
+func overlayCells(bgCells, fgCells []ansiCell, startX int) []ansiCell {
+	totalLen := max(len(bgCells), startX+len(fgCells))
+	result := make([]ansiCell, totalLen)
+	for i := len(bgCells); i < totalLen; i++ {
+		result[i] = ansiCell{char: ' '}
+	}
+	copy(result, bgCells)
+	copy(result[startX:], fgCells)
+	return result
+}
+
+func cellsToAnsi(cells []ansiCell) string {
+	var b strings.Builder
+	var activeStyle string
+	for _, cell := range cells {
+		if cell.style != activeStyle {
+			if activeStyle != "" {
+				b.WriteString("\x1b[0m")
+			}
+			b.WriteString(cell.style)
+			activeStyle = cell.style
+		}
+		b.WriteRune(cell.char)
+	}
+	if activeStyle != "" {
+		b.WriteString("\x1b[0m")
+	}
+	return b.String()
+}
+
+func overlayAnsi(bg, fg string, x int) string {
+	bgCells := parseAnsi(bg)
+	fgCells := parseAnsi(fg)
+	overlaid := overlayCells(bgCells, fgCells, x)
+	return cellsToAnsi(overlaid)
 }
