@@ -51,9 +51,22 @@ func IsGitRepository(cwd string) bool {
 	return err == nil
 }
 
+// IsValidRevision checks if a string is a valid Git revision.
+func IsValidRevision(cwd, ref string) bool {
+	if ref == "" {
+		return false
+	}
+	_, err := RunGit(cwd, "rev-parse", "--verify", ref)
+	return err == nil
+}
+
 // GetStatus returns the Git status of the repository.
-func GetStatus(cwd string) ([]GitFile, error) {
-	out, err := RunGit(cwd, "status", "--porcelain=v1")
+func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
+	args := []string{"status", "--porcelain=v1"}
+	if pathFilter != "" {
+		args = append(args, "--", pathFilter)
+	}
+	out, err := RunGit(cwd, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,9 +130,9 @@ func GetStatus(cwd string) ([]GitFile, error) {
 // GetChangedFiles lists files changed between refA and refB.
 // If refA is empty, it returns current working directory status.
 // If refB is empty, it compares refA against the working tree.
-func GetChangedFiles(cwd, refA, refB string) ([]GitFile, error) {
+func GetChangedFiles(cwd, refA, refB string, pathFilter string) ([]GitFile, error) {
 	if refA == "" {
-		return GetStatus(cwd)
+		return GetStatus(cwd, pathFilter)
 	}
 
 	var args []string
@@ -127,6 +140,9 @@ func GetChangedFiles(cwd, refA, refB string) ([]GitFile, error) {
 	args = append(args, refA)
 	if refB != "" {
 		args = append(args, refB)
+	}
+	if pathFilter != "" {
+		args = append(args, "--", pathFilter)
 	}
 
 	out, err := RunGit(cwd, args...)

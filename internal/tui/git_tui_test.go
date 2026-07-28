@@ -9,7 +9,7 @@ import (
 
 func TestGitTUIModel(t *testing.T) {
 	// Initialize git model in current workspace directory
-	m := newGitModel(".", "", "", false)
+	m := newGitModel(".", "", "", "", false)
 	if !m.gitMode {
 		t.Error("expected gitMode to be true")
 	}
@@ -61,7 +61,7 @@ func TestOverlayAnsi(t *testing.T) {
 
 func TestGitRevisionMode(t *testing.T) {
 	// Initialize git model in revision compare mode: HEAD~1 vs Working Copy
-	m := newGitModel(".", "HEAD~1", "", false)
+	m := newGitModel(".", "HEAD~1", "", "", false)
 	if m.refA != "HEAD~1" {
 		t.Errorf("expected refA to be HEAD~1, got %q", m.refA)
 	}

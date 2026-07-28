@@ -32,7 +32,7 @@ func TestGetStatus(t *testing.T) {
 		t.Fatalf("failed to get current working directory: %v", err)
 	}
 
-	files, err := GetStatus(cwd)
+	files, err := GetStatus(cwd, "")
 	if err != nil {
 		t.Fatalf("failed to get git status: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestGetChangedFiles(t *testing.T) {
 	}
 
 	// Test Status mode (no refs)
-	files, err := GetChangedFiles(cwd, "", "")
+	files, err := GetChangedFiles(cwd, "", "", "")
 	if err != nil {
 		t.Fatalf("failed to get changed files (status mode): %v", err)
 	}
@@ -66,7 +66,7 @@ func TestGetChangedFiles(t *testing.T) {
 	// We check if HEAD~1 is valid first
 	_, err = RunGit(cwd, "rev-parse", "HEAD~1")
 	if err == nil {
-		refFiles, err := GetChangedFiles(cwd, "HEAD~1", "HEAD")
+		refFiles, err := GetChangedFiles(cwd, "HEAD~1", "HEAD", "")
 		if err != nil {
 			t.Fatalf("failed to get changed files (HEAD~1 vs HEAD): %v", err)
 		}
