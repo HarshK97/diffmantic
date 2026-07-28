@@ -4062,6 +4062,18 @@
       "right_line": -1
     },
     {
+      "left_line": 792,
+      "right_line": -1
+    },
+    {
+      "left_line": 793,
+      "right_line": -1
+    },
+    {
+      "left_line": 794,
+      "right_line": -1
+    },
+    {
       "left_line": -1,
       "right_line": 798
     },
@@ -4098,16 +4110,8 @@
       "right_line": 806
     },
     {
-      "left_line": 792,
+      "left_line": -1,
       "right_line": 807
-    },
-    {
-      "left_line": 793,
-      "right_line": -1
-    },
-    {
-      "left_line": 794,
-      "right_line": -1
     },
     {
       "left_line": 795,
