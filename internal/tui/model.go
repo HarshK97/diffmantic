@@ -24,8 +24,8 @@ func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Enve
 }
 
 // RunGit starts the TUI in Git mode inside the specified repository path.
-func RunGit(repoPath string, refA, refB string, stagedOnly bool) error {
-	m := newGitModel(repoPath, refA, refB, stagedOnly)
+func RunGit(repoPath string, refA, refB string, pathFilter string, stagedOnly bool) error {
+	m := newGitModel(repoPath, refA, refB, pathFilter, stagedOnly)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
@@ -48,7 +48,7 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	return m
 }
 
-func newGitModel(repoPath string, refA, refB string, stagedOnly bool) model {
+func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOnly bool) model {
 	m := model{
 		gitMode:       true,
 		gitTreeOpen:   true,
@@ -56,6 +56,7 @@ func newGitModel(repoPath string, refA, refB string, stagedOnly bool) model {
 		refA:          refA,
 		refB:          refB,
 		gitStagedOnly: stagedOnly,
+		pathFilter:    pathFilter,
 		activePane:    "left",
 	}
 
@@ -183,7 +184,7 @@ func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, en
 
 func (m *model) refreshGitStatus() {
 	if m.refA != "" {
-		files, err := git.GetChangedFiles(m.repoPath, m.refA, m.refB)
+		files, err := git.GetChangedFiles(m.repoPath, m.refA, m.refB, m.pathFilter)
 		if err != nil {
 			m.gitItems = nil
 			return
@@ -215,7 +216,7 @@ func (m *model) refreshGitStatus() {
 
 		m.gitItems = items
 	} else {
-		files, err := git.GetStatus(m.repoPath)
+		files, err := git.GetStatus(m.repoPath, m.pathFilter)
 		if err != nil {
 			m.gitItems = nil
 			return

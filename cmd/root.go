@@ -44,21 +44,33 @@ Works as a standalone CLI, a git difftool, or a backend engine for editor
 plugins (Neovim, VS Code) via JSON output.
 
 Supported languages: Go, JavaScript, TypeScript, Python.`,
-	Args: cobra.MaximumNArgs(2),
+	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if git.IsGitRepository(".") {
-			cached, _ := cmd.Flags().GetBool("cached")
-			staged, _ := cmd.Flags().GetBool("staged")
-			stagedOnly := cached || staged
+			stagedOnly, _ := cmd.Flags().GetBool("cached")
 
-			var refA, refB string
-			if len(args) >= 1 {
-				refA = args[0]
+			var refs []string
+			var paths []string
+			for _, arg := range args {
+				if git.IsValidRevision(".", arg) {
+					refs = append(refs, arg)
+				} else {
+					paths = append(paths, arg)
+				}
 			}
-			if len(args) >= 2 {
-				refB = args[1]
+
+			var refA, refB, pathFilter string
+			if len(refs) > 0 {
+				refA = refs[0]
 			}
-			if err := tui.RunGit(".", refA, refB, stagedOnly); err != nil {
+			if len(refs) > 1 {
+				refB = refs[1]
+			}
+			if len(paths) > 0 {
+				pathFilter = paths[0]
+			}
+
+			if err := tui.RunGit(".", refA, refB, pathFilter, stagedOnly); err != nil {
 				fmt.Fprintf(os.Stderr, "error running Git interactive diff: %v\n", err)
 				os.Exit(1)
 			}
@@ -88,7 +100,5 @@ func init() {
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.diffmantic.yaml)")
 
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
-	rootCmd.Flags().Bool("staged", false, "Show only staged changes in Git mode")
 }

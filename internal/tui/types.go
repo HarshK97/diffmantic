@@ -62,6 +62,7 @@ type model struct {
 	refA               string
 	refB               string
 	gitStagedOnly      bool
+	pathFilter         string
 }
 
 type gitTreeItem struct {
