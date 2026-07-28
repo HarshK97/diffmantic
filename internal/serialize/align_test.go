@@ -133,6 +133,90 @@ func TestAlignLines(t *testing.T) {
 				{LeftLine: 2, RightLine: 2},
 			},
 		},
+		{
+			name:     "Move within same parent block does not flag lines as moved",
+			srcBytes: []byte("func foo() {\n  a()\n  b()\n}"),
+			dstBytes: []byte("func foo() {\n  b()\n  a()\n}"),
+			setup: func() (*actions.EditScript, *engine.Mapping, *treesitter.ASTNode, *treesitter.ASTNode) {
+				srcParent := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 3}
+				dstParent := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 3}
+
+				srcA := testutil.NodeAtRC("call", "a()", 1, 2)
+				srcA.Parent = srcParent
+
+				dstA := testutil.NodeAtRC("call", "a()", 2, 2)
+				dstA.Parent = dstParent
+
+				srcParent.Children = []*treesitter.ASTNode{srcA}
+				dstParent.Children = []*treesitter.ASTNode{dstA}
+
+				srcRoot := testutil.Tree(srcParent)
+				dstRoot := testutil.Tree(dstParent)
+
+				ms := engine.NewMapping()
+				ms.Add(srcParent, dstParent)
+				ms.Add(srcA, dstA)
+
+				es := actions.NewEditScript()
+				es.Add(actions.Action{
+					Type: actions.Move,
+					Node: srcA,
+				})
+
+				return es, ms, srcRoot, dstRoot
+			},
+			want: []LineAlignmentPair{
+				{LeftLine: 0, RightLine: 0},
+				{LeftLine: 1, RightLine: -1},
+				{LeftLine: 2, RightLine: 1},
+				{LeftLine: -1, RightLine: 2},
+				{LeftLine: 3, RightLine: 3},
+			},
+		},
+		{
+			name:     "Move across different parent blocks flags lines as moved",
+			srcBytes: []byte("func foo() {\n  a()\n}\nfunc bar() {\n}"),
+			dstBytes: []byte("func foo() {\n}\nfunc bar() {\n  a()\n}"),
+			setup: func() (*actions.EditScript, *engine.Mapping, *treesitter.ASTNode, *treesitter.ASTNode) {
+				srcParent1 := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
+				srcParent2 := &treesitter.ASTNode{Type: "block", StartRow: 3, EndRow: 4}
+
+				dstParent1 := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 1}
+				dstParent2 := &treesitter.ASTNode{Type: "block", StartRow: 2, EndRow: 4}
+
+				srcA := testutil.NodeAtRC("call", "a()", 1, 2)
+				srcA.Parent = srcParent1
+				srcParent1.Children = []*treesitter.ASTNode{srcA}
+
+				dstA := testutil.NodeAtRC("call", "a()", 3, 2)
+				dstA.Parent = dstParent2
+				dstParent2.Children = []*treesitter.ASTNode{dstA}
+
+				srcRoot := testutil.Tree(srcParent1, srcParent2)
+				dstRoot := testutil.Tree(dstParent1, dstParent2)
+
+				ms := engine.NewMapping()
+				ms.Add(srcParent1, dstParent1)
+				ms.Add(srcParent2, dstParent2)
+				ms.Add(srcA, dstA)
+
+				es := actions.NewEditScript()
+				es.Add(actions.Action{
+					Type: actions.Move,
+					Node: srcA,
+				})
+
+				return es, ms, srcRoot, dstRoot
+			},
+			want: []LineAlignmentPair{
+				{LeftLine: 0, RightLine: 0},
+				{LeftLine: 1, RightLine: -1},
+				{LeftLine: 2, RightLine: 1},
+				{LeftLine: 3, RightLine: 2},
+				{LeftLine: -1, RightLine: 3},
+				{LeftLine: 4, RightLine: 4},
+			},
+		},
 	}
 
 	for _, tt := range tests {
