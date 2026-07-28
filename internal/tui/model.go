@@ -24,8 +24,8 @@ func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Enve
 }
 
 // RunGit starts the TUI in Git mode inside the specified repository path.
-func RunGit(repoPath string) error {
-	m := newGitModel(repoPath)
+func RunGit(repoPath string, refA, refB string, stagedOnly bool) error {
+	m := newGitModel(repoPath, refA, refB, stagedOnly)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
@@ -48,12 +48,15 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	return m
 }
 
-func newGitModel(repoPath string) model {
+func newGitModel(repoPath string, refA, refB string, stagedOnly bool) model {
 	m := model{
-		gitMode:     true,
-		gitTreeOpen: true,
-		repoPath:    repoPath,
-		activePane:  "left",
+		gitMode:       true,
+		gitTreeOpen:   true,
+		repoPath:      repoPath,
+		refA:          refA,
+		refB:          refB,
+		gitStagedOnly: stagedOnly,
+		activePane:    "left",
 	}
 
 	ti := textinput.New()
@@ -179,53 +182,87 @@ func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, en
 }
 
 func (m *model) refreshGitStatus() {
-	files, err := git.GetStatus(m.repoPath)
-	if err != nil {
-		m.gitItems = nil
-		return
-	}
-
-	var staged []gitTreeItem
-	var unstaged []gitTreeItem
-
-	for _, f := range files {
-		if f.Staged {
-			staged = append(staged, gitTreeItem{
-				path:     f.Path,
-				oldPath:  f.OldPath,
-				status:   string(f.Status[0]) + " ",
-				isStaged: true,
-			})
+	if m.refA != "" {
+		files, err := git.GetChangedFiles(m.repoPath, m.refA, m.refB)
+		if err != nil {
+			m.gitItems = nil
+			return
 		}
-		if f.Unstaged {
-			status := " " + string(f.Status[1])
-			if f.Status == "??" {
-				status = "??"
+
+		var items []gitTreeItem
+		headerText := fmt.Sprintf("Changes: %s → Working Copy", m.refA)
+		if m.refB != "" {
+			headerText = fmt.Sprintf("Changes: %s → %s", m.refA, m.refB)
+		}
+		items = append(items, gitTreeItem{isHeader: true, headerText: headerText})
+
+		for _, f := range files {
+			status := f.Status
+			if len(status) == 1 {
+				status += " "
 			}
-			unstaged = append(unstaged, gitTreeItem{
+			items = append(items, gitTreeItem{
 				path:     f.Path,
 				oldPath:  f.OldPath,
 				status:   status,
 				isStaged: false,
 			})
 		}
-	}
 
-	var items []gitTreeItem
-	if len(staged) > 0 {
-		items = append(items, gitTreeItem{isHeader: true, headerText: "Staged Changes"})
-		items = append(items, staged...)
-	}
-	if len(unstaged) > 0 {
-		items = append(items, gitTreeItem{isHeader: true, headerText: "Unstaged Changes"})
-		items = append(items, unstaged...)
-	}
+		if len(files) == 0 {
+			items = []gitTreeItem{{isHeader: true, headerText: "No changes detected"}}
+		}
 
-	if len(items) == 0 {
-		items = append(items, gitTreeItem{isHeader: true, headerText: "No changes in repository"})
-	}
+		m.gitItems = items
+	} else {
+		files, err := git.GetStatus(m.repoPath)
+		if err != nil {
+			m.gitItems = nil
+			return
+		}
 
-	m.gitItems = items
+		var staged []gitTreeItem
+		var unstaged []gitTreeItem
+
+		for _, f := range files {
+			if f.Staged {
+				staged = append(staged, gitTreeItem{
+					path:     f.Path,
+					oldPath:  f.OldPath,
+					status:   string(f.Status[0]) + " ",
+					isStaged: true,
+				})
+			}
+			if f.Unstaged && !m.gitStagedOnly {
+				status := " " + string(f.Status[1])
+				if f.Status == "??" {
+					status = "??"
+				}
+				unstaged = append(unstaged, gitTreeItem{
+					path:     f.Path,
+					oldPath:  f.OldPath,
+					status:   status,
+					isStaged: false,
+				})
+			}
+		}
+
+		var items []gitTreeItem
+		if len(staged) > 0 {
+			items = append(items, gitTreeItem{isHeader: true, headerText: "Staged Changes"})
+			items = append(items, staged...)
+		}
+		if len(unstaged) > 0 && !m.gitStagedOnly {
+			items = append(items, gitTreeItem{isHeader: true, headerText: "Unstaged Changes"})
+			items = append(items, unstaged...)
+		}
+
+		if len(items) == 0 {
+			items = append(items, gitTreeItem{isHeader: true, headerText: "No changes in repository"})
+		}
+
+		m.gitItems = items
+	}
 
 	if m.gitCursorY >= len(m.gitItems) {
 		m.gitCursorY = len(m.gitItems) - 1
@@ -255,7 +292,16 @@ func (m *model) loadGitFileDiff(idx int) error {
 	var srcBytes, dstBytes []byte
 	var err error
 
-	if item.isStaged {
+	if m.refA != "" {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, m.refA)
+		if err != nil {
+			return err
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, m.refB)
+		if err != nil {
+			return err
+		}
+	} else if item.isStaged {
 		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
 		if err != nil {
 			return err

@@ -59,6 +59,9 @@ type model struct {
 	gitCommitInput     textinput.Model
 	gitSelectedFileIdx int
 	repoPath           string
+	refA               string
+	refB               string
+	gitStagedOnly      bool
 }
 
 type gitTreeItem struct {
