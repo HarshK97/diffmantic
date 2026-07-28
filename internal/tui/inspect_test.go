@@ -169,6 +169,9 @@ func TestActionsAtCursor(t *testing.T) {
 	if m.cursorY != 1 {
 		t.Errorf("expected jump to preserve line index 1, got row %d", m.cursorY)
 	}
+	if m.scrollY < 0 {
+		t.Errorf("expected scrollY to be non-negative after jump, got %d", m.scrollY)
+	}
 }
 
 func uint32Ptr(v uint32) *uint32 {

@@ -407,6 +407,10 @@ func (m *model) jumpToMoveCounterpart() {
 		if vl.alignedRow == targetRow {
 			m.cursorY = i
 			m.activePane = targetPane
+			h := m.contentHeight()
+			maxScroll := max(0, len(m.virtualLines)-h)
+			m.scrollY = min(max(0, m.cursorY-(h/2)), maxScroll)
+
 			m.clampCursor()
 			m.keepCursorInViewport()
 			m.updateInspectActions()
