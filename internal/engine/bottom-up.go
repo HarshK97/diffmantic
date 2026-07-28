@@ -150,28 +150,35 @@ func candidate(
 		}
 		bestCMatches := best == nil || (ancBest1 == nil && ancBest2 == nil) || (ancBest1 != nil && ancBest2 != nil && m.Src()[ancBest1] == ancBest2)
 
-		var ls int
+		diff := sim - bestSim
 		isBetter := false
-		switch {
-		case samePositional && !bestSamePositional:
-			isBetter = true
-			ls = labelOverlap(t1Labels, c)
-		case !samePositional && bestSamePositional:
-		case sim > bestSim:
-			isBetter = true
-			ls = labelOverlap(t1Labels, c)
-		case sim == bestSim:
-			if d > bestDice {
+		ls := -1
+
+		if math.Abs(diff) > 0.05 {
+			if sim > bestSim {
 				isBetter = true
 				ls = labelOverlap(t1Labels, c)
-			} else if d == bestDice {
-				if cMatches && !bestCMatches {
+			}
+		} else {
+			if samePositional && !bestSamePositional {
+				isBetter = true
+				ls = labelOverlap(t1Labels, c)
+			} else if sim > bestSim {
+				isBetter = true
+				ls = labelOverlap(t1Labels, c)
+			} else if sim == bestSim {
+				if d > bestDice {
 					isBetter = true
 					ls = labelOverlap(t1Labels, c)
-				} else if cMatches == bestCMatches {
-					ls = labelOverlap(t1Labels, c)
-					if ls > bestLabelScore {
+				} else if d == bestDice {
+					if cMatches && !bestCMatches {
 						isBetter = true
+						ls = labelOverlap(t1Labels, c)
+					} else if cMatches == bestCMatches {
+						ls = labelOverlap(t1Labels, c)
+						if ls > bestLabelScore {
+							isBetter = true
+						}
 					}
 				}
 			}

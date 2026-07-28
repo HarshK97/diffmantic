@@ -112,14 +112,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				posScore += 1
 			}
 
-			isBetter := false
-			if d > bestDice {
-				isBetter = true
-			} else if d == bestDice && d > 0.0 {
-				if posScore > bestPosScore {
-					isBetter = true
-				}
-			}
+			isBetter := posScore > bestPosScore || (posScore == bestPosScore && d > bestDice)
 
 			if isBetter {
 				bestDice = d

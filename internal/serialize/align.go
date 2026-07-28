@@ -37,10 +37,12 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 	if es != nil {
 		for _, a := range es.Actions() {
 			if a.Type == actions.Move && a.Node != nil {
-				movedSrcNodes[a.Node] = true
 				if ms != nil {
 					if destNode := ms.Src()[a.Node]; destNode != nil {
-						movedDstNodes[destNode] = true
+						if a.Node.Parent == nil || destNode.Parent == nil || ms.Src()[a.Node.Parent] != destNode.Parent {
+							movedSrcNodes[a.Node] = true
+							movedDstNodes[destNode] = true
+						}
 					}
 				}
 			}
