@@ -177,3 +177,70 @@ func TestActionsAtCursor(t *testing.T) {
 func uint32Ptr(v uint32) *uint32 {
 	return &v
 }
+
+func TestByteToLine(t *testing.T) {
+	// Standard LF line breaks
+	linesLF := []string{"abc", "de", "f"}
+	testsLF := []struct {
+		offset uint32
+		line   int
+	}{
+		{0, 0},
+		{1, 0},
+		{2, 0},
+		{3, 0}, // trailing \n belongs to line 0
+		{4, 1},
+		{5, 1},
+		{6, 1},
+		{7, 2},
+		{8, 2}, // past end falls back to last line
+	}
+	for _, tc := range testsLF {
+		got := byteToLine(linesLF, tc.offset)
+		if got != tc.line {
+			t.Errorf("LF offset %d: expected line %d, got %d", tc.offset, tc.line, got)
+		}
+	}
+
+	// CRLF line breaks — split("\n") leaves \r at the end of each line string
+	linesCRLF := []string{"abc\r", "de\r", "f"}
+	testsCRLF := []struct {
+		offset uint32
+		line   int
+	}{
+		{0, 0},
+		{3, 0}, // \r
+		{4, 0}, // \n
+		{5, 1},
+		{7, 1},
+		{8, 1},
+		{9, 2},
+		{10, 2},
+	}
+	for _, tc := range testsCRLF {
+		got := byteToLine(linesCRLF, tc.offset)
+		if got != tc.line {
+			t.Errorf("CRLF offset %d: expected line %d, got %d", tc.offset, tc.line, got)
+		}
+	}
+
+	// Multibyte characters (⌘ is 3 bytes in UTF-8)
+	linesMB := []string{"⌘", "⌘"}
+	testsMB := []struct {
+		offset uint32
+		line   int
+	}{
+		{0, 0}, // first byte of ⌘
+		{2, 0}, // third byte of ⌘
+		{3, 0}, // \n
+		{4, 1},
+		{6, 1},
+		{7, 1},
+	}
+	for _, tc := range testsMB {
+		got := byteToLine(linesMB, tc.offset)
+		if got != tc.line {
+			t.Errorf("MB offset %d: expected line %d, got %d", tc.offset, tc.line, got)
+		}
+	}
+}
