@@ -1,6 +1,7 @@
 package serialize
 
 import (
+	"maps"
 	"reflect"
 	"testing"
 
@@ -140,6 +141,50 @@ func TestAlignLines(t *testing.T) {
 			got := AlignLines(tt.srcBytes, tt.dstBytes, es, ms, srcRoot, dstRoot)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("AlignLines() got = %v, want = %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCloseGaps(t *testing.T) {
+	tests := []struct {
+		name    string
+		moved   map[int]bool
+		maxLine int
+		want    map[int]bool
+	}{
+		{
+			name:    "close single line gap",
+			moved:   map[int]bool{1: true, 3: true},
+			maxLine: 5,
+			want:    map[int]bool{1: true, 2: true, 3: true},
+		},
+		{
+			name:    "close two line gap",
+			moved:   map[int]bool{1: true, 4: true},
+			maxLine: 6,
+			want:    map[int]bool{1: true, 2: true, 3: true, 4: true},
+		},
+		{
+			name:    "do not close gap of 6 lines or more",
+			moved:   map[int]bool{0: true, 7: true},
+			maxLine: 8,
+			want:    map[int]bool{0: true, 7: true},
+		},
+		{
+			name:    "unbounded gap at end",
+			moved:   map[int]bool{1: true},
+			maxLine: 5,
+			want:    map[int]bool{1: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maps.Clone(tt.moved)
+			closeGaps(got, tt.maxLine)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("closeGaps() got = %v, want = %v", got, tt.want)
 			}
 		})
 	}

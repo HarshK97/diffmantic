@@ -70,6 +70,9 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 		}
 	}
 
+	closeGaps(movedSrcLines, len(srcLines))
+	closeGaps(movedDstLines, len(dstLines))
+
 	// Count overlapping mapped leaf nodes between before and after lines.
 	overlap := make(map[int]map[int]int)
 	if ms != nil {
@@ -204,4 +207,18 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func closeGaps(moved map[int]bool, maxLine int) {
+	last := -1
+	for i := 0; i < maxLine; i++ {
+		if moved[i] {
+			if last != -1 && i-last <= 4 {
+				for j := last + 1; j < i; j++ {
+					moved[j] = true
+				}
+			}
+			last = i
+		}
+	}
 }
