@@ -114,6 +114,68 @@ func GetStatus(cwd string) ([]GitFile, error) {
 	return files, nil
 }
 
+// GetChangedFiles lists files changed between refA and refB.
+// If refA is empty, it returns current working directory status.
+// If refB is empty, it compares refA against the working tree.
+func GetChangedFiles(cwd, refA, refB string) ([]GitFile, error) {
+	if refA == "" {
+		return GetStatus(cwd)
+	}
+
+	var args []string
+	args = append(args, "diff", "--name-status", "-M")
+	args = append(args, refA)
+	if refB != "" {
+		args = append(args, refB)
+	}
+
+	out, err := RunGit(cwd, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(string(out), "\n")
+	var files []GitFile
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Clean quotes if present.
+		for i := range parts {
+			if strings.HasPrefix(parts[i], "\"") && strings.HasSuffix(parts[i], "\"") {
+				parts[i] = parts[i][1 : len(parts[i])-1]
+			}
+		}
+
+		status := parts[0]
+		pathPart := parts[1]
+
+		gitFile := GitFile{
+			Status:   status,
+			Staged:   false,
+			Unstaged: false,
+		}
+
+		if strings.HasPrefix(status, "R") && len(parts) >= 3 {
+			gitFile.OldPath = parts[1]
+			gitFile.Path = parts[2]
+		} else {
+			gitFile.Path = pathPart
+		}
+
+		files = append(files, gitFile)
+	}
+
+	return files, nil
+}
+
 // StageFile stages a file (git add).
 func StageFile(cwd, path string) error {
 	_, err := RunGit(cwd, "add", path)

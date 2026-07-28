@@ -32,7 +32,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "diffm",
+	Use:   "diffm [refA] [refB]",
 	Short: "Semantic diff engine powered by Tree-sitter",
 	Long: `diffmantic is a structural source code diff engine.
 
@@ -44,13 +44,29 @@ Works as a standalone CLI, a git difftool, or a backend engine for editor
 plugins (Neovim, VS Code) via JSON output.
 
 Supported languages: Go, JavaScript, TypeScript, Python.`,
+	Args: cobra.MaximumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		if git.IsGitRepository(".") {
-			if err := tui.RunGit("."); err != nil {
+			cached, _ := cmd.Flags().GetBool("cached")
+			staged, _ := cmd.Flags().GetBool("staged")
+			stagedOnly := cached || staged
+
+			var refA, refB string
+			if len(args) >= 1 {
+				refA = args[0]
+			}
+			if len(args) >= 2 {
+				refB = args[1]
+			}
+			if err := tui.RunGit(".", refA, refB, stagedOnly); err != nil {
 				fmt.Fprintf(os.Stderr, "error running Git interactive diff: %v\n", err)
 				os.Exit(1)
 			}
 		} else {
+			if len(args) > 0 {
+				fmt.Fprintf(os.Stderr, "Error: Git mode requires a valid Git repository\n")
+				os.Exit(1)
+			}
 			_ = cmd.Help()
 		}
 	},
@@ -72,7 +88,7 @@ func init() {
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.diffmantic.yaml)")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
+	rootCmd.Flags().Bool("staged", false, "Show only staged changes in Git mode")
 }

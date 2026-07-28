@@ -48,3 +48,35 @@ func TestGetStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestGetChangedFiles(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get current working directory: %v", err)
+	}
+
+	// Test Status mode (no refs)
+	files, err := GetChangedFiles(cwd, "", "")
+	if err != nil {
+		t.Fatalf("failed to get changed files (status mode): %v", err)
+	}
+	t.Logf("Changed files (status mode): %d", len(files))
+
+	// Test Ref mode (HEAD~1 vs HEAD)
+	// We check if HEAD~1 is valid first
+	_, err = RunGit(cwd, "rev-parse", "HEAD~1")
+	if err == nil {
+		refFiles, err := GetChangedFiles(cwd, "HEAD~1", "HEAD")
+		if err != nil {
+			t.Fatalf("failed to get changed files (HEAD~1 vs HEAD): %v", err)
+		}
+		t.Logf("Changed files (HEAD~1 vs HEAD): %d", len(refFiles))
+		for _, f := range refFiles {
+			if f.Path == "" {
+				t.Error("expected non-empty path for Git changed file")
+			}
+		}
+	} else {
+		t.Log("Skipping ref mode test because HEAD~1 is not available (e.g. shallow clone or initial commit)")
+	}
+}

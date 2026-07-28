@@ -35,6 +35,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "s":
+			if m.refA != "" {
+				return m, nil
+			}
 			if len(m.gitItems) > 0 && m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) {
 				item := m.gitItems[m.gitCursorY]
 				if !item.isHeader && !item.isStaged {
@@ -45,6 +48,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "u":
+			if m.refA != "" {
+				return m, nil
+			}
 			if len(m.gitItems) > 0 && m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) {
 				item := m.gitItems[m.gitCursorY]
 				if !item.isHeader && item.isStaged {
@@ -55,6 +61,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "c":
+			if m.refA != "" {
+				return m, nil
+			}
 			m.gitCommitOpen = true
 			m.gitCommitInput.Focus()
 			m.gitCommitInput.SetValue("")

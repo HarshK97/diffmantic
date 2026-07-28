@@ -468,7 +468,11 @@ func (m model) renderStatusBar() string {
 	var keys string
 	if m.gitMode {
 		if m.gitTreeOpen {
-			keys = " j/k: scroll • s/u: stage/unstage • c: commit • t: toggle tree • enter: open diff • q: quit"
+			if m.refA != "" {
+				keys = " j/k: scroll • t: toggle tree • enter: open diff • q: quit"
+			} else {
+				keys = " j/k: scroll • s/u: stage/unstage • c: commit • t: toggle tree • enter: open diff • q: quit"
+			}
 		} else {
 			keys = " j/k: scroll • t: toggle tree • za: fold • i: inspect • ?: help • q: quit"
 		}
@@ -578,8 +582,10 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 				statusColor = colorGreen
 			case "D":
 				statusColor = colorRed
-			case "R":
-				statusColor = colorBlue
+			default:
+				if strings.HasPrefix(cleanStatus, "R") {
+					statusColor = colorBlue
+				}
 			}
 
 			statusStyle := lipgloss.NewStyle().
