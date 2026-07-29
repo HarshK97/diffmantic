@@ -63,6 +63,7 @@ type model struct {
 	refB               string
 	gitStagedOnly      bool
 	pathFilter         string
+	conflictWarning    string
 }
 
 type gitTreeItem struct {
@@ -70,10 +71,11 @@ type gitTreeItem struct {
 	headerText string
 
 	// File details (if not header)
-	path     string
-	oldPath  string
-	status   string
-	isStaged bool
+	path      string
+	oldPath   string
+	status    string
+	rawStatus string
+	isStaged  bool
 }
 
 const (
