@@ -81,16 +81,16 @@ go:
     # Increment/Decrement operators
     "++": update_operator_literal
     "--": update_operator_literal
+    "{": opening_brace
+    "}": closing_brace
+    "[": opening_bracket
+    "]": closing_bracket
+    ".": dot
+    ":": colon
+    ",": comma
+    ";": semicolon
   ignored:
     - "\n"
-    - "{"
-    - "}"
-    - "["
-    - "]"
-    - "."
-    - ":"
-    - ","
-    - ";"
   label_ignored: []
   scaffolding:
     - source_file
@@ -170,15 +170,15 @@ python:
     "(": "opening_paren"
     ")": "closing_paren"
     "in": "in"
+    "{": opening_brace
+    "}": closing_brace
+    "[": opening_bracket
+    "]": closing_bracket
+    ".": dot
+    ":": colon
+    ",": comma
 
   ignored:
-    - "{"
-    - "}"
-    - "["
-    - "]"
-    - "."
-    - ":"
-    - ","
     - "escape_sequence"
   label_ignored: []
   scaffolding:
@@ -310,17 +310,17 @@ javascript:
 
     # Arrow
     "=>": arrow_operator
+    "{": opening_brace
+    "}": closing_brace
+    "[": opening_bracket
+    "]": closing_bracket
+    ".": dot
+    ",": comma
+    ";": semicolon
+    ":": colon
+    "?": question_mark
+    "...": spread_operator
   ignored:
-    - "{"
-    - "}"
-    - "["
-    - "]"
-    - "."
-    - ","
-    - ";"
-    - ":"
-    - "?"
-    - "..."
     - "escape_sequence"
   label_ignored: []
   scaffolding:
@@ -477,17 +477,17 @@ typescript:
 
     # Arrow
     "=>": arrow_operator
+    "{": opening_brace
+    "}": closing_brace
+    "[": opening_bracket
+    "]": closing_bracket
+    ".": dot
+    ",": comma
+    ";": semicolon
+    ":": colon
+    "?": question_mark
+    "...": spread_operator
   ignored:
-    - "{"
-    - "}"
-    - "["
-    - "]"
-    - "."
-    - ","
-    - ";"
-    - ":"
-    - "?"
-    - "..."
     - "escape_sequence"
   label_ignored: []
   scaffolding:

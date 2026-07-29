@@ -8,7 +8,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           0
         ],
@@ -22,7 +22,7 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0
         ],
         "type": "call_expression",
@@ -35,7 +35,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0
         ],
         "type": "call_expression",
@@ -54,7 +54,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1
         ],
@@ -67,7 +67,7 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0
         ],
         "type": "call_expression",
@@ -80,7 +80,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0
         ],
         "type": "call_expression",
@@ -99,7 +99,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1,
           0
@@ -114,7 +114,7 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0,
           1
         ],
@@ -128,7 +128,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1
         ],
@@ -148,7 +148,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1,
           1
@@ -163,7 +163,7 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0,
           1
         ],
@@ -177,7 +177,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1
         ],
@@ -197,22 +197,22 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1,
           2
         ],
-        "type": "identifier",
-        "label": "proto",
-        "start_byte": 596,
-        "end_byte": 601
+        "type": "comma",
+        "label": ",",
+        "start_byte": 594,
+        "end_byte": 595
       },
       "parent": {
         "tree": "after",
         "path": [
           11,
           3,
-          2,
+          3,
           0,
           1
         ],
@@ -226,7 +226,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1
         ],
@@ -235,6 +235,55 @@
         "end_byte": 602
       },
       "old_position": 2,
+      "dest_start_byte": 639,
+      "dest_end_byte": 640,
+      "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1,
+          3
+        ],
+        "type": "identifier",
+        "label": "proto",
+        "start_byte": 596,
+        "end_byte": 601
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          3,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 3,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 602
+      },
+      "old_position": 3,
       "dest_start_byte": 641,
       "dest_end_byte": 646,
       "group_id": "group-2"
@@ -246,10 +295,10 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1,
-          3
+          4
         ],
         "type": "closing_paren",
         "label": ")",
@@ -261,7 +310,7 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0,
           1
         ],
@@ -269,13 +318,13 @@
         "start_byte": 635,
         "end_byte": 654
       },
-      "position": 4,
+      "position": 6,
       "old_parent": {
         "tree": "before",
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1
         ],
@@ -283,10 +332,100 @@
         "start_byte": 590,
         "end_byte": 602
       },
-      "old_position": 3,
+      "old_position": 4,
       "dest_start_byte": 653,
       "dest_end_byte": 654,
       "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          2,
+          1
+        ],
+        "type": "semicolon",
+        "label": ";",
+        "start_byte": 602,
+        "end_byte": 603
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          3
+        ],
+        "type": "expression_statement",
+        "start_byte": 630,
+        "end_byte": 655
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          2
+        ],
+        "type": "expression_statement",
+        "start_byte": 585,
+        "end_byte": 603
+      },
+      "old_position": 1,
+      "dest_start_byte": 654,
+      "dest_end_byte": 655
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          3,
+          0,
+          1,
+          2
+        ],
+        "type": "comma",
+        "label": ",",
+        "start_byte": 615,
+        "end_byte": 616
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 626
+      },
+      "position": 4,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          11,
+          3,
+          3,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 611,
+        "end_byte": 640
+      },
+      "old_position": 2,
+      "dest_start_byte": 618,
+      "dest_end_byte": 619
     },
     {
       "action": "insert",
@@ -295,10 +434,42 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1,
-          3
+          2
+        ],
+        "type": "comma",
+        "label": ",",
+        "start_byte": 594,
+        "end_byte": 595
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 590,
+        "end_byte": 626
+      },
+      "position": 2
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          2,
+          0,
+          1,
+          5
         ],
         "type": "false",
         "label": "false",
@@ -310,7 +481,7 @@
         "path": [
           11,
           3,
-          1,
+          2,
           0,
           1
         ],
@@ -318,7 +489,7 @@
         "start_byte": 590,
         "end_byte": 626
       },
-      "position": 3
+      "position": 5
     },
     {
       "action": "insert",
@@ -327,10 +498,42 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0,
           1,
-          3
+          4
+        ],
+        "type": "comma",
+        "label": ",",
+        "start_byte": 646,
+        "end_byte": 647
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          3,
+          0,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 635,
+        "end_byte": 654
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          3,
+          3,
+          0,
+          1,
+          5
         ],
         "type": "false",
         "label": "false",
@@ -342,7 +545,7 @@
         "path": [
           11,
           3,
-          2,
+          3,
           0,
           1
         ],
@@ -350,7 +553,7 @@
         "start_byte": 635,
         "end_byte": 654
       },
-      "position": 3
+      "position": 5
     }
   ],
   "line_alignment": [

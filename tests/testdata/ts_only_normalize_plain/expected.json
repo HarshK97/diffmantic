@@ -9,9 +9,9 @@
           7,
           1,
           2,
-          47,
+          48,
           4,
-          3
+          4
         ],
         "type": "comment",
         "label": "// Entity class instances (and other non-plain objects) are passed through",
@@ -24,39 +24,7 @@
           7,
           1,
           2,
-          47,
-          4
-        ],
-        "type": "statement_block",
-        "start_byte": 20754,
-        "end_byte": 23581
-      },
-      "position": 3
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          7,
-          1,
-          2,
-          47,
-          4,
-          4
-        ],
-        "type": "comment",
-        "label": "// unchanged: their set columns — including nullable foreign keys that happen",
-        "start_byte": 21311,
-        "end_byte": 21390
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          7,
-          1,
-          2,
-          47,
+          48,
           4
         ],
         "type": "statement_block",
@@ -73,14 +41,14 @@
           7,
           1,
           2,
-          47,
+          48,
           4,
           5
         ],
         "type": "comment",
-        "label": "// to be null — are intentionally part of the where condition and must not be",
-        "start_byte": 21399,
-        "end_byte": 21478
+        "label": "// unchanged: their set columns — including nullable foreign keys that happen",
+        "start_byte": 21311,
+        "end_byte": 21390
       },
       "parent": {
         "tree": "after",
@@ -88,7 +56,7 @@
           7,
           1,
           2,
-          47,
+          48,
           4
         ],
         "type": "statement_block",
@@ -105,14 +73,14 @@
           7,
           1,
           2,
-          47,
+          48,
           4,
           6
         ],
         "type": "comment",
-        "label": "// validated or stripped. Only plain objects (FindOptionsWhere) are normalized.",
-        "start_byte": 21487,
-        "end_byte": 21566
+        "label": "// to be null — are intentionally part of the where condition and must not be",
+        "start_byte": 21399,
+        "end_byte": 21478
       },
       "parent": {
         "tree": "after",
@@ -120,7 +88,7 @@
           7,
           1,
           2,
-          47,
+          48,
           4
         ],
         "type": "statement_block",
@@ -137,9 +105,41 @@
           7,
           1,
           2,
-          47,
+          48,
           4,
           7
+        ],
+        "type": "comment",
+        "label": "// validated or stripped. Only plain objects (FindOptionsWhere) are normalized.",
+        "start_byte": 21487,
+        "end_byte": 21566
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          48,
+          4
+        ],
+        "type": "statement_block",
+        "start_byte": 20754,
+        "end_byte": 23581
+      },
+      "position": 7
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          7,
+          1,
+          2,
+          48,
+          4,
+          8
         ],
         "type": "if_statement",
         "start_byte": 21575,
@@ -151,14 +151,14 @@
           7,
           1,
           2,
-          47,
+          48,
           4
         ],
         "type": "statement_block",
         "start_byte": 20754,
         "end_byte": 23581
       },
-      "position": 7,
+      "position": 8,
       "subtree": true
     },
     {
@@ -169,11 +169,11 @@
           7,
           1,
           2,
-          47,
+          48,
           4,
-          9,
+          10,
           6,
-          0
+          1
         ],
         "type": "if_statement",
         "start_byte": 21771,
@@ -185,16 +185,16 @@
           7,
           1,
           2,
-          47,
+          48,
           4,
-          9,
+          10,
           6
         ],
         "type": "statement_block",
         "start_byte": 21757,
         "end_byte": 23552
       },
-      "position": 0,
+      "position": 1,
       "subtree": true
     }
   ],
@@ -2912,7 +2912,7 @@
       "right_line": 677
     },
     {
-      "left_line": -1,
+      "left_line": 678,
       "right_line": 678
     },
     {
@@ -2944,7 +2944,7 @@
       "right_line": 685
     },
     {
-      "left_line": 678,
+      "left_line": -1,
       "right_line": 686
     },
     {

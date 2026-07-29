@@ -7,11 +7,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          4
+          5
         ],
         "type": "comment",
         "label": "# Skip any null responses",
@@ -22,16 +22,16 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2
         ],
         "type": "for_statement",
         "start_byte": 28384,
         "end_byte": 29599
       },
-      "position": 4
+      "position": 5
     },
     {
       "action": "insert",
@@ -39,11 +39,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           0
         ],
         "type": "if_statement",
@@ -54,11 +54,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -73,11 +73,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           1
         ],
         "type": "comment",
@@ -89,11 +89,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -107,11 +107,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           3
         ],
         "type": "comment",
@@ -123,11 +123,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -141,11 +141,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           5
         ],
         "type": "comment",
@@ -157,11 +157,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -175,11 +175,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           6
         ],
         "type": "comment",
@@ -191,11 +191,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -209,11 +209,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           7
         ],
         "type": "comment",
@@ -225,11 +225,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -243,11 +243,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           8
         ],
         "type": "comment",
@@ -259,11 +259,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -277,11 +277,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           9
         ],
         "type": "comment",
@@ -293,11 +293,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -311,11 +311,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           10
         ],
         "type": "comment",
@@ -327,11 +327,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -345,11 +345,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           11
         ],
         "type": "comment",
@@ -361,11 +361,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 28560,
@@ -374,63 +374,27 @@
       "position": 11
     },
     {
-      "action": "move",
+      "action": "delete",
       "node": {
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
-          2,
-          3,
-          0,
-          0
-        ],
-        "type": "assignment",
-        "start_byte": 28833,
-        "end_byte": 28847
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          36,
-          2,
-          12,
-          3,
           2,
           5,
           2,
-          2
+          1,
+          0,
+          0,
+          1
         ],
-        "type": "block",
-        "start_byte": 28691,
-        "end_byte": 28745
-      },
-      "position": 1,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          36,
-          2,
-          12,
-          3,
-          2,
-          4,
-          2,
-          3,
-          0
-        ],
-        "type": "block",
-        "start_byte": 28833,
-        "end_byte": 28847
-      },
-      "old_position": 0,
-      "subtree": true,
-      "dest_start_byte": 28731,
-      "dest_end_byte": 28745
+        "type": "logical_operator_literal",
+        "label": "and",
+        "start_byte": 28705,
+        "end_byte": 28708
+      }
     },
     {
       "action": "insert",
@@ -438,37 +402,63 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
-          0
+          2,
+          1,
+          1
         ],
-        "type": "identifier",
-        "label": "delimiter",
-        "start_byte": 29446,
-        "end_byte": 29455
+        "type": "logical_operator_literal",
+        "label": "and",
+        "start_byte": 29470,
+        "end_byte": 29473
       },
       "parent": {
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
-          5,
           12,
+          4,
+          2,
+          6,
+          12,
+          1,
+          2,
           1
         ],
         "type": "boolean_operator",
-        "start_byte": 29446,
-        "end_byte": 29501
+        "start_byte": 29460,
+        "end_byte": 29500
       },
-      "position": 0
+      "position": 1
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "and",
+        "start_byte": 28719,
+        "end_byte": 28722
+      }
     },
     {
       "action": "insert",
@@ -476,11 +466,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           1
@@ -494,11 +484,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1
         ],
@@ -509,16 +499,176 @@
       "position": 1
     },
     {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0,
+          2
+        ],
+        "type": "identifier",
+        "label": "chunk",
+        "start_byte": 28723,
+        "end_byte": 28728
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          6,
+          12,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29446,
+        "end_byte": 29501
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28728
+      },
+      "old_position": 2,
+      "dest_start_byte": 29446,
+      "dest_end_byte": 29455
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          4,
+          1,
+          0
+        ],
+        "type": "assignment",
+        "start_byte": 28833,
+        "end_byte": 28847
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          6,
+          2,
+          3
+        ],
+        "type": "block",
+        "start_byte": 28691,
+        "end_byte": 28745
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          4,
+          1
+        ],
+        "type": "block",
+        "start_byte": 28833,
+        "end_byte": 28847
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 28731,
+      "dest_end_byte": 28745
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0,
+          2
+        ],
+        "type": "identifier",
+        "label": "chunk",
+        "start_byte": 28723,
+        "end_byte": 28728
+      },
+      "old_value": "chunk",
+      "new_value": "delimiter",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          6,
+          12,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "delimiter",
+        "start_byte": 29446,
+        "end_byte": 29455
+      }
+    },
+    {
       "action": "insert",
       "node": {
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           2,
@@ -533,11 +683,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           2
@@ -554,87 +704,30 @@
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
-          2,
-          1,
-          1
-        ],
-        "type": "logical_operator_literal",
-        "label": "and",
-        "start_byte": 28729,
-        "end_byte": 28732
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          36,
-          2,
-          12,
-          3,
           2,
           5,
-          12,
-          1,
-          2,
-          1
-        ],
-        "type": "boolean_operator",
-        "start_byte": 29460,
-        "end_byte": 29500
-      },
-      "position": 1,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          36,
-          2,
-          12,
-          3,
-          2,
-          4,
-          2,
-          1
-        ],
-        "type": "boolean_operator",
-        "start_byte": 28699,
-        "end_byte": 28759
-      },
-      "old_position": 1,
-      "dest_start_byte": 29470,
-      "dest_end_byte": 29473
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          36,
-          2,
-          12,
-          3,
-          2,
-          4,
           2,
           1,
+          0,
+          0,
           2
         ],
-        "type": "comparison_operator",
-        "start_byte": 28733,
-        "end_byte": 28759
+        "type": "subscript",
+        "start_byte": 28709,
+        "end_byte": 28718
       },
       "parent": {
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           2,
@@ -644,27 +737,29 @@
         "start_byte": 29460,
         "end_byte": 29500
       },
-      "position": 2,
+      "position": 0,
       "old_parent": {
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
           2,
-          1
+          5,
+          2,
+          1,
+          0,
+          0
         ],
         "type": "boolean_operator",
         "start_byte": 28699,
-        "end_byte": 28759
+        "end_byte": 28718
       },
       "old_position": 2,
       "subtree": true,
-      "dest_start_byte": 29474,
-      "dest_end_byte": 29500
+      "dest_start_byte": 29460,
+      "dest_end_byte": 29469
     },
     {
       "action": "insert",
@@ -672,11 +767,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           2,
@@ -691,11 +786,11 @@
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           2
@@ -712,30 +807,28 @@
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
           2,
+          5,
+          2,
           1,
-          0,
-          0,
           2
         ],
-        "type": "subscript",
-        "start_byte": 28709,
-        "end_byte": 28718
+        "type": "comparison_operator",
+        "start_byte": 28733,
+        "end_byte": 28759
       },
       "parent": {
         "tree": "after",
         "path": [
           36,
-          2,
-          12,
           3,
+          12,
+          4,
           2,
-          5,
+          6,
           12,
           1,
           2,
@@ -745,29 +838,27 @@
         "start_byte": 29460,
         "end_byte": 29500
       },
-      "position": 0,
+      "position": 2,
       "old_parent": {
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
           2,
-          1,
-          0,
-          0
+          5,
+          2,
+          1
         ],
         "type": "boolean_operator",
         "start_byte": 28699,
-        "end_byte": 28718
+        "end_byte": 28759
       },
       "old_position": 2,
       "subtree": true,
-      "dest_start_byte": 29460,
-      "dest_end_byte": 29469
+      "dest_start_byte": 29474,
+      "dest_end_byte": 29500
     },
     {
       "action": "delete",
@@ -775,11 +866,11 @@
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
+          2,
+          5,
           2,
           1,
           0,
@@ -798,21 +889,19 @@
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
           2,
+          5,
+          2,
           1,
-          0,
-          0,
           1
         ],
         "type": "logical_operator_literal",
         "label": "and",
-        "start_byte": 28705,
-        "end_byte": 28708
+        "start_byte": 28729,
+        "end_byte": 28732
       }
     },
     {
@@ -821,42 +910,19 @@
         "tree": "before",
         "path": [
           36,
-          2,
-          12,
           3,
-          2,
+          12,
           4,
           2,
-          1,
-          0,
-          1
-        ],
-        "type": "logical_operator_literal",
-        "label": "and",
-        "start_byte": 28719,
-        "end_byte": 28722
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          36,
-          2,
-          12,
-          3,
+          5,
           2,
           4,
-          2,
-          1,
-          0,
-          2
+          0
         ],
-        "type": "identifier",
-        "label": "chunk",
-        "start_byte": 28723,
-        "end_byte": 28728
+        "type": "colon",
+        "label": ":",
+        "start_byte": 28815,
+        "end_byte": 28816
       }
     }
   ],

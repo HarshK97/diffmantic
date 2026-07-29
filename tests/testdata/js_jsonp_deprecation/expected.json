@@ -10,9 +10,9 @@
           0,
           2,
           3,
+          3,
           2,
-          2,
-          0
+          1
         ],
         "type": "comment",
         "label": "// res.json(body, status) backwards compat",
@@ -28,9 +28,9 @@
           0,
           2,
           3,
+          3,
           2,
-          2,
-          0
+          1
         ],
         "type": "comment",
         "label": "// res.jsonp(body, status) backwards compat",
@@ -47,11 +47,11 @@
           0,
           2,
           3,
+          3,
+          2,
           2,
           2,
           1,
-          2,
-          0,
           0,
           1,
           1
@@ -70,11 +70,11 @@
           0,
           2,
           3,
+          3,
+          2,
           2,
           2,
           1,
-          2,
-          0,
           0,
           1,
           1
