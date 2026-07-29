@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,6 +80,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "c":
 			if m.refA != "" {
+				return m, nil
+			}
+			if !slices.ContainsFunc(m.gitItems, func(it gitTreeItem) bool { return !it.isHeader && it.isStaged }) {
+				m.conflictWarning = "no changes staged for commit"
 				return m, nil
 			}
 			m.gitCommitOpen = true
