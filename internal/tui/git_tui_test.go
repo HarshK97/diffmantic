@@ -121,3 +121,21 @@ func TestConflictStagingGuard(t *testing.T) {
 		t.Errorf("expected conflictWarning 'resolve conflicts before staging' for file with markers on disk, got %q", m2Model.conflictWarning)
 	}
 }
+
+func TestCommitStagingGuard(t *testing.T) {
+	m := newGitModel(t.TempDir(), "", "", "", false)
+	// No staged items, only unstaged changes
+	m.gitItems = []gitTreeItem{
+		{isHeader: false, path: "file.go", rawStatus: " M", isStaged: false},
+	}
+	m.gitCursorY = 0
+
+	mRes, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	mModel := mRes.(model)
+	if mModel.conflictWarning != "no changes staged for commit" {
+		t.Errorf("expected conflictWarning 'no changes staged for commit', got %q", mModel.conflictWarning)
+	}
+	if mModel.gitCommitOpen {
+		t.Error("expected git commit input to remain closed")
+	}
+}
