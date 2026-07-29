@@ -10,12 +10,12 @@
           0,
           2,
           2,
-          1,
+          2,
           0,
           1,
           1,
           2,
-          0
+          1
         ],
         "type": "if_statement",
         "start_byte": 246,
@@ -28,7 +28,7 @@
           0,
           2,
           2,
-          1,
+          2,
           0,
           1,
           1,
@@ -38,7 +38,7 @@
         "start_byte": 240,
         "end_byte": 2200
       },
-      "position": 0,
+      "position": 1,
       "subtree": true
     }
   ],

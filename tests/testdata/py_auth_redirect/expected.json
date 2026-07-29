@@ -7,9 +7,9 @@
         "tree": "after",
         "path": [
           19,
-          2,
+          3,
           1,
-          5,
+          6,
           28
         ],
         "type": "assignment",
@@ -20,9 +20,9 @@
         "tree": "after",
         "path": [
           19,
-          2,
+          3,
           1,
-          5
+          6
         ],
         "type": "block",
         "start_byte": 1492,
@@ -37,19 +37,19 @@
         "tree": "before",
         "path": [
           19,
-          2,
-          4,
           3,
           4,
-          2,
+          4,
+          4,
+          3,
           0,
-          1,
+          2,
           11,
           2,
           1,
-          7,
+          11,
           2,
-          1
+          2
         ],
         "type": "identifier",
         "label": "auth",
@@ -62,19 +62,19 @@
         "tree": "after",
         "path": [
           19,
-          2,
-          4,
           3,
           4,
-          2,
+          4,
+          4,
+          3,
           0,
-          1,
+          2,
           11,
           2,
           1,
-          7,
+          11,
           2,
-          1
+          2
         ],
         "type": "identifier",
         "label": "_auth",
@@ -88,11 +88,11 @@
         "tree": "before",
         "path": [
           19,
-          2,
-          7,
           3,
+          7,
+          4,
           9,
-          2,
+          3,
           3
         ],
         "type": "assignment",

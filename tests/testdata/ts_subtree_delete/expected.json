@@ -9,19 +9,19 @@
           19,
           1,
           2,
-          58,
+          59,
           4,
-          0,
-          0,
           1,
-          1,
-          2,
-          2,
           0,
           1,
           1,
           2,
-          8
+          3,
+          0,
+          1,
+          1,
+          2,
+          9
         ],
         "type": "if_statement",
         "start_byte": 45345,
@@ -4373,7 +4373,7 @@
     },
     {
       "left_line": 1085,
-      "right_line": -1
+      "right_line": 1085
     },
     {
       "left_line": 1086,
@@ -4425,7 +4425,7 @@
     },
     {
       "left_line": 1098,
-      "right_line": 1085
+      "right_line": -1
     },
     {
       "left_line": 1099,

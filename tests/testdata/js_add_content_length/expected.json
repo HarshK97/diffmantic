@@ -10,7 +10,7 @@
           0,
           2,
           3,
-          9
+          10
         ],
         "type": "comment",
         "label": "// populate Content-Length",
@@ -26,7 +26,7 @@
           0,
           2,
           3,
-          9
+          10
         ],
         "type": "comment",
         "label": "// Because Content-Length and Transfer-Encoding can't be present in the response headers together,",
@@ -43,7 +43,7 @@
           0,
           2,
           3,
-          10
+          11
         ],
         "type": "comment",
         "label": "// Content-Length should be added only if there is no Transfer-Encoding header",
@@ -62,7 +62,39 @@
         "start_byte": 3327,
         "end_byte": 5655
       },
-      "position": 10
+      "position": 11
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          34,
+          0,
+          2,
+          3,
+          12,
+          2
+        ],
+        "type": "semicolon",
+        "label": ";",
+        "start_byte": 4381,
+        "end_byte": 4382
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          34,
+          0,
+          2,
+          3,
+          12
+        ],
+        "type": "variable_declaration",
+        "start_byte": 4374,
+        "end_byte": 4382
+      },
+      "position": 2
     },
     {
       "action": "move",
@@ -73,7 +105,7 @@
           0,
           2,
           3,
-          11,
+          12,
           1,
           1
         ],
@@ -88,7 +120,7 @@
           0,
           2,
           3,
-          12,
+          13,
           1,
           1
         ],
@@ -104,7 +136,7 @@
           0,
           2,
           3,
-          11,
+          12,
           1
         ],
         "type": "parenthesized_expression",
@@ -125,7 +157,7 @@
           0,
           2,
           3,
-          12,
+          13,
           1,
           1,
           1
@@ -142,7 +174,7 @@
           0,
           2,
           3,
-          12,
+          13,
           1,
           1
         ],
@@ -161,7 +193,7 @@
           0,
           2,
           3,
-          12,
+          13,
           1,
           1,
           2
@@ -177,7 +209,7 @@
           0,
           2,
           3,
-          12,
+          13,
           1,
           1
         ],

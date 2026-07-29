@@ -9,9 +9,9 @@
           10,
           0,
           1,
+          3,
           2,
-          2,
-          0,
+          1,
           1,
           1
         ],
@@ -25,9 +25,9 @@
           10,
           0,
           1,
+          3,
           2,
-          2,
-          0
+          1
         ],
         "type": "expression_statement",
         "start_byte": 630,
@@ -40,9 +40,9 @@
           10,
           0,
           1,
+          3,
           2,
-          2,
-          0,
+          1,
           1
         ],
         "type": "parenthesized_expression",
@@ -62,9 +62,43 @@
           10,
           0,
           1,
-          2,
+          3,
           2,
           1,
+          1
+        ],
+        "type": "semicolon",
+        "label": ";",
+        "start_byte": 650,
+        "end_byte": 651
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1,
+          3,
+          2,
+          1
+        ],
+        "type": "expression_statement",
+        "start_byte": 630,
+        "end_byte": 651
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1,
+          3,
+          2,
+          2,
           1,
           1
         ],
@@ -78,9 +112,9 @@
           10,
           0,
           1,
+          3,
           2,
           2,
-          1,
           1
         ],
         "type": "parenthesized_expression",

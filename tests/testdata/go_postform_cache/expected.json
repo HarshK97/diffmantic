@@ -8,7 +8,7 @@
         "path": [
           14,
           4,
-          0,
+          1,
           9
         ],
         "type": "assignment_statement",
@@ -20,7 +20,7 @@
         "path": [
           14,
           4,
-          0
+          1
         ],
         "type": "statement_list",
         "start_byte": 2038,

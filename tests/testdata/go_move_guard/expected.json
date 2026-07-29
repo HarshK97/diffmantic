@@ -8,10 +8,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2,
+          3,
+          3,
           1
         ],
         "type": "return_statement",
@@ -23,10 +23,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2
+          3,
+          3
         ],
         "type": "statement_list",
         "start_byte": 1202,
@@ -42,10 +42,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2,
+          3,
+          3,
           0,
           0
         ],
@@ -59,10 +59,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2,
+          3,
+          3,
           0
         ],
         "type": "if_statement",
@@ -78,10 +78,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2,
+          3,
+          3,
           0,
           1
         ],
@@ -94,10 +94,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2,
+          3,
+          3,
           0
         ],
         "type": "if_statement",
@@ -108,16 +108,54 @@
       "subtree": true
     },
     {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          1,
+          2,
+          3,
+          3,
+          0,
+          2,
+          0
+        ],
+        "type": "opening_brace",
+        "label": "{",
+        "start_byte": 1243,
+        "end_byte": 1244
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          1,
+          2,
+          3,
+          3,
+          0,
+          2
+        ],
+        "type": "block",
+        "start_byte": 1243,
+        "end_byte": 1301
+      },
+      "position": 0
+    },
+    {
       "action": "move",
       "node": {
         "tree": "before",
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2
+          3,
+          3
         ],
         "type": "statement_list",
         "start_byte": 1202,
@@ -128,10 +166,10 @@
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2,
-          2,
+          3,
+          3,
           0,
           2
         ],
@@ -139,24 +177,62 @@
         "start_byte": 1243,
         "end_byte": 1301
       },
-      "position": 0,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
           11,
           5,
-          0,
+          1,
           2,
-          2
+          3
         ],
         "type": "expression_case",
         "start_byte": 1182,
         "end_byte": 1252
       },
-      "old_position": 2,
+      "old_position": 3,
       "subtree": true,
       "dest_start_byte": 1248,
       "dest_end_byte": 1298
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          1,
+          2,
+          3,
+          3,
+          0,
+          2,
+          2
+        ],
+        "type": "closing_brace",
+        "label": "}",
+        "start_byte": 1300,
+        "end_byte": 1301
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          1,
+          2,
+          3,
+          3,
+          0,
+          2
+        ],
+        "type": "block",
+        "start_byte": 1243,
+        "end_byte": 1301
+      },
+      "position": 2
     }
   ],
   "line_alignment": [

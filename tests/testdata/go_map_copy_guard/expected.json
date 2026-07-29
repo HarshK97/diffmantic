@@ -8,7 +8,7 @@
         "path": [
           22,
           5,
-          0,
+          1,
           8
         ],
         "type": "expression_statement",
@@ -20,7 +20,7 @@
         "path": [
           22,
           5,
-          0
+          1
         ],
         "type": "statement_list",
         "start_byte": 3059,
@@ -36,7 +36,7 @@
         "path": [
           22,
           5,
-          0,
+          1,
           10
         ],
         "type": "expression_statement",
@@ -48,7 +48,7 @@
         "path": [
           22,
           5,
-          0
+          1
         ],
         "type": "statement_list",
         "start_byte": 3059,
