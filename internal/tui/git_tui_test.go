@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -80,5 +82,42 @@ func TestGitRevisionMode(t *testing.T) {
 	helpBar := m.renderStatusBar()
 	if strings.Contains(helpBar, "stage") || strings.Contains(helpBar, "commit") {
 		t.Errorf("expected read-only status bar help in revision mode, got %q", helpBar)
+	}
+}
+
+func TestConflictStagingGuard(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 1. Test case: file has conflict status ("UU")
+	m1 := newGitModel(tempDir, "", "", "", false)
+	m1.gitItems = []gitTreeItem{
+		{isHeader: false, path: "nonexistent.txt", rawStatus: "UU", isStaged: false},
+	}
+	m1.gitCursorY = 0
+
+	m1Res, _ := m1.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m1Model := m1Res.(model)
+	if m1Model.conflictWarning != "resolve conflicts before staging" {
+		t.Errorf("expected conflictWarning 'resolve conflicts before staging', got %q", m1Model.conflictWarning)
+	}
+
+	// 2. Test case: status is " M" (unstaged mod) but file contains conflict markers on disk
+	conflictFilePath := "conflict.txt"
+	conflictContent := "<<<<<<< HEAD\nour changes\n=======\ntheir changes\n>>>>>>> feat-branch\n"
+	err := os.WriteFile(filepath.Join(tempDir, conflictFilePath), []byte(conflictContent), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mock conflict file: %v", err)
+	}
+
+	m2 := newGitModel(tempDir, "", "", "", false)
+	m2.gitItems = []gitTreeItem{
+		{isHeader: false, path: conflictFilePath, rawStatus: " M", isStaged: false},
+	}
+	m2.gitCursorY = 0
+
+	m2Res, _ := m2.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m2Model := m2Res.(model)
+	if m2Model.conflictWarning != "resolve conflicts before staging" {
+		t.Errorf("expected conflictWarning 'resolve conflicts before staging' for file with markers on disk, got %q", m2Model.conflictWarning)
 	}
 }

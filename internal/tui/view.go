@@ -495,9 +495,13 @@ func (m model) renderStatusBar() string {
 
 	keysWidth := lipgloss.Width(keysPart)
 
-	// Get the action preview.
+	// Action preview or conflict warning.
 	var preview string
-	if len(m.inspectActions) > 0 {
+	var warningStyle bool
+	if m.conflictWarning != "" {
+		preview = m.conflictWarning
+		warningStyle = true
+	} else if len(m.inspectActions) > 0 {
 		availForPreview := m.width - keysWidth - 2
 		if availForPreview > 10 {
 			preview = formatActionPreview(m.inspectActions, availForPreview)
@@ -506,10 +510,16 @@ func (m model) renderStatusBar() string {
 
 	var bar string
 	if preview != "" {
+		var formattedPreview string
+		if warningStyle {
+			formattedPreview = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(preview)
+		} else {
+			formattedPreview = preview
+		}
 		previewWidth := lipgloss.Width(preview)
 		padding := m.width - keysWidth - previewWidth
 		if padding >= 0 {
-			bar = keysPart + strings.Repeat(" ", padding) + preview
+			bar = keysPart + strings.Repeat(" ", padding) + formattedPreview
 		} else {
 			bar = truncateStr(keysPart, m.width)
 			bar = padRight(bar, m.width)
@@ -574,17 +584,25 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 		} else {
 			statusColor := colorSubtext0
 			statusChar := item.status
-			cleanStatus := strings.TrimSpace(statusChar)
-			switch cleanStatus {
-			case "M":
-				statusColor = colorYellow
-			case "A", "??":
-				statusColor = colorGreen
-			case "D":
-				statusColor = colorRed
-			default:
-				if strings.HasPrefix(cleanStatus, "R") {
-					statusColor = colorBlue
+
+			// Highlight conflict files in pink.
+			isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
+			if isConflict {
+				statusChar = "CF"
+				statusColor = colorPink
+			} else {
+				cleanStatus := strings.TrimSpace(statusChar)
+				switch cleanStatus {
+				case "M":
+					statusColor = colorYellow
+				case "A", "??":
+					statusColor = colorGreen
+				case "D":
+					statusColor = colorRed
+				default:
+					if strings.HasPrefix(cleanStatus, "R") {
+						statusColor = colorBlue
+					}
 				}
 			}
 

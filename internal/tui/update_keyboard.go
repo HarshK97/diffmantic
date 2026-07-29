@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -14,6 +17,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// If git status tree is open, intercept input
 	if m.gitMode && m.gitTreeOpen {
+		// Clear conflict warning on any input
+		m.conflictWarning = ""
+
 		switch keyStr {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -41,6 +47,17 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(m.gitItems) > 0 && m.gitCursorY >= 0 && m.gitCursorY < len(m.gitItems) {
 				item := m.gitItems[m.gitCursorY]
 				if !item.isHeader && !item.isStaged {
+					isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
+					hasMarkers := false
+					if data, err := os.ReadFile(filepath.Join(m.repoPath, item.path)); err == nil {
+						hasMarkers = hasConflictMarkers(data)
+					}
+
+					if isConflict || hasMarkers {
+						m.conflictWarning = "resolve conflicts before staging"
+						return m, nil
+					}
+
 					_ = git.StageFile(m.repoPath, item.path)
 					m.refreshGitStatus()
 					m.syncGitCursorAndDiff()

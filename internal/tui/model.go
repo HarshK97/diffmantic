@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -203,10 +204,11 @@ func (m *model) refreshGitStatus() {
 				status += " "
 			}
 			items = append(items, gitTreeItem{
-				path:     f.Path,
-				oldPath:  f.OldPath,
-				status:   status,
-				isStaged: false,
+				path:      f.Path,
+				oldPath:   f.OldPath,
+				status:    status,
+				rawStatus: f.Status,
+				isStaged:  false,
 			})
 		}
 
@@ -228,10 +230,11 @@ func (m *model) refreshGitStatus() {
 		for _, f := range files {
 			if f.Staged {
 				staged = append(staged, gitTreeItem{
-					path:     f.Path,
-					oldPath:  f.OldPath,
-					status:   string(f.Status[0]) + " ",
-					isStaged: true,
+					path:      f.Path,
+					oldPath:   f.OldPath,
+					status:    string(f.Status[0]) + " ",
+					rawStatus: f.Status,
+					isStaged:  true,
 				})
 			}
 			if f.Unstaged && !m.gitStagedOnly {
@@ -240,10 +243,11 @@ func (m *model) refreshGitStatus() {
 					status = "??"
 				}
 				unstaged = append(unstaged, gitTreeItem{
-					path:     f.Path,
-					oldPath:  f.OldPath,
-					status:   status,
-					isStaged: false,
+					path:      f.Path,
+					oldPath:   f.OldPath,
+					status:    status,
+					rawStatus: f.Status,
+					isStaged:  false,
 				})
 			}
 		}
@@ -293,7 +297,18 @@ func (m *model) loadGitFileDiff(idx int) error {
 	var srcBytes, dstBytes []byte
 	var err error
 
-	if m.refA != "" {
+	isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
+
+	if isConflict {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
+		if err != nil {
+			return err
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
+		if err != nil {
+			return err
+		}
+	} else if m.refA != "" {
 		srcBytes, err = git.GetContent(m.repoPath, beforeFile, m.refA)
 		if err != nil {
 			return err
@@ -348,7 +363,7 @@ func (m *model) loadGitFileDiff(idx int) error {
 		return nil
 	}
 
-	env, err := computeBytesDiff(srcBytes, dstBytes, beforeFile, afterFile)
+	env, err := computeBytesDiff(srcBytes, dstBytes, beforeFile, afterFile, isConflict)
 	if err != nil {
 		env = &serialize.Envelope{}
 	}
@@ -370,14 +385,73 @@ func isBinary(data []byte) bool {
 	return false
 }
 
-func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string) (*serialize.Envelope, error) {
-	srcAST, err := treesitter.Parse(srcBytes, srcFile)
-	if err != nil {
-		return nil, err
+func hasConflictMarkers(data []byte) bool {
+	return bytes.Contains(data, []byte("<<<<<<<")) || bytes.Contains(data, []byte("=======")) || bytes.Contains(data, []byte(">>>>>>>"))
+}
+
+func generateLineDiff(srcBytes, dstBytes []byte) *serialize.Envelope {
+	alignment := serialize.AlignLines(srcBytes, dstBytes, nil, nil, nil, nil)
+
+	buildLineOffsets := func(data []byte) []uint32 {
+		offsets := []uint32{0}
+		for i, b := range data {
+			if b == '\n' {
+				offsets = append(offsets, uint32(i+1))
+			}
+		}
+		return offsets
 	}
-	dstAST, err := treesitter.Parse(dstBytes, dstFile)
-	if err != nil {
-		return nil, err
+
+	offsetsSrc := buildLineOffsets(srcBytes)
+	offsetsDst := buildLineOffsets(dstBytes)
+
+	getBounds := func(lineIdx int, offsets []uint32, maxLen int) (uint32, uint32) {
+		end := uint32(maxLen)
+		if lineIdx+1 < len(offsets) {
+			end = offsets[lineIdx+1]
+		}
+		return offsets[lineIdx], end
+	}
+
+	var actions []serialize.Action
+
+	for _, pair := range alignment {
+		if pair.RightLine == -1 && pair.LeftLine != -1 {
+			start, end := getBounds(pair.LeftLine, offsetsSrc, len(srcBytes))
+			actions = append(actions, serialize.Action{
+				Action: "delete",
+				Node: &serialize.NodeRef{
+					StartByte: start,
+					EndByte:   end,
+				},
+			})
+		} else if pair.LeftLine == -1 && pair.RightLine != -1 {
+			start, end := getBounds(pair.RightLine, offsetsDst, len(dstBytes))
+			actions = append(actions, serialize.Action{
+				Action: "insert",
+				Node: &serialize.NodeRef{
+					StartByte: start,
+					EndByte:   end,
+				},
+			})
+		}
+	}
+
+	return &serialize.Envelope{
+		Actions:       actions,
+		LineAlignment: alignment,
+	}
+}
+
+func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConflict bool) (*serialize.Envelope, error) {
+	if isConflict || hasConflictMarkers(srcBytes) || hasConflictMarkers(dstBytes) {
+		return generateLineDiff(srcBytes, dstBytes), nil
+	}
+
+	srcAST, err1 := treesitter.Parse(srcBytes, srcFile)
+	dstAST, err2 := treesitter.Parse(dstBytes, dstFile)
+	if err1 != nil || err2 != nil {
+		return generateLineDiff(srcBytes, dstBytes), nil
 	}
 
 	matchResult := engine.Match(srcAST, dstAST)
