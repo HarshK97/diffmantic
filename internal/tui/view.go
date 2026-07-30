@@ -219,16 +219,14 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 				symStyle = lineNumStyle
 			}
 
-			lineNumStr := fmt.Sprintf("%*d", gutterW-gutterPadding, lineIdx+1)
+			// Leave 1 slot for cursor indicator and 1 for fold symbol.
+			lineNumStr := fmt.Sprintf("%*d", gutterW-2, lineIdx+1)
+
 			var gutter string
 			if isCursorRow && isActivePane {
-				runes := []rune(lineNumStr + symbol)
-				if len(runes) > 0 {
-					runes[0] = '█'
-				}
-				gutter = cursorGutterStyle.Render(string(runes))
+				gutter = cursorGutterStyle.Render(" " + lineNumStr + symbol)
 			} else {
-				gutter = lineNumStyle.Render(lineNumStr) + symStyle.Render(symbol)
+				gutter = lineNumStyle.Render(" "+lineNumStr) + symStyle.Render(symbol)
 			}
 
 			rawLine := lines[lineIdx]
