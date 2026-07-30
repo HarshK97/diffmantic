@@ -135,7 +135,7 @@ func bestStructuralPartner(
 	return best
 }
 
-func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, isCandidate bool) int {
+func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, _ bool) int {
 	score := 0
 	dstChildIdx := childIndex(dst)
 	if srcChildIdx == dstChildIdx {

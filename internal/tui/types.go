@@ -1,9 +1,8 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/textinput"
-
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/charmbracelet/bubbles/textinput"
 )
 
 type model struct {

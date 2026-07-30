@@ -1,8 +1,9 @@
 package engine
 
 import (
-	"github.com/HarshK97/diffmantic/internal/testutil"
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/testutil"
 )
 
 func TestMappingAddAndLookup(t *testing.T) {
@@ -78,7 +79,7 @@ func TestMappingRemove(t *testing.T) {
 	}
 }
 
-func TestMappingRemoveNonexistent(t *testing.T) {
+func TestMappingRemoveNonexistent(_ *testing.T) {
 	// Removing missing keys won't panic.
 	m := NewMapping()
 	m.Remove(testutil.Leaf("id", "x"))

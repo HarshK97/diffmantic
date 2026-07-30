@@ -1,10 +1,10 @@
 package engine
 
 import (
-	"github.com/HarshK97/diffmantic/internal/testutil"
-
 	"bytes"
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/testutil"
 )
 
 func TestMatchIdenticalTrees(t *testing.T) {
@@ -43,6 +43,7 @@ func TestMatchDifferentLeafLabels(t *testing.T) {
 	r := Match(src, dst)
 	if r == nil {
 		t.Fatal("Match returned nil")
+		return
 	}
 	if !r.Mappings.Has(src) {
 		t.Error("root should be mapped")

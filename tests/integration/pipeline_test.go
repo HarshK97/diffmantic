@@ -175,7 +175,6 @@ func TestPipeline(t *testing.T) {
 	}
 
 	for _, name := range fixtures {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := loadFixture(t, name)
@@ -220,7 +219,7 @@ func TestPipeline(t *testing.T) {
 				if err != nil {
 					t.Fatalf("pretty-printing JSON: %v", err)
 				}
-				if err := os.WriteFile(goldenPath, pretty, 0644); err != nil {
+				if err := os.WriteFile(goldenPath, pretty, 0o644); err != nil {
 					t.Fatalf("writing golden file: %v", err)
 				}
 				t.Logf("updated golden file: %s", goldenPath)
@@ -291,7 +290,7 @@ func TestPipelineEmptyOld(t *testing.T) {
 	// Create a minimal empty file for the old side.
 	ext := filepath.Ext(f.OldPath)
 	emptyFile := filepath.Join(t.TempDir(), "empty"+ext)
-	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(emptyFile, []byte{}, 0o644); err != nil {
 		t.Fatalf("failed to write empty file: %v", err)
 	}
 
@@ -323,7 +322,7 @@ func TestPipelineEmptyNew(t *testing.T) {
 	f := loadFixture(t, fixtures[0])
 	ext := filepath.Ext(f.NewPath)
 	emptyFile := filepath.Join(t.TempDir(), "empty"+ext)
-	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(emptyFile, []byte{}, 0o644); err != nil {
 		t.Fatalf("failed to write empty file: %v", err)
 	}
 
@@ -347,7 +346,6 @@ func TestPipelineEmptyNew(t *testing.T) {
 // TestRoundTripMarshalUnmarshal checks that Marshal followed by Unmarshal is lossless.
 func TestRoundTripMarshalUnmarshal(t *testing.T) {
 	for _, name := range allFixtures(t) {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := loadFixture(t, name)
@@ -415,7 +413,6 @@ func TestCrossLanguageParsing(t *testing.T) {
 // TestActionSemantics checks action-specific invariants on real diffs.
 func TestActionSemantics(t *testing.T) {
 	for _, name := range allFixtures(t) {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := loadFixture(t, name)
@@ -465,7 +462,6 @@ func TestActionSemantics(t *testing.T) {
 // TestActionCountNonZero checks that real bug-fix diffs produce at least one action.
 func TestActionCountNonZero(t *testing.T) {
 	for _, name := range allFixtures(t) {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := loadFixture(t, name)

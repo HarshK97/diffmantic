@@ -231,10 +231,6 @@ func GetContent(cwd, path, revision string) ([]byte, error) {
 		cmdArg = revision + ":" + path
 	}
 
-	out, err := RunGit(cwd, "show", cmdArg)
-	if err != nil {
-		// New or deleted files won't exist in HEAD/index, so treat errors as empty.
-		return nil, nil
-	}
+	out, _ := RunGit(cwd, "show", cmdArg)
 	return out, nil
 }

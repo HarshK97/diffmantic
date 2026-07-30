@@ -104,7 +104,7 @@ func TestConflictStagingGuard(t *testing.T) {
 	// 2. Test case: status is " M" (unstaged mod) but file contains conflict markers on disk
 	conflictFilePath := "conflict.txt"
 	conflictContent := "<<<<<<< HEAD\nour changes\n=======\ntheir changes\n>>>>>>> feat-branch\n"
-	err := os.WriteFile(filepath.Join(tempDir, conflictFilePath), []byte(conflictContent), 0644)
+	err := os.WriteFile(filepath.Join(tempDir, conflictFilePath), []byte(conflictContent), 0o644)
 	if err != nil {
 		t.Fatalf("failed to write mock conflict file: %v", err)
 	}

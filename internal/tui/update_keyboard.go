@@ -8,9 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/HarshK97/diffmantic/internal/git"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

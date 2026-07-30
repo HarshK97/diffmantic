@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // actionsAtCursor returns actions under the cursor on the current line.
@@ -123,8 +122,8 @@ func formatActionPreview(actions []*serialize.Action, maxWidth int) string {
 	case "update":
 		if a.OldValue != "" && a.NewValue != "" {
 			old := truncateStr(a.OldValue, 20)
-			new := truncateStr(a.NewValue, 20)
-			detail = fmt.Sprintf("'%s' → '%s'", old, new)
+			newVal := truncateStr(a.NewValue, 20)
+			detail = fmt.Sprintf("'%s' → '%s'", old, newVal)
 		} else if nodeType != "" {
 			detail = nodeType
 			if nodeName != "" {
@@ -204,8 +203,8 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 	case "update":
 		if a.OldValue != "" && a.NewValue != "" {
 			old := truncateStr(a.OldValue, colWidth/2-2)
-			new := truncateStr(a.NewValue, colWidth/2-2)
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("'%s' → '%s'", old, new))
+			newVal := truncateStr(a.NewValue, colWidth/2-2)
+			line1 = inspectDetailStyle.Render(fmt.Sprintf("'%s' → '%s'", old, newVal))
 		} else if a.Parent != nil {
 			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", a.Parent.Type, a.Parent.Label))
 		}

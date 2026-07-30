@@ -130,9 +130,8 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			dstLineIdx := j - 1
 
 			matched := false
-			weight := 0
 			if !movedSrcLines[srcLineIdx] && !movedDstLines[dstLineIdx] {
-				weight = computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, overlap, ms, srcRoot, dstRoot)
+				weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, overlap, ms, srcRoot, dstRoot)
 				if weight > 0 && dp[i][j] == dp[i-1][j-1]+weight {
 					matched = true
 				}

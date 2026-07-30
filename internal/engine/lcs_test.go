@@ -1,10 +1,9 @@
 package engine
 
 import (
-	"github.com/HarshK97/diffmantic/internal/testutil"
-
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 

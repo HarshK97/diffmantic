@@ -8,7 +8,6 @@ import (
 )
 
 func TestActionsAtCursor(t *testing.T) {
-
 	srcBytes := []byte("func foo() {\n\t// old comment\n}\n")
 	dstBytes := []byte("func bar() {\n\t// new comment\n}\n")
 
