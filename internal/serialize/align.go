@@ -110,15 +110,7 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			}
 
 			// Determine match weight.
-			weight := 0
-			if srcLines[srcLineIdx] == dstLines[dstLineIdx] {
-				weight = 1000 // Exact line matches take high priority.
-				if count, ok := overlap[srcLineIdx][dstLineIdx]; ok && count > 0 {
-					weight += 10 * count // Add a small bonus to break ties correctly.
-				}
-			} else if count, ok := overlap[srcLineIdx][dstLineIdx]; ok && count > 0 {
-				weight = 100 * count // Modified lines align based on mapped tokens.
-			}
+			weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, overlap, ms, srcRoot, dstRoot)
 
 			if weight > 0 {
 				dp[i][j] = max(dp[i-1][j-1]+weight, max(dp[i-1][j], dp[i][j-1]))
@@ -140,14 +132,7 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			matched := false
 			weight := 0
 			if !movedSrcLines[srcLineIdx] && !movedDstLines[dstLineIdx] {
-				if srcLines[srcLineIdx] == dstLines[dstLineIdx] {
-					weight = 1000
-					if count, ok := overlap[srcLineIdx][dstLineIdx]; ok && count > 0 {
-						weight += 10 * count
-					}
-				} else if count, ok := overlap[srcLineIdx][dstLineIdx]; ok && count > 0 {
-					weight = 100 * count
-				}
+				weight = computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, overlap, ms, srcRoot, dstRoot)
 				if weight > 0 && dp[i][j] == dp[i-1][j-1]+weight {
 					matched = true
 				}
@@ -171,13 +156,88 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 		}
 	}
 
-	// Reverse the grid so it reads top-to-bottom.
+	// Reverse to get top-down alignment order.
 	grid := make([]LineAlignmentPair, len(reversedGrid))
-	for k := range reversedGrid {
-		grid[k] = reversedGrid[len(reversedGrid)-1-k]
+	for idx, pair := range reversedGrid {
+		grid[len(reversedGrid)-1-idx] = pair
 	}
 
 	return grid
+}
+
+// computeLineWeight rates how strongly two lines align. Standalone brackets only match if their parent AST containers map.
+func computeLineWeight(srcLineIdx, dstLineIdx int, srcLines, dstLines []string, overlap map[int]map[int]int, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) int {
+	count := overlap[srcLineIdx][dstLineIdx]
+
+	if srcLines[srcLineIdx] == dstLines[dstLineIdx] {
+		if count > 0 {
+			return 1000 + 10*count
+		}
+		if isTrivialLine(srcLines[srcLineIdx]) && !areContainersMatched(srcRoot, dstRoot, srcLineIdx, dstLineIdx, ms) {
+			return 0
+		}
+		return 1000
+	} else if count > 0 {
+		return 100 * count
+	}
+	return 0
+}
+
+// areContainersMatched checks whether the AST blocks surrounding srcRow and dstRow map to each other.
+func areContainersMatched(srcRoot, dstRoot *treesitter.ASTNode, srcRow, dstRow int, ms *engine.Mapping) bool {
+	if srcRoot == nil || dstRoot == nil || ms == nil {
+		return true
+	}
+
+	srcBlock := findEnclosingContainer(srcRoot, srcRow)
+	dstBlock := findEnclosingContainer(dstRoot, dstRow)
+
+	if srcBlock == nil || dstBlock == nil {
+		return srcBlock == dstBlock
+	}
+
+	for curr := srcBlock; curr != nil && curr != srcRoot; curr = curr.Parent {
+		if mappedDst, ok := ms.Src()[curr]; ok {
+			for dCurr := dstBlock; dCurr != nil && dCurr != dstRoot; dCurr = dCurr.Parent {
+				if dCurr == mappedDst {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// findEnclosingContainer returns the smallest AST container wrapping the given row.
+func findEnclosingContainer(root *treesitter.ASTNode, row int) *treesitter.ASTNode {
+	var best *treesitter.ASTNode
+	for curr := root; curr != nil; {
+		if int(curr.StartRow) > row || row > int(curr.EndRow) {
+			break
+		}
+		if curr != root && len(curr.Children) > 0 {
+			best = curr
+		}
+		var next *treesitter.ASTNode
+		for _, child := range curr.Children {
+			if int(child.StartRow) <= row && row <= int(child.EndRow) {
+				next = child
+				break
+			}
+		}
+		curr = next
+	}
+	return best
+}
+
+// isTrivialLine reports whether a line is just brackets or structural punctuation.
+func isTrivialLine(s string) bool {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "{", "}", "(", ")", "[", "]", "};", ");", "})", "});", "()", "{}", "() {":
+		return true
+	}
+	return false
 }
 
 func collectLeaves(n *treesitter.ASTNode, out *[]*treesitter.ASTNode) {
