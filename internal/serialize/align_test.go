@@ -273,3 +273,35 @@ func TestCloseGaps(t *testing.T) {
 		})
 	}
 }
+
+func TestTrivialLineContainerMatching(t *testing.T) {
+	srcParent := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
+	dstParent := &treesitter.ASTNode{Type: "block", StartRow: 3, EndRow: 5}
+
+	srcChild := &treesitter.ASTNode{Type: "stmt", StartRow: 1, EndRow: 1}
+	dstChild := &treesitter.ASTNode{Type: "stmt", StartRow: 4, EndRow: 4}
+
+	srcParent.Children = []*treesitter.ASTNode{srcChild}
+	dstParent.Children = []*treesitter.ASTNode{dstChild}
+	srcChild.Parent = srcParent
+	dstChild.Parent = dstParent
+
+	srcRoot := &treesitter.ASTNode{Type: "root", StartRow: 0, EndRow: 2, Children: []*treesitter.ASTNode{srcParent}}
+	dstRoot := &treesitter.ASTNode{Type: "root", StartRow: 0, EndRow: 5, Children: []*treesitter.ASTNode{dstParent}}
+	srcParent.Parent = srcRoot
+	dstParent.Parent = dstRoot
+
+	ms := engine.NewMapping()
+
+	// Unmapped blocks shouldn't align standalone closing braces.
+	if areContainersMatched(srcRoot, dstRoot, 2, 5, ms) {
+		t.Errorf("expected areContainersMatched to return false for unmapped blocks")
+	}
+
+	ms.Add(srcParent, dstParent)
+
+	// Once mapped, matching braces should align.
+	if !areContainersMatched(srcRoot, dstRoot, 2, 5, ms) {
+		t.Errorf("expected areContainersMatched to return true for mapped blocks")
+	}
+}
