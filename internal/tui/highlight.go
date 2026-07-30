@@ -203,7 +203,9 @@ func mergeAllSpans(hl *highlights, fileBytes []byte) {
 						// For updates and moves, make sure they share the same parents in the tree.
 						if curr.kind == kindUpdate || curr.kind == kindMove {
 							if curr.action != nil && next.action != nil {
-								if curr.kind == kindUpdate {
+								if curr.action.GroupID != "" && curr.action.GroupID == next.action.GroupID {
+									canMerge = true
+								} else if curr.kind == kindUpdate {
 									canMerge = nodeRefsEqual(curr.action.Parent, next.action.Parent)
 								} else {
 									// Moves need to share both the old and new parents.
