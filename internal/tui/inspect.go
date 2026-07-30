@@ -336,6 +336,21 @@ func byteToLine(lines []string, byteOffset uint32) int {
 	return len(lines) - 1
 }
 
+// visualColFromByte converts a line index and byte column into a visual display column.
+func visualColFromByte(lines []string, lineIdx, byteCol int) int {
+	if lineIdx >= len(lines) {
+		return 0
+	}
+	_, byteToVisual := expandLine(lines[lineIdx])
+	if byteCol < len(byteToVisual) {
+		return byteToVisual[byteCol]
+	}
+	if len(byteToVisual) > 0 {
+		return byteToVisual[len(byteToVisual)-1]
+	}
+	return 0
+}
+
 // jumpToMoveCounterpart jumps the cursor to the other side of a move action.
 func (m *model) jumpToMoveCounterpart() {
 	if len(m.inspectActions) == 0 {
@@ -356,12 +371,16 @@ func (m *model) jumpToMoveCounterpart() {
 
 	targetRow := -1
 	var targetPane string
+	var targetCol int = 0
 
 	if m.activePane == "left" {
 		if moveAct.DestStartByte == nil {
 			return
 		}
-		dstLine := byteToLine(m.dstLines, *moveAct.DestStartByte)
+		idx := lineIndexFromLines(m.dstLines)
+		dstLine, dstCol := byteToLineCol(idx, *moveAct.DestStartByte)
+		targetCol = visualColFromByte(m.dstLines, dstLine, dstCol)
+
 		// Find the aligned grid row.
 		for r, pair := range m.lineAlignment {
 			if pair.RightLine == dstLine {
@@ -374,7 +393,10 @@ func (m *model) jumpToMoveCounterpart() {
 		if moveAct.Node == nil {
 			return
 		}
-		srcLine := byteToLine(m.srcLines, moveAct.Node.StartByte)
+		idx := lineIndexFromLines(m.srcLines)
+		srcLine, srcCol := byteToLineCol(idx, moveAct.Node.StartByte)
+		targetCol = visualColFromByte(m.srcLines, srcLine, srcCol)
+
 		// Find the aligned grid row.
 		for r, pair := range m.lineAlignment {
 			if pair.LeftLine == srcLine {
@@ -406,6 +428,7 @@ func (m *model) jumpToMoveCounterpart() {
 	for i, vl := range m.virtualLines {
 		if vl.alignedRow == targetRow {
 			m.cursorY = i
+			m.cursorX = targetCol
 			m.activePane = targetPane
 			h := m.contentHeight()
 			maxScroll := max(0, len(m.virtualLines)-h)
