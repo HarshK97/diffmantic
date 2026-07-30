@@ -545,12 +545,29 @@ func truncateStr(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
-func padRight(s string, width int) string {
-	runes := []rune(s)
-	if len(runes) >= width {
+func truncateAnsi(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	cells := parseAnsi(s)
+	if len(cells) <= maxLen {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(runes))
+	if maxLen <= 1 {
+		return "…"
+	}
+	truncated := make([]ansiCell, maxLen)
+	copy(truncated, cells[:maxLen-1])
+	truncated[maxLen-1] = ansiCell{char: '…', style: cells[maxLen-2].style}
+	return cellsToAnsi(truncated)
+}
+
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
 
 func (m model) renderGitTreeOverlay(height, paneWidth int) []string {

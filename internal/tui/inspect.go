@@ -196,7 +196,7 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 
 	// Line 0: Icon + Action Type + Node Type/Label
 	line0 := fmt.Sprintf("%s %s %s", iconStyled, labelStyled, nodeDesc)
-	colLines[0] = truncateStr(line0, colWidth)
+	colLines[0] = truncateAnsi(line0, colWidth)
 
 	// Line 1: Parent or Destination
 	var line1 string
@@ -220,7 +220,7 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", a.Parent.Type, a.Parent.Label))
 		}
 	}
-	colLines[1] = truncateStr(line1, colWidth)
+	colLines[1] = truncateAnsi(line1, colWidth)
 
 	// Line 2: Line/Col range and Group ID
 	var line2 string
@@ -234,7 +234,7 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 			line2 = inspectDimStyle.Render("grp: " + a.GroupID)
 		}
 	}
-	colLines[2] = truncateStr(line2, colWidth)
+	colLines[2] = truncateAnsi(line2, colWidth)
 
 	// Pad lines to colWidth.
 	for idx := 0; idx < 3; idx++ {
@@ -284,10 +284,10 @@ func (m model) renderInspectPanel() string {
 			panelLines[i+1] = inspectPanelStyle.Render(border + " " + colLines[i])
 		}
 	} else {
-		// Side-by-side columns!
+		// Side-by-side columns (cap at 2 max for clean readability)!
 		numCols := len(m.inspectActions)
-		if numCols > 3 {
-			numCols = 3 // cap at 3 columns
+		if numCols > 2 {
+			numCols = 2 // cap at 2 columns
 		}
 
 		divSpacing := 3 * (numCols - 1)
