@@ -98,6 +98,20 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				}
 			}
 
+			siblingScore := 0
+			if t1.Parent != nil && t2.Parent != nil && t1Idx >= 0 {
+				if t2Idx := childIndexWithin(t2, t2.Parent); t2Idx >= 0 {
+					for _, offset := range []int{-1, 1} {
+						i1, i2 := t1Idx+offset, t2Idx+offset
+						if i1 >= 0 && i1 < len(t1.Parent.Children) && i2 >= 0 && i2 < len(t2.Parent.Children) {
+							if m.Src()[t1.Parent.Children[i1]] == t2.Parent.Children[i2] {
+								siblingScore += 500
+							}
+						}
+					}
+				}
+			}
+
 			posScore := 0
 			if parentMatched {
 				posScore += 1000
@@ -111,6 +125,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			if cMatches {
 				posScore += 1
 			}
+			posScore += siblingScore
 
 			isBetter := posScore > bestPosScore || (posScore == bestPosScore && d > bestDice)
 

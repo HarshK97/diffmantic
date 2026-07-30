@@ -43,6 +43,9 @@ func unmatchedChildrenSrc(t *treesitter.ASTNode, m *Mapping) []*treesitter.ASTNo
 	var out []*treesitter.ASTNode
 	for _, c := range t.Children {
 		if !m.Has(c) {
+			if IsTrivialLeaf(c) {
+				continue
+			}
 			out = append(out, c)
 		}
 	}
@@ -54,6 +57,9 @@ func unmatchedChildrenDst(t *treesitter.ASTNode, m *Mapping) []*treesitter.ASTNo
 	var out []*treesitter.ASTNode
 	for _, c := range t.Children {
 		if !m.HasDst(c) {
+			if IsTrivialLeaf(c) {
+				continue
+			}
 			out = append(out, c)
 		}
 	}

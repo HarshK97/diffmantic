@@ -15,5 +15,6 @@ func Run(
 		return nil
 	}
 	es = Collapse(es, ms, srcRoot, dstRoot)
+	es = FilterPunctuation(es, ms)
 	return GroupMoves(es)
 }

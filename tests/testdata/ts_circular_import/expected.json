@@ -170,22 +170,6 @@
         "end_byte": 216
       },
       "position": 2
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          1,
-          1,
-          0,
-          2
-        ],
-        "type": "comma",
-        "label": ",",
-        "start_byte": 61,
-        "end_byte": 62
-      }
     }
   ],
   "line_alignment": [
