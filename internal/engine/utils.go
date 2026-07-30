@@ -20,6 +20,19 @@ func Height(n *treesitter.ASTNode) int {
 	return max + 1
 }
 
+// IsTrivialLeaf reports whether a leaf node contains only punctuation (no alphanumeric chars or underscores).
+func IsTrivialLeaf(n *treesitter.ASTNode) bool {
+	if n == nil || len(n.Children) > 0 || n.Label == "" {
+		return false
+	}
+	for _, c := range n.Label {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			return false
+		}
+	}
+	return true
+}
+
 // Descendants returns all nodes in the subtree rooted at n,
 // excluding n itself.
 func Descendants(n *treesitter.ASTNode) []*treesitter.ASTNode {

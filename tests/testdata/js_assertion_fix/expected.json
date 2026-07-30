@@ -71,40 +71,6 @@
         "start_byte": 2503,
         "end_byte": 2505
       }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          5,
-          0,
-          1,
-          3,
-          2,
-          4,
-          0,
-          1,
-          3,
-          2,
-          1,
-          0,
-          1,
-          3,
-          2,
-          3,
-          0,
-          1,
-          1,
-          2,
-          1,
-          1
-        ],
-        "type": "semicolon",
-        "label": ";",
-        "start_byte": 2508,
-        "end_byte": 2509
-      }
     }
   ],
   "line_alignment": [

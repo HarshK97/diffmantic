@@ -12,6 +12,27 @@ type groupKey struct {
 	newParent *treesitter.ASTNode
 }
 
+func groupingParent(n *treesitter.ASTNode) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	if isStructuralPunctuation(n) && n.Parent != nil && n.Parent.Parent != nil {
+		return n.Parent.Parent
+	}
+	return n.Parent
+}
+
+func isStructuralPunctuation(n *treesitter.ASTNode) bool {
+	if n == nil {
+		return false
+	}
+	switch n.Label {
+	case "{", "}", "(", ")", "[", "]":
+		return true
+	}
+	return false
+}
+
 // GroupMoves assigns grouping metadata (GroupID) to Move actions that share
 // the exact same source parent and destination parent context.
 // Bare aliased literals are excluded from group membership.
@@ -34,9 +55,13 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 			if act.Node == nil || act.Node.Parent == nil || act.Parent == nil {
 				continue
 			}
+			newP := act.Parent
+			if isStructuralPunctuation(act.Node) && newP != nil && newP.Parent != nil {
+				newP = newP.Parent
+			}
 			k := groupKey{
-				oldParent: act.Node.Parent,
-				newParent: act.Parent,
+				oldParent: groupingParent(act.Node),
+				newParent: newP,
 			}
 			if _, exists := groups[k]; !exists {
 				keyOrder = append(keyOrder, k)

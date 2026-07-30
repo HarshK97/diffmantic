@@ -65,38 +65,6 @@
       "position": 11
     },
     {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          34,
-          0,
-          2,
-          3,
-          12,
-          2
-        ],
-        "type": "semicolon",
-        "label": ";",
-        "start_byte": 4381,
-        "end_byte": 4382
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          34,
-          0,
-          2,
-          3,
-          12
-        ],
-        "type": "variable_declaration",
-        "start_byte": 4374,
-        "end_byte": 4382
-      },
-      "position": 2
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",

@@ -18,52 +18,6 @@
           2,
           0,
           1,
-          2
-        ],
-        "type": "comma",
-        "label": ",",
-        "start_byte": 6809,
-        "end_byte": 6810
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          34,
-          4,
-          1,
-          1,
-          2,
-          0,
-          1,
-          1,
-          31,
-          2,
-          0,
-          1
-        ],
-        "type": "literal_value",
-        "start_byte": 6797,
-        "end_byte": 6818
-      },
-      "position": 2
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          34,
-          4,
-          1,
-          1,
-          2,
-          0,
-          1,
-          1,
-          31,
-          2,
-          0,
-          1,
           3
         ],
         "type": "literal_element",
