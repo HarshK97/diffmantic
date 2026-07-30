@@ -219,16 +219,14 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 				symStyle = lineNumStyle
 			}
 
-			lineNumStr := fmt.Sprintf("%*d", gutterW-gutterPadding, lineIdx+1)
+			// Leave 1 slot for cursor indicator and 1 for fold symbol.
+			lineNumStr := fmt.Sprintf("%*d", gutterW-2, lineIdx+1)
+
 			var gutter string
 			if isCursorRow && isActivePane {
-				runes := []rune(lineNumStr + symbol)
-				if len(runes) > 0 {
-					runes[0] = '█'
-				}
-				gutter = cursorGutterStyle.Render(string(runes))
+				gutter = cursorGutterStyle.Render(" " + lineNumStr + symbol)
 			} else {
-				gutter = lineNumStyle.Render(lineNumStr) + symStyle.Render(symbol)
+				gutter = lineNumStyle.Render(" "+lineNumStr) + symStyle.Render(symbol)
 			}
 
 			rawLine := lines[lineIdx]
@@ -545,12 +543,29 @@ func truncateStr(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
-func padRight(s string, width int) string {
-	runes := []rune(s)
-	if len(runes) >= width {
+func truncateAnsi(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	cells := parseAnsi(s)
+	if len(cells) <= maxLen {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(runes))
+	if maxLen <= 1 {
+		return "…"
+	}
+	truncated := make([]ansiCell, maxLen)
+	copy(truncated, cells[:maxLen-1])
+	truncated[maxLen-1] = ansiCell{char: '…', style: cells[maxLen-2].style}
+	return cellsToAnsi(truncated)
+}
+
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
 
 func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
