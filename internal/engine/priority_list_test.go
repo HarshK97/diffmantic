@@ -1,10 +1,10 @@
 package engine
 
 import (
-	"github.com/HarshK97/diffmantic/internal/testutil"
-
 	"math"
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/testutil"
 )
 
 func TestPriorityListPushAndPeek(t *testing.T) {

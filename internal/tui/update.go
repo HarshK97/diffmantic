@@ -3,9 +3,8 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/HarshK97/diffmantic/internal/git"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m model) Init() tea.Cmd {

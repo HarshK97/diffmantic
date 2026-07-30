@@ -94,7 +94,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		}
 	}
 
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := 0; i < n.ChildCount(); i++ {
 		child := buildASTWithRules(n.Child(i), src, lang, node, rules)
 		if child != nil {
 			node.Children = append(node.Children, child)

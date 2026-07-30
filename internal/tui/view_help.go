@@ -124,7 +124,7 @@ func (m model) renderHelpModal() string {
 	)
 }
 
-func renderLeftColumn(w int) string {
+func renderLeftColumn(_ int) string {
 	b := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("NAVIGATION")
 	lines := []string{
 		b,
@@ -135,11 +135,12 @@ func renderLeftColumn(w int) string {
 		"  n / N  : Next/prev change or match",
 		"  Tab    : Switch active pane",
 		"  /      : Search code",
+		"  Enter  : Jump to destination (if moved)",
 	}
 	return strings.Join(lines, "\n")
 }
 
-func renderRightColumn(w int) string {
+func renderRightColumn(_ int) string {
 	b := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("ACTIONS & FOLDING")
 	lines := []string{
 		b,

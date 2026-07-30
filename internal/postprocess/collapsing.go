@@ -94,7 +94,6 @@ func Collapse(
 				contentMoveSuppressed[act] = true
 			}
 		}
-
 	}
 
 	// Suppress redundant scaffolding Insert actions in a second pass, after

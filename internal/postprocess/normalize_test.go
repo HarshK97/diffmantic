@@ -235,7 +235,7 @@ func TestRemoveSubtreeMappings(t *testing.T) {
 	}
 }
 
-func TestRemoveSubtreeMappingsNil(t *testing.T) {
+func TestRemoveSubtreeMappingsNil(_ *testing.T) {
 	ms := engine.NewMapping()
 	removeSubtreeMappings(nil, ms) // should not panic
 }

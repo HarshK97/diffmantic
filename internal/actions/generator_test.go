@@ -127,23 +127,23 @@ func TestChawatheDeleteLeaf(t *testing.T) {
 func TestChawatheUpdateLeaf(t *testing.T) {
 	// Src: module -> [id:old]
 	src := &treesitter.ASTNode{Type: "module"}
-	srcId := &treesitter.ASTNode{Type: "identifier", Label: "old", Parent: src, StartRow: 1}
-	src.Children = []*treesitter.ASTNode{srcId}
+	srcID := &treesitter.ASTNode{Type: "identifier", Label: "old", Parent: src, StartRow: 1}
+	src.Children = []*treesitter.ASTNode{srcID}
 
 	// Dst: module -> [id:new]
 	dst := &treesitter.ASTNode{Type: "module"}
-	dstId := &treesitter.ASTNode{Type: "identifier", Label: "new", Parent: dst, StartRow: 1}
-	dst.Children = []*treesitter.ASTNode{dstId}
+	dstID := &treesitter.ASTNode{Type: "identifier", Label: "new", Parent: dst, StartRow: 1}
+	dst.Children = []*treesitter.ASTNode{dstID}
 
 	ms := engine.NewMapping()
 	ms.Add(src, dst)
-	ms.Add(srcId, dstId)
+	ms.Add(srcID, dstID)
 
 	es := GenerateEditScript(src, dst, ms)
 
 	found := false
 	for _, a := range es.Actions() {
-		if a.Type == Update && a.Node == srcId && a.Value == "new" {
+		if a.Type == Update && a.Node == srcID && a.Value == "new" {
 			found = true
 		}
 	}

@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Run launches the side-by-side terminal diff viewer.
@@ -448,9 +447,9 @@ func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConf
 		return generateLineDiff(srcBytes, dstBytes), nil
 	}
 
-	srcAST, err1 := treesitter.Parse(srcBytes, srcFile)
-	dstAST, err2 := treesitter.Parse(dstBytes, dstFile)
-	if err1 != nil || err2 != nil {
+	srcAST, _ := treesitter.Parse(srcBytes, srcFile)
+	dstAST, _ := treesitter.Parse(dstBytes, dstFile)
+	if srcAST == nil || dstAST == nil {
 		return generateLineDiff(srcBytes, dstBytes), nil
 	}
 
@@ -510,11 +509,11 @@ func (m model) textWidth() int {
 }
 
 func (m model) maxScrollY() int {
-	max := len(m.virtualLines) - m.contentHeight()
-	if max < 0 {
+	maxScroll := len(m.virtualLines) - m.contentHeight()
+	if maxScroll < 0 {
 		return 0
 	}
-	return max
+	return maxScroll
 }
 
 func maxScrollX(lines []string, textWidth int) int {
@@ -526,19 +525,19 @@ func maxScrollX(lines []string, textWidth int) int {
 			maxLen = len([]rune(expanded))
 		}
 	}
-	max := maxLen - textWidth
-	if max < 0 {
+	maxScroll := maxLen - textWidth
+	if maxScroll < 0 {
 		return 0
 	}
-	return max
+	return maxScroll
 }
 
-func clamp(v, min, max int) int {
-	if v < min {
-		return min
+func clamp(v, minVal, maxVal int) int {
+	if v < minVal {
+		return minVal
 	}
-	if v > max {
-		return max
+	if v > maxVal {
+		return maxVal
 	}
 	return v
 }

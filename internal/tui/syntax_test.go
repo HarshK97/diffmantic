@@ -5,7 +5,6 @@ import (
 )
 
 func TestHighlightSyntax(t *testing.T) {
-
 	res := highlightSyntax("test.py", nil)
 	if res != nil {
 		t.Errorf("expected nil syntax for nil source, got %v", res)
