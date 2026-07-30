@@ -371,7 +371,7 @@ func (m *model) jumpToMoveCounterpart() {
 
 	targetRow := -1
 	var targetPane string
-	var targetCol int = 0
+	var targetCol int
 
 	if m.activePane == "left" {
 		if moveAct.DestStartByte == nil {
