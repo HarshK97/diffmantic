@@ -31,8 +31,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "diffm [refA] [refB]",
-	Short: "Semantic diff engine powered by Tree-sitter",
+	Use:     "diffm [refA] [refB]",
+	Version: "0.3.0",
+	Short:   "Semantic diff engine powered by Tree-sitter",
 	Long: `diffmantic is a structural source code diff engine.
 
 It parses source files into ASTs using Tree-sitter and computes semantic
