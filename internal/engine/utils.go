@@ -93,40 +93,32 @@ func ChawatheSimilarity(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*t
 	return float64(common) / float64(maxDesc)
 }
 
-// TODO: replace the O(n) algorithm with O(1) hash comparison from
-// M. Chilowicz, E. Duris, and G. Roussel. Syntax tree
-// fingerprinting for source code similarity detection.
-//
-// Isomorphic returns true when two subtrees are structurally
-// and label-wise identical.
+// Isomorphic returns true if both subtrees match in type, label, and structure.
 func Isomorphic(a, b *treesitter.ASTNode) bool {
-	return isIsomorphic(a, b, true)
-}
-
-// StructureIsomorphic returns true when two subtrees are structurally
-// identical (same Type, same shape) but ignores leaf labels.
-func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
-	return isIsomorphic(a, b, false)
-}
-
-func isIsomorphic(a, b *treesitter.ASTNode, checkLabel bool) bool {
-	if a == nil && b == nil {
-		return true
-	}
 	if a == nil || b == nil {
-		return false
+		return a == b
 	}
-	if a.Type != b.Type || (checkLabel && a.Label != b.Label) || len(a.Children) != len(b.Children) {
-		return false
+	if a.Hash == 0 {
+		a.ComputeHashes()
 	}
+	if b.Hash == 0 {
+		b.ComputeHashes()
+	}
+	return a.Hash == b.Hash
+}
 
-	for i := range a.Children {
-		if !isIsomorphic(a.Children[i], b.Children[i], checkLabel) {
-			return false
-		}
+// StructureIsomorphic returns true if both subtrees match in shape and node types, ignoring leaf labels.
+func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
+	if a == nil || b == nil {
+		return a == b
 	}
-
-	return true
+	if a.StructureHash == 0 {
+		a.ComputeHashes()
+	}
+	if b.StructureHash == 0 {
+		b.ComputeHashes()
+	}
+	return a.StructureHash == b.StructureHash
 }
 
 // PostOrder returns all nodes in the subtree rooted at n
