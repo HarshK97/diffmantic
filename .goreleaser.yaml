@@ -60,3 +60,20 @@ changelog:
       order: 3
     - title: "📝 Other Changes"
       order: 999
+
+brews:
+  - name: diffmantic
+    repository:
+      owner: HarshK97
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/HarshK97/diffmantic"
+    description: "Structural, semantic diff engine powered by Tree-sitter"
+    license: "MIT"
+    install: |
+      bin.install "diffm"
+    test: |
+      system "#{bin}/diffm --version"
+
