@@ -151,6 +151,13 @@ func TestIsomorphic(t *testing.T) {
 }
 
 func TestStructureIsomorphic(t *testing.T) {
+	if !StructureIsomorphic(nil, nil) {
+		t.Error("both nil should be StructureIsomorphic")
+	}
+	if StructureIsomorphic(nil, testutil.Leaf("id", "x")) {
+		t.Error("nil and non-nil should not be StructureIsomorphic")
+	}
+
 	// StructureIsomorphic ignores label differences.
 	a := testutil.Node("call", "", testutil.Leaf("id", "x"))
 	b := testutil.Node("call", "", testutil.Leaf("id", "y"))

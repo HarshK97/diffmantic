@@ -19,12 +19,45 @@ type ASTNode struct {
 	EndRow    uint32
 	EndCol    uint32
 	Language  string // Set on root node only
+
+	// Subtree hash (type, label, children) for exact matching.
+	Hash uint64
+	// Shape hash (type and children) ignoring leaf labels.
+	StructureHash uint64
+}
+
+const (
+	fnvOffset uint64 = 14695981039346656037
+	fnvPrime  uint64 = 1099511628211
+)
+
+func hashStr(h uint64, s string) uint64 {
+	for i := 0; i < len(s); i++ {
+		h = (h ^ uint64(s[i])) * fnvPrime
+	}
+	return h
+}
+
+// ComputeHashes runs a post-order walk to fill Hash and StructureHash for the subtree.
+func (n *ASTNode) ComputeHashes() {
+	sh := hashStr(fnvOffset, n.Type)
+	h := hashStr(sh, n.Label)
+
+	for _, child := range n.Children {
+		child.ComputeHashes()
+		h = (h ^ child.Hash) * fnvPrime
+		sh = (sh ^ child.StructureHash) * fnvPrime
+	}
+
+	n.Hash = h
+	n.StructureHash = sh
 }
 
 func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode) *ASTNode {
 	node := buildASTWithRules(n, src, lang, parent, GetRules(lang.Name))
 	if node != nil && parent == nil {
 		node.Language = lang.Name
+		node.ComputeHashes()
 	}
 	return node
 }
