@@ -31,11 +31,25 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 		return nil, fmt.Errorf("reading %s: %w", fileB, err)
 	}
 
-	srcAST, err := treesitter.Parse(srcBytes, fileA)
+	langA, _ := treesitter.DetectLanguage(fileA)
+	langB, _ := treesitter.DetectLanguage(fileB)
+
+	if langA == nil && langB == nil {
+		return nil, fmt.Errorf("unsupported language for files: %s, %s", fileA, fileB)
+	}
+
+	if langA == nil {
+		langA = langB
+	}
+	if langB == nil {
+		langB = langA
+	}
+
+	srcAST, err := treesitter.ParseWithLanguage(srcBytes, langA)
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", fileA, err)
 	}
-	dstAST, err := treesitter.Parse(dstBytes, fileB)
+	dstAST, err := treesitter.ParseWithLanguage(dstBytes, langB)
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", fileB, err)
 	}

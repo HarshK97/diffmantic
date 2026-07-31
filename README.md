@@ -77,17 +77,18 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64 + arm64) are on the [Rele
 
 ### Build from Source
 
-You need Go 1.24+ and a C compiler (gcc, clang, or zig) because Tree-sitter uses CGo bindings.
+Requires Go 1.24+. No C compiler or CGo required (`CGO_ENABLED=0`), as diffmantic is pure Go!
 
 ```bash
 git clone https://github.com/HarshK97/diffmantic.git
 cd diffmantic
-CGO_ENABLED=1 go build -o diffm ./cmd/diffm
+go build -o diffm ./cmd/diffm
+
+# Or install directly with Go:
+go install github.com/HarshK97/diffmantic/cmd/diffm@latest
 ```
 
-> `go install` won't work out of the box because `CGO_ENABLED=1` is required and most environments don't have a C compiler set up. Use the install script or build from source.
-
-> The prebuilt binary ships with pure Go Tree-sitter grammars via `gotreesitter` with zero CGo dependency issues at runtime.
+> Built with `gotreesitter` for pure Go Tree-sitter AST parsing with zero C compiler or CGo runtime dependencies.
 
 ## Usage
 
@@ -132,7 +133,7 @@ diffm diff config.txt config2.txt --lang json
 
 ```bash
 git config --global diff.tool diffm
-git config --global difftool.diffm.cmd 'diffm diff "$LOCAL" "$REMOTE"'
+git config --global difftool.diffm.cmd 'diffm diff "$LOCAL" "$REMOTE" -f tui'
 
 # Then use:
 git difftool

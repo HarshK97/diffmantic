@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"testing"
 )
 
@@ -25,5 +26,29 @@ func TestDiffCmdFlags(t *testing.T) {
 	}
 	if f.DefValue != "" {
 		t.Errorf("format default = %q, want %q", f.DefValue, "")
+	}
+}
+
+func TestComputeDiffWithDevNull(t *testing.T) {
+	tmpFile := t.TempDir() + "/sample.go"
+	if err := os.WriteFile(tmpFile, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	devNull := os.DevNull
+	res, err := computeDiff(devNull, tmpFile)
+	if err != nil {
+		t.Fatalf("computeDiff(/dev/null, sample.go) failed: %v", err)
+	}
+	if res == nil || res.Envelope == nil {
+		t.Fatal("expected non-nil diff result and envelope")
+	}
+
+	res2, err := computeDiff(tmpFile, devNull)
+	if err != nil {
+		t.Fatalf("computeDiff(sample.go, /dev/null) failed: %v", err)
+	}
+	if res2 == nil || res2.Envelope == nil {
+		t.Fatal("expected non-nil diff result and envelope for deleted file")
 	}
 }
