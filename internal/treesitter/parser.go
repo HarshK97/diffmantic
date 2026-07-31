@@ -17,10 +17,9 @@ func DetectLanguage(filename string) (*gotreesitter.Language, error) {
 	return entry.Language(), nil
 }
 
-func Parse(src []byte, filename string) (*ASTNode, error) {
-	lang, err := DetectLanguage(filename)
-	if err != nil {
-		return nil, err
+func ParseWithLanguage(src []byte, lang *gotreesitter.Language) (*ASTNode, error) {
+	if lang == nil {
+		return nil, fmt.Errorf("nil language")
 	}
 	parser := gotreesitter.NewParser(lang)
 	tree, err := parser.Parse(src)
@@ -28,4 +27,12 @@ func Parse(src []byte, filename string) (*ASTNode, error) {
 		return nil, err
 	}
 	return BuildAST(tree.RootNode(), src, lang, nil), nil
+}
+
+func Parse(src []byte, filename string) (*ASTNode, error) {
+	lang, err := DetectLanguage(filename)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWithLanguage(src, lang)
 }

@@ -77,7 +77,7 @@ Examples:
 		}
 
 		if format == "" {
-			if isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
+			if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsTerminal(os.Stderr.Fd()) {
 				format = "tui"
 			} else {
 				format = "json"
