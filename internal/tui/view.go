@@ -451,6 +451,9 @@ func (m model) renderStatusBar() string {
 		return statusStyle.Render(padRight(m.textinput.View(), m.width))
 	}
 
+	hasActions := len(m.inspectActions) > 0
+
+	// Use compact key hints when action preview needs room.
 	var keys string
 	if m.gitMode {
 		if m.gitTreeOpen {
@@ -459,9 +462,13 @@ func (m model) renderStatusBar() string {
 			} else {
 				keys = " j/k: scroll • s/u: stage/unstage • c: commit • t: toggle tree • enter: open diff • q: quit"
 			}
+		} else if hasActions {
+			keys = " j/k: scroll • t: tree • za: fold • i: inspect • ?: help • q: quit"
 		} else {
 			keys = " j/k: scroll • t: toggle tree • za: fold • i: inspect • ?: help • q: quit"
 		}
+	} else if hasActions {
+		keys = " j/k • za • i • ?: help • q"
 	} else {
 		keys = " j/k: scroll • za: fold • i: inspect • ?: help • q: quit"
 	}
@@ -487,7 +494,7 @@ func (m model) renderStatusBar() string {
 	if m.conflictWarning != "" {
 		preview = m.conflictWarning
 		warningStyle = true
-	} else if len(m.inspectActions) > 0 {
+	} else if hasActions {
 		availForPreview := m.width - keysWidth - 2
 		if availForPreview > 10 {
 			preview = formatActionPreview(m.inspectActions, availForPreview)

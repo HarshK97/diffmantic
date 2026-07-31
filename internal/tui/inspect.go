@@ -8,6 +8,166 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// humanNodeTypes maps common tree-sitter node types to short, user-friendly display names.
+var humanNodeTypes = map[string]string{
+	// Functions & methods
+	"function_declaration":    "function",
+	"function_definition":     "function",
+	"method_declaration":      "method",
+	"method_definition":       "method",
+	"arrow_function":          "arrow fn",
+	"generator_function":      "generator fn",
+	"anonymous_function":      "anon fn",
+	"function_item":           "function",
+	"function_signature_item": "fn signature",
+	"closure_expression":      "closure",
+	"lambda":                  "lambda",
+	"lambda_expression":       "lambda",
+
+	// Classes & types
+	"class_declaration":      "class",
+	"class_definition":       "class",
+	"struct_item":            "struct",
+	"struct_type":            "struct",
+	"enum_item":              "enum",
+	"enum_declaration":       "enum",
+	"interface_declaration":  "interface",
+	"type_alias_declaration": "type alias",
+	"type_declaration":       "type",
+	"type_spec":              "type",
+	"trait_item":             "trait",
+	"impl_item":              "impl",
+
+	// Expressions
+	"call_expression":          "call",
+	"selector_expression":      "selector",
+	"member_expression":        "member access",
+	"binary_expression":        "binary expr",
+	"unary_expression":         "unary expr",
+	"assignment_expression":    "assignment",
+	"conditional_expression":   "ternary",
+	"ternary_expression":       "ternary",
+	"index_expression":         "index",
+	"subscript_expression":     "subscript",
+	"parenthesized_expression": "grouped expr",
+	"template_string":          "template string",
+	"new_expression":           "new",
+	"await_expression":         "await",
+	"yield_expression":         "yield",
+	"spread_element":           "spread",
+	"type_assertion":           "type assert",
+	"as_expression":            "as cast",
+
+	// Statements
+	"if_statement":                "if",
+	"for_statement":               "for",
+	"for_in_statement":            "for-in",
+	"while_statement":             "while",
+	"do_statement":                "do-while",
+	"switch_statement":            "switch",
+	"return_statement":            "return",
+	"expression_statement":        "expression",
+	"variable_declaration":        "variable",
+	"lexical_declaration":         "declaration",
+	"try_statement":               "try",
+	"throw_statement":             "throw",
+	"break_statement":             "break",
+	"continue_statement":          "continue",
+	"defer_statement":             "defer",
+	"go_statement":                "goroutine",
+	"select_statement":            "select",
+	"expression_switch_statement": "switch",
+	"type_switch_statement":       "type switch",
+
+	// Declarations & imports
+	"import_declaration":    "import",
+	"import_statement":      "import",
+	"import_spec":           "import",
+	"export_statement":      "export",
+	"package_clause":        "package",
+	"const_declaration":     "const",
+	"var_declaration":       "var",
+	"short_var_declaration": "short var",
+
+	// Containers & structure
+	"argument_list":       "arguments",
+	"parameter_list":      "parameters",
+	"formal_parameters":   "parameters",
+	"statement_block":     "block",
+	"source_file":         "file",
+	"program":             "program",
+	"module":              "module",
+	"class_body":          "class body",
+	"field_declaration":   "field",
+	"field_identifier":    "field",
+	"property_identifier": "property",
+
+	// Clauses
+	"catch_clause":   "catch",
+	"finally_clause": "finally",
+	"else_clause":    "else",
+	"elif_clause":    "elif",
+	"except_clause":  "except",
+	"switch_case":    "case",
+	"switch_default": "default",
+	"select_case":    "select case",
+
+	// Literals & values
+	"string_literal":             "string",
+	"interpreted_string_literal": "string",
+	"raw_string_literal":         "raw string",
+	"number_literal":             "number",
+	"integer_literal":            "integer",
+	"float_literal":              "float",
+	"boolean":                    "bool",
+	"true":                       "true",
+	"false":                      "false",
+	"nil":                        "nil",
+	"null":                       "null",
+	"undefined":                  "undefined",
+	"comment":                    "comment",
+	"line_comment":               "comment",
+	"block_comment":              "comment",
+
+	// Identifiers
+	"identifier":                            "identifier",
+	"field_expression":                      "field access",
+	"type_identifier":                       "type name",
+	"shorthand_property_identifier_pattern": "property",
+
+	// Go-specific
+	"composite_literal":  "literal",
+	"func_literal":       "func literal",
+	"slice_expression":   "slice",
+	"range_clause":       "range",
+	"communication_case": "chan case",
+
+	// CSS-specific
+	"rule_set":    "rule",
+	"declaration": "declaration",
+	"selectors":   "selectors",
+
+	// HTML-specific
+	"element":          "element",
+	"start_tag":        "tag",
+	"self_closing_tag": "self-closing tag",
+	"attribute":        "attribute",
+}
+
+func humanizeNodeType(nodeType string) string {
+	if h, ok := humanNodeTypes[nodeType]; ok {
+		return h
+	}
+	s := nodeType
+	for _, suffix := range []string{"_declaration", "_definition", "_statement", "_expression", "_literal", "_clause", "_item", "_spec"} {
+		if cut, ok := strings.CutSuffix(s, suffix); ok {
+			s = cut
+			break
+		}
+	}
+	return strings.ReplaceAll(s, "_", " ")
+}
+
 // actionsAtCursor returns actions under the cursor on the current line.
 func actionsAtCursor(m *model) []*serialize.Action {
 	if m.cursorY < 0 || m.cursorY >= len(m.virtualLines) {
@@ -113,7 +273,7 @@ func formatActionPreview(actions []*serialize.Action, maxWidth int) string {
 	nodeType := ""
 	nodeName := ""
 	if a.Node != nil {
-		nodeType = a.Node.Type
+		nodeType = humanizeNodeType(a.Node.Type)
 		nodeName = a.Node.Label
 	}
 
@@ -186,7 +346,7 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 
 	nodeDesc := ""
 	if a.Node != nil {
-		nodeDesc = a.Node.Type
+		nodeDesc = humanizeNodeType(a.Node.Type)
 		if a.Node.Label != "" {
 			nodeDesc += " '" + a.Node.Label + "'"
 		}
@@ -205,17 +365,17 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 			newVal := truncateStr(a.NewValue, colWidth/2-2)
 			line1 = inspectDetailStyle.Render(fmt.Sprintf("'%s' → '%s'", old, newVal))
 		} else if a.Parent != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", a.Parent.Type, a.Parent.Label))
+			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", humanizeNodeType(a.Parent.Type), a.Parent.Label))
 		}
 	case "move":
 		if a.DestNode != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("→ dest: %s '%s' (Enter to jump)", a.DestNode.Type, a.DestNode.Label))
+			line1 = inspectDetailStyle.Render(fmt.Sprintf("→ dest: %s '%s' (Enter to jump)", humanizeNodeType(a.DestNode.Type), a.DestNode.Label))
 		} else if a.DestStartByte != nil && a.DestEndByte != nil {
 			line1 = inspectDetailStyle.Render(fmt.Sprintf("→ dest: %s (Enter to jump)", formatByteRange(lines, *a.DestStartByte, *a.DestEndByte)))
 		}
 	default:
 		if a.Parent != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", a.Parent.Type, a.Parent.Label))
+			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", humanizeNodeType(a.Parent.Type), a.Parent.Label))
 		}
 	}
 	colLines[1] = truncateAnsi(line1, colWidth)
