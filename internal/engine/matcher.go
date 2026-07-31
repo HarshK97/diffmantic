@@ -1,10 +1,10 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
 	"io"
-	"os"
-	"sort"
+	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -150,13 +150,9 @@ func sortMappingsByPreOrder(t1Root *treesitter.ASTNode, m *Mapping) {
 	for i, n := range nodes {
 		index[n] = i
 	}
-	sort.SliceStable(m.Pairs, func(i, j int) bool {
-		return index[m.Pairs[i].Src] < index[m.Pairs[j].Src]
+	slices.SortStableFunc(m.Pairs, func(a, b MappingPair) int {
+		return cmp.Compare(index[a.Src], index[b.Src])
 	})
-}
-
-func PrintMappings(r *MatchResult) {
-	_ = FprintMappings(os.Stdout, r)
 }
 
 func FprintMappings(w io.Writer, r *MatchResult) error {

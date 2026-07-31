@@ -17,10 +17,7 @@ func (m model) renderHelpModal() string {
 
 	cardWidth := 82
 	if width < cardWidth {
-		cardWidth = width - 4
-		if cardWidth < 20 {
-			cardWidth = 20
-		}
+		cardWidth = max(width-4, 20)
 	}
 
 	var b strings.Builder
@@ -33,24 +30,18 @@ func (m model) renderHelpModal() string {
 		Foreground(colorLavender).
 		Render(centeredTitle)
 
-	colWidth := (cardWidth - 6) / 2
-	if colWidth < 10 {
-		colWidth = 10
-	}
+	colWidth := max((cardWidth-6)/2, 10)
 
-	leftCol := renderLeftColumn(colWidth)
-	rightCol := renderRightColumn(colWidth)
+	leftCol := renderLeftColumn()
+	rightCol := renderRightColumn()
 
 	leftLines := strings.Split(leftCol, "\n")
 	rightLines := strings.Split(rightCol, "\n")
 
-	maxLines := len(leftLines)
-	if len(rightLines) > maxLines {
-		maxLines = len(rightLines)
-	}
+	maxLines := max(len(rightLines), len(leftLines))
 
 	var colsBuilder strings.Builder
-	for i := 0; i < maxLines; i++ {
+	for i := range maxLines {
 		var l, r string
 		if i < len(leftLines) {
 			l = leftLines[i]
@@ -124,7 +115,7 @@ func (m model) renderHelpModal() string {
 	)
 }
 
-func renderLeftColumn(_ int) string {
+func renderLeftColumn() string {
 	b := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("NAVIGATION")
 	lines := []string{
 		b,
@@ -140,7 +131,7 @@ func renderLeftColumn(_ int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderRightColumn(_ int) string {
+func renderRightColumn() string {
 	b := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("ACTIONS & FOLDING")
 	lines := []string{
 		b,

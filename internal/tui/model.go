@@ -118,12 +118,9 @@ func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, en
 	m.dstLines = strings.Split(string(dstBytes), "\n")
 
 	if env == nil || len(env.LineAlignment) == 0 {
-		total := len(m.srcLines)
-		if len(m.dstLines) > total {
-			total = len(m.dstLines)
-		}
+		total := max(len(m.dstLines), len(m.srcLines))
 		m.lineAlignment = make([]serialize.LineAlignmentPair, total)
-		for i := 0; i < total; i++ {
+		for i := range total {
 			left := -1
 			if i < len(m.srcLines) {
 				left = i
@@ -372,16 +369,7 @@ func (m *model) loadGitFileDiff(idx int) error {
 }
 
 func isBinary(data []byte) bool {
-	limit := len(data)
-	if limit > 8000 {
-		limit = 8000
-	}
-	for i := 0; i < limit; i++ {
-		if data[i] == 0 {
-			return true
-		}
-	}
-	return false
+	return bytes.IndexByte(data[:min(len(data), 8000)], 0) != -1
 }
 
 func hasConflictMarkers(data []byte) bool {
@@ -482,10 +470,7 @@ func (m model) contentHeight() int {
 	if m.gitCommitOpen {
 		h -= 1 // 1 line for the commit input bar
 	}
-	if h < 1 {
-		h = 1
-	}
-	return h
+	return max(h, 1)
 }
 
 func (m model) paneWidth() int {
@@ -493,14 +478,8 @@ func (m model) paneWidth() int {
 }
 
 func (m model) gutterWidth() int {
-	maxLines := len(m.srcLines)
-	if len(m.dstLines) > maxLines {
-		maxLines = len(m.dstLines)
-	}
-	w := len(fmt.Sprintf("%d", maxLines))
-	if w < 3 {
-		w = 3
-	}
+	maxLines := max(len(m.dstLines), len(m.srcLines))
+	w := max(len(fmt.Sprintf("%d", maxLines)), 3)
 	return w + gutterPadding
 }
 
@@ -509,11 +488,7 @@ func (m model) textWidth() int {
 }
 
 func (m model) maxScrollY() int {
-	maxScroll := len(m.virtualLines) - m.contentHeight()
-	if maxScroll < 0 {
-		return 0
-	}
-	return maxScroll
+	return max(0, len(m.virtualLines)-m.contentHeight())
 }
 
 func maxScrollX(lines []string, textWidth int) int {
@@ -525,29 +500,16 @@ func maxScrollX(lines []string, textWidth int) int {
 			maxLen = len([]rune(expanded))
 		}
 	}
-	maxScroll := maxLen - textWidth
-	if maxScroll < 0 {
-		return 0
-	}
-	return maxScroll
+	return max(0, maxLen-textWidth)
 }
 
 func clamp(v, minVal, maxVal int) int {
-	if v < minVal {
-		return minVal
-	}
-	if v > maxVal {
-		return maxVal
-	}
-	return v
+	return max(minVal, min(v, maxVal))
 }
 
 func (m *model) clampCursor() {
 	m.cursorY = clamp(m.cursorY, 0, len(m.virtualLines)-1)
-	maxCol := m.lineVisualLength(m.cursorY) - 1
-	if maxCol < 0 {
-		maxCol = 0
-	}
+	maxCol := max(m.lineVisualLength(m.cursorY)-1, 0)
 	m.cursorX = clamp(m.cursorX, 0, maxCol)
 }
 

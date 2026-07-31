@@ -481,11 +481,12 @@ func TestActionCountNonZero(t *testing.T) {
 			for _, a := range envelope.Actions {
 				counts[a.Action]++
 			}
-			summary := fmt.Sprintf("total=%d", len(envelope.Actions))
+			var summary strings.Builder
+			fmt.Fprintf(&summary, "total=%d", len(envelope.Actions))
 			for k, v := range counts {
-				summary += fmt.Sprintf(" %s=%d", k, v)
+				fmt.Fprintf(&summary, " %s=%d", k, v)
 			}
-			t.Logf("%s: %s", name, summary)
+			t.Logf("%s: %s", name, summary.String())
 		})
 	}
 }

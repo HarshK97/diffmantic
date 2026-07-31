@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -395,7 +394,7 @@ func (m model) nextChange() int {
 	if len(m.vchanges) == 0 {
 		return m.cursorY
 	}
-	idx := sort.SearchInts(m.vchanges, m.cursorY+1)
+	idx, _ := slices.BinarySearch(m.vchanges, m.cursorY+1)
 	if idx < len(m.vchanges) {
 		return m.vchanges[idx]
 	}
@@ -406,7 +405,8 @@ func (m model) prevChange() int {
 	if len(m.vchanges) == 0 {
 		return m.cursorY
 	}
-	idx := sort.SearchInts(m.vchanges, m.cursorY) - 1
+	idx, _ := slices.BinarySearch(m.vchanges, m.cursorY)
+	idx--
 	if idx >= 0 {
 		return m.vchanges[idx]
 	}

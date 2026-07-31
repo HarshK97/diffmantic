@@ -2,8 +2,6 @@ package engine
 
 import "github.com/HarshK97/diffmantic/internal/treesitter"
 
-// TODO: Implement optimal recovery (RTED) for small subtrees, and use it
-
 // SimpleRecovery recovers additional mappings inside a pair of matched
 // container nodes (t1, t2). It is called by BottomUp after a new
 // container mapping is established.

@@ -11,13 +11,11 @@ func Height(n *treesitter.ASTNode) int {
 	if len(n.Children) == 0 {
 		return 1
 	}
-	max := 0
+	maxH := 0
 	for _, c := range n.Children {
-		if h := Height(c); h > max {
-			max = h
-		}
+		maxH = max(maxH, Height(c))
 	}
-	return max + 1
+	return maxH + 1
 }
 
 // IsTrivialLeaf reports whether a leaf node contains only punctuation (no alphanumeric chars or underscores).
@@ -37,14 +35,17 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 // excluding n itself.
 func Descendants(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	var out []*treesitter.ASTNode
-	for _, c := range n.Children {
-		out = append(out, c)
-		out = append(out, Descendants(c)...)
-	}
+	collectDescendants(n, &out)
 	return out
 }
 
-// s(t) - the set of descendants of t used by the dice formula.
+func collectDescendants(n *treesitter.ASTNode, out *[]*treesitter.ASTNode) {
+	for _, c := range n.Children {
+		*out = append(*out, c)
+		collectDescendants(c, out)
+	}
+}
+
 func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
 	s := make(map[*treesitter.ASTNode]struct{})
 	for _, d := range Descendants(n) {
@@ -53,26 +54,28 @@ func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
 	return s
 }
 
-// Dice computes the Dice similarity coefficient between two subtrees
-// given the current mapping set m (maps T1 nodes -> T2 nodes).
-//
-// dice(t1, t2, m) = 2 × |{t ∈ s(t1) | (t, t2') ∈ m for some t2'}| / (|s(t1)| + |s(t2)|)
-func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) float64 {
+func commonMappedDescendants(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) (common, lenS1, lenS2 int) {
 	s1 := Descendants(t1)
 	s2 := descendantSet(t2)
-
-	denom := float64(len(s1) + len(s2))
-	if denom == 0 {
-		return 0
-	}
-
-	common := 0
 	for _, d := range s1 {
 		if mapped, ok := m[d]; ok {
 			if _, inS2 := s2[mapped]; inS2 {
 				common++
 			}
 		}
+	}
+	return common, len(s1), len(s2)
+}
+
+// Dice computes the Dice similarity coefficient between two subtrees
+// given the current mapping set m (maps T1 nodes -> T2 nodes).
+//
+// dice(t1, t2, m) = 2 × |{t ∈ s(t1) | (t, t2') ∈ m for some t2'}| / (|s(t1)| + |s(t2)|)
+func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) float64 {
+	common, lenS1, lenS2 := commonMappedDescendants(t1, t2, m)
+	denom := float64(lenS1 + lenS2)
+	if denom == 0 {
+		return 0
 	}
 	return 2.0 * float64(common) / denom
 }
@@ -82,24 +85,10 @@ func Dice(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTN
 //
 // chawathe(t1, t2, m) = |{t ∈ s(t1) | (t, t2') ∈ m for some t2'}| / max(|s(t1)|, |s(t2)|)
 func ChawatheSimilarity(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) float64 {
-	s1 := Descendants(t1)
-	s2 := descendantSet(t2)
-
-	maxDesc := len(s1)
-	if len(s2) > maxDesc {
-		maxDesc = len(s2)
-	}
+	common, lenS1, lenS2 := commonMappedDescendants(t1, t2, m)
+	maxDesc := max(lenS1, lenS2)
 	if maxDesc == 0 {
 		return 0
-	}
-
-	common := 0
-	for _, d := range s1 {
-		if mapped, ok := m[d]; ok {
-			if _, inS2 := s2[mapped]; inS2 {
-				common++
-			}
-		}
 	}
 	return float64(common) / float64(maxDesc)
 }
@@ -111,18 +100,28 @@ func ChawatheSimilarity(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*t
 // Isomorphic returns true when two subtrees are structurally
 // and label-wise identical.
 func Isomorphic(a, b *treesitter.ASTNode) bool {
+	return isIsomorphic(a, b, true)
+}
+
+// StructureIsomorphic returns true when two subtrees are structurally
+// identical (same Type, same shape) but ignores leaf labels.
+func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
+	return isIsomorphic(a, b, false)
+}
+
+func isIsomorphic(a, b *treesitter.ASTNode, checkLabel bool) bool {
 	if a == nil && b == nil {
 		return true
 	}
 	if a == nil || b == nil {
 		return false
 	}
-	if a.Type != b.Type || a.Label != b.Label || len(a.Children) != len(b.Children) {
+	if a.Type != b.Type || (checkLabel && a.Label != b.Label) || len(a.Children) != len(b.Children) {
 		return false
 	}
 
 	for i := range a.Children {
-		if !Isomorphic(a.Children[i], b.Children[i]) {
+		if !isIsomorphic(a.Children[i], b.Children[i], checkLabel) {
 			return false
 		}
 	}
@@ -133,6 +132,9 @@ func Isomorphic(a, b *treesitter.ASTNode) bool {
 // PostOrder returns all nodes in the subtree rooted at n
 // in post-order (children before parent).
 func PostOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
 	var out []*treesitter.ASTNode
 	for _, c := range n.Children {
 		out = append(out, PostOrder(c)...)
@@ -145,35 +147,14 @@ func PostOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 // in pre-order (parent before children). Used for deterministic
 // mapping output.
 func PreOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
 	out := []*treesitter.ASTNode{n}
 	for _, c := range n.Children {
 		out = append(out, PreOrder(c)...)
 	}
 	return out
-}
-
-// StructureIsomorphic returns true when two subtrees are structurally
-// identical (same Type, same shape) but ignores leaf labels.
-//
-// TODO: replace with O(1) hash comparison alongside Isomorphic.
-func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	if a.Type != b.Type || len(a.Children) != len(b.Children) {
-		return false
-	}
-
-	for i := range a.Children {
-		if !StructureIsomorphic(a.Children[i], b.Children[i]) {
-			return false
-		}
-	}
-
-	return true
 }
 
 // NearestMatchedAncestor finds the closest ancestor of n that is present in the mapping.

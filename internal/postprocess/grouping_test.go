@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
-	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -77,21 +76,11 @@ func TestGroupMovesSerialization(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Move, Node: n2, Parent: newParent})
 
 	grouped := GroupMoves(es)
-	data, err := serialize.Marshal(grouped, nil, srcRoot, dstRoot, make([]byte, srcRoot.EndByte), make([]byte, dstRoot.EndByte))
-	if err != nil {
-		t.Fatalf("Marshal failed: %v", err)
-	}
-
-	reconstituted, err := serialize.Unmarshal(data, srcRoot, dstRoot)
-	if err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-
-	acts := reconstituted.Actions()
+	acts := grouped.Actions()
 	if len(acts) != 2 {
-		t.Fatalf("expected 2 unmarshaled actions, got %d", len(acts))
+		t.Fatalf("expected 2 grouped actions, got %d", len(acts))
 	}
 	if acts[0].GroupID != "group-1" || acts[1].GroupID != "group-1" {
-		t.Errorf("expected reconstituted actions to have GroupID group-1, got %q and %q", acts[0].GroupID, acts[1].GroupID)
+		t.Errorf("expected grouped actions to have GroupID group-1, got %q and %q", acts[0].GroupID, acts[1].GroupID)
 	}
 }

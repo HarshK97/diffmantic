@@ -62,9 +62,6 @@ func BottomUp(
 		threshold := 1.0 / (1.0 + math.Log(float64(len(Descendants(t1))+len(Descendants(t2)))))
 		if m.DiceSrc(t1, t2) >= minDice || sim >= threshold {
 			m.Add(t1, t2)
-			// TODO: Use Hybrid Approach for recovery
-			// - subtree size < maxSize → run optimal (RTED) -> To be implemented
-			// - subtree size ≥ maxSize → run simple recovery
 			SimpleRecovery(t1, t2, m)
 		}
 	}
@@ -231,12 +228,7 @@ func childIndexWithin(child, parent *treesitter.ASTNode) int {
 	if parent == nil {
 		return -1
 	}
-	for i, c := range parent.Children {
-		if c == child {
-			return i
-		}
-	}
-	return -1
+	return slices.Index(parent.Children, child)
 }
 
 // hasCommonDescendant returns true if some descendant of c (in T2) is

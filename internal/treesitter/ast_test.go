@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -55,13 +56,9 @@ def test_func():
 	if len(identifiers) == 0 {
 		t.Fatal("expected identifier nodes, found 0")
 	}
-	foundTestFunc := false
-	for _, id := range identifiers {
-		if id.Label == "test_func" {
-			foundTestFunc = true
-			break
-		}
-	}
+	foundTestFunc := slices.ContainsFunc(identifiers, func(n *ASTNode) bool {
+		return n.Label == "test_func"
+	})
 	if !foundTestFunc {
 		t.Error("expected to find identifier 'test_func' with label 'test_func'")
 	}
@@ -70,13 +67,9 @@ def test_func():
 	if len(integers) == 0 {
 		t.Fatal("expected integer nodes, found 0")
 	}
-	found123 := false
-	for _, num := range integers {
-		if num.Label == "123" {
-			found123 = true
-			break
-		}
-	}
+	found123 := slices.ContainsFunc(integers, func(n *ASTNode) bool {
+		return n.Label == "123"
+	})
 	if !found123 {
 		t.Error("expected to find integer node with label '123'")
 	}

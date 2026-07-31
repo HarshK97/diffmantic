@@ -76,7 +76,7 @@ func (s *chawatheState) generate() *EditScript {
 
 		if !s.cpyMappings.HasDst(x) {
 			k := s.findPos(x)
-			w = newEmptyFakeTree()
+			w = &treesitter.ASTNode{Type: fakeTreeType}
 
 			s.script.Add(Action{
 				Type:     Insert,
@@ -111,34 +111,11 @@ func (s *chawatheState) generate() *EditScript {
 						Position: k,
 					})
 
-					// Generate explicit Move actions for all mapped descendants
-					for _, pair := range s.collectMappedDescendants(w) {
-						descSrc := pair[0]
-						descDst := pair[1]
-						pos := slices.Index(descDst.Parent.Children, descDst)
-						if pos == -1 {
-							pos = 0
-						}
-						// Action.Parent here MUST be derived from the node's actual
-						// mapped destination's parent (D.Parent) for postprocess.Collapse's
-						// parent-equality check to remain a valid substitute for explicit
-						// mapping-depth-consistency validation -- do not change this without
-						// re-running TestCollapseDivergence and checking internal/postprocess's
-						// Move-loop logic.
-						s.script.Add(Action{
-							Type:     Move,
-							Node:     s.copyToOrig[descSrc],
-							Parent:   descDst.Parent,
-							Position: pos,
-						})
-					}
+					s.addDescendantMoves(w)
 
 					oldk := slices.Index(w.Parent.Children, w)
 					if oldk >= 0 {
-						w.Parent.Children = append(
-							w.Parent.Children[:oldk],
-							w.Parent.Children[oldk+1:]...,
-						)
+						w.Parent.Children = slices.Delete(w.Parent.Children, oldk, oldk+1)
 					}
 					insertChild(z, w, k)
 				}
@@ -177,7 +154,7 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 
 	xpos := slices.Index(siblings, x)
 	var v *treesitter.ASTNode
-	for i := 0; i < xpos; i++ {
+	for i := range xpos {
 		c := siblings[i]
 		if s.dstInOrder[c] {
 			v = c
@@ -246,27 +223,7 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 						Position: k,
 					})
 
-					// Generate explicit Move actions for all mapped descendants
-					for _, pair := range s.collectMappedDescendants(a) {
-						descSrc := pair[0]
-						descDst := pair[1]
-						pos := slices.Index(descDst.Parent.Children, descDst)
-						if pos == -1 {
-							pos = 0
-						}
-						// Action.Parent here MUST be derived from the node's actual
-						// mapped destination's parent (D.Parent) for postprocess.Collapse's
-						// parent-equality check to remain a valid substitute for explicit
-						// mapping-depth-consistency validation -- do not change this without
-						// re-running TestCollapseDivergence and checking internal/postprocess's
-						// Move-loop logic.
-						s.script.Add(Action{
-							Type:     Move,
-							Node:     s.copyToOrig[descSrc],
-							Parent:   descDst.Parent,
-							Position: pos,
-						})
-					}
+					s.addDescendantMoves(a)
 
 					insertChild(w, a, k)
 
@@ -372,10 +329,6 @@ func newFakeTree(child *treesitter.ASTNode) *treesitter.ASTNode {
 	return fake
 }
 
-func newEmptyFakeTree() *treesitter.ASTNode {
-	return &treesitter.ASTNode{Type: fakeTreeType}
-}
-
 func insertChild(parent, child *treesitter.ASTNode, k int) {
 	child.Parent = parent
 	k = max(0, min(k, len(parent.Children)))
@@ -397,18 +350,25 @@ func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	return out
 }
 
-func (s *chawatheState) collectMappedDescendants(n *treesitter.ASTNode) [][2]*treesitter.ASTNode {
-	var result [][2]*treesitter.ASTNode
+func (s *chawatheState) addDescendantMoves(n *treesitter.ASTNode) {
 	var traverse func(curr *treesitter.ASTNode)
 	traverse = func(curr *treesitter.ASTNode) {
 		for _, child := range curr.Children {
 			if s.cpyMappings.Has(child) {
 				dst := s.cpyMappings.Src()[child]
-				result = append(result, [2]*treesitter.ASTNode{child, dst})
+				pos := slices.Index(dst.Parent.Children, dst)
+				if pos == -1 {
+					pos = 0
+				}
+				s.script.Add(Action{
+					Type:     Move,
+					Node:     s.copyToOrig[child],
+					Parent:   dst.Parent,
+					Position: pos,
+				})
 			}
 			traverse(child)
 		}
 	}
 	traverse(n)
-	return result
 }

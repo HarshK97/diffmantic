@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"sort"
-
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
@@ -98,12 +96,6 @@ func buildVirtualLines(folds []fold, totalRows int, lineAlignment []serialize.Li
 	if totalRows == 0 {
 		return nil
 	}
-
-	sortedFolds := make([]fold, len(folds))
-	copy(sortedFolds, folds)
-	sort.Slice(sortedFolds, func(i, j int) bool {
-		return sortedFolds[i].startLine < sortedFolds[j].startLine
-	})
 
 	foldByStart := make(map[int]int, len(folds))
 	for i, f := range folds {

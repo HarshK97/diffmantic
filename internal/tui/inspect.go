@@ -150,28 +150,27 @@ func formatActionPreview(actions []*serialize.Action, maxWidth int) string {
 	return truncateStr(preview, maxWidth)
 }
 
-// lineIndexFromLines builds a byte offset index for lines.
-func lineIndexFromLines(lines []string) []int {
-	return buildLineIndex([]byte(strings.Join(lines, "\n")))
-}
-
-// formatNodeRange formats a node's byte range to a human-readable 1-indexed line and column range.
-func formatNodeRange(lines []string, node *serialize.NodeRef) string {
-	if node == nil {
-		return ""
-	}
-	idx := lineIndexFromLines(lines)
-	startL, startC := byteToLineCol(idx, node.StartByte)
-	endL, endC := byteToLineCol(idx, node.EndByte)
-	return fmt.Sprintf("L%d:%d - L%d:%d", startL+1, startC+1, endL+1, endC+1)
-}
-
 // formatByteRange formats byte offsets to human-readable line and column offsets.
 func formatByteRange(lines []string, startByte, endByte uint32) string {
-	idx := lineIndexFromLines(lines)
-	startL, startC := byteToLineCol(idx, startByte)
-	endL, endC := byteToLineCol(idx, endByte)
+	startL, startC := byteToLineColFromLines(lines, startByte)
+	endL, endC := byteToLineColFromLines(lines, endByte)
 	return fmt.Sprintf("L%d:%d - L%d:%d", startL+1, startC+1, endL+1, endC+1)
+}
+
+func byteToLineColFromLines(lines []string, byteOffset uint32) (int, int) {
+	offset := int(byteOffset)
+	curr := 0
+	for idx, l := range lines {
+		next := curr + len(l) + 1
+		if offset < next {
+			return idx, max(0, offset-curr)
+		}
+		curr = next
+	}
+	if len(lines) == 0 {
+		return 0, 0
+	}
+	return len(lines) - 1, 0
 }
 
 // formatActionColumn formats an action into three detail lines padded to colWidth.
@@ -224,7 +223,7 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 	// Line 2: Line/Col range and Group ID
 	var line2 string
 	if a.Node != nil {
-		line2 = inspectDimStyle.Render(formatNodeRange(lines, a.Node))
+		line2 = inspectDimStyle.Render(formatByteRange(lines, a.Node.StartByte, a.Node.EndByte))
 	}
 	if a.GroupID != "" && a.Action != "move" {
 		if line2 != "" {
@@ -236,7 +235,7 @@ func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []str
 	colLines[2] = truncateAnsi(line2, colWidth)
 
 	// Pad lines to colWidth.
-	for idx := 0; idx < 3; idx++ {
+	for idx := range 3 {
 		colLines[idx] = padRight(colLines[idx], colWidth)
 	}
 
@@ -279,25 +278,21 @@ func (m model) renderInspectPanel() string {
 		titleLine := border + " " + lipgloss.NewStyle().Foreground(accent).Bold(true).Render("SEMANTIC INSPECTOR")
 		panelLines[0] = inspectPanelStyle.Render(padRight(titleLine, width))
 
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			panelLines[i+1] = inspectPanelStyle.Render(border + " " + colLines[i])
 		}
 	} else {
 		// Side-by-side columns (cap at 2 max for clean readability)!
-		numCols := len(m.inspectActions)
-		if numCols > 2 {
-			numCols = 2 // cap at 2 columns
-		}
+		numCols := min(len(m.inspectActions),
+			// cap at 2 columns
+			2)
 
 		divSpacing := 3 * (numCols - 1)
 		availWidth := width - 4 - divSpacing
-		colWidth := availWidth / numCols
-		if colWidth < 15 {
-			colWidth = 15
-		}
+		colWidth := max(availWidth/numCols, 15)
 
 		colData := make([][]string, numCols)
-		for c := 0; c < numCols; c++ {
+		for c := range numCols {
 			colData[c] = formatActionColumn(lines, m.inspectActions[c], colWidth)
 		}
 
@@ -306,10 +301,10 @@ func (m model) renderInspectPanel() string {
 		titleLine := border + " " + lipgloss.NewStyle().Foreground(accent).Bold(true).Render("SEMANTIC INSPECTOR")
 		panelLines[0] = inspectPanelStyle.Render(padRight(titleLine, width))
 
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			var rowParts []string
 			rowParts = append(rowParts, border+" ")
-			for c := 0; c < numCols; c++ {
+			for c := range numCols {
 				if c > 0 {
 					rowParts = append(rowParts, inspectDimStyle.Render(" │ "))
 				}
@@ -320,19 +315,6 @@ func (m model) renderInspectPanel() string {
 	}
 
 	return strings.Join(panelLines, "\n")
-}
-
-// byteToLine converts a byte offset to a 0-indexed line number.
-func byteToLine(lines []string, byteOffset uint32) int {
-	offset := int(byteOffset)
-	current := 0
-	for lineIdx, line := range lines {
-		current += len(line) + 1 // +1 for the newline character
-		if current > offset {
-			return lineIdx
-		}
-	}
-	return len(lines) - 1
 }
 
 // visualColFromByte converts a line index and byte column into a visual display column.
@@ -376,8 +358,7 @@ func (m *model) jumpToMoveCounterpart() {
 		if moveAct.DestStartByte == nil {
 			return
 		}
-		idx := lineIndexFromLines(m.dstLines)
-		dstLine, dstCol := byteToLineCol(idx, *moveAct.DestStartByte)
+		dstLine, dstCol := byteToLineColFromLines(m.dstLines, *moveAct.DestStartByte)
 		targetCol = visualColFromByte(m.dstLines, dstLine, dstCol)
 
 		// Find the aligned grid row.
@@ -392,8 +373,7 @@ func (m *model) jumpToMoveCounterpart() {
 		if moveAct.Node == nil {
 			return
 		}
-		idx := lineIndexFromLines(m.srcLines)
-		srcLine, srcCol := byteToLineCol(idx, moveAct.Node.StartByte)
+		srcLine, srcCol := byteToLineColFromLines(m.srcLines, moveAct.Node.StartByte)
 		targetCol = visualColFromByte(m.srcLines, srcLine, srcCol)
 
 		// Find the aligned grid row.

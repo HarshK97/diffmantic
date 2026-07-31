@@ -15,19 +15,13 @@ const (
 	Move
 )
 
+var actionTypeNames = [...]string{"insert", "delete", "update", "move"}
+
 func (t ActionType) String() string {
-	switch t {
-	case Insert:
-		return "insert"
-	case Delete:
-		return "delete"
-	case Update:
-		return "update"
-	case Move:
-		return "move"
-	default:
-		return "unknown"
+	if uint(t) < uint(len(actionTypeNames)) {
+		return actionTypeNames[t]
 	}
+	return "unknown"
 }
 
 type Action struct {

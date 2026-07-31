@@ -49,8 +49,7 @@ Supported languages: Go, JavaScript, TypeScript, Python.`,
 		if git.IsGitRepository(".") {
 			stagedOnly, _ := cmd.Flags().GetBool("cached")
 
-			var refs []string
-			var paths []string
+			var refs, paths []string
 			for _, arg := range args {
 				if git.IsValidRevision(".", arg) {
 					refs = append(refs, arg)
@@ -94,11 +93,5 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.diffmantic.yaml)")
-
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
 }

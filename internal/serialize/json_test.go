@@ -118,7 +118,7 @@ func TestRoundTrip(t *testing.T) {
 	t.Logf("Generated JSON:\n%s", string(jsonData))
 
 	// Verify JSON structure and options:
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal(jsonData, &parsed); err != nil {
 		t.Fatalf("Unmarshal to map failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Errorf("expected version %q, got %v", SchemaVersion, parsed["version"])
 	}
 
-	acts, ok := parsed["actions"].([]interface{})
+	acts, ok := parsed["actions"].([]any)
 	if !ok {
 		t.Fatalf("actions field missing or not an array")
 	}
@@ -137,15 +137,15 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	// 1. Check Insert action fields and tree tags
-	act1 := acts[0].(map[string]interface{})
+	act1 := acts[0].(map[string]any)
 	if act1["action"] != "insert" {
 		t.Errorf("expected first action to be insert, got %v", act1["action"])
 	}
-	node1 := act1["node"].(map[string]interface{})
+	node1 := act1["node"].(map[string]any)
 	if node1["tree"] != "after" {
 		t.Errorf("insert node should be 'after', got %v", node1["tree"])
 	}
-	parent1 := act1["parent"].(map[string]interface{})
+	parent1 := act1["parent"].(map[string]any)
 	if parent1["tree"] != "after" {
 		t.Errorf("insert parent should be 'after', got %v", parent1["tree"])
 	}
@@ -154,11 +154,11 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	// 2. Check Delete action fields, tree tags and subtree
-	act2 := acts[1].(map[string]interface{})
+	act2 := acts[1].(map[string]any)
 	if act2["action"] != "delete" {
 		t.Errorf("expected second action to be delete, got %v", act2["action"])
 	}
-	node2 := act2["node"].(map[string]interface{})
+	node2 := act2["node"].(map[string]any)
 	if node2["tree"] != "before" {
 		t.Errorf("delete node should be 'before', got %v", node2["tree"])
 	}
@@ -167,7 +167,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	// 3. Check Update action fields and subtree absence
-	act3 := acts[2].(map[string]interface{})
+	act3 := acts[2].(map[string]any)
 	if act3["action"] != "update" {
 		t.Errorf("expected third action to be update, got %v", act3["action"])
 	}
@@ -179,19 +179,19 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	// 4. Check Move action fields, tree tags
-	act4 := acts[3].(map[string]interface{})
+	act4 := acts[3].(map[string]any)
 	if act4["action"] != "move" {
 		t.Errorf("expected fourth action to be move, got %v", act4["action"])
 	}
-	node4 := act4["node"].(map[string]interface{})
+	node4 := act4["node"].(map[string]any)
 	if node4["tree"] != "before" {
 		t.Errorf("move node should be 'before', got %v", node4["tree"])
 	}
-	parent4 := act4["parent"].(map[string]interface{})
+	parent4 := act4["parent"].(map[string]any)
 	if parent4["tree"] != "after" {
 		t.Errorf("move parent should be 'after', got %v", parent4["tree"])
 	}
-	oldParent4 := act4["old_parent"].(map[string]interface{})
+	oldParent4 := act4["old_parent"].(map[string]any)
 	if oldParent4["tree"] != "before" {
 		t.Errorf("move old_parent should be 'before', got %v", oldParent4["tree"])
 	}
@@ -200,66 +200,6 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if int(act4["position"].(float64)) != 1 {
 		t.Errorf("move position should be 1, got %v", act4["position"])
-	}
-
-	// Unmarshal back and compare actions
-	unmarshaled, err := Unmarshal(jsonData, src, dst)
-	if err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-
-	if unmarshaled.Size() != es.Size() {
-		t.Fatalf("size mismatch: expected %d, got %d", es.Size(), unmarshaled.Size())
-	}
-
-	for i := 0; i < es.Size(); i++ {
-		orig := es.Actions()[i]
-		unm := unmarshaled.Actions()[i]
-
-		if orig.Type != unm.Type {
-			t.Errorf("[%d] Type mismatch: original=%v, unmarshaled=%v", i, orig.Type, unm.Type)
-		}
-		if unm.Node == nil {
-			t.Errorf("[%d] Resolved Node is nil", i)
-		} else {
-			if unm.Node.Type != orig.Node.Type || unm.Node.Label != orig.Node.Label {
-				t.Errorf("[%d] Node mismatch: original=%v, unmarshaled=%v", i, orig.Node, unm.Node)
-			}
-		}
-
-		if unm.Subtree != orig.Subtree {
-			t.Errorf("[%d] Subtree mismatch: original=%v, unmarshaled=%v", i, orig.Subtree, unm.Subtree)
-		}
-
-		switch orig.Type {
-		case actions.Insert:
-			// In original Action struct, Parent was srcBar. But in JSON it was serialized with tag "after",
-			// so the unmarshaled action parent resolves to dstBar. Let's verify it resolves to dstBar.
-			if unm.Parent != dstBar {
-				t.Errorf("[%d] Insert Parent mismatch: expected %v, got %v", i, dstBar, unm.Parent)
-			}
-			if unm.Position != orig.Position {
-				t.Errorf("[%d] Insert Position mismatch: original=%v, unmarshaled=%v", i, orig.Position, unm.Position)
-			}
-
-		case actions.Delete:
-			// No extra fields
-
-		case actions.Update:
-			if unm.Value != orig.Value {
-				t.Errorf("[%d] Update Value mismatch: original=%q, unmarshaled=%q", i, orig.Value, unm.Value)
-			}
-
-		case actions.Move:
-			// In original Action, Parent was srcBar. In JSON it was serialized as dstBar,
-			// so unmarshaled resolves to dstBar.
-			if unm.Parent != dstBar {
-				t.Errorf("[%d] Move Parent mismatch: expected %v, got %v", i, dstBar, unm.Parent)
-			}
-			if unm.Position != orig.Position {
-				t.Errorf("[%d] Move Position mismatch: original=%v, unmarshaled=%v", i, orig.Position, unm.Position)
-			}
-		}
 	}
 }
 

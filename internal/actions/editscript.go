@@ -3,7 +3,6 @@ package actions
 import (
 	"fmt"
 	"io"
-	"os"
 )
 
 type EditScript struct {
@@ -24,10 +23,6 @@ func (es *EditScript) Size() int {
 
 func (es *EditScript) Actions() []Action {
 	return es.actions
-}
-
-func PrintActions(es *EditScript) {
-	_ = FprintActions(os.Stdout, es)
 }
 
 func FprintActions(w io.Writer, es *EditScript) error {

@@ -72,28 +72,16 @@ func (m model) renderContent() string {
 
 	pw := m.paneWidth()
 	gw := m.gutterWidth()
-	tw := pw - gw
-	if tw < 1 {
-		tw = 1
-	}
+	tw := max(pw-gw, 1)
 
 	leftLines := m.renderPane(m.srcLines, m.srcHighlights, m.srcSyntax, m.scrollXLeft, height, pw, gw, tw, true)
 	rightLines := m.renderPane(m.dstLines, m.dstHighlights, m.dstSyntax, m.scrollXRight, height, pw, gw, tw, false)
 
 	if m.gitTreeOpen {
-		treeWidth := 38
-		if treeWidth > pw-4 {
-			treeWidth = pw - 4
-		}
-		if treeWidth < 20 {
-			treeWidth = 20
-		}
+		treeWidth := max(min(38, pw-4), 20)
 
 		treeHeight := len(m.gitItems) + 2
-		maxHeight := height - 4
-		if maxHeight < 5 {
-			maxHeight = 5
-		}
+		maxHeight := max(height-4, 5)
 		if treeHeight > maxHeight {
 			treeHeight = maxHeight
 		}
@@ -132,7 +120,7 @@ func (m model) renderContent() string {
 	div := dividerStyle.Render("│")
 
 	var b strings.Builder
-	for i := 0; i < height; i++ {
+	for i := range height {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
@@ -155,7 +143,7 @@ func (m model) renderContent() string {
 func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]syntaxSpan, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
 	result := make([]string, height)
 
-	for i := 0; i < height; i++ {
+	for i := range height {
 		vIdx := m.scrollY + i
 
 		// Past the end of virtual lines.
@@ -264,7 +252,7 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 				}
 
 				var b strings.Builder
-				for idx := 0; idx < textW; idx++ {
+				for idx := range textW {
 					col := scrollX + idx
 					var r rune
 					var s lipgloss.Style
@@ -375,7 +363,7 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 
 	expRunes := []rune(expanded)
 	var b strings.Builder
-	for idx := 0; idx < textW; idx++ {
+	for idx := range textW {
 		col := scrollX + idx
 		var style lipgloss.Style
 		var r rune
@@ -579,7 +567,7 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 		scrollY = 0
 	}
 
-	for i := 0; i < height; i++ {
+	for i := range height {
 		idx := scrollY + i
 		if idx >= len(m.gitItems) {
 			result[i] = lipgloss.NewStyle().Background(colorBase).Render(strings.Repeat(" ", paneWidth))
@@ -646,10 +634,7 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 				pathStr = item.oldPath + " -> " + item.path
 			}
 
-			maxPathWidth := paneWidth - 7
-			if maxPathWidth < 5 {
-				maxPathWidth = 5
-			}
+			maxPathWidth := max(paneWidth-7, 5)
 			truncatedPath := truncateStr(pathStr, maxPathWidth)
 
 			lineContent := renderedStatus + " " + itemStyle.Render(truncatedPath)

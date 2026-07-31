@@ -1,6 +1,8 @@
 package postprocess
 
 import (
+	"slices"
+
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -53,7 +55,7 @@ func Collapse(
 	}
 
 	// Collapse/Clean Inserts bottom-up on the destination tree
-	for _, parent := range postOrder(dstRoot) {
+	for _, parent := range engine.PostOrder(dstRoot) {
 		if act, ok := inserted[parent]; ok && len(parent.Children) > 0 {
 			allChildrenInserted := true
 			for _, child := range parent.Children {
@@ -100,7 +102,7 @@ func Collapse(
 	// all Subtree:true/KillChildren determinations are finalized. This avoids
 	// a cascade bug where prematurely suppressing a scaffolding child's Insert
 	// prevents its parent from reaching Subtree:true.
-	for _, node := range postOrder(dstRoot) {
+	for _, node := range engine.PostOrder(dstRoot) {
 		if node.IsScaffolding() {
 			if sAct, ok := inserted[node]; ok && !suppressed[sAct] && !sAct.Subtree {
 				if node.Parent != nil {
@@ -113,7 +115,7 @@ func Collapse(
 	}
 
 	// Collapse/Clean Deletes bottom-up on the source tree
-	for _, parent := range postOrder(srcRoot) {
+	for _, parent := range engine.PostOrder(srcRoot) {
 		if act, ok := deleted[parent]; ok && len(parent.Children) > 0 {
 			allChildrenDeleted := true
 			for _, child := range parent.Children {
@@ -139,7 +141,7 @@ func Collapse(
 	}
 
 	// Collapse/Clean Moves bottom-up on the source tree
-	for _, parentSrc := range postOrder(srcRoot) {
+	for _, parentSrc := range engine.PostOrder(srcRoot) {
 		if act, ok := moved[parentSrc]; ok && len(parentSrc.Children) > 0 {
 			allChildrenMovedToSameParent := true
 			dstParent := ms.Src()[parentSrc]
@@ -170,13 +172,7 @@ func Collapse(
 				var destPositions []int
 				for _, childSrc := range parentSrc.Children {
 					childDst := ms.Src()[childSrc]
-					pos := -1
-					for idx, child := range dstParent.Children {
-						if child == childDst {
-							pos = idx
-							break
-						}
-					}
+					pos := slices.Index(dstParent.Children, childDst)
 					destPositions = append(destPositions, pos)
 				}
 
@@ -288,18 +284,6 @@ func suppressInlineParentRedundancy(
 		}
 		suppressed[parentAct] = true
 	}
-}
-
-func postOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	var res []*treesitter.ASTNode
-	for _, child := range n.Children {
-		res = append(res, postOrder(child)...)
-	}
-	res = append(res, n)
-	return res
 }
 
 var genuineBareOperatorLiterals = map[string]bool{

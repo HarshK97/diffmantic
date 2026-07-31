@@ -9,7 +9,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"golang.org/x/sync/errgroup"
 )
 
 type diffResult struct {
@@ -17,61 +16,28 @@ type diffResult struct {
 	DstBytes    []byte
 	SrcFile     string
 	DstFile     string
-	SrcAST      *treesitter.ASTNode
-	DstAST      *treesitter.ASTNode
 	MatchResult *engine.MatchResult
 	EditScript  *actions.EditScript
 	Envelope    *serialize.Envelope
 }
 
 func computeDiff(fileA, fileB string) (*diffResult, error) {
-	var (
-		srcBytes []byte
-		dstBytes []byte
-		srcAST   *treesitter.ASTNode
-		dstAST   *treesitter.ASTNode
-	)
-
-	g := new(errgroup.Group)
-	g.Go(func() error {
-		data, err := os.ReadFile(fileA)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", fileA, err)
-		}
-		srcBytes = data
-		return nil
-	})
-	g.Go(func() error {
-		data, err := os.ReadFile(fileB)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", fileB, err)
-		}
-		dstBytes = data
-		return nil
-	})
-	if err := g.Wait(); err != nil {
-		return nil, err
+	srcBytes, err := os.ReadFile(fileA)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", fileA, err)
+	}
+	dstBytes, err := os.ReadFile(fileB)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", fileB, err)
 	}
 
-	g = new(errgroup.Group)
-	g.Go(func() error {
-		parsed, err := treesitter.Parse(srcBytes, fileA)
-		if err != nil {
-			return fmt.Errorf("parsing %s: %w", fileA, err)
-		}
-		srcAST = parsed
-		return nil
-	})
-	g.Go(func() error {
-		parsed, err := treesitter.Parse(dstBytes, fileB)
-		if err != nil {
-			return fmt.Errorf("parsing %s: %w", fileB, err)
-		}
-		dstAST = parsed
-		return nil
-	})
-	if err := g.Wait(); err != nil {
-		return nil, err
+	srcAST, err := treesitter.Parse(srcBytes, fileA)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", fileA, err)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, fileB)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", fileB, err)
 	}
 
 	matchResult := engine.Match(srcAST, dstAST)
@@ -88,8 +54,6 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 		DstBytes:    dstBytes,
 		SrcFile:     fileA,
 		DstFile:     fileB,
-		SrcAST:      srcAST,
-		DstAST:      dstAST,
 		MatchResult: matchResult,
 		EditScript:  es,
 		Envelope:    env,

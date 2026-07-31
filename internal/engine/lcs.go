@@ -90,7 +90,7 @@ func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 		}
 	}
 
-	slicesReverse(pairs)
+	slices.Reverse(pairs)
 	return pairs
 }
 
@@ -155,16 +155,5 @@ func childIndex(n *treesitter.ASTNode) int {
 	if n == nil || n.Parent == nil {
 		return -1
 	}
-	for i, c := range n.Parent.Children {
-		if c == n {
-			return i
-		}
-	}
-	return -1
-}
-
-func slicesReverse[T any](s []T) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
+	return slices.Index(n.Parent.Children, n)
 }
