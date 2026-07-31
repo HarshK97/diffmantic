@@ -1,6 +1,8 @@
 package postprocess
 
 import (
+	"slices"
+
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -103,12 +105,7 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 
 				pos := -1
 				if dec.dstNode.Parent != nil {
-					for idx, child := range dec.dstNode.Parent.Children {
-						if child == dec.dstNode {
-							pos = idx
-							break
-						}
-					}
+					pos = slices.Index(dec.dstNode.Parent.Children, dec.dstNode)
 				}
 				insAct := actions.Action{
 					Type:     actions.Insert,
@@ -228,12 +225,7 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 				if dstNode != nil {
 					pos := -1
 					if dstNode.Parent != nil {
-						for idx, child := range dstNode.Parent.Children {
-							if child == dstNode {
-								pos = idx
-								break
-							}
-						}
+						pos = slices.Index(dstNode.Parent.Children, dstNode)
 					}
 					insAct := actions.Action{
 						Type:     actions.Insert,

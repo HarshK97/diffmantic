@@ -1,12 +1,10 @@
 package tui
 
 import (
-	"sort"
-
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
-// A single visible row on the screen.
+// virtualLine is a single visible row on the screen.
 type virtualLine struct {
 	alignedRow int // index in LineAlignment grid (-1 if fold marker)
 	leftLine   int // 0-indexed line number in source file (-1 if filler or fold marker)
@@ -98,12 +96,6 @@ func buildVirtualLines(folds []fold, totalRows int, lineAlignment []serialize.Li
 	if totalRows == 0 {
 		return nil
 	}
-
-	sortedFolds := make([]fold, len(folds))
-	copy(sortedFolds, folds)
-	sort.Slice(sortedFolds, func(i, j int) bool {
-		return sortedFolds[i].startLine < sortedFolds[j].startLine
-	})
 
 	foldByStart := make(map[int]int, len(folds))
 	for i, f := range folds {

@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,23 +27,9 @@ func RunGit(cwd string, args ...string) ([]byte, error) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return nil, &GitError{
-			Args:   args,
-			Stderr: stderr.String(),
-			Err:    err,
-		}
+		return nil, fmt.Errorf("git %s failed: %s (%w)", strings.Join(args, " "), stderr.String(), err)
 	}
 	return stdout.Bytes(), nil
-}
-
-type GitError struct {
-	Args   []string
-	Stderr string
-	Err    error
-}
-
-func (e *GitError) Error() string {
-	return "git " + strings.Join(e.Args, " ") + " failed: " + e.Stderr + " (" + e.Err.Error() + ")"
 }
 
 // IsGitRepository checks if the directory is a Git repository.
@@ -79,12 +66,7 @@ func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
 			continue
 		}
 		status := line[0:2]
-		pathPart := line[3:]
-
-		// Handle double quotes if git escaped the path.
-		if strings.HasPrefix(pathPart, "\"") && strings.HasSuffix(pathPart, "\"") {
-			pathPart = pathPart[1 : len(pathPart)-1]
-		}
+		pathPart := strings.Trim(line[3:], "\"")
 
 		gitFile := GitFile{
 			Status: status,
@@ -104,14 +86,8 @@ func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
 		if x == 'R' || x == 'C' {
 			parts := strings.Split(pathPart, " -> ")
 			if len(parts) == 2 {
-				oldPath := parts[0]
-				newPath := parts[1]
-				if strings.HasPrefix(oldPath, "\"") && strings.HasSuffix(oldPath, "\"") {
-					oldPath = oldPath[1 : len(oldPath)-1]
-				}
-				if strings.HasPrefix(newPath, "\"") && strings.HasSuffix(newPath, "\"") {
-					newPath = newPath[1 : len(newPath)-1]
-				}
+				oldPath := strings.Trim(parts[0], "\"")
+				newPath := strings.Trim(parts[1], "\"")
 				gitFile.OldPath = oldPath
 				gitFile.Path = newPath
 			} else {
@@ -163,11 +139,8 @@ func GetChangedFiles(cwd, refA, refB string, pathFilter string) ([]GitFile, erro
 			continue
 		}
 
-		// Clean quotes if present.
 		for i := range parts {
-			if strings.HasPrefix(parts[i], "\"") && strings.HasSuffix(parts[i], "\"") {
-				parts[i] = parts[i][1 : len(parts[i])-1]
-			}
+			parts[i] = strings.Trim(parts[i], "\"")
 		}
 
 		status := parts[0]

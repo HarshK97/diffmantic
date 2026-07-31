@@ -2,7 +2,6 @@ package treesitter
 
 import (
 	_ "embed"
-	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,26 +23,9 @@ var (
 	rulesYAML []byte
 
 	rulesCache map[string]Rules
-	rulesOnce  sync.Once
-	rulesErr   error
-	rulesMu    sync.RWMutex
 )
 
-func LoadRules() error {
-	rulesOnce.Do(func() {
-		var config RulesConfig
-		if err := yaml.Unmarshal(rulesYAML, &config); err != nil {
-			rulesErr = err
-			return
-		}
-		rulesCache = config.Languages
-	})
-	return rulesErr
-}
-
 func GetRules(lang string) *Rules {
-	rulesMu.RLock()
-	defer rulesMu.RUnlock()
 	if rulesCache == nil {
 		return nil
 	}
@@ -54,18 +36,10 @@ func GetRules(lang string) *Rules {
 	return &r
 }
 
-func SetRules(lang string, r Rules) {
-	_ = LoadRules()
-	rulesMu.Lock()
-	defer rulesMu.Unlock()
-	if rulesCache == nil {
-		rulesCache = make(map[string]Rules)
-	}
-	rulesCache[lang] = r
-}
-
 func init() {
-	if err := LoadRules(); err != nil {
+	var config RulesConfig
+	if err := yaml.Unmarshal(rulesYAML, &config); err != nil {
 		panic("failed to load rules.yml: " + err.Error())
 	}
+	rulesCache = config.Languages
 }

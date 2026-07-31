@@ -2,6 +2,7 @@ package actions
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -238,12 +239,12 @@ func TestBFS(t *testing.T) {
 	if len(nodes) != 4 {
 		t.Fatalf("bfs returned %d nodes, want 4", len(nodes))
 	}
-	types := ""
+	var types strings.Builder
 	for _, n := range nodes {
-		types += n.Type
+		types.WriteString(n.Type)
 	}
-	if types != "abcd" {
-		t.Errorf("bfs order = %q, want %q", types, "abcd")
+	if types.String() != "abcd" {
+		t.Errorf("bfs order = %q, want %q", types.String(), "abcd")
 	}
 }
 
@@ -259,11 +260,11 @@ func TestPostOrder(t *testing.T) {
 	if len(nodes) != 4 {
 		t.Fatalf("postOrder returned %d nodes, want 4", len(nodes))
 	}
-	types := ""
+	var types strings.Builder
 	for _, n := range nodes {
-		types += n.Type
+		types.WriteString(n.Type)
 	}
-	if types != "dbca" {
-		t.Errorf("postOrder order = %q, want %q", types, "dbca")
+	if types.String() != "dbca" {
+		t.Errorf("postOrder order = %q, want %q", types.String(), "dbca")
 	}
 }

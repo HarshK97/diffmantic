@@ -9,8 +9,6 @@ import (
 
 type eqFunc func(a, b *treesitter.ASTNode) bool
 
-// lcs computes the longest common subsequence of two node slices
-// using the given equality function. Returns matched pairs.
 func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 	n := len(seq1)
 	m := len(seq2)
@@ -51,21 +49,13 @@ func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 	return pairs
 }
 
-// isomorphic equality (type + label + structure).
+// LCSLabel matches node sequences by type, label, and structure.
 func LCSLabel(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 	return lcs(seq1, seq2, Isomorphic)
 }
 
-// structure-only isomorphism (type + shape, ignoring leaf labels).
-//
-// This variant resolves ambiguous structural matches (one src node
-// structurally equal to several dst nodes) with a positional +
-// label-similarity tie-break. It first computes the plain structural LCS,
-// then for each matched src node that is structurally equal to more than one
-// matched/unmatched dst node, re-selects the best partner: same child index
-// within the parent first, then the most label-similar candidate. This keeps
-// a loop variable like "import_from_child" paired with "child" instead of the
-// rightmost "children".
+// LCSStructure matches node sequences by type and shape (ignoring leaf labels),
+// using child position and label similarity to resolve ambiguous matches.
 func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 	pairs := lcs(seq1, seq2, StructureIsomorphic)
 	if len(pairs) == 0 {
@@ -90,7 +80,7 @@ func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 		}
 	}
 
-	slicesReverse(pairs)
+	slices.Reverse(pairs)
 	return pairs
 }
 
@@ -155,16 +145,5 @@ func childIndex(n *treesitter.ASTNode) int {
 	if n == nil || n.Parent == nil {
 		return -1
 	}
-	for i, c := range n.Parent.Children {
-		if c == n {
-			return i
-		}
-	}
-	return -1
-}
-
-func slicesReverse[T any](s []T) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
+	return slices.Index(n.Parent.Children, n)
 }

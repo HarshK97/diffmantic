@@ -7,19 +7,8 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-// BottomUp implements the GumTree bottom-up matching phase.
-//
-// It walks T1 in post-order and for each unmatched node that has at
-// least one matched child, it finds the best candidate in T2 (same
-// type, highest dice) and adds the pair to the mapping. Then it runs
-// SimpleRecovery to map descendants inside the newly matched container.
-//
-// Parameters:
-//
-//	t1Root  - root of source tree T1
-//	t2Root  - root of destination tree T2
-//	m       - existing mapping from the top-down phase (modified in place)
-//	minDice - minimum dice coefficient to accept a candidate
+// BottomUp pairs unmatched container nodes in post-order when they share matched
+// children, running recovery on newly matched blocks.
 func BottomUp(
 	t1Root, t2Root *treesitter.ASTNode,
 	m *Mapping,
@@ -62,9 +51,6 @@ func BottomUp(
 		threshold := 1.0 / (1.0 + math.Log(float64(len(Descendants(t1))+len(Descendants(t2)))))
 		if m.DiceSrc(t1, t2) >= minDice || sim >= threshold {
 			m.Add(t1, t2)
-			// TODO: Use Hybrid Approach for recovery
-			// - subtree size < maxSize → run optimal (RTED) -> To be implemented
-			// - subtree size ≥ maxSize → run simple recovery
 			SimpleRecovery(t1, t2, m)
 		}
 	}
@@ -88,20 +74,15 @@ func hasUnmappedChildrenDst(t *treesitter.ASTNode, m *Mapping) bool {
 	return false
 }
 
-// hasMatchedChild returns true if any direct child of t1 is in the
-// src side of the mapping.
 func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
 	return slices.ContainsFunc(t1.Children, func(c *treesitter.ASTNode) bool {
 		return m.Has(c)
 	})
 }
 
-// candidate finds the best unmatched node in T2 to pair with t1.
-// Among all valid candidates, we prefer one that sits at the same child index
-// within its parent, then the one with the highest Chawathe similarity,
-// then Dice as a tie-breaker. Positional prior counters the case where an
-// inserted wrapper node (e.g. an added `if`-guard) makes a nested inner block
-// score higher on similarity metrics even though it's not the sibling-level partner.
+// Find the best unmatched node in T2 for t1. We prefer nodes at the same child
+// index to prevent wrapper insertions (like an added `if` guard) from pulling
+// nested blocks out of alignment, tie-breaking with Chawathe similarity and Dice.
 func candidate(
 	t1 *treesitter.ASTNode,
 	t2Root *treesitter.ASTNode,
@@ -195,7 +176,6 @@ func candidate(
 	return best
 }
 
-// leafLabels collects all non-empty labels from leaf nodes in the subtree.
 func leafLabels(n *treesitter.ASTNode) map[string]int {
 	labels := make(map[string]int)
 	for _, d := range Descendants(n) {
@@ -209,7 +189,6 @@ func leafLabels(n *treesitter.ASTNode) map[string]int {
 	return labels
 }
 
-// labelOverlap counts how many leaf labels in t2's subtree also appear in t1Labels.
 func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
 	count := 0
 	for _, d := range Descendants(t2) {
@@ -231,16 +210,9 @@ func childIndexWithin(child, parent *treesitter.ASTNode) int {
 	if parent == nil {
 		return -1
 	}
-	for i, c := range parent.Children {
-		if c == child {
-			return i
-		}
-	}
-	return -1
+	return slices.Index(parent.Children, child)
 }
 
-// hasCommonDescendant returns true if some descendant of c (in T2) is
-// mapped to a descendant of t1 (in T1).
 func hasCommonDescendant(
 	s1 map[*treesitter.ASTNode]struct{},
 	c *treesitter.ASTNode,

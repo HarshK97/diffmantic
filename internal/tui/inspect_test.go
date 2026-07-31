@@ -45,8 +45,8 @@ func TestActionsAtCursor(t *testing.T) {
 			StartByte: 14,
 			EndByte:   28,
 		},
-		DestStartByte: uint32Ptr(14),
-		DestEndByte:   uint32Ptr(28),
+		DestStartByte: new(uint32(14)),
+		DestEndByte:   new(uint32(28)),
 	}
 
 	m.srcHighlights = &highlights{
@@ -173,73 +173,54 @@ func TestActionsAtCursor(t *testing.T) {
 	}
 }
 
-func uint32Ptr(v uint32) *uint32 {
-	return &v
-}
-
-func TestByteToLine(t *testing.T) {
-	// Standard LF line breaks
-	linesLF := []string{"abc", "de", "f"}
-	testsLF := []struct {
+func TestByteToLineColFromLines(t *testing.T) {
+	tests := []struct {
+		name   string
+		lines  []string
 		offset uint32
 		line   int
+		col    int
 	}{
-		{0, 0},
-		{1, 0},
-		{2, 0},
-		{3, 0}, // trailing \n belongs to line 0
-		{4, 1},
-		{5, 1},
-		{6, 1},
-		{7, 2},
-		{8, 2}, // past end falls back to last line
-	}
-	for _, tc := range testsLF {
-		got := byteToLine(linesLF, tc.offset)
-		if got != tc.line {
-			t.Errorf("LF offset %d: expected line %d, got %d", tc.offset, tc.line, got)
-		}
+		// Standard LF line breaks: "abc\nde\nf\n"
+		{"LF first byte", []string{"abc", "de", "f"}, 0, 0, 0},
+		{"LF mid first line", []string{"abc", "de", "f"}, 1, 0, 1},
+		{"LF end first line", []string{"abc", "de", "f"}, 2, 0, 2},
+		{"LF newline byte", []string{"abc", "de", "f"}, 3, 0, 3},
+		{"LF start second line", []string{"abc", "de", "f"}, 4, 1, 0},
+		{"LF mid second line", []string{"abc", "de", "f"}, 5, 1, 1},
+		{"LF end second line", []string{"abc", "de", "f"}, 6, 1, 2},
+		{"LF start third line", []string{"abc", "de", "f"}, 7, 2, 0},
+		{"LF past end", []string{"abc", "de", "f"}, 99, 2, 0},
+
+		// CRLF: split("\n") leaves \r at end of each line string.
+		{"CRLF first byte", []string{"abc\r", "de\r", "f"}, 0, 0, 0},
+		{"CRLF CR byte", []string{"abc\r", "de\r", "f"}, 3, 0, 3},
+		{"CRLF LF byte", []string{"abc\r", "de\r", "f"}, 4, 0, 4},
+		{"CRLF start second", []string{"abc\r", "de\r", "f"}, 5, 1, 0},
+		{"CRLF second CR", []string{"abc\r", "de\r", "f"}, 7, 1, 2},
+		{"CRLF second LF", []string{"abc\r", "de\r", "f"}, 8, 1, 3},
+		{"CRLF start third", []string{"abc\r", "de\r", "f"}, 9, 2, 0},
+
+		// Multibyte: ⌘ is 3 bytes in UTF-8.
+		{"MB first byte", []string{"⌘", "⌘"}, 0, 0, 0},
+		{"MB third byte", []string{"⌘", "⌘"}, 2, 0, 2},
+		{"MB newline", []string{"⌘", "⌘"}, 3, 0, 3},
+		{"MB second line", []string{"⌘", "⌘"}, 4, 1, 0},
+		{"MB second last byte", []string{"⌘", "⌘"}, 6, 1, 2},
+		{"MB past end", []string{"⌘", "⌘"}, 99, 1, 0},
+
+		// Empty lines.
+		{"empty input", []string{}, 0, 0, 0},
+		{"single empty line", []string{""}, 0, 0, 0},
 	}
 
-	// CRLF line breaks — split("\n") leaves \r at the end of each line string
-	linesCRLF := []string{"abc\r", "de\r", "f"}
-	testsCRLF := []struct {
-		offset uint32
-		line   int
-	}{
-		{0, 0},
-		{3, 0}, // \r
-		{4, 0}, // \n
-		{5, 1},
-		{7, 1},
-		{8, 1},
-		{9, 2},
-		{10, 2},
-	}
-	for _, tc := range testsCRLF {
-		got := byteToLine(linesCRLF, tc.offset)
-		if got != tc.line {
-			t.Errorf("CRLF offset %d: expected line %d, got %d", tc.offset, tc.line, got)
-		}
-	}
-
-	// Multibyte characters (⌘ is 3 bytes in UTF-8)
-	linesMB := []string{"⌘", "⌘"}
-	testsMB := []struct {
-		offset uint32
-		line   int
-	}{
-		{0, 0}, // first byte of ⌘
-		{2, 0}, // third byte of ⌘
-		{3, 0}, // \n
-		{4, 1},
-		{6, 1},
-		{7, 1},
-	}
-	for _, tc := range testsMB {
-		got := byteToLine(linesMB, tc.offset)
-		if got != tc.line {
-			t.Errorf("MB offset %d: expected line %d, got %d", tc.offset, tc.line, got)
-		}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotLine, gotCol := byteToLineColFromLines(tc.lines, tc.offset)
+			if gotLine != tc.line || gotCol != tc.col {
+				t.Errorf("byteToLineColFromLines(%q, %d) = (%d, %d), want (%d, %d)",
+					tc.lines, tc.offset, gotLine, gotCol, tc.line, tc.col)
+			}
+		})
 	}
 }

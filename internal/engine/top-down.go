@@ -1,46 +1,39 @@
 package engine
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-// TopDown imploments the Gumtree Top-Down matching phase.
-//
-// It takes:
-//
-//	t1Root - root of source tree T1
-//	t2Root - root of destination tree T2
-//	minHeight - minimum subtree height (Will be removed after adding the Simple recovery function)
-//
-// Returns the set of mappings m and the candidate list A
+// TopDown matches largest isomorphic subtrees top-down by height.
 func TopDown(
 	t1Root, t2Root *treesitter.ASTNode,
 	minHeight int,
 ) *Mapping {
-	l1 := NewPriorityList()
-	l2 := NewPriorityList()
+	l1 := newPriorityList()
+	l2 := newPriorityList()
 	var A [][2]*treesitter.ASTNode // canditdate mappings
 	m := NewMapping()              // final mapping
 
-	Push(t1Root, l1)
-	Push(t2Root, l2)
+	l1.Push(t1Root)
+	l2.Push(t2Root)
 
-	for min(PeekMax(l1), PeekMax(l2)) >= minHeight {
-		if PeekMax(l1) != PeekMax(l2) {
-			if PeekMax(l1) > PeekMax(l2) {
-				for _, t := range Pop(l1) {
-					Open(t, l1)
+	for min(l1.PeekMax(), l2.PeekMax()) >= minHeight {
+		if l1.PeekMax() != l2.PeekMax() {
+			if l1.PeekMax() > l2.PeekMax() {
+				for _, t := range l1.Pop() {
+					l1.Open(t)
 				}
 			} else {
-				for _, t := range Pop(l2) {
-					Open(t, l2)
+				for _, t := range l2.Pop() {
+					l2.Open(t)
 				}
 			}
 		} else {
-			H1 := Pop(l1)
-			H2 := Pop(l2)
+			H1 := l1.Pop()
+			H2 := l2.Pop()
 
 			for _, t1 := range H1 {
 				for _, t2 := range H2 {
@@ -81,15 +74,12 @@ func TopDown(
 				}
 
 				if !matched {
-					for _, pair := range A {
-						if pair[0] == t1 {
-							matched = true
-							break
-						}
-					}
+					matched = slices.ContainsFunc(A, func(p [2]*treesitter.ASTNode) bool {
+						return p[0] == t1
+					})
 				}
 				if !matched {
-					Open(t1, l1)
+					l1.Open(t1)
 				}
 			}
 			for _, t2 := range H2 {
@@ -101,15 +91,12 @@ func TopDown(
 					}
 				}
 				if !matched {
-					for _, pair := range A {
-						if pair[1] == t2 {
-							matched = true
-							break
-						}
-					}
+					matched = slices.ContainsFunc(A, func(p [2]*treesitter.ASTNode) bool {
+						return p[1] == t2
+					})
 				}
 				if !matched {
-					Open(t2, l2)
+					l2.Open(t2)
 				}
 			}
 		}
@@ -133,14 +120,58 @@ func TopDown(
 
 		addIsomorphicPairs(t1, t2, m)
 
-		filtered := A[:0]
-		for _, p := range A {
-			if p[0] != t1 && p[1] != t2 {
-				filtered = append(filtered, p)
-			}
-		}
-		A = filtered
+		A = slices.DeleteFunc(A, func(p [2]*treesitter.ASTNode) bool {
+			return p[0] == t1 || p[1] == t2
+		})
 	}
 
 	return m
+}
+
+type priorityList struct {
+	buckets map[int][]*treesitter.ASTNode
+	heights []int
+}
+
+func newPriorityList() *priorityList {
+	return &priorityList{buckets: make(map[int][]*treesitter.ASTNode)}
+}
+
+func (l *priorityList) Push(n *treesitter.ASTNode) {
+	h := Height(n)
+	if _, exists := l.buckets[h]; !exists {
+		idx, found := sort.Find(len(l.heights), func(i int) int {
+			return h - l.heights[i]
+		})
+		if !found {
+			l.heights = append(l.heights, 0)
+			copy(l.heights[idx+1:], l.heights[idx:])
+			l.heights[idx] = h
+		}
+	}
+	l.buckets[h] = append(l.buckets[h], n)
+}
+
+func (l *priorityList) PeekMax() int {
+	if len(l.heights) == 0 {
+		return -1
+	}
+	return l.heights[len(l.heights)-1]
+}
+
+func (l *priorityList) Pop() []*treesitter.ASTNode {
+	if len(l.heights) == 0 {
+		return nil
+	}
+	maxH := l.heights[len(l.heights)-1]
+	l.heights = l.heights[:len(l.heights)-1]
+	nodes := l.buckets[maxH]
+	delete(l.buckets, maxH)
+	return nodes
+}
+
+func (l *priorityList) Open(t *treesitter.ASTNode) {
+	for _, c := range t.Children {
+		l.Push(c)
+	}
 }

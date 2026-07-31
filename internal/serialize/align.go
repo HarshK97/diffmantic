@@ -1,6 +1,7 @@
 package serialize
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -156,12 +157,8 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 	}
 
 	// Reverse to get top-down alignment order.
-	grid := make([]LineAlignmentPair, len(reversedGrid))
-	for idx, pair := range reversedGrid {
-		grid[len(reversedGrid)-1-idx] = pair
-	}
-
-	return grid
+	slices.Reverse(reversedGrid)
+	return reversedGrid
 }
 
 // computeLineWeight rates how strongly two lines align. Standalone brackets only match if their parent AST containers map.
@@ -263,16 +260,9 @@ func hasMovedAncestor(n *treesitter.ASTNode, movedNodes map[*treesitter.ASTNode]
 	return false
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func closeGaps(moved map[int]bool, maxLine int) {
 	last := -1
-	for i := 0; i < maxLine; i++ {
+	for i := range maxLine {
 		if moved[i] {
 			if last != -1 && i-last <= 4 {
 				for j := last + 1; j < i; j++ {

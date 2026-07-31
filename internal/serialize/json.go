@@ -130,7 +130,7 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			ja.OldValue = a.Node.Label
 			ja.NewValue = a.Value
 
-			// Resolve mapped destination node in target (after) tree
+			// Resolve the mapped destination node to reference in the after tree.
 			if ms != nil {
 				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 					destRef, err := makeNodeRef(destNodeDst, "after")
@@ -168,13 +168,7 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 				if destNodeDst != nil {
 					newParentDst = destNodeDst.Parent
 					if newParentDst != nil {
-						pos = -1
-						for idx, child := range newParentDst.Children {
-							if child == destNodeDst {
-								pos = idx
-								break
-							}
-						}
+						pos = slices.Index(newParentDst.Children, destNodeDst)
 						if pos != -1 {
 							resolved = true
 						}
@@ -183,7 +177,7 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			}
 
 			if !resolved {
-				// Fallback to old behavior
+				// Fallback: keep the action's original parent and position.
 				if findRoot(a.Parent) == findRoot(dstRoot) {
 					newParentDst = a.Parent
 				} else if ms != nil {
@@ -214,13 +208,7 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			ja.OldParent = oldParentRef
 
 			// Find old position in the before tree
-			oldPos := -1
-			for i, child := range a.Node.Parent.Children {
-				if child == a.Node {
-					oldPos = i
-					break
-				}
-			}
+			oldPos := slices.Index(a.Node.Parent.Children, a.Node)
 			if oldPos == -1 {
 				return nil, fmt.Errorf("moved node %s not found in its old parent's children", a.Node.Type)
 			}
@@ -231,7 +219,7 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 				ja.Subtree = &st
 			}
 
-			// Resolve mapped destination node in target (after) tree for byte location
+			// Resolve the mapped destination node for the destination byte range.
 			if ms != nil {
 				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 					startByte := destNodeDst.StartByte
@@ -264,89 +252,6 @@ func Marshal(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *trees
 	return json.MarshalIndent(env, "", "  ")
 }
 
-// Unmarshal reconstructs an actions.EditScript from the JSON data, resolving node
-// references against the provided source (before) and destination (after) AST roots.
-func Unmarshal(data []byte, srcRoot, dstRoot *treesitter.ASTNode) (*actions.EditScript, error) {
-	var env Envelope
-	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	es := actions.NewEditScript()
-
-	for _, ja := range env.Actions {
-		var a actions.Action
-
-		switch ja.Action {
-		case "insert":
-			a.Type = actions.Insert
-		case "delete":
-			a.Type = actions.Delete
-		case "update":
-			a.Type = actions.Update
-		case "move":
-			a.Type = actions.Move
-		default:
-			return nil, fmt.Errorf("unknown action type: %q", ja.Action)
-		}
-
-		// Resolve Node
-		if ja.Node != nil {
-			var err error
-			switch ja.Node.Tree {
-			case "before":
-				a.Node, err = findNodeByPath(srcRoot, ja.Node.Path)
-			case "after":
-				a.Node, err = findNodeByPath(dstRoot, ja.Node.Path)
-			default:
-				return nil, fmt.Errorf("unknown tree name for node: %q", ja.Node.Tree)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve node: %w", err)
-			}
-		}
-
-		// Resolve Parent (if present)
-		if ja.Parent != nil {
-			var err error
-			switch ja.Parent.Tree {
-			case "before":
-				a.Parent, err = findNodeByPath(srcRoot, ja.Parent.Path)
-			case "after":
-				a.Parent, err = findNodeByPath(dstRoot, ja.Parent.Path)
-			default:
-				return nil, fmt.Errorf("unknown tree name for parent: %q", ja.Parent.Tree)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve parent: %w", err)
-			}
-		}
-
-		// Resolve Position
-		if ja.Position != nil {
-			a.Position = *ja.Position
-		}
-
-		// Resolve Value
-		if ja.Action == "update" {
-			a.Value = ja.NewValue
-		}
-
-		// Resolve Subtree
-		if ja.Subtree != nil {
-			a.Subtree = *ja.Subtree
-		}
-
-		if ja.GroupID != "" {
-			a.GroupID = ja.GroupID
-		}
-
-		es.Add(a)
-	}
-
-	return es, nil
-}
-
 func makeNodeRef(n *treesitter.ASTNode, treeName string) (*NodeRef, error) {
 	if n == nil {
 		return nil, nil
@@ -369,13 +274,7 @@ func getIndexPath(node *treesitter.ASTNode) []int {
 	var path []int
 	curr := node
 	for curr.Parent != nil {
-		idx := -1
-		for i, child := range curr.Parent.Children {
-			if child == curr {
-				idx = i
-				break
-			}
-		}
+		idx := slices.Index(curr.Parent.Children, curr)
 		if idx == -1 {
 			return nil
 		}
@@ -384,17 +283,6 @@ func getIndexPath(node *treesitter.ASTNode) []int {
 	}
 	slices.Reverse(path)
 	return path
-}
-
-func findNodeByPath(root *treesitter.ASTNode, path []int) (*treesitter.ASTNode, error) {
-	curr := root
-	for _, idx := range path {
-		if idx < 0 || idx >= len(curr.Children) {
-			return nil, fmt.Errorf("invalid path index %d for node %s with %d children", idx, curr.Type, len(curr.Children))
-		}
-		curr = curr.Children[idx]
-	}
-	return curr, nil
 }
 
 func findRoot(n *treesitter.ASTNode) *treesitter.ASTNode {

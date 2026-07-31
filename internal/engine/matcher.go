@@ -1,10 +1,10 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
 	"io"
-	"os"
-	"sort"
+	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -31,12 +31,9 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 	return &MatchResult{Mappings: mappings}
 }
 
-// MatchUnmatchedLeaves greedily maps remaining leaf nodes with matching type
-// and label. Dice of parents picks the best candidate; ties are broken by a
-// positional score (parent mapped > parent same slot in matched ancestor >
-// same child index > matched ancestor pair).
-// Leaves with an unmatched parent are skipped: they belong to deleted or
-// inserted subtrees and have no real counterpart.
+// MatchUnmatchedLeaves pairs unmatched leaf nodes of the same type and label using
+// parent Dice similarity and positional scores to break ties. Leaves under unmatched
+// parents are skipped since they belong to deleted or inserted blocks.
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	t2Nodes := PostOrder(t2Root)
 	for _, t1 := range PostOrder(t1Root) {
@@ -142,21 +139,16 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	}
 }
 
-// sortMappingsByPreOrder sorts m.Pairs by the pre-order index of each
-// pair's Src node within the T1 tree.
+// sortMappingsByPreOrder sorts mapped pairs by T1 pre-order index.
 func sortMappingsByPreOrder(t1Root *treesitter.ASTNode, m *Mapping) {
 	nodes := PreOrder(t1Root)
 	index := make(map[*treesitter.ASTNode]int, len(nodes))
 	for i, n := range nodes {
 		index[n] = i
 	}
-	sort.SliceStable(m.Pairs, func(i, j int) bool {
-		return index[m.Pairs[i].Src] < index[m.Pairs[j].Src]
+	slices.SortStableFunc(m.Pairs, func(a, b MappingPair) int {
+		return cmp.Compare(index[a.Src], index[b.Src])
 	})
-}
-
-func PrintMappings(r *MatchResult) {
-	_ = FprintMappings(os.Stdout, r)
 }
 
 func FprintMappings(w io.Writer, r *MatchResult) error {

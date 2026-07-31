@@ -88,19 +88,17 @@ var (
 	hlMoveStyle   = lipgloss.NewStyle().Background(bgMoveTint)
 )
 
+var (
+	hlStyles    = [...]lipgloss.Style{hlDeleteStyle, hlInsertStyle, hlUpdateStyle, hlMoveStyle}
+	actionFgs   = [...]lipgloss.Color{colorRed, colorGreen, colorYellow, colorBlue}
+	actionIcons = [...]string{"✘", "✚", "✎", "➤"}
+)
+
 func hlStyle(kind actionKind) lipgloss.Style {
-	switch kind {
-	case kindDelete:
-		return hlDeleteStyle
-	case kindInsert:
-		return hlInsertStyle
-	case kindUpdate:
-		return hlUpdateStyle
-	case kindMove:
-		return hlMoveStyle
-	default:
-		return contentStyle
+	if uint(kind) < uint(len(hlStyles)) {
+		return hlStyles[kind]
 	}
+	return contentStyle
 }
 
 // Inspect panel styles.
@@ -117,32 +115,16 @@ var (
 
 // actionFg returns the foreground color for an action kind.
 func actionFg(kind actionKind) lipgloss.Color {
-	switch kind {
-	case kindDelete:
-		return colorRed
-	case kindInsert:
-		return colorGreen
-	case kindUpdate:
-		return colorYellow
-	case kindMove:
-		return colorBlue
-	default:
-		return colorText
+	if uint(kind) < uint(len(actionFgs)) {
+		return actionFgs[kind]
 	}
+	return colorText
 }
 
 // actionIcon returns a unicode icon for an action kind.
 func actionIcon(kind actionKind) string {
-	switch kind {
-	case kindDelete:
-		return "✘"
-	case kindInsert:
-		return "✚"
-	case kindUpdate:
-		return "✎"
-	case kindMove:
-		return "➤"
-	default:
-		return "•"
+	if uint(kind) < uint(len(actionIcons)) {
+		return actionIcons[kind]
 	}
+	return "•"
 }

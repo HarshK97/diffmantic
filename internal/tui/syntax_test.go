@@ -22,7 +22,6 @@ func TestHighlightSyntax(t *testing.T) {
 		// If it failed to build or parse, warn or fail.
 		t.Log("Warning: Tree-sitter Python highlight returned nil (maybe grammar is not linked in this test binary)")
 	} else {
-
 		spans, ok := res[0]
 		if !ok || len(spans) == 0 {
 			t.Errorf("expected syntax spans for line 0, got %v", spans)

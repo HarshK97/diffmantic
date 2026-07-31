@@ -30,7 +30,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "diffm [refA] [refB]",
 	Short: "Semantic diff engine powered by Tree-sitter",
@@ -49,8 +48,7 @@ Supported languages: Go, JavaScript, TypeScript, Python.`,
 		if git.IsGitRepository(".") {
 			stagedOnly, _ := cmd.Flags().GetBool("cached")
 
-			var refs []string
-			var paths []string
+			var refs, paths []string
 			for _, arg := range args {
 				if git.IsValidRevision(".", arg) {
 					refs = append(refs, arg)
@@ -84,8 +82,7 @@ Supported languages: Go, JavaScript, TypeScript, Python.`,
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
+// Execute runs the CLI and exits on error.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -94,11 +91,5 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.diffmantic.yaml)")
-
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
 }

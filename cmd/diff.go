@@ -45,12 +45,10 @@ node level, not just changed lines.
 Examples:
   diffm diff before.go after.go                 Interactive TUI (default)
   diffm diff before.go after.go -f json         JSON output for editor plugins
-  diffm diff before.go after.go -f actions      Print structural actions list
-  diffm diff before.go after.go --lang go       Override language detection`,
+  diffm diff before.go after.go -f actions      Print structural actions list`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		fileA, fileB := args[0], args[1]
-		// lang, _ := cmd.Flags().GetString("lang")
 		format, _ := cmd.Flags().GetString("format")
 		if format != "" && format != "json" && format != "actions" && format != "tui" {
 			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, tui\n", format)
@@ -97,8 +95,8 @@ Examples:
 			_, _ = os.Stdout.Write([]byte("\n"))
 		case "actions":
 			fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
-			engine.PrintMappings(dr.MatchResult)
-			actions.PrintActions(dr.EditScript)
+			_ = engine.FprintMappings(os.Stdout, dr.MatchResult)
+			_ = actions.FprintActions(os.Stdout, dr.EditScript)
 		case "tui":
 			if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes, dr.Envelope); err != nil {
 				fmt.Fprintf(os.Stderr, "error running TUI: %v\n", err)
@@ -111,5 +109,4 @@ Examples:
 func init() {
 	rootCmd.AddCommand(diffCmd)
 	diffCmd.Flags().StringP("format", "f", "", "Output format: json, actions, tui (default: tui if interactive, json otherwise)")
-	diffCmd.Flags().StringP("lang", "l", "", "Override language detection (e.g., go, python, js)")
 }

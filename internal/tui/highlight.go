@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"maps"
+	"slices"
 	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
@@ -81,8 +83,8 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 	mergeAllSpans(dstHL, dstBytes)
 
 	// Track edited lines so the user can jump between them with n/N.
-	srcHL.changeLines = sortedKeys(srcHL.tinted)
-	dstHL.changeLines = sortedKeys(dstHL.tinted)
+	srcHL.changeLines = slices.Sorted(maps.Keys(srcHL.tinted))
+	dstHL.changeLines = slices.Sorted(maps.Keys(dstHL.tinted))
 
 	return srcHL, dstHL
 }
@@ -147,23 +149,11 @@ func buildLineIndex(data []byte) []int {
 // byteToLineCol converts a global byte offset into a 0-indexed line and column.
 func byteToLineCol(lineIndex []int, offset uint32) (line, col int) {
 	off := int(offset)
-	line = sort.Search(len(lineIndex), func(i int) bool {
+	line = max(sort.Search(len(lineIndex), func(i int) bool {
 		return lineIndex[i] > off
-	}) - 1
-	if line < 0 {
-		line = 0
-	}
+	})-1, 0)
 	col = off - lineIndex[line]
 	return line, col
-}
-
-func sortedKeys(m map[int]actionKind) []int {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	return keys
 }
 
 func mergeAllSpans(hl *highlights, fileBytes []byte) {

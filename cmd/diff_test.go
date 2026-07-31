@@ -26,9 +26,4 @@ func TestDiffCmdFlags(t *testing.T) {
 	if f.DefValue != "" {
 		t.Errorf("format default = %q, want %q", f.DefValue, "")
 	}
-
-	l := diffCmd.Flags().Lookup("lang")
-	if l == nil {
-		t.Fatal("lang flag not registered")
-	}
 }
