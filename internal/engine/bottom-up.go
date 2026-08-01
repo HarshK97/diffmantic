@@ -14,6 +14,31 @@ func BottomUp(
 	m *Mapping,
 	minDice float64,
 ) {
+	// Index T2 nodes by type so candidate lookups aren't O(N).
+	t2NodesByType := make(map[string][]*treesitter.ASTNode)
+	for _, node := range PostOrder(t2Root) {
+		t2NodesByType[node.Type] = append(t2NodesByType[node.Type], node)
+	}
+
+	// Cache leaf label counts during the match so we don't re-walk subtrees.
+	leafLabelCache := make(map[*treesitter.ASTNode]map[string]int)
+	getLeafLabels := func(n *treesitter.ASTNode) map[string]int {
+		if labels, ok := leafLabelCache[n]; ok {
+			return labels
+		}
+		labels := make(map[string]int)
+		for _, d := range Descendants(n) {
+			if len(d.Children) == 0 && d.Label != "" {
+				labels[d.Label]++
+			}
+		}
+		if len(n.Children) == 0 && n.Label != "" {
+			labels[n.Label]++
+		}
+		leafLabelCache[n] = labels
+		return labels
+	}
+
 	for _, t1 := range PostOrder(t1Root) {
 		if t1 == t1Root {
 			if !m.Has(t1) && !m.HasDst(t2Root) {
@@ -42,7 +67,7 @@ func BottomUp(
 			continue
 		}
 
-		t2 := candidate(t1, t2Root, m)
+		t2 := candidate(t1, t2NodesByType[t1.Type], m, getLeafLabels)
 		if t2 == nil {
 			continue
 		}
@@ -80,13 +105,13 @@ func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
 	})
 }
 
-// Find the best unmatched node in T2 for t1. We prefer nodes at the same child
-// index to prevent wrapper insertions (like an added `if` guard) from pulling
-// nested blocks out of alignment, tie-breaking with Chawathe similarity and Dice.
+// Find the best unmatched node in T2 to pair with t1.
+// Breaks ties using same child position, Chawathe similarity, and then Dice.
 func candidate(
 	t1 *treesitter.ASTNode,
-	t2Root *treesitter.ASTNode,
+	candidates []*treesitter.ASTNode,
 	m *Mapping,
+	getLeafLabels func(*treesitter.ASTNode) map[string]int,
 ) *treesitter.ASTNode {
 	s1 := descendantSet(t1)
 
@@ -96,12 +121,9 @@ func candidate(
 	bestLabelScore := -1
 	var bestSamePositional bool
 
-	t1Labels := leafLabels(t1)
+	t1Labels := getLeafLabels(t1)
 
-	for _, c := range PostOrder(t2Root) {
-		if c.Type != t1.Type {
-			continue
-		}
+	for _, c := range candidates {
 		if m.HasDst(c) {
 			continue
 		}
@@ -138,25 +160,25 @@ func candidate(
 		if math.Abs(diff) > 0.05 {
 			if sim > bestSim {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			}
 		} else {
 			if samePositional && !bestSamePositional {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			} else if sim > bestSim {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			} else if sim == bestSim {
 				if d > bestDice {
 					isBetter = true
-					ls = labelOverlap(t1Labels, c)
+					ls = labelOverlap(t1Labels, c, getLeafLabels)
 				} else if d == bestDice {
 					if cMatches && !bestCMatches {
 						isBetter = true
-						ls = labelOverlap(t1Labels, c)
+						ls = labelOverlap(t1Labels, c, getLeafLabels)
 					} else if cMatches == bestCMatches {
-						ls = labelOverlap(t1Labels, c)
+						ls = labelOverlap(t1Labels, c, getLeafLabels)
 						if ls > bestLabelScore {
 							isBetter = true
 						}
@@ -176,31 +198,16 @@ func candidate(
 	return best
 }
 
-func leafLabels(n *treesitter.ASTNode) map[string]int {
-	labels := make(map[string]int)
-	for _, d := range Descendants(n) {
-		if len(d.Children) == 0 && d.Label != "" {
-			labels[d.Label]++
-		}
-	}
-	if len(n.Children) == 0 && n.Label != "" {
-		labels[n.Label]++
-	}
-	return labels
-}
-
-func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
+// Count how many leaf labels t1 and t2 share.
+func labelOverlap(
+	t1Labels map[string]int,
+	t2 *treesitter.ASTNode,
+	getLeafLabels func(*treesitter.ASTNode) map[string]int,
+) int {
 	count := 0
-	for _, d := range Descendants(t2) {
-		if len(d.Children) == 0 && d.Label != "" {
-			if t1Labels[d.Label] > 0 {
-				count++
-			}
-		}
-	}
-	if len(t2.Children) == 0 && t2.Label != "" {
-		if t1Labels[t2.Label] > 0 {
-			count++
+	for label, freq2 := range getLeafLabels(t2) {
+		if t1Labels[label] > 0 {
+			count += freq2
 		}
 	}
 	return count
