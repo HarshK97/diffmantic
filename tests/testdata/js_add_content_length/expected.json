@@ -2,24 +2,8 @@
   "version": "v1",
   "actions": [
     {
-      "action": "update",
+      "action": "insert",
       "node": {
-        "tree": "before",
-        "path": [
-          34,
-          0,
-          2,
-          3,
-          10
-        ],
-        "type": "comment",
-        "label": "// populate Content-Length",
-        "start_byte": 4192,
-        "end_byte": 4218
-      },
-      "old_value": "// populate Content-Length",
-      "new_value": "// Because Content-Length and Transfer-Encoding can't be present in the response headers together,",
-      "dest_node": {
         "tree": "after",
         "path": [
           34,
@@ -32,7 +16,20 @@
         "label": "// Because Content-Length and Transfer-Encoding can't be present in the response headers together,",
         "start_byte": 4192,
         "end_byte": 4290
-      }
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          34,
+          0,
+          2,
+          3
+        ],
+        "type": "statement_block",
+        "start_byte": 3327,
+        "end_byte": 5655
+      },
+      "position": 10
     },
     {
       "action": "insert",
@@ -187,6 +184,23 @@
       },
       "position": 2,
       "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          34,
+          0,
+          2,
+          3,
+          10
+        ],
+        "type": "comment",
+        "label": "// populate Content-Length",
+        "start_byte": 4192,
+        "end_byte": 4218
+      }
     }
   ],
   "line_alignment": [
@@ -848,6 +862,10 @@
     },
     {
       "left_line": 164,
+      "right_line": -1
+    },
+    {
+      "left_line": -1,
       "right_line": 164
     },
     {
