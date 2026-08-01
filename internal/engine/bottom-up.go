@@ -20,6 +20,25 @@ func BottomUp(
 		t2NodesByType[node.Type] = append(t2NodesByType[node.Type], node)
 	}
 
+	// Cache leaf label counts during the match so we don't re-walk subtrees.
+	leafLabelCache := make(map[*treesitter.ASTNode]map[string]int)
+	getLeafLabels := func(n *treesitter.ASTNode) map[string]int {
+		if labels, ok := leafLabelCache[n]; ok {
+			return labels
+		}
+		labels := make(map[string]int)
+		for _, d := range Descendants(n) {
+			if len(d.Children) == 0 && d.Label != "" {
+				labels[d.Label]++
+			}
+		}
+		if len(n.Children) == 0 && n.Label != "" {
+			labels[n.Label]++
+		}
+		leafLabelCache[n] = labels
+		return labels
+	}
+
 	for _, t1 := range PostOrder(t1Root) {
 		if t1 == t1Root {
 			if !m.Has(t1) && !m.HasDst(t2Root) {
@@ -48,7 +67,7 @@ func BottomUp(
 			continue
 		}
 
-		t2 := candidate(t1, t2NodesByType[t1.Type], m)
+		t2 := candidate(t1, t2NodesByType[t1.Type], m, getLeafLabels)
 		if t2 == nil {
 			continue
 		}
@@ -92,8 +111,9 @@ func candidate(
 	t1 *treesitter.ASTNode,
 	candidates []*treesitter.ASTNode,
 	m *Mapping,
+	getLeafLabels func(*treesitter.ASTNode) map[string]int,
 ) *treesitter.ASTNode {
-	s1 := t1.DescendantSet()
+	s1 := descendantSet(t1)
 
 	var best *treesitter.ASTNode
 	bestSim := -1.0
@@ -101,7 +121,7 @@ func candidate(
 	bestLabelScore := -1
 	var bestSamePositional bool
 
-	t1Labels := t1.LeafLabels()
+	t1Labels := getLeafLabels(t1)
 
 	for _, c := range candidates {
 		if m.HasDst(c) {
@@ -140,25 +160,25 @@ func candidate(
 		if math.Abs(diff) > 0.05 {
 			if sim > bestSim {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			}
 		} else {
 			if samePositional && !bestSamePositional {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			} else if sim > bestSim {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c)
+				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			} else if sim == bestSim {
 				if d > bestDice {
 					isBetter = true
-					ls = labelOverlap(t1Labels, c)
+					ls = labelOverlap(t1Labels, c, getLeafLabels)
 				} else if d == bestDice {
 					if cMatches && !bestCMatches {
 						isBetter = true
-						ls = labelOverlap(t1Labels, c)
+						ls = labelOverlap(t1Labels, c, getLeafLabels)
 					} else if cMatches == bestCMatches {
-						ls = labelOverlap(t1Labels, c)
+						ls = labelOverlap(t1Labels, c, getLeafLabels)
 						if ls > bestLabelScore {
 							isBetter = true
 						}
@@ -179,9 +199,13 @@ func candidate(
 }
 
 // Count how many leaf labels t1 and t2 share.
-func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
+func labelOverlap(
+	t1Labels map[string]int,
+	t2 *treesitter.ASTNode,
+	getLeafLabels func(*treesitter.ASTNode) map[string]int,
+) int {
 	count := 0
-	for label, freq2 := range t2.LeafLabels() {
+	for label, freq2 := range getLeafLabels(t2) {
 		if t1Labels[label] > 0 {
 			count += freq2
 		}

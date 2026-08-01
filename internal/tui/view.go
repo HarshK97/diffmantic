@@ -212,9 +212,9 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 
 			var gutter string
 			if isCursorRow && isActivePane {
-				gutter = cursorGutterStyle.Render(" " + lineNumStr + symbol)
+				gutter = cursorGutterStyle.Render(lineNumStr + symbol)
 			} else {
-				gutter = lineNumStyle.Render(" "+lineNumStr) + symStyle.Render(symbol)
+				gutter = lineNumStyle.Render(lineNumStr) + symStyle.Render(symbol)
 			}
 
 			rawLine := lines[lineIdx]
