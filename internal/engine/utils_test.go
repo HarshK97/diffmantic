@@ -251,3 +251,38 @@ func TestAncestorNameSimilarityNil(t *testing.T) {
 		t.Error("nil input should return 0")
 	}
 }
+
+func TestCommentSimilarity(t *testing.T) {
+	tests := []struct {
+		s1, s2 string
+		match  bool
+	}{
+		{"// Comment", "// Comment 1", true},
+		{"// Comment", "// Hello", false},
+		{"# Comment", "// Comment 1", true},
+		{"/* Comment */", "// Comment", true},
+		{"// then Dice as a tie-breaker. Positional prior...", "// then Dice as a tie-breaker.", true},
+		{"// leafLabels collects all...", "// then Dice as a tie-breaker.", false},
+	}
+
+	for _, tt := range tests {
+		got := CommentSimilarity(tt.s1, tt.s2)
+		match := got >= 0.4
+		if match != tt.match {
+			t.Errorf("CommentSimilarity(%q, %q) = %f; match = %v, want match = %v", tt.s1, tt.s2, got, match, tt.match)
+		}
+	}
+}
+
+func TestStructureIsomorphicComments(t *testing.T) {
+	c1 := &treesitter.ASTNode{Type: "comment", Label: "// Comment"}
+	c2 := &treesitter.ASTNode{Type: "comment", Label: "// Comment 1"}
+	c3 := &treesitter.ASTNode{Type: "comment", Label: "// Hello"}
+
+	if !StructureIsomorphic(c1, c2) {
+		t.Error("expected c1 and c2 to be structurally isomorphic comments")
+	}
+	if StructureIsomorphic(c1, c3) {
+		t.Error("expected c1 and c3 not to be structurally isomorphic comments")
+	}
+}

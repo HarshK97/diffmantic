@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/HarshK97/diffmantic/internal/treesitter"
+import (
+	"strings"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+)
 
 // Height returns the height of a subtree rooted at n.
 // A leaf has height 1.
@@ -112,6 +116,12 @@ func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
+	if a.Type == "comment" || b.Type == "comment" {
+		if a.Type != b.Type {
+			return false
+		}
+		return CommentSimilarity(a.Label, b.Label) >= 0.4
+	}
 	if a.StructureHash == 0 {
 		a.ComputeHashes()
 	}
@@ -202,4 +212,60 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 		curr = curr.Parent
 	}
 	return overlap
+}
+
+// CommentSimilarity returns the bigram Dice coefficient for two cleaned comment strings.
+func CommentSimilarity(s1, s2 string) float64 {
+	s1 = cleanComment(s1)
+	s2 = cleanComment(s2)
+	if s1 == "" && s2 == "" {
+		return 1.0
+	}
+	if s1 == "" || s2 == "" {
+		return 0.0
+	}
+	if s1 == s2 {
+		return 1.0
+	}
+
+	b1 := makeBigrams(s1)
+	b2 := makeBigrams(s2)
+	if len(b1) == 0 || len(b2) == 0 {
+		return 0.0
+	}
+
+	intersection := 0
+	counts := make(map[string]int, len(b1))
+	for _, bg := range b1 {
+		counts[bg]++
+	}
+	for _, bg := range b2 {
+		if counts[bg] > 0 {
+			intersection++
+			counts[bg]--
+		}
+	}
+
+	return 2.0 * float64(intersection) / float64(len(b1)+len(b2))
+}
+
+func cleanComment(label string) string {
+	return strings.Trim(strings.ToLower(label), "/#* \t\r\n")
+}
+
+func makeBigrams(s string) []string {
+	var runes []rune
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			runes = append(runes, r)
+		}
+	}
+	if len(runes) < 2 {
+		return nil
+	}
+	bigrams := make([]string, len(runes)-1)
+	for i := range len(runes) - 1 {
+		bigrams[i] = string(runes[i : i+2])
+	}
+	return bigrams
 }
