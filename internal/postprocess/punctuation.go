@@ -44,7 +44,7 @@ func FilterPunctuation(es *actions.EditScript, ms *engine.Mapping) *actions.Edit
 				Node: a.Node,
 			})
 
-			dstNode := ms.Dst()[a.Node]
+			dstNode := ms.Src()[a.Node]
 			if dstNode != nil {
 				filtered.Add(actions.Action{
 					Type:     actions.Insert,
