@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"maps"
 	"slices"
 	"sort"
@@ -177,8 +178,8 @@ func mergeAllSpans(hl *highlights, fileBytes []byte) {
 
 			if curr.kind == next.kind {
 				gap := next.startCol - curr.endCol
-				if gap <= 5 {
-					// Check if the gap is just spaces, tabs, or punctuation.
+				if gap <= 3 {
+					// Check if the gap contains only non-word characters like spaces or punctuation.
 					onlyNonChars := true
 					if gap > 0 && line < len(lineIndex) {
 						lineStart := lineIndex[line]
@@ -196,11 +197,11 @@ func mergeAllSpans(hl *highlights, fileBytes []byte) {
 								if curr.action.GroupID != "" && curr.action.GroupID == next.action.GroupID {
 									canMerge = true
 								} else if curr.kind == kindUpdate {
-									canMerge = nodeRefsEqual(curr.action.Parent, next.action.Parent)
+									canMerge = sharesLineage(curr.action.Parent, next.action.Parent)
 								} else {
-									// Moves need to share both the old and new parents.
-									canMerge = nodeRefsEqual(curr.action.Parent, next.action.Parent) &&
-										nodeRefsEqual(curr.action.OldParent, next.action.OldParent)
+									// Moves must share both their original and destination lineage.
+									canMerge = sharesLineage(curr.action.Parent, next.action.Parent) &&
+										sharesLineage(curr.action.OldParent, next.action.OldParent)
 								}
 							}
 						} else {
@@ -227,6 +228,9 @@ func mergeAllSpans(hl *highlights, fileBytes []byte) {
 }
 
 func isOnlyNonCharacters(b []byte) bool {
+	if bytes.ContainsAny(b, "<>=+-*/%!&|^~?") {
+		return false
+	}
 	for _, c := range b {
 		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
 			return false
@@ -236,19 +240,19 @@ func isOnlyNonCharacters(b []byte) bool {
 }
 
 func nodeRefsEqual(n1, n2 *serialize.NodeRef) bool {
-	if n1 == nil && n2 == nil {
-		return true
-	}
 	if n1 == nil || n2 == nil {
+		return n1 == nil && n2 == nil
+	}
+	return slices.Equal(n1.Path, n2.Path)
+}
+
+func isAncestorRef(a, b *serialize.NodeRef) bool {
+	if a == nil || b == nil {
 		return false
 	}
-	if len(n1.Path) != len(n2.Path) {
-		return false
-	}
-	for i := range n1.Path {
-		if n1.Path[i] != n2.Path[i] {
-			return false
-		}
-	}
-	return true
+	return len(b.Path) >= len(a.Path) && slices.Equal(a.Path, b.Path[:len(a.Path)])
+}
+
+func sharesLineage(n1, n2 *serialize.NodeRef) bool {
+	return nodeRefsEqual(n1, n2) || isAncestorRef(n1, n2) || isAncestorRef(n2, n1)
 }
