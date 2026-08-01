@@ -14,6 +14,12 @@ func BottomUp(
 	m *Mapping,
 	minDice float64,
 ) {
+	// Index T2 nodes by type so candidate lookups aren't O(N).
+	t2NodesByType := make(map[string][]*treesitter.ASTNode)
+	for _, node := range PostOrder(t2Root) {
+		t2NodesByType[node.Type] = append(t2NodesByType[node.Type], node)
+	}
+
 	for _, t1 := range PostOrder(t1Root) {
 		if t1 == t1Root {
 			if !m.Has(t1) && !m.HasDst(t2Root) {
@@ -42,7 +48,7 @@ func BottomUp(
 			continue
 		}
 
-		t2 := candidate(t1, t2Root, m)
+		t2 := candidate(t1, t2NodesByType[t1.Type], m)
 		if t2 == nil {
 			continue
 		}
@@ -80,15 +86,14 @@ func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
 	})
 }
 
-// Find the best unmatched node in T2 for t1. We prefer nodes at the same child
-// index to prevent wrapper insertions (like an added `if` guard) from pulling
-// nested blocks out of alignment, tie-breaking with Chawathe similarity and Dice.
+// Find the best unmatched node in T2 to pair with t1.
+// Breaks ties using same child position, Chawathe similarity, and then Dice.
 func candidate(
 	t1 *treesitter.ASTNode,
-	t2Root *treesitter.ASTNode,
+	candidates []*treesitter.ASTNode,
 	m *Mapping,
 ) *treesitter.ASTNode {
-	s1 := descendantSet(t1)
+	s1 := t1.DescendantSet()
 
 	var best *treesitter.ASTNode
 	bestSim := -1.0
@@ -96,12 +101,9 @@ func candidate(
 	bestLabelScore := -1
 	var bestSamePositional bool
 
-	t1Labels := leafLabels(t1)
+	t1Labels := t1.LeafLabels()
 
-	for _, c := range PostOrder(t2Root) {
-		if c.Type != t1.Type {
-			continue
-		}
+	for _, c := range candidates {
 		if m.HasDst(c) {
 			continue
 		}
@@ -176,31 +178,12 @@ func candidate(
 	return best
 }
 
-func leafLabels(n *treesitter.ASTNode) map[string]int {
-	labels := make(map[string]int)
-	for _, d := range Descendants(n) {
-		if len(d.Children) == 0 && d.Label != "" {
-			labels[d.Label]++
-		}
-	}
-	if len(n.Children) == 0 && n.Label != "" {
-		labels[n.Label]++
-	}
-	return labels
-}
-
+// Count how many leaf labels t1 and t2 share.
 func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
 	count := 0
-	for _, d := range Descendants(t2) {
-		if len(d.Children) == 0 && d.Label != "" {
-			if t1Labels[d.Label] > 0 {
-				count++
-			}
-		}
-	}
-	if len(t2.Children) == 0 && t2.Label != "" {
-		if t1Labels[t2.Label] > 0 {
-			count++
+	for label, freq2 := range t2.LeafLabels() {
+		if t1Labels[label] > 0 {
+			count += freq2
 		}
 	}
 	return count

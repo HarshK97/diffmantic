@@ -24,6 +24,10 @@ type ASTNode struct {
 	Hash uint64
 	// Shape hash (type and children) ignoring leaf labels.
 	StructureHash uint64
+
+	// Subtree caches for matching
+	DescendantsCached []*ASTNode
+	LeafLabelsCached  map[string]int
 }
 
 const (
@@ -178,4 +182,45 @@ func (n *ASTNode) IsScaffolding() bool {
 		return false
 	}
 	return slices.Contains(rules.Scaffolding, n.Type)
+}
+
+// Descendants returns all subtree descendants, caching the slice on first call.
+func (n *ASTNode) Descendants() []*ASTNode {
+	if n.DescendantsCached != nil {
+		return n.DescendantsCached
+	}
+	var out []*ASTNode
+	for _, c := range n.Children {
+		out = append(out, c)
+		out = append(out, c.Descendants()...)
+	}
+	n.DescendantsCached = out
+	return out
+}
+
+// DescendantSet returns all subtree descendants as a map set.
+func (n *ASTNode) DescendantSet() map[*ASTNode]struct{} {
+	s := make(map[*ASTNode]struct{})
+	for _, d := range n.Descendants() {
+		s[d] = struct{}{}
+	}
+	return s
+}
+
+// LeafLabels returns counts of all leaf labels in the subtree, caching on first call.
+func (n *ASTNode) LeafLabels() map[string]int {
+	if n.LeafLabelsCached != nil {
+		return n.LeafLabelsCached
+	}
+	labels := make(map[string]int)
+	for _, d := range n.Descendants() {
+		if len(d.Children) == 0 && d.Label != "" {
+			labels[d.Label]++
+		}
+	}
+	if len(n.Children) == 0 && n.Label != "" {
+		labels[n.Label]++
+	}
+	n.LeafLabelsCached = labels
+	return labels
 }

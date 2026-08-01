@@ -34,29 +34,12 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 // Descendants returns all nodes in the subtree rooted at n,
 // excluding n itself.
 func Descendants(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	var out []*treesitter.ASTNode
-	collectDescendants(n, &out)
-	return out
-}
-
-func collectDescendants(n *treesitter.ASTNode, out *[]*treesitter.ASTNode) {
-	for _, c := range n.Children {
-		*out = append(*out, c)
-		collectDescendants(c, out)
-	}
-}
-
-func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
-	s := make(map[*treesitter.ASTNode]struct{})
-	for _, d := range Descendants(n) {
-		s[d] = struct{}{}
-	}
-	return s
+	return n.Descendants()
 }
 
 func commonMappedDescendants(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) (common, lenS1, lenS2 int) {
 	s1 := Descendants(t1)
-	s2 := descendantSet(t2)
+	s2 := t2.DescendantSet()
 	for _, d := range s1 {
 		if mapped, ok := m[d]; ok {
 			if _, inS2 := s2[mapped]; inS2 {
