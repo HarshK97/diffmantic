@@ -137,7 +137,10 @@ jobs:
 
       - name: Run benchmarks on baseline
         if: steps.filter.outputs.run_benchmarks == 'true'
-        run: go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_old.txt || true
+        run: |
+          go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_old.txt || true
+          echo "==> Restoring PR HEAD commit to access scripts..."
+          git checkout ${{ github.sha }} || git checkout - || true
 
       - name: Render Benchmark A/B Summary
         if: steps.filter.outputs.run_benchmarks == 'true'
