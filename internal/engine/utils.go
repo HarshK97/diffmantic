@@ -37,7 +37,14 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 
 // Returns all descendants in the subtree, excluding n itself.
 func Descendants(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	var out []*treesitter.ASTNode
+	if n == nil {
+		return nil
+	}
+	size := n.Size()
+	if size <= 1 {
+		return nil
+	}
+	out := make([]*treesitter.ASTNode, 0, size-1)
 	collectDescendants(n, &out)
 	return out
 }
@@ -137,12 +144,14 @@ func PostOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	if n == nil {
 		return nil
 	}
-	var out []*treesitter.ASTNode
+	return appendPostOrder(make([]*treesitter.ASTNode, 0, n.Size()), n)
+}
+
+func appendPostOrder(out []*treesitter.ASTNode, n *treesitter.ASTNode) []*treesitter.ASTNode {
 	for _, c := range n.Children {
-		out = append(out, PostOrder(c)...)
+		out = appendPostOrder(out, c)
 	}
-	out = append(out, n)
-	return out
+	return append(out, n)
 }
 
 // PreOrder returns all nodes in the subtree rooted at n
@@ -152,9 +161,13 @@ func PreOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
 	if n == nil {
 		return nil
 	}
-	out := []*treesitter.ASTNode{n}
+	return appendPreOrder(make([]*treesitter.ASTNode, 0, n.Size()), n)
+}
+
+func appendPreOrder(out []*treesitter.ASTNode, n *treesitter.ASTNode) []*treesitter.ASTNode {
+	out = append(out, n)
 	for _, c := range n.Children {
-		out = append(out, PreOrder(c)...)
+		out = appendPreOrder(out, c)
 	}
 	return out
 }

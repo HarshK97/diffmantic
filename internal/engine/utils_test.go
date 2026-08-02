@@ -173,6 +173,9 @@ func TestStructureIsomorphic(t *testing.T) {
 }
 
 func TestPostOrder(t *testing.T) {
+	if PostOrder(nil) != nil {
+		t.Error("PostOrder(nil) should return nil")
+	}
 	leaf := testutil.Leaf("id", "x")
 	root := testutil.Node("call", "", leaf)
 	order := PostOrder(root)
@@ -186,6 +189,9 @@ func TestPostOrder(t *testing.T) {
 }
 
 func TestPreOrder(t *testing.T) {
+	if PreOrder(nil) != nil {
+		t.Error("PreOrder(nil) should return nil")
+	}
 	leaf := testutil.Leaf("id", "x")
 	root := testutil.Node("call", "", leaf)
 	order := PreOrder(root)
