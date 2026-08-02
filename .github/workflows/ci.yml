@@ -87,20 +87,61 @@ jobs:
           report_paths: '**/unit-tests.xml'
           check_name: 'Test Report (${{ matrix.os }})'
 
-      - name: Benchmark A/B comparison (benchstat & GITHUB_STEP_SUMMARY)
-        if: matrix.os == 'ubuntu-latest'
+  benchmark:
+    name: Benchmark A/B Comparison
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check performance-critical file changes
+        id: filter
         run: |
-          go install golang.org/x/perf/cmd/benchstat@latest
-          echo "==> Running benchmarks on current HEAD..."
-          go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_new.txt
-          echo "==> Fetching baseline..."
-          git fetch origin ${{ github.event.pull_request.base.ref || 'main' }} --depth=2 || true
+          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          CHANGED=$(git diff --name-only $BASE_REF HEAD || true)
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(internal/engine/|internal/treesitter/|internal/actions/|tests/integration/|go\.mod|go\.sum)'; then
+            echo "::notice::Performance-critical files changed. Running A/B benchmarks..."
+            echo "run_benchmarks=true" >> $GITHUB_OUTPUT
+          else
+            echo "::notice::No performance-critical files changed. Skipping benchmarks."
+            echo "run_benchmarks=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Go
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: 'go.sum'
+
+      - name: Install benchstat
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Run benchmarks on current HEAD
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_new.txt
+
+      - name: Fetch baseline branch
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: |
           BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
           git checkout $BASE_REF || true
-          echo "==> Running benchmarks on baseline ($BASE_REF)..."
-          go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_old.txt || true
-          
-          # Render formatted Markdown comparison report for GitHub Actions Summary Tab
+
+      - name: Run benchmarks on baseline
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_old.txt || true
+
+      - name: Render Benchmark A/B Summary
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: |
           benchstat bench_old.txt bench_new.txt > benchstat_raw.txt || true
           python3 .github/scripts/format_benchstat.py benchstat_raw.txt >> $GITHUB_STEP_SUMMARY || cat benchstat_raw.txt >> $GITHUB_STEP_SUMMARY
           rm -f bench_old.txt bench_new.txt benchstat_raw.txt
