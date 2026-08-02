@@ -27,15 +27,15 @@ import (
 var update = flag.Bool("update", false, "update the golden files")
 
 // testdataDir returns the absolute path to tests/testdata/.
-func testdataDir(t *testing.T) string {
-	t.Helper()
+func testdataDir(tb testing.TB) string {
+	tb.Helper()
 	// pipeline_test.go is two levels below repo root; testdata is in tests/
 	dir, err := filepath.Abs(filepath.Join("..", "testdata"))
 	if err != nil {
-		t.Fatalf("resolving testdata dir: %v", err)
+		tb.Fatalf("resolving testdata dir: %v", err)
 	}
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Fatalf("testdata dir does not exist: %s", dir)
+		tb.Fatalf("testdata dir does not exist: %s", dir)
 	}
 	return dir
 }
@@ -50,13 +50,13 @@ type fixture struct {
 }
 
 // loadFixture reads the old and new source files for a fixture.
-func loadFixture(t *testing.T, name string) fixture {
-	t.Helper()
-	dir := filepath.Join(testdataDir(t), name)
+func loadFixture(tb testing.TB, name string) fixture {
+	tb.Helper()
+	dir := filepath.Join(testdataDir(tb), name)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("reading fixture dir %s: %v", name, err)
+		tb.Fatalf("reading fixture dir %s: %v", name, err)
 	}
 
 	var oldPath, newPath string
@@ -69,16 +69,16 @@ func loadFixture(t *testing.T, name string) fixture {
 		}
 	}
 	if oldPath == "" || newPath == "" {
-		t.Fatalf("fixture %s: missing old.* or new.* file", name)
+		tb.Fatalf("fixture %s: missing old.* or new.* file", name)
 	}
 
 	oldSrc, err := os.ReadFile(oldPath)
 	if err != nil {
-		t.Fatalf("reading %s: %v", oldPath, err)
+		tb.Fatalf("reading %s: %v", oldPath, err)
 	}
 	newSrc, err := os.ReadFile(newPath)
 	if err != nil {
-		t.Fatalf("reading %s: %v", newPath, err)
+		tb.Fatalf("reading %s: %v", newPath, err)
 	}
 
 	return fixture{
@@ -88,6 +88,15 @@ func loadFixture(t *testing.T, name string) fixture {
 		OldSrc:  oldSrc,
 		NewSrc:  newSrc,
 	}
+}
+
+func mustParse(tb testing.TB, src []byte, path string) *treesitter.ASTNode {
+	tb.Helper()
+	ast, err := treesitter.Parse(src, path)
+	if err != nil {
+		tb.Fatalf("parsing %s: %v", path, err)
+	}
+	return ast
 }
 
 // pipelineResult holds the output of a full engine run.
@@ -131,12 +140,12 @@ func runPipeline(t *testing.T, f fixture) pipelineResult {
 }
 
 // allFixtures returns the names of all fixture directories in testdata/.
-func allFixtures(t *testing.T) []string {
-	t.Helper()
-	dir := testdataDir(t)
+func allFixtures(tb testing.TB) []string {
+	tb.Helper()
+	dir := testdataDir(tb)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("reading testdata dir: %v", err)
+		tb.Fatalf("reading testdata dir: %v", err)
 	}
 	var names []string
 	for _, e := range entries {
