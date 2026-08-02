@@ -61,16 +61,24 @@ jobs:
           -coverprofile=coverage.out -covermode=atomic -coverpkg=./...
           ./...
 
-      - name: Print coverage summary
+      - name: Print & publish coverage summary
         if: matrix.os == 'ubuntu-latest'
-        run: go tool cover -func=coverage.out | tail -1
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          echo "### 🧪 Code Coverage" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | tail -15 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage report
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.out
+          path: |
+            coverage.out
+            coverage.html
 
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v4
@@ -78,10 +86,6 @@ jobs:
         with:
           report_paths: '**/unit-tests.xml'
           check_name: 'Test Report (${{ matrix.os }})'
-
-      - name: Benchmark smoke test
-        if: matrix.os == 'ubuntu-latest'
-        run: go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=1 -benchtime=1x
 
       - name: Benchmark A/B comparison (benchstat & GITHUB_STEP_SUMMARY)
         if: matrix.os == 'ubuntu-latest'
@@ -96,9 +100,7 @@ jobs:
           echo "==> Running benchmarks on baseline ($BASE_REF)..."
           go test ./tests/integration/ -bench=BenchmarkPipeline -benchmem -run=^$ -count=3 > bench_old.txt || true
           
-          # Render Markdown comparison table for GitHub Actions Summary Tab
-          echo "### 📊 Benchmark A/B Comparison vs Baseline" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          benchstat bench_old.txt bench_new.txt >> $GITHUB_STEP_SUMMARY || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          rm -f bench_old.txt bench_new.txt
+          # Render formatted Markdown comparison report for GitHub Actions Summary Tab
+          benchstat bench_old.txt bench_new.txt > benchstat_raw.txt || true
+          python3 .github/scripts/format_benchstat.py benchstat_raw.txt >> $GITHUB_STEP_SUMMARY || cat benchstat_raw.txt >> $GITHUB_STEP_SUMMARY
+          rm -f bench_old.txt bench_new.txt benchstat_raw.txt
