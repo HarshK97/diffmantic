@@ -41,14 +41,27 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 // parent Dice similarity and positional scores to break ties. Leaves under unmatched
 // parents are skipped since they belong to deleted or inserted blocks.
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *LinePartition) {
-	t2Nodes := PostOrder(t2Root)
+	type leafKey struct{ Type, Label string }
+	t2Leaves := make(map[leafKey][]*treesitter.ASTNode)
+	for _, t2 := range PostOrder(t2Root) {
+		if len(t2.Children) == 0 && t2.Label != "" {
+			t2Leaves[leafKey{t2.Type, t2.Label}] = append(t2Leaves[leafKey{t2.Type, t2.Label}], t2)
+		}
+	}
+
+	type parentPair struct{ p1, p2 *treesitter.ASTNode }
+	diceCache := make(map[parentPair]float64)
 	for _, t1 := range PostOrder(t1Root) {
 		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" {
 			continue
 		}
 
-		// No matched parent → leaf is in a deleted/inserted subtree.
 		if t1.Parent != nil && !m.Has(t1.Parent) {
+			continue
+		}
+
+		candidates := t2Leaves[leafKey{t1.Type, t1.Label}]
+		if len(candidates) == 0 {
 			continue
 		}
 
@@ -61,25 +74,20 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			t1Idx = childIndexWithin(t1, t1.Parent)
 		}
 
-		for _, t2 := range t2Nodes {
-			if m.HasDst(t2) || t2.Type != t1.Type || t2.Label != t1.Label || len(t2.Children) > 0 {
+		anc1 := NearestMatchedAncestor(t1, m, false)
+
+		for _, t2 := range candidates {
+			if m.HasDst(t2) {
 				continue
 			}
 			if part != nil && !part.CanMatch(t1, t2) {
 				continue
 			}
 
-			// No matched parent on destination leaf -> it belongs to an inserted subtree.
 			if t2.Parent != nil && !m.HasDst(t2.Parent) {
 				continue
 			}
 
-			d := 0.0
-			if t1.Parent != nil && t2.Parent != nil {
-				d = Dice(t1.Parent, t2.Parent, m.Src())
-			}
-
-			anc1 := NearestMatchedAncestor(t1, m, false)
 			anc2 := NearestMatchedAncestor(t2, m, true)
 			cMatches := (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
 
@@ -90,9 +98,6 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 				samePositional = t1Idx == childIndexWithin(t2, t2.Parent)
 			}
 
-			// Check if both parents sit at the same index within their
-			// nearest matched ancestors (for fixed-position keywords like
-			// "if" where samePositional can't tell them apart).
 			parentPositional := false
 			if cMatches && anc1 != nil && anc2 != nil &&
 				t1.Parent != nil && t2.Parent != nil &&
@@ -133,12 +138,23 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 			posScore += siblingScore
 
-			isBetter := posScore > bestPosScore || (posScore == bestPosScore && d > bestDice)
+			if posScore >= bestPosScore {
+				d := 0.0
+				if t1.Parent != nil && t2.Parent != nil {
+					pair := parentPair{p1: t1.Parent, p2: t2.Parent}
+					if cached, ok := diceCache[pair]; ok {
+						d = cached
+					} else {
+						d = Dice(t1.Parent, t2.Parent, m.Src())
+						diceCache[pair] = d
+					}
+				}
 
-			if isBetter {
-				bestDice = d
-				bestT2 = t2
-				bestPosScore = posScore
+				if posScore > bestPosScore || d > bestDice {
+					bestDice = d
+					bestT2 = t2
+					bestPosScore = posScore
+				}
 			}
 		}
 
