@@ -34,8 +34,15 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 	langA, _ := treesitter.DetectLanguage(fileA)
 	langB, _ := treesitter.DetectLanguage(fileB)
 
+	// Fall back to line diff if tree-sitter can't parse the file.
 	if langA == nil && langB == nil {
-		return nil, fmt.Errorf("unsupported language for files: %s, %s", fileA, fileB)
+		return &diffResult{
+			SrcBytes: srcBytes,
+			DstBytes: dstBytes,
+			SrcFile:  fileA,
+			DstFile:  fileB,
+			Envelope: serialize.BuildLineDiffEnvelope(srcBytes, dstBytes),
+		}, nil
 	}
 
 	if langA == nil {
@@ -45,13 +52,16 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 		langB = langA
 	}
 
-	srcAST, err := treesitter.ParseWithLanguage(srcBytes, langA)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", fileA, err)
-	}
-	dstAST, err := treesitter.ParseWithLanguage(dstBytes, langB)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", fileB, err)
+	srcAST, _ := treesitter.ParseWithLanguage(srcBytes, langA)
+	dstAST, _ := treesitter.ParseWithLanguage(dstBytes, langB)
+	if srcAST == nil || dstAST == nil {
+		return &diffResult{
+			SrcBytes: srcBytes,
+			DstBytes: dstBytes,
+			SrcFile:  fileA,
+			DstFile:  fileB,
+			Envelope: serialize.BuildLineDiffEnvelope(srcBytes, dstBytes),
+		}, nil
 	}
 
 	matchResult := engine.Match(srcAST, dstAST)

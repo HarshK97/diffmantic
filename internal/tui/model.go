@@ -376,69 +376,15 @@ func hasConflictMarkers(data []byte) bool {
 	return bytes.Contains(data, []byte("<<<<<<<")) || bytes.Contains(data, []byte("=======")) || bytes.Contains(data, []byte(">>>>>>>"))
 }
 
-func generateLineDiff(srcBytes, dstBytes []byte) *serialize.Envelope {
-	alignment := serialize.AlignLines(srcBytes, dstBytes, nil, nil, nil, nil)
-
-	buildLineOffsets := func(data []byte) []uint32 {
-		offsets := []uint32{0}
-		for i, b := range data {
-			if b == '\n' {
-				offsets = append(offsets, uint32(i+1))
-			}
-		}
-		return offsets
-	}
-
-	offsetsSrc := buildLineOffsets(srcBytes)
-	offsetsDst := buildLineOffsets(dstBytes)
-
-	getBounds := func(lineIdx int, offsets []uint32, maxLen int) (uint32, uint32) {
-		end := uint32(maxLen)
-		if lineIdx+1 < len(offsets) {
-			end = offsets[lineIdx+1]
-		}
-		return offsets[lineIdx], end
-	}
-
-	var actions []serialize.Action
-
-	for _, pair := range alignment {
-		if pair.RightLine == -1 && pair.LeftLine != -1 {
-			start, end := getBounds(pair.LeftLine, offsetsSrc, len(srcBytes))
-			actions = append(actions, serialize.Action{
-				Action: "delete",
-				Node: &serialize.NodeRef{
-					StartByte: start,
-					EndByte:   end,
-				},
-			})
-		} else if pair.LeftLine == -1 && pair.RightLine != -1 {
-			start, end := getBounds(pair.RightLine, offsetsDst, len(dstBytes))
-			actions = append(actions, serialize.Action{
-				Action: "insert",
-				Node: &serialize.NodeRef{
-					StartByte: start,
-					EndByte:   end,
-				},
-			})
-		}
-	}
-
-	return &serialize.Envelope{
-		Actions:       actions,
-		LineAlignment: alignment,
-	}
-}
-
 func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConflict bool) (*serialize.Envelope, error) {
 	if isConflict || hasConflictMarkers(srcBytes) || hasConflictMarkers(dstBytes) {
-		return generateLineDiff(srcBytes, dstBytes), nil
+		return serialize.BuildLineDiffEnvelope(srcBytes, dstBytes), nil
 	}
 
 	srcAST, _ := treesitter.Parse(srcBytes, srcFile)
 	dstAST, _ := treesitter.Parse(dstBytes, dstFile)
 	if srcAST == nil || dstAST == nil {
-		return generateLineDiff(srcBytes, dstBytes), nil
+		return serialize.BuildLineDiffEnvelope(srcBytes, dstBytes), nil
 	}
 
 	matchResult := engine.Match(srcAST, dstAST)
