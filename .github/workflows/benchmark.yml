@@ -63,12 +63,20 @@ jobs:
               body: newBody,
             });
 
-      - name: Get PR details
+      - name: Get PR details & determine benchmark target
         id: pr_details
         uses: actions/github-script@v7
         with:
           script: |
+            let benchTarget = 'BenchmarkPipeline';
             if (context.eventName === 'issue_comment') {
+              const body = (context.payload.comment.body || '').toLowerCase();
+              if (body.includes('parse')) benchTarget = 'BenchmarkParse';
+              else if (body.includes('match')) benchTarget = 'BenchmarkMatch';
+              else if (body.includes('editscript')) benchTarget = 'BenchmarkEditScript';
+              else if (body.includes('postprocess')) benchTarget = 'BenchmarkPostprocess';
+              else if (body.includes('serialize')) benchTarget = 'BenchmarkSerialize';
+
               const { data: pr } = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -79,6 +87,7 @@ jobs:
               core.setOutput('base_sha', pr.base.sha);
               core.setOutput('pull_number', pr.number);
             }
+            core.setOutput('bench_target', benchTarget);
 
       - name: Verify CI checks (lint & tests) have passed
         if: github.event_name == 'issue_comment'
@@ -158,14 +167,14 @@ jobs:
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
       - name: Run benchmarks on PR HEAD
-        run: go test ./tests/integration/ -bench=BenchmarkMatch -benchmem -run=^$ -count=3 > bench_new.txt
+        run: go test ./tests/integration/ -bench=${{ steps.pr_details.outputs.bench_target || 'BenchmarkPipeline' }} -benchmem -run=^$ -count=3 > bench_new.txt
 
       - name: Fetch and run benchmarks on baseline branch
         run: |
           git fetch origin main:main || true
           BASE_SHA="${{ steps.pr_details.outputs.base_sha || 'main' }}"
           git checkout $BASE_SHA || true
-          go test ./tests/integration/ -bench=BenchmarkMatch -benchmem -run=^$ -count=3 > bench_old.txt || true
+          go test ./tests/integration/ -bench=${{ steps.pr_details.outputs.bench_target || 'BenchmarkPipeline' }} -benchmem -run=^$ -count=3 > bench_old.txt || true
           echo "==> Restoring PR HEAD commit..."
           git checkout ${{ steps.pr_details.outputs.head_sha || github.sha }} || true
 
