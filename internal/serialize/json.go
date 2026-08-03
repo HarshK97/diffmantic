@@ -55,6 +55,64 @@ type NodeRef struct {
 	EndByte   uint32 `json:"end_byte"`
 }
 
+// BuildLineDiffEnvelope creates a line-level diff envelope when tree-sitter can't parse a file.
+func BuildLineDiffEnvelope(srcBytes, dstBytes []byte) *Envelope {
+	alignment := AlignLines(srcBytes, dstBytes, nil, nil, nil, nil)
+
+	buildLineOffsets := func(data []byte) []uint32 {
+		offsets := []uint32{0}
+		for i, b := range data {
+			if b == '\n' {
+				offsets = append(offsets, uint32(i+1))
+			}
+		}
+		return offsets
+	}
+
+	offsetsSrc := buildLineOffsets(srcBytes)
+	offsetsDst := buildLineOffsets(dstBytes)
+
+	getBounds := func(lineIdx int, offsets []uint32, maxLen int) (uint32, uint32) {
+		end := uint32(maxLen)
+		if lineIdx+1 < len(offsets) {
+			end = offsets[lineIdx+1]
+		}
+		return offsets[lineIdx], end
+	}
+
+	var actionsList []Action
+
+	for _, pair := range alignment {
+		if pair.RightLine == -1 && pair.LeftLine != -1 {
+			start, end := getBounds(pair.LeftLine, offsetsSrc, len(srcBytes))
+			actionsList = append(actionsList, Action{
+				Action: "delete",
+				Node: &NodeRef{
+					Tree:      "before",
+					StartByte: start,
+					EndByte:   end,
+				},
+			})
+		} else if pair.LeftLine == -1 && pair.RightLine != -1 {
+			start, end := getBounds(pair.RightLine, offsetsDst, len(dstBytes))
+			actionsList = append(actionsList, Action{
+				Action: "insert",
+				Node: &NodeRef{
+					Tree:      "after",
+					StartByte: start,
+					EndByte:   end,
+				},
+			})
+		}
+	}
+
+	return &Envelope{
+		Version:       SchemaVersion,
+		Actions:       actionsList,
+		LineAlignment: alignment,
+	}
+}
+
 // BuildEnvelope bundles the edit script, AST mappings, and metadata into a unified envelope.
 func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode, srcBytes, dstBytes []byte) (*Envelope, error) {
 	if es == nil {

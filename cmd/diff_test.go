@@ -52,3 +52,23 @@ func TestComputeDiffWithDevNull(t *testing.T) {
 		t.Fatal("expected non-nil diff result and envelope for deleted file")
 	}
 }
+
+func TestComputeDiffUnsupportedLanguage(t *testing.T) {
+	dir := t.TempDir()
+	fileA := dir + "/a.unknown"
+	fileB := dir + "/b.unknown"
+
+	_ = os.WriteFile(fileA, []byte("line 1\nline 2\nline 3\n"), 0o644)
+	_ = os.WriteFile(fileB, []byte("line 1\nline 2 modified\nline 3\nline 4\n"), 0o644)
+
+	res, err := computeDiff(fileA, fileB)
+	if err != nil {
+		t.Fatalf("computeDiff failed for unsupported files: %v", err)
+	}
+	if res == nil || res.Envelope == nil {
+		t.Fatal("expected non-nil result and envelope for unsupported file diff")
+	}
+	if len(res.Envelope.Actions) == 0 {
+		t.Error("expected fallback line diff actions for unsupported files, got 0")
+	}
+}
