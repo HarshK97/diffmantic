@@ -64,7 +64,7 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 		}, nil
 	}
 
-	matchResult := engine.Match(srcAST, dstAST)
+	matchResult := engine.Match(srcAST, dstAST, srcBytes, dstBytes)
 	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
 

@@ -19,7 +19,7 @@ func BenchmarkPipeline(b *testing.B) {
 				astA := mustParse(b, f.OldSrc, f.OldPath)
 				astB := mustParse(b, f.NewSrc, f.NewPath)
 
-				result := engine.Match(astA, astB)
+				result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
 				es := actions.GenerateEditScript(astA, astB, result.Mappings)
 				es = postprocess.Run(es, result.Mappings, astA, astB)
 
@@ -54,7 +54,7 @@ func BenchmarkMatch(b *testing.B) {
 			for b.Loop() {
 				astA := mustParse(b, f.OldSrc, f.OldPath)
 				astB := mustParse(b, f.NewSrc, f.NewPath)
-				engine.Match(astA, astB)
+				engine.Match(astA, astB, f.OldSrc, f.NewSrc)
 			}
 		})
 	}
@@ -69,7 +69,7 @@ func BenchmarkEditScript(b *testing.B) {
 			for b.Loop() {
 				astA := mustParse(b, f.OldSrc, f.OldPath)
 				astB := mustParse(b, f.NewSrc, f.NewPath)
-				result := engine.Match(astA, astB)
+				result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
 				actions.GenerateEditScript(astA, astB, result.Mappings)
 			}
 		})
@@ -85,7 +85,7 @@ func BenchmarkPostprocess(b *testing.B) {
 			for b.Loop() {
 				astA := mustParse(b, f.OldSrc, f.OldPath)
 				astB := mustParse(b, f.NewSrc, f.NewPath)
-				result := engine.Match(astA, astB)
+				result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
 				es := actions.GenerateEditScript(astA, astB, result.Mappings)
 				postprocess.Run(es, result.Mappings, astA, astB)
 			}
@@ -102,7 +102,7 @@ func BenchmarkSerialize(b *testing.B) {
 			for b.Loop() {
 				astA := mustParse(b, f.OldSrc, f.OldPath)
 				astB := mustParse(b, f.NewSrc, f.NewPath)
-				result := engine.Match(astA, astB)
+				result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
 				es := actions.GenerateEditScript(astA, astB, result.Mappings)
 				es = postprocess.Run(es, result.Mappings, astA, astB)
 				if _, err := serialize.Marshal(es, result.Mappings, astA, astB, f.OldSrc, f.NewSrc); err != nil {
