@@ -142,3 +142,33 @@ func TestBottomUpWithPriorMapping(t *testing.T) {
 		t.Error("BottomUp should match block containing matched leaf")
 	}
 }
+
+func TestMatchUnmatchedLeaves(t *testing.T) {
+	// Create two distinct parent blocks with identical leaf types/labels ("identifier", "count").
+	l1 := testutil.Leaf("identifier", "count")
+	l2 := testutil.Leaf("identifier", "count")
+	p1 := testutil.Node("block_a", "", l1)
+	p2 := testutil.Node("block_b", "", l2)
+	srcRoot := testutil.Node("root", "", p1, p2)
+
+	r1 := testutil.Leaf("identifier", "count")
+	r2 := testutil.Leaf("identifier", "count")
+	q1 := testutil.Node("block_a", "", r1)
+	q2 := testutil.Node("block_b", "", r2)
+	dstRoot := testutil.Node("root", "", q1, q2)
+
+	m := NewMapping()
+	m.Add(srcRoot, dstRoot)
+	m.Add(p1, q1)
+	m.Add(p2, q2)
+
+	// MatchUnmatchedLeaves should correctly pair l1 -> r1 and l2 -> r2 based on parent mapping.
+	MatchUnmatchedLeaves(srcRoot, dstRoot, m, nil)
+
+	if !m.Has(l1) || m.Src()[l1] != r1 {
+		t.Errorf("l1 should be matched to r1 under parent block_a, got %v", m.Src()[l1])
+	}
+	if !m.Has(l2) || m.Src()[l2] != r2 {
+		t.Errorf("l2 should be matched to r2 under parent block_b, got %v", m.Src()[l2])
+	}
+}
