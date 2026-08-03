@@ -21,7 +21,8 @@ func TestTopDown(t *testing.T) {
 			),
 		)
 
-		m := TopDown(src, dst, 1)
+		m := NewMapping()
+		TopDown(src, dst, 1, m, nil)
 
 		for _, n := range PreOrder(src) {
 			if !m.Has(n) {
@@ -43,7 +44,8 @@ func TestTopDown(t *testing.T) {
 			testutil.Node("block", "", dstLeaf1, dstLeaf2),
 		)
 
-		m := TopDown(src, dst, 1)
+		m := NewMapping()
+		TopDown(src, dst, 1, m, nil)
 
 		// TopDown matches isomorphic subtrees like srcLeaf1.
 		if !m.Has(srcLeaf1) {
@@ -62,7 +64,8 @@ func TestTopDown(t *testing.T) {
 		dstLeaf2 := testutil.Leaf("id", "y")
 		dst := testutil.Node("block", "", dstLeaf1, dstLeaf2)
 
-		m := TopDown(src, dst, 1)
+		m := NewMapping()
+		TopDown(src, dst, 1, m, nil)
 
 		if !m.Has(srcLeaf) {
 			t.Errorf("expected original leaf to be mapped")
@@ -79,7 +82,8 @@ func TestTopDown(t *testing.T) {
 		dstSub := testutil.Node("call", "", testutil.Leaf("id", "f"))
 		dst := testutil.Node("func", "b", dstSub)
 
-		m := TopDown(src, dst, 1)
+		m := NewMapping()
+		TopDown(src, dst, 1, m, nil)
 
 		if !m.Has(srcSub) {
 			t.Errorf("expected identical subtree to be mapped")
@@ -120,7 +124,8 @@ func TestBottomUp(t *testing.T) {
 		dstBlock := testutil.Node("block", "", dstLeaf1, dstLeaf2)
 		dstRoot := testutil.Node("func", "main", dstBlock)
 
-		m := TopDown(srcRoot, dstRoot, 1)
+		m := NewMapping()
+		TopDown(srcRoot, dstRoot, 1, m, nil)
 		BottomUp(srcRoot, dstRoot, m, 0.5)
 
 		if !m.Has(srcRoot) {
@@ -138,7 +143,8 @@ func TestBottomUp(t *testing.T) {
 		dstLeaf := testutil.Leaf("str", "hello")
 		dst := testutil.Node("func", "b", dstLeaf)
 
-		m := TopDown(src, dst, 1)
+		m := NewMapping()
+		TopDown(src, dst, 1, m, nil)
 		BottomUp(src, dst, m, 0.5)
 
 		// BottomUp might map the root as a fallback, but leaves shouldn't map.

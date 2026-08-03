@@ -11,11 +11,12 @@ import (
 func TopDown(
 	t1Root, t2Root *treesitter.ASTNode,
 	minHeight int,
-) *Mapping {
+	m *Mapping,
+	part *LinePartition,
+) {
 	l1 := newPriorityList()
 	l2 := newPriorityList()
 	var A [][2]*treesitter.ASTNode // canditdate mappings
-	m := NewMapping()              // final mapping
 
 	l1.Push(t1Root)
 	l2.Push(t2Root)
@@ -37,6 +38,9 @@ func TopDown(
 
 			for _, t1 := range H1 {
 				for _, t2 := range H2 {
+					if part != nil && !part.CanMatch(t1, t2) {
+						continue
+					}
 					if Isomorphic(t1, t2) {
 						ambiguous := false
 
@@ -124,8 +128,6 @@ func TopDown(
 			return p[0] == t1 || p[1] == t2
 		})
 	}
-
-	return m
 }
 
 type priorityList struct {

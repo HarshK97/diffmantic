@@ -271,7 +271,7 @@ func TestMatchDeclarationIntegration(t *testing.T) {
 		),
 	)
 
-	r := Match(src, dst)
+	r := Match(src, dst, nil, nil)
 	srcFn := src.Children[0]
 	dstFn := dst.Children[0]
 	if !r.Mappings.Has(srcFn) {

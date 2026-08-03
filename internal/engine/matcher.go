@@ -13,14 +13,20 @@ type MatchResult struct {
 	Mappings *Mapping
 }
 
-func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
+func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
+	mappings := NewMapping()
+
+	part := NewLinePartition(srcA, srcB)
+
 	minHeight := 2
 	minDice := 0.5
-	mappings := TopDown(t1, t2, minHeight)
+
+	// Match AST nodes top-down, by declaration, and bottom-up using line partitioning.
+	TopDown(t1, t2, minHeight, mappings, part)
 	matchDeclarations(t1, t2, mappings)
 	BottomUp(t1, t2, mappings, minDice)
 
-	MatchUnmatchedLeaves(t1, t2, mappings)
+	MatchUnmatchedLeaves(t1, t2, mappings, part)
 
 	if !mappings.Has(t1) && !mappings.HasDst(t2) {
 		mappings.Add(t1, t2)
@@ -34,7 +40,7 @@ func Match(t1, t2 *treesitter.ASTNode) *MatchResult {
 // MatchUnmatchedLeaves pairs unmatched leaf nodes of the same type and label using
 // parent Dice similarity and positional scores to break ties. Leaves under unmatched
 // parents are skipped since they belong to deleted or inserted blocks.
-func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *LinePartition) {
 	t2Nodes := PostOrder(t2Root)
 	for _, t1 := range PostOrder(t1Root) {
 		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" {
@@ -57,6 +63,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 		for _, t2 := range t2Nodes {
 			if m.HasDst(t2) || t2.Type != t1.Type || t2.Label != t1.Label || len(t2.Children) > 0 {
+				continue
+			}
+			if part != nil && !part.CanMatch(t1, t2) {
 				continue
 			}
 

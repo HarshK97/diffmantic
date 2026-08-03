@@ -121,7 +121,7 @@ func runPipeline(t *testing.T, f fixture) pipelineResult {
 		t.Fatalf("parsing %s: %v", f.NewPath, err)
 	}
 
-	result := engine.Match(astA, astB)
+	result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
 	es := actions.GenerateEditScript(astA, astB, result.Mappings)
 	es = postprocess.Run(es, result.Mappings, astA, astB)
 
