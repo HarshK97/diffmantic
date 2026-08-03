@@ -29,7 +29,7 @@ def compute_pct(old_s, new_s):
         return 0.0
     return ((new_v - old_v) / old_v) * 100.0
 
-def format_benchstat(text):
+def format_benchstat(text, pr_mode=False, run_url=None):
     lines = text.splitlines()
     current_metric = None
     geomeans = {}
@@ -48,11 +48,11 @@ def format_benchstat(text):
             if len(parts) >= 3 and current_metric:
                 delta = parts[3] if len(parts) >= 4 else "~"
                 geomeans[current_metric] = (parts[1], parts[2], delta)
-        elif line_str.startswith('Pipeline/'):
+        elif '/' in line_str and not line_str.startswith(('geomean', 'goos:', 'goarch:', 'pkg:', 'cpu:')):
             parts = line_str.split()
             if len(parts) >= 3 and current_metric:
                 fixture_raw = parts[0]
-                fix_name = fixture_raw.replace('Pipeline/', '')
+                fix_name = fixture_raw.split('/', 1)[1] if '/' in fixture_raw else fixture_raw
                 if '-' in fix_name:
                     fix_name = fix_name.rsplit('-', 1)[0]
                 
@@ -66,6 +66,8 @@ def format_benchstat(text):
     # Build Markdown Output
     md = []
     md.append("### 📊 Benchmark A/B Comparison Report")
+    if run_url:
+        md.append(f"> 🔗 [View Action Logs & Full Breakdown]({run_url})")
     md.append("")
     md.append("#### 📈 Key Metrics Summary (Geometric Mean)")
     md.append("| Metric | Baseline | Current | Delta | Status |")
@@ -107,11 +109,11 @@ def format_benchstat(text):
 
     changes.sort(key=lambda x: x[1])
 
-    speedups = [c for c in changes if c[1] <= -10.0]
-    regressions = [c for c in changes if c[1] >= 10.0]
+    speedups = [c for c in changes if c[1] <= -1.0][:5]
+    regressions = [c for c in changes if c[1] >= 1.0][:5]
 
     if speedups or regressions:
-        md.append("#### ⚡ Notable Performance Shifts (≥ 10% change)")
+        md.append("#### ⚡ Notable Performance Shifts (Top 5)")
         md.append("| Fixture | Baseline Time | Current Time | Time Delta | Memory Delta |")
         md.append("| :--- | :---: | :---: | :---: | :---: |")
         
@@ -125,7 +127,10 @@ def format_benchstat(text):
             md.append(f"| {icon} `{fix_name}` | `{old_t}` | `{new_t}` | **`{pct:+.1f}%`** | {mem_pct_str} |")
         md.append("")
 
-    # Collapsible Table for All Fixtures
+    if pr_mode:
+        return "\n".join(md)
+
+    # Collapsible Table for All Fixtures in full step summary
     md.append("<details>")
     md.append(f"<summary><b>🔍 Full Breakdown ({len(fixtures)} Fixtures)</b></summary>")
     md.append("")
@@ -162,9 +167,17 @@ def format_benchstat(text):
     return "\n".join(md)
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        with open(sys.argv[1], 'r') as f:
+    pr_mode = '--pr' in sys.argv
+    run_url = None
+    if '--run-url' in sys.argv:
+        idx = sys.argv.index('--run-url')
+        if idx + 1 < len(sys.argv):
+            run_url = sys.argv[idx + 1]
+    
+    file_args = [a for a in sys.argv[1:] if a != '--pr' and a != '--run-url' and a != run_url]
+    if file_args:
+        with open(file_args[0], 'r') as f:
             content = f.read()
     else:
         content = sys.stdin.read()
-    print(format_benchstat(content))
+    print(format_benchstat(content, pr_mode=pr_mode, run_url=run_url))
