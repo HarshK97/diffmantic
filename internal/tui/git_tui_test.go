@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/git"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -137,5 +138,171 @@ func TestCommitStagingGuard(t *testing.T) {
 	}
 	if mModel.gitCommitOpen {
 		t.Error("expected git commit input to remain closed")
+	}
+}
+
+func initGitRepo(t *testing.T, dir string) {
+	_, err := git.RunGit(dir, "init")
+	if err != nil {
+		t.Fatalf("failed to init git: %v", err)
+	}
+	_, _ = git.RunGit(dir, "config", "user.name", "Test User")
+	_, _ = git.RunGit(dir, "config", "user.email", "test@example.com")
+	_, _ = git.RunGit(dir, "config", "commit.gpgsign", "false")
+}
+
+func TestGitDiffCache(t *testing.T) {
+	tempDir := t.TempDir()
+	initGitRepo(t, tempDir)
+
+	// Initial commit with a supported text file, unsupported plain text file, and binary image
+	textFile := "main.go"
+	plainFile := "notes.txt"
+	binFile := "image.png"
+	err := os.WriteFile(filepath.Join(tempDir, textFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v1\")\n}\n"), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write textFile: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tempDir, plainFile), []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write plainFile: %v", err)
+	}
+
+	binData := []byte{0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d, 0x0a, 0x1a, 0x0a}
+	err = os.WriteFile(filepath.Join(tempDir, binFile), binData, 0o644)
+	if err != nil {
+		t.Fatalf("failed to write binFile: %v", err)
+	}
+
+	_, err = git.RunGit(tempDir, "add", textFile, plainFile, binFile)
+	if err != nil {
+		t.Fatalf("failed to add files: %v", err)
+	}
+	_, err = git.RunGit(tempDir, "commit", "-m", "initial commit")
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	// Make unstaged edits and stage a brand-new file
+	err = os.WriteFile(filepath.Join(tempDir, textFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v2\")\n}\n"), 0o644)
+	if err != nil {
+		t.Fatalf("failed to modify textFile: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tempDir, plainFile), []byte("line 1\nline 2 modified\n"), 0o644)
+	if err != nil {
+		t.Fatalf("failed to modify plainFile: %v", err)
+	}
+
+	binDataModified := []byte{0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d, 0x0a, 0x1a, 0x0b}
+	err = os.WriteFile(filepath.Join(tempDir, binFile), binDataModified, 0o644)
+	if err != nil {
+		t.Fatalf("failed to modify binFile: %v", err)
+	}
+
+	stagedFile := "staged.go"
+	err = os.WriteFile(filepath.Join(tempDir, stagedFile), []byte("package main\n\nvar Staged = true\n"), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write stagedFile: %v", err)
+	}
+	_, err = git.RunGit(tempDir, "add", stagedFile)
+	if err != nil {
+		t.Fatalf("failed to add stagedFile: %v", err)
+	}
+
+	// Creating the git model kicks off background precomputation
+	m := newGitModel(tempDir, "", "", "", false)
+
+	// Verify all modified/staged files exist in gitItems
+	expectedFiles := map[string]bool{textFile: false, plainFile: false, binFile: false, stagedFile: false}
+	for _, item := range m.gitItems {
+		if !item.isHeader {
+			if _, exists := expectedFiles[item.path]; exists {
+				expectedFiles[item.path] = true
+			}
+		}
+	}
+	for f, found := range expectedFiles {
+		if !found {
+			t.Errorf("expected %s to be present in gitItems", f)
+		}
+	}
+
+	// Check text file cache entry
+	textEntry, ok := m.gitDiffCache[textFile]
+	if !ok {
+		t.Fatalf("expected %s in gitDiffCache", textFile)
+	}
+	if textEntry.isBinary {
+		t.Errorf("expected %s not to be marked binary", textFile)
+	}
+	if len(textEntry.srcBytes) == 0 || len(textEntry.dstBytes) == 0 {
+		t.Errorf("expected non-empty srcBytes and dstBytes for %s", textFile)
+	}
+	if textEntry.env == nil {
+		t.Errorf("expected non-nil AST envelope for %s", textFile)
+	}
+
+	// Check unsupported plain text file cache entry (handled via line diff)
+	plainEntry, ok := m.gitDiffCache[plainFile]
+	if !ok {
+		t.Fatalf("expected %s in gitDiffCache", plainFile)
+	}
+	if plainEntry.isBinary {
+		t.Errorf("expected %s not to be marked binary", plainFile)
+	}
+	if plainEntry.env == nil {
+		t.Errorf("expected non-nil line-diff envelope for %s", plainFile)
+	}
+
+	// Check binary file cache entry
+	binEntry, ok := m.gitDiffCache[binFile]
+	if !ok {
+		t.Fatalf("expected %s in gitDiffCache", binFile)
+	}
+	if !binEntry.isBinary {
+		t.Errorf("expected %s to be marked as binary", binFile)
+	}
+
+	// Check staged file cache entry
+	stagedEntry, ok := m.gitDiffCache[stagedFile]
+	if !ok {
+		t.Fatalf("expected %s in gitDiffCache", stagedFile)
+	}
+	if len(stagedEntry.dstBytes) == 0 {
+		t.Errorf("expected non-empty dstBytes for staged file %s", stagedFile)
+	}
+
+	// Verify binary files set the placeholder message on load
+	for i, item := range m.gitItems {
+		if item.isHeader {
+			continue
+		}
+		err = m.loadGitFileDiff(i)
+		if err != nil {
+			t.Errorf("failed loadGitFileDiff for %s: %v", item.path, err)
+		}
+		if item.path == binFile {
+			if len(m.srcLines) == 0 || m.srcLines[0] != "[Binary File Diff Not Supported]" {
+				t.Errorf("expected binary placeholder in srcLines for %s, got: %v", binFile, m.srcLines)
+			}
+		}
+	}
+
+	// Verify cache updates when refresh is called after a disk change
+	err = os.WriteFile(filepath.Join(tempDir, textFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v3 updated\")\n}\n"), 0o644)
+	if err != nil {
+		t.Fatalf("failed to update textFile: %v", err)
+	}
+
+	m.refreshGitStatus()
+
+	updatedTextEntry, ok := m.gitDiffCache[textFile]
+	if !ok {
+		t.Fatalf("expected %s in gitDiffCache after refresh", textFile)
+	}
+	if !strings.Contains(string(updatedTextEntry.dstBytes), "v3 updated") {
+		t.Errorf("expected dstBytes to contain 'v3 updated', got: %s", string(updatedTextEntry.dstBytes))
 	}
 }
