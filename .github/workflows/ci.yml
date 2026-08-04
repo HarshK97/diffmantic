@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   checks: write
-  pull-requests: write
 
 # Group runs by workflow and ref/PR number.
 # Cancel in-progress runs on pull requests, but always let runs on 'main' complete.
@@ -24,6 +23,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -49,6 +50,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -102,6 +105,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -122,3 +127,133 @@ jobs:
         with:
           report_paths: '**/unit-tests.xml'
           check_name: 'Test Report (${{ matrix.os }})'
+
+  benchmark-stage:
+    name: Benchmark Sub-System Stage
+    needs: [lint, test-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check performance-critical file changes & determine stage target
+        id: filter
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          CHANGED=$(git diff --name-only $BASE_REF HEAD || true)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          PRIMARY_STAGE=""
+          if echo "$CHANGED" | grep -qE '^internal/treesitter/'; then
+            PRIMARY_STAGE="BenchmarkParse"
+          elif echo "$CHANGED" | grep -qE '^internal/engine/'; then
+            PRIMARY_STAGE="BenchmarkMatch"
+          elif echo "$CHANGED" | grep -qE '^internal/actions/'; then
+            PRIMARY_STAGE="BenchmarkEditScript"
+          elif echo "$CHANGED" | grep -qE '^internal/postprocess/'; then
+            PRIMARY_STAGE="BenchmarkPostprocess"
+          elif echo "$CHANGED" | grep -qE '^internal/serialize/'; then
+            PRIMARY_STAGE="BenchmarkSerialize"
+          fi
+
+          if [ -n "$PRIMARY_STAGE" ]; then
+            echo "run_stage=true" >> $GITHUB_OUTPUT
+            echo "primary_stage=$PRIMARY_STAGE" >> $GITHUB_OUTPUT
+            echo "Selected sub-system benchmark: $PRIMARY_STAGE"
+          else
+            echo "run_stage=false" >> $GITHUB_OUTPUT
+            echo "No sub-system specific files changed. Skipping stage benchmark."
+          fi
+
+      - name: Set up Go
+        if: steps.filter.outputs.run_stage == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: 'go.sum'
+
+      - name: Install benchstat
+        if: steps.filter.outputs.run_stage == 'true'
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Run Sub-System Stage Benchmark
+        if: steps.filter.outputs.run_stage == 'true'
+        env:
+          PRIMARY_STAGE: ${{ steps.filter.outputs.primary_stage }}
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          echo "==> Running Sub-System Stage Benchmark: $PRIMARY_STAGE on PR HEAD..."
+          go test ./tests/integration/ -bench="^${PRIMARY_STAGE}$" -benchmem -run=^$ -count=3 > bench_stage_new.txt
+
+          echo "==> Fetching baseline and running $PRIMARY_STAGE..."
+          git checkout $BASE_REF || true
+          go test ./tests/integration/ -bench="^${PRIMARY_STAGE}$" -benchmem -run=^$ -count=3 > bench_stage_old.txt || true
+          git checkout ${{ github.sha }} || git checkout - || true
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          benchstat bench_stage_old.txt bench_stage_new.txt > bench_stage_raw.txt || true
+          python3 .github/scripts/format_benchstat.py bench_stage_raw.txt --run-url "$RUN_URL" --title "### 🎯 Sub-System Stage Benchmark: $PRIMARY_STAGE" >> $GITHUB_STEP_SUMMARY || cat bench_stage_raw.txt >> $GITHUB_STEP_SUMMARY
+          rm -f bench_stage_new.txt bench_stage_old.txt bench_stage_raw.txt
+
+  benchmark-pipeline:
+    name: Benchmark Pipeline (E2E)
+    needs: [lint, test-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check performance-critical file changes
+        id: filter
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          CHANGED=$(git diff --name-only $BASE_REF HEAD || true)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE '^(internal/engine/|internal/treesitter/|internal/actions/|internal/postprocess/|internal/serialize/|tests/integration/|go\.mod|go\.sum)'; then
+            echo "::notice::Performance-critical files changed. Running E2E pipeline benchmark..."
+            echo "run_benchmarks=true" >> $GITHUB_OUTPUT
+          else
+            echo "::notice::No performance-critical files changed. Skipping pipeline benchmark."
+            echo "run_benchmarks=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Go
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: 'go.sum'
+
+      - name: Install benchstat
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Run End-to-End Pipeline Benchmark
+        if: steps.filter.outputs.run_benchmarks == 'true'
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          echo "==> Running End-to-End Benchmark: BenchmarkPipeline on PR HEAD..."
+          go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchmem -run=^$ -count=3 > bench_pipe_new.txt
+
+          echo "==> Fetching baseline and running BenchmarkPipeline..."
+          git checkout $BASE_REF || true
+          go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchmem -run=^$ -count=3 > bench_pipe_old.txt || true
+          git checkout ${{ github.sha }} || git checkout - || true
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          benchstat bench_pipe_old.txt bench_pipe_new.txt > bench_pipe_raw.txt || true
+          python3 .github/scripts/format_benchstat.py bench_pipe_raw.txt --run-url "$RUN_URL" --title "### 🚀 End-to-End Benchmark: BenchmarkPipeline" >> $GITHUB_STEP_SUMMARY || cat bench_pipe_raw.txt >> $GITHUB_STEP_SUMMARY
+          rm -f bench_pipe_new.txt bench_pipe_old.txt bench_pipe_raw.txt

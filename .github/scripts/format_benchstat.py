@@ -29,7 +29,7 @@ def compute_pct(old_s, new_s):
         return 0.0
     return ((new_v - old_v) / old_v) * 100.0
 
-def format_benchstat(text, pr_mode=False, run_url=None):
+def format_benchstat(text, run_url=None, title="### 📊 Benchmark A/B Comparison Report"):
     lines = text.splitlines()
     current_metric = None
     geomeans = {}
@@ -65,7 +65,7 @@ def format_benchstat(text, pr_mode=False, run_url=None):
 
     # Build Markdown Output
     md = []
-    md.append("### 📊 Benchmark A/B Comparison Report")
+    md.append(title)
     if run_url:
         md.append(f"> 🔗 [View Action Logs & Full Breakdown]({run_url})")
     md.append("")
@@ -91,9 +91,11 @@ def format_benchstat(text, pr_mode=False, run_url=None):
             elif pct < 0:
                 status = "🟢 Faster" if key == 'time' else "🟢 Reduced"
                 badge = f"**`{pct:+.2f}%`**"
+                print(f"::notice::{name} improved (Geometric Mean): {pct:+.2f}%", file=sys.stderr)
             else:
                 status = "🔴 Slower" if key == 'time' else "🟡 Increased"
                 badge = f"**`{pct:+.2f}%`**"
+                print(f"::warning::{name} regression (Geometric Mean): {pct:+.2f}%", file=sys.stderr)
                 
             md.append(f"| **{name}** | `{old_g}` | `{new_g}` | {badge} | {status} |")
 
@@ -125,10 +127,8 @@ def format_benchstat(text, pr_mode=False, run_url=None):
                 m_pct = compute_pct(old_m, new_m)
                 mem_pct_str = f"`{m_pct:+.1f}%`"
             md.append(f"| {icon} `{fix_name}` | `{old_t}` | `{new_t}` | **`{pct:+.1f}%`** | {mem_pct_str} |")
-        md.append("")
 
-    if pr_mode:
-        return "\n".join(md)
+        md.append("")
 
     # Collapsible Table for All Fixtures in full step summary
     md.append("<details>")
@@ -167,17 +167,21 @@ def format_benchstat(text, pr_mode=False, run_url=None):
     return "\n".join(md)
 
 if __name__ == '__main__':
-    pr_mode = '--pr' in sys.argv
     run_url = None
+    title = "### 📊 Benchmark A/B Comparison Report"
     if '--run-url' in sys.argv:
         idx = sys.argv.index('--run-url')
         if idx + 1 < len(sys.argv):
             run_url = sys.argv[idx + 1]
+    if '--title' in sys.argv:
+        idx = sys.argv.index('--title')
+        if idx + 1 < len(sys.argv):
+            title = sys.argv[idx + 1]
     
-    file_args = [a for a in sys.argv[1:] if a != '--pr' and a != '--run-url' and a != run_url]
+    file_args = [a for a in sys.argv[1:] if a not in ('--run-url', run_url, '--title', title)]
     if file_args:
         with open(file_args[0], 'r') as f:
             content = f.read()
     else:
         content = sys.stdin.read()
-    print(format_benchstat(content, pr_mode=pr_mode, run_url=run_url))
+    print(format_benchstat(content, run_url=run_url, title=title))
