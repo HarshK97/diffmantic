@@ -76,89 +76,222 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 	closeGaps(movedSrcLines, len(srcLines))
 	closeGaps(movedDstLines, len(dstLines))
 
-	// Count overlapping mapped leaf nodes between before and after lines.
-	overlap := make(map[int]map[int]int)
+	srcLineMapsTo := make(map[int]map[int]bool)
+	dstLineMapsTo := make(map[int]map[int]bool)
 	if ms != nil {
-		for _, srcLeaf := range srcLeaves {
-			if dstLeaf, mapped := ms.Src()[srcLeaf]; mapped {
-				sRow := int(srcLeaf.StartRow)
-				dRow := int(dstLeaf.StartRow)
-				if overlap[sRow] == nil {
-					overlap[sRow] = make(map[int]int)
+		for srcNode, dstNode := range ms.Src() {
+			srcRow := int(srcNode.StartRow)
+			dstRow := int(dstNode.StartRow)
+			if srcLineMapsTo[srcRow] == nil {
+				srcLineMapsTo[srcRow] = make(map[int]bool)
+			}
+			srcLineMapsTo[srcRow][dstRow] = true
+
+			if dstLineMapsTo[dstRow] == nil {
+				dstLineMapsTo[dstRow] = make(map[int]bool)
+			}
+			dstLineMapsTo[dstRow][srcRow] = true
+		}
+	}
+
+	isLineMappedToOther := func(srcIdx, dstIdx int) bool {
+		srcTargets := srcLineMapsTo[srcIdx]
+		if len(srcTargets) > 1 || (len(srcTargets) == 1 && !srcTargets[dstIdx]) {
+			return true
+		}
+		dstTargets := dstLineMapsTo[dstIdx]
+		return len(dstTargets) > 1 || (len(dstTargets) == 1 && !dstTargets[srcIdx])
+	}
+
+	type anchorPair struct {
+		left  int
+		right int
+	}
+
+	var anchors []anchorPair
+	lastJ := -1
+	for i := 0; i < len(srcLines); i++ {
+		if movedSrcLines[i] {
+			continue
+		}
+		targets := srcLineMapsTo[i]
+		if len(targets) != 1 {
+			continue
+		}
+		var j int
+		for j = range targets {
+		}
+		if movedDstLines[j] || j <= lastJ {
+			continue
+		}
+		reverseTargets := dstLineMapsTo[j]
+		if len(reverseTargets) != 1 || !reverseTargets[i] {
+			continue
+		}
+		if srcLines[i] != dstLines[j] {
+			continue
+		}
+		anchors = append(anchors, anchorPair{left: i, right: j})
+		lastJ = j
+	}
+
+	alignRegion := func(srcStart, srcEnd, dstStart, dstEnd int) []LineAlignmentPair {
+		n := srcEnd - srcStart
+		m := dstEnd - dstStart
+
+		if n <= 0 {
+			res := make([]LineAlignmentPair, m)
+			for j := 0; j < m; j++ {
+				res[j] = LineAlignmentPair{LeftLine: -1, RightLine: dstStart + j}
+			}
+			return res
+		}
+		if m <= 0 {
+			res := make([]LineAlignmentPair, n)
+			for i := 0; i < n; i++ {
+				res[i] = LineAlignmentPair{LeftLine: srcStart + i, RightLine: -1}
+			}
+			return res
+		}
+
+		prefixLimit := 0
+		for prefixLimit < n && prefixLimit < m {
+			srcIdx := srcStart + prefixLimit
+			dstIdx := dstStart + prefixLimit
+			if srcLines[srcIdx] != dstLines[dstIdx] {
+				break
+			}
+			if movedSrcLines[srcIdx] || movedDstLines[dstIdx] {
+				break
+			}
+			if isLineMappedToOther(srcIdx, dstIdx) {
+				break
+			}
+			prefixLimit++
+		}
+
+		suffixLimit := 0
+		for suffixLimit < n-prefixLimit && suffixLimit < m-prefixLimit {
+			srcIdx := srcEnd - 1 - suffixLimit
+			dstIdx := dstEnd - 1 - suffixLimit
+			if srcLines[srcIdx] != dstLines[dstIdx] {
+				break
+			}
+			if movedSrcLines[srcIdx] || movedDstLines[dstIdx] {
+				break
+			}
+			if isLineMappedToOther(srcIdx, dstIdx) {
+				break
+			}
+			suffixLimit++
+		}
+
+		grid := make([]LineAlignmentPair, 0, n+m)
+
+		for k := 0; k < prefixLimit; k++ {
+			grid = append(grid, LineAlignmentPair{LeftLine: srcStart + k, RightLine: dstStart + k})
+		}
+
+		nMiddle := n - prefixLimit - suffixLimit
+		mMiddle := m - prefixLimit - suffixLimit
+
+		if nMiddle > 0 || mMiddle > 0 {
+			middleSrcStart := srcStart + prefixLimit
+			middleDstStart := dstStart + prefixLimit
+
+			dp := make([][]int, nMiddle+1)
+			for i := range dp {
+				dp[i] = make([]int, mMiddle+1)
+			}
+
+			subOverlap := make(map[int]map[int]int)
+			for _, srcLeaf := range srcLeaves {
+				if dstLeaf, mapped := ms.Src()[srcLeaf]; mapped {
+					sRow := int(srcLeaf.StartRow)
+					dRow := int(dstLeaf.StartRow)
+					if sRow >= middleSrcStart && sRow < middleSrcStart+nMiddle &&
+						dRow >= middleDstStart && dRow < middleDstStart+mMiddle {
+						if subOverlap[sRow] == nil {
+							subOverlap[sRow] = make(map[int]int)
+						}
+						subOverlap[sRow][dRow]++
+					}
 				}
-				overlap[sRow][dRow]++
-			}
-		}
-	}
-
-	// Run LCS (longest common subsequence) using a DP matrix to align lines.
-	n := len(srcLines)
-	m := len(dstLines)
-	dp := make([][]int, n+1)
-	for i := range dp {
-		dp[i] = make([]int, m+1)
-	}
-
-	for i := 1; i <= n; i++ {
-		for j := 1; j <= m; j++ {
-			srcLineIdx := i - 1
-			dstLineIdx := j - 1
-
-			// Do not pair lines that are part of a moved block.
-			if movedSrcLines[srcLineIdx] || movedDstLines[dstLineIdx] {
-				dp[i][j] = max(dp[i-1][j], dp[i][j-1])
-				continue
 			}
 
-			// Determine match weight.
-			weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, overlap, ms, srcRoot, dstRoot)
+			for i := 1; i <= nMiddle; i++ {
+				for j := 1; j <= mMiddle; j++ {
+					srcLineIdx := middleSrcStart + i - 1
+					dstLineIdx := middleDstStart + j - 1
 
-			if weight > 0 {
-				dp[i][j] = max(dp[i-1][j-1]+weight, max(dp[i-1][j], dp[i][j-1]))
-			} else {
-				dp[i][j] = max(dp[i-1][j], dp[i][j-1])
-			}
-		}
-	}
+					if movedSrcLines[srcLineIdx] || movedDstLines[dstLineIdx] {
+						dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+						continue
+					}
 
-	// Reconstruct the alignment grid by backtracking.
-	var reversedGrid []LineAlignmentPair
-	i, j := n, m
-
-	for i > 0 || j > 0 {
-		if i > 0 && j > 0 {
-			srcLineIdx := i - 1
-			dstLineIdx := j - 1
-
-			matched := false
-			if !movedSrcLines[srcLineIdx] && !movedDstLines[dstLineIdx] {
-				weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, overlap, ms, srcRoot, dstRoot)
-				if weight > 0 && dp[i][j] == dp[i-1][j-1]+weight {
-					matched = true
+					weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, subOverlap, ms, srcRoot, dstRoot)
+					if weight > 0 {
+						dp[i][j] = max(dp[i-1][j-1]+weight, max(dp[i-1][j], dp[i][j-1]))
+					} else {
+						dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+					}
 				}
 			}
 
-			if matched {
-				reversedGrid = append(reversedGrid, LineAlignmentPair{LeftLine: srcLineIdx, RightLine: dstLineIdx})
-				i--
-				j--
-				continue
+			var reversedMiddle []LineAlignmentPair
+			i, j := nMiddle, mMiddle
+
+			for i > 0 || j > 0 {
+				if i > 0 && j > 0 {
+					srcLineIdx := middleSrcStart + i - 1
+					dstLineIdx := middleDstStart + j - 1
+
+					if !movedSrcLines[srcLineIdx] && !movedDstLines[dstLineIdx] {
+						if weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, subOverlap, ms, srcRoot, dstRoot); weight > 0 && dp[i][j] == dp[i-1][j-1]+weight {
+							reversedMiddle = append(reversedMiddle, LineAlignmentPair{LeftLine: srcLineIdx, RightLine: dstLineIdx})
+							i--
+							j--
+							continue
+						}
+					}
+				}
+
+				if i > 0 && (j == 0 || dp[i-1][j] > dp[i][j-1]) {
+					reversedMiddle = append(reversedMiddle, LineAlignmentPair{LeftLine: middleSrcStart + i - 1, RightLine: -1})
+					i--
+				} else {
+					reversedMiddle = append(reversedMiddle, LineAlignmentPair{LeftLine: -1, RightLine: middleDstStart + j - 1})
+					j--
+				}
 			}
+
+			slices.Reverse(reversedMiddle)
+			grid = append(grid, reversedMiddle...)
 		}
 
-		// Step towards the higher DP score.
-		if i > 0 && (j == 0 || dp[i-1][j] > dp[i][j-1]) {
-			reversedGrid = append(reversedGrid, LineAlignmentPair{LeftLine: i - 1, RightLine: -1})
-			i--
-		} else {
-			reversedGrid = append(reversedGrid, LineAlignmentPair{LeftLine: -1, RightLine: j - 1})
-			j--
+		for k := 0; k < suffixLimit; k++ {
+			srcIdx := srcEnd - suffixLimit + k
+			dstIdx := dstEnd - suffixLimit + k
+			grid = append(grid, LineAlignmentPair{LeftLine: srcIdx, RightLine: dstIdx})
 		}
+
+		return grid
 	}
 
-	// Reverse to get top-down alignment order.
-	slices.Reverse(reversedGrid)
-	return reversedGrid
+	var grid []LineAlignmentPair
+	currentSrc := 0
+	currentDst := 0
+
+	for _, a := range anchors {
+		grid = append(grid, alignRegion(currentSrc, a.left, currentDst, a.right)...)
+		grid = append(grid, LineAlignmentPair{LeftLine: a.left, RightLine: a.right})
+		currentSrc = a.left + 1
+		currentDst = a.right + 1
+	}
+
+	grid = append(grid, alignRegion(currentSrc, len(srcLines), currentDst, len(dstLines))...)
+
+	return grid
 }
 
 // computeLineWeight rates how strongly two lines align. Standalone brackets only match if their parent AST containers map.
