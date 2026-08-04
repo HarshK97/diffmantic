@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -58,6 +59,8 @@ func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOn
 		gitStagedOnly: stagedOnly,
 		pathFilter:    pathFilter,
 		activePane:    "left",
+		gitDiffCache:  make(map[string]gitDiffCacheEntry),
+		gitDiffMu:     &sync.RWMutex{},
 	}
 
 	ti := textinput.New()
@@ -271,6 +274,104 @@ func (m *model) refreshGitStatus() {
 	if m.gitCursorY < 0 {
 		m.gitCursorY = 0
 	}
+
+	if m.gitDiffMu == nil {
+		m.gitDiffMu = &sync.RWMutex{}
+	}
+	m.gitDiffMu.Lock()
+	m.gitDiffCache = make(map[string]gitDiffCacheEntry)
+	m.gitDiffMu.Unlock()
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8) // Cap at 8, no point hitting git with more
+
+	for _, item := range m.gitItems {
+		if item.isHeader {
+			continue
+		}
+		wg.Add(1)
+		go func(it gitTreeItem) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			entry := m.computeSingleGitDiff(it)
+
+			m.gitDiffMu.Lock()
+			m.gitDiffCache[it.path] = entry
+			m.gitDiffMu.Unlock()
+		}(item)
+	}
+	wg.Wait()
+}
+
+func (m *model) computeSingleGitDiff(item gitTreeItem) gitDiffCacheEntry {
+	beforeFile := item.path
+	if item.oldPath != "" {
+		beforeFile = item.oldPath
+	}
+	afterFile := item.path
+
+	var srcBytes, dstBytes []byte
+	var err error
+
+	isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
+
+	if isConflict {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+	} else if m.refA != "" {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, m.refA)
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, m.refB)
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+	} else if item.isStaged {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, ":")
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+	} else {
+		srcBytes, err = git.GetContent(m.repoPath, beforeFile, ":")
+		if err != nil || len(srcBytes) == 0 {
+			srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
+			if err != nil {
+				return gitDiffCacheEntry{}
+			}
+		}
+		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
+		if err != nil {
+			return gitDiffCacheEntry{}
+		}
+	}
+
+	if isBinary(srcBytes) || isBinary(dstBytes) {
+		return gitDiffCacheEntry{isBinary: true}
+	}
+
+	if len(srcBytes) == 0 && len(dstBytes) == 0 {
+		return gitDiffCacheEntry{}
+	}
+
+	env, _ := computeBytesDiff(srcBytes, dstBytes, beforeFile, afterFile, isConflict)
+	return gitDiffCacheEntry{
+		srcBytes: srcBytes,
+		dstBytes: dstBytes,
+		env:      env,
+	}
 }
 
 func (m *model) loadGitFileDiff(idx int) error {
@@ -290,53 +391,14 @@ func (m *model) loadGitFileDiff(idx int) error {
 	}
 	afterFile := item.path
 
-	var srcBytes, dstBytes []byte
-	var err error
-
-	isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
-
-	if isConflict {
-		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
-		if err != nil {
-			return err
-		}
-		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
-		if err != nil {
-			return err
-		}
-	} else if m.refA != "" {
-		srcBytes, err = git.GetContent(m.repoPath, beforeFile, m.refA)
-		if err != nil {
-			return err
-		}
-		dstBytes, err = git.GetContent(m.repoPath, afterFile, m.refB)
-		if err != nil {
-			return err
-		}
-	} else if item.isStaged {
-		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
-		if err != nil {
-			return err
-		}
-		dstBytes, err = git.GetContent(m.repoPath, afterFile, ":")
-		if err != nil {
-			return err
-		}
-	} else {
-		srcBytes, err = git.GetContent(m.repoPath, beforeFile, ":")
-		if err != nil || len(srcBytes) == 0 {
-			srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
-			if err != nil {
-				return err
-			}
-		}
-		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
-		if err != nil {
-			return err
-		}
+	var cacheEntry gitDiffCacheEntry
+	if m.gitDiffMu != nil {
+		m.gitDiffMu.RLock()
+		cacheEntry = m.gitDiffCache[item.path]
+		m.gitDiffMu.RUnlock()
 	}
 
-	if isBinary(srcBytes) || isBinary(dstBytes) {
+	if cacheEntry.isBinary {
 		m.srcFile = beforeFile
 		m.dstFile = afterFile
 		m.srcLines = []string{"[Binary File Diff Not Supported]"}
@@ -354,17 +416,17 @@ func (m *model) loadGitFileDiff(idx int) error {
 		return nil
 	}
 
-	if len(srcBytes) == 0 && len(dstBytes) == 0 {
+	if len(cacheEntry.srcBytes) == 0 && len(cacheEntry.dstBytes) == 0 {
 		m.setupEmptyPlaceholder()
 		return nil
 	}
 
-	env, err := computeBytesDiff(srcBytes, dstBytes, beforeFile, afterFile, isConflict)
-	if err != nil {
+	env := cacheEntry.env
+	if env == nil {
 		env = &serialize.Envelope{}
 	}
 
-	m.setupDiff(beforeFile, afterFile, srcBytes, dstBytes, env)
+	m.setupDiff(beforeFile, afterFile, cacheEntry.srcBytes, cacheEntry.dstBytes, env)
 	return nil
 }
 
