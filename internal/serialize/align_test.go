@@ -167,9 +167,9 @@ func TestAlignLines(t *testing.T) {
 			},
 			want: []LineAlignmentPair{
 				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: -1},
-				{LeftLine: 2, RightLine: 1},
-				{LeftLine: -1, RightLine: 2},
+				{LeftLine: -1, RightLine: 1},
+				{LeftLine: 1, RightLine: 2},
+				{LeftLine: 2, RightLine: -1},
 				{LeftLine: 3, RightLine: 3},
 			},
 		},

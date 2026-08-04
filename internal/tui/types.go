@@ -80,7 +80,7 @@ type gitTreeItem struct {
 const (
 	titleBarHeight     = 1
 	statusBarHeight    = 1
-	gutterPadding      = 1
+	gutterPadding      = 2
 	dividerWidth       = 1
 	foldContext        = 3 // Unchanged lines to keep visible around changes
 	inspectPanelHeight = 4
