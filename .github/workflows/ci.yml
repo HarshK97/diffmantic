@@ -202,11 +202,11 @@ jobs:
           BASE_REF: ${{ steps.filter.outputs.base_ref }}
         run: |
           echo "==> Running Stage Benchmark: $STAGE on PR HEAD..."
-          go test ./tests/integration/ -bench="^(${STAGE})$" -benchmem -run=^$ -count=3 > bench_stage_new.txt
+          go test ./tests/integration/ -bench="^(${STAGE})$" -benchtime=100ms -benchmem -run=^$ -count=3 > bench_stage_new.txt
 
           echo "==> Fetching baseline ($BASE_REF) and running $STAGE..."
           git checkout $BASE_REF || true
-          go test ./tests/integration/ -bench="^(${STAGE})$" -benchmem -run=^$ -count=3 > bench_stage_old.txt || true
+          go test ./tests/integration/ -bench="^(${STAGE})$" -benchtime=100ms -benchmem -run=^$ -count=3 > bench_stage_old.txt || true
           git checkout ${{ github.sha }} || git checkout - || true
 
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -271,11 +271,11 @@ jobs:
           BASE_REF: ${{ steps.filter.outputs.base_ref }}
         run: |
           echo "==> Running End-to-End Benchmark: BenchmarkPipeline on PR HEAD..."
-          go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchmem -run=^$ -count=3 > bench_pipe_new.txt
+          go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchtime=100ms -benchmem -run=^$ -count=3 > bench_pipe_new.txt
 
           echo "==> Fetching baseline ($BASE_REF) and running BenchmarkPipeline..."
           git checkout $BASE_REF || true
-          go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchmem -run=^$ -count=3 > bench_pipe_old.txt || true
+          go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchtime=100ms -benchmem -run=^$ -count=3 > bench_pipe_old.txt || true
           git checkout ${{ github.sha }} || git checkout - || true
 
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
