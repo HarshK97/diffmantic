@@ -143,28 +143,44 @@ jobs:
       - name: Check performance-critical file changes & determine stage target
         id: filter
         run: |
-          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              BASE_REF="HEAD~1"
+            else
+              BASE_REF="$BEFORE"
+            fi
+          fi
+
           CHANGED=$(git diff --name-only $BASE_REF HEAD || true)
           echo "Changed files:"
           echo "$CHANGED"
 
-          PRIMARY_STAGE=""
-          if echo "$CHANGED" | grep -qE '^internal/treesitter/'; then
-            PRIMARY_STAGE="BenchmarkParse"
-          elif echo "$CHANGED" | grep -qE '^internal/engine/'; then
-            PRIMARY_STAGE="BenchmarkMatch"
-          elif echo "$CHANGED" | grep -qE '^internal/actions/'; then
-            PRIMARY_STAGE="BenchmarkEditScript"
-          elif echo "$CHANGED" | grep -qE '^internal/postprocess/'; then
-            PRIMARY_STAGE="BenchmarkPostprocess"
-          elif echo "$CHANGED" | grep -qE '^internal/serialize/'; then
-            PRIMARY_STAGE="BenchmarkSerialize"
+          STAGES=()
+          if echo "$CHANGED" | grep -qE '^(internal/treesitter/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'; then
+            STAGES+=("BenchmarkParse")
+          fi
+          if echo "$CHANGED" | grep -qE '^(internal/engine/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'; then
+            STAGES+=("BenchmarkMatch")
+          fi
+          if echo "$CHANGED" | grep -qE '^(internal/actions/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'; then
+            STAGES+=("BenchmarkEditScript")
+          fi
+          if echo "$CHANGED" | grep -qE '^(internal/postprocess/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'; then
+            STAGES+=("BenchmarkPostprocess")
+          fi
+          if echo "$CHANGED" | grep -qE '^(internal/serialize/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'; then
+            STAGES+=("BenchmarkSerialize")
           fi
 
-          if [ -n "$PRIMARY_STAGE" ]; then
+          if [ ${#STAGES[@]} -gt 0 ]; then
+            PRIMARY_STAGE=$(IFS='|'; echo "${STAGES[*]}")
             echo "run_stage=true" >> $GITHUB_OUTPUT
             echo "primary_stage=$PRIMARY_STAGE" >> $GITHUB_OUTPUT
-            echo "Selected sub-system benchmark: $PRIMARY_STAGE"
+            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+            echo "Selected sub-system benchmark(s): $PRIMARY_STAGE"
           else
             echo "run_stage=false" >> $GITHUB_OUTPUT
             echo "No sub-system specific files changed. Skipping stage benchmark."
@@ -186,14 +202,14 @@ jobs:
         if: steps.filter.outputs.run_stage == 'true'
         env:
           PRIMARY_STAGE: ${{ steps.filter.outputs.primary_stage }}
+          BASE_REF: ${{ steps.filter.outputs.base_ref }}
         run: |
-          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
           echo "==> Running Sub-System Stage Benchmark: $PRIMARY_STAGE on PR HEAD..."
-          go test ./tests/integration/ -bench="^${PRIMARY_STAGE}$" -benchmem -run=^$ -count=3 > bench_stage_new.txt
+          go test ./tests/integration/ -bench="^(${PRIMARY_STAGE})$" -benchmem -run=^$ -count=3 > bench_stage_new.txt
 
-          echo "==> Fetching baseline and running $PRIMARY_STAGE..."
+          echo "==> Fetching baseline ($BASE_REF) and running $PRIMARY_STAGE..."
           git checkout $BASE_REF || true
-          go test ./tests/integration/ -bench="^${PRIMARY_STAGE}$" -benchmem -run=^$ -count=3 > bench_stage_old.txt || true
+          go test ./tests/integration/ -bench="^(${PRIMARY_STAGE})$" -benchmem -run=^$ -count=3 > bench_stage_old.txt || true
           git checkout ${{ github.sha }} || git checkout - || true
 
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -216,14 +232,25 @@ jobs:
       - name: Check performance-critical file changes
         id: filter
         run: |
-          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              BASE_REF="HEAD~1"
+            else
+              BASE_REF="$BEFORE"
+            fi
+          fi
+
           CHANGED=$(git diff --name-only $BASE_REF HEAD || true)
           echo "Changed files:"
           echo "$CHANGED"
 
-          if echo "$CHANGED" | grep -qE '^(internal/engine/|internal/treesitter/|internal/actions/|internal/postprocess/|internal/serialize/|tests/integration/|go\.mod|go\.sum)'; then
+          if echo "$CHANGED" | grep -qE '^(internal/engine/|internal/treesitter/|internal/actions/|internal/postprocess/|internal/serialize/|tests/integration/|tests/testdata/|go\.mod|go\.sum)'; then
             echo "::notice::Performance-critical files changed. Running E2E pipeline benchmark..."
             echo "run_benchmarks=true" >> $GITHUB_OUTPUT
+            echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
           else
             echo "::notice::No performance-critical files changed. Skipping pipeline benchmark."
             echo "run_benchmarks=false" >> $GITHUB_OUTPUT
@@ -243,12 +270,13 @@ jobs:
 
       - name: Run End-to-End Pipeline Benchmark
         if: steps.filter.outputs.run_benchmarks == 'true'
+        env:
+          BASE_REF: ${{ steps.filter.outputs.base_ref }}
         run: |
-          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
           echo "==> Running End-to-End Benchmark: BenchmarkPipeline on PR HEAD..."
           go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchmem -run=^$ -count=3 > bench_pipe_new.txt
 
-          echo "==> Fetching baseline and running BenchmarkPipeline..."
+          echo "==> Fetching baseline ($BASE_REF) and running BenchmarkPipeline..."
           git checkout $BASE_REF || true
           go test ./tests/integration/ -bench="^BenchmarkPipeline$" -benchmem -run=^$ -count=3 > bench_pipe_old.txt || true
           git checkout ${{ github.sha }} || git checkout - || true
