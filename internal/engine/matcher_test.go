@@ -27,7 +27,7 @@ func TestMatchIdenticalTrees(t *testing.T) {
 		t.Fatal("Match returned nil")
 	}
 
-	srcNodes := PreOrder(src)
+	srcNodes := src.PreOrder()
 	for _, n := range srcNodes {
 		if !r.Mappings.Has(n) {
 			t.Errorf("node %s:%s not mapped in identical tree", n.Type, n.Label)

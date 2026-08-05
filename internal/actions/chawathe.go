@@ -127,7 +127,7 @@ func (s *chawatheState) generate() *EditScript {
 		s.alignChildren(w, x)
 	}
 
-	for _, w := range engine.PostOrder(s.cpySrc) {
+	for _, w := range s.cpySrc.PostOrder() {
 		if !s.cpyMappings.Has(w) {
 			s.script.Add(Action{
 				Type: Delete,

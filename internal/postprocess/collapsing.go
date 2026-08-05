@@ -55,7 +55,7 @@ func Collapse(
 	}
 
 	// Collapse/Clean Inserts bottom-up on the destination tree
-	for _, parent := range engine.PostOrder(dstRoot) {
+	for _, parent := range dstRoot.PostOrder() {
 		if act, ok := inserted[parent]; ok && len(parent.Children) > 0 {
 			allChildrenInserted := true
 			for _, child := range parent.Children {
@@ -102,7 +102,7 @@ func Collapse(
 	// all Subtree:true/KillChildren determinations are finalized. This avoids
 	// a cascade bug where prematurely suppressing a scaffolding child's Insert
 	// prevents its parent from reaching Subtree:true.
-	for _, node := range engine.PostOrder(dstRoot) {
+	for _, node := range dstRoot.PostOrder() {
 		if node.IsScaffolding() {
 			if sAct, ok := inserted[node]; ok && !suppressed[sAct] && !sAct.Subtree {
 				if node.Parent != nil {
@@ -115,7 +115,7 @@ func Collapse(
 	}
 
 	// Collapse/Clean Deletes bottom-up on the source tree
-	for _, parent := range engine.PostOrder(srcRoot) {
+	for _, parent := range srcRoot.PostOrder() {
 		if act, ok := deleted[parent]; ok && len(parent.Children) > 0 {
 			allChildrenDeleted := true
 			for _, child := range parent.Children {
@@ -141,7 +141,7 @@ func Collapse(
 	}
 
 	// Collapse/Clean Moves bottom-up on the source tree
-	for _, parentSrc := range engine.PostOrder(srcRoot) {
+	for _, parentSrc := range srcRoot.PostOrder() {
 		if act, ok := moved[parentSrc]; ok && len(parentSrc.Children) > 0 {
 			allChildrenMovedToSameParent := true
 			dstParent := ms.Src()[parentSrc]

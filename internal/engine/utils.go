@@ -35,29 +35,8 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 	return true
 }
 
-// Returns all descendants in the subtree, excluding n itself.
-func Descendants(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	size := n.Size()
-	if size <= 1 {
-		return nil
-	}
-	out := make([]*treesitter.ASTNode, 0, size-1)
-	collectDescendants(n, &out)
-	return out
-}
-
-func collectDescendants(n *treesitter.ASTNode, out *[]*treesitter.ASTNode) {
-	for _, c := range n.Children {
-		*out = append(*out, c)
-		collectDescendants(c, out)
-	}
-}
-
 func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
-	desc := Descendants(n)
+	desc := n.Descendants()
 	s := make(map[*treesitter.ASTNode]struct{}, len(desc))
 	for _, d := range desc {
 		s[d] = struct{}{}
@@ -66,7 +45,7 @@ func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
 }
 
 func commonMappedDescendants(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) (common, lenS1, lenS2 int) {
-	s1 := Descendants(t1)
+	s1 := t1.Descendants()
 	s2 := descendantSet(t2)
 	for _, d := range s1 {
 		if mapped, ok := m[d]; ok {
@@ -136,40 +115,6 @@ func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
 		b.ComputeHashes()
 	}
 	return a.StructureHash == b.StructureHash
-}
-
-// PostOrder returns all nodes in the subtree rooted at n
-// in post-order (children before parent).
-func PostOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	return appendPostOrder(make([]*treesitter.ASTNode, 0, n.Size()), n)
-}
-
-func appendPostOrder(out []*treesitter.ASTNode, n *treesitter.ASTNode) []*treesitter.ASTNode {
-	for _, c := range n.Children {
-		out = appendPostOrder(out, c)
-	}
-	return append(out, n)
-}
-
-// PreOrder returns all nodes in the subtree rooted at n
-// in pre-order (parent before children). Used for deterministic
-// mapping output.
-func PreOrder(n *treesitter.ASTNode) []*treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	return appendPreOrder(make([]*treesitter.ASTNode, 0, n.Size()), n)
-}
-
-func appendPreOrder(out []*treesitter.ASTNode, n *treesitter.ASTNode) []*treesitter.ASTNode {
-	out = append(out, n)
-	for _, c := range n.Children {
-		out = appendPreOrder(out, c)
-	}
-	return out
 }
 
 // NearestMatchedAncestor finds the closest ancestor of n that is present in the mapping.
