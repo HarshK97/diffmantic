@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -256,7 +255,7 @@ func TestPostOrder(t *testing.T) {
 	testutil.Tree(root, b, c)
 	testutil.Tree(b, d)
 
-	nodes := engine.PostOrder(root)
+	nodes := root.PostOrder()
 	if len(nodes) != 4 {
 		t.Fatalf("postOrder returned %d nodes, want 4", len(nodes))
 	}

@@ -28,31 +28,6 @@ func TestHeight(t *testing.T) {
 	}
 }
 
-func TestDescendants(t *testing.T) {
-	c1 := testutil.Leaf("id", "a")
-	c2 := testutil.Leaf("id", "b")
-	root := testutil.Node("call", "", c1, c2)
-
-	desc := Descendants(root)
-	if len(desc) != 2 {
-		t.Fatalf("want 2 descendants, got %d", len(desc))
-	}
-	if desc[0] != c1 || desc[1] != c2 {
-		t.Error("descendants not in expected order")
-	}
-}
-
-func TestDescendantsNested(t *testing.T) {
-	leaf := testutil.Leaf("id", "x")
-	mid := testutil.Node("call", "", leaf)
-	root := testutil.Node("func", "", mid)
-
-	desc := Descendants(root)
-	if len(desc) != 2 {
-		t.Fatalf("want 2 descendants, got %d", len(desc))
-	}
-}
-
 func TestDice(t *testing.T) {
 	// Identical mapped trees have a Dice coefficient of 1.0.
 	a1 := testutil.Leaf("id", "x")
@@ -169,38 +144,6 @@ func TestStructureIsomorphic(t *testing.T) {
 	c := testutil.Node("call", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))
 	if StructureIsomorphic(a, c) {
 		t.Error("different structure should not be StructureIsomorphic")
-	}
-}
-
-func TestPostOrder(t *testing.T) {
-	if PostOrder(nil) != nil {
-		t.Error("PostOrder(nil) should return nil")
-	}
-	leaf := testutil.Leaf("id", "x")
-	root := testutil.Node("call", "", leaf)
-	order := PostOrder(root)
-
-	if len(order) != 2 {
-		t.Fatalf("want 2 nodes, got %d", len(order))
-	}
-	if order[0] != leaf || order[1] != root {
-		t.Error("post-order should visit child before parent")
-	}
-}
-
-func TestPreOrder(t *testing.T) {
-	if PreOrder(nil) != nil {
-		t.Error("PreOrder(nil) should return nil")
-	}
-	leaf := testutil.Leaf("id", "x")
-	root := testutil.Node("call", "", leaf)
-	order := PreOrder(root)
-
-	if len(order) != 2 {
-		t.Fatalf("want 2 nodes, got %d", len(order))
-	}
-	if order[0] != root || order[1] != leaf {
-		t.Error("pre-order should visit parent before child")
 	}
 }
 

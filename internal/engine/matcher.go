@@ -32,7 +32,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 		mappings.Add(t1, t2)
 	}
 
-	sortMappingsByPreOrder(t1, mappings)
+	sortMappingsByPreOrder(mappings)
 
 	return &MatchResult{Mappings: mappings}
 }
@@ -43,7 +43,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *LinePartition) {
 	type leafKey struct{ Type, Label string }
 	t2Leaves := make(map[leafKey][]*treesitter.ASTNode)
-	for _, t2 := range PostOrder(t2Root) {
+	for _, t2 := range t2Root.PostOrder() {
 		if len(t2.Children) == 0 && t2.Label != "" {
 			t2Leaves[leafKey{t2.Type, t2.Label}] = append(t2Leaves[leafKey{t2.Type, t2.Label}], t2)
 		}
@@ -51,7 +51,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 
 	type parentPair struct{ p1, p2 *treesitter.ASTNode }
 	diceCache := make(map[parentPair]float64)
-	for _, t1 := range PostOrder(t1Root) {
+	for _, t1 := range t1Root.PostOrder() {
 		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" {
 			continue
 		}
@@ -165,14 +165,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 }
 
 // sortMappingsByPreOrder sorts mapped pairs by T1 pre-order index.
-func sortMappingsByPreOrder(t1Root *treesitter.ASTNode, m *Mapping) {
-	nodes := PreOrder(t1Root)
-	index := make(map[*treesitter.ASTNode]int, len(nodes))
-	for i, n := range nodes {
-		index[n] = i
-	}
+func sortMappingsByPreOrder(m *Mapping) {
 	slices.SortStableFunc(m.Pairs, func(a, b MappingPair) int {
-		return cmp.Compare(index[a.Src], index[b.Src])
+		return cmp.Compare(a.Src.ID, b.Src.ID)
 	})
 }
 

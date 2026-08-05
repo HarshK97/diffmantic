@@ -14,32 +14,13 @@ func BottomUp(
 	m *Mapping,
 	minDice float64,
 ) {
-	// Index T2 nodes by type so candidate lookups aren't O(N).
+	// Pre-index T2 nodes by type to speed up candidate queries.
 	t2NodesByType := make(map[string][]*treesitter.ASTNode)
-	for _, node := range PostOrder(t2Root) {
+	for _, node := range t2Root.PostOrder() {
 		t2NodesByType[node.Type] = append(t2NodesByType[node.Type], node)
 	}
 
-	// Cache leaf label counts during the match so we don't re-walk subtrees.
-	leafLabelCache := make(map[*treesitter.ASTNode]map[string]int)
-	getLeafLabels := func(n *treesitter.ASTNode) map[string]int {
-		if labels, ok := leafLabelCache[n]; ok {
-			return labels
-		}
-		labels := make(map[string]int)
-		for _, d := range Descendants(n) {
-			if len(d.Children) == 0 && d.Label != "" {
-				labels[d.Label]++
-			}
-		}
-		if len(n.Children) == 0 && n.Label != "" {
-			labels[n.Label]++
-		}
-		leafLabelCache[n] = labels
-		return labels
-	}
-
-	for _, t1 := range PostOrder(t1Root) {
+	for _, t1 := range t1Root.PostOrder() {
 		if t1 == t1Root {
 			if !m.Has(t1) && !m.HasDst(t2Root) {
 				m.Add(t1, t2Root)
@@ -67,13 +48,13 @@ func BottomUp(
 			continue
 		}
 
-		t2 := candidate(t1, t2NodesByType[t1.Type], m, getLeafLabels)
+		t2 := candidate(t1, t2NodesByType[t1.Type], m)
 		if t2 == nil {
 			continue
 		}
 
 		sim := ChawatheSimilarity(t1, t2, m.Src())
-		threshold := 1.0 / (1.0 + math.Log(float64(len(Descendants(t1))+len(Descendants(t2)))))
+		threshold := 1.0 / (1.0 + math.Log(float64((t1.Size()-1)+(t2.Size()-1))))
 		if m.DiceSrc(t1, t2) >= minDice || sim >= threshold {
 			m.Add(t1, t2)
 			SimpleRecovery(t1, t2, m)
@@ -105,30 +86,27 @@ func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
 	})
 }
 
-// Find the best unmatched node in T2 to pair with t1.
-// Breaks ties using same child position, Chawathe similarity, and then Dice.
+// candidate finds the best unmatched node in T2 to pair with t1.
+// Prefers same child position, higher Chawathe similarity, then Dice score.
 func candidate(
 	t1 *treesitter.ASTNode,
 	candidates []*treesitter.ASTNode,
 	m *Mapping,
-	getLeafLabels func(*treesitter.ASTNode) map[string]int,
 ) *treesitter.ASTNode {
-	s1 := descendantSet(t1)
-
 	var best *treesitter.ASTNode
 	bestSim := -1.0
 	bestDice := -1.0
 	bestLabelScore := -1
 	var bestSamePositional bool
 
-	t1Labels := getLeafLabels(t1)
+	t1Labels := t1.LeafLabels()
 
 	for _, c := range candidates {
 		if m.HasDst(c) {
 			continue
 		}
 
-		if !hasCommonDescendant(s1, c, m) {
+		if !hasCommonDescendant(t1, c, m) {
 			continue
 		}
 
@@ -155,30 +133,24 @@ func candidate(
 
 		diff := sim - bestSim
 		isBetter := false
-		ls := -1
+		ls := labelOverlap(t1Labels, c)
 
 		if math.Abs(diff) > 0.05 {
 			if sim > bestSim {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			}
 		} else {
 			if samePositional && !bestSamePositional {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			} else if sim > bestSim {
 				isBetter = true
-				ls = labelOverlap(t1Labels, c, getLeafLabels)
 			} else if sim == bestSim {
 				if d > bestDice {
 					isBetter = true
-					ls = labelOverlap(t1Labels, c, getLeafLabels)
 				} else if d == bestDice {
 					if cMatches && !bestCMatches {
 						isBetter = true
-						ls = labelOverlap(t1Labels, c, getLeafLabels)
 					} else if cMatches == bestCMatches {
-						ls = labelOverlap(t1Labels, c, getLeafLabels)
 						if ls > bestLabelScore {
 							isBetter = true
 						}
@@ -198,17 +170,11 @@ func candidate(
 	return best
 }
 
-// Count how many leaf labels t1 and t2 share.
-func labelOverlap(
-	t1Labels map[string]int,
-	t2 *treesitter.ASTNode,
-	getLeafLabels func(*treesitter.ASTNode) map[string]int,
-) int {
+// labelOverlap returns the number of shared leaf labels in t2's subtree.
+func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
 	count := 0
-	for label, freq2 := range getLeafLabels(t2) {
-		if t1Labels[label] > 0 {
-			count += freq2
-		}
+	for label := range t1Labels {
+		count += t2.FrequencyInSubtree(label)
 	}
 	return count
 }
@@ -221,15 +187,13 @@ func childIndexWithin(child, parent *treesitter.ASTNode) int {
 }
 
 func hasCommonDescendant(
-	s1 map[*treesitter.ASTNode]struct{},
+	t1 *treesitter.ASTNode,
 	c *treesitter.ASTNode,
 	m *Mapping,
 ) bool {
-	for _, d := range Descendants(c) {
-		if t1Partner, ok := m.Dst()[d]; ok {
-			if _, in := s1[t1Partner]; in {
-				return true
-			}
+	for _, d := range c.Descendants() {
+		if t1Partner, ok := m.Dst()[d]; ok && t1.Contains(t1Partner) {
+			return true
 		}
 	}
 	return false

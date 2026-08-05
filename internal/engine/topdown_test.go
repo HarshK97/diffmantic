@@ -24,7 +24,7 @@ func TestTopDown(t *testing.T) {
 		m := NewMapping()
 		TopDown(src, dst, 1, m, nil)
 
-		for _, n := range PreOrder(src) {
+		for _, n := range src.PreOrder() {
 			if !m.Has(n) {
 				t.Errorf("expected node %s:%s to be mapped", n.Type, n.Label)
 			}
