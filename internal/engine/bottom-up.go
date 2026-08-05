@@ -21,21 +21,17 @@ func BottomUp(
 	}
 
 	for _, t1 := range t1Root.PostOrder() {
-		if t1 == t1Root {
-			if !m.Has(t1) && !m.HasDst(t2Root) {
-				m.Add(t1, t2Root)
-			}
-			t2 := m.Src()[t1]
-			if t2 != nil && hasUnmappedChildrenSrc(t1, m) && hasUnmappedChildrenDst(t2, m) {
-				SimpleRecovery(t1, t2, m)
-			}
-			break
+		if t1 == t1Root && !m.Has(t1) && !m.HasDst(t2Root) {
+			m.Add(t1, t2Root)
 		}
 
 		if m.Has(t1) {
 			t2 := m.Src()[t1]
-			if t2 != nil && hasUnmappedChildrenSrc(t1, m) && hasUnmappedChildrenDst(t2, m) {
+			if t2 != nil && hasUnmappedChild(t1, m.Has) && hasUnmappedChild(t2, m.HasDst) {
 				SimpleRecovery(t1, t2, m)
+			}
+			if t1 == t1Root {
+				break
 			}
 			continue
 		}
@@ -62,18 +58,9 @@ func BottomUp(
 	}
 }
 
-func hasUnmappedChildrenSrc(t *treesitter.ASTNode, m *Mapping) bool {
+func hasUnmappedChild(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bool) bool {
 	for _, c := range t.Children {
-		if !m.Has(c) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasUnmappedChildrenDst(t *treesitter.ASTNode, m *Mapping) bool {
-	for _, c := range t.Children {
-		if !m.HasDst(c) {
+		if !hasFn(c) {
 			return true
 		}
 	}
@@ -115,21 +102,20 @@ func candidate(
 
 		samePositional := false
 		if t1.Parent != nil && c.Parent != nil {
-			t1Idx := childIndexWithin(t1, t1.Parent)
-			cIdx := childIndexWithin(c, c.Parent)
+			t1Idx := t1.ChildIndex()
+			cIdx := c.ChildIndex()
 			samePositional = t1Idx == cIdx
 		}
 
 		anc1 := NearestMatchedAncestor(t1, m, false)
 		anc2 := NearestMatchedAncestor(c, m, true)
-		cMatches := (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
+		cMatches := areAncestorsMatched(anc1, anc2, m)
 
-		ancBest1 := NearestMatchedAncestor(t1, m, false)
 		var ancBest2 *treesitter.ASTNode
 		if best != nil {
 			ancBest2 = NearestMatchedAncestor(best, m, true)
 		}
-		bestCMatches := best == nil || (ancBest1 == nil && ancBest2 == nil) || (ancBest1 != nil && ancBest2 != nil && m.Src()[ancBest1] == ancBest2)
+		bestCMatches := best == nil || areAncestorsMatched(anc1, ancBest2, m)
 
 		diff := sim - bestSim
 		isBetter := false
@@ -177,13 +163,6 @@ func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
 		count += t2.FrequencyInSubtree(label)
 	}
 	return count
-}
-
-func childIndexWithin(child, parent *treesitter.ASTNode) int {
-	if parent == nil {
-		return -1
-	}
-	return slices.Index(parent.Children, child)
 }
 
 func hasCommonDescendant(

@@ -36,8 +36,8 @@ func TestChawatheIdenticalTrees(t *testing.T) {
 	src := buildSimpleTree("")
 	dst := buildSimpleTree("")
 
-	srcNodes := bfs(src)
-	dstNodes := bfs(dst)
+	srcNodes := src.LevelOrder()
+	dstNodes := dst.LevelOrder()
 	ms := engine.NewMapping()
 	for i := range srcNodes {
 		ms.Add(srcNodes[i], dstNodes[i])

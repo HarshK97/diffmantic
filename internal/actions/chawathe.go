@@ -74,7 +74,7 @@ func (s *chawatheState) generate() *EditScript {
 
 	s.cpyMappings.Add(srcFakeRoot, dstFakeRoot)
 
-	for _, x := range bfs(s.origDst) {
+	for _, x := range s.origDst.LevelOrder() {
 		var w *treesitter.ASTNode
 		y := x.Parent
 		z := s.cpyDstToSrc[y]
@@ -118,7 +118,7 @@ func (s *chawatheState) generate() *EditScript {
 
 					s.addDescendantMoves(w)
 
-					oldk := slices.Index(w.Parent.Children, w)
+					oldk := w.ChildIndex()
 					if oldk >= 0 {
 						w.Parent.Children = slices.Delete(w.Parent.Children, oldk, oldk+1)
 					}
@@ -157,7 +157,7 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 		}
 	}
 
-	xpos := slices.Index(siblings, x)
+	xpos := x.ChildIndex()
 	var v *treesitter.ASTNode
 	for i := range xpos {
 		c := siblings[i]
@@ -171,7 +171,7 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 	}
 
 	u := s.cpyDstToSrc[v]
-	upos := slices.Index(u.Parent.Children, u)
+	upos := u.ChildIndex()
 	return upos + 1
 }
 
@@ -214,7 +214,7 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 		for _, a := range s1 {
 			if src, ok := s.cpySrcToDst[a]; ok && src == b {
 				if !lcsSet[a] {
-					if idx := slices.Index(a.Parent.Children, a); idx != -1 {
+					if idx := a.ChildIndex(); idx >= 0 {
 						a.Parent.Children = slices.Delete(a.Parent.Children, idx, idx+1)
 					}
 
@@ -345,34 +345,12 @@ func insertChild(parent, child *treesitter.ASTNode, k int) {
 	parent.Children = slices.Insert(parent.Children, k, child)
 }
 
-func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
-	if root == nil {
-		return nil
-	}
-	size := root.Size()
-	out := make([]*treesitter.ASTNode, 0, size)
-	queue := make([]*treesitter.ASTNode, 0, size)
-	queue = append(queue, root)
-
-	head := 0
-	for head < len(queue) {
-		n := queue[head]
-		head++
-		out = append(out, n)
-		queue = append(queue, n.Children...)
-	}
-	return out
-}
-
 func (s *chawatheState) addDescendantMoves(n *treesitter.ASTNode) {
 	var traverse func(curr *treesitter.ASTNode)
 	traverse = func(curr *treesitter.ASTNode) {
 		for _, child := range curr.Children {
 			if dst, ok := s.cpySrcToDst[child]; ok {
-				pos := slices.Index(dst.Parent.Children, dst)
-				if pos == -1 {
-					pos = 0
-				}
+				pos := max(0, dst.ChildIndex())
 				s.script.Add(Action{
 					Type:     Move,
 					Node:     s.copyToOrig[child],

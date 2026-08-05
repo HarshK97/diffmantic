@@ -23,14 +23,7 @@ func groupingParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 }
 
 func isStructuralPunctuation(n *treesitter.ASTNode) bool {
-	if n == nil {
-		return false
-	}
-	switch n.Label {
-	case "{", "}", "(", ")", "[", "]":
-		return true
-	}
-	return false
+	return n.IsBracketOrParen()
 }
 
 // GroupMoves assigns grouping metadata (GroupID) to Move actions that share

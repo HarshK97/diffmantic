@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 // actionKind is the type of edit (insert, delete, move, update) that dictates how we color the line.
@@ -46,8 +47,8 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 		tinted: make(map[int]actionKind),
 	}
 
-	srcIndex := buildLineIndex(srcBytes)
-	dstIndex := buildLineIndex(dstBytes)
+	srcIndex := serialize.BuildLineIndex(srcBytes)
+	dstIndex := serialize.BuildLineIndex(dstBytes)
 
 	for i := range actions {
 		a := &actions[i]
@@ -90,75 +91,18 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 	return srcHL, dstHL
 }
 
-// Split a byte range into line-by-line highlights. Ranges can cross line boundaries.
+// Break a byte range into line-by-line highlights.
 func addHighlight(hl *highlights, lineIndex []int, fileBytes []byte, startByte, endByte uint32, kind actionKind, action *serialize.Action) {
-	if startByte >= endByte {
-		return
-	}
-	startLine, startCol := byteToLineCol(lineIndex, startByte)
-	endLine, endCol := byteToLineCol(lineIndex, endByte)
-
-	for line := startLine; line <= endLine; line++ {
-		var sc, ec int
-
-		if line == startLine {
-			sc = startCol
-		} else {
-			sc = 0
-		}
-
-		if line == endLine {
-			ec = endCol
-		} else {
-			if line < len(lineIndex)-1 {
-				lineLen := lineIndex[line+1] - lineIndex[line]
-				// Don't highlight the trailing newline so we avoid coloring empty space.
-				if lineLen > 0 && line+1 < len(lineIndex) {
-					bytePos := lineIndex[line] + lineLen - 1
-					if bytePos < len(fileBytes) && fileBytes[bytePos] == '\n' {
-						lineLen--
-					}
-				}
-				ec = lineLen
-			} else {
-				ec = len(fileBytes) - lineIndex[line]
-			}
-		}
-
-		if ec > sc {
-			hl.spans[line] = append(hl.spans[line], span{startCol: sc, endCol: ec, kind: kind, action: action})
-		}
-
-		// If a line has multiple changes, color the whole line using the most important one.
+	serialize.ForEachLineSpan(lineIndex, fileBytes, startByte, endByte, func(line, sc, ec int) {
+		hl.spans[line] = append(hl.spans[line], span{startCol: sc, endCol: ec, kind: kind, action: action})
 		if existing, ok := hl.tinted[line]; !ok || kind < existing {
 			hl.tinted[line] = kind
 		}
-	}
-}
-
-// buildLineIndex maps out where each line starts in the file.
-func buildLineIndex(data []byte) []int {
-	index := []int{0}
-	for i, b := range data {
-		if b == '\n' {
-			index = append(index, i+1)
-		}
-	}
-	return index
-}
-
-// byteToLineCol converts a global byte offset into a 0-indexed line and column.
-func byteToLineCol(lineIndex []int, offset uint32) (line, col int) {
-	off := int(offset)
-	line = max(sort.Search(len(lineIndex), func(i int) bool {
-		return lineIndex[i] > off
-	})-1, 0)
-	col = off - lineIndex[line]
-	return line, col
+	})
 }
 
 func mergeAllSpans(hl *highlights, fileBytes []byte) {
-	lineIndex := buildLineIndex(fileBytes)
+	lineIndex := serialize.BuildLineIndex(fileBytes)
 	for line, lineSpans := range hl.spans {
 		if len(lineSpans) <= 1 {
 			continue
@@ -232,7 +176,7 @@ func isOnlyNonCharacters(b []byte) bool {
 		return false
 	}
 	for _, c := range b {
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+		if treesitter.IsWordChar(c) {
 			return false
 		}
 	}

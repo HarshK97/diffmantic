@@ -8,9 +8,13 @@ import (
 	"github.com/odvcencio/gotreesitter/grammars"
 )
 
-func DetectLanguage(filename string) (*gotreesitter.Language, error) {
+func DetectGrammarEntry(filename string) *grammars.LangEntry {
 	base := filepath.Base(filename)
-	entry := grammars.DetectLanguage(base)
+	return grammars.DetectLanguage(base)
+}
+
+func DetectLanguage(filename string) (*gotreesitter.Language, error) {
+	entry := DetectGrammarEntry(filename)
 	if entry == nil {
 		return nil, fmt.Errorf("unsupported language for file: %s", filename)
 	}

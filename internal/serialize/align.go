@@ -54,9 +54,8 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 	movedDstLines := make(map[int]bool)
 
 	// Collect leaf nodes to map their line numbers.
-	var srcLeaves, dstLeaves []*treesitter.ASTNode
-	collectLeaves(srcRoot, &srcLeaves)
-	collectLeaves(dstRoot, &dstLeaves)
+	srcLeaves := srcRoot.Leaves()
+	dstLeaves := dstRoot.Leaves()
 
 	for _, n := range srcLeaves {
 		if hasMovedAncestor(n, movedSrcNodes) {
@@ -367,19 +366,6 @@ func isTrivialLine(s string) bool {
 		return true
 	}
 	return false
-}
-
-func collectLeaves(n *treesitter.ASTNode, out *[]*treesitter.ASTNode) {
-	if n == nil {
-		return
-	}
-	if len(n.Children) == 0 || n.Type == "string" || n.Type == "string_literal" || n.Type == "interpreted_string_literal" || n.Type == "raw_string_literal" {
-		*out = append(*out, n)
-		return
-	}
-	for _, child := range n.Children {
-		collectLeaves(child, out)
-	}
 }
 
 func hasMovedAncestor(n *treesitter.ASTNode, movedNodes map[*treesitter.ASTNode]bool) bool {

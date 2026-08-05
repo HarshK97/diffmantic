@@ -55,29 +55,19 @@ type NodeRef struct {
 	EndByte   uint32 `json:"end_byte"`
 }
 
-// BuildLineDiffEnvelope creates a line-level diff envelope when tree-sitter can't parse a file.
+// BuildLineDiffEnvelope creates a line-level diff fallback when tree-sitter can't parse a file.
 func BuildLineDiffEnvelope(srcBytes, dstBytes []byte) *Envelope {
 	alignment := AlignLines(srcBytes, dstBytes, nil, nil, nil, nil)
 
-	buildLineOffsets := func(data []byte) []uint32 {
-		offsets := []uint32{0}
-		for i, b := range data {
-			if b == '\n' {
-				offsets = append(offsets, uint32(i+1))
-			}
-		}
-		return offsets
-	}
+	offsetsSrc := BuildLineIndex(srcBytes)
+	offsetsDst := BuildLineIndex(dstBytes)
 
-	offsetsSrc := buildLineOffsets(srcBytes)
-	offsetsDst := buildLineOffsets(dstBytes)
-
-	getBounds := func(lineIdx int, offsets []uint32, maxLen int) (uint32, uint32) {
+	getBounds := func(lineIdx int, offsets []int, maxLen int) (uint32, uint32) {
 		end := uint32(maxLen)
 		if lineIdx+1 < len(offsets) {
-			end = offsets[lineIdx+1]
+			end = uint32(offsets[lineIdx+1])
 		}
-		return offsets[lineIdx], end
+		return uint32(offsets[lineIdx]), end
 	}
 
 	var actionsList []Action
@@ -222,21 +212,18 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			resolved := false
 
 			if ms != nil {
-				destNodeDst := ms.Src()[a.Node]
-				if destNodeDst != nil {
+				if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 					newParentDst = destNodeDst.Parent
-					if newParentDst != nil {
-						pos = slices.Index(newParentDst.Children, destNodeDst)
-						if pos != -1 {
-							resolved = true
-						}
+					if p := destNodeDst.ChildIndex(); p >= 0 {
+						pos = p
+						resolved = true
 					}
 				}
 			}
 
 			if !resolved {
 				// Fallback: keep the action's original parent and position.
-				if findRoot(a.Parent) == findRoot(dstRoot) {
+				if a.Parent.Root() == dstRoot.Root() {
 					newParentDst = a.Parent
 				} else if ms != nil {
 					newParentDst = ms.Src()[a.Parent]
@@ -265,8 +252,7 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 			}
 			ja.OldParent = oldParentRef
 
-			// Find old position in the before tree
-			oldPos := slices.Index(a.Node.Parent.Children, a.Node)
+			oldPos := a.Node.ChildIndex()
 			if oldPos == -1 {
 				return nil, fmt.Errorf("moved node %s not found in its old parent's children", a.Node.Type)
 			}
@@ -332,7 +318,7 @@ func getIndexPath(node *treesitter.ASTNode) []int {
 	var path []int
 	curr := node
 	for curr.Parent != nil {
-		idx := slices.Index(curr.Parent.Children, curr)
+		idx := curr.ChildIndex()
 		if idx == -1 {
 			return nil
 		}
@@ -341,17 +327,6 @@ func getIndexPath(node *treesitter.ASTNode) []int {
 	}
 	slices.Reverse(path)
 	return path
-}
-
-func findRoot(n *treesitter.ASTNode) *treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	curr := n
-	for curr.Parent != nil {
-		curr = curr.Parent
-	}
-	return curr
 }
 
 // adjustRangeForHeader limits the node's range to its header by cutting off at the first code block.

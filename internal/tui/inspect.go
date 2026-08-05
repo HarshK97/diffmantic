@@ -318,19 +318,19 @@ func formatByteRange(lines []string, startByte, endByte uint32) string {
 }
 
 func byteToLineColFromLines(lines []string, byteOffset uint32) (int, int) {
-	offset := int(byteOffset)
-	curr := 0
-	for idx, l := range lines {
-		next := curr + len(l) + 1
-		if offset < next {
-			return idx, max(0, offset-curr)
-		}
-		curr = next
-	}
 	if len(lines) == 0 {
 		return 0, 0
 	}
-	return len(lines) - 1, 0
+	lineIndex := make([]int, len(lines))
+	curr := 0
+	for i, l := range lines {
+		lineIndex[i] = curr
+		curr += len(l) + 1
+	}
+	if int(byteOffset) >= curr {
+		return len(lines) - 1, 0
+	}
+	return serialize.ByteToLineCol(lineIndex, byteOffset)
 }
 
 // formatActionColumn formats an action into three detail lines padded to colWidth.

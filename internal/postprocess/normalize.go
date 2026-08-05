@@ -1,8 +1,6 @@
 package postprocess
 
 import (
-	"slices"
-
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -10,14 +8,9 @@ import (
 
 const commentSimilarityThreshold = 0.7
 
-// normalizeBareLiteralMoves finds all Move actions in the edit script where the
-// moved node is a bare aliased literal (such as "=", "and", "is not", "+") and
-// converts them into a Delete action for the source node and an Insert action for
-// the destination node.
-//
-// Only convert when the match is spurious: the node was matched across unrelated
-// parent contexts. If the node and its parent both moved coherently (a.Parent ==
-// ms.Src()[a.Node.Parent]), keep the Move so parent Move-collapsing still works.
+// Converts spurious moves on bare literals (like "=", "+", "and") into delete/insert pairs.
+// We only split moves when the literal matched across unrelated parent contexts. If the parent
+// moved along with the literal, keep the move so parent collapsing still works.
 func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
 	if isBareAliasedLiteral(node) {
 		return true
@@ -32,12 +25,23 @@ func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
 }
 
 func removeSubtreeMappings(node *treesitter.ASTNode, ms *engine.Mapping) {
-	if node == nil {
-		return
+	for _, n := range node.PreOrder() {
+		ms.Remove(n)
 	}
-	ms.Remove(node)
-	for _, child := range node.Children {
-		removeSubtreeMappings(child, ms)
+}
+
+func splitMoveToDeleteInsert(result *actions.EditScript, srcNode, dstNode *treesitter.ASTNode) {
+	result.Add(actions.Action{
+		Type: actions.Delete,
+		Node: srcNode,
+	})
+	if dstNode != nil {
+		result.Add(actions.Action{
+			Type:     actions.Insert,
+			Node:     dstNode,
+			Parent:   dstNode.Parent,
+			Position: dstNode.ChildIndex(),
+		})
 	}
 }
 
@@ -96,24 +100,7 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 			if dec, ok := decisions[a.Node]; ok && dec.shouldNormalize {
 				// Break mappings for this subtree so they don't generate spurious move actions.
 				removeSubtreeMappings(a.Node, ms)
-
-				delAct := actions.Action{
-					Type: actions.Delete,
-					Node: a.Node,
-				}
-				result.Add(delAct)
-
-				pos := -1
-				if dec.dstNode.Parent != nil {
-					pos = slices.Index(dec.dstNode.Parent.Children, dec.dstNode)
-				}
-				insAct := actions.Action{
-					Type:     actions.Insert,
-					Node:     dec.dstNode,
-					Parent:   dec.dstNode.Parent,
-					Position: pos,
-				}
-				result.Add(insAct)
+				splitMoveToDeleteInsert(result, a.Node, dec.dstNode)
 				continue
 			}
 		}
@@ -213,28 +200,8 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 
 			if commentMovedConverted[a.Node] {
 				dstNode := ms.Src()[a.Node]
-
 				removeSubtreeMappings(a.Node, ms)
-
-				delAct := actions.Action{
-					Type: actions.Delete,
-					Node: a.Node,
-				}
-				result.Add(delAct)
-
-				if dstNode != nil {
-					pos := -1
-					if dstNode.Parent != nil {
-						pos = slices.Index(dstNode.Parent.Children, dstNode)
-					}
-					insAct := actions.Action{
-						Type:     actions.Insert,
-						Node:     dstNode,
-						Parent:   dstNode.Parent,
-						Position: pos,
-					}
-					result.Add(insAct)
-				}
+				splitMoveToDeleteInsert(result, a.Node, dstNode)
 				continue
 			}
 		}

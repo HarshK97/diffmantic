@@ -68,41 +68,8 @@ func TopDown(
 				}
 			}
 
-			for _, t1 := range H1 {
-				matched := false
-				for _, t2 := range H2 {
-					if Isomorphic(t1, t2) && m.Has(t1) {
-						matched = true
-						break
-					}
-				}
-
-				if !matched {
-					matched = slices.ContainsFunc(A, func(p [2]*treesitter.ASTNode) bool {
-						return p[0] == t1
-					})
-				}
-				if !matched {
-					l1.Open(t1)
-				}
-			}
-			for _, t2 := range H2 {
-				matched := false
-				for _, t1 := range H1 {
-					if Isomorphic(t1, t2) && m.HasDst(t2) {
-						matched = true
-						break
-					}
-				}
-				if !matched {
-					matched = slices.ContainsFunc(A, func(p [2]*treesitter.ASTNode) bool {
-						return p[1] == t2
-					})
-				}
-				if !matched {
-					l2.Open(t2)
-				}
-			}
+			openUnmatched(H1, H2, m.Has, 0, A, l1)
+			openUnmatched(H2, H1, m.HasDst, 1, A, l2)
 		}
 	}
 
@@ -175,5 +142,31 @@ func (l *priorityList) Pop() []*treesitter.ASTNode {
 func (l *priorityList) Open(t *treesitter.ASTNode) {
 	for _, c := range t.Children {
 		l.Push(c)
+	}
+}
+
+func openUnmatched(
+	nodes, partners []*treesitter.ASTNode,
+	hasFn func(*treesitter.ASTNode) bool,
+	pairIdx int,
+	candidates [][2]*treesitter.ASTNode,
+	targetList *priorityList,
+) {
+	for _, n := range nodes {
+		matched := false
+		for _, partner := range partners {
+			if Isomorphic(n, partner) && hasFn(n) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			matched = slices.ContainsFunc(candidates, func(p [2]*treesitter.ASTNode) bool {
+				return p[pairIdx] == n
+			})
+		}
+		if !matched {
+			targetList.Open(n)
+		}
 	}
 }

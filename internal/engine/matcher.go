@@ -69,10 +69,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 		bestDice := 0.0
 		bestPosScore := -1
 
-		t1Idx := -1
-		if t1.Parent != nil {
-			t1Idx = childIndexWithin(t1, t1.Parent)
-		}
+		t1Idx := t1.ChildIndex()
 
 		anc1 := NearestMatchedAncestor(t1, m, false)
 
@@ -89,21 +86,21 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 
 			anc2 := NearestMatchedAncestor(t2, m, true)
-			cMatches := (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
+			cMatches := areAncestorsMatched(anc1, anc2, m)
 
 			parentMatched := t1.Parent != nil && t2.Parent != nil && m.Src()[t1.Parent] == t2.Parent
 
 			samePositional := false
 			if t1.Parent != nil && t2.Parent != nil {
-				samePositional = t1Idx == childIndexWithin(t2, t2.Parent)
+				samePositional = t1Idx == t2.ChildIndex()
 			}
 
 			parentPositional := false
 			if cMatches && anc1 != nil && anc2 != nil &&
 				t1.Parent != nil && t2.Parent != nil &&
 				anc1 != t1.Parent && anc2 != t2.Parent {
-				p1Idx := childIndexWithin(t1.Parent, anc1)
-				p2Idx := childIndexWithin(t2.Parent, anc2)
+				p1Idx := t1.Parent.ChildIndex()
+				p2Idx := t2.Parent.ChildIndex()
 				if p1Idx >= 0 && p2Idx >= 0 {
 					parentPositional = p1Idx == p2Idx
 				}
@@ -111,7 +108,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 
 			siblingScore := 0
 			if t1.Parent != nil && t2.Parent != nil && t1Idx >= 0 {
-				if t2Idx := childIndexWithin(t2, t2.Parent); t2Idx >= 0 {
+				if t2Idx := t2.ChildIndex(); t2Idx >= 0 {
 					for _, offset := range []int{-1, 1} {
 						i1, i2 := t1Idx+offset, t2Idx+offset
 						if i1 >= 0 && i1 < len(t1.Parent.Children) && i2 >= 0 && i2 < len(t2.Parent.Children) {
