@@ -374,72 +374,7 @@
       "position": 11
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          36,
-          3,
-          12,
-          4,
-          2,
-          5,
-          2,
-          1,
-          0,
-          0,
-          1
-        ],
-        "type": "logical_operator_literal",
-        "label": "and",
-        "start_byte": 28705,
-        "end_byte": 28708
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          36,
-          3,
-          12,
-          4,
-          2,
-          6,
-          12,
-          1,
-          2,
-          1,
-          1
-        ],
-        "type": "logical_operator_literal",
-        "label": "and",
-        "start_byte": 29470,
-        "end_byte": 29473
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          36,
-          3,
-          12,
-          4,
-          2,
-          6,
-          12,
-          1,
-          2,
-          1
-        ],
-        "type": "boolean_operator",
-        "start_byte": 29460,
-        "end_byte": 29500
-      },
-      "position": 1
-    },
-    {
-      "action": "delete",
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
@@ -458,27 +393,6 @@
         "label": "and",
         "start_byte": 28719,
         "end_byte": 28722
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          36,
-          3,
-          12,
-          4,
-          2,
-          6,
-          12,
-          1,
-          1
-        ],
-        "type": "logical_operator_literal",
-        "label": "or",
-        "start_byte": 29456,
-        "end_byte": 29458
       },
       "parent": {
         "tree": "after",
@@ -496,10 +410,30 @@
         "start_byte": 29446,
         "end_byte": 29501
       },
-      "position": 1
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28728
+      },
+      "old_position": 1,
+      "dest_start_byte": 29456,
+      "dest_end_byte": 29458
     },
     {
-      "action": "move",
+      "action": "delete",
       "node": {
         "tree": "before",
         "path": [
@@ -518,6 +452,27 @@
         "label": "chunk",
         "start_byte": 28723,
         "end_byte": 28728
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          6,
+          12,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "delimiter",
+        "start_byte": 29446,
+        "end_byte": 29455
       },
       "parent": {
         "tree": "after",
@@ -535,27 +490,7 @@
         "start_byte": 29446,
         "end_byte": 29501
       },
-      "position": 0,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          36,
-          3,
-          12,
-          4,
-          2,
-          5,
-          2,
-          1,
-          0
-        ],
-        "type": "boolean_operator",
-        "start_byte": 28699,
-        "end_byte": 28728
-      },
-      "old_position": 2,
-      "dest_start_byte": 29446,
-      "dest_end_byte": 29455
+      "position": 0
     },
     {
       "action": "move",
@@ -630,15 +565,15 @@
           2,
           1,
           0,
-          2
+          1
         ],
-        "type": "identifier",
-        "label": "chunk",
-        "start_byte": 28723,
-        "end_byte": 28728
+        "type": "logical_operator_literal",
+        "label": "and",
+        "start_byte": 28719,
+        "end_byte": 28722
       },
-      "old_value": "chunk",
-      "new_value": "delimiter",
+      "old_value": "and",
+      "new_value": "or",
       "dest_node": {
         "tree": "after",
         "path": [
@@ -650,12 +585,12 @@
           6,
           12,
           1,
-          0
+          1
         ],
-        "type": "identifier",
-        "label": "delimiter",
-        "start_byte": 29446,
-        "end_byte": 29455
+        "type": "logical_operator_literal",
+        "label": "or",
+        "start_byte": 29456,
+        "end_byte": 29458
       }
     },
     {
@@ -697,6 +632,69 @@
         "end_byte": 29501
       },
       "position": 0
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0,
+          0,
+          1
+        ],
+        "type": "logical_operator_literal",
+        "label": "and",
+        "start_byte": 28705,
+        "end_byte": 28708
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          6,
+          12,
+          1,
+          2,
+          1
+        ],
+        "type": "boolean_operator",
+        "start_byte": 29460,
+        "end_byte": 29500
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          1,
+          0,
+          0
+        ],
+        "type": "boolean_operator",
+        "start_byte": 28699,
+        "end_byte": 28718
+      },
+      "old_position": 1,
+      "dest_start_byte": 29470,
+      "dest_end_byte": 29473
     },
     {
       "action": "move",
@@ -923,6 +921,45 @@
         "label": ":",
         "start_byte": 28815,
         "end_byte": 28816
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          4,
+          1
+        ],
+        "type": "block",
+        "start_byte": 28833,
+        "end_byte": 28847
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          3,
+          12,
+          4,
+          2,
+          5,
+          2,
+          4
+        ],
+        "type": "else_clause",
+        "start_byte": 28811,
+        "end_byte": 28833
       }
     }
   ],

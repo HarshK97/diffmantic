@@ -256,12 +256,20 @@ func (s *chawatheState) lcs(
 	}
 
 	stride := n + 1
-	opt := make([]int, (m+1)*stride)
+	opt := make([]float64, (m+1)*stride)
 
 	for i := m - 1; i >= 0; i-- {
 		for j := n - 1; j >= 0; j-- {
 			if s.cpyDstToSrc[y[j]] == x[i] {
-				opt[i*stride+j] = opt[(i+1)*stride+(j+1)] + 1
+				score := 1.0
+				if x[i].Parent != nil && y[j].Parent != nil {
+					idxX := slices.Index(x[i].Parent.Children, x[i])
+					idxY := slices.Index(y[j].Parent.Children, y[j])
+					if idxX == idxY && idxX != -1 {
+						score += 0.01
+					}
+				}
+				opt[i*stride+j] = opt[(i+1)*stride+(j+1)] + score
 			} else {
 				opt[i*stride+j] = max(opt[(i+1)*stride+j], opt[i*stride+(j+1)])
 			}

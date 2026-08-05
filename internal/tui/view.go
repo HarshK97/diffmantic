@@ -311,9 +311,14 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 	expanded, byteToVisual := expandLine(rawLine)
 	runeLen := len([]rune(expanded))
 
+	// colHighlight tracks which action kind colors each column.
+	// colSpanWidth tracks how wide the winning span is so narrower
+	// (more specific) spans can override wider (outer) ones.
 	colHighlight := make([]int, runeLen)
+	colSpanWidth := make([]int, runeLen)
 	for i := range colHighlight {
 		colHighlight[i] = -1
+		colSpanWidth[i] = 1<<31 - 1 // max int sentinel
 	}
 	for _, s := range lineSpans {
 		sc := -1
@@ -327,9 +332,11 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 			ec = runeLen
 		}
 		if sc >= 0 && ec > sc {
+			spanWidth := ec - sc
 			for col := sc; col < ec && col < runeLen; col++ {
-				if colHighlight[col] == -1 || s.kind < actionKind(colHighlight[col]) {
+				if colHighlight[col] == -1 || spanWidth < colSpanWidth[col] {
 					colHighlight[col] = int(s.kind)
+					colSpanWidth[col] = spanWidth
 				}
 			}
 		}
