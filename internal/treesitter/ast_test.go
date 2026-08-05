@@ -143,3 +143,58 @@ func TestPreOrder(t *testing.T) {
 		t.Error("pre-order should visit parent before child")
 	}
 }
+
+func TestLeaves(t *testing.T) {
+	var nilNode *ASTNode
+	if nilNode.Leaves() != nil {
+		t.Error("nilNode.Leaves() should return nil")
+	}
+	leaf1 := &ASTNode{Type: "id", Label: "a"}
+	leaf2 := &ASTNode{Type: "id", Label: "b"}
+	root := &ASTNode{Type: "call", Children: []*ASTNode{leaf1, leaf2}}
+
+	leaves := root.Leaves()
+	if len(leaves) != 2 {
+		t.Fatalf("want 2 leaves, got %d", len(leaves))
+	}
+	if leaves[0] != leaf1 || leaves[1] != leaf2 {
+		t.Error("leaves not in expected order")
+	}
+}
+
+func TestLevelOrder(t *testing.T) {
+	var nilNode *ASTNode
+	if nilNode.LevelOrder() != nil {
+		t.Error("nilNode.LevelOrder() should return nil")
+	}
+	leaf1 := &ASTNode{Type: "id", Label: "a"}
+	leaf2 := &ASTNode{Type: "id", Label: "b"}
+	root := &ASTNode{Type: "call", Children: []*ASTNode{leaf1, leaf2}}
+
+	order := root.LevelOrder()
+	if len(order) != 3 {
+		t.Fatalf("want 3 nodes in level-order, got %d", len(order))
+	}
+	if order[0] != root || order[1] != leaf1 || order[2] != leaf2 {
+		t.Error("level-order should visit root then children")
+	}
+}
+
+func TestIsLeafOrStringLiteral(t *testing.T) {
+	var nilNode *ASTNode
+	if nilNode.IsLeafOrStringLiteral() {
+		t.Error("nilNode.IsLeafOrStringLiteral() should be false")
+	}
+	leaf := &ASTNode{Type: "identifier", Label: "x"}
+	if !leaf.IsLeafOrStringLiteral() {
+		t.Error("leaf node should be leaf or string literal")
+	}
+	str := &ASTNode{Type: "string_literal", Label: `"hello"`, Children: []*ASTNode{{Type: "string_content"}}}
+	if !str.IsLeafOrStringLiteral() {
+		t.Error("string_literal with children should still be considered string literal leaf")
+	}
+	parent := &ASTNode{Type: "function", Children: []*ASTNode{leaf}}
+	if parent.IsLeafOrStringLiteral() {
+		t.Error("non-string parent node should not be leaf")
+	}
+}

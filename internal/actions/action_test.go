@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
@@ -198,10 +197,7 @@ func TestInsertChild(t *testing.T) {
 
 func TestPositionInParent(t *testing.T) {
 	positionInParent := func(n *treesitter.ASTNode) int {
-		if n == nil || n.Parent == nil {
-			return -1
-		}
-		return slices.Index(n.Parent.Children, n)
+		return n.ChildIndex()
 	}
 
 	parent := testutil.NodeAtRC("block", "", 0, 0)
@@ -234,7 +230,7 @@ func TestBFS(t *testing.T) {
 	testutil.Tree(root, b, c)
 	testutil.Tree(b, d)
 
-	nodes := bfs(root)
+	nodes := root.LevelOrder()
 	if len(nodes) != 4 {
 		t.Fatalf("bfs returned %d nodes, want 4", len(nodes))
 	}

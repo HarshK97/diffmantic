@@ -96,8 +96,9 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		}
 	}
 
+	isLeaf := n.ChildCount() == 0 || slices.Contains(stringLiteralTypes, nodeType)
 	var label string
-	if n.ChildCount() == 0 || slices.Contains(stringLiteralTypes, nodeType) {
+	if isLeaf {
 		label = strings.TrimSpace(string(src[n.StartByte():n.EndByte()]))
 	}
 
@@ -119,7 +120,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	}
 
 	// Only set label for leaf nodes or string literals.
-	if n.ChildCount() == 0 || slices.Contains(stringLiteralTypes, nodeType) {
+	if isLeaf {
 		node.Label = label
 	}
 
@@ -175,13 +176,42 @@ func (n *ASTNode) Size() int {
 	return size
 }
 
-// GetLanguage walks up to the root to retrieve the AST's language.
-func (n *ASTNode) GetLanguage() string {
+// Root walks up to the root node of the AST.
+func (n *ASTNode) Root() *ASTNode {
+	if n == nil {
+		return nil
+	}
 	curr := n
 	for curr.Parent != nil {
 		curr = curr.Parent
 	}
-	return curr.Language
+	return curr
+}
+
+// GetLanguage walks up to the root to retrieve the AST's language.
+func (n *ASTNode) GetLanguage() string {
+	root := n.Root()
+	if root == nil {
+		return ""
+	}
+	return root.Language
+}
+
+// IsBracketOrParen reports whether the node label is a bracket, brace, or parenthesis.
+func (n *ASTNode) IsBracketOrParen() bool {
+	if n == nil {
+		return false
+	}
+	switch n.Label {
+	case "{", "}", "(", ")", "[", "]":
+		return true
+	}
+	return false
+}
+
+// IsWordChar checks if c is an ASCII letter, digit, or underscore.
+func IsWordChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
 
 // IsScaffolding checks rules.yml to see if this node type is a variable-arity container.
@@ -280,5 +310,72 @@ func (n *ASTNode) PreOrder() []*ASTNode {
 		}
 	}
 	traverse(n)
+	return out
+}
+
+// ChildIndex returns the node's position among its parent's children, or -1 if it has no parent.
+func (n *ASTNode) ChildIndex() int {
+	if n == nil || n.Parent == nil {
+		return -1
+	}
+	return slices.Index(n.Parent.Children, n)
+}
+
+// IsLeafOrStringLiteral checks if n is a leaf node or string literal.
+func (n *ASTNode) IsLeafOrStringLiteral() bool {
+	if n == nil {
+		return false
+	}
+	return len(n.Children) == 0 || slices.Contains(stringLiteralTypes, n.Type)
+}
+
+// Leaves returns all leaf nodes (and atomic string literals) in pre-order under n.
+func (n *ASTNode) Leaves() []*ASTNode {
+	if n == nil {
+		return nil
+	}
+	var leaves []*ASTNode
+	if n.Index != nil && n.PreSize > 0 {
+		start := int(n.ID)
+		end := int(n.ID + n.PreSize)
+		for i := start; i < end; i++ {
+			node := n.Index.Nodes[i]
+			if node.IsLeafOrStringLiteral() {
+				leaves = append(leaves, node)
+			}
+		}
+		return leaves
+	}
+	var traverse func(*ASTNode)
+	traverse = func(curr *ASTNode) {
+		if curr.IsLeafOrStringLiteral() {
+			leaves = append(leaves, curr)
+			return
+		}
+		for _, c := range curr.Children {
+			traverse(c)
+		}
+	}
+	traverse(n)
+	return leaves
+}
+
+// LevelOrder returns all nodes in the subtree level by level (breadth-first).
+func (n *ASTNode) LevelOrder() []*ASTNode {
+	if n == nil {
+		return nil
+	}
+	size := n.Size()
+	out := make([]*ASTNode, 0, size)
+	queue := make([]*ASTNode, 0, size)
+	queue = append(queue, n)
+
+	head := 0
+	for head < len(queue) {
+		curr := queue[head]
+		head++
+		out = append(out, curr)
+		queue = append(queue, curr.Children...)
+	}
 	return out
 }

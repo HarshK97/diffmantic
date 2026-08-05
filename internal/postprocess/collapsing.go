@@ -1,8 +1,6 @@
 package postprocess
 
 import (
-	"slices"
-
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -172,7 +170,7 @@ func Collapse(
 				var destPositions []int
 				for _, childSrc := range parentSrc.Children {
 					childDst := ms.Src()[childSrc]
-					pos := slices.Index(dstParent.Children, childDst)
+					pos := childDst.ChildIndex()
 					destPositions = append(destPositions, pos)
 				}
 
@@ -326,35 +324,21 @@ func hasMovedOrUpdatedDescendant(
 			if isBareAliasedLiteral(child) {
 				continue
 			}
+			var srcNode, dstNode, actionKey *treesitter.ASTNode
 			if isInsert {
-				srcNode := ms.Dst()[child]
-				if srcNode != nil {
-					isMove := false
-					if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
-						isMove = true
-					}
-					isUpdate := false
-					if updateAct, ok := updated[srcNode]; ok && !suppressed[updateAct] {
-						isUpdate = true
-					}
-					if (isMove || isUpdate) && nodeSimilarity(srcNode, child, ms) >= 0.5 {
-						return true
-					}
-				}
+				srcNode = ms.Dst()[child]
+				dstNode = child
+				actionKey = srcNode
 			} else {
-				dstNode := ms.Src()[child]
-				if dstNode != nil {
-					isMove := false
-					if moveAct, ok := moved[child]; ok && !suppressed[moveAct] {
-						isMove = true
-					}
-					isUpdate := false
-					if updateAct, ok := updated[child]; ok && !suppressed[updateAct] {
-						isUpdate = true
-					}
-					if (isMove || isUpdate) && nodeSimilarity(child, dstNode, ms) >= 0.5 {
-						return true
-					}
+				srcNode = child
+				dstNode = ms.Src()[child]
+				actionKey = child
+			}
+			if srcNode != nil && dstNode != nil {
+				isMove := moved[actionKey] != nil && !suppressed[moved[actionKey]]
+				isUpdate := updated[actionKey] != nil && !suppressed[updated[actionKey]]
+				if (isMove || isUpdate) && nodeSimilarity(srcNode, dstNode, ms) >= 0.5 {
+					return true
 				}
 			}
 			if check(child) {

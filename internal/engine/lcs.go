@@ -9,24 +9,25 @@ import (
 
 type eqFunc func(a, b *treesitter.ASTNode) bool
 
-func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
+// LCS computes the longest common subsequence of two node sequences using a custom equality predicate.
+func LCS(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 	n := len(seq1)
 	m := len(seq2)
 	if n == 0 || m == 0 {
 		return nil
 	}
 
-	dp := make([][]int, n+1)
-	for i := range dp {
-		dp[i] = make([]int, m+1)
-	}
+	stride := m + 1
+	opt := make([]int, (n+1)*stride)
 	for i := 1; i <= n; i++ {
+		rowCurr := i * stride
+		rowPrev := (i - 1) * stride
 		for j := 1; j <= m; j++ {
 			if eq(seq1[i-1], seq2[j-1]) {
 				weight := seq1[i-1].Size()
-				dp[i][j] = dp[i-1][j-1] + weight
+				opt[rowCurr+j] = opt[rowPrev+j-1] + weight
 			} else {
-				dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+				opt[rowCurr+j] = max(opt[rowPrev+j], opt[rowCurr+j-1])
 			}
 		}
 	}
@@ -34,11 +35,13 @@ func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 	var pairs [][2]*treesitter.ASTNode
 	i, j := n, m
 	for i > 0 && j > 0 {
+		rowCurr := i * stride
+		rowPrev := (i - 1) * stride
 		if eq(seq1[i-1], seq2[j-1]) {
 			pairs = append(pairs, [2]*treesitter.ASTNode{seq1[i-1], seq2[j-1]})
 			i--
 			j--
-		} else if dp[i-1][j] >= dp[i][j-1] {
+		} else if opt[rowPrev+j] >= opt[rowCurr+j-1] {
 			i--
 		} else {
 			j--
@@ -51,13 +54,13 @@ func lcs(seq1, seq2 []*treesitter.ASTNode, eq eqFunc) [][2]*treesitter.ASTNode {
 
 // LCSLabel matches node sequences by type, label, and structure.
 func LCSLabel(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
-	return lcs(seq1, seq2, Isomorphic)
+	return LCS(seq1, seq2, Isomorphic)
 }
 
 // LCSStructure matches node sequences by type and shape (ignoring leaf labels),
 // using child position and label similarity to resolve ambiguous matches.
 func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
-	pairs := lcs(seq1, seq2, StructureIsomorphic)
+	pairs := LCS(seq1, seq2, StructureIsomorphic)
 	if len(pairs) == 0 {
 		return pairs
 	}
@@ -80,7 +83,6 @@ func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 		}
 	}
 
-	slices.Reverse(pairs)
 	return pairs
 }
 
@@ -106,9 +108,9 @@ func bestStructuralPartner(
 	current *treesitter.ASTNode,
 	dstUsed map[*treesitter.ASTNode]bool,
 ) *treesitter.ASTNode {
-	srcIdx := childIndex(src)
+	srcIdx := src.ChildIndex()
 	var best *treesitter.ASTNode
-	bestScore := scorePartner(src, current, srcIdx, false)
+	bestScore := scorePartner(src, current, srcIdx)
 	for _, d := range seq2 {
 		if d == current || dstUsed[d] {
 			continue
@@ -116,7 +118,7 @@ func bestStructuralPartner(
 		if !StructureIsomorphic(src, d) {
 			continue
 		}
-		s := scorePartner(src, d, srcIdx, true)
+		s := scorePartner(src, d, srcIdx)
 		if s > bestScore {
 			bestScore = s
 			best = d
@@ -125,9 +127,9 @@ func bestStructuralPartner(
 	return best
 }
 
-func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, _ bool) int {
+func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int) int {
 	score := 0
-	dstChildIdx := childIndex(dst)
+	dstChildIdx := dst.ChildIndex()
 	if srcChildIdx == dstChildIdx {
 		score += 100
 	}
@@ -139,11 +141,4 @@ func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, _ bool) int {
 		}
 	}
 	return score
-}
-
-func childIndex(n *treesitter.ASTNode) int {
-	if n == nil || n.Parent == nil {
-		return -1
-	}
-	return slices.Index(n.Parent.Children, n)
 }

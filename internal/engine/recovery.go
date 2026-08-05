@@ -5,22 +5,22 @@ import "github.com/HarshK97/diffmantic/internal/treesitter"
 // SimpleRecovery maps unmatched children inside container pair (t1, t2) using
 // label LCS, structural LCS, and unique-type matching.
 func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
-	uc1 := unmatchedChildrenSrc(t1, m)
-	uc2 := unmatchedChildrenDst(t2, m)
+	uc1 := unmatchedChildren(t1, m.Has)
+	uc2 := unmatchedChildren(t2, m.HasDst)
 
 	for _, pair := range LCSLabel(uc1, uc2) {
 		addIsomorphicPairs(pair[0], pair[1], m)
 	}
 
-	uc1 = unmatchedChildrenSrc(t1, m)
-	uc2 = unmatchedChildrenDst(t2, m)
+	uc1 = unmatchedChildren(t1, m.Has)
+	uc2 = unmatchedChildren(t2, m.HasDst)
 
 	for _, pair := range LCSStructure(uc1, uc2) {
 		addIsomorphicPairs(pair[0], pair[1], m)
 	}
 
-	uc1 = unmatchedChildrenSrc(t1, m)
-	uc2 = unmatchedChildrenDst(t2, m)
+	uc1 = unmatchedChildren(t1, m.Has)
+	uc2 = unmatchedChildren(t2, m.HasDst)
 
 	for _, pair := range uniqueTypePairs(uc1, uc2) {
 		m.Add(pair[0], pair[1])
@@ -28,23 +28,10 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	}
 }
 
-func unmatchedChildrenSrc(t *treesitter.ASTNode, m *Mapping) []*treesitter.ASTNode {
+func unmatchedChildren(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bool) []*treesitter.ASTNode {
 	var out []*treesitter.ASTNode
 	for _, c := range t.Children {
-		if !m.Has(c) {
-			if IsTrivialLeaf(c) {
-				continue
-			}
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-func unmatchedChildrenDst(t *treesitter.ASTNode, m *Mapping) []*treesitter.ASTNode {
-	var out []*treesitter.ASTNode
-	for _, c := range t.Children {
-		if !m.HasDst(c) {
+		if !hasFn(c) {
 			if IsTrivialLeaf(c) {
 				continue
 			}

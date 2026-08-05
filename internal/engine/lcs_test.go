@@ -77,21 +77,22 @@ func TestChildIndex(t *testing.T) {
 	c2 := testutil.Leaf("id", "y")
 	testutil.Node("call", "", c1, c2)
 
-	if got := childIndex(c1); got != 0 {
-		t.Errorf("childIndex(c1) = %d, want 0", got)
+	if got := c1.ChildIndex(); got != 0 {
+		t.Errorf("c1.ChildIndex() = %d, want 0", got)
 	}
-	if got := childIndex(c2); got != 1 {
-		t.Errorf("childIndex(c2) = %d, want 1", got)
+	if got := c2.ChildIndex(); got != 1 {
+		t.Errorf("c2.ChildIndex() = %d, want 1", got)
 	}
 }
 
 func TestChildIndexNoParent(t *testing.T) {
 	n := testutil.Leaf("id", "x")
-	if got := childIndex(n); got != -1 {
-		t.Errorf("orphan childIndex = %d, want -1", got)
+	if got := n.ChildIndex(); got != -1 {
+		t.Errorf("orphan ChildIndex() = %d, want -1", got)
 	}
-	if got := childIndex(nil); got != -1 {
-		t.Errorf("nil childIndex = %d, want -1", got)
+	var nilNode *treesitter.ASTNode
+	if got := nilNode.ChildIndex(); got != -1 {
+		t.Errorf("nil ChildIndex() = %d, want -1", got)
 	}
 }
 
@@ -101,7 +102,7 @@ func TestScorePartner(t *testing.T) {
 	testutil.Node("call", "", src)
 	testutil.Node("call", "", dst)
 
-	score := scorePartner(src, dst, 0, false)
+	score := scorePartner(src, dst, 0)
 	if score < 100 {
 		t.Errorf("same position + label should score >= 100, got %d", score)
 	}

@@ -38,21 +38,7 @@ func FilterPunctuation(es *actions.EditScript, ms *engine.Mapping) *actions.Edit
 		}
 
 		if (a.Type == actions.Move || a.Type == actions.Update) && isStrictPunctuation(a.Node) {
-			// Split punctuation moves into delete + insert.
-			filtered.Add(actions.Action{
-				Type: actions.Delete,
-				Node: a.Node,
-			})
-
-			dstNode := ms.Src()[a.Node]
-			if dstNode != nil {
-				filtered.Add(actions.Action{
-					Type:     actions.Insert,
-					Node:     dstNode,
-					Parent:   a.Parent,
-					Position: a.Position,
-				})
-			}
+			splitMoveToDeleteInsert(filtered, a.Node, ms.Src()[a.Node])
 		} else {
 			filtered.Add(a)
 		}
@@ -73,9 +59,5 @@ func isStrictPunctuation(n *treesitter.ASTNode) bool {
 	if !engine.IsTrivialLeaf(n) {
 		return false
 	}
-	switch n.Label {
-	case "(", ")", "{", "}", "[", "]":
-		return false
-	}
-	return true
+	return !n.IsBracketOrParen()
 }

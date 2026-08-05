@@ -28,11 +28,15 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 		return false
 	}
 	for _, c := range n.Label {
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+		if treesitter.IsWordChar(byte(c)) {
 			return false
 		}
 	}
 	return true
+}
+
+func areAncestorsMatched(anc1, anc2 *treesitter.ASTNode, m *Mapping) bool {
+	return (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
 }
 
 func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {

@@ -1,12 +1,12 @@
 package tui
 
 import (
-	"path/filepath"
 	"strings"
 
+	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/odvcencio/gotreesitter"
-	"github.com/odvcencio/gotreesitter/grammars"
 )
 
 // A styled foreground color span for a single line.
@@ -22,8 +22,7 @@ func highlightSyntax(filename string, source []byte) map[int][]syntaxSpan {
 		return nil
 	}
 
-	base := filepath.Base(filename)
-	entry := grammars.DetectLanguage(base)
+	entry := treesitter.DetectGrammarEntry(filename)
 	if entry == nil || entry.HighlightQuery == "" {
 		return nil
 	}
@@ -51,7 +50,7 @@ func highlightSyntax(filename string, source []byte) map[int][]syntaxSpan {
 	}
 
 	// Index line start offsets for converting bytes to line numbers.
-	lineIndex := buildLineIndex(source)
+	lineIndex := serialize.BuildLineIndex(source)
 
 	result := make(map[int][]syntaxSpan)
 
@@ -61,42 +60,13 @@ func highlightSyntax(filename string, source []byte) map[int][]syntaxSpan {
 			continue
 		}
 
-		startLine, startCol := byteToLineCol(lineIndex, r.StartByte)
-		endLine, endCol := byteToLineCol(lineIndex, r.EndByte)
-
-		for line := startLine; line <= endLine; line++ {
-			sc := 0
-			if line == startLine {
-				sc = startCol
-			}
-
-			var ec int
-			if line == endLine {
-				ec = endCol
-			} else {
-				// The span extends to the end of the line.
-				if line+1 < len(lineIndex) {
-					lineLen := lineIndex[line+1] - lineIndex[line]
-					if lineLen > 0 {
-						bytePos := lineIndex[line] + lineLen - 1
-						if bytePos < len(source) && source[bytePos] == '\n' {
-							lineLen--
-						}
-					}
-					ec = lineLen
-				} else {
-					ec = len(source) - lineIndex[line]
-				}
-			}
-
-			if ec > sc {
-				result[line] = append(result[line], syntaxSpan{
-					startCol: sc,
-					endCol:   ec,
-					color:    color,
-				})
-			}
-		}
+		serialize.ForEachLineSpan(lineIndex, source, r.StartByte, r.EndByte, func(line, sc, ec int) {
+			result[line] = append(result[line], syntaxSpan{
+				startCol: sc,
+				endCol:   ec,
+				color:    color,
+			})
+		})
 	}
 
 	return result
