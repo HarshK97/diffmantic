@@ -11,6 +11,37 @@
           1,
           2,
           3,
+          3
+        ],
+        "type": "statement_list",
+        "start_byte": 1202,
+        "end_byte": 1333
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          1,
+          2,
+          3
+        ],
+        "type": "expression_case",
+        "start_byte": 1182,
+        "end_byte": 1333
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          5,
+          1,
+          2,
+          3,
           3,
           1
         ],

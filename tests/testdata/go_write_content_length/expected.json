@@ -7,6 +7,29 @@
         "tree": "after",
         "path": [
           4,
+          1
+        ],
+        "type": "import_spec_list",
+        "start_byte": 190,
+        "end_byte": 216
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          4
+        ],
+        "type": "import_declaration",
+        "start_byte": 183,
+        "end_byte": 216
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          4,
           1,
           0
         ],

@@ -89,9 +89,6 @@ func Collapse(
 			if allChildrenInserted {
 				KillChildren(parent, inserted, suppressed)
 				act.Subtree = true
-			} else if hasMovedOrUpdatedDescendant(parent, moved, updated, suppressed, ms, true) {
-				suppressed[act] = true
-				contentMoveSuppressed[act] = true
 			}
 		}
 	}
@@ -131,9 +128,6 @@ func Collapse(
 			if allChildrenDeleted {
 				KillChildren(parent, deleted, suppressed)
 				act.Subtree = true
-			} else if hasMovedOrUpdatedDescendant(parent, moved, updated, suppressed, ms, false) {
-				suppressed[act] = true
-				contentMoveSuppressed[act] = true
 			}
 		}
 	}
@@ -299,53 +293,4 @@ var genuineBareOperatorLiterals = map[string]bool{
 
 func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
 	return genuineBareOperatorLiterals[node.Type]
-}
-
-func nodeSimilarity(src, dst *treesitter.ASTNode, ms *engine.Mapping) float64 {
-	if len(src.Children) == 0 && len(dst.Children) == 0 {
-		if src.Type == dst.Type && src.Label == dst.Label {
-			return 1.0
-		}
-		return 0.0
-	}
-	return ms.DiceSrc(src, dst)
-}
-
-func hasMovedOrUpdatedDescendant(
-	node *treesitter.ASTNode,
-	moved, updated map[*treesitter.ASTNode]*actions.Action,
-	suppressed map[*actions.Action]bool,
-	ms *engine.Mapping,
-	isInsert bool,
-) bool {
-	var check func(*treesitter.ASTNode) bool
-	check = func(n *treesitter.ASTNode) bool {
-		for _, child := range n.Children {
-			if isBareAliasedLiteral(child) {
-				continue
-			}
-			var srcNode, dstNode, actionKey *treesitter.ASTNode
-			if isInsert {
-				srcNode = ms.Dst()[child]
-				dstNode = child
-				actionKey = srcNode
-			} else {
-				srcNode = child
-				dstNode = ms.Src()[child]
-				actionKey = child
-			}
-			if srcNode != nil && dstNode != nil {
-				isMove := moved[actionKey] != nil && !suppressed[moved[actionKey]]
-				isUpdate := updated[actionKey] != nil && !suppressed[updated[actionKey]]
-				if (isMove || isUpdate) && nodeSimilarity(srcNode, dstNode, ms) >= 0.5 {
-					return true
-				}
-			}
-			if check(child) {
-				return true
-			}
-		}
-		return false
-	}
-	return check(node)
 }

@@ -2,7 +2,7 @@
   "version": "v1",
   "actions": [
     {
-      "action": "delete",
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
@@ -16,35 +16,11 @@
           2,
           3,
           1,
-          1
+          2
         ],
-        "type": "logical_operator_literal",
-        "label": "||",
-        "start_byte": 1457,
-        "end_byte": 1459
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          16,
-          0,
-          2,
-          2,
-          3,
-          4,
-          2,
-          2,
-          3,
-          1,
-          1
-        ],
-        "type": "logical_operator_literal",
-        "label": "||",
-        "start_byte": 1448,
-        "end_byte": 1450
+        "type": "member_expression",
+        "start_byte": 1460,
+        "end_byte": 1480
       },
       "parent": {
         "tree": "after",
@@ -64,7 +40,30 @@
         "start_byte": 1427,
         "end_byte": 1472
       },
-      "position": 1
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          16,
+          0,
+          2,
+          2,
+          3,
+          4,
+          2,
+          2,
+          3,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 1427,
+        "end_byte": 1480
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 1427,
+      "dest_end_byte": 1447,
+      "group_id": "group-1"
     },
     {
       "action": "move",
@@ -127,7 +126,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 1451,
-      "dest_end_byte": 1472
+      "dest_end_byte": 1472,
+      "group_id": "group-1"
     }
   ],
   "line_alignment": [
