@@ -29,6 +29,9 @@ type chawatheState struct {
 	origMappings *engine.Mapping
 	cpyMappings  *engine.Mapping
 
+	cpySrcToDst map[*treesitter.ASTNode]*treesitter.ASTNode
+	cpyDstToSrc map[*treesitter.ASTNode]*treesitter.ASTNode
+
 	origToCopy map[*treesitter.ASTNode]*treesitter.ASTNode
 	copyToOrig map[*treesitter.ASTNode]*treesitter.ASTNode
 
@@ -57,6 +60,8 @@ func (s *chawatheState) init(
 			s.cpyMappings.Add(cpyNode, p.Dst)
 		}
 	}
+	s.cpySrcToDst = s.cpyMappings.Src()
+	s.cpyDstToSrc = s.cpyMappings.Dst()
 }
 
 func (s *chawatheState) generate() *EditScript {
@@ -72,7 +77,7 @@ func (s *chawatheState) generate() *EditScript {
 	for _, x := range bfs(s.origDst) {
 		var w *treesitter.ASTNode
 		y := x.Parent
-		z := s.cpyMappings.Dst()[y]
+		z := s.cpyDstToSrc[y]
 
 		if !s.cpyMappings.HasDst(x) {
 			k := s.findPos(x)
@@ -89,7 +94,7 @@ func (s *chawatheState) generate() *EditScript {
 			s.cpyMappings.Add(w, x)
 			insertChild(z, w, k)
 		} else {
-			w = s.cpyMappings.Dst()[x]
+			w = s.cpyDstToSrc[x]
 			if x != s.origDst {
 				v := w.Parent
 
@@ -165,7 +170,7 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 		return 0
 	}
 
-	u := s.cpyMappings.Dst()[v]
+	u := s.cpyDstToSrc[v]
 	upos := slices.Index(u.Parent.Children, u)
 	return upos + 1
 }
@@ -180,9 +185,8 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 
 	var s1 []*treesitter.ASTNode
 	for _, c := range w.Children {
-		if s.cpyMappings.Has(c) {
-			dst := s.cpyMappings.Src()[c]
-			if slices.Contains(x.Children, dst) {
+		if dst, ok := s.cpySrcToDst[c]; ok {
+			if dst.Parent == x {
 				s1 = append(s1, c)
 			}
 		}
@@ -190,9 +194,8 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 
 	var s2 []*treesitter.ASTNode
 	for _, c := range x.Children {
-		if s.cpyMappings.HasDst(c) {
-			src := s.cpyMappings.Dst()[c]
-			if slices.Contains(w.Children, src) {
+		if src, ok := s.cpyDstToSrc[c]; ok {
+			if src.Parent == w {
 				s2 = append(s2, c)
 			}
 		}
@@ -209,7 +212,7 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 
 	for _, b := range s2 {
 		for _, a := range s1 {
-			if s.cpyMappings.Has(a) && s.cpyMappings.Src()[a] == b {
+			if src, ok := s.cpySrcToDst[a]; ok && src == b {
 				if !lcsSet[a] {
 					if idx := slices.Index(a.Parent.Children, a); idx != -1 {
 						a.Parent.Children = slices.Delete(a.Parent.Children, idx, idx+1)
@@ -245,16 +248,22 @@ func (s *chawatheState) lcs(
 		return nil
 	}
 
-	opt := make([][]int, m+1)
-	for i := range opt {
-		opt[i] = make([]int, n+1)
+	if m == 1 && n == 1 {
+		if s.cpyDstToSrc[y[0]] == x[0] {
+			return [][2]*treesitter.ASTNode{{x[0], y[0]}}
+		}
+		return nil
 	}
+
+	stride := n + 1
+	opt := make([]int, (m+1)*stride)
+
 	for i := m - 1; i >= 0; i-- {
 		for j := n - 1; j >= 0; j-- {
-			if s.cpyMappings.Dst()[y[j]] == x[i] {
-				opt[i][j] = opt[i+1][j+1] + 1
+			if s.cpyDstToSrc[y[j]] == x[i] {
+				opt[i*stride+j] = opt[(i+1)*stride+(j+1)] + 1
 			} else {
-				opt[i][j] = max(opt[i+1][j], opt[i][j+1])
+				opt[i*stride+j] = max(opt[(i+1)*stride+j], opt[i*stride+(j+1)])
 			}
 		}
 	}
@@ -262,11 +271,11 @@ func (s *chawatheState) lcs(
 	var pairs [][2]*treesitter.ASTNode
 	i, j := 0, 0
 	for i < m && j < n {
-		if s.cpyMappings.Dst()[y[j]] == x[i] {
+		if s.cpyDstToSrc[y[j]] == x[i] {
 			pairs = append(pairs, [2]*treesitter.ASTNode{x[i], y[j]})
 			i++
 			j++
-		} else if opt[i+1][j] >= opt[i][j+1] {
+		} else if opt[(i+1)*stride+j] >= opt[i*stride+(j+1)] {
 			i++
 		} else {
 			j++
@@ -285,8 +294,9 @@ type copyResult struct {
 }
 
 func deepCopyTree(n *treesitter.ASTNode) *copyResult {
-	o2c := make(map[*treesitter.ASTNode]*treesitter.ASTNode)
-	c2o := make(map[*treesitter.ASTNode]*treesitter.ASTNode)
+	size := n.Size()
+	o2c := make(map[*treesitter.ASTNode]*treesitter.ASTNode, size)
+	c2o := make(map[*treesitter.ASTNode]*treesitter.ASTNode, size)
 	root := deepCopyNode(n, nil, o2c, c2o)
 	return &copyResult{root: root, origToCopy: o2c, copyToOrig: c2o}
 }
@@ -339,11 +349,15 @@ func bfs(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	if root == nil {
 		return nil
 	}
-	queue := []*treesitter.ASTNode{root}
-	var out []*treesitter.ASTNode
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
+	size := root.Size()
+	out := make([]*treesitter.ASTNode, 0, size)
+	queue := make([]*treesitter.ASTNode, 0, size)
+	queue = append(queue, root)
+
+	head := 0
+	for head < len(queue) {
+		n := queue[head]
+		head++
 		out = append(out, n)
 		queue = append(queue, n.Children...)
 	}
@@ -354,8 +368,7 @@ func (s *chawatheState) addDescendantMoves(n *treesitter.ASTNode) {
 	var traverse func(curr *treesitter.ASTNode)
 	traverse = func(curr *treesitter.ASTNode) {
 		for _, child := range curr.Children {
-			if s.cpyMappings.Has(child) {
-				dst := s.cpyMappings.Src()[child]
+			if dst, ok := s.cpySrcToDst[child]; ok {
 				pos := slices.Index(dst.Parent.Children, dst)
 				if pos == -1 {
 					pos = 0
