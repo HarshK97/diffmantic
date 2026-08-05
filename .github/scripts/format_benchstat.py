@@ -14,10 +14,10 @@ def parse_val_unit(s):
     val_str, unit = m.groups()
     val = float(val_str)
     multiplier = 1.0
-    if unit == 'k': multiplier = 1e3
+    if unit in ('k', 'Ki'): multiplier = 1e3
     elif unit in ('M', 'Mi'): multiplier = 1e6
     elif unit in ('G', 'Gi'): multiplier = 1e9
-    elif unit == 'm': multiplier = 1e-3
+    elif unit in ('m', 'ms'): multiplier = 1e-3
     elif unit in ('u', 'µ'): multiplier = 1e-6
     elif unit == 'n': multiplier = 1e-9
     return val * multiplier

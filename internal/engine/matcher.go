@@ -247,15 +247,20 @@ var declarationTypes = map[string]bool{
 }
 
 func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
-	if root == nil {
-		return nil
-	}
 	var decs []*treesitter.ASTNode
-	for _, n := range root.PreOrder() {
+	var traverse func(*treesitter.ASTNode)
+	traverse = func(n *treesitter.ASTNode) {
+		if n == nil {
+			return
+		}
 		if declarationTypes[n.Type] {
 			decs = append(decs, n)
 		}
+		for _, child := range n.Children {
+			traverse(child)
+		}
 	}
+	traverse(root)
 	return decs
 }
 
