@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "ccb105dbcb48cbcec988df8a46e90af3adf7c0ff",
+  "commit": "7dfa6c936a3f3169979f1bbfa074c6915f055881",
+  "message": "fix #1784: correct error comparison on tests (#1785)",
+  "author": "Dmitry Kutakov",
+  "date": "2019-02-28T17:43:27+03:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 4
+}

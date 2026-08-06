@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "a816f9e9dbf820d7d01e8d363539da976fb8aa40",
+  "commit": "6626358d4fefa40ec37ca4b502c6c7d0cdea6d18",
+  "message": "Fix golint warnings in utils.go (#1209)",
+  "author": "Weilin Shi",
+  "date": "2017-12-25T13:58:02+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 4
+}

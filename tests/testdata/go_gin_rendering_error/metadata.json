@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "9abb909731f3158a82b9cb972a6fdc9b97c669ea",
+  "commit": "2fc2a3e7827d9033f00425eef78ec9f47d08ebf6",
+  "message": "Rendering error throws a panic()",
+  "author": "Manu Mtz.-Almeida",
+  "date": "2016-01-26T18:35:04+01:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 7
+}

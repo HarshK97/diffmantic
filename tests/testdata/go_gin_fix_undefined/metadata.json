@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "26c3f42095b8a1378617eb4756fbf8282cb1ae89",
+  "commit": "f1edd2c2d1c0ff06ab0a3e8f3c6a3d58ee4a0a68",
+  "message": "fix(ginS): fix undefined ref (#1087)",
+  "author": "vz",
+  "date": "2017-08-27T17:11:38+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 16,
+  "deletions": 16
+}

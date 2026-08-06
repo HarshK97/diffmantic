@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "81007d2ce0176f7a9ce52dd12e56edd7ef40e72c",
+  "commit": "4b5ec517daa247f8f3bd0448f82ca55c0d14fa0a",
+  "message": "fix(test): only check Location header (#1064)\n\n* fix(test): only check Location header",
+  "author": "Eason Lin",
+  "date": "2017-08-14T11:02:31+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 13,
+  "deletions": 13
+}

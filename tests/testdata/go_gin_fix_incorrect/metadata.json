@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "234a6d4c00cb77af9852aca0b8289745d5529b4b",
+  "commit": "ed150e72544949a96e7eb0b7d1151cf1907068fb",
+  "message": "test(benchmarks): fix the incorrect function name (#4375)\n\nSigned-off-by: mengxun <mengxun1122@163.com>",
+  "author": "Meng Xun",
+  "date": "2025-09-26T08:15:35+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

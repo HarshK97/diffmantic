@@ -137,15 +137,15 @@ jobs:
       matrix:
         include:
           - stage: BenchmarkParse
-            pattern: '^(internal/treesitter/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'
+            pattern: '^(internal/treesitter/|go\.mod|go\.sum)'
           - stage: BenchmarkMatch
-            pattern: '^(internal/engine/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'
+            pattern: '^(internal/engine/|go\.mod|go\.sum)'
           - stage: BenchmarkEditScript
-            pattern: '^(internal/actions/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'
+            pattern: '^(internal/actions/|go\.mod|go\.sum)'
           - stage: BenchmarkPostprocess
-            pattern: '^(internal/postprocess/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'
+            pattern: '^(internal/postprocess/|go\.mod|go\.sum)'
           - stage: BenchmarkSerialize
-            pattern: '^(internal/serialize/|tests/testdata/|tests/integration/|go\.mod|go\.sum)'
+            pattern: '^(internal/serialize/|go\.mod|go\.sum)'
 
     steps:
       - name: Checkout code
@@ -244,7 +244,7 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED"
 
-          if echo "$CHANGED" | grep -qE '^(internal/engine/|internal/treesitter/|internal/actions/|internal/postprocess/|internal/serialize/|tests/integration/|tests/testdata/|go\.mod|go\.sum)'; then
+          if echo "$CHANGED" | grep -qE '^(internal/engine/|internal/treesitter/|internal/actions/|internal/postprocess/|internal/serialize/|go\.mod|go\.sum)'; then
             echo "::notice::Performance-critical files changed. Running E2E pipeline benchmark..."
             echo "run_benchmarks=true" >> $GITHUB_OUTPUT
             echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT

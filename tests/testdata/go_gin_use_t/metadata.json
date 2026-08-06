@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "074b669a95fd834701359acc55371e6b377618f6",
+  "commit": "da1e108614ecbbadfa5736b1b297b16121d23b9b",
+  "message": "test(context): use t.TempDir() for SaveUploadedFile permission test on WSL (#4709)\n\n* fix: change file creation to use c.Temp instead to work on wsl",
+  "author": "Pierre F.",
+  "date": "2026-06-22T16:43:44+02:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 7
+}

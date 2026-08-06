@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "d0fb4a6bf02b1c92231f89220c563175dad381f8",
+  "commit": "2947981b6137df0e8e9ed89c36c40cbafef86e7b",
+  "message": "Fix Corrupted plainRender",
+  "author": "mopemoepe",
+  "date": "2014-07-18T08:56:59+09:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 1
+}
