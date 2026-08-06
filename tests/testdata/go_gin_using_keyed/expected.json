@@ -1413,10 +1413,6 @@
     },
     {
       "left_line": 82,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 82
     },
     {
@@ -1453,18 +1449,10 @@
     },
     {
       "left_line": 88,
-      "right_line": -1
-    },
-    {
-      "left_line": 89,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 91
     },
     {
-      "left_line": -1,
+      "left_line": 89,
       "right_line": 92
     },
     {
@@ -1489,10 +1477,6 @@
     },
     {
       "left_line": 95,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 98
     },
     {

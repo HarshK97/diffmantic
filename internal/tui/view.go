@@ -311,14 +311,13 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 	expanded, byteToVisual := expandLine(rawLine)
 	runeLen := len([]rune(expanded))
 
-	// colHighlight tracks which action kind colors each column.
-	// colSpanWidth tracks how wide the winning span is so narrower
-	// (more specific) spans can override wider (outer) ones.
+	// Action kind and total byte length for each column.
+	// Inner (smaller) AST nodes override outer container nodes.
 	colHighlight := make([]int, runeLen)
-	colSpanWidth := make([]int, runeLen)
+	colSpanLen := make([]int, runeLen)
 	for i := range colHighlight {
 		colHighlight[i] = -1
-		colSpanWidth[i] = 1<<31 - 1 // max int sentinel
+		colSpanLen[i] = 1<<31 - 1 // max int sentinel
 	}
 	for _, s := range lineSpans {
 		sc := -1
@@ -332,11 +331,15 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 			ec = runeLen
 		}
 		if sc >= 0 && ec > sc {
-			spanWidth := ec - sc
+			candidateLen := s.totalLen
+			if candidateLen <= 0 {
+				candidateLen = ec - sc
+			}
 			for col := sc; col < ec && col < runeLen; col++ {
-				if colHighlight[col] == -1 || spanWidth < colSpanWidth[col] {
+				curLen := colSpanLen[col]
+				if colHighlight[col] == -1 || candidateLen < curLen || (candidateLen == curLen && s.kind > actionKind(colHighlight[col])) {
 					colHighlight[col] = int(s.kind)
-					colSpanWidth[col] = spanWidth
+					colSpanLen[col] = candidateLen
 				}
 			}
 		}
