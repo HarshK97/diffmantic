@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "2a438c27b5a5828c8ea0dc958112eecffca70b12",
+  "commit": "e45b428960ff3927812fc9b555e2ac627ba95769",
+  "message": "Add rfc9110 HTTP status code names\n\nRFC 9110 _HTTP Semantics_ obsoletes some earlier RFCs which defined HTTP\n1.1. It adds some status codes that were previously only used for\nWebDAV to HTTP _proper_ after making the names somewhat more generic.\n\nSee https://www.rfc-editor.org/rfc/rfc9110.html#name-changes-from-rfc-7231\n\nThis commit adds the http status code names from that RFC.",
+  "author": "Michiel W. Beijen",
+  "date": "2024-04-08T21:48:24+02:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

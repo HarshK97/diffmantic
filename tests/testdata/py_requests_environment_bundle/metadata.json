@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "5e749546a26ce62e53d0a14ae1455f8b066fe19f",
+  "commit": "79c4a017fe341fb989d3a7876cf4e44b87601b58",
+  "message": "Fix environment CA Bundle resolution",
+  "author": "Nate Prewitt",
+  "date": "2022-02-25T11:25:20-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 0
+}

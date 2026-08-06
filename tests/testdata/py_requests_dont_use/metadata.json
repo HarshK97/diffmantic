@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "6badbac6e0d6b5a53872f26401761ad37a9002b8",
+  "commit": "b1d73ddb509a3a2d3e10744e85f9cdebdbde90f0",
+  "message": "Don't use default SSLContext with custom poolmanager kwargs",
+  "author": "Nate Prewitt",
+  "date": "2024-05-24T11:38:10-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 4,
+  "deletions": 0
+}

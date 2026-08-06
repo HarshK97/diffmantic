@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "ec78348c4b6292b1a38008fa31e51f7b6b2252dc",
+  "commit": "e90852d20c9bc44c465e55234c01432711627d94",
+  "message": "Make json doc strings consistent (#6368)",
+  "author": "Yifang Zhu",
+  "date": "2023-03-02T21:32:49-08:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}
