@@ -424,7 +424,7 @@
     },
     {
       "left_line": 14,
-      "right_line": -1
+      "right_line": 12
     },
     {
       "left_line": 15,
@@ -433,10 +433,6 @@
     {
       "left_line": 16,
       "right_line": -1
-    },
-    {
-      "left_line": -1,
-      "right_line": 12
     },
     {
       "left_line": -1,

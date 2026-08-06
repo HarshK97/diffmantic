@@ -5445,36 +5445,24 @@
       "right_line": -1
     },
     {
-      "left_line": 1256,
-      "right_line": -1
-    },
-    {
-      "left_line": 1257,
-      "right_line": -1
-    },
-    {
-      "left_line": 1258,
-      "right_line": -1
-    },
-    {
-      "left_line": 1259,
-      "right_line": -1
-    },
-    {
       "left_line": -1,
       "right_line": 1257
     },
     {
-      "left_line": -1,
+      "left_line": 1256,
       "right_line": 1258
     },
     {
-      "left_line": -1,
+      "left_line": 1257,
       "right_line": 1259
     },
     {
-      "left_line": -1,
+      "left_line": 1258,
       "right_line": 1260
+    },
+    {
+      "left_line": 1259,
+      "right_line": -1
     },
     {
       "left_line": -1,

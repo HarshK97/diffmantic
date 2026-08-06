@@ -563,8 +563,12 @@
       "right_line": 71
     },
     {
+      "left_line": -1,
+      "right_line": 72
+    },
+    {
       "left_line": 67,
-      "right_line": -1
+      "right_line": 73
     },
     {
       "left_line": 68,
@@ -577,14 +581,6 @@
     {
       "left_line": 70,
       "right_line": -1
-    },
-    {
-      "left_line": -1,
-      "right_line": 72
-    },
-    {
-      "left_line": -1,
-      "right_line": 73
     },
     {
       "left_line": 71,

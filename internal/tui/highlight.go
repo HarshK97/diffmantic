@@ -26,6 +26,7 @@ type span struct {
 	startCol int
 	endCol   int
 	kind     actionKind
+	totalLen int
 	action   *serialize.Action
 }
 
@@ -93,8 +94,15 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 
 // Break a byte range into line-by-line highlights.
 func addHighlight(hl *highlights, lineIndex []int, fileBytes []byte, startByte, endByte uint32, kind actionKind, action *serialize.Action) {
+	totLen := int(endByte - startByte)
 	serialize.ForEachLineSpan(lineIndex, fileBytes, startByte, endByte, func(line, sc, ec int) {
-		hl.spans[line] = append(hl.spans[line], span{startCol: sc, endCol: ec, kind: kind, action: action})
+		hl.spans[line] = append(hl.spans[line], span{
+			startCol: sc,
+			endCol:   ec,
+			kind:     kind,
+			totalLen: totLen,
+			action:   action,
+		})
 		if existing, ok := hl.tinted[line]; !ok || kind < existing {
 			hl.tinted[line] = kind
 		}
@@ -160,6 +168,9 @@ func mergeAllSpans(hl *highlights, fileBytes []byte) {
 				// Extend current span to cover the next one.
 				if next.endCol > curr.endCol {
 					curr.endCol = next.endCol
+				}
+				if next.totalLen > curr.totalLen {
+					curr.totalLen = next.totalLen
 				}
 			} else {
 				merged = append(merged, curr)

@@ -41,8 +41,10 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 				if ms != nil {
 					if destNode := ms.Src()[a.Node]; destNode != nil {
 						if a.Node.Parent == nil || destNode.Parent == nil || ms.Src()[a.Node.Parent] != destNode.Parent {
-							movedSrcNodes[a.Node] = true
-							movedDstNodes[destNode] = true
+							if isDisplacedMove(a.Node, destNode, ms) {
+								movedSrcNodes[a.Node] = true
+								movedDstNodes[destNode] = true
+							}
 						}
 					}
 				}
@@ -71,9 +73,6 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			}
 		}
 	}
-
-	closeGaps(movedSrcLines, len(srcLines))
-	closeGaps(movedDstLines, len(dstLines))
 
 	srcLineMapsTo := make(map[int]map[int]bool)
 	dstLineMapsTo := make(map[int]map[int]bool)
@@ -391,4 +390,35 @@ func closeGaps(moved map[int]bool, maxLine int) {
 			last = i
 		}
 	}
+}
+
+func isDisplacedMove(srcNode, dstNode *treesitter.ASTNode, ms *engine.Mapping) bool {
+	if srcNode == nil || dstNode == nil || ms == nil {
+		return true
+	}
+
+	var srcContainer, dstContainer *treesitter.ASTNode
+	for curr := srcNode.Parent; curr != nil; curr = curr.Parent {
+		if mappedDst, ok := ms.Src()[curr]; ok {
+			srcContainer = curr
+			dstContainer = mappedDst
+			break
+		}
+	}
+
+	if srcContainer != nil && dstContainer != nil {
+		if dstNode.StartRow >= dstContainer.StartRow && dstNode.EndRow <= dstContainer.EndRow {
+			relSrc := int(srcNode.StartRow - srcContainer.StartRow)
+			relDst := int(dstNode.StartRow - dstContainer.StartRow)
+			diff := relSrc - relDst
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff <= 2 {
+				return false
+			}
+		}
+	}
+
+	return int(srcNode.StartRow) != int(dstNode.StartRow)
 }
