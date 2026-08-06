@@ -131,12 +131,12 @@ diffm diff config.txt config2.txt --lang json
 
 ## How It Works
 
-diffmantic matches ASTs in four phases, based on the [GumTree](https://github.com/GumTreeDiff/gumtree) algorithm:
+diffmantic matches ASTs in four phases, combining the [GumTree](https://github.com/GumTreeDiff/gumtree) algorithm, Zhang-Shasha tree edit distance, and Chawathe edit script generation:
 
 1. **Top-Down Matching.** We look for identical subtrees by height. When we find an exact match, all nodes in the subtree get mapped together.
 2. **Bottom-Up Matching.** For unmatched nodes, we look for counterparts of the same type that share already-matched children. If the Dice similarity score is high enough, we match them.
-3. **Recovery.** Inside matched containers, we run LCS alignment on unmatched children. First by exact label, then by structural shape.
-4. **Action Generation & Post-Processing.** We produce a raw edit script (insert, delete, update, move) and then refine it. Child edits get collapsed into clean subtree operations, comment changes get normalized, and related moves get grouped.
+3. **Recovery.** Inside matched containers, we run LCS alignment on unmatched children (first by label, then by structural shape). For small subtrees, [Zhang-Shasha (1989)](https://doi.org/10.1137/0218082) tree edit distance is used as a precise fallback.
+4. **Action Generation & Post-Processing.** We produce a raw edit script (insert, delete, update, move) using [Chawathe et al. (1996)](https://doi.org/10.1145/235968.235970) edit script generation and then refine it. Child edits get collapsed into clean subtree operations, comment changes get normalized, and related moves get grouped.
 
 ## Editor Integrations
 
@@ -158,8 +158,10 @@ MIT. See [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-The engine is based on the GumTree matching algorithm and the Chawathe edit script generator:
+The engine is based on foundational research in AST differencing, tree edit distance, and edit script generation:
 
 - [GumTree: A Complete Approach for AST Differencing](https://hal.science/hal-04855170v1/file/GumTree_simple__fine_grained__accurate_and_scalable_source_differencing.pdf), Falleri et al.
 - [Beyond GumTree](https://www.researchgate.net/publication/335498580_Beyond_GumTree_A_Hybrid_Approach_to_Generate_Edit_Scripts), Huvier et al.
+- [Simple Fast Algorithms for the Editing Distance Between Trees and Related Problems](https://doi.org/10.1137/0218082), Kaizhong Zhang and Dennis Shasha (SIAM Journal on Computing, 1989).
+- [Change Detection in Hierarchically Structured Information](https://doi.org/10.1145/235968.235970), Sudarshan S. Chawathe, Anand Rajaraman, Hector Garcia-Molina, and Jennifer Widom (ACM SIGMOD, 1996).
 - [GumTree GitHub Repository](https://github.com/GumTreeDiff/gumtree)

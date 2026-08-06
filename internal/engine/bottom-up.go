@@ -21,17 +21,21 @@ func BottomUp(
 	}
 
 	for _, t1 := range t1Root.PostOrder() {
-		if t1 == t1Root && !m.Has(t1) && !m.HasDst(t2Root) {
-			m.Add(t1, t2Root)
+		if t1 == t1Root {
+			if !m.Has(t1) && !m.HasDst(t2Root) {
+				m.Add(t1, t2Root)
+			}
+			t2 := m.Src()[t1]
+			if t2 != nil && hasUnmappedChild(t1, m.Has) && hasUnmappedChild(t2, m.HasDst) {
+				Recover(t1, t2, m)
+			}
+			break
 		}
 
 		if m.Has(t1) {
 			t2 := m.Src()[t1]
 			if t2 != nil && hasUnmappedChild(t1, m.Has) && hasUnmappedChild(t2, m.HasDst) {
-				SimpleRecovery(t1, t2, m)
-			}
-			if t1 == t1Root {
-				break
+				Recover(t1, t2, m)
 			}
 			continue
 		}
@@ -53,7 +57,7 @@ func BottomUp(
 		threshold := 1.0 / (1.0 + math.Log(float64((t1.Size()-1)+(t2.Size()-1))))
 		if m.DiceSrc(t1, t2) >= minDice || sim >= threshold {
 			m.Add(t1, t2)
-			SimpleRecovery(t1, t2, m)
+			Recover(t1, t2, m)
 		}
 	}
 }

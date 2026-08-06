@@ -2,6 +2,17 @@ package engine
 
 import "github.com/HarshK97/diffmantic/internal/treesitter"
 
+// Recover aligns unmatched nodes inside a matched container pair.
+// Uses Zhang-Shasha (1989) tree edit distance as a last-chance fallback on tiny
+// subtrees (< 20 nodes), and uses SimpleRecovery (Sibling LCS) on larger subtrees.
+func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	if t1.Size() < 20 || t2.Size() < 20 {
+		RunZSRecovery(t1, t2, m)
+	} else {
+		SimpleRecovery(t1, t2, m)
+	}
+}
+
 // SimpleRecovery maps unmatched children inside container pair (t1, t2) using
 // label LCS, structural LCS, and unique-type matching.
 func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
@@ -24,7 +35,7 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 
 	for _, pair := range uniqueTypePairs(uc1, uc2) {
 		m.Add(pair[0], pair[1])
-		SimpleRecovery(pair[0], pair[1], m)
+		Recover(pair[0], pair[1], m)
 	}
 }
 
