@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "ef68fa032c0e6ce637db56e89ec734c0de0a9f5e",
+  "commit": "da67cc1b988ed6498eccaecb989467e87b555dfd",
+  "message": "test: fix lint failures (#4244)",
+  "author": "Siddhesh Mhadnak",
+  "date": "2025-05-20T15:46:21+05:30",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 6
+}

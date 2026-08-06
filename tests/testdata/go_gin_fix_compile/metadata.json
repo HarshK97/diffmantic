@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "7742ff50e0a05d079a0c468ccfbf7c6ecfe2414b",
+  "commit": "3b5e861bb1c7f93424ab861dd779de168cb4c624",
+  "message": "fix compile error from #2572 (#2600)",
+  "author": "thinkerou",
+  "date": "2021-01-03T21:14:56+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 5
+}

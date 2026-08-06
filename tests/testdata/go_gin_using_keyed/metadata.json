@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "f63a354b40991d77b0488553b5a54f2d320ee0e8",
+  "commit": "94bc35bb2db753c4af7b43595569938a84d8f57e",
+  "message": "Using keyed initialization to fix app-engine integration",
+  "author": "Manu Mtz-Almeida",
+  "date": "2014-07-13T16:53:46+02:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 4
+}

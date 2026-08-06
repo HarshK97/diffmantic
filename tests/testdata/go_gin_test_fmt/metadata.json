@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "8edb7a71a17061bbaa85db53bb8ba6daad3c3aa8",
+  "commit": "aefae309a4fc197ce5d57cd8391562b6d2a63a95",
+  "message": "fix: test fmt.Println replace t.Error (#3328)",
+  "author": "jessetang",
+  "date": "2022-11-06T17:12:11+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 13,
+  "deletions": 13
+}

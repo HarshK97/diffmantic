@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "22c274c84ba5a502ce6453a9d2bb9e05ed91b911",
+  "commit": "26c3a628655cad2388380cb8102d6ce7d4875f3b",
+  "message": "chore(response): prevent Flush() panic when `http.Flusher` (#4479)",
+  "author": "Twacqwq",
+  "date": "2025-12-24T18:35:20+08:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 1
+}

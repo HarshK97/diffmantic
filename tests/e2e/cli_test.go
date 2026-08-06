@@ -90,12 +90,28 @@ func runDiffm(args ...string) (stdout, stderr string, err error) {
 	return outBuf.String(), errBuf.String(), err
 }
 
+func sampleFixture(t *testing.T) string {
+	t.Helper()
+	dir := testdataDir(t)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading testdata dir: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "go_") {
+			return e.Name()
+		}
+	}
+	t.Fatal("no go_ fixture found in testdata")
+	return ""
+}
+
 // --------------------------------------------------------------------------
 // JSON format tests
 // --------------------------------------------------------------------------
 
 func TestCLI_JSONFormat_ValidOutput(t *testing.T) {
-	oldPath, newPath := fixtureFiles(t, "go_comment_update")
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
 	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json")
 	if err != nil {
@@ -119,7 +135,7 @@ func TestCLI_NonInteractive_DefaultsToJSON(t *testing.T) {
 	// Our test harness runs diffm via exec.Command, meaning stdin and stdout aren't
 	// terminals (like in a CI runner or pipe). The CLI should fall back to JSON
 	// output here. The TUI remains the default in actual interactive terminal sessions.
-	oldPath, newPath := fixtureFiles(t, "go_comment_update")
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 	stdout, stderr, err := runDiffm("diff", oldPath, newPath)
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
@@ -135,7 +151,7 @@ func TestCLI_NonInteractive_DefaultsToJSON(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestCLI_ActionsFormat(t *testing.T) {
-	oldPath, newPath := fixtureFiles(t, "go_comment_update")
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
 	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "actions")
 	if err != nil {
@@ -163,7 +179,7 @@ func TestCLI_MissingFile(t *testing.T) {
 }
 
 func TestCLI_UnsupportedFormat(t *testing.T) {
-	oldPath, newPath := fixtureFiles(t, "go_comment_update")
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
 	_, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "xml")
 	if err == nil {
@@ -198,7 +214,7 @@ func TestCLI_NoArgs(t *testing.T) {
 }
 
 func TestCLI_OneArg(t *testing.T) {
-	oldPath, _ := fixtureFiles(t, "go_comment_update")
+	oldPath, _ := fixtureFiles(t, sampleFixture(t))
 
 	_, stderr, err := runDiffm("diff", oldPath)
 	if err == nil {

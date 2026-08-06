@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/gin-gonic/gin",
+  "parent": "00413032bbd6cb512d24b8fcd9f12d6710dd0e15",
+  "commit": "e1781e2db10b1c3580837491198ea2f7ef3c0ab4",
+  "message": "Fixes \"http: multiple response.WriteHeader calls\" in 404 [Issue #29]",
+  "author": "Manu Mtz-Almeida",
+  "date": "2014-07-04T00:12:35+02:00",
+  "language": "go",
+  "files_changed": 1,
+  "insertions": 4,
+  "deletions": 6
+}

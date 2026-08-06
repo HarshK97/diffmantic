@@ -1,7 +1,9 @@
 package treesitter
 
 import (
-	_ "embed"
+	"embed"
+	"io/fs"
+	"path"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,16 +16,10 @@ type Rules struct {
 	Scaffolding  []string          `yaml:"scaffolding"`
 }
 
-type RulesConfig struct {
-	Languages map[string]Rules `yaml:",inline"`
-}
+//go:embed */rules.yml
+var rulesFS embed.FS
 
-var (
-	//go:embed rules.yml
-	rulesYAML []byte
-
-	rulesCache map[string]Rules
-)
+var rulesCache map[string]Rules
 
 func GetRules(lang string) *Rules {
 	if rulesCache == nil {
@@ -37,9 +33,24 @@ func GetRules(lang string) *Rules {
 }
 
 func init() {
-	var config RulesConfig
-	if err := yaml.Unmarshal(rulesYAML, &config); err != nil {
-		panic("failed to load rules.yml: " + err.Error())
+	rulesCache = make(map[string]Rules)
+	entries, err := fs.ReadDir(rulesFS, ".")
+	if err != nil {
+		panic("failed to read embedded rules directory: " + err.Error())
 	}
-	rulesCache = config.Languages
+	for _, entry := range entries {
+		if entry.IsDir() {
+			lang := entry.Name()
+			rulePath := path.Join(lang, "rules.yml")
+			data, err := rulesFS.ReadFile(rulePath)
+			if err != nil {
+				continue
+			}
+			var r Rules
+			if err := yaml.Unmarshal(data, &r); err != nil {
+				panic("failed to load " + rulePath + ": " + err.Error())
+			}
+			rulesCache[lang] = r
+		}
+	}
 }

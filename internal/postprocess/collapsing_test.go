@@ -280,15 +280,15 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 		s := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 13}
 		mappedChild := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10}
 		parent := &treesitter.ASTNode{
-			Type: "call", StartByte: 0, EndByte: 13,
+			Type: "call_expression", StartByte: 0, EndByte: 13,
 			Children: []*treesitter.ASTNode{mappedChild, s},
 		}
-		parent.Language = "python"
+		parent.Language = "go"
 		mappedChild.Parent = parent
 		s.Parent = parent
 
 		mappedSrc := &treesitter.ASTNode{Type: "identifier", StartByte: 100, EndByte: 110}
-		mappedSrc.Language = "python"
+		mappedSrc.Language = "go"
 
 		ms := engine.NewMapping()
 		ms.Add(mappedSrc, mappedChild)
@@ -332,13 +332,13 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 			Type: "function_definition", StartByte: 0, EndByte: 70,
 			Children: []*treesitter.ASTNode{unrelatedChild, sNode},
 		}
-		parent.Language = "python"
+		parent.Language = "go"
 		unrelatedChild.Parent = parent
 		sChild.Parent = sNode
 		sNode.Parent = parent
 
 		unrelatedSrc := &treesitter.ASTNode{Type: "decorator", StartByte: 100, EndByte: 110}
-		unrelatedSrc.Language = "python"
+		unrelatedSrc.Language = "go"
 
 		ms := engine.NewMapping()
 		ms.Add(unrelatedSrc, unrelatedChild)
@@ -391,16 +391,16 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 			Type: "call", StartByte: 0, EndByte: 22,
 			Children: []*treesitter.ASTNode{mappedChild, s},
 		}
-		parent.Language = "python"
+		parent.Language = "go"
 		mappedChild.Parent = parent
 		mappedChild2.Parent = s
 		s2.Parent = s
 		s.Parent = parent
 
 		mappedSrc := &treesitter.ASTNode{Type: "identifier", StartByte: 200, EndByte: 209}
-		mappedSrc.Language = "python"
+		mappedSrc.Language = "go"
 		mappedSrc2 := &treesitter.ASTNode{Type: "identifier", StartByte: 210, EndByte: 219}
-		mappedSrc2.Language = "python"
+		mappedSrc2.Language = "go"
 
 		ms := engine.NewMapping()
 		ms.Add(mappedSrc, mappedChild)
