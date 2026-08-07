@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/pmndrs/zustand",
+  "parent": "73b91d370043dd768230a480099e82d0c458d6d0",
+  "commit": "295bf970a322f2248823877aad10aca5bab023c0",
+  "message": "test(*): add 'expect' with 'toBeInTheDocument' (#3162)\n\n* test(*): add 'expect' with 'toBeInTheDocument'\n\n* chore(eslint.config): enable 'vitest/expect-expect' rule",
+  "author": "Wonsuk Choi",
+  "date": "2025-06-29T11:49:16+09:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 1
+}

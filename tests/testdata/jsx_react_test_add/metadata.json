@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/facebook/react",
+  "parent": "6913ea4d28229d066603bff9fc1170334e151a4a",
+  "commit": "087a34696f1eb484157b19aee1648bcbce51de64",
+  "message": "[test] add activity test with gSBU and enableViewTransition bugfix (#35555)\n\nRelated to https://github.com/facebook/react/pull/35548,\n`enableViewTransition` fixes a bug where `getSnapshotBeforeUpdate` was\nrunning in hidden trees when it shouldn't (`componentWillUpdate` won't\nrun for hidden updates, and when it becomes visible it will be called\nwith `componentWillMount`).",
+  "author": "Ricky",
+  "date": "2026-02-04T14:37:45-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 81,
+  "deletions": 0
+}

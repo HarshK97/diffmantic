@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "7a9311216adf81c49812eb8e645c4a3774424189",
+  "commit": "c5b8d55a6a941fb5f8c783f7734a32f40142c4d9",
+  "message": "feat: add deprecation warnings for redirect arguments undefined (#6405)",
+  "author": "Sebastian Beltran",
+  "date": "2025-07-14T22:18:10-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 13,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/FormidableLabs/victory",
+  "parent": "e51bd04523eb1bfab0f51e2e4a65e47e1c203ba2",
+  "commit": "c7ff5168ee5d13984023febeda2074a30b4b9fd5",
+  "message": "Fixed prettier errors in scripts/changelog.js",
+  "author": "grose",
+  "date": "2022-12-07T17:06:33-07:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

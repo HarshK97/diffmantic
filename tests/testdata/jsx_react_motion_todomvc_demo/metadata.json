@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/chenglou/react-motion",
+  "parent": "1ca9c4ffbf60a256232c81a00e7fa03b16f5c3a1",
+  "commit": "ab22e8eec9fdc8f12a1bbe40f0566d2ee754327b",
+  "message": "Fix todomvc demo mistake\n\nClicking on X removed every item _but_ the one we're removing.",
+  "author": "Cheng Lou",
+  "date": "2016-01-24T03:16:23-05:00",
+  "language": "jsx",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

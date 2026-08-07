@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "2cd372e34cd6613f4d00836c2ee122f28bddfcb3",
+  "commit": "9a3f7ff4120d7920a2d13809ff5ae78648c8a3d6",
+  "message": "Polish HTML structure of the response in the res.redirect() function (#5167)\n\n* structure the DOM body\n\n* structure the DOM body\n\n* test: add html title to redirect test\n\n* fix: update HTML structure for include body and head tags\n\n* docs: improve HTML structure in res.redirect() responses for better browser compatibility\n\n---------\n\nCo-authored-by: Sebastian Beltran <bjohansebas@gmail.com>",
+  "author": "Bernice Wu",
+  "date": "2026-01-16T10:29:01-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

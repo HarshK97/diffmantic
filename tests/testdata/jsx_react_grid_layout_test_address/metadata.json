@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/react-grid-layout/react-grid-layout",
+  "parent": "535b810ba74ed15972b51d536fc34ba2e25365fb",
+  "commit": "16ec80b93cf48358e412b9ad849ce915becc7323",
+  "message": "test: address CR feedback - record onLayoutChange, assert snapped layout, document yarn",
+  "author": "Samuel Reed",
+  "date": "2026-08-04T21:55:23-04:00",
+  "language": "jsx",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 0
+}

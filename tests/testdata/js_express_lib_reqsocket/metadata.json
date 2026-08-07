@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "d9a62f983390da932c4f2e21e67a55fa33c164f4",
+  "commit": "89f198c6a50ab0cb65b741767791dd1b647e3b2c",
+  "message": "lib: use req.socket over deprecated req.connection (#6705)\n\nSigned-off-by: Sebastian Beltran <bjohansebas@gmail.com>",
+  "author": "Sebastian Beltran",
+  "date": "2025-08-21T10:05:29-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/pmndrs/zustand",
+  "parent": "fc104c2c1497280bcc39bb5589d9b8b8c89f6fd7",
+  "commit": "58d4b080510560ba210e739b72ade7efef1d67c9",
+  "message": "chore(rollup): clarify the callback argument 'e' to 'entry' (#2952)",
+  "author": "Wonsuk Choi",
+  "date": "2025-01-12T20:47:51+09:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

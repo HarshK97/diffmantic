@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/chenglou/react-motion",
+  "parent": "46910faf57a2747f829100c5b90cf2e38ec7acf7",
+  "commit": "6f1f97a9465b43a87811d37bb61c15f74847493e",
+  "message": "Win: npm run prerelease",
+  "author": "Nik Butenko",
+  "date": "2015-10-06T21:09:44+11:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 0
+}

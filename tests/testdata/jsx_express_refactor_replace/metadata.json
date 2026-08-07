@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/expressjs/express",
+  "parent": "41c054cff1e10f346feb39efe1f66660c0570aab",
+  "commit": "09831580ec64c2b53d712dfbf47a47a5790aa560",
+  "message": "refactor: replace 'path-is-absolute' dep with node:path isAbsolute method (#5830)\n\n* refactor: replace 'path-is-absolute' dep with node:path isAbsolute method\r\n\r\n* docs: add path-is-absolute dep removal to History.md",
+  "author": "Carlos Serrano",
+  "date": "2024-08-17T10:21:29-05:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}
