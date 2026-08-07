@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/colinhacks/zod",
+  "parent": "377f5d1eb05bfa2631ac1f020d118f5d3ca99c94",
+  "commit": "dea32d52a5745eb6ed9aee2ecab4b01f4ccd0313",
+  "message": "docs(ecosystem): add fn sphere and zod-compare (#5326)\n\n* docs(ecosystem): add fn sphere and zod-compare\n\n* chore: format\n\nCo-authored-by: coderabbitai[bot] <136622811+coderabbitai[bot]@users.noreply.github.com>\n\n---------\n\nCo-authored-by: coderabbitai[bot] <136622811+coderabbitai[bot]@users.noreply.github.com>\nCo-authored-by: Colin McDonnell <colinmcd94@gmail.com>",
+  "author": "Whitewater",
+  "date": "2025-11-18T10:11:01-08:00",
+  "language": "tsx",
+  "files_changed": 1,
+  "insertions": 11,
+  "deletions": 0
+}

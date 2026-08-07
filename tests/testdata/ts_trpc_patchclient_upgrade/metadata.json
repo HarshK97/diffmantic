@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/trpc/trpc",
+  "parent": "326b89a3166d0b1f218286ef742736fe824f89f1",
+  "commit": "e70e78413d5a05447c29f8b1e60aaa330607888f",
+  "message": "patch(`client`): upgrade `localLink` from experimental -> `unstable` (#6817)\n\n_Notetoself: not auto-merging as it updates docs and then we gotta\ntrigger a release which I ain't doing right now_\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai\n-->\n## Summary by CodeRabbit\n\n- **Documentation**\n- Updated documentation to reflect the new naming convention for the\nlocal link API, changing references from `experimental_localLink` to\n`unstable_localLink`.\n  - Example code and descriptive text now use `unstable_localLink`.\n\n- **Refactor**\n- Renamed the local link API export from `experimental_localLink` to\n`unstable_localLink`.\n- Added a deprecated alias so `experimental_localLink` now points to\n`unstable_localLink`.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->\n\n---------\n\nCo-authored-by: kodiakhq[bot] <49736102+kodiakhq[bot]@users.noreply.github.com>\nCo-authored-by: Julius Marminge <julius0216@outlook.com>\nCo-authored-by: coderabbitai[bot] <136622811+coderabbitai[bot]@users.noreply.github.com>\nCo-authored-by: autofix-ci[bot] <114827586+autofix-ci[bot]@users.noreply.github.com>",
+  "author": "Alex / KATT",
+  "date": "2025-06-12T13:30:12+02:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 5,
+  "deletions": 0
+}

@@ -59,6 +59,21 @@ func TestRulesAliased(t *testing.T) {
 				"type", "interface", "namespace", "enum", "abstract", "readonly",
 			},
 		},
+		{
+			lang: "tsx",
+			operators: []string{
+				"+", "-", "*", "/", "%", "**",
+				"==", "!=", "===", "!==", "<", "<=", ">", ">=",
+				"&&", "||", "??",
+				"=", "+=", "-=", "*=", "/=", "%=", "**=",
+				"&&=", "||=", "??=",
+				"&", "|", "^", "<<", ">>", ">>>",
+				"!", "~", "++", "--",
+				"=>",
+				"type", "interface", "namespace", "enum", "abstract", "readonly",
+				"/>", "</",
+			},
+		},
 	}
 
 	for _, tt := range tests {

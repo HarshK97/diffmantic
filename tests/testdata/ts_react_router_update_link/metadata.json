@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/remix-run/react-router",
+  "parent": "963affeb924f2256bd20c0c5c87e4c4b4fcbd188",
+  "commit": "7965e50072eb7d3a28b770a5e131c45ed9367926",
+  "message": "Update link to v7 instead of a specific version (#15147)",
+  "author": "Matt Brophy",
+  "date": "2026-06-04T10:17:03-04:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

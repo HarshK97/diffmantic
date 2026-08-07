@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/remix-run/react-router",
+  "parent": "db526f08df9e7678e1265269f782b3dec62454f1",
+  "commit": "966103936377bd9e51496f077496166ddc12627c",
+  "message": "Filter removed change files from pr check workflow",
+  "author": "Matt Brophy",
+  "date": "2026-06-29T11:36:15-04:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

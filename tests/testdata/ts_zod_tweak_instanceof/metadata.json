@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/colinhacks/zod",
+  "parent": "d3355f76e8c93690ef463859b86e69f4b2c927f9",
+  "commit": "15cc73fb76d63cff73504a67c0f2eec5aa49e284",
+  "message": "Tweak instanceof error message",
+  "author": "Colin McDonnell",
+  "date": "2025-12-30T14:10:48-08:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 3
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/remix-run/react-router",
+  "parent": "44c34783abbdd2be1a9fe1a4b843d49e704f9a0e",
+  "commit": "6bf91cef0e5d3d224d5580d485b6b716d96742d1",
+  "message": "chore: format",
+  "author": "Remix Run Bot",
+  "date": "2026-05-13T13:29:04Z",
+  "language": "tsx",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 2
+}
