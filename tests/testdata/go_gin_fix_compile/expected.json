@@ -67,6 +67,30 @@
       "subtree": true
     },
     {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          0
+        ],
+        "type": "bitwise_operator_literal",
+        "label": "\u0026",
+        "start_byte": 376,
+        "end_byte": 377
+      }
+    },
+    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -77,11 +101,15 @@
           0,
           1,
           0,
-          1
+          1,
+          1,
+          0,
+          0
         ],
-        "type": "call_expression",
-        "start_byte": 337,
-        "end_byte": 404
+        "type": "bitwise_operator_literal",
+        "label": "\u0026",
+        "start_byte": 355,
+        "end_byte": 356
       },
       "parent": {
         "tree": "after",
@@ -91,13 +119,59 @@
           0,
           0,
           1,
+          0,
+          1,
+          1,
           0
         ],
-        "type": "type_conversion_expression",
-        "start_byte": 326,
-        "end_byte": 405
+        "type": "unary_expression",
+        "start_byte": 355,
+        "end_byte": 400
       },
-      "position": 1
+      "position": 0
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        "type": "identifier",
+        "label": "s",
+        "start_byte": 377,
+        "end_byte": 378
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2,
+          0,
+          0
+        ],
+        "type": "arithmetic_operator_literal",
+        "label": "*",
+        "start_byte": 336,
+        "end_byte": 337
+      }
     },
     {
       "action": "move",
@@ -167,11 +241,13 @@
           1,
           0,
           1,
+          1,
+          0,
           1
         ],
-        "type": "argument_list",
-        "start_byte": 351,
-        "end_byte": 404
+        "type": "composite_literal",
+        "start_byte": 356,
+        "end_byte": 400
       },
       "parent": {
         "tree": "after",
@@ -182,14 +258,383 @@
           0,
           1,
           0,
+          1,
+          1,
+          0
+        ],
+        "type": "unary_expression",
+        "start_byte": 355,
+        "end_byte": 400
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "struct_type",
+        "start_byte": 356,
+        "end_byte": 389
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
           1
         ],
-        "type": "call_expression",
-        "start_byte": 337,
-        "end_byte": 404
+        "type": "composite_literal",
+        "start_byte": 356,
+        "end_byte": 400
       },
-      "position": 1,
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          0
+        ],
+        "type": "struct",
+        "label": "struct",
+        "start_byte": 356,
+        "end_byte": 362
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "struct_type",
+        "start_byte": 356,
+        "end_byte": 389
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        "type": "field_declaration_list",
+        "start_byte": 363,
+        "end_byte": 389
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "struct_type",
+        "start_byte": 356,
+        "end_byte": 389
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1,
+          0
+        ],
+        "type": "literal_element",
+        "start_byte": 390,
+        "end_byte": 391
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "literal_value",
+        "start_byte": 389,
+        "end_byte": 400
+      },
+      "position": 0,
       "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1,
+          2
+        ],
+        "type": "literal_element",
+        "start_byte": 393,
+        "end_byte": 399
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "literal_value",
+        "start_byte": 389,
+        "end_byte": 400
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "field_declaration",
+        "start_byte": 368,
+        "end_byte": 374
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        "type": "field_declaration_list",
+        "start_byte": 363,
+        "end_byte": 389
+      },
+      "position": 0,
+      "subtree": true
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          0,
+          4,
+          2
+        ],
+        "type": "field_identifier",
+        "label": "Cap",
+        "start_byte": 452,
+        "end_byte": 455
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "field_declaration",
+        "start_byte": 378,
+        "end_byte": 385
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          0,
+          4
+        ],
+        "type": "selector_expression",
+        "start_byte": 449,
+        "end_byte": 455
+      },
+      "old_position": 2,
+      "dest_start_byte": 378,
+      "dest_end_byte": 381
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "type": "type_identifier",
+        "label": "int",
+        "start_byte": 382,
+        "end_byte": 385
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "field_declaration",
+        "start_byte": 378,
+        "end_byte": 385
+      },
+      "position": 1
     },
     {
       "action": "delete",
@@ -232,13 +677,86 @@
           6,
           4,
           0,
+          0,
           0
         ],
-        "type": "short_var_declaration",
+        "type": "expression_list",
         "start_byte": 330,
-        "end_byte": 380
+        "end_byte": 332
       },
       "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          1
+        ],
+        "type": "assignment_operator_literal",
+        "label": ":=",
+        "start_byte": 333,
+        "end_byte": 335
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0
+        ],
+        "type": "parenthesized_expression",
+        "start_byte": 337,
+        "end_byte": 360
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2,
+          0,
+          1,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 360,
+        "end_byte": 380
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2
+        ],
+        "type": "expression_list",
+        "start_byte": 336,
+        "end_byte": 380
+      }
     },
     {
       "action": "delete",
@@ -356,11 +874,125 @@
           6,
           4,
           0,
+          2,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 432,
+        "end_byte": 439
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          0,
           2
         ],
-        "type": "assignment_statement",
-        "start_byte": 432,
+        "type": "selector_expression",
+        "start_byte": 441,
+        "end_byte": 447
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          0,
+          4,
+          0
+        ],
+        "type": "identifier",
+        "label": "bh",
+        "start_byte": 449,
+        "end_byte": 451
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          0,
+          4,
+          1
+        ],
+        "type": "dot",
+        "label": ".",
+        "start_byte": 451,
+        "end_byte": 452
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          1
+        ],
+        "type": "assignment_operator_literal",
+        "label": "=",
+        "start_byte": 456,
+        "end_byte": 457
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          2,
+          2
+        ],
+        "type": "expression_list",
+        "start_byte": 458,
         "end_byte": 481
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          6,
+          4,
+          0,
+          0,
+          2,
+          0,
+          1,
+          1,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 361,
+        "end_byte": 375
       },
       "subtree": true
     }
@@ -427,14 +1059,6 @@
       "right_line": 12
     },
     {
-      "left_line": 15,
-      "right_line": -1
-    },
-    {
-      "left_line": 16,
-      "right_line": -1
-    },
-    {
       "left_line": -1,
       "right_line": 13
     },
@@ -447,8 +1071,12 @@
       "right_line": 15
     },
     {
-      "left_line": -1,
+      "left_line": 15,
       "right_line": 16
+    },
+    {
+      "left_line": 16,
+      "right_line": -1
     },
     {
       "left_line": -1,

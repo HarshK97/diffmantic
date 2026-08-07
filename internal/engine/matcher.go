@@ -27,6 +27,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 	BottomUp(t1, t2, mappings, minDice)
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
+	RollupMatchedContainers(t1, t2, mappings)
 
 	if !mappings.Has(t1) && !mappings.HasDst(t2) {
 		mappings.Add(t1, t2)
@@ -39,7 +40,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 
 // MatchUnmatchedLeaves pairs unmatched leaf nodes of the same type and label using
 // parent Dice similarity and positional scores to break ties. Leaves under unmatched
-// parents are skipped since they belong to deleted or inserted blocks.
+// parents are allowed if they share a matched ancestor.
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *LinePartition) {
 	type leafKey struct{ Type, Label string }
 	t2Leaves := make(map[leafKey][]*treesitter.ASTNode)
@@ -56,7 +57,8 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			continue
 		}
 
-		if t1.Parent != nil && !m.Has(t1.Parent) {
+		anc1 := NearestMatchedAncestor(t1, m, false)
+		if anc1 == nil {
 			continue
 		}
 
@@ -71,8 +73,6 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 
 		t1Idx := t1.ChildIndex()
 
-		anc1 := NearestMatchedAncestor(t1, m, false)
-
 		for _, t2 := range candidates {
 			if m.HasDst(t2) {
 				continue
@@ -80,13 +80,10 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			if part != nil && !part.CanMatch(t1, t2) {
 				continue
 			}
-
-			if t2.Parent != nil && !m.HasDst(t2.Parent) {
+			anc1, anc2 := SharedMatchedAncestor(t1, t2, m)
+			if anc1 == nil || anc2 == nil {
 				continue
 			}
-
-			anc2 := NearestMatchedAncestor(t2, m, true)
-			cMatches := areAncestorsMatched(anc1, anc2, m)
 
 			parentMatched := t1.Parent != nil && t2.Parent != nil && m.Src()[t1.Parent] == t2.Parent
 
@@ -96,7 +93,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 
 			parentPositional := false
-			if cMatches && anc1 != nil && anc2 != nil &&
+			if anc1 != nil && anc2 != nil &&
 				t1.Parent != nil && t2.Parent != nil &&
 				anc1 != t1.Parent && anc2 != t2.Parent {
 				p1Idx := t1.Parent.ChildIndex()
@@ -120,7 +117,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 				}
 			}
 
-			posScore := 0
+			posScore := 1
 			if parentMatched {
 				posScore += 1000
 			}
@@ -129,9 +126,6 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 			if samePositional {
 				posScore += 10
-			}
-			if cMatches {
-				posScore += 1
 			}
 			posScore += siblingScore
 

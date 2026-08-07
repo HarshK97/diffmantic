@@ -53,26 +53,8 @@
       "dest_end_byte": 28309
     },
     {
-      "action": "update",
+      "action": "insert",
       "node": {
-        "tree": "before",
-        "path": [
-          26,
-          4,
-          15,
-          4,
-          2,
-          4,
-          3
-        ],
-        "type": "comment",
-        "label": "# Look for requests environment configuration and be compatible",
-        "start_byte": 27637,
-        "end_byte": 27700
-      },
-      "old_value": "# Look for requests environment configuration and be compatible",
-      "new_value": "# Look for requests environment configuration",
-      "dest_node": {
         "tree": "after",
         "path": [
           26,
@@ -87,29 +69,26 @@
         "label": "# Look for requests environment configuration",
         "start_byte": 27637,
         "end_byte": 27682
-      }
-    },
-    {
-      "action": "update",
-      "node": {
-        "tree": "before",
+      },
+      "parent": {
+        "tree": "after",
         "path": [
           26,
           4,
           15,
           4,
           2,
-          4,
           4
         ],
-        "type": "comment",
-        "label": "# with cURL.",
-        "start_byte": 27713,
-        "end_byte": 27725
+        "type": "block",
+        "start_byte": 27398,
+        "end_byte": 27962
       },
-      "old_value": "# with cURL.",
-      "new_value": "# and be compatible with cURL.",
-      "dest_node": {
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
         "tree": "after",
         "path": [
           26,
@@ -124,7 +103,22 @@
         "label": "# and be compatible with cURL.",
         "start_byte": 27695,
         "end_byte": 27725
-      }
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          26,
+          4,
+          15,
+          4,
+          2,
+          4
+        ],
+        "type": "block",
+        "start_byte": 27398,
+        "end_byte": 27962
+      },
+      "position": 4
     },
     {
       "action": "insert",
@@ -318,6 +312,44 @@
         "end_byte": 27944
       },
       "position": 2
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          26,
+          4,
+          15,
+          4,
+          2,
+          4,
+          3
+        ],
+        "type": "comment",
+        "label": "# Look for requests environment configuration and be compatible",
+        "start_byte": 27637,
+        "end_byte": 27700
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          26,
+          4,
+          15,
+          4,
+          2,
+          4,
+          4
+        ],
+        "type": "comment",
+        "label": "# with cURL.",
+        "start_byte": 27713,
+        "end_byte": 27725
+      }
     }
   ],
   "line_alignment": [
@@ -3139,10 +3171,18 @@
     },
     {
       "left_line": 704,
-      "right_line": 704
+      "right_line": -1
     },
     {
       "left_line": 705,
+      "right_line": -1
+    },
+    {
+      "left_line": -1,
+      "right_line": 704
+    },
+    {
+      "left_line": -1,
       "right_line": 705
     },
     {

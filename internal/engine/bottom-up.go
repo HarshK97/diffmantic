@@ -181,3 +181,31 @@ func hasCommonDescendant(
 	}
 	return false
 }
+
+// RollupMatchedContainers pairs unmatched container nodes in post-order when their
+// mapped children predominantly belong to the same unmatched parent container in T2.
+func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	for _, t1 := range t1Root.PostOrder() {
+		if m.Has(t1) || len(t1.Children) == 0 {
+			continue
+		}
+
+		parentCounts := make(map[*treesitter.ASTNode]int)
+		var bestParent *treesitter.ASTNode
+		bestCount := 0
+		for _, c := range t1.Children {
+			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && c2.Parent.Type == t1.Type {
+				cnt := parentCounts[c2.Parent] + 1
+				parentCounts[c2.Parent] = cnt
+				if cnt > bestCount {
+					bestCount = cnt
+					bestParent = c2.Parent
+				}
+			}
+		}
+
+		if bestParent != nil {
+			m.Add(t1, bestParent)
+		}
+	}
+}

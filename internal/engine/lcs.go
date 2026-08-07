@@ -70,20 +70,31 @@ func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 		dstUsed[p[1]] = true
 	}
 
-	for k, p := range pairs {
+	var filtered [][2]*treesitter.ASTNode
+	for _, p := range pairs {
 		src := p[0]
-		if !hasMultipleStructuralMatches(src, seq2, p[1]) {
-			continue
+		current := p[1]
+		best := current
+		if hasMultipleStructuralMatches(src, seq2, current) {
+			cand := bestStructuralPartner(src, seq2, current, dstUsed)
+			if cand != nil {
+				scoreCurr := scorePartner(src, current, src.ChildIndex())
+				scoreCand := scorePartner(src, cand, src.ChildIndex())
+				if scoreCand > scoreCurr {
+					dstUsed[current] = false
+					dstUsed[cand] = true
+					best = cand
+				}
+			}
 		}
-		best := bestStructuralPartner(src, seq2, p[1], dstUsed)
-		if best != nil && best != p[1] {
-			dstUsed[p[1]] = false
-			dstUsed[best] = true
-			pairs[k] = [2]*treesitter.ASTNode{src, best}
+		if scorePartner(src, best, src.ChildIndex()) >= 0 {
+			filtered = append(filtered, [2]*treesitter.ASTNode{src, best})
+		} else {
+			dstUsed[best] = false
 		}
 	}
 
-	return pairs
+	return filtered
 }
 
 func hasMultipleStructuralMatches(src *treesitter.ASTNode, seq2 []*treesitter.ASTNode, exclude *treesitter.ASTNode) bool {
@@ -128,6 +139,9 @@ func bestStructuralPartner(
 }
 
 func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int) int {
+	if (HasLongLeafToken(src) || HasLongLeafToken(dst)) && LeafSimilarity(src, dst) == 0 {
+		return -100
+	}
 	score := 0
 	dstChildIdx := dst.ChildIndex()
 	if srcChildIdx == dstChildIdx {

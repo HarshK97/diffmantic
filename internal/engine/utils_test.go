@@ -235,3 +235,33 @@ func TestStructureIsomorphicComments(t *testing.T) {
 		t.Error("expected c1 and c3 not to be structurally isomorphic comments")
 	}
 }
+
+func TestLeafSimilarityAndHasLongLeafToken(t *testing.T) {
+	t1 := testutil.Node("pair", "",
+		testutil.Leaf("integer", "414"),
+		testutil.Node("tuple", "", testutil.Leaf("string", "\"request_uri_too_large\"")),
+	)
+	t2 := testutil.Node("pair", "",
+		testutil.Leaf("integer", "422"),
+		testutil.Node("tuple", "", testutil.Leaf("string", "\"unprocessable_entity\"")),
+	)
+	t3 := testutil.Node("pair", "",
+		testutil.Leaf("integer", "414"),
+		testutil.Node("tuple", "", testutil.Leaf("string", "\"request_uri_too_large\""), testutil.Leaf("string", "\"uri_too_long\"")),
+	)
+
+	if !HasLongLeafToken(t1) {
+		t.Error("expected t1 to have long leaf token")
+	}
+	if !HasLongLeafToken(t2) {
+		t.Error("expected t2 to have long leaf token")
+	}
+
+	if sim := LeafSimilarity(t1, t2); sim != 0 {
+		t.Errorf("LeafSimilarity(t1, t2) = %f, want 0", sim)
+	}
+
+	if sim := LeafSimilarity(t1, t3); sim <= 0 {
+		t.Errorf("LeafSimilarity(t1, t3) = %f, want > 0", sim)
+	}
+}
