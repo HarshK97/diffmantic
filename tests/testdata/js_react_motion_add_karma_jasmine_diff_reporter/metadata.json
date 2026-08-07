@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/chenglou/react-motion",
+  "parent": "f1ce31c36577eb9893dde1857482519d6932dfb6",
+  "commit": "b0cdd95df107e4b0c5b9ecac9c1d6359deaa2452",
+  "message": "Add karma-jasmine-diff-reporter",
+  "author": "Nik Butenko",
+  "date": "2016-01-16T19:55:47+11:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 8,
+  "deletions": 0
+}

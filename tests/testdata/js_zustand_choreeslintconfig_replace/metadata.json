@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/pmndrs/zustand",
+  "parent": "fd1ea8ca9da54cf754a3351170bdc39a7648e9c1",
+  "commit": "612d5c4647efe1547beea00e9255be0733d2a773",
+  "message": "chore(eslint.config): replace deprecated 'tseslint.config' with 'defineConfig' (#3231)\n\nCo-authored-by: Daishi Kato <dai-shi@users.noreply.github.com>",
+  "author": "Wonsuk Choi",
+  "date": "2025-09-10T19:37:07+09:00",
+  "language": "javascript",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

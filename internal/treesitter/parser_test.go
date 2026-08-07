@@ -79,6 +79,28 @@ func TestParse(t *testing.T) {
 		}
 	})
 
+	t.Run("valid javascript source", func(t *testing.T) {
+		src := []byte(`function hello() { return "world"; }`)
+		ast, err := Parse(src, "main.js")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
+	t.Run("valid jsx source", func(t *testing.T) {
+		src := []byte(`const App = () => <div className="app">Hello</div>;`)
+		ast, err := Parse(src, "App.jsx")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")

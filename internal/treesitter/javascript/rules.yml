@@ -1,0 +1,162 @@
+flattened:
+  - string
+  - template_string
+  - comment
+  - html_comment
+
+aliased:
+  # Keywords
+  "if": "condition_declaration"
+  "else": "else"
+  "for": "for"
+  "while": "while"
+  "do": "do"
+  "switch": "switch"
+  "case": "case"
+  "default": "default"
+  "break": "break"
+  "continue": "continue"
+  "return": "return"
+  "try": "try"
+  "catch": "catch"
+  "finally": "finally"
+  "throw": "throw"
+  "yield": "yield"
+  "await": "await"
+  "async": "async"
+  "function": "function"
+  "class": "class"
+  "extends": "extends"
+  "const": "const"
+  "let": "let"
+  "var": "var"
+  "using": "using"
+  "import": "import"
+  "export": "export"
+  "from": "from"
+  "with": "with"
+  "of": "of"
+  "in": "in"
+  "new": "new"
+  "this": "this"
+  "super": "super"
+  "delete": "delete"
+  "typeof": "typeof"
+  "void": "void"
+  "instanceof": "instanceof"
+  "debugger": "debugger"
+
+  # Arithmetic operators
+  "+": arithmetic_operator_literal
+  "-": arithmetic_operator_literal
+  "*": arithmetic_operator_literal
+  "/": arithmetic_operator_literal
+  "%": arithmetic_operator_literal
+  "**": arithmetic_operator_literal
+
+  # Comparison operators
+  "==": comparison_operator_literal
+  "!=": comparison_operator_literal
+  "===": comparison_operator_literal
+  "!==": comparison_operator_literal
+  "<": comparison_operator_literal
+  "<=": comparison_operator_literal
+  ">": comparison_operator_literal
+  ">=": comparison_operator_literal
+
+  # Logical operators
+  "&&": logical_operator_literal
+  "||": logical_operator_literal
+  "??": logical_operator_literal
+
+  # Assignment operators
+  "=": assignment_operator_literal
+  "+=": assignment_operator_literal
+  "-=": assignment_operator_literal
+  "*=": assignment_operator_literal
+  "/=": assignment_operator_literal
+  "%=": assignment_operator_literal
+  "**=": assignment_operator_literal
+  "&=": assignment_operator_literal
+  "|=": assignment_operator_literal
+  "^=": assignment_operator_literal
+  "<<=": assignment_operator_literal
+  ">>=": assignment_operator_literal
+  ">>>=": assignment_operator_literal
+  "&&=": assignment_operator_literal
+  "||=": assignment_operator_literal
+  "??=": assignment_operator_literal
+
+  # Bitwise operators
+  "&": bitwise_operator_literal
+  "|": bitwise_operator_literal
+  "^": bitwise_operator_literal
+  "~": bitwise_operator_literal
+  "<<": bitwise_operator_literal
+  ">>": bitwise_operator_literal
+  ">>>": bitwise_operator_literal
+
+  # Unary operators
+  "!": unary_operator_literal
+
+  # Increment/Decrement & Arrow operators
+  "++": update_operator_literal
+  "--": update_operator_literal
+  "=>": arrow
+
+  # Punctuation
+  ".": dot
+  ":": colon
+  ",": comma
+  ";": semicolon
+  "...": ellipsis
+  "?.": optional_chain_op
+  "@": decorator_at
+
+ignored:
+  - "\n"
+  - "_automatic_semicolon"
+
+scaffolding:
+  - program
+  - statement_block
+  - arguments
+  - formal_parameters
+  - expression_statement
+  - variable_declaration
+  - lexical_declaration
+  - using_declaration
+  - variable_declarator
+  - function_declaration
+  - function_expression
+  - arrow_function
+  - method_definition
+  - class_declaration
+  - class_body
+  - if_statement
+  - else_clause
+  - for_statement
+  - for_in_statement
+  - while_statement
+  - do_statement
+  - switch_statement
+  - switch_body
+  - switch_case
+  - switch_default
+  - try_statement
+  - catch_clause
+  - finally_clause
+  - return_statement
+  - object
+  - object_pattern
+  - array
+  - array_pattern
+  - pair
+  - export_statement
+  - import_statement
+  - jsx_element
+  - jsx_opening_element
+  - jsx_closing_element
+  - jsx_self_closing_element
+  - jsx_attribute
+  - jsx_expression
