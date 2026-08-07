@@ -172,3 +172,50 @@ func TestMatchUnmatchedLeaves(t *testing.T) {
 		t.Errorf("l2 should be matched to r2 under parent block_b, got %v", m.Src()[l2])
 	}
 }
+
+func TestRollupMatchedContainers(t *testing.T) {
+	k1 := testutil.Leaf("integer", "414")
+	v1 := testutil.Leaf("string", "\"request_uri_too_large\"")
+	pair1 := testutil.Node("pair", "", k1, v1)
+	dict1 := testutil.Node("dictionary", "", pair1)
+
+	k2 := testutil.Leaf("integer", "414")
+	v2 := testutil.Leaf("string", "\"request_uri_too_large\"")
+	pair2 := testutil.Node("pair", "", k2, v2)
+	dict2 := testutil.Node("dictionary", "", pair2)
+
+	m := NewMapping()
+	m.Add(dict1, dict2)
+	m.Add(k1, k2)
+	m.Add(v1, v2)
+
+	RollupMatchedContainers(dict1, dict2, m)
+
+	if !m.Has(pair1) || m.Src()[pair1] != pair2 {
+		t.Errorf("RollupMatchedContainers should pair pair1 -> pair2, got %v", m.Src()[pair1])
+	}
+}
+
+func TestMatchUnmatchedLeavesUnderUnmatchedContainer(t *testing.T) {
+	k1 := testutil.Leaf("integer", "414")
+	v1 := testutil.Leaf("string", "\"request_uri_too_large\"")
+	pair1 := testutil.Node("pair", "", k1, v1)
+	dict1 := testutil.Node("dictionary", "", pair1)
+
+	k2 := testutil.Leaf("integer", "414")
+	v2 := testutil.Leaf("string", "\"request_uri_too_large\"")
+	pair2 := testutil.Node("pair", "", k2, v2)
+	dict2 := testutil.Node("dictionary", "", pair2)
+
+	m := NewMapping()
+	m.Add(dict1, dict2)
+
+	MatchUnmatchedLeaves(dict1, dict2, m, nil)
+
+	if !m.Has(k1) || m.Src()[k1] != k2 {
+		t.Errorf("k1 should match k2 under matched dictionary ancestor, got %v", m.Src()[k1])
+	}
+	if !m.Has(v1) || m.Src()[v1] != v2 {
+		t.Errorf("v1 should match v2 under matched dictionary ancestor, got %v", m.Src()[v1])
+	}
+}

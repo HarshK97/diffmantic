@@ -2,69 +2,34 @@
   "version": "v1",
   "actions": [
     {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          2,
-          2,
-          92
-        ],
-        "type": "pair",
-        "start_byte": 2547,
-        "end_byte": 2593
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          2,
-          2
-        ],
-        "type": "dictionary",
-        "start_byte": 580,
-        "end_byte": 3758
-      },
-      "position": 80,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          2,
-          2
-        ],
-        "type": "dictionary",
-        "start_byte": 580,
-        "end_byte": 3684
-      },
-      "old_position": 92,
-      "subtree": true,
-      "dest_start_byte": 2229,
-      "dest_end_byte": 2275
-    },
-    {
       "action": "insert",
       "node": {
         "tree": "after",
         "path": [
           2,
           2,
-          5
+          5,
+          2,
+          2
         ],
-        "type": "pair",
-        "start_byte": 666,
+        "type": "string",
+        "label": "\"early-hints\"",
+        "start_byte": 686,
+        "end_byte": 699
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          2,
+          2,
+          5,
+          2
+        ],
+        "type": "tuple",
+        "start_byte": 671,
         "end_byte": 700
       },
-      "parent": {
-        "tree": "after",
-        "path": [
-          2,
-          2
-        ],
-        "type": "dictionary",
-        "start_byte": 580,
-        "end_byte": 3758
-      },
-      "position": 5,
-      "subtree": true
+      "position": 2
     },
     {
       "action": "insert",
@@ -73,134 +38,32 @@
         "path": [
           2,
           2,
-          78
+          78,
+          2,
+          2
         ],
-        "type": "pair",
-        "start_byte": 2169,
+        "type": "string",
+        "label": "\"content_too_large\"",
+        "start_byte": 2203,
+        "end_byte": 2222
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          2,
+          2,
+          78,
+          2
+        ],
+        "type": "tuple",
+        "start_byte": 2174,
         "end_byte": 2223
       },
-      "parent": {
-        "tree": "after",
-        "path": [
-          2,
-          2
-        ],
-        "type": "dictionary",
-        "start_byte": 580,
-        "end_byte": 3758
-      },
-      "position": 79,
-      "subtree": true
+      "position": 2
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          2,
-          2,
-          92
-        ],
-        "type": "pair",
-        "start_byte": 2596,
-        "end_byte": 2667
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          2,
-          2
-        ],
-        "type": "dictionary",
-        "start_byte": 580,
-        "end_byte": 3758
-      },
-      "position": 95,
-      "subtree": true
-    },
-    {
-      "action": "update",
-      "node": {
-        "tree": "before",
-        "path": [
-          2,
-          2,
-          92,
-          0
-        ],
-        "type": "integer",
-        "label": "422",
-        "start_byte": 2547,
-        "end_byte": 2550
-      },
-      "old_value": "422",
-      "new_value": "414",
-      "dest_node": {
-        "tree": "after",
-        "path": [
-          2,
-          2,
-          80,
-          0
-        ],
-        "type": "integer",
-        "label": "414",
-        "start_byte": 2229,
-        "end_byte": 2232
-      }
-    },
-    {
-      "action": "update",
-      "node": {
-        "tree": "before",
-        "path": [
-          2,
-          2,
-          92,
-          2,
-          0
-        ],
-        "type": "string",
-        "label": "\"unprocessable_entity\"",
-        "start_byte": 2553,
-        "end_byte": 2575
-      },
-      "old_value": "\"unprocessable_entity\"",
-      "new_value": "\"request_uri_too_large\"",
-      "dest_node": {
-        "tree": "after",
-        "path": [
-          2,
-          2,
-          80,
-          2,
-          0
-        ],
-        "type": "string",
-        "label": "\"request_uri_too_large\"",
-        "start_byte": 2235,
-        "end_byte": 2258
-      }
-    },
-    {
-      "action": "update",
-      "node": {
-        "tree": "before",
-        "path": [
-          2,
-          2,
-          92,
-          2,
-          2
-        ],
-        "type": "string",
-        "label": "\"unprocessable\"",
-        "start_byte": 2577,
-        "end_byte": 2592
-      },
-      "old_value": "\"unprocessable\"",
-      "new_value": "\"uri_too_long\"",
-      "dest_node": {
         "tree": "after",
         "path": [
           2,
@@ -213,52 +76,50 @@
         "label": "\"uri_too_long\"",
         "start_byte": 2260,
         "end_byte": 2274
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
+      },
+      "parent": {
+        "tree": "after",
         "path": [
           2,
           2,
-          5
+          80,
+          2
         ],
-        "type": "pair",
-        "start_byte": 666,
-        "end_byte": 686
+        "type": "tuple",
+        "start_byte": 2234,
+        "end_byte": 2275
       },
-      "subtree": true
+      "position": 2
     },
     {
-      "action": "delete",
+      "action": "insert",
       "node": {
-        "tree": "before",
+        "tree": "after",
         "path": [
           2,
           2,
-          78
+          92,
+          2,
+          4
         ],
-        "type": "pair",
-        "start_byte": 2155,
-        "end_byte": 2189
+        "type": "string",
+        "label": "\"unprocessable_content\"",
+        "start_byte": 2643,
+        "end_byte": 2666
       },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
+      "parent": {
+        "tree": "after",
         "path": [
           2,
           2,
-          80
+          92,
+          2
         ],
-        "type": "pair",
-        "start_byte": 2195,
-        "end_byte": 2226
+        "type": "tuple",
+        "start_byte": 2601,
+        "end_byte": 2667
       },
-      "subtree": true
+      "position": 4
     }
   ],
   "line_alignment": [

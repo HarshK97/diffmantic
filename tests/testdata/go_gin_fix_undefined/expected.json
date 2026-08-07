@@ -340,6 +340,188 @@
       "subtree": true
     },
     {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          18,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 1332,
+        "end_byte": 1339
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          20,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 1526,
+        "end_byte": 1533
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          22,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 1703,
+        "end_byte": 1710
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          24,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 1888,
+        "end_byte": 1895
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          26,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 2073,
+        "end_byte": 2080
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          28,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 2251,
+        "end_byte": 2258
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          30,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 2439,
+        "end_byte": 2446
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          32,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 2622,
+        "end_byte": 2629
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          33,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 2739,
+        "end_byte": 2746
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          34,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 2847,
+        "end_byte": 2854
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          41,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 3239,
+        "end_byte": 3246
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          42,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 3351,
+        "end_byte": 3358
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          46,
+          3
+        ],
+        "type": "type_identifier",
+        "label": "IRoutes",
+        "start_byte": 3721,
+        "end_byte": 3728
+      }
+    },
+    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -924,188 +1106,6 @@
         "label": "HandlerFunc",
         "start_byte": 3708,
         "end_byte": 3719
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          18,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 1332,
-        "end_byte": 1339
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          20,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 1526,
-        "end_byte": 1533
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          22,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 1703,
-        "end_byte": 1710
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          24,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 1888,
-        "end_byte": 1895
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          26,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 2073,
-        "end_byte": 2080
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          28,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 2251,
-        "end_byte": 2258
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          30,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 2439,
-        "end_byte": 2446
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          32,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 2622,
-        "end_byte": 2629
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          33,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 2739,
-        "end_byte": 2746
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          34,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 2847,
-        "end_byte": 2854
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          41,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 3239,
-        "end_byte": 3246
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          42,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 3351,
-        "end_byte": 3358
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          46,
-          3
-        ],
-        "type": "type_identifier",
-        "label": "IRoutes",
-        "start_byte": 3721,
-        "end_byte": 3728
       }
     }
   ],

@@ -116,69 +116,82 @@ func mergeAllSpans(hl *highlights, fileBytes []byte) {
 			continue
 		}
 
-		// Sort spans by their starting columns.
-		sort.Slice(lineSpans, func(i, j int) bool {
-			return lineSpans[i].startCol < lineSpans[j].startCol
-		})
-
-		var merged []span
-		curr := lineSpans[0]
-
-		for i := 1; i < len(lineSpans); i++ {
-			next := lineSpans[i]
-			canMerge := false
-
-			if curr.kind == next.kind {
-				gap := next.startCol - curr.endCol
-				if gap <= 3 {
-					// Check if the gap contains only non-word characters like spaces or punctuation.
-					onlyNonChars := true
-					if gap > 0 && line < len(lineIndex) {
-						lineStart := lineIndex[line]
-						gapStart := lineStart + curr.endCol
-						gapEnd := lineStart + next.startCol
-						if gapStart < len(fileBytes) && gapEnd <= len(fileBytes) {
-							onlyNonChars = isOnlyNonCharacters(fileBytes[gapStart:gapEnd])
-						}
-					}
-
-					if onlyNonChars {
-						// For updates and moves, make sure they share the same parents in the tree.
-						if curr.kind == kindUpdate || curr.kind == kindMove {
-							if curr.action != nil && next.action != nil {
-								if curr.action.GroupID != "" && curr.action.GroupID == next.action.GroupID {
-									canMerge = true
-								} else if curr.kind == kindUpdate {
-									canMerge = sharesLineage(curr.action.Parent, next.action.Parent)
-								} else {
-									// Moves must share both their original and destination lineage.
-									canMerge = sharesLineage(curr.action.Parent, next.action.Parent) &&
-										sharesLineage(curr.action.OldParent, next.action.OldParent)
-								}
-							}
-						} else {
-							// We can always merge inserts and deletes if there are no word characters in the gap.
-							canMerge = true
-						}
-					}
-				}
-			}
-
-			if canMerge {
-				// Extend current span to cover the next one.
-				if next.endCol > curr.endCol {
-					curr.endCol = next.endCol
-				}
-				if next.totalLen > curr.totalLen {
-					curr.totalLen = next.totalLen
-				}
-			} else {
-				merged = append(merged, curr)
-				curr = next
+		// Group spans by actionKind so spans of the same kind (e.g. moves)
+		// can merge across gaps without being blocked by interleaved spans of other kinds.
+		var spansByKind [4][]span
+		for _, s := range lineSpans {
+			if int(s.kind) >= 0 && int(s.kind) < len(spansByKind) {
+				spansByKind[int(s.kind)] = append(spansByKind[int(s.kind)], s)
 			}
 		}
-		merged = append(merged, curr)
-		hl.spans[line] = merged
+
+		var allMerged []span
+		for _, kSpans := range spansByKind {
+			if len(kSpans) == 0 {
+				continue
+			}
+			sort.Slice(kSpans, func(i, j int) bool {
+				return kSpans[i].startCol < kSpans[j].startCol
+			})
+
+			curr := kSpans[0]
+			for i := 1; i < len(kSpans); i++ {
+				next := kSpans[i]
+				canMerge := false
+
+				if curr.kind == next.kind {
+					gap := next.startCol - curr.endCol
+					if gap <= 3 {
+						// Check if the gap contains only non-word characters like spaces or punctuation.
+						onlyNonChars := true
+						if gap > 0 && line < len(lineIndex) {
+							lineStart := lineIndex[line]
+							gapStart := lineStart + curr.endCol
+							gapEnd := lineStart + next.startCol
+							if gapStart < len(fileBytes) && gapEnd <= len(fileBytes) {
+								onlyNonChars = isOnlyNonCharacters(fileBytes[gapStart:gapEnd])
+							}
+						}
+
+						if onlyNonChars {
+							// For updates and moves, make sure they share the same parents in the tree.
+							if curr.kind == kindUpdate || curr.kind == kindMove {
+								if curr.action != nil && next.action != nil {
+									if curr.action.GroupID != "" && curr.action.GroupID == next.action.GroupID {
+										canMerge = true
+									} else if curr.kind == kindUpdate {
+										canMerge = sharesLineage(curr.action.Parent, next.action.Parent)
+									} else {
+										// Moves must share both their original and destination lineage.
+										canMerge = sharesLineage(curr.action.Parent, next.action.Parent) &&
+											sharesLineage(curr.action.OldParent, next.action.OldParent)
+									}
+								}
+							} else {
+								// We can always merge inserts and deletes if there are no word characters in the gap.
+								canMerge = true
+							}
+						}
+					}
+				}
+
+				if canMerge {
+					// Extend current span to cover the next one.
+					if next.endCol > curr.endCol {
+						curr.endCol = next.endCol
+					}
+					if next.totalLen > curr.totalLen {
+						curr.totalLen = next.totalLen
+					}
+				} else {
+					allMerged = append(allMerged, curr)
+					curr = next
+				}
+			}
+			allMerged = append(allMerged, curr)
+		}
+
+		hl.spans[line] = allMerged
 	}
 }
 

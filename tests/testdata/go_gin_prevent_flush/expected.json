@@ -97,36 +97,6 @@
           4,
           0,
           1,
-          4
-        ],
-        "type": "block",
-        "start_byte": 3098,
-        "end_byte": 3114
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          25,
-          4,
-          0,
-          1
-        ],
-        "type": "if_statement",
-        "start_byte": 3050,
-        "end_byte": 3114
-      },
-      "position": 4,
-      "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          25,
-          4,
-          0,
-          1,
           1,
           0
         ],
@@ -253,7 +223,47 @@
       }
     },
     {
-      "action": "delete",
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "type": "dot",
+        "label": ".",
+        "start_byte": 3103,
+        "end_byte": 3104
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 3102,
+        "end_byte": 3109
+      },
+      "position": 1
+    },
+    {
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
@@ -269,7 +279,119 @@
         "label": "Flush",
         "start_byte": 3082,
         "end_byte": 3087
-      }
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 3102,
+        "end_byte": 3109
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 3050,
+        "end_byte": 3087
+      },
+      "old_position": 2,
+      "dest_start_byte": 3104,
+      "dest_end_byte": 3109
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 3109,
+        "end_byte": 3111
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        "type": "call_expression",
+        "start_byte": 3102,
+        "end_byte": 3111
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "type": "identifier",
+        "label": "f",
+        "start_byte": 3102,
+        "end_byte": 3103
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          25,
+          4,
+          0,
+          1,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 3102,
+        "end_byte": 3109
+      },
+      "position": 0
     },
     {
       "action": "delete",
@@ -285,21 +407,6 @@
         ],
         "type": "argument_list",
         "start_byte": 3087,
-        "end_byte": 3089
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          25,
-          4,
-          0,
-          1
-        ],
-        "type": "expression_statement",
-        "start_byte": 3050,
         "end_byte": 3089
       }
     }

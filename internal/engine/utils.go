@@ -143,6 +143,30 @@ func NearestMatchedAncestor(n *treesitter.ASTNode, m *Mapping, isDst bool) *tree
 	return nil
 }
 
+// SharedMatchedAncestor finds the nearest pair of ancestors (a1, a2) of t1 and t2
+// such that a1 in T1 is mapped to a2 in T2.
+func SharedMatchedAncestor(t1, t2 *treesitter.ASTNode, m *Mapping) (*treesitter.ASTNode, *treesitter.ASTNode) {
+	if t1 == nil || t2 == nil || m == nil {
+		return nil, nil
+	}
+	dstToSrc := make(map[*treesitter.ASTNode]*treesitter.ASTNode)
+	for curr1 := t1.Parent; curr1 != nil; curr1 = curr1.Parent {
+		if target, ok := m.Src()[curr1]; ok {
+			dstToSrc[target] = curr1
+		}
+	}
+	if len(dstToSrc) == 0 {
+		return nil, nil
+	}
+
+	for curr2 := t2.Parent; curr2 != nil; curr2 = curr2.Parent {
+		if a1, ok := dstToSrc[curr2]; ok {
+			return a1, curr2
+		}
+	}
+	return nil, nil
+}
+
 // AncestorNameSimilarity calculates the number of matching identifier labels
 // among the ancestors of t1 and t2. This helps break ties in top-down matching
 // by preferring pairs located in similarly named functions or classes.
@@ -230,4 +254,53 @@ func makeBigrams(s string) []string {
 		bigrams[i] = string(runes[i : i+2])
 	}
 	return bigrams
+}
+
+func hasWordChar(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if treesitter.IsWordChar(s[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// LeafSimilarity returns the Dice coefficient of non-trivial leaf labels between subtrees a and b.
+func LeafSimilarity(a, b *treesitter.ASTNode) float64 {
+	if a == nil || b == nil {
+		return 0.0
+	}
+	l1, l2 := a.LeafLabels(), b.LeafLabels()
+	intersection, total1, total2 := 0, 0, 0
+	for label, count1 := range l1 {
+		if !hasWordChar(label) {
+			continue
+		}
+		total1 += count1
+		if count2, ok := l2[label]; ok {
+			intersection += min(count1, count2)
+		}
+	}
+	for label, count2 := range l2 {
+		if hasWordChar(label) {
+			total2 += count2
+		}
+	}
+	if total1+total2 == 0 {
+		return 0.0
+	}
+	return 2.0 * float64(intersection) / float64(total1+total2)
+}
+
+// HasLongLeafToken reports whether a subtree contains any non-trivial leaf label with length > 3.
+func HasLongLeafToken(n *treesitter.ASTNode) bool {
+	if n == nil {
+		return false
+	}
+	for label := range n.LeafLabels() {
+		if len(label) > 3 && hasWordChar(label) {
+			return true
+		}
+	}
+	return false
 }
