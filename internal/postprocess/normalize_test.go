@@ -156,6 +156,49 @@ func TestNormalizeBareLiteralMovesKeepsCoherent(t *testing.T) {
 	}
 }
 
+func TestNormalizeBareLiteralMovesKeepsSiblingMoved(t *testing.T) {
+	// Move of an identifier where a sibling in the destination parent also moved from the same source parent.
+	srcParent := mkNode("for_statement", "")
+	srcNode1 := mkLeaf("for", "for")
+	srcNode2 := mkLeaf("identifier", "cookie")
+	srcParent.Children = []*treesitter.ASTNode{srcNode1, srcNode2}
+	srcNode1.Parent = srcParent
+	srcNode2.Parent = srcParent
+
+	dstParent := mkNode("for_in_clause", "")
+	dstNode1 := mkLeaf("for", "for")
+	dstNode2 := mkLeaf("identifier", "cookie")
+	dstParent.Children = []*treesitter.ASTNode{dstNode1, dstNode2}
+	dstNode1.Parent = dstParent
+	dstNode2.Parent = dstParent
+
+	ms := engine.NewMapping()
+	ms.Add(srcNode1, dstNode1)
+	ms.Add(srcNode2, dstNode2)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:   actions.Move,
+		Node:   srcNode1,
+		Parent: dstParent,
+	})
+	es.Add(actions.Action{
+		Type:   actions.Move,
+		Node:   srcNode2,
+		Parent: dstParent,
+	})
+
+	result := normalizeBareLiteralMoves(es, ms)
+	if result.Size() != 2 {
+		t.Fatalf("sibling moved literal should keep both moves, got %d actions", result.Size())
+	}
+	for _, a := range result.Actions() {
+		if a.Type != actions.Move {
+			t.Errorf("action should be Move, got %s", a.Type)
+		}
+	}
+}
+
 func TestNormalizeBareLiteralMovesNilMapping(t *testing.T) {
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Insert, Node: mkLeaf("id", "x")})

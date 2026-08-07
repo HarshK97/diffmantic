@@ -59,6 +59,18 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 	}
 	decisions := make(map[*treesitter.ASTNode]moveDecision)
 
+	// Pre-map destination nodes that have move actions
+	movedDstNodes := make(map[*treesitter.ASTNode]*actions.Action)
+	actionsSlice := es.Actions()
+	for i := range actionsSlice {
+		a := &actionsSlice[i]
+		if a.Type == actions.Move && a.Node != nil {
+			if dstNode := ms.Src()[a.Node]; dstNode != nil {
+				movedDstNodes[dstNode] = a
+			}
+		}
+	}
+
 	for _, a := range es.Actions() {
 		if a.Type != actions.Move || a.Node == nil || !isSpuriousMoveCandidate(a.Node) {
 			continue
@@ -72,7 +84,8 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 		if srcParent != nil {
 			dstParentMapped = ms.Src()[srcParent]
 		}
-		if dstParentMapped == nil || a.Parent != dstParentMapped {
+		sameParent := dstParentMapped != nil && a.Parent == dstParentMapped
+		if !sameParent && !hasMovedSiblingFromSameParent(a.Node, a.Parent, srcParent, movedDstNodes) {
 			decisions[a.Node] = moveDecision{
 				shouldNormalize: true,
 				dstNode:         dstNode,
@@ -209,4 +222,23 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 		result.Add(a)
 	}
 	return result
+}
+
+func hasMovedSiblingFromSameParent(
+	node *treesitter.ASTNode,
+	parent *treesitter.ASTNode,
+	srcParent *treesitter.ASTNode,
+	movedDstNodes map[*treesitter.ASTNode]*actions.Action,
+) bool {
+	if node == nil || srcParent == nil || parent == nil {
+		return false
+	}
+	for _, child := range parent.Children {
+		if act, ok := movedDstNodes[child]; ok && act != nil && act.Node != nil && act.Node != node {
+			if act.Node.Parent == srcParent {
+				return true
+			}
+		}
+	}
+	return false
 }
