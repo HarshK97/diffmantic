@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "cbce031327be4f1b4b5fd041ff4dcaa8efa2ce53",
+  "commit": "ef439eb779c1eba7cbdeeeb302b11e1e061b4b7d",
+  "message": "Prevent Response self-reference in redirect history (#7328)",
+  "author": "Nate Prewitt",
+  "date": "2026-04-05T08:31:02-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 1
+}

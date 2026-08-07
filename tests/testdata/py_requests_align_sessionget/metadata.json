@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "a4f9a5999bdb9bf2d6e7c8aa973b28cacb17134f",
+  "commit": "86b378d3f60f828daa13ca50aa82e287ff7b66b4",
+  "message": "Align Session.get parameters with requests.get (#7429)",
+  "author": "Nate Prewitt",
+  "date": "2026-05-11T12:24:34-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 0
+}

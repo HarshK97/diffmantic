@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "6e83187b8feb273ed4c6cdab5efd8d54901dfab3",
+  "commit": "cd90742ed94d901759e26766197d0ce7c7bd9c8e",
+  "message": "docs: indent continuation line in Session.get :param params: (#7460)",
+  "author": "aldbr",
+  "date": "2026-05-18T08:02:35-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/psf/requests",
+  "parent": "eb07385b025798baf921d3cb3b398c8794524fd9",
+  "commit": "61c324da43dd8b775d3930d76265538b3ca27bc1",
+  "message": "v2.28.2",
+  "author": "Nate Prewitt",
+  "date": "2023-01-12T09:16:09-07:00",
+  "language": "python",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}
