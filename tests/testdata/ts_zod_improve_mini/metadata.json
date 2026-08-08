@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/colinhacks/zod",
+  "parent": "21afffdb42ccab554036312e33fed0ea3cb8f982",
+  "commit": "e36743e513aadb307b29949a80d6eb0dcc8fc278",
+  "message": "Improve mini treeshaking",
+  "author": "Colin McDonnell",
+  "date": "2026-01-04T00:03:53-08:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

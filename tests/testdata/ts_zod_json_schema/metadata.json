@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/colinhacks/zod",
+  "parent": "0b3093dead737f808483e17ed000efd196754f45",
+  "commit": "7e9ad3f0333d3284f51db089af0eaccc5a333591",
+  "message": "Fix JSON Schema generation for `z.iso.time` with minute precision (#5557)\n\n* Fix JSON Schema generation for z.iso.time with minute precision\n\nWhen z.iso.time({ precision: -1 }) is used, Zod validates HH:MM format\nbut toJSONSchema() was generating format: \"time\" which requires HH:MM:SS\nper RFC 3339. This caused validation mismatches where payloads passed\nZod validation but failed JSON Schema validators.\n\nThe fix removes format: \"time\" when precision is -1, relying only on\nthe pattern regex which correctly validates the HH:MM format. Schemas\nwith precision >= 0 still include format: \"time\" as they comply with\nRFC 3339.\n\nAdded tests covering precision values: -1 (minute), 0 (second), and 3\n(millisecond) to ensure correct JSON Schema generation for each case.\n\nFixes #5542\n\n* Never use format=time for z.iso.time in JSON Schema\n\nJSON Schema format: \"time\" requires a full time with offset or Z.\nz.iso.time() does not include timezone information, so this format\nshould never be used regardless of precision settings.\n\n---------\n\nCo-authored-by: pullfrog <team@pullfrog.com>",
+  "author": "pullfrog[bot]",
+  "date": "2025-12-29T12:30:31-08:00",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 0
+}

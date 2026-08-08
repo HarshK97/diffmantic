@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/colinhacks/zod",
+  "parent": "76e8f706bb554de82234106de8299d0139cb3b8e",
+  "commit": "f0b0608ee300e609772405501ab4b219f0e19680",
+  "message": "ecosystem: `eslint-plugin-zod-x` is `eslint-plugin-zod` now (#5637)",
+  "author": "Marco Pasqualetti",
+  "date": "2026-04-29T08:25:14-07:00",
+  "language": "tsx",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

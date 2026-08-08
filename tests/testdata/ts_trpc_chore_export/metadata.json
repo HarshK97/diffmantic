@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/trpc/trpc",
+  "parent": "9111f0bab80a3f25384b5930b56005c2292cb874",
+  "commit": "62c6ab085f2ab0219811215436427fee2bc85c47",
+  "message": "chore: export `HTTPBatchStreamLinkOptions` (#7250)",
+  "author": "Anatol Zakrividoroga",
+  "date": "2026-03-15T11:58:04Z",
+  "language": "typescript",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

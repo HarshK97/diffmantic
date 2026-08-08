@@ -90,9 +90,31 @@ func TestParse(t *testing.T) {
 		}
 	})
 
+	t.Run("valid typescript source", func(t *testing.T) {
+		src := []byte(`interface User { id: number; name: string; } const u: User = { id: 1, name: "Alice" };`)
+		ast, err := Parse(src, "main.ts")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
 	t.Run("valid jsx source", func(t *testing.T) {
 		src := []byte(`const App = () => <div className="app">Hello</div>;`)
 		ast, err := Parse(src, "App.jsx")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
+	t.Run("valid tsx source", func(t *testing.T) {
+		src := []byte(`export const App = (): JSX.Element => <div><h1>Hello World</h1></div>;`)
+		ast, err := Parse(src, "main.tsx")
 		if err != nil {
 			t.Fatalf("Parse(): unexpected error: %v", err)
 		}

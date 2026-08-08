@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/colinhacks/zod",
+  "parent": "4c2fa95ce3f3390fbc522324e406b4e9e89b88f9",
+  "commit": "2aeec83eb135e3a83756e973ef44845fc5a455d2",
+  "message": "docs: prune lapsed gold sponsors and rebalance logo sizing\n\nRemove Brand.dev, Courier, Liblab, and Retool from the Gold tier\nbased on a sponsor audit (no recent payment in GitHub Sponsors or\neither Stripe account). Update Zernio's logo to the official primary\nwordmark, and add a per-logo h-12 override so dense wordmarks\n(Zernio, Stainless) read at the same visual weight as the others.",
+  "author": "Colin McDonnell",
+  "date": "2026-05-03T12:19:16-07:00",
+  "language": "tsx",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 20
+}
