@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "bd4ce688642ca6b0cebc3882ae00d695cc864e5d",
+  "commit": "ff2f286c120680f03182082a3fb97d69cd71d27d",
+  "message": "fs: fix `File::from_raw_fd` test (#5528)",
+  "author": "Tymoteusz Wiśniewski",
+  "date": "2023-03-04T11:45:42+01:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 3
+}

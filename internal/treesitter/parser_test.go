@@ -123,6 +123,17 @@ func TestParse(t *testing.T) {
 		}
 	})
 
+	t.Run("valid rust source", func(t *testing.T) {
+		src := []byte(`fn main() { println!("Hello, world!"); }`)
+		ast, err := Parse(src, "main.rs")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")

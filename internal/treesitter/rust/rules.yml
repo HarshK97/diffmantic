@@ -1,0 +1,136 @@
+flattened:
+  - string_literal
+  - raw_string_literal
+  - line_comment
+  - block_comment
+  - doc_comment
+aliased:
+  # Keywords
+  "if": "condition_declaration"
+  "else": "else"
+  "for": "for"
+  "while": "while"
+  "loop": "loop"
+  "match": "match"
+  "return": "return"
+  "break": "break"
+  "continue": "continue"
+  "fn": "fn"
+  "let": "let"
+  "const": "const"
+  "static": "static"
+  "mut": "mut"
+  "struct": "struct"
+  "enum": "enum"
+  "union": "union"
+  "trait": "trait"
+  "impl": "impl"
+  "type": "type"
+  "use": "use"
+  "pub": "pub"
+  "mod": "mod"
+  "async": "async"
+  "await": "await"
+  "unsafe": "unsafe"
+  "where": "where"
+  "extern": "extern"
+  "dyn": "dyn"
+  "ref": "ref"
+  "move": "move"
+  "as": "as"
+  "in": "in"
+
+  # Arithmetic operators
+  "+": arithmetic_operator_literal
+  "-": arithmetic_operator_literal
+  "*": arithmetic_operator_literal
+  "/": arithmetic_operator_literal
+  "%": arithmetic_operator_literal
+
+  # Comparison operators
+  "==": comparison_operator_literal
+  "!=": comparison_operator_literal
+  "<": comparison_operator_literal
+  "<=": comparison_operator_literal
+  ">": comparison_operator_literal
+  ">=": comparison_operator_literal
+
+  # Logical operators
+  "&&": logical_operator_literal
+  "||": logical_operator_literal
+  "!": unary_operator_literal
+
+  # Assignment operators
+  "=": assignment_operator_literal
+  "+=": assignment_operator_literal
+  "-=": assignment_operator_literal
+  "*=": assignment_operator_literal
+  "/=": assignment_operator_literal
+  "%=": assignment_operator_literal
+  "^=": assignment_operator_literal
+  "&=": assignment_operator_literal
+  "|=": assignment_operator_literal
+  "<<=": assignment_operator_literal
+  ">>=": assignment_operator_literal
+
+  # Bitwise operators
+  "&": bitwise_operator_literal
+  "|": bitwise_operator_literal
+  "^": bitwise_operator_literal
+  "<<": bitwise_operator_literal
+  ">>": bitwise_operator_literal
+
+  # Range operators
+  "..": range_operator_literal
+  "..=": range_operator_literal
+  "...": range_operator_literal
+
+  # Delimiters and operators
+  "->": arrow
+  "=>": fat_arrow
+  "::": path_separator
+  ".": dot
+  ",": comma
+  ";": semicolon
+  ":": colon
+  "@": at_symbol
+  "?": try_operator
+
+ignored:
+  - "\n"
+
+scaffolding:
+  - source_file
+  - block
+  - declaration_list
+  - field_declaration_list
+  - ordered_field_declaration_list
+  - enum_variant_list
+  - use_list
+  - type_parameters
+  - type_arguments
+  - parameters
+  - closure_parameters
+  - arguments
+  - parenthesized_expression
+  - tuple_expression
+  - array_expression
+  - struct_expression
+  - field_initializer_list
+  - match_block
+  - match_arm
+  - if_expression
+  - else_clause
+  - while_expression
+  - loop_expression
+  - for_expression
+  - function_item
+  - struct_item
+  - enum_item
+  - trait_item
+  - impl_item
+  - macro_definition
+  - macro_invocation
+  - let_declaration
+  - use_declaration
+  - expression_statement

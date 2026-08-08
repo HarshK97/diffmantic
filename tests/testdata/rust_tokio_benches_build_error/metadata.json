@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "f9ce18a52451fdc55c247f0901cebc3f9171e75a",
+  "commit": "17c7ce616c1c874cde33c137b04aa7e4223872f8",
+  "message": "benches: fix build error (#3769)",
+  "author": "Taiki Endo",
+  "date": "2021-05-09T22:26:20+09:00",
+  "language": "rust",
+  "files_changed": 3,
+  "insertions": 9,
+  "deletions": 1
+}

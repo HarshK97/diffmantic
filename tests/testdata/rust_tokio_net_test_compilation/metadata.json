@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "2298679af4f7b48ac181b54a3c526391d47c94b1",
+  "commit": "0a50cb3baa7493e82f5154e38d76a6cff7337676",
+  "message": "net: fix test compilation failure (#5506)",
+  "author": "Alice Ryhl",
+  "date": "2023-02-26T20:06:08+01:00",
+  "language": "rust",
+  "files_changed": 2,
+  "insertions": 2,
+  "deletions": 2
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "70364b707975b84daf223915d60a1610de2539a2",
+  "commit": "f6313f4382145a365dfd94a352a53f805a2f14ef",
+  "message": "task: fix stacked borrows issue in `JoinSet` (#5693)",
+  "author": "Alice Ryhl",
+  "date": "2023-05-15T17:55:52+02:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 20,
+  "deletions": 1
+}

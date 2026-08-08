@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "fc058b95617720e4e1fed973f62c654657f9128d",
+  "commit": "f71bded94361323e9bddd52f3d13559887e76884",
+  "message": "sync: fix typo in name of test (#6693)",
+  "author": "Ikko Eltociear Ashimine",
+  "date": "2024-07-18T18:05:16+09:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

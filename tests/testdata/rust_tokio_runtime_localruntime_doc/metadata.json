@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "fd2048dad1ccbb047bef0325d7f38f6e945a58ac",
+  "commit": "15f73666f18e0853fe1f730bbe8b9b1618fb1016",
+  "message": "runtime: fix `LocalRuntime` doc links (#7074)",
+  "author": "Thomas Schilling",
+  "date": "2025-01-06T15:49:42+01:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 4,
+  "deletions": 2
+}
