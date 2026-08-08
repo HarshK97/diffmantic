@@ -121,57 +121,6 @@
       "dest_end_byte": 6443
     },
     {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          22,
-          2,
-          5,
-          5,
-          3,
-          4,
-          1
-        ],
-        "type": "arguments",
-        "start_byte": 6358,
-        "end_byte": 6363
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          22,
-          2,
-          5,
-          5,
-          3,
-          4
-        ],
-        "type": "call_expression",
-        "start_byte": 6319,
-        "end_byte": 6448
-      },
-      "position": 1,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          22,
-          2,
-          5,
-          5,
-          3,
-          4
-        ],
-        "type": "call_expression",
-        "start_byte": 6319,
-        "end_byte": 6363
-      },
-      "old_position": 1,
-      "subtree": true,
-      "dest_start_byte": 6443,
-      "dest_end_byte": 6448
-    },
-    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -486,23 +435,6 @@
         "label": "split",
         "start_byte": 6353,
         "end_byte": 6358
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          22,
-          2,
-          5,
-          5,
-          3,
-          4
-        ],
-        "type": "call_expression",
-        "start_byte": 6319,
-        "end_byte": 6363
       }
     }
   ],
@@ -1497,10 +1429,6 @@
     },
     {
       "left_line": 247,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 247
     },
     {

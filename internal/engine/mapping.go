@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/HarshK97/diffmantic/internal/treesitter"
+import (
+	"slices"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+)
 
 // MappingPair is a single src→dst node mapping, kept for deterministic ordering.
 type MappingPair struct {
@@ -46,6 +50,9 @@ func (m *Mapping) Remove(t1 *treesitter.ASTNode) {
 		delete(m.dst, t2)
 	}
 	delete(m.src, t1)
+	m.Pairs = slices.DeleteFunc(m.Pairs, func(p MappingPair) bool {
+		return p.Src == t1
+	})
 }
 
 // Src exposes the T1->T2 map for use in Dice calculations.

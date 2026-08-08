@@ -209,3 +209,49 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 	}
 }
+
+// ContestContainers reassigns T2 containers that got greedily claimed by an inner T1 node
+// during bottom-up matching back to their proper outer T1 parent.
+//
+// Example: deleting an if-block can trick BottomUp into matching the if's inner block
+// to the outer function body (if they share something like a throw). That leaves the
+// real function body unmapped and generates a mess of spurious Move actions.
+func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	dstMap := m.Dst()
+
+	for _, t2 := range t2Root.PostOrder() {
+		if !m.HasDst(t2) || len(t2.Children) == 0 || t2.Parent == nil {
+			continue
+		}
+
+		currentT1 := dstMap[t2]
+
+		t1MappedParent := dstMap[t2.Parent]
+		if t1MappedParent == nil {
+			continue
+		}
+
+		// Already at the expected depth under the mapped parent — nothing to fix.
+		if currentT1.Parent == t1MappedParent {
+			continue
+		}
+
+		// T1 sits deeper than expected. Look for an unmapped sibling at the expected depth.
+		for _, candidate := range t1MappedParent.Children {
+			if candidate.Type != t2.Type || m.Has(candidate) {
+				continue
+			}
+			if !candidate.Contains(currentT1) {
+				continue
+			}
+
+			m.Remove(currentT1)
+			m.Add(candidate, t2)
+
+			if hasUnmappedChild(candidate, m.Has) && hasUnmappedChild(t2, m.HasDst) {
+				Recover(candidate, t2, m)
+			}
+			break
+		}
+	}
+}
