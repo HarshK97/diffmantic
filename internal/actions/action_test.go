@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -125,100 +126,86 @@ func TestNodeToString(t *testing.T) {
 
 func TestDeepCopyTree(t *testing.T) {
 	root := testutil.NodeAtRC("module", "", 0, 0)
+	root.ID = 0
 	child1 := testutil.NodeAtRC("function", "foo", 1, 0)
+	child1.ID = 1
 	child2 := testutil.NodeAtRC("function", "bar", 5, 0)
+	child2.ID = 2
 	testutil.Tree(root, child1, child2)
 	leaf := testutil.NodeAtRC("identifier", "x", 2, 4)
+	leaf.ID = 3
 	testutil.Tree(child1, leaf)
 
-	cr := deepCopyTree(root)
+	cs := &chawatheState{}
+	cs.init(root, root, engine.NewMapping())
 
-	if cr.root.Type != "module" {
+	if cs.cpySrc.nodeType != "module" {
 		t.Fatal("root type wrong")
 	}
-	if len(cr.root.Children) != 2 {
-		t.Fatalf("root children = %d, want 2", len(cr.root.Children))
+	if len(cs.cpySrc.children) != 2 {
+		t.Fatalf("root children = %d, want 2", len(cs.cpySrc.children))
 	}
-	if cr.root.Children[0].Label != "foo" {
+	if cs.cpySrc.children[0].label != "foo" {
 		t.Fatal("child1 label wrong")
 	}
-	if len(cr.root.Children[0].Children) != 1 {
+	if len(cs.cpySrc.children[0].children) != 1 {
 		t.Fatal("child1 should have 1 child")
 	}
 
-	if cr.origToCopy[root] != cr.root {
+	if cs.origToCopy[root] != cs.cpySrc {
 		t.Fatal("origToCopy[root] wrong")
 	}
-	if cr.copyToOrig[cr.root] != root {
+	if cs.cpySrc.orig != root {
 		t.Fatal("copyToOrig[root] wrong")
 	}
 
-	cr.root.Label = "mutated"
+	cs.cpySrc.label = "mutated"
 	if root.Label != "" {
 		t.Fatal("deep copy is not independent")
 	}
 }
 
-func TestFakeTree(t *testing.T) {
-	child := testutil.NodeAtRC("module", "", 0, 0)
-	fake := newFakeTree(child)
-
-	if fake.Type != fakeTreeType {
-		t.Errorf("FakeTree type = %q, want %q", fake.Type, fakeTreeType)
-	}
-	if len(fake.Children) != 1 || fake.Children[0] != child {
-		t.Fatal("FakeTree should wrap child")
-	}
-	if child.Parent != fake {
-		t.Fatal("child.Parent should be fake")
-	}
-}
-
 func TestInsertChild(t *testing.T) {
-	parent := testutil.NodeAtRC("block", "", 0, 0)
-	c1 := testutil.NodeAtRC("a", "", 0, 0)
-	c2 := testutil.NodeAtRC("b", "", 0, 0)
-	c3 := testutil.NodeAtRC("c", "", 0, 0)
+	parent := &cnode{nodeType: "block"}
+	c1 := &cnode{nodeType: "a"}
+	c2 := &cnode{nodeType: "b"}
+	c3 := &cnode{nodeType: "c"}
 
 	insertChild(parent, c1, 0)
 	insertChild(parent, c3, 1)
 	insertChild(parent, c2, 1)
 
-	if len(parent.Children) != 3 {
-		t.Fatalf("children count = %d, want 3", len(parent.Children))
+	if len(parent.children) != 3 {
+		t.Fatalf("children count = %d, want 3", len(parent.children))
 	}
-	if parent.Children[0] != c1 || parent.Children[1] != c2 || parent.Children[2] != c3 {
+	if parent.children[0] != c1 || parent.children[1] != c2 || parent.children[2] != c3 {
 		t.Fatalf("children order wrong")
 	}
-	if c2.Parent != parent {
+	if c2.parent != parent {
 		t.Fatal("inserted child parent not set")
 	}
 }
 
 func TestPositionInParent(t *testing.T) {
-	positionInParent := func(n *treesitter.ASTNode) int {
-		return n.ChildIndex()
-	}
-
 	parent := testutil.NodeAtRC("block", "", 0, 0)
 	c1 := testutil.NodeAtRC("a", "", 0, 0)
 	c2 := testutil.NodeAtRC("b", "", 0, 0)
 	c3 := testutil.NodeAtRC("c", "", 0, 0)
 	testutil.Tree(parent, c1, c2, c3)
 
-	if p := positionInParent(c1); p != 0 {
-		t.Errorf("positionInParent(c1) = %d, want 0", p)
+	if p := c1.ChildIndex(); p != 0 {
+		t.Errorf("c1.ChildIndex() = %d, want 0", p)
 	}
-	if p := positionInParent(c2); p != 1 {
-		t.Errorf("positionInParent(c2) = %d, want 1", p)
+	if p := c2.ChildIndex(); p != 1 {
+		t.Errorf("c2.ChildIndex() = %d, want 1", p)
 	}
-	if p := positionInParent(c3); p != 2 {
-		t.Errorf("positionInParent(c3) = %d, want 2", p)
+	if p := c3.ChildIndex(); p != 2 {
+		t.Errorf("c3.ChildIndex() = %d, want 2", p)
 	}
 
 	orphan := testutil.NodeAtRC("orphan", "", 0, 0)
-	if p := positionInParent(orphan); p != -1 {
-		t.Errorf("positionInParent(orphan) = %d, want -1", p)
+	if p := orphan.ChildIndex(); p != -1 {
+		t.Errorf("orphan.ChildIndex() = %d, want -1", p)
 	}
 }
 

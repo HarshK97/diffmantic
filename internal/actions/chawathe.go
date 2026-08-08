@@ -13,30 +13,49 @@ func GenerateEditScript(
 ) *EditScript {
 	s := &chawatheState{}
 	s.init(src, dst, ms)
-	defer func() {
-		if dst != nil {
-			dst.Parent = nil
-		}
-	}()
 	return s.generate()
 }
 
+// Chawathe Node, contain only necesssary attributes of ASTNode
+type cnode struct {
+	orig     *treesitter.ASTNode
+	nodeType string
+	label    string
+	parent   *cnode
+	children []*cnode
+}
+
+func (c *cnode) ChildIndex() int {
+	if c.parent == nil {
+		return -1
+	}
+	return slices.Index(c.parent.children, c)
+}
+
+func (c *cnode) PostOrder() []*cnode {
+	var nodes []*cnode
+	var traverse func(n *cnode)
+	traverse = func(n *cnode) {
+		for _, ch := range n.children {
+			traverse(ch)
+		}
+		nodes = append(nodes, n)
+	}
+	traverse(c)
+	return nodes
+}
+
 type chawatheState struct {
-	origSrc *treesitter.ASTNode
-	cpySrc  *treesitter.ASTNode
+	cpySrc  *cnode
 	origDst *treesitter.ASTNode
 
-	origMappings *engine.Mapping
-	cpyMappings  *engine.Mapping
+	cpySrcToDst map[*cnode]*treesitter.ASTNode
+	cpyDstToSrc map[*treesitter.ASTNode]*cnode
 
-	cpySrcToDst map[*treesitter.ASTNode]*treesitter.ASTNode
-	cpyDstToSrc map[*treesitter.ASTNode]*treesitter.ASTNode
-
-	origToCopy map[*treesitter.ASTNode]*treesitter.ASTNode
-	copyToOrig map[*treesitter.ASTNode]*treesitter.ASTNode
+	origToCopy map[*treesitter.ASTNode]*cnode
 
 	dstInOrder map[*treesitter.ASTNode]bool
-	srcInOrder map[*treesitter.ASTNode]bool
+	srcInOrder map[*cnode]bool
 
 	script *EditScript
 }
@@ -45,74 +64,96 @@ func (s *chawatheState) init(
 	src, dst *treesitter.ASTNode,
 	ms *engine.Mapping,
 ) {
-	s.origSrc = src
 	s.origDst = dst
-	s.origMappings = ms
 
-	cr := deepCopyTree(src)
-	s.cpySrc = cr.root
-	s.origToCopy = cr.origToCopy
-	s.copyToOrig = cr.copyToOrig
+	size := src.Size()
+	s.origToCopy = make(map[*treesitter.ASTNode]*cnode, size)
+	s.cpySrc = s.deepCopy(src, nil)
 
-	s.cpyMappings = engine.NewMapping()
+	s.cpySrcToDst = make(map[*cnode]*treesitter.ASTNode, len(ms.Pairs))
+	s.cpyDstToSrc = make(map[*treesitter.ASTNode]*cnode, len(ms.Pairs))
+
 	for _, p := range ms.Pairs {
 		if cpyNode, ok := s.origToCopy[p.Src]; ok {
-			s.cpyMappings.Add(cpyNode, p.Dst)
+			s.cpySrcToDst[cpyNode] = p.Dst
+			s.cpyDstToSrc[p.Dst] = cpyNode
 		}
 	}
-	s.cpySrcToDst = s.cpyMappings.Src()
-	s.cpyDstToSrc = s.cpyMappings.Dst()
+}
+
+func (s *chawatheState) deepCopy(n *treesitter.ASTNode, parent *cnode) *cnode {
+	if n == nil {
+		return nil
+	}
+	cn := &cnode{
+		orig:     n,
+		nodeType: n.Type,
+		label:    n.Label,
+		parent:   parent,
+	}
+	s.origToCopy[n] = cn
+	if len(n.Children) > 0 {
+		cn.children = make([]*cnode, 0, len(n.Children))
+		for _, child := range n.Children {
+			if cc := s.deepCopy(child, cn); cc != nil {
+				cn.children = append(cn.children, cc)
+			}
+		}
+	}
+	return cn
 }
 
 func (s *chawatheState) generate() *EditScript {
-	srcFakeRoot := newFakeTree(s.cpySrc)
-	dstFakeRoot := newFakeTree(s.origDst)
+	srcFakeRoot := &cnode{nodeType: fakeTreeType, children: []*cnode{s.cpySrc}}
+	s.cpySrc.parent = srcFakeRoot
+	dstFakeRoot := &treesitter.ASTNode{Type: fakeTreeType, Children: []*treesitter.ASTNode{s.origDst}}
 
 	s.script = NewEditScript()
 	s.dstInOrder = make(map[*treesitter.ASTNode]bool)
-	s.srcInOrder = make(map[*treesitter.ASTNode]bool)
+	s.srcInOrder = make(map[*cnode]bool)
 
-	s.cpyMappings.Add(srcFakeRoot, dstFakeRoot)
+	s.cpySrcToDst[srcFakeRoot] = dstFakeRoot
+	s.cpyDstToSrc[dstFakeRoot] = srcFakeRoot
 
 	for _, x := range s.origDst.LevelOrder() {
-		var w *treesitter.ASTNode
+		var w *cnode
 		y := x.Parent
 		z := s.cpyDstToSrc[y]
 
-		if !s.cpyMappings.HasDst(x) {
+		if _, hasDst := s.cpyDstToSrc[x]; !hasDst {
 			k := s.findPos(x)
-			w = &treesitter.ASTNode{Type: fakeTreeType}
+			w = &cnode{nodeType: fakeTreeType, orig: x}
 
 			s.script.Add(Action{
 				Type:     Insert,
 				Node:     x,
-				Parent:   s.copyToOrig[z],
+				Parent:   z.orig,
 				Position: k,
 			})
 
-			s.copyToOrig[w] = x
-			s.cpyMappings.Add(w, x)
+			s.cpySrcToDst[w] = x
+			s.cpyDstToSrc[x] = w
 			insertChild(z, w, k)
 		} else {
 			w = s.cpyDstToSrc[x]
 			if x != s.origDst {
-				v := w.Parent
+				v := w.parent
 
-				if w.Label != x.Label {
+				if w.label != x.Label {
 					s.script.Add(Action{
 						Type:  Update,
-						Node:  s.copyToOrig[w],
+						Node:  w.orig,
 						Value: x.Label,
 					})
-					w.Label = x.Label
+					w.label = x.Label
 				}
 
 				if z != v {
 					k := s.findPos(x)
 					s.script.Add(Action{
 						Type:     Move,
-						Node:     s.copyToOrig[w],
-						Parent:   s.copyToOrig[z],
+						Node:     w.orig,
+						Parent:   z.orig,
 						Position: k,
 					})
 
@@ -120,7 +161,7 @@ func (s *chawatheState) generate() *EditScript {
 
 					oldk := w.ChildIndex()
 					if oldk >= 0 {
-						w.Parent.Children = slices.Delete(w.Parent.Children, oldk, oldk+1)
+						w.parent.children = slices.Delete(w.parent.children, oldk, oldk+1)
 					}
 					insertChild(z, w, k)
 				}
@@ -133,10 +174,10 @@ func (s *chawatheState) generate() *EditScript {
 	}
 
 	for _, w := range s.cpySrc.PostOrder() {
-		if !s.cpyMappings.Has(w) {
+		if _, hasSrc := s.cpySrcToDst[w]; !hasSrc {
 			s.script.Add(Action{
 				Type: Delete,
-				Node: s.copyToOrig[w],
+				Node: w.orig,
 			})
 		}
 	}
@@ -175,16 +216,16 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 	return upos + 1
 }
 
-func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
-	for _, c := range w.Children {
+func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
+	for _, c := range w.children {
 		delete(s.srcInOrder, c)
 	}
 	for _, c := range x.Children {
 		delete(s.dstInOrder, c)
 	}
 
-	var s1 []*treesitter.ASTNode
-	for _, c := range w.Children {
+	var s1 []*cnode
+	for _, c := range w.children {
 		if dst, ok := s.cpySrcToDst[c]; ok {
 			if dst.Parent == x {
 				s1 = append(s1, c)
@@ -195,7 +236,7 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 	var s2 []*treesitter.ASTNode
 	for _, c := range x.Children {
 		if src, ok := s.cpyDstToSrc[c]; ok {
-			if src.Parent == w {
+			if src.parent == w {
 				s2 = append(s2, c)
 			}
 		}
@@ -203,11 +244,11 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 
 	lcsPairs := s.lcs(s1, s2)
 
-	lcsSet := make(map[*treesitter.ASTNode]bool)
+	lcsSet := make(map[*cnode]bool)
 	for _, pair := range lcsPairs {
-		s.srcInOrder[pair[0]] = true
-		s.dstInOrder[pair[1]] = true
-		lcsSet[pair[0]] = true
+		s.srcInOrder[pair.src] = true
+		s.dstInOrder[pair.dst] = true
+		lcsSet[pair.src] = true
 	}
 
 	for _, b := range s2 {
@@ -215,14 +256,14 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 			if src, ok := s.cpySrcToDst[a]; ok && src == b {
 				if !lcsSet[a] {
 					if idx := a.ChildIndex(); idx >= 0 {
-						a.Parent.Children = slices.Delete(a.Parent.Children, idx, idx+1)
+						a.parent.children = slices.Delete(a.parent.children, idx, idx+1)
 					}
 
 					k := s.findPos(b)
 					s.script.Add(Action{
 						Type:     Move,
-						Node:     s.copyToOrig[a],
-						Parent:   s.copyToOrig[w],
+						Node:     a.orig,
+						Parent:   w.orig,
 						Position: k,
 					})
 
@@ -238,10 +279,15 @@ func (s *chawatheState) alignChildren(w, x *treesitter.ASTNode) {
 	}
 }
 
+type lcsPair struct {
+	src *cnode
+	dst *treesitter.ASTNode
+}
+
 func (s *chawatheState) lcs(
-	x []*treesitter.ASTNode,
+	x []*cnode,
 	y []*treesitter.ASTNode,
-) [][2]*treesitter.ASTNode {
+) []lcsPair {
 	m := len(x)
 	n := len(y)
 	if m == 0 || n == 0 {
@@ -250,7 +296,7 @@ func (s *chawatheState) lcs(
 
 	if m == 1 && n == 1 {
 		if s.cpyDstToSrc[y[0]] == x[0] {
-			return [][2]*treesitter.ASTNode{{x[0], y[0]}}
+			return []lcsPair{{x[0], y[0]}}
 		}
 		return nil
 	}
@@ -262,8 +308,8 @@ func (s *chawatheState) lcs(
 		for j := n - 1; j >= 0; j-- {
 			if s.cpyDstToSrc[y[j]] == x[i] {
 				score := 1.0
-				if x[i].Parent != nil && y[j].Parent != nil {
-					idxX := slices.Index(x[i].Parent.Children, x[i])
+				if x[i].parent != nil && y[j].Parent != nil {
+					idxX := slices.Index(x[i].parent.children, x[i])
 					idxY := slices.Index(y[j].Parent.Children, y[j])
 					if idxX == idxY && idxX != -1 {
 						score += 0.01
@@ -276,11 +322,11 @@ func (s *chawatheState) lcs(
 		}
 	}
 
-	var pairs [][2]*treesitter.ASTNode
+	var pairs []lcsPair
 	i, j := 0, 0
 	for i < m && j < n {
 		if s.cpyDstToSrc[y[j]] == x[i] {
-			pairs = append(pairs, [2]*treesitter.ASTNode{x[i], y[j]})
+			pairs = append(pairs, lcsPair{x[i], y[j]})
 			i++
 			j++
 		} else if opt[(i+1)*stride+j] >= opt[i*stride+(j+1)] {
@@ -295,73 +341,21 @@ func (s *chawatheState) lcs(
 
 const fakeTreeType = "__fake_root__"
 
-type copyResult struct {
-	root       *treesitter.ASTNode
-	origToCopy map[*treesitter.ASTNode]*treesitter.ASTNode
-	copyToOrig map[*treesitter.ASTNode]*treesitter.ASTNode
+func insertChild(parent, child *cnode, k int) {
+	child.parent = parent
+	k = max(0, min(k, len(parent.children)))
+	parent.children = slices.Insert(parent.children, k, child)
 }
 
-func deepCopyTree(n *treesitter.ASTNode) *copyResult {
-	size := n.Size()
-	o2c := make(map[*treesitter.ASTNode]*treesitter.ASTNode, size)
-	c2o := make(map[*treesitter.ASTNode]*treesitter.ASTNode, size)
-	root := deepCopyNode(n, nil, o2c, c2o)
-	return &copyResult{root: root, origToCopy: o2c, copyToOrig: c2o}
-}
-
-func deepCopyNode(
-	n, parent *treesitter.ASTNode,
-	o2c, c2o map[*treesitter.ASTNode]*treesitter.ASTNode,
-) *treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	cp := &treesitter.ASTNode{
-		Type:      n.Type,
-		Label:     n.Label,
-		Parent:    parent,
-		StartByte: n.StartByte,
-		EndByte:   n.EndByte,
-		StartRow:  n.StartRow,
-		StartCol:  n.StartCol,
-		EndRow:    n.EndRow,
-		EndCol:    n.EndCol,
-	}
-	o2c[n] = cp
-	c2o[cp] = n
-	for _, child := range n.Children {
-		cc := deepCopyNode(child, cp, o2c, c2o)
-		if cc != nil {
-			cp.Children = append(cp.Children, cc)
-		}
-	}
-	return cp
-}
-
-func newFakeTree(child *treesitter.ASTNode) *treesitter.ASTNode {
-	fake := &treesitter.ASTNode{Type: fakeTreeType}
-	if child != nil {
-		fake.Children = []*treesitter.ASTNode{child}
-		child.Parent = fake
-	}
-	return fake
-}
-
-func insertChild(parent, child *treesitter.ASTNode, k int) {
-	child.Parent = parent
-	k = max(0, min(k, len(parent.Children)))
-	parent.Children = slices.Insert(parent.Children, k, child)
-}
-
-func (s *chawatheState) addDescendantMoves(n *treesitter.ASTNode) {
-	var traverse func(curr *treesitter.ASTNode)
-	traverse = func(curr *treesitter.ASTNode) {
-		for _, child := range curr.Children {
+func (s *chawatheState) addDescendantMoves(n *cnode) {
+	var traverse func(curr *cnode)
+	traverse = func(curr *cnode) {
+		for _, child := range curr.children {
 			if dst, ok := s.cpySrcToDst[child]; ok {
 				pos := max(0, dst.ChildIndex())
 				s.script.Add(Action{
 					Type:     Move,
-					Node:     s.copyToOrig[child],
+					Node:     child.orig,
 					Parent:   dst.Parent,
 					Position: pos,
 				})
