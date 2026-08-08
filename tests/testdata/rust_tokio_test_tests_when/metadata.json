@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "c8f3539bc11e57843745c68ee60ca5276248f9f9",
+  "commit": "4825c444eb29b05c9c0b6f4a4c89475cb2556c65",
+  "message": "test: fix tests when '-' is absent from kernel version (#6681)\n\nOn my machine, any test that calls `is_pidfd_available` fails as my",
+  "author": "Matthew Leach",
+  "date": "2024-07-14T05:38:23+01:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 1
+}

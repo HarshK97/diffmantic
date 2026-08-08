@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "91d3b4c0bccf2234fc3ed19e605e2cd402f19437",
+  "commit": "eb4988dc2ecb85d2617971fbbabc84938c141bfd",
+  "message": "time: fix the loom test of the race between cancellation/insertion (#8302)",
+  "author": "ADD-SP",
+  "date": "2026-07-20T19:10:31+08:00",
+  "language": "rust",
+  "files_changed": 2,
+  "insertions": 37,
+  "deletions": 33
+}

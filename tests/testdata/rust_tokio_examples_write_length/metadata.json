@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "3eb515e1a706dd37f60516bd0f040434644de7a9",
+  "commit": "c9b4e4c1101ba7c8fbcec0ffe5516d928d30d669",
+  "message": "examples: fix the write length in the `connect-tcp` example (#7581)\n\nSigned-off-by: Martin Tzvetanov Grigorov <mgrigorov@apache.org>",
+  "author": "Martin Grigorov",
+  "date": "2025-09-06T10:49:07+03:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

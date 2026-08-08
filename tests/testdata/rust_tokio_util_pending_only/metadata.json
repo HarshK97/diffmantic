@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "6dc4f85f0bf1d5c22c15187a2b8cb78784ab4bda",
+  "commit": "86de2e306b91eb9a6de7aa5a38e3359789f27bf4",
+  "message": "util: fix `pending_only_on_first_poll_with_cancellation_token_owned_test` to use an owned cancellation token (#7613)\n\nThe name of the test suggests that it should test the",
+  "author": "Martin Grigorov",
+  "date": "2025-09-15T10:22:42+03:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

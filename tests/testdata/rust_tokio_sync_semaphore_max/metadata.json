@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "92d33b718142b1f952aef5ab9e3b09adb0a26548",
+  "commit": "822af18cf5fde60b134943067647ee35405c3797",
+  "message": "sync: fix `Semaphore::MAX_PERMITS` test (#5582)",
+  "author": "Alice Ryhl",
+  "date": "2023-03-25T19:09:05+01:00",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 8,
+  "deletions": 2
+}

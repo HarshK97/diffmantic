@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "2438b436716ed21432b809a21024f54caebab887",
+  "commit": "19618905dea0d45a91e30d614b910514673dd01c",
+  "message": "time: fix test-util requirement for pause and resume in docs (#6503)",
+  "author": "Jainil Patel",
+  "date": "2024-04-21T17:42:36+05:30",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 2
+}

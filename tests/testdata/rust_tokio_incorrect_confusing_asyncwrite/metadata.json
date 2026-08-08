@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/tokio-rs/tokio",
+  "parent": "0d6c7af3e43457350bdc03a6dbcafa276fab7352",
+  "commit": "f61374f931a55357dcc20a9d9b55cc0c509f90f3",
+  "message": "io: fix incorrect and confusing AsyncWrite documentation (#7875)",
+  "author": "Muzzaiyyan Hussain",
+  "date": "2026-02-03T20:52:34+05:30",
+  "language": "rust",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 4
+}
