@@ -48,86 +48,6 @@
       "position": 1
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          44,
-          4,
-          0
-        ],
-        "type": "string",
-        "label": "\"\"\"Returns a key/value dictionary from a CookieJar.\n\n    :param cj: CookieJar object to extract cookies from.\n    :rtype: dict\n    \"\"\"",
-        "start_byte": 14942,
-        "end_byte": 15076
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          44,
-          4,
-          0
-        ],
-        "type": "string",
-        "label": "\"\"\"Returns a key/value dictionary from a CookieJar.\n\n    :param cj: CookieJar object to extract cookies from.\n    :rtype: dict\n    \"\"\"",
-        "start_byte": 14942,
-        "end_byte": 15076
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          44,
-          4
-        ],
-        "type": "block",
-        "start_byte": 14942,
-        "end_byte": 15163
-      },
-      "position": 0
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          44,
-          4,
-          3
-        ],
-        "type": "return_statement",
-        "start_byte": 15175,
-        "end_byte": 15193
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          44,
-          4
-        ],
-        "type": "block",
-        "start_byte": 14942,
-        "end_byte": 15163
-      },
-      "position": 2,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          44,
-          4
-        ],
-        "type": "block",
-        "start_byte": 14942,
-        "end_byte": 15193
-      },
-      "old_position": 3,
-      "subtree": true,
-      "dest_start_byte": 15145,
-      "dest_end_byte": 15163
-    },
-    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -551,11 +471,12 @@
         "path": [
           44,
           4,
-          2
+          2,
+          5
         ],
-        "type": "for_statement",
-        "start_byte": 15104,
-        "end_byte": 15130
+        "type": "block",
+        "start_byte": 15130,
+        "end_byte": 15169
       }
     },
     {
@@ -564,11 +485,12 @@
         "tree": "before",
         "path": [
           44,
-          4
+          4,
+          2
         ],
-        "type": "block",
-        "start_byte": 14942,
-        "end_byte": 15193
+        "type": "for_statement",
+        "start_byte": 15104,
+        "end_byte": 15130
       }
     }
   ],
@@ -2443,7 +2365,7 @@
     },
     {
       "left_line": 467,
-      "right_line": -1
+      "right_line": 467
     },
     {
       "left_line": 468,
@@ -2451,7 +2373,7 @@
     },
     {
       "left_line": 469,
-      "right_line": 467
+      "right_line": -1
     },
     {
       "left_line": 470,
@@ -2467,10 +2389,6 @@
     },
     {
       "left_line": 473,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 469
     },
     {

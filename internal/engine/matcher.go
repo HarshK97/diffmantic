@@ -25,6 +25,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 	TopDown(t1, t2, minHeight, mappings, part)
 	matchDeclarations(t1, t2, mappings)
 	BottomUp(t1, t2, mappings, minDice)
+	ContestContainers(t1, t2, mappings)
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
 	RollupMatchedContainers(t1, t2, mappings)
