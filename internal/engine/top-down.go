@@ -7,6 +7,12 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+type scoredPair struct {
+	pair   [2]*treesitter.ASTNode
+	dice   float64
+	ancSim int
+}
+
 // TopDown matches largest isomorphic subtrees top-down by height.
 func TopDown(
 	t1Root, t2Root *treesitter.ASTNode,
@@ -20,6 +26,8 @@ func TopDown(
 
 	l1.Push(t1Root)
 	l2.Push(t2Root)
+
+	h2ByHash := make(map[uint64][]*treesitter.ASTNode)
 
 	for min(l1.PeekMax(), l2.PeekMax()) >= minHeight {
 		if l1.PeekMax() != l2.PeekMax() {
@@ -36,15 +44,28 @@ func TopDown(
 			H1 := l1.Pop()
 			H2 := l2.Pop()
 
+			clear(h2ByHash)
+			for _, t2 := range H2 {
+				if t2.Hash == 0 {
+					t2.ComputeHashes()
+				}
+				h2ByHash[t2.Hash] = append(h2ByHash[t2.Hash], t2)
+			}
+
 			for _, t1 := range H1 {
-				for _, t2 := range H2 {
+				if t1.Hash == 0 {
+					t1.ComputeHashes()
+				}
+
+				candidates := h2ByHash[t1.Hash]
+				for _, t2 := range candidates {
 					if part != nil && !part.CanMatch(t1, t2) {
 						continue
 					}
 					if Isomorphic(t1, t2) {
 						ambiguous := false
 
-						for _, ta := range H2 {
+						for _, ta := range candidates {
 							if ta != t2 && Isomorphic(t1, ta) {
 								ambiguous = true
 								break
@@ -68,31 +89,38 @@ func TopDown(
 				}
 			}
 
-			openUnmatched(H1, H2, m.Has, 0, A, l1)
-			openUnmatched(H2, H1, m.HasDst, 1, A, l2)
+			openUnmatched(H1, m.Has, 0, A, l1)
+			openUnmatched(H2, m.HasDst, 1, A, l2)
 		}
 	}
 
-	sort.SliceStable(A, func(i, j int) bool {
-		di := Dice(A[i][0].Parent, A[i][1].Parent, m.Src())
-		dj := Dice(A[j][0].Parent, A[j][1].Parent, m.Src())
-		if di != dj {
-			return di > dj
+	scored := make([]scoredPair, len(A))
+	for i, pair := range A {
+		di := Dice(pair[0].Parent, pair[1].Parent, m.Src())
+		si := AncestorNameSimilarity(pair[0], pair[1])
+		scored[i] = scoredPair{pair: pair, dice: di, ancSim: si}
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].dice != scored[j].dice {
+			return scored[i].dice > scored[j].dice
 		}
-		si := AncestorNameSimilarity(A[i][0], A[i][1])
-		sj := AncestorNameSimilarity(A[j][0], A[j][1])
-		return si > sj
+		return scored[i].ancSim > scored[j].ancSim
 	})
 
-	for len(A) > 0 {
-		pair := A[0]
-		A = A[1:]
+	for len(scored) > 0 {
+		pair := scored[0].pair
+		scored = scored[1:]
 		t1, t2 := pair[0], pair[1]
+
+		if m.Has(t1) || m.HasDst(t2) {
+			continue
+		}
 
 		addIsomorphicPairs(t1, t2, m)
 
-		A = slices.DeleteFunc(A, func(p [2]*treesitter.ASTNode) bool {
-			return p[0] == t1 || p[1] == t2
+		scored = slices.DeleteFunc(scored, func(sp scoredPair) bool {
+			return sp.pair[0] == t1 || sp.pair[1] == t2
 		})
 	}
 }
@@ -146,26 +174,14 @@ func (l *priorityList) Open(t *treesitter.ASTNode) {
 }
 
 func openUnmatched(
-	nodes, partners []*treesitter.ASTNode,
+	nodes []*treesitter.ASTNode,
 	hasFn func(*treesitter.ASTNode) bool,
 	pairIdx int,
 	candidates [][2]*treesitter.ASTNode,
 	targetList *priorityList,
 ) {
 	for _, n := range nodes {
-		matched := false
-		for _, partner := range partners {
-			if Isomorphic(n, partner) && hasFn(n) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			matched = slices.ContainsFunc(candidates, func(p [2]*treesitter.ASTNode) bool {
-				return p[pairIdx] == n
-			})
-		}
-		if !matched {
+		if !hasFn(n) && !slices.ContainsFunc(candidates, func(p [2]*treesitter.ASTNode) bool { return p[pairIdx] == n }) {
 			targetList.Open(n)
 		}
 	}
