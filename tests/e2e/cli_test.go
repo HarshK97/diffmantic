@@ -9,6 +9,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -222,5 +223,41 @@ func TestCLI_OneArg(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "accepts 2 arg(s)") {
 		t.Errorf("expected arg count error, got: %s", stderr)
+	}
+}
+
+func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "large_old.ts")
+	newPath := filepath.Join(dir, "large_new.ts")
+
+	var oldBuilder, newBuilder strings.Builder
+	for i := 0; i < 15000; i++ {
+		fmt.Fprintf(&oldBuilder, "const variable_%d: number = %d;\n", i, i)
+		fmt.Fprintf(&newBuilder, "const variable_%d: number = %d;\n", i, i+1)
+	}
+
+	if err := os.WriteFile(oldPath, []byte(oldBuilder.String()), 0o644); err != nil {
+		t.Fatalf("writing old file: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(newBuilder.String()), 0o644); err != nil {
+		t.Fatalf("writing new file: %v", err)
+	}
+
+	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json")
+	if err != nil {
+		t.Fatalf("diffm failed on >400KB file: %v\nstderr: %s", err, stderr)
+	}
+
+	var envelope serialize.Envelope
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatalf("invalid JSON output on >400KB file fallback: %v", err)
+	}
+
+	if envelope.Version == "" {
+		t.Error("missing version in JSON output")
+	}
+	if len(envelope.LineAlignment) == 0 {
+		t.Error("expected line alignment entries in fallback envelope")
 	}
 }
