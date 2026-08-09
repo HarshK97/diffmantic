@@ -1,0 +1,6 @@
+{
+  "repo": "./dataset/cpp_gtest/_clones/googletest",
+  "commit": "f269e15c5cafa4ba7f4b543e0c395646bbbbd32d",
+  "message": "Resolve an issue where the resolution of `operator<<` overloads would attempt to instantiate the incomplete `testing::internal::Secret` type.",
+  "action_count": 545
+}

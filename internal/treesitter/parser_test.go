@@ -18,6 +18,11 @@ func TestDetectLanguage(t *testing.T) {
 		{"test.rs", false},
 		{"test.c", false},
 		{"test.cpp", false},
+		{"test.hpp", false},
+		{"test.cc", false},
+		{"test.cxx", false},
+		{"test.hh", false},
+		{"test.h", false},
 		{"test.cs", false},
 		{"test.java", false},
 		{"test.json", false},
@@ -137,6 +142,18 @@ func TestParse(t *testing.T) {
 	t.Run("valid c source", func(t *testing.T) {
 		src := []byte(`#include <stdio.h>\nint main() { printf("Hello world\n"); return 0; }`)
 		ast, err := Parse(src, "main.c")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
+	t.Run("valid cpp source", func(t *testing.T) {
+		src := []byte(`#include <iostream>
+int main() { std::cout << "Hello C++\n"; return 0; }`)
+		ast, err := Parse(src, "main.cpp")
 		if err != nil {
 			t.Fatalf("Parse(): unexpected error: %v", err)
 		}

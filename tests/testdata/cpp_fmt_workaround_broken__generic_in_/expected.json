@@ -1,0 +1,1329 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          0
+        ],
+        "type": "placeholder_type_specifier",
+        "start_byte": 1316,
+        "end_byte": 1320
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0
+        ],
+        "type": "declaration",
+        "start_byte": 1323,
+        "end_byte": 1450
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4
+        ],
+        "type": "declaration",
+        "start_byte": 1316,
+        "end_byte": 1432
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 1323,
+      "dest_end_byte": 1327
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "format_args_view",
+        "start_byte": 1321,
+        "end_byte": 1337
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1
+        ],
+        "type": "init_declarator",
+        "start_byte": 1328,
+        "end_byte": 1449
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1
+        ],
+        "type": "init_declarator",
+        "start_byte": 1321,
+        "end_byte": 1431
+      },
+      "old_position": 0,
+      "dest_start_byte": 1328,
+      "dest_end_byte": 1334
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          1
+        ],
+        "type": "assignment_operator_literal",
+        "label": "=",
+        "start_byte": 1338,
+        "end_byte": 1339
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "assignment_operator_literal",
+        "label": "=",
+        "start_byte": 1335,
+        "end_byte": 1336
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1
+        ],
+        "type": "init_declarator",
+        "start_byte": 1328,
+        "end_byte": 1449
+      },
+      "position": 1
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2,
+          0,
+          0
+        ],
+        "type": "identifier",
+        "label": "format_args",
+        "start_byte": 1391,
+        "end_byte": 1402
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          0,
+          2
+        ],
+        "type": "identifier",
+        "label": "format_args",
+        "start_byte": 1396,
+        "end_byte": 1407
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          0
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1391,
+        "end_byte": 1407
+      },
+      "position": 2
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2,
+          7
+        ],
+        "type": "case_statement",
+        "start_byte": 1114,
+        "end_byte": 1181
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 586,
+        "end_byte": 1306
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 586,
+        "end_byte": 1308
+      },
+      "old_position": 7,
+      "subtree": true,
+      "dest_start_byte": 733,
+      "dest_end_byte": 799,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2,
+          6
+        ],
+        "type": "case_statement",
+        "start_byte": 1042,
+        "end_byte": 1109
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 586,
+        "end_byte": 1306
+      },
+      "position": 3,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 586,
+        "end_byte": 1308
+      },
+      "old_position": 6,
+      "subtree": true,
+      "dest_start_byte": 804,
+      "dest_end_byte": 870,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2,
+          5
+        ],
+        "type": "case_statement",
+        "start_byte": 973,
+        "end_byte": 1037
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 586,
+        "end_byte": 1306
+      },
+      "position": 8,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          3,
+          5,
+          0,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 586,
+        "end_byte": 1308
+      },
+      "old_position": 5,
+      "subtree": true,
+      "dest_start_byte": 1184,
+      "dest_end_byte": 1248,
+      "group_id": "group-1"
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "format_args_view",
+        "start_byte": 1321,
+        "end_byte": 1337
+      },
+      "old_value": "format_args_view",
+      "new_value": "result",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "result",
+        "start_byte": 1328,
+        "end_byte": 1334
+      }
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          0
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1460,
+        "end_byte": 1477
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2
+        ],
+        "type": "call_expression",
+        "start_byte": 1337,
+        "end_byte": 1449
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2
+        ],
+        "type": "call_expression",
+        "start_byte": 1460,
+        "end_byte": 1514
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 1337,
+      "dest_end_byte": 1354
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "buffer",
+        "start_byte": 1478,
+        "end_byte": 1484
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1477,
+        "end_byte": 1514
+      },
+      "old_position": 0,
+      "dest_start_byte": 1364,
+      "dest_end_byte": 1370,
+      "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1,
+          2
+        ],
+        "type": "identifier",
+        "label": "size",
+        "start_byte": 1486,
+        "end_byte": 1490
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1477,
+        "end_byte": 1514
+      },
+      "old_position": 2,
+      "dest_start_byte": 1372,
+      "dest_end_byte": 1376,
+      "group_id": "group-2"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1,
+          4
+        ],
+        "type": "identifier",
+        "label": "fmt",
+        "start_byte": 1492,
+        "end_byte": 1495
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 4,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1477,
+        "end_byte": 1514
+      },
+      "old_position": 4,
+      "dest_start_byte": 1378,
+      "dest_end_byte": 1381,
+      "group_id": "group-2"
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6
+        ],
+        "type": "call_expression",
+        "start_byte": 1391,
+        "end_byte": 1448
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 6
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        "type": "namespace_identifier",
+        "label": "fmt",
+        "start_byte": 1340,
+        "end_byte": 1343
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          0
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1391,
+        "end_byte": 1407
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          0,
+          0
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1340,
+        "end_byte": 1362
+      },
+      "old_position": 0,
+      "dest_start_byte": 1391,
+      "dest_end_byte": 1394
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          0,
+          0,
+          1
+        ],
+        "type": "scope_resolution",
+        "label": "::",
+        "start_byte": 1343,
+        "end_byte": 1345
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          0,
+          1
+        ],
+        "type": "scope_resolution",
+        "label": "::",
+        "start_byte": 1394,
+        "end_byte": 1396
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          0
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1391,
+        "end_byte": 1407
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "format_args",
+        "start_byte": 1408,
+        "end_byte": 1419
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1407,
+        "end_byte": 1448
+      },
+      "position": 0
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2,
+          0,
+          2
+        ],
+        "type": "call_expression",
+        "start_byte": 1404,
+        "end_byte": 1430
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1407,
+        "end_byte": 1448
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2,
+          0
+        ],
+        "type": "comma_expression",
+        "start_byte": 1391,
+        "end_byte": 1430
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 1421,
+      "dest_end_byte": 1447
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          0,
+          0,
+          2
+        ],
+        "type": "identifier",
+        "label": "basic_format_args",
+        "start_byte": 1345,
+        "end_byte": 1362
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6
+        ],
+        "type": "identifier",
+        "label": "format_args_view",
+        "start_byte": 1497,
+        "end_byte": 1513
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          0,
+          1
+        ],
+        "type": "comparison_operator_literal",
+        "label": "\u003c",
+        "start_byte": 1362,
+        "end_byte": 1363
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          0,
+          2
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1363,
+        "end_byte": 1382
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          1
+        ],
+        "type": "comparison_operator_literal",
+        "label": "\u003e",
+        "start_byte": 1382,
+        "end_byte": 1383
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2
+        ],
+        "type": "parenthesized_expression",
+        "start_byte": 1383,
+        "end_byte": 1431
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2
+        ],
+        "type": "binary_expression",
+        "start_byte": 1340,
+        "end_byte": 1431
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          0
+        ],
+        "type": "placeholder_type_specifier",
+        "start_byte": 1446,
+        "end_byte": 1450
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "identifier",
+        "label": "result",
+        "start_byte": 1451,
+        "end_byte": 1457
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          5,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "assignment_operator_literal",
+        "label": "=",
+        "start_byte": 1458,
+        "end_byte": 1459
+      }
+    }
+  ],
+  "line_alignment": [
+    {
+      "left_line": 0,
+      "right_line": 0
+    },
+    {
+      "left_line": 1,
+      "right_line": 1
+    },
+    {
+      "left_line": 2,
+      "right_line": 2
+    },
+    {
+      "left_line": 3,
+      "right_line": 3
+    },
+    {
+      "left_line": 4,
+      "right_line": 4
+    },
+    {
+      "left_line": 5,
+      "right_line": 5
+    },
+    {
+      "left_line": 6,
+      "right_line": 6
+    },
+    {
+      "left_line": 7,
+      "right_line": 7
+    },
+    {
+      "left_line": 8,
+      "right_line": 8
+    },
+    {
+      "left_line": 9,
+      "right_line": 9
+    },
+    {
+      "left_line": 10,
+      "right_line": 10
+    },
+    {
+      "left_line": 11,
+      "right_line": 11
+    },
+    {
+      "left_line": 12,
+      "right_line": 12
+    },
+    {
+      "left_line": 13,
+      "right_line": 13
+    },
+    {
+      "left_line": 14,
+      "right_line": 14
+    },
+    {
+      "left_line": 15,
+      "right_line": 15
+    },
+    {
+      "left_line": 16,
+      "right_line": 16
+    },
+    {
+      "left_line": 17,
+      "right_line": 17
+    },
+    {
+      "left_line": 18,
+      "right_line": 18
+    },
+    {
+      "left_line": 19,
+      "right_line": 19
+    },
+    {
+      "left_line": 20,
+      "right_line": 20
+    },
+    {
+      "left_line": -1,
+      "right_line": 21
+    },
+    {
+      "left_line": -1,
+      "right_line": 22
+    },
+    {
+      "left_line": 21,
+      "right_line": 23
+    },
+    {
+      "left_line": 22,
+      "right_line": 24
+    },
+    {
+      "left_line": 23,
+      "right_line": 25
+    },
+    {
+      "left_line": 24,
+      "right_line": 26
+    },
+    {
+      "left_line": 25,
+      "right_line": 27
+    },
+    {
+      "left_line": -1,
+      "right_line": 28
+    },
+    {
+      "left_line": 26,
+      "right_line": 29
+    },
+    {
+      "left_line": 27,
+      "right_line": -1
+    },
+    {
+      "left_line": 28,
+      "right_line": -1
+    },
+    {
+      "left_line": 29,
+      "right_line": -1
+    },
+    {
+      "left_line": 30,
+      "right_line": 30
+    },
+    {
+      "left_line": 31,
+      "right_line": 31
+    },
+    {
+      "left_line": 32,
+      "right_line": 32
+    },
+    {
+      "left_line": 33,
+      "right_line": -1
+    },
+    {
+      "left_line": 34,
+      "right_line": -1
+    },
+    {
+      "left_line": 35,
+      "right_line": -1
+    },
+    {
+      "left_line": 36,
+      "right_line": -1
+    },
+    {
+      "left_line": 37,
+      "right_line": 33
+    },
+    {
+      "left_line": -1,
+      "right_line": 34
+    },
+    {
+      "left_line": 38,
+      "right_line": 35
+    },
+    {
+      "left_line": -1,
+      "right_line": 36
+    },
+    {
+      "left_line": 39,
+      "right_line": 37
+    },
+    {
+      "left_line": 40,
+      "right_line": 38
+    },
+    {
+      "left_line": 41,
+      "right_line": 39
+    },
+    {
+      "left_line": 42,
+      "right_line": 40
+    },
+    {
+      "left_line": 43,
+      "right_line": 41
+    },
+    {
+      "left_line": 44,
+      "right_line": 42
+    }
+  ]
+}

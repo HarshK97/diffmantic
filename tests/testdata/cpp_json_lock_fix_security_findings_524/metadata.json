@@ -1,0 +1,6 @@
+{
+  "repo": "./dataset/cpp_json/_clones/json",
+  "commit": "bb60941f0ef6ff14a82e46f2c9dfade71e2f86ae",
+  "message": ":lock: fix security findings (#5245)",
+  "action_count": 1
+}

@@ -1,0 +1,6 @@
+{
+  "repo": "./dataset/cpp_json/_clones/json",
+  "commit": "5bc24e876b05a8edaed095bdaa8ca7226780264d",
+  "message": "tests: fix CI failures in the #5340 test helpers",
+  "action_count": 20
+}

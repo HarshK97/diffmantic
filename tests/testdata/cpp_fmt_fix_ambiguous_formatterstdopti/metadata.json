@@ -1,0 +1,6 @@
+{
+  "repo": "./dataset/cpp_fmt/_clones/fmt",
+  "commit": "9cb8c0f92b4c345fb974a75d71370c23047528aa",
+  "message": "Fix ambiguous formatter<std::optional<T>> between fmt/std.h and fmt/ranges.h on C++26 (P3168R2) (#4761)",
+  "action_count": 82
+}
