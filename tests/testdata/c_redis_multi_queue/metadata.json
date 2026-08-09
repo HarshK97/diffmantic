@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "62551a7b12c33560227b2e40ab774a99660ab611",
+  "commit": "9302d2788936eea4710792a499d7ce43cfec8806",
+  "message": "Fix MULTI queue memory accounting in multiStateMemOverhead (#15163)",
+  "author": "h.o.t. neglected",
+  "date": "2026-05-11T10:53:18+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

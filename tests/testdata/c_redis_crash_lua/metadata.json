@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "c4e340570495ff24b04c3507e29320711f1b82c4",
+  "commit": "8cdf9391da50ba79784cce1d141125e5a4f31b35",
+  "message": "Fix crash in Lua debugger when error object is not a string",
+  "author": "Stav-Levi",
+  "date": "2026-05-14T14:10:41+03:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "7bdab45ff1c16d5555e8cafb5985939079be428f",
+  "commit": "bf432c98fd36138a89b2cee20d51be6dcfc734b9",
+  "message": "Fix incorrect memmove size in LDB breakpoint deletion (#15115)",
+  "author": "Leenear",
+  "date": "2026-05-10T13:01:08+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

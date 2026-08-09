@@ -134,6 +134,17 @@ func TestParse(t *testing.T) {
 		}
 	})
 
+	t.Run("valid c source", func(t *testing.T) {
+		src := []byte(`#include <stdio.h>\nint main() { printf("Hello world\n"); return 0; }`)
+		ast, err := Parse(src, "main.c")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")
