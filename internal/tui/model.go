@@ -292,10 +292,8 @@ func (m *model) refreshGitStatus() {
 		wg.Add(1)
 		go func(it gitTreeItem) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
 
-			entry := m.computeSingleGitDiff(it)
+			entry := m.computeSingleGitDiff(it, sem)
 
 			m.gitDiffMu.Lock()
 			m.gitDiffCache[it.path] = entry
@@ -305,7 +303,7 @@ func (m *model) refreshGitStatus() {
 	wg.Wait()
 }
 
-func (m *model) computeSingleGitDiff(item gitTreeItem) gitDiffCacheEntry {
+func (m *model) computeSingleGitDiff(item gitTreeItem, sem chan struct{}) gitDiffCacheEntry {
 	beforeFile := item.path
 	if item.oldPath != "" {
 		beforeFile = item.oldPath
@@ -366,7 +364,30 @@ func (m *model) computeSingleGitDiff(item gitTreeItem) gitDiffCacheEntry {
 		return gitDiffCacheEntry{}
 	}
 
+	// Calculate worker weight based on max file size to throttle memory consumption
+	maxSize := max(len(srcBytes), len(dstBytes))
+	weight := 1
+	if maxSize <= 400*1024 {
+		if maxSize > 200*1024 {
+			weight = 4 // Heavy AST file: max 2 parallel
+		} else if maxSize > 50*1024 {
+			weight = 2 // Medium AST file: max 4 parallel
+		}
+	}
+
+	if sem != nil {
+		for i := 0; i < weight; i++ {
+			sem <- struct{}{}
+		}
+		defer func() {
+			for i := 0; i < weight; i++ {
+				<-sem
+			}
+		}()
+	}
+
 	env, _ := computeBytesDiff(srcBytes, dstBytes, beforeFile, afterFile, isConflict)
+
 	return gitDiffCacheEntry{
 		srcBytes: srcBytes,
 		dstBytes: dstBytes,

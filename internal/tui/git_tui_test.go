@@ -306,3 +306,48 @@ func TestGitDiffCache(t *testing.T) {
 		t.Errorf("expected dstBytes to contain 'v3 updated', got: %s", string(updatedTextEntry.dstBytes))
 	}
 }
+
+func TestComputeSingleGitDiffWorkerThrottling(t *testing.T) {
+	tempDir := t.TempDir()
+	initGitRepo(t, tempDir)
+
+	m := newGitModel(tempDir, "", "", "", false)
+
+	tests := []struct {
+		name           string
+		size           int
+		expectedWeight int
+	}{
+		{"small_file", 10 * 1024, 1},
+		{"medium_file", 100 * 1024, 2},
+		{"heavy_file", 250 * 1024, 4},
+		{"fallback_file", 500 * 1024, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filePath := tt.name + ".go"
+			content := make([]byte, tt.size)
+			for i := range content {
+				content[i] = 'a'
+			}
+			err := os.WriteFile(filepath.Join(tempDir, filePath), content, 0o644)
+			if err != nil {
+				t.Fatalf("failed to write test file: %v", err)
+			}
+
+			sem := make(chan struct{}, 8)
+			item := gitTreeItem{path: filePath, rawStatus: " M"}
+
+			entry := m.computeSingleGitDiff(item, sem)
+			if entry.env == nil {
+				t.Errorf("expected non-nil envelope for %s", tt.name)
+			}
+
+			// Ensure all slots were released via defer
+			if len(sem) != 0 {
+				t.Errorf("expected sem capacity to be 0 after completion, got %d", len(sem))
+			}
+		})
+	}
+}
