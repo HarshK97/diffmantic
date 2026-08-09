@@ -439,7 +439,7 @@ func hasConflictMarkers(data []byte) bool {
 }
 
 func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConflict bool) (*serialize.Envelope, error) {
-	if isConflict || hasConflictMarkers(srcBytes) || hasConflictMarkers(dstBytes) {
+	if isConflict || hasConflictMarkers(srcBytes) || hasConflictMarkers(dstBytes) || len(srcBytes) > 400*1024 || len(dstBytes) > 400*1024 {
 		return serialize.BuildLineDiffEnvelope(srcBytes, dstBytes), nil
 	}
 

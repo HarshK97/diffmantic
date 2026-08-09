@@ -21,6 +21,8 @@ type diffResult struct {
 	Envelope    *serialize.Envelope
 }
 
+const MaxASTFileSize = 400 * 1024
+
 func computeDiff(fileA, fileB string) (*diffResult, error) {
 	srcBytes, err := os.ReadFile(fileA)
 	if err != nil {
@@ -29,6 +31,16 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 	dstBytes, err := os.ReadFile(fileB)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", fileB, err)
+	}
+
+	if len(srcBytes) > MaxASTFileSize || len(dstBytes) > MaxASTFileSize {
+		return &diffResult{
+			SrcBytes: srcBytes,
+			DstBytes: dstBytes,
+			SrcFile:  fileA,
+			DstFile:  fileB,
+			Envelope: serialize.BuildLineDiffEnvelope(srcBytes, dstBytes),
+		}, nil
 	}
 
 	langA, _ := treesitter.DetectLanguage(fileA)
