@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "3c96680cfb7ac55ecbeeed43f9bfb1997e079c0c",
+  "commit": "b23122d0027108c98581f1767364e89373a0d04c",
+  "message": "Remove unused comment in ebuckets.c (#14694)",
+  "author": "cui",
+  "date": "2026-01-14T14:25:58+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 4,
+  "deletions": 4
+}

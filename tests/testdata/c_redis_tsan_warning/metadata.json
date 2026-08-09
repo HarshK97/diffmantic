@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "477aaf79c5863f18a72fc90592d5796f8fe00134",
+  "commit": "fe5d2186468217f682e61b0fd4b4198ff49f7a90",
+  "message": "Fix TSAN warning in hashTypeLength (#15382)",
+  "author": "Ozan Tezcan",
+  "date": "2026-06-29T08:56:14+03:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 0
+}

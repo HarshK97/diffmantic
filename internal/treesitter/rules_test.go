@@ -86,6 +86,19 @@ func TestRulesAliased(t *testing.T) {
 				"fn", "let", "mut", "struct", "enum", "trait", "impl", "use", "pub",
 			},
 		},
+		{
+			lang: "c",
+			operators: []string{
+				"+", "-", "*", "/", "%",
+				"==", "!=", "<", "<=", ">", ">=",
+				"&&", "||", "!",
+				"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
+				"&", "|", "^", "~", "<<", ">>",
+				"++", "--", "->", ".",
+				"if", "else", "switch", "case", "default", "for", "while", "do",
+				"return", "break", "continue", "goto", "struct", "union", "enum", "typedef",
+			},
+		},
 	}
 
 	for _, tt := range tests {

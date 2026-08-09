@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "534377d66ef4fb03c317a5ec03ebff66ebb7b1c7",
+  "commit": "af293cf75bf88773f9c04e20276cff57cffa730a",
+  "message": "Fix write handler removal in iothread when sending client to main (#15467)",
+  "author": "Mincho Paskalev",
+  "date": "2026-07-17T16:55:43+03:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 0
+}

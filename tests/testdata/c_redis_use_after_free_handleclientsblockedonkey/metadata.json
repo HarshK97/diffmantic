@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "5a5345952b8edfee3307902fbecc46a08ca43d0f",
+  "commit": "a8edcfc98c50bb01c850e5dab3998ce57807144d",
+  "message": "Fix use-after-free in handleClientsBlockedOnKey (#15594)\n\nFixes https://github.com/redis/redis/issues/15562.\n\nhandleClientsBlockedOnKey() used a list iterator while reprocessing clients\nblocked on the same key. Reprocessing one client may trigger client eviction,\nwhich can remove another blocked client and free the node cached by the\niterator, resulting in a use-after-free.\n\nReplace the iterator with a bounded head-to-tail traversal. Before reprocessing\na client, move its node to the tail so the next waiter remains at the head while\npreserving FIFO order. Since reprocessing may remove all blocked clients and\nfree the list, look up the list again before each iteration.",
+  "author": "Yuan Wang",
+  "date": "2026-08-06T16:52:31+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 11,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "de3ea25a9f486a44467cad0628bdb2d0a36aabf0",
+  "commit": "e60e6f0b3358181ff381276d8c9368f783dc93bd",
+  "message": "Fix quadratic search of slot duplicates in hotkeys command (#15561)",
+  "author": "Mincho Paskalev",
+  "date": "2026-08-03T13:05:23+03:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

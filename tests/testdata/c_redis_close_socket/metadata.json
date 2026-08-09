@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "e4324ae896869615ab22f2b1825d0b8408ab016b",
+  "commit": "b53f65d9b471ee264293976805ad6c896171e3ed",
+  "message": "Close socket when blocking connect wait fails (#15529)",
+  "author": "Vitah Lin",
+  "date": "2026-07-24T16:07:26+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

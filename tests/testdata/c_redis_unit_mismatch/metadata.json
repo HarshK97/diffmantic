@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "117681f6a6509eae72c704df62fcfb81bde122ec",
+  "commit": "3071bf6d7db6507cc06737ec34195a521551209a",
+  "message": "Fix unit mismatch that disabled the FAST expire cycle stale trigger (#15412)",
+  "author": "JongsuPark",
+  "date": "2026-07-13T22:38:38+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

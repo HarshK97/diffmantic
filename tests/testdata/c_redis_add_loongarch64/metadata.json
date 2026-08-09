@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "parent": "894a225ffa1b2eec4e14a0a2ab0ff1c36a7ae566",
+  "commit": "bff152c7ac57b896780bb70b8ed9d71770eb92a2",
+  "message": "Add LoongArch64 backtrace support (#15247)",
+  "author": "darkyzhou",
+  "date": "2026-06-05T15:59:51+08:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 46,
+  "deletions": 0
+}
