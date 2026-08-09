@@ -66,4 +66,30 @@ func TestLinePartition(t *testing.T) {
 			t.Errorf("expected CanMatch to return false for non-corresponding Group 1 lines")
 		}
 	})
+
+	t.Run("Memoization cache and nil handling", func(t *testing.T) {
+		srcA := []byte("a\nb\n")
+		srcB := []byte("a\nb\n")
+		part := NewLinePartition(srcA, srcB)
+
+		n := &treesitter.ASTNode{StartRow: 0, EndRow: 0}
+
+		g1First, startFirst := part.IsGroup1A(n)
+		g1Second, startSecond := part.IsGroup1A(n)
+
+		if g1First != g1Second || startFirst != startSecond {
+			t.Errorf("cached result mismatch: first=(%v, %d), second=(%v, %d)", g1First, startFirst, g1Second, startSecond)
+		}
+
+		var nilPart *LinePartition
+		g1Nil, startNil := nilPart.IsGroup1A(n)
+		if g1Nil != false || startNil != -1 {
+			t.Errorf("expected nil LinePartition to return (false, -1), got (%v, %d)", g1Nil, startNil)
+		}
+
+		g1NilNode, startNilNode := part.IsGroup1A(nil)
+		if g1NilNode != false || startNilNode != -1 {
+			t.Errorf("expected nil ASTNode to return (false, -1), got (%v, %d)", g1NilNode, startNilNode)
+		}
+	})
 }

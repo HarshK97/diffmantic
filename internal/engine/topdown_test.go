@@ -156,3 +156,48 @@ func TestBottomUp(t *testing.T) {
 		}
 	})
 }
+
+func TestTopDownUncomputedHashes(t *testing.T) {
+	srcLeaf1 := testutil.Leaf("id", "x")
+	srcLeaf2 := testutil.Leaf("id", "y")
+	src := testutil.Node("func", "main",
+		testutil.Node("block", "", srcLeaf1, srcLeaf2),
+	)
+
+	dstLeaf1 := testutil.Leaf("id", "x")
+	dstLeaf2 := testutil.Leaf("id", "y")
+	dst := testutil.Node("func", "main",
+		testutil.Node("block", "", dstLeaf1, dstLeaf2),
+	)
+
+	// Reset hashes to 0 to make sure TopDown lazily computes missing hashes.
+	for _, n := range src.PreOrder() {
+		n.Hash = 0
+	}
+	for _, n := range dst.PreOrder() {
+		n.Hash = 0
+	}
+
+	m := NewMapping()
+	TopDown(src, dst, 1, m, nil)
+
+	if !m.Has(srcLeaf1) || !m.Has(srcLeaf2) {
+		t.Errorf("expected all isomorphic leaves to be mapped even when initial Hash is 0")
+	}
+}
+
+func TestFindCandidatesWithCommonDescendants(t *testing.T) {
+	d1 := testutil.Leaf("id", "x")
+	t1 := testutil.Node("block", "", d1)
+
+	d2 := testutil.Leaf("id", "x")
+	t2 := testutil.Node("block", "", d2)
+
+	m := NewMapping()
+	m.Add(d1, d2)
+
+	candidates := findCandidatesWithCommonDescendants(t1, m)
+	if len(candidates) != 1 || candidates[0] != t2 {
+		t.Errorf("findCandidatesWithCommonDescendants() = %v, want [%v]", candidates, t2)
+	}
+}

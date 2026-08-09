@@ -14,12 +14,6 @@ func BottomUp(
 	m *Mapping,
 	minDice float64,
 ) {
-	// Pre-index T2 nodes by type to speed up candidate queries.
-	t2NodesByType := make(map[string][]*treesitter.ASTNode)
-	for _, node := range t2Root.PostOrder() {
-		t2NodesByType[node.Type] = append(t2NodesByType[node.Type], node)
-	}
-
 	for _, t1 := range t1Root.PostOrder() {
 		if t1 == t1Root {
 			if !m.Has(t1) && !m.HasDst(t2Root) {
@@ -48,7 +42,8 @@ func BottomUp(
 			continue
 		}
 
-		t2 := candidate(t1, t2NodesByType[t1.Type], m)
+		candidates := findCandidatesWithCommonDescendants(t1, m)
+		t2 := candidate(t1, candidates, m)
 		if t2 == nil {
 			continue
 		}
@@ -60,6 +55,25 @@ func BottomUp(
 			Recover(t1, t2, m)
 		}
 	}
+}
+
+func findCandidatesWithCommonDescendants(t1 *treesitter.ASTNode, m *Mapping) []*treesitter.ASTNode {
+	candMap := make(map[*treesitter.ASTNode]bool)
+	var cands []*treesitter.ASTNode
+
+	for _, d1 := range t1.Descendants() {
+		if d2, ok := m.Src()[d1]; ok {
+			for anc := d2.Parent; anc != nil; anc = anc.Parent {
+				if anc.Type == t1.Type && !m.HasDst(anc) {
+					if !candMap[anc] {
+						candMap[anc] = true
+						cands = append(cands, anc)
+					}
+				}
+			}
+		}
+	}
+	return cands
 }
 
 func hasUnmappedChild(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bool) bool {
