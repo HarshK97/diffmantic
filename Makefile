@@ -1,4 +1,10 @@
-.PHONY: test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short
+.PHONY: build test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short clean
+
+build: ## Build the diffm binary
+	go build -o diffm ./cmd/diffm
+
+clean: ## Remove built binaries and coverage files
+	rm -f diffm coverage.out coverage.html
 
 test: lint test-unit test-integration test-e2e ## Run everything
 
