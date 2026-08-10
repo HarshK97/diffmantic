@@ -466,7 +466,7 @@ func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConf
 
 	srcAST, _ := treesitter.Parse(srcBytes, srcFile)
 	dstAST, _ := treesitter.Parse(dstBytes, dstFile)
-	if srcAST == nil || dstAST == nil {
+	if srcAST == nil || dstAST == nil || srcAST.ParseErrorCount > 0 || dstAST.ParseErrorCount > 0 {
 		return serialize.BuildLineDiffEnvelope(srcBytes, dstBytes), nil
 	}
 

@@ -72,3 +72,44 @@ func TestComputeDiffUnsupportedLanguage(t *testing.T) {
 		t.Error("expected fallback line diff actions for unsupported files, got 0")
 	}
 }
+
+func TestParseErrorLimitFlag(t *testing.T) {
+	f := diffCmd.Flags().Lookup("parse-error-limit")
+	if f == nil {
+		t.Fatal("parse-error-limit flag not registered")
+	}
+	if f.Shorthand != "e" {
+		t.Errorf("shorthand = %q, want %q", f.Shorthand, "e")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("default = %q, want %q", f.DefValue, "0")
+	}
+}
+
+func TestComputeDiffWithParseErrorLimit(t *testing.T) {
+	dir := t.TempDir()
+	fileA := dir + "/a.go"
+	fileB := dir + "/b.go"
+
+	// File with a syntax error (missing expression after :=)
+	_ = os.WriteFile(fileA, []byte("package main\n\nfunc foo() {\n\tx :=\n}\n"), 0o644)
+	_ = os.WriteFile(fileB, []byte("package main\n\nfunc foo() {\n\tx := 10\n}\n"), 0o644)
+
+	// Default (limit = 0): should fall back to line diff
+	resDefault, err := computeDiffWithOptions(fileA, fileB, 0)
+	if err != nil {
+		t.Fatalf("computeDiffWithOptions(0) failed: %v", err)
+	}
+	if resDefault.MatchResult != nil {
+		t.Error("expected line diff fallback (nil MatchResult) when limit is 0")
+	}
+
+	// Allowed limit (limit = 5): should perform AST structural matching
+	resAllowed, err := computeDiffWithOptions(fileA, fileB, 5)
+	if err != nil {
+		t.Fatalf("computeDiffWithOptions(5) failed: %v", err)
+	}
+	if resAllowed.MatchResult == nil {
+		t.Error("expected structural AST match result when limit is 5")
+	}
+}

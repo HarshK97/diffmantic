@@ -8,17 +8,19 @@ import (
 )
 
 type ASTNode struct {
-	Type      string
-	Label     string
-	Children  []*ASTNode
-	Parent    *ASTNode
-	StartByte uint32
-	EndByte   uint32
-	StartRow  uint32 // 0-indexed
-	StartCol  uint32
-	EndRow    uint32
-	EndCol    uint32
-	Language  string // Set on root node only
+	Type            string
+	Label           string
+	Children        []*ASTNode
+	Parent          *ASTNode
+	StartByte       uint32
+	EndByte         uint32
+	StartRow        uint32 // 0-indexed
+	StartCol        uint32
+	EndRow          uint32
+	EndCol          uint32
+	Language        string // Set on root node only
+	HasError        bool   // True if parse tree contained any ERROR nodes
+	ParseErrorCount int    // Total count of ERROR nodes in parse tree
 
 	// Hash is the combined hash of node type, label, and children.
 	Hash uint64
@@ -64,13 +66,58 @@ func (n *ASTNode) ComputeHashes() {
 }
 
 func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode) *ASTNode {
-	node := buildASTWithRules(n, src, lang, parent, GetRules(lang.Name))
+	if n == nil {
+		return nil
+	}
+	rules := GetRules(lang.Name)
+	if parent == nil && n.Type(lang) == "ERROR" {
+		rootType := "translation_unit"
+		if rules != nil && len(rules.Scaffolding) > 0 {
+			rootType = rules.Scaffolding[0]
+		}
+		errCount := countErrorNodes(n, lang)
+		root := &ASTNode{
+			Type:            rootType,
+			StartByte:       n.StartByte(),
+			EndByte:         n.EndByte(),
+			StartRow:        n.StartPoint().Row,
+			StartCol:        n.StartPoint().Column,
+			EndRow:          n.EndPoint().Row,
+			EndCol:          n.EndPoint().Column,
+			Language:        lang.Name,
+			HasError:        errCount > 0,
+			ParseErrorCount: errCount,
+		}
+		unwrapErrorNode(n, src, lang, root, rules)
+		root.ComputeHashes()
+		EnsureIndex(root)
+		return root
+	}
+
+	node := buildASTWithRules(n, src, lang, parent, rules)
 	if node != nil && parent == nil {
+		errCount := countErrorNodes(n, lang)
 		node.Language = lang.Name
+		node.ParseErrorCount = errCount
+		node.HasError = errCount > 0
 		node.ComputeHashes()
 		EnsureIndex(node)
 	}
 	return node
+}
+
+func countErrorNodes(n *gotreesitter.Node, lang *gotreesitter.Language) int {
+	if n == nil || !n.HasError() {
+		return 0
+	}
+	count := 0
+	if n.Type(lang) == "ERROR" || n.IsError() || n.IsMissing() {
+		count = 1
+	}
+	for i := 0; i < n.ChildCount(); i++ {
+		count += countErrorNodes(n.Child(i), lang)
+	}
+	return count
 }
 
 var stringLiteralTypes = []string{
@@ -83,15 +130,18 @@ var stringLiteralTypes = []string{
 
 func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) *ASTNode {
 	nodeType := n.Type(lang)
+	if nodeType == "ERROR" {
+		if parent != nil {
+			unwrapErrorNode(n, src, lang, parent, rules)
+			return nil
+		}
+	}
 
 	if !n.IsNamed() {
-		isAliased := false
-		if rules != nil {
-			if _, ok := rules.Aliased[nodeType]; ok {
-				isAliased = true
-			}
+		if rules == nil {
+			return nil
 		}
-		if !isAliased {
+		if _, ok := rules.Aliased[nodeType]; !ok {
 			return nil
 		}
 	}
@@ -99,7 +149,12 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	isLeaf := n.ChildCount() == 0 || slices.Contains(stringLiteralTypes, nodeType)
 	var label string
 	if isLeaf {
-		label = strings.TrimSpace(string(src[n.StartByte():n.EndByte()]))
+		srcLen := uint32(len(src))
+		start, end := min(n.StartByte(), srcLen), min(n.EndByte(), srcLen)
+		if start > end {
+			start = end
+		}
+		label = strings.TrimSpace(string(src[start:end]))
 	}
 
 	if rules != nil {
@@ -137,8 +192,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	}
 
 	for i := 0; i < n.ChildCount(); i++ {
-		child := buildASTWithRules(n.Child(i), src, lang, node, rules)
-		if child != nil {
+		if child := buildASTWithRules(n.Child(i), src, lang, node, rules); child != nil {
 			node.Children = append(node.Children, child)
 		}
 	}
@@ -155,6 +209,14 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	}
 
 	return node
+}
+
+func unwrapErrorNode(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) {
+	for i := 0; i < n.ChildCount(); i++ {
+		if child := buildASTWithRules(n.Child(i), src, lang, parent, rules); child != nil {
+			parent.Children = append(parent.Children, child)
+		}
+	}
 }
 
 func isIgnored(nodeType, label string, ignored []string) bool {

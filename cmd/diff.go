@@ -70,7 +70,8 @@ Examples:
 			os.Exit(1)
 		}
 
-		dr, err := computeDiff(fileA, fileB)
+		parseErrorLimit := getParseErrorLimit(cmd)
+		dr, err := computeDiffWithOptions(fileA, fileB, parseErrorLimit)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -106,7 +107,17 @@ Examples:
 	},
 }
 
+func getParseErrorLimit(cmd *cobra.Command) int {
+	if cmd != nil {
+		if limit, err := cmd.Flags().GetInt("parse-error-limit"); err == nil {
+			return limit
+		}
+	}
+	return 0
+}
+
 func init() {
 	rootCmd.AddCommand(diffCmd)
 	diffCmd.Flags().StringP("format", "f", "", "Output format: json, actions, tui (default: tui if interactive, json otherwise)")
+	diffCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
 }
