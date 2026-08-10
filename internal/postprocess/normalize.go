@@ -18,7 +18,7 @@ func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
 	switch node.Type {
 	case "type", "type_identifier", "primitive_type",
 		"integer", "float", "string", "true", "false", "none", "nil",
-		"identifier":
+		"identifier", "field_identifier", "property_identifier":
 		return true
 	}
 	return false

@@ -18,6 +18,7 @@ const (
 	kindInsert
 	kindUpdate
 	kindMove
+	kindMoveUpdate
 )
 
 // span is a range of columns to highlight in a single line.
@@ -73,11 +74,15 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 			}
 
 		case "move":
+			kind := kindMove
+			if a.NewValue != "" || a.OldValue != "" || a.DestNode != nil {
+				kind = kindMoveUpdate
+			}
 			if a.Node != nil {
-				addHighlight(srcHL, srcIndex, srcBytes, a.Node.StartByte, a.Node.EndByte, kindMove, a)
+				addHighlight(srcHL, srcIndex, srcBytes, a.Node.StartByte, a.Node.EndByte, kind, a)
 			}
 			if a.DestStartByte != nil && a.DestEndByte != nil {
-				addHighlight(dstHL, dstIndex, dstBytes, *a.DestStartByte, *a.DestEndByte, kindMove, a)
+				addHighlight(dstHL, dstIndex, dstBytes, *a.DestStartByte, *a.DestEndByte, kind, a)
 			}
 		}
 	}
