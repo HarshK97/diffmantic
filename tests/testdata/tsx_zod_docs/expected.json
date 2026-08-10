@@ -68,8 +68,7 @@
           8,
           1,
           3,
-          10,
-          1
+          11
         ],
         "type": "colon",
         "label": ":",
@@ -110,37 +109,19 @@
       "position": 1
     },
     {
-      "action": "delete",
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
           8,
           1,
           3,
-          11
+          12
         ],
         "type": "string",
         "label": "\"zodgres\"",
         "start_byte": 8388,
         "end_byte": 8397
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          0,
-          2
-        ],
-        "type": "string",
-        "label": "\"zodgres\"",
-        "start_byte": 8392,
-        "end_byte": 8401
       },
       "parent": {
         "tree": "after",
@@ -155,7 +136,21 @@
         "start_byte": 8386,
         "end_byte": 8401
       },
-      "position": 2
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "old_position": 12,
+      "dest_start_byte": 8392,
+      "dest_end_byte": 8401
     },
     {
       "action": "insert",
@@ -197,8 +192,7 @@
           8,
           1,
           3,
-          13,
-          1
+          15
         ],
         "type": "colon",
         "label": ":",
@@ -239,37 +233,19 @@
       "position": 1
     },
     {
-      "action": "delete",
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
           8,
           1,
           3,
-          14
+          16
         ],
         "type": "string",
         "label": "\"https://github.com/endel/zodgres\"",
         "start_byte": 8408,
         "end_byte": 8442
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          2,
-          2
-        ],
-        "type": "string",
-        "label": "\"https://github.com/endel/zodgres\"",
-        "start_byte": 8412,
-        "end_byte": 8446
       },
       "parent": {
         "tree": "after",
@@ -284,7 +260,21 @@
         "start_byte": 8407,
         "end_byte": 8446
       },
-      "position": 2
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "old_position": 16,
+      "dest_start_byte": 8412,
+      "dest_end_byte": 8446
     },
     {
       "action": "insert",
@@ -326,8 +316,7 @@
           8,
           1,
           3,
-          16,
-          1
+          19
         ],
         "type": "colon",
         "label": ":",
@@ -368,37 +357,19 @@
       "position": 1
     },
     {
-      "action": "delete",
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
           8,
           1,
           3,
-          17
+          20
         ],
         "type": "string",
         "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
         "start_byte": 8461,
         "end_byte": 8554
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          4,
-          2
-        ],
-        "type": "string",
-        "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
-        "start_byte": 8465,
-        "end_byte": 8558
       },
       "parent": {
         "tree": "after",
@@ -413,7 +384,21 @@
         "start_byte": 8452,
         "end_byte": 8558
       },
-      "position": 2
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "old_position": 20,
+      "dest_start_byte": 8465,
+      "dest_end_byte": 8558
     },
     {
       "action": "insert",
@@ -455,8 +440,7 @@
           8,
           1,
           3,
-          19,
-          1
+          23
         ],
         "type": "colon",
         "label": ":",
@@ -497,37 +481,19 @@
       "position": 1
     },
     {
-      "action": "delete",
+      "action": "move",
       "node": {
         "tree": "before",
         "path": [
           8,
           1,
           3,
-          20
+          24
         ],
         "type": "string",
         "label": "\"endel/zodgres\"",
         "start_byte": 8566,
         "end_byte": 8581
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          6,
-          2
-        ],
-        "type": "string",
-        "label": "\"endel/zodgres\"",
-        "start_byte": 8570,
-        "end_byte": 8585
       },
       "parent": {
         "tree": "after",
@@ -542,7 +508,21 @@
         "start_byte": 8564,
         "end_byte": 8585
       },
-      "position": 2
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "old_position": 24,
+      "dest_start_byte": 8570,
+      "dest_end_byte": 8585
     },
     {
       "action": "delete",
@@ -552,8 +532,7 @@
           8,
           1,
           3,
-          10,
-          0
+          10
         ],
         "type": "identifier",
         "label": "name",
@@ -569,8 +548,7 @@
           8,
           1,
           3,
-          13,
-          0
+          14
         ],
         "type": "identifier",
         "label": "url",
@@ -586,8 +564,7 @@
           8,
           1,
           3,
-          16,
-          0
+          18
         ],
         "type": "identifier",
         "label": "description",
@@ -603,28 +580,12 @@
           8,
           1,
           3,
-          19,
-          0
+          22
         ],
         "type": "identifier",
         "label": "slug",
         "start_byte": 8560,
         "end_byte": 8564
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          22
-        ],
-        "type": "ERROR",
-        "start_byte": 8585,
-        "end_byte": 8586
       }
     }
   ],

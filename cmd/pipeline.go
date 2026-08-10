@@ -24,6 +24,10 @@ type diffResult struct {
 const MaxASTFileSize = 400 * 1024
 
 func computeDiff(fileA, fileB string) (*diffResult, error) {
+	return computeDiffWithOptions(fileA, fileB, getParseErrorLimit(nil))
+}
+
+func computeDiffWithOptions(fileA, fileB string, parseErrorLimit int) (*diffResult, error) {
 	srcBytes, err := os.ReadFile(fileA)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", fileA, err)
@@ -66,7 +70,7 @@ func computeDiff(fileA, fileB string) (*diffResult, error) {
 
 	srcAST, _ := treesitter.ParseWithLanguage(srcBytes, langA)
 	dstAST, _ := treesitter.ParseWithLanguage(dstBytes, langB)
-	if srcAST == nil || dstAST == nil {
+	if srcAST == nil || dstAST == nil || srcAST.ParseErrorCount > parseErrorLimit || dstAST.ParseErrorCount > parseErrorLimit {
 		return &diffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,
