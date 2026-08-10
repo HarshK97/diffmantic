@@ -11,8 +11,10 @@ import (
 )
 
 func TestGitTUIModel(t *testing.T) {
-	// Initialize git model in current workspace directory
-	m := newGitModel(".", "", "", "", false)
+	tempDir := t.TempDir()
+	initGitRepo(t, tempDir)
+	// Initialize git model in clean temp directory
+	m := newGitModel(tempDir, "", "", "", false)
 	if !m.gitMode {
 		t.Error("expected gitMode to be true")
 	}
@@ -63,8 +65,10 @@ func TestOverlayAnsi(t *testing.T) {
 }
 
 func TestGitRevisionMode(t *testing.T) {
-	// Initialize git model in revision compare mode: HEAD~1 vs Working Copy
-	m := newGitModel(".", "HEAD~1", "", "", false)
+	tempDir := t.TempDir()
+	initGitRepo(t, tempDir)
+	// Initialize git model in revision compare mode in clean temp directory
+	m := newGitModel(tempDir, "HEAD~1", "", "", false)
 	if m.refA != "HEAD~1" {
 		t.Errorf("expected refA to be HEAD~1, got %q", m.refA)
 	}

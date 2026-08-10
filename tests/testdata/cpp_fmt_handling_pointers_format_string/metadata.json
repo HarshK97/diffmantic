@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/fmt",
+  "commit": "19e4d5ecd9f423df05d372fbfc288b03ce2b6306",
+  "message": "Fix handling of pointers in format string compilation and FMT_BUILTIN_TYPES=0",
+  "action_count": 5
+}

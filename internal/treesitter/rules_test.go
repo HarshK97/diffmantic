@@ -99,6 +99,21 @@ func TestRulesAliased(t *testing.T) {
 				"return", "break", "continue", "goto", "struct", "union", "enum", "typedef",
 			},
 		},
+		{
+			lang: "cpp",
+			operators: []string{
+				"+", "-", "*", "/", "%",
+				"==", "!=", "<", "<=", ">", ">=",
+				"&&", "||", "!",
+				"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
+				"&", "|", "^", "~", "<<", ">>",
+				"++", "--", "->", ".", "::",
+				"if", "else", "switch", "case", "default", "for", "while", "do",
+				"return", "break", "continue", "goto", "struct", "union", "enum", "typedef",
+				"class", "namespace", "template", "typename", "public", "private", "protected",
+				"virtual", "override", "final", "constexpr", "try", "catch", "throw", "using",
+			},
+		},
 	}
 
 	for _, tt := range tests {

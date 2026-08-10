@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/fmt",
+  "commit": "9d6e24c64e41cfdf24cc2815145d87da1356349a",
+  "message": "Fix handling of long with FMT_BUILTIN_TYPES=0",
+  "action_count": 1
+}

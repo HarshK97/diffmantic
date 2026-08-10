@@ -1,0 +1,1848 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          3
+        ],
+        "type": "preproc_include",
+        "start_byte": 81,
+        "end_byte": 106
+      },
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 3,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          9,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 881,
+        "end_byte": 926
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          9,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 850,
+        "end_byte": 927
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 977,
+        "end_byte": 1032
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 946,
+        "end_byte": 1033
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          11,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 1083,
+        "end_byte": 1144
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          11,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1052,
+        "end_byte": 1145
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          12,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 1195,
+        "end_byte": 1251
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          12,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1164,
+        "end_byte": 1252
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          13,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 1302,
+        "end_byte": 1347
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          13,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1271,
+        "end_byte": 1348
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          14,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 1398,
+        "end_byte": 1448
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          14,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1367,
+        "end_byte": 1449
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          15,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 1499,
+        "end_byte": 1551
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          15,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1468,
+        "end_byte": 1552
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          16,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 1602,
+        "end_byte": 1658
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          16,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1571,
+        "end_byte": 1659
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          21,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 2402,
+        "end_byte": 2447
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2369,
+        "end_byte": 2448
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          22,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 2500,
+        "end_byte": 2555
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2467,
+        "end_byte": 2556
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          23,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 2608,
+        "end_byte": 2669
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          23,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2575,
+        "end_byte": 2670
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          24,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 2722,
+        "end_byte": 2778
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          24,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2689,
+        "end_byte": 2779
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          25,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 2831,
+        "end_byte": 2876
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          25,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2798,
+        "end_byte": 2877
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          26,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 2929,
+        "end_byte": 2979
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          26,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2896,
+        "end_byte": 2980
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          27,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 3032,
+        "end_byte": 3084
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          27,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 2999,
+        "end_byte": 3085
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          28,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 3137,
+        "end_byte": 3193
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          28,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 3104,
+        "end_byte": 3194
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          33,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 3799,
+        "end_byte": 3844
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          33,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 3769,
+        "end_byte": 3865
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          34,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 3914,
+        "end_byte": 3959
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          34,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 3884,
+        "end_byte": 3979
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          35,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4028,
+        "end_byte": 4083
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          35,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 3998,
+        "end_byte": 4094
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          36,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4143,
+        "end_byte": 4198
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          36,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4113,
+        "end_byte": 4208
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          37,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4257,
+        "end_byte": 4318
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          37,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4227,
+        "end_byte": 4323
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          38,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4372,
+        "end_byte": 4433
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          38,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4342,
+        "end_byte": 4437
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          39,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4486,
+        "end_byte": 4542
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          39,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4456,
+        "end_byte": 4552
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          40,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4601,
+        "end_byte": 4657
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          40,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4571,
+        "end_byte": 4666
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          41,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4715,
+        "end_byte": 4760
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          41,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4685,
+        "end_byte": 4781
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          42,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4830,
+        "end_byte": 4875
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          42,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4800,
+        "end_byte": 4895
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          43,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 4944,
+        "end_byte": 4994
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          43,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 4914,
+        "end_byte": 5010
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          44,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 5059,
+        "end_byte": 5109
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          44,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 5029,
+        "end_byte": 5124
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          45,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 5173,
+        "end_byte": 5225
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          45,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 5143,
+        "end_byte": 5239
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          46,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 5288,
+        "end_byte": 5340
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          46,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 5258,
+        "end_byte": 5353
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          47,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 5402,
+        "end_byte": 5458
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          47,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 5372,
+        "end_byte": 5468
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          48,
+          0,
+          1,
+          4
+        ],
+        "type": "concatenated_string",
+        "start_byte": 5517,
+        "end_byte": 5573
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          48,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 5487,
+        "end_byte": 5582
+      },
+      "position": 4
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/jeopardy/jeopardy.json\"",
+        "start_byte": 860,
+        "end_byte": 889
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          9,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/canada.json\"",
+        "start_byte": 944,
+        "end_byte": 983
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          10,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
+        "start_byte": 1038,
+        "end_byte": 1083
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          11,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/twitter.json\"",
+        "start_byte": 1138,
+        "end_byte": 1178
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          12,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/floats.json\"",
+        "start_byte": 1233,
+        "end_byte": 1259
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          13,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/signed_ints.json\"",
+        "start_byte": 1314,
+        "end_byte": 1345
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          14,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/unsigned_ints.json\"",
+        "start_byte": 1400,
+        "end_byte": 1433
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          15,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/small_signed_ints.json\"",
+        "start_byte": 1488,
+        "end_byte": 1525
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          20,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/jeopardy/jeopardy.json\"",
+        "start_byte": 2271,
+        "end_byte": 2300
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          21,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/canada.json\"",
+        "start_byte": 2355,
+        "end_byte": 2394
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          22,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
+        "start_byte": 2449,
+        "end_byte": 2494
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          23,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/twitter.json\"",
+        "start_byte": 2549,
+        "end_byte": 2589
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          24,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/floats.json\"",
+        "start_byte": 2644,
+        "end_byte": 2670
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          25,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/signed_ints.json\"",
+        "start_byte": 2725,
+        "end_byte": 2756
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          26,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/unsigned_ints.json\"",
+        "start_byte": 2811,
+        "end_byte": 2844
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          27,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/small_signed_ints.json\"",
+        "start_byte": 2899,
+        "end_byte": 2936
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          32,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/jeopardy/jeopardy.json\"",
+        "start_byte": 3538,
+        "end_byte": 3567
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          33,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/jeopardy/jeopardy.json\"",
+        "start_byte": 3633,
+        "end_byte": 3662
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          34,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/canada.json\"",
+        "start_byte": 3727,
+        "end_byte": 3766
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          35,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/canada.json\"",
+        "start_byte": 3822,
+        "end_byte": 3861
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          36,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
+        "start_byte": 3916,
+        "end_byte": 3961
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          37,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
+        "start_byte": 4011,
+        "end_byte": 4056
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          38,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/twitter.json\"",
+        "start_byte": 4105,
+        "end_byte": 4145
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          39,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/nativejson-benchmark/twitter.json\"",
+        "start_byte": 4200,
+        "end_byte": 4240
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          40,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/floats.json\"",
+        "start_byte": 4294,
+        "end_byte": 4320
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          41,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/floats.json\"",
+        "start_byte": 4389,
+        "end_byte": 4415
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          42,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/signed_ints.json\"",
+        "start_byte": 4483,
+        "end_byte": 4514
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          43,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/signed_ints.json\"",
+        "start_byte": 4578,
+        "end_byte": 4609
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          44,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/unsigned_ints.json\"",
+        "start_byte": 4672,
+        "end_byte": 4705
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          45,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/unsigned_ints.json\"",
+        "start_byte": 4767,
+        "end_byte": 4800
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          46,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/small_signed_ints.json\"",
+        "start_byte": 4867,
+        "end_byte": 4904
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          47,
+          0,
+          1,
+          4
+        ],
+        "type": "string_literal",
+        "label": "\"data/numbers/small_signed_ints.json\"",
+        "start_byte": 4962,
+        "end_byte": 4999
+      }
+    }
+  ],
+  "line_alignment": [
+    {
+      "left_line": 0,
+      "right_line": 0
+    },
+    {
+      "left_line": 1,
+      "right_line": 1
+    },
+    {
+      "left_line": 2,
+      "right_line": 2
+    },
+    {
+      "left_line": -1,
+      "right_line": 3
+    },
+    {
+      "left_line": 3,
+      "right_line": 4
+    },
+    {
+      "left_line": 4,
+      "right_line": 5
+    },
+    {
+      "left_line": 5,
+      "right_line": 6
+    },
+    {
+      "left_line": 6,
+      "right_line": 7
+    },
+    {
+      "left_line": 7,
+      "right_line": 8
+    },
+    {
+      "left_line": 8,
+      "right_line": 9
+    },
+    {
+      "left_line": 9,
+      "right_line": 10
+    },
+    {
+      "left_line": 10,
+      "right_line": 11
+    },
+    {
+      "left_line": 11,
+      "right_line": 12
+    },
+    {
+      "left_line": 12,
+      "right_line": 13
+    },
+    {
+      "left_line": 13,
+      "right_line": 14
+    },
+    {
+      "left_line": 14,
+      "right_line": 15
+    },
+    {
+      "left_line": 15,
+      "right_line": 16
+    },
+    {
+      "left_line": 16,
+      "right_line": 17
+    },
+    {
+      "left_line": 17,
+      "right_line": 18
+    },
+    {
+      "left_line": 18,
+      "right_line": 19
+    },
+    {
+      "left_line": 19,
+      "right_line": 20
+    },
+    {
+      "left_line": 20,
+      "right_line": 21
+    },
+    {
+      "left_line": 21,
+      "right_line": 22
+    },
+    {
+      "left_line": 22,
+      "right_line": 23
+    },
+    {
+      "left_line": 23,
+      "right_line": 24
+    },
+    {
+      "left_line": 24,
+      "right_line": 25
+    },
+    {
+      "left_line": 25,
+      "right_line": 26
+    },
+    {
+      "left_line": 26,
+      "right_line": 27
+    },
+    {
+      "left_line": 27,
+      "right_line": 28
+    },
+    {
+      "left_line": 28,
+      "right_line": 29
+    },
+    {
+      "left_line": 29,
+      "right_line": 30
+    },
+    {
+      "left_line": 30,
+      "right_line": 31
+    },
+    {
+      "left_line": 31,
+      "right_line": 32
+    },
+    {
+      "left_line": 32,
+      "right_line": 33
+    },
+    {
+      "left_line": 33,
+      "right_line": 34
+    },
+    {
+      "left_line": 34,
+      "right_line": 35
+    },
+    {
+      "left_line": 35,
+      "right_line": 36
+    },
+    {
+      "left_line": 36,
+      "right_line": 37
+    },
+    {
+      "left_line": 37,
+      "right_line": 38
+    },
+    {
+      "left_line": 38,
+      "right_line": 39
+    },
+    {
+      "left_line": 39,
+      "right_line": 40
+    },
+    {
+      "left_line": 40,
+      "right_line": 41
+    },
+    {
+      "left_line": 41,
+      "right_line": 42
+    },
+    {
+      "left_line": 42,
+      "right_line": 43
+    },
+    {
+      "left_line": 43,
+      "right_line": 44
+    },
+    {
+      "left_line": 44,
+      "right_line": 45
+    },
+    {
+      "left_line": 45,
+      "right_line": 46
+    },
+    {
+      "left_line": 46,
+      "right_line": 47
+    },
+    {
+      "left_line": 47,
+      "right_line": 48
+    },
+    {
+      "left_line": 48,
+      "right_line": 49
+    },
+    {
+      "left_line": 49,
+      "right_line": 50
+    },
+    {
+      "left_line": 50,
+      "right_line": 51
+    },
+    {
+      "left_line": 51,
+      "right_line": 52
+    },
+    {
+      "left_line": 52,
+      "right_line": 53
+    },
+    {
+      "left_line": 53,
+      "right_line": 54
+    },
+    {
+      "left_line": 54,
+      "right_line": 55
+    },
+    {
+      "left_line": 55,
+      "right_line": 56
+    },
+    {
+      "left_line": 56,
+      "right_line": 57
+    },
+    {
+      "left_line": 57,
+      "right_line": 58
+    },
+    {
+      "left_line": 58,
+      "right_line": 59
+    },
+    {
+      "left_line": 59,
+      "right_line": 60
+    },
+    {
+      "left_line": 60,
+      "right_line": 61
+    },
+    {
+      "left_line": 61,
+      "right_line": 62
+    },
+    {
+      "left_line": 62,
+      "right_line": 63
+    },
+    {
+      "left_line": 63,
+      "right_line": 64
+    },
+    {
+      "left_line": 64,
+      "right_line": 65
+    },
+    {
+      "left_line": 65,
+      "right_line": 66
+    },
+    {
+      "left_line": 66,
+      "right_line": 67
+    },
+    {
+      "left_line": 67,
+      "right_line": 68
+    },
+    {
+      "left_line": 68,
+      "right_line": 69
+    },
+    {
+      "left_line": 69,
+      "right_line": 70
+    },
+    {
+      "left_line": 70,
+      "right_line": 71
+    },
+    {
+      "left_line": 71,
+      "right_line": 72
+    },
+    {
+      "left_line": 72,
+      "right_line": 73
+    },
+    {
+      "left_line": 73,
+      "right_line": 74
+    },
+    {
+      "left_line": 74,
+      "right_line": 75
+    },
+    {
+      "left_line": 75,
+      "right_line": 76
+    },
+    {
+      "left_line": 76,
+      "right_line": 77
+    },
+    {
+      "left_line": 77,
+      "right_line": 78
+    },
+    {
+      "left_line": 78,
+      "right_line": 79
+    },
+    {
+      "left_line": 79,
+      "right_line": 80
+    },
+    {
+      "left_line": 80,
+      "right_line": 81
+    },
+    {
+      "left_line": 81,
+      "right_line": 82
+    },
+    {
+      "left_line": 82,
+      "right_line": 83
+    },
+    {
+      "left_line": 83,
+      "right_line": 84
+    },
+    {
+      "left_line": 84,
+      "right_line": 85
+    },
+    {
+      "left_line": 85,
+      "right_line": 86
+    },
+    {
+      "left_line": 86,
+      "right_line": 87
+    },
+    {
+      "left_line": 87,
+      "right_line": 88
+    },
+    {
+      "left_line": 88,
+      "right_line": 89
+    },
+    {
+      "left_line": 89,
+      "right_line": 90
+    },
+    {
+      "left_line": 90,
+      "right_line": 91
+    },
+    {
+      "left_line": 91,
+      "right_line": 92
+    },
+    {
+      "left_line": 92,
+      "right_line": 93
+    },
+    {
+      "left_line": 93,
+      "right_line": 94
+    },
+    {
+      "left_line": 94,
+      "right_line": 95
+    },
+    {
+      "left_line": 95,
+      "right_line": 96
+    },
+    {
+      "left_line": 96,
+      "right_line": 97
+    },
+    {
+      "left_line": 97,
+      "right_line": 98
+    },
+    {
+      "left_line": 98,
+      "right_line": 99
+    },
+    {
+      "left_line": 99,
+      "right_line": 100
+    },
+    {
+      "left_line": 100,
+      "right_line": 101
+    },
+    {
+      "left_line": 101,
+      "right_line": 102
+    },
+    {
+      "left_line": 102,
+      "right_line": 103
+    },
+    {
+      "left_line": 103,
+      "right_line": 104
+    },
+    {
+      "left_line": 104,
+      "right_line": 105
+    },
+    {
+      "left_line": 105,
+      "right_line": 106
+    },
+    {
+      "left_line": 106,
+      "right_line": 107
+    },
+    {
+      "left_line": 107,
+      "right_line": 108
+    },
+    {
+      "left_line": 108,
+      "right_line": 109
+    },
+    {
+      "left_line": 109,
+      "right_line": 110
+    }
+  ]
+}
