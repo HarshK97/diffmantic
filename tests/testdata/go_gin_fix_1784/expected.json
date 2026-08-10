@@ -169,7 +169,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 39182,
-      "dest_end_byte": 39207
+      "dest_end_byte": 39207,
+      "group_id": "group-1"
     },
     {
       "action": "move",
@@ -219,7 +220,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 39354,
-      "dest_end_byte": 39380
+      "dest_end_byte": 39380,
+      "group_id": "group-1"
     },
     {
       "action": "insert",

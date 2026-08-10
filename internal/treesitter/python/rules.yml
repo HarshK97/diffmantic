@@ -90,6 +90,9 @@ aliased:
   "lambda": "lambda"
   "in": "in"
 
+  # Clauses and Statements
+  "for_in_clause": "for_statement"
+
   # Punctuation
   # "(": "opening_paren"
   # ")": "closing_paren"

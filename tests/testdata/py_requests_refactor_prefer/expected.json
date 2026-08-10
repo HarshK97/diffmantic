@@ -115,7 +115,7 @@
           2,
           1
         ],
-        "type": "for_in_clause",
+        "type": "for_statement",
         "start_byte": 15123,
         "end_byte": 15139
       },
@@ -182,7 +182,8 @@
       "old_position": 1,
       "subtree": true,
       "dest_start_byte": 15097,
-      "dest_end_byte": 15108
+      "dest_end_byte": 15108,
+      "group_id": "group-1"
     },
     {
       "action": "delete",
@@ -278,7 +279,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 15110,
-      "dest_end_byte": 15122
+      "dest_end_byte": 15122,
+      "group_id": "group-1"
     },
     {
       "action": "delete",
