@@ -9,45 +9,29 @@
           2,
           2,
           5,
-          2,
-          2
-        ],
-        "type": "string",
-        "label": "\"early-hints\"",
-        "start_byte": 686,
-        "end_byte": 699
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          2,
-          2,
-          5,
           2
         ],
         "type": "tuple",
         "start_byte": 671,
         "end_byte": 700
       },
-      "position": 2
-    },
-    {
-      "action": "insert",
-      "node": {
+      "parent": {
         "tree": "after",
         "path": [
           2,
           2,
-          78,
-          2,
-          2
+          5
         ],
-        "type": "string",
-        "label": "\"content_too_large\"",
-        "start_byte": 2203,
-        "end_byte": 2222
+        "type": "pair",
+        "start_byte": 666,
+        "end_byte": 700
       },
-      "parent": {
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
         "tree": "after",
         "path": [
           2,
@@ -59,25 +43,23 @@
         "start_byte": 2174,
         "end_byte": 2223
       },
-      "position": 2
-    },
-    {
-      "action": "insert",
-      "node": {
+      "parent": {
         "tree": "after",
         "path": [
           2,
           2,
-          80,
-          2,
-          2
+          78
         ],
-        "type": "string",
-        "label": "\"uri_too_long\"",
-        "start_byte": 2260,
-        "end_byte": 2274
+        "type": "pair",
+        "start_byte": 2169,
+        "end_byte": 2223
       },
-      "parent": {
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
         "tree": "after",
         "path": [
           2,
@@ -89,25 +71,23 @@
         "start_byte": 2234,
         "end_byte": 2275
       },
-      "position": 2
-    },
-    {
-      "action": "insert",
-      "node": {
+      "parent": {
         "tree": "after",
         "path": [
           2,
           2,
-          92,
-          2,
-          4
+          80
         ],
-        "type": "string",
-        "label": "\"unprocessable_content\"",
-        "start_byte": 2643,
-        "end_byte": 2666
+        "type": "pair",
+        "start_byte": 2229,
+        "end_byte": 2275
       },
-      "parent": {
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
         "tree": "after",
         "path": [
           2,
@@ -119,7 +99,83 @@
         "start_byte": 2601,
         "end_byte": 2667
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          2,
+          2,
+          92
+        ],
+        "type": "pair",
+        "start_byte": 2596,
+        "end_byte": 2667
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          2,
+          2,
+          5,
+          2
+        ],
+        "type": "tuple",
+        "start_byte": 671,
+        "end_byte": 686
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          2,
+          2,
+          78,
+          2
+        ],
+        "type": "tuple",
+        "start_byte": 2160,
+        "end_byte": 2189
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          2,
+          2,
+          80,
+          2
+        ],
+        "type": "tuple",
+        "start_byte": 2200,
+        "end_byte": 2226
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          2,
+          2,
+          92,
+          2
+        ],
+        "type": "tuple",
+        "start_byte": 2552,
+        "end_byte": 2593
+      },
+      "subtree": true
     }
   ],
   "line_alignment": [

@@ -47,28 +47,6 @@
       "dest_end_byte": 3289
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          2,
-          0,
-          0,
-          0,
-          0,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 3289,
-        "end_byte": 3290
-      }
-    },
-    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -77,142 +55,11 @@
           4,
           0,
           4,
-          2,
-          0,
-          0,
-          0,
-          0,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 3315,
-        "end_byte": 3316
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          0
-        ],
-        "type": "selector_expression",
-        "start_byte": 3314,
-        "end_byte": 3322
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "c",
-        "start_byte": 3314,
-        "end_byte": 3315
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          0
-        ],
-        "type": "selector_expression",
-        "start_byte": 3314,
-        "end_byte": 3322
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 3252,
-        "end_byte": 3275
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
           2
         ],
-        "type": "expression_statement",
-        "start_byte": 3252,
-        "end_byte": 3275
-      },
-      "position": 0
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          1,
-          0,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 3261,
-        "end_byte": 3262
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          0,
-          0,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 3260,
-        "end_byte": 3261
+        "type": "block",
+        "start_byte": 3310,
+        "end_byte": 3352
       },
       "parent": {
         "tree": "after",
@@ -220,15 +67,14 @@
           15,
           4,
           0,
-          2,
-          0,
-          0
+          4
         ],
-        "type": "selector_expression",
-        "start_byte": 3252,
-        "end_byte": 3270
+        "type": "if_statement",
+        "start_byte": 3287,
+        "end_byte": 3352
       },
-      "position": 1
+      "position": 2,
+      "subtree": true
     },
     {
       "action": "move",
@@ -439,6 +285,40 @@
           2,
           0,
           0,
+          1
+        ],
+        "type": "dot",
+        "label": ".",
+        "start_byte": 3260,
+        "end_byte": 3261
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          15,
+          4,
+          0,
+          2,
+          0,
+          0
+        ],
+        "type": "selector_expression",
+        "start_byte": 3252,
+        "end_byte": 3270
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          15,
+          4,
+          0,
+          2,
+          0,
+          0,
           2
         ],
         "type": "field_identifier",
@@ -460,7 +340,7 @@
         "start_byte": 3252,
         "end_byte": 3270
       },
-      "position": 3
+      "position": 2
     },
     {
       "action": "insert",
@@ -537,33 +417,31 @@
       }
     },
     {
-      "action": "insert",
+      "action": "delete",
       "node": {
-        "tree": "after",
+        "tree": "before",
         "path": [
           15,
           4,
           0,
-          4,
           2,
-          0,
-          0,
-          0,
-          0,
-          2
+          1
         ],
-        "type": "field_identifier",
-        "label": "String",
-        "start_byte": 3316,
-        "end_byte": 3322
+        "type": "binary_expression",
+        "start_byte": 3255,
+        "end_byte": 3280
       },
-      "parent": {
-        "tree": "after",
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
         "path": [
           15,
           4,
           0,
-          4,
+          2,
           2,
           0,
           0,
@@ -571,208 +449,10 @@
           0
         ],
         "type": "selector_expression",
-        "start_byte": 3314,
-        "end_byte": 3322
-      },
-      "position": 3
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          1,
-          0
-        ],
-        "type": "int_literal",
-        "label": "404",
-        "start_byte": 3323,
-        "end_byte": 3326
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 3322,
-        "end_byte": 3349
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          1,
-          2
-        ],
-        "type": "interpreted_string_literal",
-        "label": "\"404 page not found\"",
-        "start_byte": 3328,
-        "end_byte": 3348
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          15,
-          4,
-          0,
-          4,
-          2,
-          0,
-          0,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 3322,
-        "end_byte": 3349
-      },
-      "position": 2
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          1,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "engine",
-        "start_byte": 3255,
-        "end_byte": 3261
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          1,
-          0,
-          2
-        ],
-        "type": "field_identifier",
-        "label": "handlers404",
-        "start_byte": 3262,
-        "end_byte": 3273
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          1,
-          1
-        ],
-        "type": "comparison_operator_literal",
-        "label": "==",
-        "start_byte": 3274,
-        "end_byte": 3276
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          1,
-          2
-        ],
-        "type": "nil",
-        "label": "nil",
-        "start_byte": 3277,
-        "end_byte": 3280
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          2,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "http",
         "start_byte": 3285,
-        "end_byte": 3289
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          15,
-          4,
-          0,
-          2,
-          2,
-          0,
-          0,
-          0,
-          0,
-          2
-        ],
-        "type": "field_identifier",
-        "label": "NotFound",
-        "start_byte": 3290,
         "end_byte": 3298
-      }
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -795,6 +475,57 @@
         "end_byte": 3314
       },
       "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          15,
+          4,
+          0,
+          2,
+          2,
+          0,
+          0
+        ],
+        "type": "expression_statement",
+        "start_byte": 3285,
+        "end_byte": 3315
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          15,
+          4,
+          0,
+          2,
+          2,
+          0
+        ],
+        "type": "statement_list",
+        "start_byte": 3285,
+        "end_byte": 3316
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          15,
+          4,
+          0,
+          2,
+          2
+        ],
+        "type": "block",
+        "start_byte": 3281,
+        "end_byte": 3318
+      }
     },
     {
       "action": "delete",

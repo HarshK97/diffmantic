@@ -2,9 +2,9 @@
   "version": "v1",
   "actions": [
     {
-      "action": "move",
+      "action": "insert",
       "node": {
-        "tree": "before",
+        "tree": "after",
         "path": [
           37,
           3,
@@ -17,14 +17,12 @@
           0,
           2,
           0,
-          5,
-          0,
           0
         ],
         "type": "yield",
         "label": "yield",
-        "start_byte": 27457,
-        "end_byte": 27462
+        "start_byte": 27370,
+        "end_byte": 27375
       },
       "parent": {
         "tree": "after",
@@ -45,31 +43,7 @@
         "start_byte": 27370,
         "end_byte": 27429
       },
-      "position": 0,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          37,
-          3,
-          16,
-          4,
-          1,
-          5,
-          0,
-          3,
-          0,
-          2,
-          0,
-          5,
-          0
-        ],
-        "type": "yield",
-        "start_byte": 27457,
-        "end_byte": 27468
-      },
-      "old_position": 0,
-      "dest_start_byte": 27370,
-      "dest_end_byte": 27375
+      "position": 0
     },
     {
       "action": "insert",
@@ -197,32 +171,6 @@
           0,
           2,
           0,
-          5,
-          0,
-          1
-        ],
-        "type": "identifier",
-        "label": "chunk",
-        "start_byte": 27463,
-        "end_byte": 27468
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          37,
-          3,
-          16,
-          4,
-          1,
-          5,
-          0,
-          3,
-          0,
-          2,
-          0,
           0
         ],
         "type": "for",
@@ -324,7 +272,8 @@
         "type": "block",
         "start_byte": 27457,
         "end_byte": 27468
-      }
+      },
+      "subtree": true
     },
     {
       "action": "delete",

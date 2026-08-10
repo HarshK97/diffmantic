@@ -142,6 +142,12 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 					}
 				}
 
+				depth1 := t1.DepthTo(anc1)
+				depth2 := t2.DepthTo(anc2)
+				if !parentMatched && siblingScore == 0 && d < 0.25 && (depth1 > 2 || depth2 > 2) {
+					continue
+				}
+
 				if posScore > bestPosScore || d > bestDice {
 					bestDice = d
 					bestT2 = t2

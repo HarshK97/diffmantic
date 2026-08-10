@@ -37,13 +37,11 @@
           1,
           3,
           10,
-          0,
           0
         ],
-        "type": "property_identifier",
-        "label": "name",
+        "type": "pair",
         "start_byte": 8386,
-        "end_byte": 8390
+        "end_byte": 8401
       },
       "parent": {
         "tree": "after",
@@ -51,14 +49,120 @@
           8,
           1,
           3,
+          10
+        ],
+        "type": "object",
+        "start_byte": 8380,
+        "end_byte": 8590
+      },
+      "position": 0,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
           10,
-          0
+          2
         ],
         "type": "pair",
-        "start_byte": 8386,
-        "end_byte": 8401
+        "start_byte": 8407,
+        "end_byte": 8446
       },
-      "position": 0
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          10
+        ],
+        "type": "object",
+        "start_byte": 8380,
+        "end_byte": 8590
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          10,
+          4
+        ],
+        "type": "pair",
+        "start_byte": 8452,
+        "end_byte": 8558
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          10
+        ],
+        "type": "object",
+        "start_byte": 8380,
+        "end_byte": 8590
+      },
+      "position": 4,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          10,
+          6
+        ],
+        "type": "pair",
+        "start_byte": 8564,
+        "end_byte": 8585
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          10
+        ],
+        "type": "object",
+        "start_byte": 8380,
+        "end_byte": 8590
+      },
+      "position": 6,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
+          10
+        ],
+        "type": "identifier",
+        "label": "name",
+        "start_byte": 8382,
+        "end_byte": 8386
+      }
     },
     {
       "action": "delete",
@@ -77,39 +181,7 @@
       }
     },
     {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          0,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8390,
-        "end_byte": 8391
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          0
-        ],
-        "type": "pair",
-        "start_byte": 8386,
-        "end_byte": 8401
-      },
-      "position": 1
-    },
-    {
-      "action": "move",
+      "action": "delete",
       "node": {
         "tree": "before",
         "path": [
@@ -122,422 +194,6 @@
         "label": "\"zodgres\"",
         "start_byte": 8388,
         "end_byte": 8397
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          0
-        ],
-        "type": "pair",
-        "start_byte": 8386,
-        "end_byte": 8401
-      },
-      "position": 2,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "old_position": 12,
-      "dest_start_byte": 8392,
-      "dest_end_byte": 8401
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          2,
-          0
-        ],
-        "type": "property_identifier",
-        "label": "url",
-        "start_byte": 8407,
-        "end_byte": 8410
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          2
-        ],
-        "type": "pair",
-        "start_byte": 8407,
-        "end_byte": 8446
-      },
-      "position": 0
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          15
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8406,
-        "end_byte": 8407
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          2,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8410,
-        "end_byte": 8411
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          2
-        ],
-        "type": "pair",
-        "start_byte": 8407,
-        "end_byte": 8446
-      },
-      "position": 1
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          16
-        ],
-        "type": "string",
-        "label": "\"https://github.com/endel/zodgres\"",
-        "start_byte": 8408,
-        "end_byte": 8442
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          2
-        ],
-        "type": "pair",
-        "start_byte": 8407,
-        "end_byte": 8446
-      },
-      "position": 2,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "old_position": 16,
-      "dest_start_byte": 8412,
-      "dest_end_byte": 8446
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          4,
-          0
-        ],
-        "type": "property_identifier",
-        "label": "description",
-        "start_byte": 8452,
-        "end_byte": 8463
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          4
-        ],
-        "type": "pair",
-        "start_byte": 8452,
-        "end_byte": 8558
-      },
-      "position": 0
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          19
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8459,
-        "end_byte": 8460
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          4,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8463,
-        "end_byte": 8464
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          4
-        ],
-        "type": "pair",
-        "start_byte": 8452,
-        "end_byte": 8558
-      },
-      "position": 1
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          20
-        ],
-        "type": "string",
-        "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
-        "start_byte": 8461,
-        "end_byte": 8554
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          4
-        ],
-        "type": "pair",
-        "start_byte": 8452,
-        "end_byte": 8558
-      },
-      "position": 2,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "old_position": 20,
-      "dest_start_byte": 8465,
-      "dest_end_byte": 8558
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          6,
-          0
-        ],
-        "type": "property_identifier",
-        "label": "slug",
-        "start_byte": 8564,
-        "end_byte": 8568
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          6
-        ],
-        "type": "pair",
-        "start_byte": 8564,
-        "end_byte": 8585
-      },
-      "position": 0
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          23
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8564,
-        "end_byte": 8565
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          6,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8568,
-        "end_byte": 8569
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          6
-        ],
-        "type": "pair",
-        "start_byte": 8564,
-        "end_byte": 8585
-      },
-      "position": 1
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          24
-        ],
-        "type": "string",
-        "label": "\"endel/zodgres\"",
-        "start_byte": 8566,
-        "end_byte": 8581
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          10,
-          6
-        ],
-        "type": "pair",
-        "start_byte": 8564,
-        "end_byte": 8585
-      },
-      "position": 2,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "old_position": 24,
-      "dest_start_byte": 8570,
-      "dest_end_byte": 8585
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          1,
-          3,
-          10
-        ],
-        "type": "identifier",
-        "label": "name",
-        "start_byte": 8382,
-        "end_byte": 8386
       }
     },
     {
@@ -564,6 +220,38 @@
           8,
           1,
           3,
+          15
+        ],
+        "type": "colon",
+        "label": ":",
+        "start_byte": 8406,
+        "end_byte": 8407
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
+          16
+        ],
+        "type": "string",
+        "label": "\"https://github.com/endel/zodgres\"",
+        "start_byte": 8408,
+        "end_byte": 8442
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
           18
         ],
         "type": "identifier",
@@ -580,12 +268,76 @@
           8,
           1,
           3,
+          19
+        ],
+        "type": "colon",
+        "label": ":",
+        "start_byte": 8459,
+        "end_byte": 8460
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
+          20
+        ],
+        "type": "string",
+        "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
+        "start_byte": 8461,
+        "end_byte": 8554
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
           22
         ],
         "type": "identifier",
         "label": "slug",
         "start_byte": 8560,
         "end_byte": 8564
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
+          23
+        ],
+        "type": "colon",
+        "label": ":",
+        "start_byte": 8564,
+        "end_byte": 8565
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          1,
+          3,
+          24
+        ],
+        "type": "string",
+        "label": "\"endel/zodgres\"",
+        "start_byte": 8566,
+        "end_byte": 8581
       }
     }
   ],

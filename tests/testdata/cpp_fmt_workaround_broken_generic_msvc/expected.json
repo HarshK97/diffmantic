@@ -153,71 +153,6 @@
       "position": 1
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          2,
-          2,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "format_args",
-        "start_byte": 1391,
-        "end_byte": 1402
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6,
-          0,
-          2
-        ],
-        "type": "identifier",
-        "label": "format_args",
-        "start_byte": 1396,
-        "end_byte": 1407
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6,
-          0
-        ],
-        "type": "qualified_identifier",
-        "start_byte": 1391,
-        "end_byte": 1407
-      },
-      "position": 2
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -477,27 +412,8 @@
       "dest_end_byte": 1354
     },
     {
-      "action": "move",
+      "action": "insert",
       "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          5,
-          1,
-          0,
-          1,
-          2,
-          1,
-          0
-        ],
-        "type": "identifier",
-        "label": "buffer",
-        "start_byte": 1478,
-        "end_byte": 1484
-      },
-      "parent": {
         "tree": "after",
         "path": [
           8,
@@ -514,312 +430,21 @@
         "start_byte": 1354,
         "end_byte": 1449
       },
-      "position": 0,
-      "old_parent": {
-        "tree": "before",
+      "parent": {
+        "tree": "after",
         "path": [
           8,
           2,
           2,
-          5,
+          4,
           1,
           0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1477,
-        "end_byte": 1514
-      },
-      "old_position": 0,
-      "dest_start_byte": 1364,
-      "dest_end_byte": 1370,
-      "group_id": "group-2"
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          5,
-          1,
-          0,
-          1,
-          2,
           1,
           2
         ],
-        "type": "identifier",
-        "label": "size",
-        "start_byte": 1486,
-        "end_byte": 1490
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1354,
-        "end_byte": 1449
-      },
-      "position": 2,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          5,
-          1,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1477,
-        "end_byte": 1514
-      },
-      "old_position": 2,
-      "dest_start_byte": 1372,
-      "dest_end_byte": 1376,
-      "group_id": "group-2"
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          5,
-          1,
-          0,
-          1,
-          2,
-          1,
-          4
-        ],
-        "type": "identifier",
-        "label": "fmt",
-        "start_byte": 1492,
-        "end_byte": 1495
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1354,
-        "end_byte": 1449
-      },
-      "position": 4,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          5,
-          1,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1477,
-        "end_byte": 1514
-      },
-      "old_position": 4,
-      "dest_start_byte": 1378,
-      "dest_end_byte": 1381,
-      "group_id": "group-2"
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6
-        ],
         "type": "call_expression",
-        "start_byte": 1391,
-        "end_byte": 1448
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1354,
+        "start_byte": 1337,
         "end_byte": 1449
-      },
-      "position": 6
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          2,
-          0,
-          0,
-          0
-        ],
-        "type": "namespace_identifier",
-        "label": "fmt",
-        "start_byte": 1340,
-        "end_byte": 1343
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6,
-          0
-        ],
-        "type": "qualified_identifier",
-        "start_byte": 1391,
-        "end_byte": 1407
-      },
-      "position": 0,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          2,
-          0,
-          0
-        ],
-        "type": "qualified_identifier",
-        "start_byte": 1340,
-        "end_byte": 1362
-      },
-      "old_position": 0,
-      "dest_start_byte": 1391,
-      "dest_end_byte": 1394
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          2,
-          0,
-          0,
-          1
-        ],
-        "type": "scope_resolution",
-        "label": "::",
-        "start_byte": 1343,
-        "end_byte": 1345
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6,
-          0,
-          1
-        ],
-        "type": "scope_resolution",
-        "label": "::",
-        "start_byte": 1394,
-        "end_byte": 1396
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6,
-          0
-        ],
-        "type": "qualified_identifier",
-        "start_byte": 1391,
-        "end_byte": 1407
       },
       "position": 1
     },
@@ -837,14 +462,173 @@
           1,
           2,
           1,
-          6,
+          0
+        ],
+        "type": "identifier",
+        "label": "buffer",
+        "start_byte": 1364,
+        "end_byte": 1370
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
           1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          2
+        ],
+        "type": "identifier",
+        "label": "size",
+        "start_byte": 1372,
+        "end_byte": 1376
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 2
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          4
+        ],
+        "type": "identifier",
+        "label": "fmt",
+        "start_byte": 1378,
+        "end_byte": 1381
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 4
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6,
+          0
+        ],
+        "type": "qualified_identifier",
+        "start_byte": 1391,
+        "end_byte": 1407
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          6
+        ],
+        "type": "call_expression",
+        "start_byte": 1391,
+        "end_byte": 1448
+      },
+      "position": 0,
+      "subtree": true
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2,
+          0,
           0
         ],
         "type": "identifier",
         "label": "format_args",
-        "start_byte": 1408,
-        "end_byte": 1419
+        "start_byte": 1391,
+        "end_byte": 1402
       },
       "parent": {
         "tree": "after",
@@ -865,7 +649,27 @@
         "start_byte": 1407,
         "end_byte": 1448
       },
-      "position": 0
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2,
+          0
+        ],
+        "type": "comma_expression",
+        "start_byte": 1391,
+        "end_byte": 1430
+      },
+      "old_position": 0,
+      "dest_start_byte": 1408,
+      "dest_end_byte": 1419,
+      "group_id": "group-2"
     },
     {
       "action": "move",
@@ -925,28 +729,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 1421,
-      "dest_end_byte": 1447
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          2,
-          0,
-          0,
-          2
-        ],
-        "type": "identifier",
-        "label": "basic_format_args",
-        "start_byte": 1345,
-        "end_byte": 1362
-      }
+      "dest_end_byte": 1447,
+      "group_id": "group-2"
     },
     {
       "action": "delete",
@@ -961,34 +745,13 @@
           0,
           1,
           2,
-          1,
-          6
-        ],
-        "type": "identifier",
-        "label": "format_args_view",
-        "start_byte": 1497,
-        "end_byte": 1513
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          2,
-          0,
           1
         ],
-        "type": "comparison_operator_literal",
-        "label": "\u003c",
-        "start_byte": 1362,
-        "end_byte": 1363
-      }
+        "type": "argument_list",
+        "start_byte": 1477,
+        "end_byte": 1514
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1001,11 +764,10 @@
           4,
           1,
           2,
-          0,
-          2
+          0
         ],
-        "type": "qualified_identifier",
-        "start_byte": 1363,
+        "type": "binary_expression",
+        "start_byte": 1340,
         "end_byte": 1382
       },
       "subtree": true
@@ -1027,6 +789,25 @@
         "label": "\u003e",
         "start_byte": 1382,
         "end_byte": 1383
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          2,
+          2,
+          0
+        ],
+        "type": "comma_expression",
+        "start_byte": 1391,
+        "end_byte": 1430
       }
     },
     {
@@ -1290,11 +1071,11 @@
       "right_line": 33
     },
     {
-      "left_line": -1,
+      "left_line": 38,
       "right_line": 34
     },
     {
-      "left_line": 38,
+      "left_line": -1,
       "right_line": 35
     },
     {

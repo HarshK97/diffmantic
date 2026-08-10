@@ -128,24 +128,6 @@
       "group_id": "group-1"
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          7,
-          2,
-          0,
-          1,
-          0,
-          1
-        ],
-        "type": "comparison_operator_literal",
-        "label": "\u003c",
-        "start_byte": 610,
-        "end_byte": 611
-      }
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -292,6 +274,24 @@
         "end_byte": 642
       },
       "position": 1
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          7,
+          2,
+          0,
+          1,
+          0,
+          1
+        ],
+        "type": "comparison_operator_literal",
+        "label": "\u003c",
+        "start_byte": 610,
+        "end_byte": 611
+      }
     }
   ],
   "line_alignment": [

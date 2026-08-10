@@ -28,26 +28,23 @@
         "tree": "after",
         "path": [
           9,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 881,
-        "end_byte": 926
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          9,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 850,
+        "type": "call_expression",
+        "start_byte": 833,
         "end_byte": 927
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          9
+        ],
+        "type": "expression_statement",
+        "start_byte": 833,
+        "end_byte": 928
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -55,26 +52,23 @@
         "tree": "after",
         "path": [
           10,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 977,
-        "end_byte": 1032
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          10,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 946,
+        "type": "call_expression",
+        "start_byte": 929,
         "end_byte": 1033
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          10
+        ],
+        "type": "expression_statement",
+        "start_byte": 929,
+        "end_byte": 1034
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -82,26 +76,23 @@
         "tree": "after",
         "path": [
           11,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 1083,
-        "end_byte": 1144
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          11,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1052,
+        "type": "call_expression",
+        "start_byte": 1035,
         "end_byte": 1145
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          11
+        ],
+        "type": "expression_statement",
+        "start_byte": 1035,
+        "end_byte": 1146
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -109,26 +100,23 @@
         "tree": "after",
         "path": [
           12,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 1195,
-        "end_byte": 1251
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          12,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1164,
+        "type": "call_expression",
+        "start_byte": 1147,
         "end_byte": 1252
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          12
+        ],
+        "type": "expression_statement",
+        "start_byte": 1147,
+        "end_byte": 1253
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -136,26 +124,23 @@
         "tree": "after",
         "path": [
           13,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 1302,
-        "end_byte": 1347
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          13,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1271,
+        "type": "call_expression",
+        "start_byte": 1254,
         "end_byte": 1348
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          13
+        ],
+        "type": "expression_statement",
+        "start_byte": 1254,
+        "end_byte": 1349
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -163,26 +148,23 @@
         "tree": "after",
         "path": [
           14,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 1398,
-        "end_byte": 1448
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          14,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1367,
+        "type": "call_expression",
+        "start_byte": 1350,
         "end_byte": 1449
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          14
+        ],
+        "type": "expression_statement",
+        "start_byte": 1350,
+        "end_byte": 1450
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -190,26 +172,23 @@
         "tree": "after",
         "path": [
           15,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 1499,
-        "end_byte": 1551
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          15,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1468,
+        "type": "call_expression",
+        "start_byte": 1451,
         "end_byte": 1552
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          15
+        ],
+        "type": "expression_statement",
+        "start_byte": 1451,
+        "end_byte": 1553
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -217,26 +196,23 @@
         "tree": "after",
         "path": [
           16,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 1602,
-        "end_byte": 1658
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          16,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1571,
+        "type": "call_expression",
+        "start_byte": 1554,
         "end_byte": 1659
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          16
+        ],
+        "type": "expression_statement",
+        "start_byte": 1554,
+        "end_byte": 1660
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -244,26 +220,23 @@
         "tree": "after",
         "path": [
           21,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 2402,
-        "end_byte": 2447
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          21,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2369,
+        "type": "call_expression",
+        "start_byte": 2352,
         "end_byte": 2448
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          21
+        ],
+        "type": "expression_statement",
+        "start_byte": 2352,
+        "end_byte": 2449
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -271,26 +244,23 @@
         "tree": "after",
         "path": [
           22,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 2500,
-        "end_byte": 2555
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          22,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2467,
+        "type": "call_expression",
+        "start_byte": 2450,
         "end_byte": 2556
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          22
+        ],
+        "type": "expression_statement",
+        "start_byte": 2450,
+        "end_byte": 2557
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -298,26 +268,23 @@
         "tree": "after",
         "path": [
           23,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 2608,
-        "end_byte": 2669
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          23,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2575,
+        "type": "call_expression",
+        "start_byte": 2558,
         "end_byte": 2670
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          23
+        ],
+        "type": "expression_statement",
+        "start_byte": 2558,
+        "end_byte": 2671
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -325,26 +292,23 @@
         "tree": "after",
         "path": [
           24,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 2722,
-        "end_byte": 2778
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          24,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2689,
+        "type": "call_expression",
+        "start_byte": 2672,
         "end_byte": 2779
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          24
+        ],
+        "type": "expression_statement",
+        "start_byte": 2672,
+        "end_byte": 2780
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -352,26 +316,23 @@
         "tree": "after",
         "path": [
           25,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 2831,
-        "end_byte": 2876
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          25,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2798,
+        "type": "call_expression",
+        "start_byte": 2781,
         "end_byte": 2877
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          25
+        ],
+        "type": "expression_statement",
+        "start_byte": 2781,
+        "end_byte": 2878
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -379,26 +340,23 @@
         "tree": "after",
         "path": [
           26,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 2929,
-        "end_byte": 2979
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          26,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2896,
+        "type": "call_expression",
+        "start_byte": 2879,
         "end_byte": 2980
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          26
+        ],
+        "type": "expression_statement",
+        "start_byte": 2879,
+        "end_byte": 2981
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -406,26 +364,23 @@
         "tree": "after",
         "path": [
           27,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 3032,
-        "end_byte": 3084
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          27,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 2999,
+        "type": "call_expression",
+        "start_byte": 2982,
         "end_byte": 3085
       },
-      "position": 4
+      "parent": {
+        "tree": "after",
+        "path": [
+          27
+        ],
+        "type": "expression_statement",
+        "start_byte": 2982,
+        "end_byte": 3086
+      },
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -433,26 +388,23 @@
         "tree": "after",
         "path": [
           28,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "concatenated_string",
-        "start_byte": 3137,
-        "end_byte": 3193
+        "type": "call_expression",
+        "start_byte": 3087,
+        "end_byte": 3194
       },
       "parent": {
         "tree": "after",
         "path": [
-          28,
-          0,
-          1
+          28
         ],
-        "type": "argument_list",
-        "start_byte": 3104,
-        "end_byte": 3194
+        "type": "expression_statement",
+        "start_byte": 3087,
+        "end_byte": 3195
       },
-      "position": 4
+      "position": 0,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -892,15 +844,13 @@
         "tree": "before",
         "path": [
           8,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/jeopardy/jeopardy.json\"",
-        "start_byte": 860,
-        "end_byte": 889
-      }
+        "type": "call_expression",
+        "start_byte": 808,
+        "end_byte": 890
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -908,15 +858,13 @@
         "tree": "before",
         "path": [
           9,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/nativejson-benchmark/canada.json\"",
-        "start_byte": 944,
-        "end_byte": 983
-      }
+        "type": "call_expression",
+        "start_byte": 892,
+        "end_byte": 984
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -924,15 +872,13 @@
         "tree": "before",
         "path": [
           10,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
-        "start_byte": 1038,
-        "end_byte": 1083
-      }
+        "type": "call_expression",
+        "start_byte": 986,
+        "end_byte": 1084
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -940,15 +886,13 @@
         "tree": "before",
         "path": [
           11,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/nativejson-benchmark/twitter.json\"",
-        "start_byte": 1138,
-        "end_byte": 1178
-      }
+        "type": "call_expression",
+        "start_byte": 1086,
+        "end_byte": 1179
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -956,15 +900,13 @@
         "tree": "before",
         "path": [
           12,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/floats.json\"",
-        "start_byte": 1233,
-        "end_byte": 1259
-      }
+        "type": "call_expression",
+        "start_byte": 1181,
+        "end_byte": 1260
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -972,15 +914,13 @@
         "tree": "before",
         "path": [
           13,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/signed_ints.json\"",
-        "start_byte": 1314,
-        "end_byte": 1345
-      }
+        "type": "call_expression",
+        "start_byte": 1262,
+        "end_byte": 1346
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -988,15 +928,13 @@
         "tree": "before",
         "path": [
           14,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/unsigned_ints.json\"",
-        "start_byte": 1400,
-        "end_byte": 1433
-      }
+        "type": "call_expression",
+        "start_byte": 1348,
+        "end_byte": 1434
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1004,15 +942,13 @@
         "tree": "before",
         "path": [
           15,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/small_signed_ints.json\"",
-        "start_byte": 1488,
-        "end_byte": 1525
-      }
+        "type": "call_expression",
+        "start_byte": 1436,
+        "end_byte": 1526
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1020,15 +956,13 @@
         "tree": "before",
         "path": [
           20,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/jeopardy/jeopardy.json\"",
-        "start_byte": 2271,
-        "end_byte": 2300
-      }
+        "type": "call_expression",
+        "start_byte": 2219,
+        "end_byte": 2301
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1036,15 +970,13 @@
         "tree": "before",
         "path": [
           21,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/nativejson-benchmark/canada.json\"",
-        "start_byte": 2355,
-        "end_byte": 2394
-      }
+        "type": "call_expression",
+        "start_byte": 2303,
+        "end_byte": 2395
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1052,15 +984,13 @@
         "tree": "before",
         "path": [
           22,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
-        "start_byte": 2449,
-        "end_byte": 2494
-      }
+        "type": "call_expression",
+        "start_byte": 2397,
+        "end_byte": 2495
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1068,15 +998,13 @@
         "tree": "before",
         "path": [
           23,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/nativejson-benchmark/twitter.json\"",
-        "start_byte": 2549,
-        "end_byte": 2589
-      }
+        "type": "call_expression",
+        "start_byte": 2497,
+        "end_byte": 2590
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1084,15 +1012,13 @@
         "tree": "before",
         "path": [
           24,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/floats.json\"",
-        "start_byte": 2644,
-        "end_byte": 2670
-      }
+        "type": "call_expression",
+        "start_byte": 2592,
+        "end_byte": 2671
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1100,15 +1026,13 @@
         "tree": "before",
         "path": [
           25,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/signed_ints.json\"",
-        "start_byte": 2725,
-        "end_byte": 2756
-      }
+        "type": "call_expression",
+        "start_byte": 2673,
+        "end_byte": 2757
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1116,15 +1040,13 @@
         "tree": "before",
         "path": [
           26,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/unsigned_ints.json\"",
-        "start_byte": 2811,
-        "end_byte": 2844
-      }
+        "type": "call_expression",
+        "start_byte": 2759,
+        "end_byte": 2845
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -1132,15 +1054,13 @@
         "tree": "before",
         "path": [
           27,
-          0,
-          1,
-          4
+          0
         ],
-        "type": "string_literal",
-        "label": "\"data/numbers/small_signed_ints.json\"",
-        "start_byte": 2899,
-        "end_byte": 2936
-      }
+        "type": "call_expression",
+        "start_byte": 2847,
+        "end_byte": 2937
+      },
+      "subtree": true
     },
     {
       "action": "delete",

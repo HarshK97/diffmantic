@@ -53,16 +53,36 @@
           1,
           0,
           14,
-          2,
-          0
+          2
         ],
-        "type": "string",
-        "label": "'jasmine-diff'",
-        "start_byte": 1258,
-        "end_byte": 1272
+        "type": "array",
+        "start_byte": 1257,
+        "end_byte": 1285
       },
       "parent": {
         "tree": "after",
+        "path": [
+          6,
+          0,
+          2,
+          2,
+          0,
+          0,
+          1,
+          0,
+          14
+        ],
+        "type": "pair",
+        "start_byte": 1246,
+        "end_byte": 1285
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
         "path": [
           6,
           0,
@@ -77,9 +97,9 @@
         ],
         "type": "array",
         "start_byte": 1257,
-        "end_byte": 1285
+        "end_byte": 1269
       },
-      "position": 0
+      "subtree": true
     }
   ],
   "line_alignment": [
