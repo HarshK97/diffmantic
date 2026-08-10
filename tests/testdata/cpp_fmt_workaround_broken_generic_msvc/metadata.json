@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/fmt",
+  "commit": "60d5d0cec6ae6f17ae6ec500ee7f0d350bc2509b",
+  "message": "Workaround broken _Generic in MSVC",
+  "action_count": 30
+}

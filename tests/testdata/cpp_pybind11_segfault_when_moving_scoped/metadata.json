@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/pybind11",
+  "commit": "804e2c1b39ec55899efcfe3b49b324b10d8cbc9c",
+  "message": "fix: segfault when moving `scoped_ostream_redirect` (#6033)\n\n* fix: segfault when moving `scoped_ostream_redirect`",
+  "action_count": 6
+}

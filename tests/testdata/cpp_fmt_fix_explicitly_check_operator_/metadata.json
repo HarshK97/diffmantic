@@ -1,6 +1,0 @@
-{
-  "repo": "./dataset/cpp_fmt/_clones/fmt",
-  "commit": "0e601c34de26fe5b46f4c62dab2039efcb0acaed",
-  "message": "fix: explicitly check `operator[]` in `is_contiguous` (#4825)",
-  "action_count": 4
-}

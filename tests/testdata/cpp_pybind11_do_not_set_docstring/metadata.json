@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/pybind11",
+  "commit": "d587a2fd17dc89c0b2d4b6dc7715594bed45fb58",
+  "message": "fix: do not set docstring for function when empty (#2745)\n\n* Do not set docstring for function when it's empty",
+  "action_count": 1
+}

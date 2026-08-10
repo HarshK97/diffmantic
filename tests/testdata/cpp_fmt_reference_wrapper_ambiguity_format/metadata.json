@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/fmt",
+  "commit": "4999416e5cba39569b95331e99be02d486ee09a2",
+  "message": "Fix reference_wrapper ambiguity with format_as (#4434)",
+  "action_count": 10
+}

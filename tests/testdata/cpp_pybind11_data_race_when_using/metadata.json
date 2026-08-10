@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/pybind11",
+  "commit": "15d9dae14b148509f3e1e7a42d5b1260fffff3ad",
+  "message": "Fix data race when using shared variables (free threading) (#5494)\n\n* Fix data race when using shared variables (free threading)",
+  "action_count": 3
+}

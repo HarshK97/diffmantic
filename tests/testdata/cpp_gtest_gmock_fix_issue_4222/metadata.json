@@ -1,6 +1,0 @@
-{
-  "repo": "./dataset/cpp_gtest/_clones/googletest",
-  "commit": "51eeae5a5520166a385ce457b410d6309ac20968",
-  "message": "gmock: fix issue #4222",
-  "action_count": 3
-}

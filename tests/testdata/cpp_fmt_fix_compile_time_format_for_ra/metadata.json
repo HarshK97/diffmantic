@@ -1,6 +1,0 @@
-{
-  "repo": "./dataset/cpp_fmt/_clones/fmt",
-  "commit": "029d543768abdc14a94360446597d0f5bc7350aa",
-  "message": "Fix compile time format for ranges, style, and std (#4759)",
-  "action_count": 39
-}

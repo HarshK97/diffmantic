@@ -1,6 +1,0 @@
-{
-  "repo": "./dataset/cpp_gtest/_clones/googletest",
-  "commit": "0a3b403fe037ff80daa1826ae99eed41e94dea05",
-  "message": "Fix gmock_output_test when using MSVC",
-  "action_count": 9
-}

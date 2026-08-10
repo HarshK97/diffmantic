@@ -1,6 +1,0 @@
-{
-  "repo": "./dataset/cpp_gtest/_clones/googletest",
-  "commit": "f1c05d4544964b060460a683c1cf31e02f0ba094",
-  "message": "Use explicit short to fix MSVC compiler warning",
-  "action_count": 139
-}
