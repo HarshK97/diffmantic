@@ -15,7 +15,7 @@ func (m model) renderHelpModal() string {
 		return ""
 	}
 
-	cardWidth := 82
+	cardWidth := 90
 	if width < cardWidth {
 		cardWidth = max(width-4, 20)
 	}
@@ -66,11 +66,12 @@ func (m model) renderHelpModal() string {
 
 	legendTitle := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("COLOR LEGEND")
 	legend := fmt.Sprintf(
-		"  %s    %s    %s    %s",
+		"  %s   %s   %s   %s   %s",
 		hlInsertStyle.Render(" ✚ INSERT "),
 		hlDeleteStyle.Render(" ✘ DELETE "),
 		hlUpdateStyle.Render(" ✎ UPDATE "),
-		hlMoveStyle.Render(" ➤ MOVE   "),
+		hlMoveStyle.Render(" ➤ MOVE "),
+		hlMoveUpdateStyle.Render(" ✎ MOVE+UPDATE "),
 	)
 
 	mouseTitle := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("MOUSE CONTROLS")
@@ -121,6 +122,7 @@ func renderLeftColumn() string {
 		b,
 		"  j / k  : Scroll row up/down",
 		"  h / l  : Scroll view left/right",
+		"  ]h / [h: Jump next/prev span",
 		"  w / b  : Move word forward/back",
 		"  0 / $  : Go to start/end of line",
 		"  n / N  : Next/prev change or match",

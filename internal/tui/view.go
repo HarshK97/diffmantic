@@ -143,6 +143,7 @@ func (m model) renderContent() string {
 func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]syntaxSpan, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
 	result := make([]string, height)
 
+	lineNumWidth := max(gutterW-4, 1)
 	for i := range height {
 		vIdx := m.scrollY + i
 
@@ -174,11 +175,14 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 		}
 
 		if lineIdx == -1 {
+			emptyLineNum := strings.Repeat(" ", lineNumWidth)
+			badgeStr := renderGutterBadge(nil, isCursorRow && isActivePane, isLeftPane)
+
 			var gutter string
 			if isCursorRow && isActivePane {
-				gutter = cursorGutterStyle.Render(strings.Repeat(" ", gutterW))
+				gutter = cursorGutterStyle.Render(" "+emptyLineNum+" ") + badgeStr + cursorGutterStyle.Render(" ")
 			} else {
-				gutter = lineNumStyle.Render(strings.Repeat(" ", gutterW))
+				gutter = lineNumStyle.Render(" "+emptyLineNum+" ") + badgeStr + lineNumStyle.Render(" ")
 			}
 
 			var content string
@@ -207,14 +211,15 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 				symStyle = lineNumStyle
 			}
 
-			// Leave 1 slot for cursor indicator and 1 for fold symbol.
-			lineNumStr := fmt.Sprintf("%*d", gutterW-2, lineIdx+1)
+			// Leave 1 slot for cursor indicator, 1 space, 1 badge slot, and 1 for fold symbol.
+			lineNumStr := fmt.Sprintf("%*d", lineNumWidth, lineIdx+1)
+			badgeStr := renderGutterBadge(lineSpans, isCursorRow && isActivePane, isLeftPane)
 
 			var gutter string
 			if isCursorRow && isActivePane {
-				gutter = cursorGutterStyle.Render(" " + lineNumStr + symbol)
+				gutter = cursorGutterStyle.Render(" "+lineNumStr+" ") + badgeStr + cursorGutterStyle.Render(symbol)
 			} else {
-				gutter = lineNumStyle.Render(" "+lineNumStr) + symStyle.Render(symbol)
+				gutter = lineNumStyle.Render(" "+lineNumStr+" ") + badgeStr + symStyle.Render(symbol)
 			}
 
 			rawLine := lines[lineIdx]
@@ -306,10 +311,95 @@ func centerPad(s string, width int) string {
 	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
 }
 
+func renderGutterBadge(spans []span, isCursor bool, isLeftPane bool) string {
+	var hasUpdate, hasInsert, hasDelete, hasMove bool
+	for _, s := range spans {
+		switch s.kind {
+		case kindUpdate:
+			hasUpdate = true
+		case kindInsert:
+			hasInsert = true
+		case kindDelete:
+			hasDelete = true
+		case kindMove:
+			hasMove = true
+		case kindMoveUpdate:
+			hasUpdate = true
+			hasMove = true
+		}
+	}
+
+	inactiveBg := colorCrust
+	if isCursor {
+		inactiveBg = lipgloss.Color("#222230")
+	}
+
+	// Left Pipe (Foreground of ▌)
+	leftColor := inactiveBg
+	if isLeftPane && hasDelete {
+		leftColor = colorRed
+	} else if !isLeftPane && hasInsert {
+		leftColor = colorGreen
+	}
+
+	// Right Pipe (Background of ▌)
+	rightColor := inactiveBg
+	if hasUpdate && hasMove {
+		rightColor = colorTeal
+	} else if hasUpdate {
+		rightColor = colorYellow
+	} else if hasMove {
+		rightColor = colorBlue
+	}
+
+	if leftColor == inactiveBg && rightColor == inactiveBg {
+		return lipgloss.NewStyle().Background(inactiveBg).Render(" ")
+	}
+
+	return lipgloss.NewStyle().Foreground(leftColor).Background(rightColor).Render("▌")
+}
+
 func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syntaxSpan, matches []searchMatch, scrollX, textW int, cursorCol int, pane string, virtualRow int) string {
 	// Expand tabs and map original byte offsets to visual column positions.
 	expanded, byteToVisual := expandLine(rawLine)
 	runeLen := len([]rune(expanded))
+
+	// Calculate off-screen chevrons for left/right viewport boundaries
+	var hasLeftChevron, hasRightChevron bool
+	var leftChevronKind, rightChevronKind actionKind
+
+	closestLeftEnd := -1
+	closestRightStart := 1<<31 - 1
+
+	for _, s := range lineSpans {
+		sc := 0
+		if s.startCol < len(byteToVisual) {
+			sc = byteToVisual[s.startCol]
+		}
+		ec := runeLen
+		if s.endCol < len(byteToVisual) {
+			ec = byteToVisual[s.endCol]
+		}
+
+		if sc >= 0 && ec > sc {
+			// Span lies entirely to the left of scrollX
+			if ec <= scrollX {
+				if ec > closestLeftEnd {
+					closestLeftEnd = ec
+					leftChevronKind = s.kind
+					hasLeftChevron = true
+				}
+			}
+			// Span lies entirely past scrollX + textW
+			if sc >= scrollX+textW {
+				if sc < closestRightStart {
+					closestRightStart = sc
+					rightChevronKind = s.kind
+					hasRightChevron = true
+				}
+			}
+		}
+	}
 
 	// Action kind and total byte length for each column.
 	// Inner (smaller) AST nodes override outer container nodes.
@@ -393,7 +483,19 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 		var style lipgloss.Style
 		var r rune
 
-		if col < runeLen {
+		if idx == 0 && hasLeftChevron {
+			r = '<'
+			style = lipgloss.NewStyle().Foreground(actionFg(leftChevronKind))
+			if cursorCol >= 0 {
+				style = style.Background(colorSurface0)
+			}
+		} else if idx == textW-1 && hasRightChevron {
+			r = '>'
+			style = lipgloss.NewStyle().Foreground(actionFg(rightChevronKind))
+			if cursorCol >= 0 {
+				style = style.Background(colorSurface0)
+			}
+		} else if col < runeLen {
 			r = expRunes[col]
 
 			searchStyleState := -1
@@ -503,6 +605,9 @@ func (m model) renderStatusBar() string {
 	prefix := m.digitBuffer
 	if m.pendingZ {
 		prefix += "z"
+	}
+	if m.pendingBracket != "" {
+		prefix += m.pendingBracket
 	}
 	prefixLen := len([]rune(prefix))
 
