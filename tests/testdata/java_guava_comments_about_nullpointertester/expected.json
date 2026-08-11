@@ -1586,14 +1586,10 @@
     },
     {
       "left_line": 387,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 387
     },
     {
-      "left_line": -1,
+      "left_line": 388,
       "right_line": 388
     },
     {
@@ -1609,7 +1605,7 @@
       "right_line": 391
     },
     {
-      "left_line": 388,
+      "left_line": -1,
       "right_line": 392
     },
     {

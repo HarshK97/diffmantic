@@ -289,7 +289,95 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 
 	grid = append(grid, alignRegion(currentSrc, len(srcLines), currentDst, len(dstLines))...)
 
-	return grid
+	return coalesceAlignmentGrid(grid, srcLines, dstLines, movedSrcLines, movedDstLines)
+}
+
+// coalesceAlignmentGrid pairs unaligned left/right lines side-by-side within changed blocks
+// so modified lines render next to each other instead of producing interleaved gaps.
+func coalesceAlignmentGrid(grid []LineAlignmentPair, srcLines, dstLines []string, movedSrcLines, movedDstLines map[int]bool) []LineAlignmentPair {
+	var result []LineAlignmentPair
+	var unalignedLeft []int
+	var unalignedRight []int
+
+	flushUnaligned := func() {
+		if len(unalignedLeft) == 0 && len(unalignedRight) == 0 {
+			return
+		}
+
+		var stdLeft []int
+		var stdRight []int
+
+		flushStd := func() {
+			nLeft := len(stdLeft)
+			nRight := len(stdRight)
+			minLen := min(nLeft, nRight)
+			for k := 0; k < minLen; k++ {
+				result = append(result, LineAlignmentPair{LeftLine: stdLeft[k], RightLine: stdRight[k]})
+			}
+			for k := minLen; k < nLeft; k++ {
+				result = append(result, LineAlignmentPair{LeftLine: stdLeft[k], RightLine: -1})
+			}
+			for k := minLen; k < nRight; k++ {
+				result = append(result, LineAlignmentPair{LeftLine: -1, RightLine: stdRight[k]})
+			}
+			stdLeft = nil
+			stdRight = nil
+		}
+
+		for _, l := range unalignedLeft {
+			if movedSrcLines[l] {
+				flushStd()
+				result = append(result, LineAlignmentPair{LeftLine: l, RightLine: -1})
+			} else {
+				stdLeft = append(stdLeft, l)
+			}
+		}
+
+		for _, r := range unalignedRight {
+			if movedDstLines[r] {
+				flushStd()
+				result = append(result, LineAlignmentPair{LeftLine: -1, RightLine: r})
+			} else {
+				stdRight = append(stdRight, r)
+			}
+		}
+
+		flushStd()
+		unalignedLeft = nil
+		unalignedRight = nil
+	}
+
+	for _, pair := range grid {
+		if pair.LeftLine != -1 && pair.RightLine != -1 {
+			// Don't let bare comment delimiters (like "/**" or "*/") split up an unaligned block
+			if (len(unalignedLeft) > 0 || len(unalignedRight) > 0) && isTrivialAnchorLine(srcLines[pair.LeftLine]) {
+				unalignedLeft = append(unalignedLeft, pair.LeftLine)
+				unalignedRight = append(unalignedRight, pair.RightLine)
+				continue
+			}
+			flushUnaligned()
+			result = append(result, pair)
+		} else {
+			if pair.LeftLine != -1 {
+				unalignedLeft = append(unalignedLeft, pair.LeftLine)
+			}
+			if pair.RightLine != -1 {
+				unalignedRight = append(unalignedRight, pair.RightLine)
+			}
+		}
+	}
+	flushUnaligned()
+	return result
+}
+
+// isTrivialAnchorLine returns true for comment markers like "/*" or "<p>" that shouldn't anchor alignment.
+func isTrivialAnchorLine(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	switch trimmed {
+	case "*", "/**", "/*", "*/", "//", "<p>", "</p>":
+		return true
+	}
+	return false
 }
 
 // computeLineWeight rates how strongly two lines align. Standalone brackets only match if their parent AST containers map.

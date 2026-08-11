@@ -1492,10 +1492,6 @@
     },
     {
       "left_line": 345,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 345
     },
     {
@@ -12540,18 +12536,10 @@
     },
     {
       "left_line": 3106,
-      "right_line": -1
-    },
-    {
-      "left_line": 3107,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 3106
     },
     {
-      "left_line": -1,
+      "left_line": 3107,
       "right_line": 3107
     },
     {
@@ -12668,10 +12656,6 @@
     },
     {
       "left_line": 3136,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 3136
     },
     {
