@@ -16,10 +16,31 @@ func groupingParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 	if n == nil {
 		return nil
 	}
-	if isStructuralPunctuation(n) && n.Parent != nil && n.Parent.Parent != nil {
-		return n.Parent.Parent
+	curr := n.Parent
+	for curr != nil && curr.Parent != nil {
+		if curr.StartRow != n.StartRow {
+			return curr
+		}
+		curr = curr.Parent
+	}
+	if curr != nil {
+		return curr
 	}
 	return n.Parent
+}
+
+func groupingNewParent(n *treesitter.ASTNode) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	curr := n
+	for curr != nil && curr.Parent != nil {
+		if curr.StartRow != n.StartRow {
+			return curr
+		}
+		curr = curr.Parent
+	}
+	return n
 }
 
 func isStructuralPunctuation(n *treesitter.ASTNode) bool {
@@ -48,13 +69,9 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 			if act.Node == nil || act.Node.Parent == nil || act.Parent == nil {
 				continue
 			}
-			newP := act.Parent
-			if isStructuralPunctuation(act.Node) && newP != nil && newP.Parent != nil {
-				newP = newP.Parent
-			}
 			k := groupKey{
 				oldParent: groupingParent(act.Node),
-				newParent: newP,
+				newParent: groupingNewParent(act.Parent),
 			}
 			if _, exists := groups[k]; !exists {
 				keyOrder = append(keyOrder, k)

@@ -130,7 +130,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 1929,
-      "dest_end_byte": 1931
+      "dest_end_byte": 1931,
+      "group_id": "group-1"
     },
     {
       "action": "insert",
@@ -261,7 +262,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 1942,
-      "dest_end_byte": 1947
+      "dest_end_byte": 1947,
+      "group_id": "group-1"
     },
     {
       "action": "insert",
@@ -419,7 +421,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 2080,
-      "dest_end_byte": 2088
+      "dest_end_byte": 2088,
+      "group_id": "group-2"
     },
     {
       "action": "insert",
@@ -571,7 +574,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 2122,
-      "dest_end_byte": 2134
+      "dest_end_byte": 2134,
+      "group_id": "group-2"
     },
     {
       "action": "insert",
@@ -901,7 +905,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 2096,
-      "dest_end_byte": 2098
+      "dest_end_byte": 2098,
+      "group_id": "group-2"
     },
     {
       "action": "insert",
@@ -1079,7 +1084,8 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 2107,
-      "dest_end_byte": 2110
+      "dest_end_byte": 2110,
+      "group_id": "group-2"
     }
   ],
   "line_alignment": [

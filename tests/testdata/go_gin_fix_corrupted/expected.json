@@ -222,7 +222,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 1449,
-      "dest_end_byte": 1455
+      "dest_end_byte": 1455,
+      "group_id": "group-1"
     },
     {
       "action": "insert",
@@ -312,7 +313,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 1458,
-      "dest_end_byte": 1465
+      "dest_end_byte": 1465,
+      "group_id": "group-1"
     },
     {
       "action": "move",
@@ -372,7 +374,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 1466,
-      "dest_end_byte": 1472
+      "dest_end_byte": 1472,
+      "group_id": "group-1"
     },
     {
       "action": "move",
@@ -435,7 +438,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 1473,
-      "dest_end_byte": 1484
+      "dest_end_byte": 1484,
+      "group_id": "group-1"
     },
     {
       "action": "move",
@@ -501,7 +505,8 @@
       },
       "old_position": 0,
       "dest_start_byte": 1485,
-      "dest_end_byte": 1491
+      "dest_end_byte": 1491,
+      "group_id": "group-1"
     },
     {
       "action": "delete",

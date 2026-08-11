@@ -606,7 +606,8 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 16971,
-      "dest_end_byte": 16984
+      "dest_end_byte": 16984,
+      "group_id": "group-2"
     },
     {
       "action": "delete",

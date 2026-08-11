@@ -36,6 +36,108 @@
       "position": 0
     },
     {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          47,
+          3,
+          2,
+          2,
+          3,
+          2,
+          1
+        ],
+        "type": "expression_statement",
+        "start_byte": 28067,
+        "end_byte": 28113
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          47,
+          3,
+          2,
+          2,
+          3,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 27901,
+        "end_byte": 30472
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          47,
+          3,
+          2,
+          2,
+          3,
+          2,
+          2
+        ],
+        "type": "if_statement",
+        "start_byte": 28126,
+        "end_byte": 28141
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          47,
+          3,
+          2,
+          2,
+          3,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 27901,
+        "end_byte": 30472
+      },
+      "position": 2,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          47,
+          3,
+          2,
+          2,
+          3,
+          2,
+          3
+        ],
+        "type": "declaration",
+        "start_byte": 28154,
+        "end_byte": 28185
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          47,
+          3,
+          2,
+          2,
+          3,
+          2
+        ],
+        "type": "compound_statement",
+        "start_byte": 27901,
+        "end_byte": 30472
+      },
+      "position": 3,
+      "subtree": true
+    },
+    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -83,7 +185,8 @@
       },
       "old_position": 0,
       "dest_start_byte": 28198,
-      "dest_end_byte": 28206
+      "dest_end_byte": 28206,
+      "group_id": "group-1"
     },
     {
       "action": "insert",
@@ -260,308 +363,6 @@
       "position": 4
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          6,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "ln",
-        "start_byte": 27966,
-        "end_byte": 27968
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          6,
-          1,
-          0,
-          0,
-          0,
-          1
-        ],
-        "type": "assignment_operator_literal",
-        "label": "=",
-        "start_byte": 27969,
-        "end_byte": 27970
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          1
-        ],
-        "type": "assignment_operator_literal",
-        "label": "=",
-        "start_byte": 28070,
-        "end_byte": 28071
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0
-        ],
-        "type": "assignment_expression",
-        "start_byte": 28067,
-        "end_byte": 28112
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          2,
-          0
-        ],
-        "type": "condition_declaration",
-        "label": "if",
-        "start_byte": 28126,
-        "end_byte": 28128
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          2
-        ],
-        "type": "if_statement",
-        "start_byte": 28126,
-        "end_byte": 28141
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          2,
-          1
-        ],
-        "type": "parenthesized_expression",
-        "start_byte": 28129,
-        "end_byte": 28134
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          2
-        ],
-        "type": "if_statement",
-        "start_byte": 28126,
-        "end_byte": 28141
-      },
-      "position": 1,
-      "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          3,
-          0
-        ],
-        "type": "type_identifier",
-        "label": "list",
-        "start_byte": 28154,
-        "end_byte": 28158
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          3
-        ],
-        "type": "declaration",
-        "start_byte": 28154,
-        "end_byte": 28185
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          3,
-          1
-        ],
-        "type": "init_declarator",
-        "start_byte": 28159,
-        "end_byte": 28184
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          3
-        ],
-        "type": "declaration",
-        "start_byte": 28154,
-        "end_byte": 28185
-      },
-      "position": 1,
-      "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "de",
-        "start_byte": 28067,
-        "end_byte": 28069
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0
-        ],
-        "type": "assignment_expression",
-        "start_byte": 28067,
-        "end_byte": 28112
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          2,
-          2,
-          0
-        ],
-        "type": "break",
-        "label": "break",
-        "start_byte": 28135,
-        "end_byte": 28140
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          2,
-          2
-        ],
-        "type": "break_statement",
-        "start_byte": 28135,
-        "end_byte": 28141
-      },
-      "position": 0
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -610,7 +411,8 @@
       "old_position": 1,
       "subtree": true,
       "dest_start_byte": 28207,
-      "dest_end_byte": 28210
+      "dest_end_byte": 28210,
+      "group_id": "group-1"
     },
     {
       "action": "insert",
@@ -651,124 +453,8 @@
       "position": 1
     },
     {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          0,
-          1,
-          0
-        ],
-        "type": "identifier",
-        "label": "clients",
-        "start_byte": 27726,
-        "end_byte": 27733
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          4,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 28222,
-        "end_byte": 28231
-      },
-      "position": 0,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 27725,
-        "end_byte": 27738
-      },
-      "old_position": 0,
-      "dest_start_byte": 28223,
-      "dest_end_byte": 28230
-    },
-    {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          2,
-          0
-        ],
-        "type": "identifier",
-        "label": "dictFind",
-        "start_byte": 28072,
-        "end_byte": 28080
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          2
-        ],
-        "type": "call_expression",
-        "start_byte": 28072,
-        "end_byte": 28112
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          4,
-          1,
-          2,
-          0
-        ],
-        "type": "identifier",
-        "label": "listFirst",
-        "start_byte": 28213,
-        "end_byte": 28222
-      },
-      "parent": {
         "tree": "after",
         "path": [
           47,
@@ -785,29 +471,6 @@
         "start_byte": 28213,
         "end_byte": 28231
       },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          2,
-          1,
-          0
-        ],
-        "type": "field_expression",
-        "start_byte": 28081,
-        "end_byte": 28102
-      },
       "parent": {
         "tree": "after",
         "path": [
@@ -817,56 +480,12 @@
           2,
           3,
           2,
-          1,
-          0,
-          2,
+          4,
           1
         ],
-        "type": "argument_list",
-        "start_byte": 28080,
-        "end_byte": 28112
-      },
-      "position": 0,
-      "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          2,
-          1,
-          2
-        ],
-        "type": "field_expression",
-        "start_byte": 28104,
-        "end_byte": 28111
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          2,
-          1,
-          0,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 28080,
-        "end_byte": 28112
+        "type": "init_declarator",
+        "start_byte": 28207,
+        "end_byte": 28231
       },
       "position": 2,
       "subtree": true
@@ -880,32 +499,13 @@
           3,
           2,
           2,
-          2,
-          0
+          2
         ],
-        "type": "type_identifier",
-        "label": "listIter",
+        "type": "declaration",
         "start_byte": 27694,
-        "end_byte": 27702
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          2,
-          1
-        ],
-        "type": "identifier",
-        "label": "li",
-        "start_byte": 27703,
-        "end_byte": 27705
-      }
+        "end_byte": 27706
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -921,7 +521,8 @@
         "type": "expression_statement",
         "start_byte": 27715,
         "end_byte": 27739
-      }
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -940,7 +541,8 @@
         "type": "parenthesized_expression",
         "start_byte": 27965,
         "end_byte": 27985
-      }
+      },
+      "subtree": true
     },
     {
       "action": "delete",
@@ -961,67 +563,6 @@
         "start_byte": 27986,
         "end_byte": 27988
       }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          6,
-          1,
-          0,
-          0,
-          0,
-          2
-        ],
-        "type": "call_expression",
-        "start_byte": 27971,
-        "end_byte": 27984
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "listRewind",
-        "start_byte": 27715,
-        "end_byte": 27725
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          47,
-          3,
-          2,
-          2,
-          3,
-          0,
-          1,
-          2
-        ],
-        "type": "pointer_expression",
-        "start_byte": 27734,
-        "end_byte": 27737
-      },
-      "subtree": true
     }
   ],
   "line_alignment": [

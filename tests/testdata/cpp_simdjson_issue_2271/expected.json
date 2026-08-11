@@ -124,26 +124,7 @@
       "old_position": 0,
       "subtree": true,
       "dest_start_byte": 551,
-      "dest_end_byte": 609,
-      "group_id": "group-1"
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          7,
-          2,
-          0,
-          1,
-          0,
-          1
-        ],
-        "type": "comparison_operator_literal",
-        "label": "\u003c",
-        "start_byte": 610,
-        "end_byte": 611
-      }
+      "dest_end_byte": 609
     },
     {
       "action": "move",
@@ -192,8 +173,7 @@
       "old_position": 2,
       "subtree": true,
       "dest_start_byte": 616,
-      "dest_end_byte": 642,
-      "group_id": "group-1"
+      "dest_end_byte": 642
     },
     {
       "action": "insert",
@@ -292,6 +272,24 @@
         "end_byte": 642
       },
       "position": 1
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          7,
+          2,
+          0,
+          1,
+          0,
+          1
+        ],
+        "type": "comparison_operator_literal",
+        "label": "\u003c",
+        "start_byte": 610,
+        "end_byte": 611
+      }
     }
   ],
   "line_alignment": [

@@ -315,6 +315,8 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 	// Inner (smaller) AST nodes override outer container nodes.
 	colHighlight := make([]int, runeLen)
 	colSpanLen := make([]int, runeLen)
+	colHasMove := make([]bool, runeLen)
+	colHasUpdate := make([]bool, runeLen)
 	for i := range colHighlight {
 		colHighlight[i] = -1
 		colSpanLen[i] = 1<<31 - 1 // max int sentinel
@@ -336,12 +338,25 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 				candidateLen = ec - sc
 			}
 			for col := sc; col < ec && col < runeLen; col++ {
+				if s.kind == kindMove || s.kind == kindMoveUpdate {
+					colHasMove[col] = true
+				}
+				if s.kind == kindUpdate || s.kind == kindMoveUpdate {
+					colHasUpdate[col] = true
+				}
+
 				curLen := colSpanLen[col]
 				if colHighlight[col] == -1 || candidateLen < curLen || (candidateLen == curLen && s.kind > actionKind(colHighlight[col])) {
 					colHighlight[col] = int(s.kind)
 					colSpanLen[col] = candidateLen
 				}
 			}
+		}
+	}
+
+	for col := range colHighlight {
+		if colHasMove[col] && colHasUpdate[col] {
+			colHighlight[col] = int(kindMoveUpdate)
 		}
 	}
 
@@ -405,7 +420,9 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 
 				if actionIdx >= 0 {
 					style = hlStyle(actionKind(actionIdx))
-					if synColor != "" {
+					if actionKind(actionIdx) == kindMoveUpdate {
+						style = style.Foreground(colorYellow).Underline(true)
+					} else if synColor != "" {
 						style = style.Foreground(synColor)
 					}
 				} else if synColor != "" {

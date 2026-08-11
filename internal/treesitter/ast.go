@@ -441,3 +441,14 @@ func (n *ASTNode) LevelOrder() []*ASTNode {
 	}
 	return out
 }
+
+// DepthTo returns the number of parent edges between n and ancestor (or 0 if n is ancestor or ancestor is nil).
+func (n *ASTNode) DepthTo(ancestor *ASTNode) int {
+	depth := 0
+	curr := n
+	for curr != nil && curr != ancestor {
+		depth++
+		curr = curr.Parent
+	}
+	return depth
+}

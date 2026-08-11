@@ -82,16 +82,17 @@ var (
 )
 
 var (
-	hlDeleteStyle = lipgloss.NewStyle().Background(bgDeleteTint)
-	hlInsertStyle = lipgloss.NewStyle().Background(bgInsertTint)
-	hlUpdateStyle = lipgloss.NewStyle().Background(bgUpdateTint)
-	hlMoveStyle   = lipgloss.NewStyle().Background(bgMoveTint)
+	hlDeleteStyle     = lipgloss.NewStyle().Background(bgDeleteTint)
+	hlInsertStyle     = lipgloss.NewStyle().Background(bgInsertTint)
+	hlUpdateStyle     = lipgloss.NewStyle().Background(bgUpdateTint)
+	hlMoveStyle       = lipgloss.NewStyle().Background(bgMoveTint)
+	hlMoveUpdateStyle = lipgloss.NewStyle().Background(bgMoveTint).Foreground(colorYellow).Underline(true)
 )
 
 var (
-	hlStyles    = [...]lipgloss.Style{hlDeleteStyle, hlInsertStyle, hlUpdateStyle, hlMoveStyle}
-	actionFgs   = [...]lipgloss.Color{colorRed, colorGreen, colorYellow, colorBlue}
-	actionIcons = [...]string{"✘", "✚", "✎", "➤"}
+	hlStyles    = [...]lipgloss.Style{hlDeleteStyle, hlInsertStyle, hlUpdateStyle, hlMoveStyle, hlMoveUpdateStyle}
+	actionFgs   = [...]lipgloss.Color{colorRed, colorGreen, colorYellow, colorBlue, colorYellow}
+	actionIcons = [...]string{"✘", "✚", "✎", "➤", "✎"}
 )
 
 func hlStyle(kind actionKind) lipgloss.Style {
