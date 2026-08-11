@@ -404,18 +404,10 @@
     },
     {
       "left_line": 88,
-      "right_line": -1
-    },
-    {
-      "left_line": 89,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 88
     },
     {
-      "left_line": -1,
+      "left_line": 89,
       "right_line": 89
     },
     {

@@ -251,9 +251,9 @@ func TestCloseGaps(t *testing.T) {
 		},
 		{
 			name:    "do not close gap of 6 lines or more",
-			moved:   map[int]bool{0: true, 7: true},
-			maxLine: 8,
-			want:    map[int]bool{0: true, 7: true},
+			moved:   map[int]bool{1: true, 7: true},
+			maxLine: 9,
+			want:    map[int]bool{1: true, 7: true},
 		},
 		{
 			name:    "unbounded gap at end",
@@ -271,6 +271,34 @@ func TestCloseGaps(t *testing.T) {
 				t.Errorf("closeGaps() got = %v, want = %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCoalesceAlignmentGrid(t *testing.T) {
+	srcLines := []string{"/**", " * line 1", " * line 2", " */"}
+	dstLines := []string{"/**", " * line 1 modified", " * line 2 modified", " * line 3 extra", " */"}
+
+	grid := []LineAlignmentPair{
+		{LeftLine: 0, RightLine: 0},
+		{LeftLine: 1, RightLine: -1},
+		{LeftLine: -1, RightLine: 1},
+		{LeftLine: 2, RightLine: -1},
+		{LeftLine: -1, RightLine: 2},
+		{LeftLine: -1, RightLine: 3},
+		{LeftLine: 3, RightLine: 4},
+	}
+
+	got := coalesceAlignmentGrid(grid, srcLines, dstLines, nil, nil)
+	want := []LineAlignmentPair{
+		{LeftLine: 0, RightLine: 0},
+		{LeftLine: 1, RightLine: 1},
+		{LeftLine: 2, RightLine: 2},
+		{LeftLine: 3, RightLine: 3},
+		{LeftLine: -1, RightLine: 4},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("coalesceAlignmentGrid() got = %v, want = %v", got, want)
 	}
 }
 

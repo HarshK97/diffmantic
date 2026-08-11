@@ -3171,18 +3171,10 @@
     },
     {
       "left_line": 704,
-      "right_line": -1
-    },
-    {
-      "left_line": 705,
-      "right_line": -1
-    },
-    {
-      "left_line": -1,
       "right_line": 704
     },
     {
-      "left_line": -1,
+      "left_line": 705,
       "right_line": 705
     },
     {
