@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/mockito/mockito",
+  "parent": "a7aa41d19742e78cd6c48eaf641445fb439a8ff0",
+  "commit": "82998ff78a14b2111e07ba24c5a7fa731a5f0a82",
+  "message": "Fix non-deterministic AssertionError when using MockMakers.SUBCLASS (#3406) (#3795)",
+  "author": "Markus Gaisbauer",
+  "date": "2026-03-17T20:58:46+01:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 0
+}

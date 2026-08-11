@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/mockito/mockito",
+  "parent": "bb83c922484cfd3693d61549b5d6ef39a9c02c2b",
+  "commit": "a6729d657e232ca64da81d9801d7b8f3be6fc49a",
+  "message": "chore: update BDDMockito with jspecify annotation",
+  "author": "Philippe Kernevez",
+  "date": "2026-03-02T15:52:40+01:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

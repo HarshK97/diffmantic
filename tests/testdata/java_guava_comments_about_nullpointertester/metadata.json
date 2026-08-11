@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/google/guava",
+  "parent": "9285dce3990effba80a8b014e1836929273df9d7",
+  "commit": "4ceec526555db4a756cf6d4677f055c0548b18ee",
+  "message": "Update comments about `NullPointerTester` under Android.\n\nWe've exposed type-use annotations in guava-android for a while.\n\nRELNOTES=n/a\nPiperOrigin-RevId: 948347741",
+  "author": "cpovirk",
+  "date": "2026-07-15T08:23:16-07:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 4,
+  "deletions": 0
+}

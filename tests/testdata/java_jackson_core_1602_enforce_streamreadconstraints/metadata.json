@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/fasterxml/jackson-core",
+  "parent": "695a365a499f9378c32d13822dd0733ac7cfc155",
+  "commit": "8c91dbba9e7c0872ad2bfee5675f2b9fff09c536",
+  "message": "Fix #1602: enforce StreamReadConstraints.maxNameLen on UTF8DataInputJsonParser too (#1603)",
+  "author": "Tatu Saloranta",
+  "date": "2026-04-23T18:29:05-07:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

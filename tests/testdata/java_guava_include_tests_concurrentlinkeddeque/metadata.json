@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/google/guava",
+  "parent": "f86fd58e17a650bdb1ed8d99859dbe031619c1bc",
+  "commit": "e1a0ffb5e676d5b7a5444a72027f031a4aff5120",
+  "message": "Include tests for `ConcurrentLinkedDeque` in the Android flavor.\n\nThat class is available [since API Level 21](https://developer.android.com/reference/java/util/concurrent/ConcurrentLinkedDeque).\n\nThat said, this CL is a little silly: We don't currently run `TestsFor*InJavaUtil` under an actual Android VM, so we could include \"tests\" for whatever classes we want to, as long as they're present in the very recent version of Android that we _build_ against. Thus, there is a case to be made for just copying over _everything_. That would be the winning move from the perspective of reducing merge conflicts. (And merge conflicts are the reason that I noticed this difference at all: I hit one in https://github.com/google/guava/commit/9a5d60d9d71bfc09c65a12ee5bd7c6e4b9ffda02.) But for now, I'm copying over just this one test, and I'll copy more when we reach a `minSdkVersion` of 26. In the meantime, maybe I'll hit more merge conflicts, or maybe we'll arrange to actually run our `TestsFor*InJavaUtil` classes under an Android VM (though that has become less important as Android has moved to OpenJDK implementations, so probably not).\n\nSo, in short: This CL is mostly about reducing diffs between mainline and backport, but I didn't have the conviction to go all the way.\n\nRELNOTES=n/a\nPiperOrigin-RevId: 927802736",
+  "author": "cpovirk",
+  "date": "2026-06-06T09:15:00-07:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 21,
+  "deletions": 0
+}

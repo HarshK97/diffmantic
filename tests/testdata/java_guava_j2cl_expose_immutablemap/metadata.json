@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/google/guava",
+  "parent": "92289956ea6baeccb98e62881aeda5615d3b4c2a",
+  "commit": "638ab1846d2e6e794b831f33cc063e6478a44040",
+  "message": "J2CL: expose `ImmutableMap.ofEntries` to JS\n\nCallers from JS can use `java.util.Map.entry(key, value)` to create `Entry`\ninstances to pass to this. For example:\n\n```js\nconst m = new Map([[\"key1\", \"value1\"], [\"key2\", \"value2\"]]);\nconst immutableMap = ImmutableMap.ofEntries(\n    ...m.entries().map(([k, v]) => java.util.Map.entry(k, v))\n);\n```\n\nRELNOTES=n/a\nPiperOrigin-RevId: 885046186",
+  "author": "Kevin O'Connor",
+  "date": "2026-03-17T08:51:42-07:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 0
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/mockito/mockito",
+  "parent": "2c6228440aae6ab3c12f555efd070dbf21ac1d7b",
+  "commit": "f3cf74c7e1106f7d32299001ca0ecf2c492c468c",
+  "message": "docs(when-verify): fixes to explanations about redundancy (#3838)\n\n\u2022\u202fSpacing\n\u2022\u202fExample method consistency\n\u2022\u202fPlacement of the word \u201ceven\u201d\n\nFixes #3837",
+  "author": "M. Minot",
+  "date": "2026-06-26T13:36:17+02:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 0
+}

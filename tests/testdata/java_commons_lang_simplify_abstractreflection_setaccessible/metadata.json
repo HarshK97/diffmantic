@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/apache/commons-lang",
+  "parent": "65f6692fb2225edfdb1d54d29a48da4e2f7f6f89",
+  "commit": "285cd2fc42a16de63f1ea518cfd7ea1851563c46",
+  "message": "Simplify AbstractReflection.setAccessible(boolean, AccessibleObject)\n\n- Simplify AbstractReflection.setAccessibleTrue(AccessibleObject)",
+  "author": "Gary Gregory",
+  "date": "2026-07-30T08:19:01-04:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 7
+}
