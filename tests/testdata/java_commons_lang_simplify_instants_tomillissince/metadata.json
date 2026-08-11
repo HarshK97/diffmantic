@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/apache/commons-lang",
+  "parent": "ebd9b236187525a9a345d488482efa9c8c546b30",
+  "commit": "164b290d38323b271bfa4f3c5007323d64a7575b",
+  "message": "Simplify Instants.toMillisSince(Instant)",
+  "author": "Gary Gregory",
+  "date": "2026-08-04T07:57:35-04:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 8
+}

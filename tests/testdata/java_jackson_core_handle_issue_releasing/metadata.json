@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/fasterxml/jackson-core",
+  "parent": "0e3f612db4e16e8d3a320445f6d085a6787e56bc",
+  "commit": "d1db72cc137971085f8990cf6d07de6366a3620b",
+  "message": "Handle issue with releasing buffers (fix #1598) (#1599)",
+  "author": "PJ Fanning",
+  "date": "2026-04-20T18:34:29-07:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 2
+}

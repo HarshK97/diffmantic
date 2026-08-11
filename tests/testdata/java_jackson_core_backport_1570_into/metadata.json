@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/fasterxml/jackson-core",
+  "parent": "4fc50ff5d2df3a2a199958cc6400618bc2b3fcee",
+  "commit": "74c9ee255d1534c179bc7d3de48941bf39a9079c",
+  "message": "Backport #1570 into 3.1 (for 3.1.1) (#1574)",
+  "author": "Tatu Saloranta",
+  "date": "2026-03-11T13:59:24-07:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 8,
+  "deletions": 0
+}

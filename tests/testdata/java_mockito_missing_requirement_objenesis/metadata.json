@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/mockito/mockito",
+  "parent": "d000e630775cfa45752eeb491a197283e7370621",
+  "commit": "1e029d767b33ee8de42e58459a2c3e63ab3f7c41",
+  "message": "Add missing requirement to objenesis.",
+  "author": "Rafael Winterhalter",
+  "date": "2025-03-15T22:14:02+01:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 0
+}

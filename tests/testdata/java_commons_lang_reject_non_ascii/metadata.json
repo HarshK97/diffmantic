@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/apache/commons-lang",
+  "parent": "7d15536229e0f565ead115538b30ebeeeefdac4e",
+  "commit": "54ee8ec1c9c44a6617e8e41acf475a79857ac564",
+  "message": "Reject non-ASCII hex characters in Conversion.hexDigitToInt (#1767)",
+  "author": "alhuda",
+  "date": "2026-08-04T07:32:18-04:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 0,
+  "deletions": 1
+}

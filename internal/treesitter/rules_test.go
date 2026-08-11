@@ -114,6 +114,22 @@ func TestRulesAliased(t *testing.T) {
 				"virtual", "override", "final", "constexpr", "try", "catch", "throw", "using",
 			},
 		},
+		{
+			lang: "java",
+			operators: []string{
+				"+", "-", "*", "/", "%",
+				"==", "!=", "<", "<=", ">", ">=",
+				"&&", "||", "!",
+				"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", ">>>=",
+				"&", "|", "^", "~", "<<", ">>", ">>>",
+				"++", "--", "->", "::", ".",
+				"if", "else", "switch", "case", "default", "for", "while", "do",
+				"return", "break", "continue", "yield", "class", "interface", "enum", "record",
+				"public", "private", "protected", "static", "final", "abstract", "synchronized",
+				"volatile", "transient", "extends", "implements", "new", "this", "super",
+				"try", "catch", "finally", "throw", "throws", "assert", "instanceof", "var",
+			},
+		},
 	}
 
 	for _, tt := range tests {

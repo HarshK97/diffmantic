@@ -100,10 +100,25 @@ func sampleFixture(t *testing.T) string {
 	}
 	for _, e := range entries {
 		if e.IsDir() && strings.HasPrefix(e.Name(), "go_") {
-			return e.Name()
+			subEntries, err := os.ReadDir(filepath.Join(dir, e.Name()))
+			if err != nil {
+				continue
+			}
+			hasOld, hasNew := false, false
+			for _, se := range subEntries {
+				if strings.HasPrefix(se.Name(), "old.") {
+					hasOld = true
+				}
+				if strings.HasPrefix(se.Name(), "new.") {
+					hasNew = true
+				}
+			}
+			if hasOld && hasNew {
+				return e.Name()
+			}
 		}
 	}
-	t.Fatal("no go_ fixture found in testdata")
+	t.Fatal("no valid go_ fixture found in testdata")
 	return ""
 }
 

@@ -162,6 +162,16 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 		}
 	})
 
+	t.Run("valid java source", func(t *testing.T) {
+		src := []byte(`package com.example; public class Main { public static void main(String[] args) { System.out.println("Hello Java"); } }`)
+		ast, err := Parse(src, "Main.java")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")

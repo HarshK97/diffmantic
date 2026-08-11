@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/mockito/mockito",
+  "parent": "d16fcfc274d7ca03a2b4bdc22dd7c3ec6dac8690",
+  "commit": "ef9ee5529853d96028b520f84a41ffd41afc9a1d",
+  "message": "Avoids mocking private static methods, as well as package-private static methods of java.* classes, as those are primarily internal utilities that will cause non-intuitive changes of methods. This are not invoked for non-static mocks either. Fixes #3778. (#3785)",
+  "author": "Rafael Winterhalter",
+  "date": "2026-02-06T16:23:07+01:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 11,
+  "deletions": 0
+}

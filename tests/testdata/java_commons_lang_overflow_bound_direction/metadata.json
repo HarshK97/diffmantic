@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/apache/commons-lang",
+  "parent": "03636f3e9ca42122996e6cd5ac5449c0e707c80f",
+  "commit": "9288e2c95f39abd1ff115aeddafaa276ceafae6d",
+  "message": "Fix the overflow bound direction in Instants.toMillisSince(Instant) (#1766)\n\nThe Javadoc states that a result greater than Long.MAX_VALUE is bound to\nLong.MAX_VALUE and one lesser than Long.MIN_VALUE to Long.MIN_VALUE, but the\nbound was selected from the sign of the instant's epoch second. The value being\nbound is the duration from that instant to now, whose sign is the opposite, so\nboth reachable overflow cases returned the wrong end: Instant.MIN gave\nLong.MIN_VALUE where the contract asks for Long.MAX_VALUE, and Instant.MAX the\nreverse.\n\nBind on the sign of the duration instead. The two tests that pinned the previous\nbehavior are updated; both fail without this change.",
+  "author": "renechoi",
+  "date": "2026-08-04T07:51:35-04:00",
+  "language": "java",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 0
+}
