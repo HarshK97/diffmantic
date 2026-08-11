@@ -123,18 +123,36 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	count := 1
+	if len(m.digitBuffer) > 0 {
+		if c, err := strconv.Atoi(m.digitBuffer); err == nil {
+			count = c
+		}
+	}
+
+	// Handle pending bracket navigation (e.g. ]h, [h, ]c, [c, ]], [[).
+	if m.pendingBracket != "" {
+		bracket := m.pendingBracket
+		m.pendingBracket = ""
+		m.digitBuffer = ""
+		switch keyStr {
+		case "h", "c", bracket:
+			switch bracket {
+			case "]":
+				m.jumpToNextSpan(count)
+			case "[":
+				m.jumpToPrevSpan(count)
+			}
+		}
+		m.updateInspectActions()
+		return m, nil
+	}
+
 	if len(keyStr) == 1 && keyStr[0] >= '0' && keyStr[0] <= '9' {
 		// Vim counts don't start with 0, so ignore it if the buffer is empty.
 		if keyStr[0] != '0' || len(m.digitBuffer) > 0 {
 			m.digitBuffer += keyStr
 			return m, nil
-		}
-	}
-
-	count := 1
-	if len(m.digitBuffer) > 0 {
-		if c, err := strconv.Atoi(m.digitBuffer); err == nil {
-			count = c
 		}
 	}
 
@@ -206,6 +224,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "z":
 		m.pendingZ = true
+		resetBuffer = false
+
+	case "]":
+		m.pendingBracket = "]"
+		resetBuffer = false
+
+	case "[":
+		m.pendingBracket = "["
 		resetBuffer = false
 
 	case "h", "left":
@@ -594,3 +620,144 @@ func (m *model) syncGitCursorAndDiff() {
 		m.setupEmptyPlaceholder()
 	}
 }
+
+func (m *model) currentLineSpansAndText() ([]span, string, *int) {
+	if m.cursorY < 0 || m.cursorY >= len(m.virtualLines) {
+		return nil, "", nil
+	}
+	vl := m.virtualLines[m.cursorY]
+	if vl.foldIdx >= 0 {
+		return nil, "", nil
+	}
+
+	var lineIdx int
+	var lines []string
+	var hl *highlights
+	var scrollX *int
+
+	if m.activePane == "left" {
+		lineIdx = vl.leftLine
+		lines = m.srcLines
+		hl = m.srcHighlights
+		scrollX = &m.scrollXLeft
+	} else {
+		lineIdx = vl.rightLine
+		lines = m.dstLines
+		hl = m.dstHighlights
+		scrollX = &m.scrollXRight
+	}
+
+	if lineIdx < 0 || lineIdx >= len(lines) || hl == nil {
+		return nil, "", nil
+	}
+
+	spans := hl.spans[lineIdx]
+	return spans, lines[lineIdx], scrollX
+}
+
+type visualSpan struct {
+	startCol int
+	endCol   int
+	kind     actionKind
+}
+
+func getVisualSpans(spans []span, rawLine string) []visualSpan {
+	if len(spans) == 0 {
+		return nil
+	}
+	expanded, byteToVisual := expandLine(rawLine)
+	runeLen := len([]rune(expanded))
+
+	var vSpans []visualSpan
+	for _, s := range spans {
+		sc := 0
+		if s.startCol < len(byteToVisual) {
+			sc = byteToVisual[s.startCol]
+		}
+		ec := runeLen
+		if s.endCol < len(byteToVisual) {
+			ec = byteToVisual[s.endCol]
+		}
+		if sc >= 0 && ec > sc {
+			vSpans = append(vSpans, visualSpan{startCol: sc, endCol: ec, kind: s.kind})
+		}
+	}
+	slices.SortFunc(vSpans, func(a, b visualSpan) int {
+		if a.startCol != b.startCol {
+			return a.startCol - b.startCol
+		}
+		return a.endCol - b.endCol
+	})
+	return vSpans
+}
+
+func (m *model) jumpSpan(dir int, count int) {
+	spans, rawLine, scrollXPtr := m.currentLineSpansAndText()
+	if len(spans) == 0 || scrollXPtr == nil {
+		return
+	}
+	vSpans := getVisualSpans(spans, rawLine)
+	if len(vSpans) == 0 {
+		return
+	}
+
+	textW := m.textWidth()
+	curScroll := *scrollXPtr
+
+	var target visualSpan
+	found := false
+
+	if dir > 0 {
+		for _, vs := range vSpans {
+			if vs.startCol > curScroll || (vs.startCol == curScroll && m.cursorX < vs.startCol) {
+				target = vs
+				found = true
+				break
+			}
+		}
+		if !found {
+			target = vSpans[0]
+		}
+	} else {
+		for i := len(vSpans) - 1; i >= 0; i-- {
+			vs := vSpans[i]
+			if vs.startCol < curScroll || (vs.startCol == curScroll && m.cursorX > vs.startCol) {
+				target = vs
+				found = true
+				break
+			}
+		}
+		if !found {
+			target = vSpans[len(vSpans)-1]
+		}
+	}
+
+	if count > 1 {
+		idx := 0
+		for i, vs := range vSpans {
+			if vs.startCol == target.startCol && vs.endCol == target.endCol {
+				idx = i
+				break
+			}
+		}
+		targetIdx := (idx + dir*(count-1)) % len(vSpans)
+		if targetIdx < 0 {
+			targetIdx += len(vSpans)
+		}
+		target = vSpans[targetIdx]
+	}
+
+	expanded, _ := expandLine(rawLine)
+	runeLen := len([]rune(expanded))
+	maxScroll := max(0, runeLen-textW)
+
+	midCol := (target.startCol + target.endCol) / 2
+	desiredScroll := midCol - (textW / 2)
+	*scrollXPtr = clamp(desiredScroll, 0, maxScroll)
+
+	m.cursorX = target.startCol
+	m.keepCursorInViewport()
+}
+
+func (m *model) jumpToNextSpan(count int) { m.jumpSpan(1, count) }
+func (m *model) jumpToPrevSpan(count int) { m.jumpSpan(-1, count) }

@@ -26,8 +26,9 @@ type model struct {
 	lineAlignment []serialize.LineAlignmentPair
 	allChanges    []int // Sorted list of all changed lines for n/N jumping
 
-	digitBuffer string // Buffer for vim-style count prefixes
-	pendingZ    bool   // Waiting for the second key in a 'z' combo
+	digitBuffer    string // Buffer for vim-style count prefixes
+	pendingZ       bool   // Waiting for the second key in a 'z' combo
+	pendingBracket string // Waiting for second key in a '[' or ']' combo
 
 	folds        []fold
 	virtualLines []virtualLine
@@ -91,7 +92,7 @@ type gitDiffCacheEntry struct {
 const (
 	titleBarHeight     = 1
 	statusBarHeight    = 1
-	gutterPadding      = 2
+	gutterPadding      = 4
 	dividerWidth       = 1
 	foldContext        = 3 // Unchanged lines to keep visible around changes
 	inspectPanelHeight = 4

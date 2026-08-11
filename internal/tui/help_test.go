@@ -41,6 +41,12 @@ func TestHelpMenu(t *testing.T) {
 	if !strings.Contains(viewTextHelp, "COLOR LEGEND") {
 		t.Error("expected help view to render color legend section")
 	}
+	if !strings.Contains(viewTextHelp, "MOVE+UPDATE") {
+		t.Error("expected help view to render MOVE+UPDATE legend entry")
+	}
+	if !strings.Contains(viewTextHelp, "]h / [h") {
+		t.Error("expected help view to render ]h / [h keybinding")
+	}
 
 	m2, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = m2.(model)

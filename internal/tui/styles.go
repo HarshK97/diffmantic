@@ -9,17 +9,18 @@ var (
 	colorOverlay0  = lipgloss.Color("#6c7086")
 	colorSubtext0  = lipgloss.Color("#a6adc8")
 	colorText      = lipgloss.Color("#cdd6f4")
-	colorBlue      = lipgloss.Color("#89b4fa")
+	colorBlue      = lipgloss.Color("#0047AB")
 	colorLavender  = lipgloss.Color("#b4befe")
 	colorMauve     = lipgloss.Color("#cba6f7")
-	colorGreen     = lipgloss.Color("#a6e3a1")
+	colorGreen     = lipgloss.Color("#00FF66")
 	colorPeach     = lipgloss.Color("#fab387")
 	colorSky       = lipgloss.Color("#89dceb")
-	colorYellow    = lipgloss.Color("#f9e2af")
+	colorYellow    = lipgloss.Color("#B88600")
 	colorPink      = lipgloss.Color("#f5c2e7")
-	colorRed       = lipgloss.Color("#f38ba8")
-	colorTeal      = lipgloss.Color("#94e2d5")
+	colorRed       = lipgloss.Color("#FF3030")
+	colorTeal      = lipgloss.Color("#FFFFFF")
 	colorRosewater = lipgloss.Color("#f5e0dc")
+	colorCrust     = lipgloss.Color("#11111b")
 )
 
 var (
@@ -91,7 +92,7 @@ var (
 
 var (
 	hlStyles    = [...]lipgloss.Style{hlDeleteStyle, hlInsertStyle, hlUpdateStyle, hlMoveStyle, hlMoveUpdateStyle}
-	actionFgs   = [...]lipgloss.Color{colorRed, colorGreen, colorYellow, colorBlue, colorYellow}
+	actionFgs   = [...]lipgloss.Color{colorRed, colorGreen, colorYellow, colorBlue, colorTeal}
 	actionIcons = [...]string{"✘", "✚", "✎", "➤", "✎"}
 )
 
