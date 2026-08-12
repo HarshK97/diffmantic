@@ -529,7 +529,7 @@
           12,
           2,
           0,
-          1
+          2
         ],
         "type": "qualified_type",
         "start_byte": 747,
@@ -546,7 +546,7 @@
         "start_byte": 735,
         "end_byte": 762
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -557,7 +557,7 @@
           14,
           2,
           0,
-          1
+          2
         ],
         "type": "qualified_type",
         "start_byte": 876,
@@ -574,7 +574,7 @@
         "start_byte": 864,
         "end_byte": 891
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -584,8 +584,8 @@
         "path": [
           17,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 1189,
@@ -596,13 +596,13 @@
         "path": [
           17,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 1177,
         "end_byte": 1204
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -627,8 +627,8 @@
         "path": [
           18,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 1335,
@@ -639,13 +639,13 @@
         "path": [
           18,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 1323,
         "end_byte": 1350
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -655,8 +655,8 @@
         "path": [
           20,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 1537,
@@ -667,13 +667,13 @@
         "path": [
           20,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 1525,
         "end_byte": 1552
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -683,8 +683,8 @@
         "path": [
           22,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 1722,
@@ -695,13 +695,13 @@
         "path": [
           22,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 1710,
         "end_byte": 1737
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -711,8 +711,8 @@
         "path": [
           24,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 1915,
@@ -723,13 +723,13 @@
         "path": [
           24,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 1903,
         "end_byte": 1930
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -739,8 +739,8 @@
         "path": [
           26,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 2108,
@@ -751,13 +751,13 @@
         "path": [
           26,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 2096,
         "end_byte": 2123
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -767,8 +767,8 @@
         "path": [
           28,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 2294,
@@ -779,13 +779,13 @@
         "path": [
           28,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 2282,
         "end_byte": 2309
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -795,8 +795,8 @@
         "path": [
           30,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 2490,
@@ -807,13 +807,13 @@
         "path": [
           30,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 2478,
         "end_byte": 2505
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -823,8 +823,8 @@
         "path": [
           32,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 2681,
@@ -835,13 +835,13 @@
         "path": [
           32,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 2669,
         "end_byte": 2696
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -851,8 +851,8 @@
         "path": [
           33,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "qualified_type",
         "start_byte": 2806,
@@ -863,13 +863,13 @@
         "path": [
           33,
           2,
-          2
+          1
         ],
         "type": "variadic_parameter_declaration",
         "start_byte": 2794,
         "end_byte": 2821
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -880,7 +880,7 @@
           46,
           2,
           0,
-          1
+          2
         ],
         "type": "qualified_type",
         "start_byte": 3808,
@@ -897,7 +897,7 @@
         "start_byte": 3793,
         "end_byte": 3823
       },
-      "position": 1,
+      "position": 2,
       "subtree": true
     },
     {
@@ -908,7 +908,7 @@
           12,
           2,
           0,
-          1
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -924,7 +924,7 @@
           14,
           2,
           0,
-          1
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -939,8 +939,8 @@
         "path": [
           17,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -955,8 +955,8 @@
         "path": [
           18,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -971,8 +971,8 @@
         "path": [
           20,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -987,8 +987,8 @@
         "path": [
           22,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1003,8 +1003,8 @@
         "path": [
           24,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1019,8 +1019,8 @@
         "path": [
           26,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1035,8 +1035,8 @@
         "path": [
           28,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1051,8 +1051,8 @@
         "path": [
           30,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1067,8 +1067,8 @@
         "path": [
           32,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1083,8 +1083,8 @@
         "path": [
           33,
           2,
-          2,
-          1
+          1,
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",
@@ -1100,7 +1100,7 @@
           46,
           2,
           0,
-          1
+          2
         ],
         "type": "type_identifier",
         "label": "HandlerFunc",

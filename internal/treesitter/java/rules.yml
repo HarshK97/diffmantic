@@ -11,52 +11,6 @@ flattened:
   - line_comment
   - block_comment
 aliased:
-  # Keywords
-  "if": condition_declaration
-  "else": else
-  "switch": switch
-  "case": case
-  "default": default
-  "for": for
-  "while": while
-  "do": do
-  "return": return
-  "break": break
-  "continue": continue
-  "yield": yield
-  "class": class
-  "interface": interface
-  "enum": enum
-  "record": record
-  "public": public
-  "private": private
-  "protected": protected
-  "static": static
-  "final": final
-  "abstract": abstract
-  "synchronized": synchronized
-  "volatile": volatile
-  "transient": transient
-  "native": native
-  "strictfp": strictfp
-  "extends": extends
-  "implements": implements
-  "permits": permits
-  "sealed": sealed
-  "non-sealed": non-sealed
-  "new": new
-  "this": this
-  "super": super
-  "try": try
-  "catch": catch
-  "finally": finally
-  "throw": throw
-  "throws": throws
-  "assert": assert
-  "instanceof": instanceof
-  "var": var
-  "void": void
-
   # Arithmetic operators
   "+": arithmetic_operator_literal
   "-": arithmetic_operator_literal
@@ -100,19 +54,25 @@ aliased:
   ">>": bitwise_operator_literal
   ">>>": bitwise_operator_literal
 
-  # Increment/Decrement & Punctuation
+  # Increment/Decrement operators
   "++": update_operator_literal
   "--": update_operator_literal
-  "->": arrow
-  "::": scope_resolution
-  ".": dot
-  ",": comma
-  ";": semicolon
-  ":": colon
-  "?": question_mark
 
 ignored:
   - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "?"
+  - "->"
+  - "::"
 
 scaffolding:
   - program

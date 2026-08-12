@@ -7,7 +7,7 @@
         "tree": "before",
         "path": [
           25,
-          5,
+          4,
           6,
           3,
           1,
@@ -23,7 +23,7 @@
         "tree": "after",
         "path": [
           25,
-          5,
+          4,
           6,
           3,
           1,
@@ -41,7 +41,7 @@
         "tree": "before",
         "path": [
           25,
-          5,
+          4,
           6,
           3,
           1,
@@ -63,7 +63,7 @@
         "tree": "after",
         "path": [
           25,
-          5,
+          4,
           6,
           3,
           1,
@@ -73,16 +73,16 @@
           0,
           1
         ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 13927,
-        "end_byte": 13928
+        "type": "field_identifier",
+        "label": "cast",
+        "start_byte": 13928,
+        "end_byte": 13932
       },
       "parent": {
         "tree": "after",
         "path": [
           25,
-          5,
+          4,
           6,
           3,
           1,
@@ -96,46 +96,6 @@
         "end_byte": 13932
       },
       "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          25,
-          5,
-          6,
-          3,
-          1,
-          0,
-          1,
-          0,
-          0,
-          2
-        ],
-        "type": "field_identifier",
-        "label": "cast",
-        "start_byte": 13928,
-        "end_byte": 13932
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          25,
-          5,
-          6,
-          3,
-          1,
-          0,
-          1,
-          0,
-          0
-        ],
-        "type": "field_expression",
-        "start_byte": 13907,
-        "end_byte": 13932
-      },
-      "position": 2
     }
   ],
   "line_alignment": [

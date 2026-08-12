@@ -40,44 +40,6 @@
       "subtree": true
     },
     {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 1927,
-        "end_byte": 1928
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0
-        ],
-        "type": "keyed_element",
-        "start_byte": 1922,
-        "end_byte": 1931
-      },
-      "position": 1
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -111,7 +73,7 @@
         "start_byte": 1922,
         "end_byte": 1931
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -145,7 +107,7 @@
           2,
           0,
           1,
-          2,
+          1,
           0
         ],
         "type": "literal_element",
@@ -162,7 +124,7 @@
           2,
           0,
           1,
-          2
+          1
         ],
         "type": "keyed_element",
         "start_byte": 1935,
@@ -170,44 +132,6 @@
       },
       "position": 0,
       "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          0,
-          2,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 1940,
-        "end_byte": 1941
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          0,
-          2,
-          0,
-          1,
-          2
-        ],
-        "type": "keyed_element",
-        "start_byte": 1935,
-        "end_byte": 1947
-      },
-      "position": 1
     },
     {
       "action": "move",
@@ -221,7 +145,7 @@
           2,
           0,
           1,
-          2
+          1
         ],
         "type": "literal_element",
         "start_byte": 1923,
@@ -237,13 +161,13 @@
           2,
           0,
           1,
-          2
+          1
         ],
         "type": "keyed_element",
         "start_byte": 1935,
         "end_byte": 1947
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -259,7 +183,7 @@
         "start_byte": 1918,
         "end_byte": 1929
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 1942,
       "dest_end_byte": 1947,
@@ -310,50 +234,6 @@
       "subtree": true
     },
     {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 2078,
-        "end_byte": 2079
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0
-        ],
-        "type": "keyed_element",
-        "start_byte": 2074,
-        "end_byte": 2111
-      },
-      "position": 1
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -390,7 +270,7 @@
           0,
           1,
           0,
-          2,
+          1,
           0
         ],
         "type": "composite_literal",
@@ -439,7 +319,7 @@
           2,
           0,
           1,
-          2,
+          1,
           0
         ],
         "type": "literal_element",
@@ -459,7 +339,7 @@
           2,
           0,
           1,
-          2
+          1
         ],
         "type": "keyed_element",
         "start_byte": 2116,
@@ -467,50 +347,6 @@
       },
       "position": 0,
       "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 2120,
-        "end_byte": 2121
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          2
-        ],
-        "type": "keyed_element",
-        "start_byte": 2116,
-        "end_byte": 2134
-      },
-      "position": 1
     },
     {
       "action": "move",
@@ -527,7 +363,7 @@
           2,
           0,
           1,
-          2
+          1
         ],
         "type": "literal_element",
         "start_byte": 2074,
@@ -546,13 +382,13 @@
           2,
           0,
           1,
-          2
+          1
         ],
         "type": "keyed_element",
         "start_byte": 2116,
         "end_byte": 2134
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -571,7 +407,7 @@
         "start_byte": 2047,
         "end_byte": 2091
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 2122,
       "dest_end_byte": 2134,
@@ -622,50 +458,6 @@
       "subtree": true
     },
     {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          3,
-          1,
-          2,
-          0,
-          1,
-          0,
-          1,
-          0,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 2260,
-        "end_byte": 2261
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          3,
-          1,
-          2,
-          0,
-          1,
-          0,
-          1,
-          0
-        ],
-        "type": "keyed_element",
-        "start_byte": 2256,
-        "end_byte": 2272
-      },
-      "position": 1
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -705,7 +497,7 @@
         "start_byte": 2256,
         "end_byte": 2272
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -745,7 +537,7 @@
           0,
           1,
           0,
-          2,
+          1,
           0,
           1,
           0,
@@ -769,7 +561,7 @@
           0,
           1,
           0,
-          2,
+          1,
           0,
           1,
           0
@@ -780,58 +572,6 @@
       },
       "position": 0,
       "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0,
-          2,
-          0,
-          1,
-          0,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 2094,
-        "end_byte": 2095
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0,
-          2,
-          0,
-          1,
-          0
-        ],
-        "type": "keyed_element",
-        "start_byte": 2089,
-        "end_byte": 2098
-      },
-      "position": 1
     },
     {
       "action": "move",
@@ -871,7 +611,7 @@
           0,
           1,
           0,
-          2,
+          1,
           0,
           1,
           0
@@ -880,7 +620,7 @@
         "start_byte": 2089,
         "end_byte": 2098
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -924,10 +664,10 @@
           0,
           1,
           0,
-          2,
+          1,
           0,
           1,
-          2,
+          1,
           0
         ],
         "type": "literal_element",
@@ -948,10 +688,10 @@
           0,
           1,
           0,
-          2,
+          1,
           0,
           1,
-          2
+          1
         ],
         "type": "keyed_element",
         "start_byte": 2100,
@@ -959,58 +699,6 @@
       },
       "position": 0,
       "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0,
-          2,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 2105,
-        "end_byte": 2106
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          6,
-          5,
-          0,
-          2,
-          2,
-          0,
-          0,
-          2,
-          0,
-          1,
-          0,
-          2,
-          0,
-          1,
-          2
-        ],
-        "type": "keyed_element",
-        "start_byte": 2100,
-        "end_byte": 2110
-      },
-      "position": 1
     },
     {
       "action": "move",
@@ -1030,7 +718,7 @@
           0,
           0,
           1,
-          2
+          1
         ],
         "type": "literal_element",
         "start_byte": 2065,
@@ -1050,16 +738,16 @@
           0,
           1,
           0,
-          2,
+          1,
           0,
           1,
-          2
+          1
         ],
         "type": "keyed_element",
         "start_byte": 2100,
         "end_byte": 2110
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -1081,7 +769,7 @@
         "start_byte": 2060,
         "end_byte": 2069
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 2107,
       "dest_end_byte": 2110,

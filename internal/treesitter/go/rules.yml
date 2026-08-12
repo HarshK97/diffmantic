@@ -1,36 +1,6 @@
 flattened:
   - interpreted_string_literal
 aliased:
-  # Keywords
-  "if": "condition_declaration"
-  "for": "for"
-  "return": "return"
-  "switch": "switch"
-  "select": "select"
-  "case": "case"
-  "default": "default"
-  "go": "go"
-  "defer": "defer"
-  "var": "var"
-  "const": "const"
-  "type": "type"
-  "struct": "struct"
-  "interface": "interface"
-  "func": "func"
-  "package": "package"
-  "import": "import"
-  "map": "map"
-  "chan": "chan"
-  "break": "break"
-  "continue": "continue"
-  "range": "range"
-  "fallthrough": "fallthrough"
-  "else": "else"
-
-  # Punctuation
-  # "(": "opening_paren"
-  # ")": "closing_paren"
-
   # Arithmetic operators
   "+": arithmetic_operator_literal
   "-": arithmetic_operator_literal
@@ -80,16 +50,20 @@ aliased:
   # Increment/Decrement operators
   "++": update_operator_literal
   "--": update_operator_literal
-  # "{": opening_brace
-  # "}": closing_brace
-  # "[": opening_bracket
-  # "]": closing_bracket
-  ".": dot
-  ":": colon
-  ",": comma
-  ";": semicolon
+
 ignored:
   - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+
 scaffolding:
   - source_file
   - block

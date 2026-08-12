@@ -2,22 +2,6 @@
   "version": "v1",
   "actions": [
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          1,
-          1,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "tokio",
-        "start_byte": 19,
-        "end_byte": 24
-      }
-    },
-    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -50,71 +34,13 @@
         "path": [
           1,
           1,
-          0,
-          1
-        ],
-        "type": "path_separator",
-        "label": "::",
-        "start_byte": 24,
-        "end_byte": 26
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          1,
-          1,
-          1
-        ],
-        "type": "path_separator",
-        "label": "::",
-        "start_byte": 31,
-        "end_byte": 33
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          1,
-          1
+          0
         ],
         "type": "scoped_identifier",
         "start_byte": 19,
-        "end_byte": 42
-      },
-      "position": 1
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          1,
-          1,
-          0,
-          2
-        ],
-        "type": "identifier",
-        "label": "stream",
-        "start_byte": 26,
         "end_byte": 32
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          1,
-          1,
-          1
-        ],
-        "type": "path_separator",
-        "label": "::",
-        "start_byte": 32,
-        "end_byte": 34
-      }
+      },
+      "subtree": true
     }
   ],
   "line_alignment": [

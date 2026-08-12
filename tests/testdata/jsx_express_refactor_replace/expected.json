@@ -51,34 +51,6 @@
           2,
           1
         ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 576,
-        "end_byte": 577
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          12,
-          1,
-          2
-        ],
-        "type": "member_expression",
-        "start_byte": 561,
-        "end_byte": 587
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          12,
-          1,
-          2,
-          2
-        ],
         "type": "property_identifier",
         "label": "isAbsolute",
         "start_byte": 577,
@@ -95,7 +67,7 @@
         "start_byte": 561,
         "end_byte": 587
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "update",

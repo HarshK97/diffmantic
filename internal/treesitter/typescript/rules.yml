@@ -2,6 +2,7 @@ flattened:
   - string
   - template_string
   - comment
+
 aliased:
   # Comparison operators
   "==": comparison_operator_literal
@@ -59,50 +60,22 @@ aliased:
   "--": update_operator_literal
   "=>": arrow
 
-  # Keywords
-  "if": "condition_declaration"
-  "else": "else"
-  "for": "for"
-  "while": "while"
-  "do": "do"
-  "switch": "switch"
-  "case": "case"
-  "default": "default"
-  "try": "try"
-  "catch": "catch"
-  "finally": "finally"
-  "throw": "throw"
-  "return": "return"
-  "break": "break"
-  "continue": "continue"
-  "function": "function"
-  "class": "class"
-  "const": "const"
-  "let": "let"
-  "var": "var"
-  "type": "type"
-  "interface": "interface"
-  "namespace": "namespace"
-  "enum": "enum"
-  "abstract": "abstract"
-  "readonly": "readonly"
-  "export": "export"
-  "import": "import"
-  "from": "from"
-  "as": "as"
-  "async": "async"
-  "await": "await"
-
-  # Punctuation
-  ".": dot
-  ":": colon
-  ",": comma
-  ";": semicolon
-  "?.": optional_chaining
-
 ignored:
   - "\n"
+  - "_automatic_semicolon"
   - "escape_sequence"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "..."
+  - "?."
 
 scaffolding:
   - program

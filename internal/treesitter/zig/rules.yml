@@ -6,38 +6,6 @@ flattened:
   - doc_comment
 
 aliased:
-  # Keywords
-  "const": "const"
-  "var": "var"
-  "fn": "fn"
-  "pub": "pub"
-  "usingnamespace": "usingnamespace"
-  "struct": "struct"
-  "enum": "enum"
-  "union": "union"
-  "error": "error"
-  "if": "condition_declaration"
-  "else": "else"
-  "switch": "switch"
-  "while": "while"
-  "for": "for"
-  "return": "return"
-  "break": "break"
-  "continue": "continue"
-  "defer": "defer"
-  "errdefer": "errdefer"
-  "try": "try"
-  "catch": "catch"
-  "async": "async"
-  "await": "await"
-  "suspend": "suspend"
-  "resume": "resume"
-  "comptime": "comptime"
-  "inline": "inline"
-  "noalias": "noalias"
-  "anytype": "anytype"
-  "test": "test"
-
   # Arithmetic operators
   "+": arithmetic_operator_literal
   "-": arithmetic_operator_literal
@@ -89,16 +57,20 @@ aliased:
   ".?": unary_operator_literal
   ".*": unary_operator_literal
 
-  # Punctuation & Arrows
-  "=>": arrow
-  "->": arrow
-  ".": dot
-  ":": colon
-  ",": comma
-  ";": semicolon
-
 ignored:
   - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "=>"
+  - "->"
 
 scaffolding:
   - source_file

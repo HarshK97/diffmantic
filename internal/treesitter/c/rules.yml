@@ -5,34 +5,6 @@ flattened:
   - concatenated_string
   - comment
 aliased:
-  # Keywords
-  "if": "condition_declaration"
-  "else": "else"
-  "switch": "switch"
-  "case": "case"
-  "default": "default"
-  "for": "for"
-  "while": "while"
-  "do": "do"
-  "return": "return"
-  "break": "break"
-  "continue": "continue"
-  "goto": "goto"
-  "struct": "struct"
-  "union": "union"
-  "enum": "enum"
-  "typedef": "typedef"
-  "const": "const"
-  "volatile": "volatile"
-  "static": "static"
-  "extern": "extern"
-  "inline": "inline"
-  "register": "register"
-  "auto": "auto"
-  "restrict": "restrict"
-  "sizeof": "sizeof"
-  "alignof": "alignof"
-
   # Arithmetic operators
   "+": arithmetic_operator_literal
   "-": arithmetic_operator_literal
@@ -78,14 +50,6 @@ aliased:
   "++": update_operator_literal
   "--": update_operator_literal
 
-  # Punctuation & Delimiters
-  ".": dot
-  "->": arrow
-  ",": comma
-  ";": semicolon
-  ":": colon
-  "?": question_mark
-
   # Preprocessor keywords
   "#include": preproc_include
   "#define": preproc_def
@@ -99,6 +63,18 @@ aliased:
 
 ignored:
   - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "?"
+  - "->"
 
 scaffolding:
   - translation_unit

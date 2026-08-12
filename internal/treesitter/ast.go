@@ -137,13 +137,8 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		}
 	}
 
-	if !n.IsNamed() {
-		if rules == nil {
-			return nil
-		}
-		if _, ok := rules.Aliased[nodeType]; !ok {
-			return nil
-		}
+	if rules == nil {
+		return nil
 	}
 
 	isLeaf := n.ChildCount() == 0 || slices.Contains(stringLiteralTypes, nodeType)
@@ -157,10 +152,8 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		label = strings.TrimSpace(string(src[start:end]))
 	}
 
-	if rules != nil {
-		if isIgnored(nodeType, label, rules.Ignored) {
-			return nil
-		}
+	if isIgnored(nodeType, label, rules.Ignored) {
+		return nil
 	}
 
 	node := &ASTNode{

@@ -7,9 +7,9 @@
         "tree": "after",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           6,
           0
         ],
@@ -22,9 +22,9 @@
         "tree": "after",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           6
         ],
         "type": "assignment",
@@ -39,9 +39,9 @@
         "tree": "after",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           6,
           2
         ],
@@ -53,9 +53,9 @@
         "tree": "after",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           6
         ],
         "type": "assignment",
@@ -71,9 +71,9 @@
         "tree": "before",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           6
         ],
         "type": "comment",
@@ -88,9 +88,9 @@
         "tree": "before",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           7
         ],
         "type": "comment",
@@ -105,9 +105,9 @@
         "tree": "before",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           8,
           0
         ],
@@ -123,9 +123,9 @@
         "tree": "before",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           8,
           2
         ],
@@ -141,9 +141,9 @@
         "tree": "before",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           9
         ],
         "type": "if_statement",
@@ -158,9 +158,9 @@
         "tree": "before",
         "path": [
           32,
-          4,
           3,
-          2,
+          3,
+          1,
           10
         ],
         "type": "assignment",

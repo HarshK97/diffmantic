@@ -14,7 +14,7 @@
           0,
           1,
           0,
-          16
+          8
         ],
         "type": "pair",
         "start_byte": 1291,
@@ -36,7 +36,7 @@
         "start_byte": 881,
         "end_byte": 1904
       },
-      "position": 16,
+      "position": 8,
       "subtree": true
     },
     {
@@ -52,8 +52,8 @@
           0,
           1,
           0,
-          14,
-          2
+          7,
+          1
         ],
         "type": "array",
         "start_byte": 1257,
@@ -70,13 +70,13 @@
           0,
           1,
           0,
-          14
+          7
         ],
         "type": "pair",
         "start_byte": 1246,
         "end_byte": 1285
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -92,8 +92,8 @@
           0,
           1,
           0,
-          14,
-          2
+          7,
+          1
         ],
         "type": "array",
         "start_byte": 1257,

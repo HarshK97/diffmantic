@@ -5,47 +5,6 @@ flattened:
   - html_comment
 
 aliased:
-  # Keywords
-  "if": "condition_declaration"
-  "else": "else"
-  "for": "for"
-  "while": "while"
-  "do": "do"
-  "switch": "switch"
-  "case": "case"
-  "default": "default"
-  "break": "break"
-  "continue": "continue"
-  "return": "return"
-  "try": "try"
-  "catch": "catch"
-  "finally": "finally"
-  "throw": "throw"
-  "yield": "yield"
-  "await": "await"
-  "async": "async"
-  "function": "function"
-  "class": "class"
-  "extends": "extends"
-  "const": "const"
-  "let": "let"
-  "var": "var"
-  "using": "using"
-  "import": "import"
-  "export": "export"
-  "from": "from"
-  "with": "with"
-  "of": "of"
-  "in": "in"
-  "new": "new"
-  "this": "this"
-  "super": "super"
-  "delete": "delete"
-  "typeof": "typeof"
-  "void": "void"
-  "instanceof": "instanceof"
-  "debugger": "debugger"
-
   # Arithmetic operators
   "+": arithmetic_operator_literal
   "-": arithmetic_operator_literal
@@ -104,18 +63,23 @@ aliased:
   "--": update_operator_literal
   "=>": arrow
 
-  # Punctuation
-  ".": dot
-  ":": colon
-  ",": comma
-  ";": semicolon
-  "...": ellipsis
-  "?.": optional_chain_op
-  "@": decorator_at
-
 ignored:
   - "\n"
   - "_automatic_semicolon"
+  - "escape_sequence"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "..."
+  - "?."
+  - "@"
 
 scaffolding:
   - program

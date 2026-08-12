@@ -7,7 +7,7 @@
         "tree": "after",
         "path": [
           1,
-          1,
+          2,
           6
         ],
         "type": "requires_module_directive",
@@ -18,7 +18,7 @@
         "tree": "after",
         "path": [
           1,
-          1
+          2
         ],
         "type": "module_body",
         "start_byte": 139,

@@ -9,12 +9,152 @@
           8,
           1,
           3,
-          10
+          5
         ],
         "type": "identifier",
         "label": "name",
         "start_byte": 8382,
         "end_byte": 8386
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "position": 5
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          6
+        ],
+        "type": "string",
+        "label": "\"zodgres\"",
+        "start_byte": 8388,
+        "end_byte": 8397
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "position": 6
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          7
+        ],
+        "type": "identifier",
+        "label": "url",
+        "start_byte": 8403,
+        "end_byte": 8406
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "position": 7
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          8
+        ],
+        "type": "string",
+        "label": "\"https://github.com/endel/zodgres\"",
+        "start_byte": 8408,
+        "end_byte": 8442
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "position": 8
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          9
+        ],
+        "type": "identifier",
+        "label": "description",
+        "start_byte": 8448,
+        "end_byte": 8459
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3
+        ],
+        "type": "array",
+        "start_byte": 7297,
+        "end_byte": 8588
+      },
+      "position": 9
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          1,
+          3,
+          10
+        ],
+        "type": "string",
+        "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
+        "start_byte": 8461,
+        "end_byte": 8554
       },
       "parent": {
         "tree": "after",
@@ -39,10 +179,10 @@
           3,
           11
         ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8386,
-        "end_byte": 8387
+        "type": "identifier",
+        "label": "slug",
+        "start_byte": 8560,
+        "end_byte": 8564
       },
       "parent": {
         "tree": "after",
@@ -68,9 +208,9 @@
           12
         ],
         "type": "string",
-        "label": "\"zodgres\"",
-        "start_byte": 8388,
-        "end_byte": 8397
+        "label": "\"endel/zodgres\"",
+        "start_byte": 8566,
+        "end_byte": 8581
       },
       "parent": {
         "tree": "after",
@@ -90,262 +230,10 @@
       "node": {
         "tree": "after",
         "path": [
-          8,
-          1,
-          3,
-          14
-        ],
-        "type": "identifier",
-        "label": "url",
-        "start_byte": 8403,
-        "end_byte": 8406
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 14
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          15
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8406,
-        "end_byte": 8407
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 15
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          16
-        ],
-        "type": "string",
-        "label": "\"https://github.com/endel/zodgres\"",
-        "start_byte": 8408,
-        "end_byte": 8442
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 16
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          18
-        ],
-        "type": "identifier",
-        "label": "description",
-        "start_byte": 8448,
-        "end_byte": 8459
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 18
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          19
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8459,
-        "end_byte": 8460
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 19
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          20
-        ],
-        "type": "string",
-        "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
-        "start_byte": 8461,
-        "end_byte": 8554
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 20
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          22
-        ],
-        "type": "identifier",
-        "label": "slug",
-        "start_byte": 8560,
-        "end_byte": 8564
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 22
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          23
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 8564,
-        "end_byte": 8565
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 23
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3,
-          24
-        ],
-        "type": "string",
-        "label": "\"endel/zodgres\"",
-        "start_byte": 8566,
-        "end_byte": 8581
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          1,
-          3
-        ],
-        "type": "array",
-        "start_byte": 7297,
-        "end_byte": 8588
-      },
-      "position": 24
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
           9,
           1,
           3,
-          6
+          3
         ],
         "type": "object",
         "start_byte": 9361,
@@ -362,7 +250,7 @@
         "start_byte": 8627,
         "end_byte": 9551
       },
-      "position": 6,
+      "position": 3,
       "subtree": true
     },
     {
@@ -373,9 +261,9 @@
           8,
           1,
           3,
-          8,
+          4,
           0,
-          2
+          1
         ],
         "type": "string",
         "label": "\"zodgres\"",
@@ -390,9 +278,9 @@
           8,
           1,
           3,
-          8,
+          4,
           0,
-          2
+          1
         ],
         "type": "string",
         "label": "\"Fn Sphere\"",
@@ -408,9 +296,9 @@
           8,
           1,
           3,
-          8,
-          2,
-          2
+          4,
+          1,
+          1
         ],
         "type": "string",
         "label": "\"https://github.com/endel/zodgres\"",
@@ -425,9 +313,9 @@
           8,
           1,
           3,
-          8,
-          2,
-          2
+          4,
+          1,
+          1
         ],
         "type": "string",
         "label": "\"https://github.com/lawvs/fn-sphere\"",
@@ -443,9 +331,9 @@
           8,
           1,
           3,
-          8,
           4,
-          2
+          2,
+          1
         ],
         "type": "string",
         "label": "\"Postgres.js + Zod: Database collections with static type inference and automatic migrations\"",
@@ -460,9 +348,9 @@
           8,
           1,
           3,
-          8,
           4,
-          2
+          2,
+          1
         ],
         "type": "string",
         "label": "\"A Zod-first toolkit for building powerful, type-safe filter experiences across web apps.\"",
@@ -478,9 +366,9 @@
           8,
           1,
           3,
-          8,
-          6,
-          2
+          4,
+          3,
+          1
         ],
         "type": "string",
         "label": "\"endel/zodgres\"",
@@ -495,9 +383,9 @@
           8,
           1,
           3,
-          8,
-          6,
-          2
+          4,
+          3,
+          1
         ],
         "type": "string",
         "label": "\"lawvs/fn-sphere\"",
@@ -1604,7 +1492,7 @@
       "right_line": 273
     },
     {
-      "left_line": -1,
+      "left_line": 269,
       "right_line": 274
     },
     {
@@ -1628,7 +1516,7 @@
       "right_line": 279
     },
     {
-      "left_line": 269,
+      "left_line": -1,
       "right_line": 280
     },
     {

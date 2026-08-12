@@ -8,7 +8,7 @@
         "path": [
           7,
           1,
-          2
+          1
         ],
         "type": "struct_specifier",
         "start_byte": 657,
@@ -24,7 +24,7 @@
         "start_byte": 434,
         "end_byte": 710
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -34,7 +34,7 @@
         "path": [
           7,
           1,
-          4
+          2
         ],
         "type": "declaration",
         "start_byte": 680,
@@ -50,7 +50,7 @@
         "start_byte": 434,
         "end_byte": 710
       },
-      "position": 4,
+      "position": 2,
       "subtree": true
     },
     {

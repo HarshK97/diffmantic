@@ -97,7 +97,7 @@
         "path": [
           127,
           4,
-          6
+          5
         ],
         "type": "comment",
         "label": "/// Whether `help` should print the description of a parameter on a new line instead of after",
@@ -114,7 +114,7 @@
         "start_byte": 35300,
         "end_byte": 37331
       },
-      "position": 7
+      "position": 6
     },
     {
       "action": "insert",
@@ -123,7 +123,7 @@
         "path": [
           127,
           4,
-          28
+          25
         ],
         "type": "comment",
         "label": "/// How much to indent each parameter.",
@@ -140,7 +140,7 @@
         "start_byte": 35300,
         "end_byte": 37331
       },
-      "position": 30
+      "position": 27
     },
     {
       "action": "insert",
@@ -149,7 +149,7 @@
         "path": [
           127,
           4,
-          45
+          41
         ],
         "type": "comment",
         "label": "/// parameters into multiple lines if they exceed this maximum. Setting this to the width",
@@ -166,7 +166,7 @@
         "start_byte": 35300,
         "end_byte": 37331
       },
-      "position": 48
+      "position": 44
     },
     {
       "action": "update",
@@ -307,7 +307,7 @@
         "path": [
           127,
           4,
-          6
+          5
         ],
         "type": "comment",
         "label": "/// Wether `help` should print the description of a parameter on a new line instead of after",
@@ -322,7 +322,7 @@
         "path": [
           127,
           4,
-          28
+          25
         ],
         "type": "comment",
         "label": "/// How much to indent each paramter.",
@@ -337,7 +337,7 @@
         "path": [
           127,
           4,
-          45
+          41
         ],
         "type": "comment",
         "label": "/// paramters into multiple lines if they exeed this maximum. Setting this to the width",

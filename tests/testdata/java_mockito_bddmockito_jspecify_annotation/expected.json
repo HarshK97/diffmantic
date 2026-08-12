@@ -137,7 +137,7 @@
           4,
           7,
           3,
-          2,
+          1,
           0
         ],
         "type": "modifiers",
@@ -153,7 +153,7 @@
           4,
           7,
           3,
-          2
+          1
         ],
         "type": "spread_parameter",
         "start_byte": 3797,
@@ -245,7 +245,7 @@
           5,
           5,
           3,
-          2,
+          1,
           0
         ],
         "type": "modifiers",
@@ -261,7 +261,7 @@
           5,
           5,
           3,
-          2
+          1
         ],
         "type": "spread_parameter",
         "start_byte": 5859,

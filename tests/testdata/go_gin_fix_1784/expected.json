@@ -132,7 +132,7 @@
           8,
           0,
           1,
-          2
+          1
         ],
         "type": "call_expression",
         "start_byte": 39489,
@@ -166,7 +166,7 @@
         "start_byte": 39485,
         "end_byte": 39532
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 39182,
       "dest_end_byte": 39207,
@@ -183,7 +183,7 @@
           11,
           0,
           1,
-          2
+          1
         ],
         "type": "call_expression",
         "start_byte": 39637,
@@ -217,7 +217,7 @@
         "start_byte": 39633,
         "end_byte": 39681
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 39354,
       "dest_end_byte": 39380,
@@ -268,7 +268,7 @@
           10,
           0,
           1,
-          2
+          1
         ],
         "type": "identifier",
         "label": "firstErr",
@@ -289,7 +289,7 @@
         "start_byte": 39531,
         "end_byte": 39561
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "insert",
@@ -302,7 +302,7 @@
           13,
           0,
           1,
-          2
+          1
         ],
         "type": "identifier",
         "label": "secondErr",
@@ -323,7 +323,7 @@
         "start_byte": 39662,
         "end_byte": 39693
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "insert",
@@ -340,7 +340,7 @@
           1,
           1,
           1,
-          2,
+          1,
           0
         ],
         "type": "identifier",
@@ -361,7 +361,7 @@
           1,
           1,
           1,
-          2
+          1
         ],
         "type": "literal_element",
         "start_byte": 39426,
@@ -403,7 +403,7 @@
           1,
           1,
           1,
-          2,
+          1,
           0
         ],
         "type": "call_expression",

@@ -149,7 +149,7 @@
           1,
           0,
           1,
-          2
+          1
         ],
         "type": "selector_expression",
         "start_byte": 6858,
@@ -189,7 +189,7 @@
         "start_byte": 6846,
         "end_byte": 6865
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 6835,
       "dest_end_byte": 6841
@@ -284,7 +284,7 @@
           1,
           0,
           1,
-          2
+          1
         ],
         "type": "selector_expression",
         "start_byte": 7241,
@@ -324,7 +324,7 @@
         "start_byte": 7229,
         "end_byte": 7248
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 7204,
       "dest_end_byte": 7210
@@ -419,7 +419,7 @@
           1,
           0,
           1,
-          2
+          1
         ],
         "type": "selector_expression",
         "start_byte": 7628,
@@ -459,7 +459,7 @@
         "start_byte": 7616,
         "end_byte": 7635
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 7577,
       "dest_end_byte": 7583
@@ -554,7 +554,7 @@
           1,
           0,
           1,
-          2
+          1
         ],
         "type": "selector_expression",
         "start_byte": 8236,
@@ -594,7 +594,7 @@
         "start_byte": 8224,
         "end_byte": 8243
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 8171,
       "dest_end_byte": 8177
@@ -689,7 +689,7 @@
           1,
           0,
           1,
-          2
+          1
         ],
         "type": "selector_expression",
         "start_byte": 8615,
@@ -729,7 +729,7 @@
         "start_byte": 8604,
         "end_byte": 8622
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 8537,
       "dest_end_byte": 8543

@@ -9,7 +9,7 @@
           25,
           3,
           1,
-          4
+          2
         ],
         "type": "comment",
         "label": "// https://github.com/ziglang/zig/issues/24263",
@@ -27,7 +27,7 @@
         "start_byte": 1261,
         "end_byte": 1899
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -37,7 +37,7 @@
           25,
           3,
           1,
-          5
+          3
         ],
         "type": "comment",
         "label": "// .{ .cpu_arch = .aarch64, .os_tag = .windows },",
@@ -55,7 +55,7 @@
         "start_byte": 1261,
         "end_byte": 1899
       },
-      "position": 5
+      "position": 3
     },
     {
       "action": "delete",
@@ -65,7 +65,7 @@
           25,
           3,
           1,
-          4
+          2
         ],
         "type": "anonymous_struct_initializer",
         "start_byte": 1365,

@@ -60,7 +60,7 @@
           1,
           0,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -82,7 +82,7 @@
           1,
           0,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -103,9 +103,9 @@
           2,
           0,
           1,
-          3,
+          2,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -125,9 +125,9 @@
           2,
           0,
           1,
-          3,
+          2,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -148,9 +148,9 @@
           2,
           0,
           1,
-          6,
-          0,
           4,
+          0,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -170,9 +170,9 @@
           2,
           0,
           1,
-          6,
-          0,
           4,
+          0,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -193,9 +193,9 @@
           2,
           0,
           1,
-          9,
+          6,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -215,9 +215,9 @@
           2,
           0,
           1,
-          9,
+          6,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -238,9 +238,9 @@
           2,
           0,
           1,
-          12,
+          8,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -260,9 +260,9 @@
           2,
           0,
           1,
-          12,
+          8,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -283,9 +283,9 @@
           2,
           0,
           1,
-          15,
+          10,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -305,9 +305,9 @@
           2,
           0,
           1,
-          15,
+          10,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -328,9 +328,9 @@
           2,
           0,
           1,
-          18,
+          12,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -350,9 +350,9 @@
           2,
           0,
           1,
-          18,
+          12,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -373,9 +373,9 @@
           2,
           0,
           1,
-          21,
+          14,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -395,9 +395,9 @@
           2,
           0,
           1,
-          21,
+          14,
           0,
-          4,
+          2,
           0
         ],
         "type": "interpreted_string_literal",
@@ -423,8 +423,8 @@
           0,
           0,
           1,
-          4,
-          2
+          2,
+          1
         ],
         "type": "field_identifier",
         "label": "header",
@@ -448,8 +448,8 @@
           0,
           0,
           1,
-          4,
-          2
+          2,
+          1
         ],
         "type": "field_identifier",
         "label": "location",
@@ -474,7 +474,7 @@
           0,
           0,
           1,
-          2,
+          1,
           1,
           0,
           1
@@ -498,7 +498,7 @@
           0,
           0,
           1,
-          2,
+          1,
           1,
           0
         ],
@@ -526,7 +526,7 @@
           0,
           0,
           1,
-          2,
+          1,
           1,
           0
         ],
@@ -549,7 +549,7 @@
           0,
           0,
           1,
-          2,
+          1,
           1,
           0,
           0
@@ -574,7 +574,7 @@
           0,
           0,
           1,
-          2,
+          1,
           1
         ],
         "type": "argument_list",
@@ -603,65 +603,11 @@
           0,
           0,
           1,
-          2,
+          1,
           1,
           0,
           0,
           1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 10355,
-        "end_byte": 10356
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          28,
-          3,
-          0,
-          6,
-          2,
-          0,
-          2,
-          2,
-          0,
-          0,
-          0,
-          1,
-          2,
-          1,
-          0,
-          0
-        ],
-        "type": "selector_expression",
-        "start_byte": 10345,
-        "end_byte": 10359
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          28,
-          3,
-          0,
-          6,
-          2,
-          0,
-          2,
-          2,
-          0,
-          0,
-          0,
-          1,
-          2,
-          1,
-          0,
-          0,
-          2
         ],
         "type": "field_identifier",
         "label": "Get",
@@ -683,7 +629,7 @@
           0,
           0,
           1,
-          2,
+          1,
           1,
           0,
           0
@@ -692,7 +638,7 @@
         "start_byte": 10345,
         "end_byte": 10359
       },
-      "position": 2
+      "position": 1
     }
   ],
   "line_alignment": [

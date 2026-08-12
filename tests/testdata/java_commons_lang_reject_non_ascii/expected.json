@@ -118,7 +118,8 @@
         "type": "integral_type",
         "start_byte": 30044,
         "end_byte": 30047
-      }
+      },
+      "subtree": true
     },
     {
       "action": "delete",

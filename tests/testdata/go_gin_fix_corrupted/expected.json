@@ -67,7 +67,7 @@
           4,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 1428,
         "end_byte": 1430
@@ -523,7 +523,7 @@
           0,
           1,
           1,
-          2
+          1
         ],
         "type": "identifier",
         "label": "args",
@@ -549,7 +549,7 @@
           0,
           1,
           1,
-          2
+          1
         ],
         "type": "variadic_argument",
         "start_byte": 1493,
@@ -576,7 +576,7 @@
         "start_byte": 1484,
         "end_byte": 1501
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {

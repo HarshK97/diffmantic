@@ -39,7 +39,7 @@
           1,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 3050,
         "end_byte": 3052
@@ -67,7 +67,7 @@
           4,
           0,
           1,
-          3
+          2
         ],
         "type": "identifier",
         "label": "ok",
@@ -86,7 +86,7 @@
         "start_byte": 3050,
         "end_byte": 3114
       },
-      "position": 3
+      "position": 2
     },
     {
       "action": "insert",
@@ -97,7 +97,7 @@
           4,
           0,
           1,
-          4
+          3
         ],
         "type": "block",
         "start_byte": 3098,
@@ -115,7 +115,7 @@
         "start_byte": 3050,
         "end_byte": 3114
       },
-      "position": 4,
+      "position": 3,
       "subtree": true
     },
     {
@@ -245,25 +245,6 @@
           0,
           0,
           1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 3081,
-        "end_byte": 3082
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          25,
-          4,
-          0,
-          1,
-          0,
-          0,
-          2
         ],
         "type": "field_identifier",
         "label": "Flush",

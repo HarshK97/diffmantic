@@ -164,7 +164,7 @@
           3,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 1367,
         "end_byte": 1369
@@ -215,7 +215,7 @@
           5,
           0,
           3,
-          3
+          2
         ],
         "type": "binary_expression",
         "start_byte": 1426,
@@ -232,7 +232,7 @@
           5,
           0,
           3,
-          4
+          3
         ],
         "type": "block",
         "start_byte": 1437,

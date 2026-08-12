@@ -70,17 +70,37 @@
         "tree": "after",
         "path": [
           29,
+          2
+        ],
+        "type": "parameters",
+        "start_byte": 4336,
+        "end_byte": 4338
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          29
+        ],
+        "type": "function_item",
+        "start_byte": 4312,
+        "end_byte": 4379
+      },
+      "position": 2
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          29,
           3,
           0,
           0,
-          1,
-          0,
-          0
+          1
         ],
-        "type": "identifier",
-        "label": "MAX_PERMITS",
-        "start_byte": 4360,
-        "end_byte": 4371
+        "type": "arguments",
+        "start_byte": 4359,
+        "end_byte": 4376
       },
       "parent": {
         "tree": "after",
@@ -88,15 +108,27 @@
           29,
           3,
           0,
-          0,
-          1,
           0
         ],
-        "type": "binary_expression",
-        "start_byte": 4360,
-        "end_byte": 4375
+        "type": "call_expression",
+        "start_byte": 4345,
+        "end_byte": 4376
       },
-      "position": 0
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          26,
+          2
+        ],
+        "type": "parameters",
+        "start_byte": 4195,
+        "end_byte": 4197
+      }
     },
     {
       "action": "delete",
@@ -122,13 +154,11 @@
           3,
           1,
           0,
-          1,
-          0,
-          0
+          1
         ],
-        "type": "parenthesized_expression",
-        "start_byte": 4239,
-        "end_byte": 4256
+        "type": "arguments",
+        "start_byte": 4238,
+        "end_byte": 4261
       },
       "subtree": true
     }

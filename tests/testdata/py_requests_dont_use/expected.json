@@ -8,7 +8,7 @@
         "path": [
           33,
           2,
-          6
+          3
         ],
         "type": "typed_parameter",
         "start_byte": 2199,
@@ -24,7 +24,7 @@
         "start_byte": 2072,
         "end_byte": 2228
       },
-      "position": 6,
+      "position": 3,
       "subtree": true
     },
     {
@@ -33,7 +33,7 @@
         "tree": "after",
         "path": [
           33,
-          6,
+          4,
           5
         ],
         "type": "assignment",
@@ -44,7 +44,7 @@
         "tree": "after",
         "path": [
           33,
-          6
+          4
         ],
         "type": "block",
         "start_byte": 2300,
@@ -59,7 +59,7 @@
         "tree": "after",
         "path": [
           33,
-          6,
+          4,
           6
         ],
         "type": "assignment",
@@ -70,7 +70,7 @@
         "tree": "after",
         "path": [
           33,
-          6
+          4
         ],
         "type": "block",
         "start_byte": 2300,
@@ -85,9 +85,9 @@
         "tree": "before",
         "path": [
           33,
-          6,
-          6,
           4,
+          6,
+          3,
           1
         ],
         "type": "comparison_operator",
@@ -98,9 +98,9 @@
         "tree": "after",
         "path": [
           33,
-          6,
-          8,
           4,
+          8,
+          3,
           1
         ],
         "type": "boolean_operator",
@@ -112,9 +112,9 @@
         "tree": "before",
         "path": [
           33,
+          4,
           6,
-          6,
-          4
+          3
         ],
         "type": "elif_clause",
         "start_byte": 2527,
@@ -131,9 +131,9 @@
         "tree": "after",
         "path": [
           33,
-          6,
-          8,
           4,
+          8,
+          3,
           1,
           1
         ],
@@ -146,9 +146,9 @@
         "tree": "after",
         "path": [
           33,
-          6,
-          8,
           4,
+          8,
+          3,
           1
         ],
         "type": "boolean_operator",
@@ -163,9 +163,9 @@
         "tree": "after",
         "path": [
           33,
-          6,
-          8,
           4,
+          8,
+          3,
           1,
           2
         ],
@@ -177,9 +177,9 @@
         "tree": "after",
         "path": [
           33,
-          6,
-          8,
           4,
+          8,
+          3,
           1
         ],
         "type": "boolean_operator",
@@ -195,13 +195,13 @@
         "tree": "after",
         "path": [
           35,
-          4,
+          3,
           9,
-          4,
+          3,
           1,
           1,
           1,
-          6
+          3
         ],
         "type": "attribute",
         "start_byte": 16200,
@@ -211,9 +211,9 @@
         "tree": "after",
         "path": [
           35,
-          4,
+          3,
           9,
-          4,
+          3,
           1,
           1,
           1
@@ -222,7 +222,7 @@
         "start_byte": 16176,
         "end_byte": 16217
       },
-      "position": 6,
+      "position": 3,
       "subtree": true
     }
   ],

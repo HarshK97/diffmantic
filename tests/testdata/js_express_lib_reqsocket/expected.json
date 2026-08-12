@@ -9,14 +9,14 @@
           32,
           0,
           1,
-          4,
+          2,
           3,
           0,
           1,
           2,
           0,
           0,
-          2
+          1
         ],
         "type": "property_identifier",
         "label": "connection",
@@ -31,14 +31,14 @@
           32,
           0,
           1,
-          4,
+          2,
           3,
           0,
           1,
           2,
           0,
           0,
-          2
+          1
         ],
         "type": "property_identifier",
         "label": "socket",
@@ -54,7 +54,7 @@
           32,
           0,
           1,
-          4,
+          2,
           3,
           2,
           1,
@@ -63,7 +63,7 @@
           1,
           0,
           0,
-          2
+          1
         ],
         "type": "property_identifier",
         "label": "connection",
@@ -78,7 +78,7 @@
           32,
           0,
           1,
-          4,
+          2,
           3,
           2,
           1,
@@ -87,7 +87,7 @@
           1,
           0,
           0,
-          2
+          1
         ],
         "type": "property_identifier",
         "label": "socket",
@@ -103,7 +103,7 @@
           44,
           0,
           1,
-          4,
+          2,
           3,
           2,
           1,
@@ -113,7 +113,7 @@
           1,
           0,
           0,
-          2
+          1
         ],
         "type": "property_identifier",
         "label": "connection",
@@ -128,7 +128,7 @@
           44,
           0,
           1,
-          4,
+          2,
           3,
           2,
           1,
@@ -138,7 +138,7 @@
           1,
           0,
           0,
-          2
+          1
         ],
         "type": "property_identifier",
         "label": "socket",
