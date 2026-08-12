@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "4efd646c8458077da64ca589241b7d060996faa7",
+  "commit": "75bd32d1be6decda507aad9eb224803d2e8ae70d",
+  "message": "fix unused argument error when creating version check error\n\nA compile error while generating a compile error.",
+  "author": "Techatrix",
+  "date": "2024-05-01T15:38:53+02:00",
+  "language": "zig",
+  "files_changed": 1,
+  "insertions": 10,
+  "deletions": 6
+}

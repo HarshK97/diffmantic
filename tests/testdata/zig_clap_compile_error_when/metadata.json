@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "1d3d273524e3c180f015ff1e93c83075e4634e2c",
+  "commit": "27621cb7207643f914bae7b01902b22a8b5916e7",
+  "message": "fix: Add compile error when positional taking many values is not last\n\nSee https://github.com/Hejsil/zig-clap/issues/153",
+  "author": "Jimmi Holst Christensen",
+  "date": "2026-02-14T18:19:39+01:00",
+  "language": "zig",
+  "files_changed": 1,
+  "insertions": 18,
+  "deletions": 0
+}

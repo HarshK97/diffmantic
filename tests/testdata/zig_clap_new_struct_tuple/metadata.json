@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "c499116264c348e4a98d939917b2446cad79d5fb",
+  "commit": "c56c0ba49ab64b45190f8bd7e946bde9678139a5",
+  "message": "fix: Use the new @Struct and @Tuple constructors\n\n@Type has been replaced with individual type-creating builtins as of zig",
+  "author": "Leapofod",
+  "date": "2025-12-01T11:08:43+07:00",
+  "language": "zig",
+  "files_changed": 2,
+  "insertions": 19,
+  "deletions": 27
+}

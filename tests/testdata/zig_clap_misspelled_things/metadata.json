@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "7dfef5b10de832d9da588f96d03f2cfe6f01f39d",
+  "commit": "6c9ca9025199b145c42a75d10cadb3f97879ee6d",
+  "message": "Fix misspelled things",
+  "author": "Jimmi Holst Christensen",
+  "date": "2023-01-12T19:49:56+01:00",
+  "language": "zig",
+  "files_changed": 4,
+  "insertions": 13,
+  "deletions": 13
+}

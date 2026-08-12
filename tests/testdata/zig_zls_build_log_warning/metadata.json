@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "369909ae593acece607cf48365dafc64320a845e",
+  "commit": "8176fe732721ba7650524bceaa4d041f386c6ee2",
+  "message": "build: log warning when failing to run `git describe` to resolve version",
+  "author": "Techatrix",
+  "date": "2024-12-15T20:23:06+01:00",
+  "language": "zig",
+  "files_changed": 1,
+  "insertions": 10,
+  "deletions": 5
+}

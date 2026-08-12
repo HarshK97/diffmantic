@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "245abe30f96f7ca35f3e3f6a91892c50ad2fa7c2",
+  "commit": "3b8364a37deb1c3c6789ca4451709e01c31f01a7",
+  "message": "build: fix zig build gen being run with arguments",
+  "author": "Techatrix",
+  "date": "2025-01-14T12:44:50+01:00",
+  "language": "zig",
+  "files_changed": 1,
+  "insertions": 12,
+  "deletions": 9
+}

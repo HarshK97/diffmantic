@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "4be3fcdb616647215dc162c9e2f64b7d6e3ad09d",
+  "commit": "bf94b097c4134b9ceaf983984f71b688e36274a4",
+  "message": "Fix uses of builtin",
+  "author": "Komari Spaghetti",
+  "date": "2021-10-09T13:06:28+02:00",
+  "language": "zig",
+  "files_changed": 3,
+  "insertions": 8,
+  "deletions": 9
+}

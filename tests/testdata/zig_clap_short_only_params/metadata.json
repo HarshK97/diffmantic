@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "f108cfafdb1f4f6150ae2a05244bfe00611c7bc4",
+  "commit": "c394594d218c3c936547e590b461e69e6e0b20c4",
+  "message": "Fix short only params not getting fields in `Arguments`\n\nfixes #84",
+  "author": "Jimmi Holst Christensen",
+  "date": "2023-11-16T12:00:15+01:00",
+  "language": "zig",
+  "files_changed": 1,
+  "insertions": 11,
+  "deletions": 10
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "068c38f89814079635692c7d0be9f58508c86173",
+  "commit": "1d89fdc16a446c139bf37ecfe1c7ef07d89d4894",
+  "message": "fix: More than 2 positionals not parsing correctly\n\nFixes #149",
+  "author": "Jimmi Holst Christensen",
+  "date": "2025-02-21T21:24:16+01:00",
+  "language": "zig",
+  "files_changed": 1,
+  "insertions": 44,
+  "deletions": 26
+}
