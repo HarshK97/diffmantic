@@ -95,6 +95,17 @@ func TestParse(t *testing.T) {
 		}
 	})
 
+	t.Run("valid zig source", func(t *testing.T) {
+		src := []byte(`const std = @import("std"); pub fn main() void {}`)
+		ast, err := Parse(src, "main.zig")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
 	t.Run("valid typescript source", func(t *testing.T) {
 		src := []byte(`interface User { id: number; name: string; } const u: User = { id: 1, name: "Alice" };`)
 		ast, err := Parse(src, "main.ts")

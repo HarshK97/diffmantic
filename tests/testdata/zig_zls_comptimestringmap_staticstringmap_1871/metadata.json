@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "07508440588bf06f041da9f6dd3956948368f194",
+  "commit": "6310bcc6ab918e96f7349d37e4a0bc20d68a7ff0",
+  "message": "fix: `ComptimeStringMap`->`StaticStringMap` (#1871)",
+  "author": "John",
+  "date": "2024-04-26T01:42:58+09:00",
+  "language": "zig",
+  "files_changed": 7,
+  "insertions": 13,
+  "deletions": 13
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "6811c533020318cf6e57b723bd724ad41d20f0dd",
+  "commit": "c0b913127e51b0119fc66899520054a3bbfd4457",
+  "message": "fix: 0.13.0-dev.46+3648d7df1 compatibility\n\nSummary:",
+  "author": "Kiss R\u00f3bert",
+  "date": "2024-05-05T14:35:16+02:00",
+  "language": "zig",
+  "files_changed": 4,
+  "insertions": 10,
+  "deletions": 10
+}

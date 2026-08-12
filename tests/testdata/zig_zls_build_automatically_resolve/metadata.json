@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "e8d374fa937d1d84793c66d6d98e1b89c27a6796",
+  "commit": "a9f82d5285d11885befe234064f0445763e57289",
+  "message": "build: automatically resolve the correct default data version\n\nremoves two source locations that would need to be updated on a new release",
+  "author": "Techatrix",
+  "date": "2024-04-22T20:00:51+02:00",
+  "language": "zig",
+  "files_changed": 2,
+  "insertions": 17,
+  "deletions": 11
+}

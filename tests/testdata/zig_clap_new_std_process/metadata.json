@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Hejsil/zig-clap",
+  "parent": "efa85b280f66f6f8416a6ed7257d0351d9d48023",
+  "commit": "1d3d273524e3c180f015ff1e93c83075e4634e2c",
+  "message": "fix: use new `std.process.Init` args for Zig `0.16.0-dev.2261+d6b3dd25a` (#175)",
+  "author": "darcy",
+  "date": "2026-01-25T09:27:04+11:00",
+  "language": "zig",
+  "files_changed": 9,
+  "insertions": 52,
+  "deletions": 135
+}

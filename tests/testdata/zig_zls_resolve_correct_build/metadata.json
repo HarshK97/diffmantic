@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/zigtools/zls",
+  "parent": "632ef59bb8700345be5010bb60dabcb198214aef",
+  "commit": "81407cd41b82a1a450315862897958e62e50e660",
+  "message": "resolve the correct build runner path in tests",
+  "author": "Techatrix",
+  "date": "2025-03-05T21:24:36+01:00",
+  "language": "zig",
+  "files_changed": 2,
+  "insertions": 5,
+  "deletions": 2
+}

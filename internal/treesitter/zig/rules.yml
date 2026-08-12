@@ -1,0 +1,115 @@
+flattened:
+  - string_literal
+  - multiline_string_literal
+  - char_literal
+  - line_comment
+  - doc_comment
+
+aliased:
+  # Keywords
+  "const": "const"
+  "var": "var"
+  "fn": "fn"
+  "pub": "pub"
+  "usingnamespace": "usingnamespace"
+  "struct": "struct"
+  "enum": "enum"
+  "union": "union"
+  "error": "error"
+  "if": "condition_declaration"
+  "else": "else"
+  "switch": "switch"
+  "while": "while"
+  "for": "for"
+  "return": "return"
+  "break": "break"
+  "continue": "continue"
+  "defer": "defer"
+  "errdefer": "errdefer"
+  "try": "try"
+  "catch": "catch"
+  "async": "async"
+  "await": "await"
+  "suspend": "suspend"
+  "resume": "resume"
+  "comptime": "comptime"
+  "inline": "inline"
+  "noalias": "noalias"
+  "anytype": "anytype"
+  "test": "test"
+
+  # Arithmetic operators
+  "+": arithmetic_operator_literal
+  "-": arithmetic_operator_literal
+  "*": arithmetic_operator_literal
+  "/": arithmetic_operator_literal
+  "%": arithmetic_operator_literal
+  "+%": arithmetic_operator_literal
+  "-%": arithmetic_operator_literal
+  "*%": arithmetic_operator_literal
+
+  # Comparison operators
+  "==": comparison_operator_literal
+  "!=": comparison_operator_literal
+  "<": comparison_operator_literal
+  "<=": comparison_operator_literal
+  ">": comparison_operator_literal
+  ">=": comparison_operator_literal
+
+  # Logical operators
+  "and": logical_operator_literal
+  "or": logical_operator_literal
+
+  # Assignment operators
+  "=": assignment_operator_literal
+  "+=": assignment_operator_literal
+  "-=": assignment_operator_literal
+  "*=": assignment_operator_literal
+  "/=": assignment_operator_literal
+  "%=": assignment_operator_literal
+  "+%=": assignment_operator_literal
+  "-%=": assignment_operator_literal
+  "*%=": assignment_operator_literal
+  "&=": assignment_operator_literal
+  "|=": assignment_operator_literal
+  "^=": assignment_operator_literal
+  "<<=": assignment_operator_literal
+  ">>=": assignment_operator_literal
+
+  # Bitwise operators
+  "&": bitwise_operator_literal
+  "|": bitwise_operator_literal
+  "^": bitwise_operator_literal
+  "<<": bitwise_operator_literal
+  ">>": bitwise_operator_literal
+  "~": bitwise_operator_literal
+
+  # Unary / Pointer / Option operators
+  "!": unary_operator_literal
+  ".?": unary_operator_literal
+  ".*": unary_operator_literal
+
+  # Punctuation & Arrows
+  "=>": arrow
+  "->": arrow
+  ".": dot
+  ":": colon
+  ",": comma
+  ";": semicolon
+
+ignored:
+  - "\n"
+
+scaffolding:
+  - source_file
+  - Block
+  - Statement
+  - Expression
+  - Decl
+  - FnProto
+  - ParamDecl
+  - ContainerDecl
+  - StructDecl
+  - EnumDecl
+  - UnionDecl
+  - InitList
