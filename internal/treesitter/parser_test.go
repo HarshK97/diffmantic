@@ -25,6 +25,7 @@ func TestDetectLanguage(t *testing.T) {
 		{"test.h", false},
 		{"test.cs", false},
 		{"test.java", false},
+		{"test.php", false},
 		{"test.json", false},
 		{"test.yaml", false},
 		{"test.yml", false},
@@ -176,6 +177,17 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 	t.Run("valid java source", func(t *testing.T) {
 		src := []byte(`package com.example; public class Main { public static void main(String[] args) { System.out.println("Hello Java"); } }`)
 		ast, err := Parse(src, "Main.java")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
+	t.Run("valid php source", func(t *testing.T) {
+		src := []byte(`<?php echo "Hello World"; ?>`)
+		ast, err := Parse(src, "main.php")
 		if err != nil {
 			t.Fatalf("Parse(): unexpected error: %v", err)
 		}
