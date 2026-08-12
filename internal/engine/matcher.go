@@ -28,6 +28,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 	ContestContainers(t1, t2, mappings)
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
+	MatchContainerKeywords(t1, t2, mappings)
 	RollupMatchedContainers(t1, t2, mappings)
 
 	if !mappings.Has(t1) && !mappings.HasDst(t2) {
@@ -46,7 +47,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 	type leafKey struct{ Type, Label string }
 	t2Leaves := make(map[leafKey][]*treesitter.ASTNode)
 	for _, t2 := range t2Root.PostOrder() {
-		if len(t2.Children) == 0 && t2.Label != "" {
+		if len(t2.Children) == 0 && t2.Label != "" && !t2.IsKeyword {
 			t2Leaves[leafKey{t2.Type, t2.Label}] = append(t2Leaves[leafKey{t2.Type, t2.Label}], t2)
 		}
 	}
@@ -54,7 +55,7 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 	type parentPair struct{ p1, p2 *treesitter.ASTNode }
 	diceCache := make(map[parentPair]float64)
 	for _, t1 := range t1Root.PostOrder() {
-		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" {
+		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" || t1.IsKeyword {
 			continue
 		}
 
@@ -162,6 +163,43 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 	}
 }
 
+// MatchContainerKeywords maps unmapped keyword children between mapped parent containers.
+func MatchContainerKeywords(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	for _, p1 := range t1Root.PostOrder() {
+		p2 := m.Src()[p1]
+		if p2 == nil {
+			continue
+		}
+		for _, c1 := range p1.Children {
+			if c1.IsKeyword && !m.Has(c1) {
+				k2 := findMatchingKeywordChild(p2, c1, m)
+				if k2 != nil {
+					m.Add(c1, k2)
+				}
+			}
+		}
+	}
+}
+
+func findMatchingKeywordChild(p2 *treesitter.ASTNode, k1 *treesitter.ASTNode, m *Mapping) *treesitter.ASTNode {
+	if p2 == nil || k1 == nil {
+		return nil
+	}
+	k1Idx := k1.ChildIndex()
+	var fallback *treesitter.ASTNode
+	for _, c2 := range p2.Children {
+		if c2.IsKeyword && c2.Type == k1.Type && !m.HasDst(c2) {
+			if c2.ChildIndex() == k1Idx {
+				return c2
+			}
+			if fallback == nil {
+				fallback = c2
+			}
+		}
+	}
+	return fallback
+}
+
 // sortMappingsByPreOrder sorts mapped pairs by T1 pre-order index.
 func sortMappingsByPreOrder(m *Mapping) {
 	slices.SortStableFunc(m.Pairs, func(a, b MappingPair) int {
@@ -238,23 +276,26 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	}
 }
 
-var declarationTypes = map[string]bool{
-	"function_declaration": true,
-	"method_declaration":   true,
-	"function_definition":  true,
-	"class_definition":     true,
-	"class_declaration":    true,
-	"method_definition":    true,
-}
-
 func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
+	if root == nil || root.Language == "" {
+		return nil
+	}
+	r := treesitter.GetRules(root.Language)
+	if r == nil || len(r.Declarations) == 0 {
+		return nil
+	}
+	decMap := make(map[string]bool, len(r.Declarations))
+	for _, d := range r.Declarations {
+		decMap[d] = true
+	}
+
 	var decs []*treesitter.ASTNode
 	var traverse func(*treesitter.ASTNode)
 	traverse = func(n *treesitter.ASTNode) {
 		if n == nil {
 			return
 		}
-		if declarationTypes[n.Type] {
+		if decMap[n.Type] {
 			decs = append(decs, n)
 		}
 		for _, child := range n.Children {
@@ -270,8 +311,10 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 		return ""
 	}
 	for _, child := range n.Children {
-		if child.Type == "identifier" || child.Type == "field_identifier" {
-			return child.Label
+		if child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "type_identifier" || child.Type == "name" {
+			if child.Label != "" {
+				return child.Label
+			}
 		}
 	}
 	return ""

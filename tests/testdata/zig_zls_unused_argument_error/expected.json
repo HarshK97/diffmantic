@@ -17,6 +17,50 @@
           1,
           0,
           2,
+          0
+        ],
+        "type": "if",
+        "label": "if",
+        "start_byte": 22893,
+        "end_byte": 22895
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2
+        ],
+        "type": "if_expression",
+        "start_byte": 22893,
+        "end_byte": 24003
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
           2
         ],
         "type": "call_expression",
@@ -42,7 +86,51 @@
         "start_byte": 22893,
         "end_byte": 24003
       },
-      "position": 2
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
+          3
+        ],
+        "type": "else",
+        "label": "else",
+        "start_byte": 23466,
+        "end_byte": 23470
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2
+        ],
+        "type": "if_expression",
+        "start_byte": 22893,
+        "end_byte": 24003
+      },
+      "position": 4
     },
     {
       "action": "insert",
@@ -417,12 +505,60 @@
           1,
           0,
           2,
+          0
+        ],
+        "type": "if",
+        "label": "if",
+        "start_byte": 22893,
+        "end_byte": 22895
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
           2
         ],
         "type": "multiline_string",
         "label": "\\\\Please download the {[minimum_version]} release of Zig. (https://ziglang.org/download/)\n            \\\\\n            \\\\Tagged releases of ZLS are also available.\n            \\\\  -\u003e https://github.com/zigtools/zls/releases\n            \\\\  -\u003e https://github.com/zigtools/zls/releases/tag/{[minimum_version_simple]} (may not exist yet)",
         "start_byte": 22936,
         "end_byte": 23268
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
+          3
+        ],
+        "type": "else",
+        "label": "else",
+        "start_byte": 23277,
+        "end_byte": 23281
       }
     }
   ],

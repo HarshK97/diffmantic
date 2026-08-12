@@ -108,3 +108,71 @@ scaffolding:
   - array
   - type_arguments
   - type_parameters
+
+keywords:
+  - function
+  - const
+  - let
+  - var
+  - class
+  - extends
+  - implements
+  - interface
+  - type
+  - namespace
+  - enum
+  - abstract
+  - readonly
+  - private
+  - public
+  - protected
+  - override
+  - import
+  - export
+  - default
+  - from
+  - as
+  - if
+  - else
+  - switch
+  - case
+  - for
+  - while
+  - do
+  - return
+  - break
+  - continue
+  - yield
+  - async
+  - await
+  - try
+  - catch
+  - finally
+  - throw
+  - new
+  - this
+  - super
+  - typeof
+  - instanceof
+  - void
+  - delete
+  - in
+  - of
+  - keyof
+  - infer
+  - is
+  - satisfies
+
+declarations:
+  - function_declaration
+  - generator_function_declaration
+  - class_declaration
+  - abstract_class_declaration
+  - interface_declaration
+  - enum_declaration
+  - type_alias_declaration
+  - method_definition
+  - variable_declaration
+  - lexical_declaration
+
+

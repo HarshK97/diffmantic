@@ -2,6 +2,34 @@
   "version": "v1",
   "actions": [
     {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          39,
+          4,
+          0,
+          0
+        ],
+        "type": "use",
+        "label": "use",
+        "start_byte": 4398,
+        "end_byte": 4401
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          39,
+          4,
+          0
+        ],
+        "type": "use_declaration",
+        "start_byte": 4398,
+        "end_byte": 4444
+      },
+      "position": 0
+    },
+    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -225,6 +253,22 @@
         "label": "into_std",
         "start_byte": 4605,
         "end_byte": 4613
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          39,
+          4,
+          0,
+          0
+        ],
+        "type": "use",
+        "label": "use",
+        "start_byte": 4398,
+        "end_byte": 4401
       }
     },
     {

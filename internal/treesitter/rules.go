@@ -14,6 +14,8 @@ type Rules struct {
 	Aliased      map[string]string `yaml:"aliased"`
 	LabelIgnored []string          `yaml:"label_ignored"`
 	Scaffolding  []string          `yaml:"scaffolding"`
+	Keywords     []string          `yaml:"keywords"`
+	Declarations []string          `yaml:"declarations"`
 }
 
 //go:embed */rules.yml

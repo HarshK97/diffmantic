@@ -115,3 +115,44 @@ scaffolding:
   - decorated_definition
   - import_statement
   - import_from_statement
+
+keywords:
+  - def
+  - class
+  - import
+  - from
+  - as
+  - if
+  - elif
+  - else
+  - for
+  - while
+  - in
+  - not
+  - and
+  - or
+  - is
+  - return
+  - yield
+  - break
+  - continue
+  - pass
+  - try
+  - except
+  - finally
+  - raise
+  - with
+  - async
+  - await
+  - global
+  - nonlocal
+  - assert
+  - lambda
+  - match
+  - case
+
+declarations:
+  - function_definition
+  - class_definition
+
+

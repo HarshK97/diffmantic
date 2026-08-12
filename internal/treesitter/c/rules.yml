@@ -110,3 +110,50 @@ scaffolding:
   - preproc_ifdef
   - preproc_else
   - preproc_elif
+
+keywords:
+  - struct
+  - union
+  - enum
+  - typedef
+  - auto
+  - register
+  - static
+  - extern
+  - const
+  - volatile
+  - inline
+  - void
+  - char
+  - short
+  - int
+  - long
+  - float
+  - double
+  - signed
+  - unsigned
+  - if
+  - else
+  - switch
+  - case
+  - default
+  - for
+  - while
+  - do
+  - goto
+  - continue
+  - break
+  - return
+  - sizeof
+
+declarations:
+  - function_definition
+  - declaration
+  - struct_specifier
+  - union_specifier
+  - enum_specifier
+  - type_definition
+  - parameter_declaration
+  - field_declaration
+
+

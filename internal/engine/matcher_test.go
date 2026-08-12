@@ -219,3 +219,27 @@ func TestMatchUnmatchedLeavesUnderUnmatchedContainer(t *testing.T) {
 		t.Errorf("v1 should match v2 under matched dictionary ancestor, got %v", m.Src()[v1])
 	}
 }
+
+func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
+	kw1 := testutil.Leaf("if", "if")
+	kw1.IsKeyword = true
+	p1 := testutil.Node("if_statement", "", kw1)
+	srcRoot := testutil.Node("root", "", p1)
+
+	kw2 := testutil.Leaf("if", "if")
+	kw2.IsKeyword = true
+	p2 := testutil.Node("if_statement", "", kw2)
+	dstRoot := testutil.Node("root", "", p2)
+
+	m := NewMapping()
+	m.Add(srcRoot, dstRoot)
+	m.Add(p1, p2)
+
+	MatchUnmatchedLeaves(srcRoot, dstRoot, m, nil)
+
+	MatchContainerKeywords(srcRoot, dstRoot, m)
+
+	if !m.Has(kw1) || m.Src()[kw1] != kw2 {
+		t.Errorf("MatchContainerKeywords should map kw1 to kw2 under mapped parents, got %v", m.Src()[kw1])
+	}
+}

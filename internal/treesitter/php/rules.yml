@@ -108,3 +108,67 @@ scaffolding:
   - use_declaration
   - namespace_definition
   - namespace_use_declaration
+
+keywords:
+  - function
+  - fn
+  - class
+  - interface
+  - trait
+  - enum
+  - extends
+  - implements
+  - public
+  - private
+  - protected
+  - static
+  - final
+  - abstract
+  - readonly
+  - const
+  - var
+  - use
+  - namespace
+  - if
+  - elseif
+  - else
+  - switch
+  - case
+  - default
+  - for
+  - foreach
+  - while
+  - do
+  - return
+  - break
+  - continue
+  - yield
+  - try
+  - catch
+  - finally
+  - throw
+  - new
+  - clone
+  - match
+  - goto
+  - declare
+  - global
+  - instanceof
+  - insteadof
+  - as
+  - and
+  - or
+  - xor
+
+declarations:
+  - function_definition
+  - method_declaration
+  - class_declaration
+  - interface_declaration
+  - trait_declaration
+  - enum_declaration
+  - namespace_definition
+  - property_declaration
+  - const_declaration
+
+

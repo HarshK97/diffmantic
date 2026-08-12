@@ -85,3 +85,50 @@ scaffolding:
   - EnumDecl
   - UnionDecl
   - InitList
+
+keywords:
+  - fn
+  - const
+  - var
+  - pub
+  - export
+  - extern
+  - inline
+  - noinline
+  - comptime
+  - struct
+  - enum
+  - union
+  - error
+  - type
+  - void
+  - bool
+  - anytype
+  - if
+  - else
+  - switch
+  - while
+  - for
+  - return
+  - break
+  - continue
+  - defer
+  - errdefer
+  - try
+  - catch
+  - unreachable
+  - usingnamespace
+  - test
+
+declarations:
+  - function_declaration
+  - variable_declaration
+  - struct_declaration
+  - enum_declaration
+  - union_declaration
+  - opaque_declaration
+  - error_set_declaration
+  - test_declaration
+  - using_namespace_declaration
+
+
