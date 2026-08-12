@@ -58,59 +58,6 @@
       "subtree": true
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          21,
-          3,
-          0,
-          18,
-          0,
-          1,
-          4
-        ],
-        "type": "identifier",
-        "label": "mode",
-        "start_byte": 7660,
-        "end_byte": 7664
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          21,
-          3,
-          0,
-          18,
-          0,
-          1,
-          2
-        ],
-        "type": "identifier",
-        "label": "mode",
-        "start_byte": 7602,
-        "end_byte": 7606
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          21,
-          3,
-          0,
-          18,
-          0,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 7598,
-        "end_byte": 7627
-      },
-      "position": 2
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
@@ -121,7 +68,7 @@
           18,
           0,
           1,
-          2
+          1
         ],
         "type": "call_expression",
         "start_byte": 7640,
@@ -141,7 +88,7 @@
         "start_byte": 7598,
         "end_byte": 7627
       },
-      "position": 4,
+      "position": 2,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -156,7 +103,7 @@
         "start_byte": 7636,
         "end_byte": 7665
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 7608,
       "dest_end_byte": 7626
@@ -172,9 +119,9 @@
           15,
           0,
           1,
-          2,
           1,
-          2
+          1,
+          1
         ],
         "type": "identifier",
         "label": "dst",
@@ -190,14 +137,14 @@
           15,
           0,
           1,
-          2,
+          1,
           1
         ],
         "type": "argument_list",
         "start_byte": 7503,
         "end_byte": 7517
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "insert",
@@ -210,9 +157,9 @@
           15,
           0,
           1,
-          2,
           1,
-          2
+          1,
+          1
         ],
         "type": "identifier",
         "label": "dst",
@@ -228,14 +175,14 @@
           15,
           0,
           1,
-          2,
+          1,
           1
         ],
         "type": "argument_list",
         "start_byte": 8319,
         "end_byte": 8333
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "insert",
@@ -288,9 +235,9 @@
           14,
           0,
           1,
-          2,
           1,
-          2
+          1,
+          1
         ],
         "type": "interpreted_string_literal",
         "label": "\"permission_test\"",
@@ -347,9 +294,9 @@
           14,
           0,
           1,
-          2,
           1,
-          2
+          1,
+          1
         ],
         "type": "interpreted_string_literal",
         "label": "\"test/permission_test\"",

@@ -11,7 +11,7 @@
           2,
           3,
           0,
-          2
+          1
         ],
         "type": "field_identifier",
         "label": "with_cancellation_token",
@@ -28,7 +28,7 @@
           2,
           3,
           0,
-          2
+          1
         ],
         "type": "field_identifier",
         "label": "with_cancellation_token_owned",

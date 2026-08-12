@@ -27,38 +27,25 @@
       "node": {
         "tree": "after",
         "path": [
-          9,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 833,
-        "end_byte": 927
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
           9
         ],
         "type": "expression_statement",
         "start_byte": 833,
         "end_byte": 928
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 9,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          10,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 929,
-        "end_byte": 1033
-      },
-      "parent": {
         "tree": "after",
         "path": [
           10
@@ -67,22 +54,19 @@
         "start_byte": 929,
         "end_byte": 1034
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 10,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          11,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 1035,
-        "end_byte": 1145
-      },
-      "parent": {
         "tree": "after",
         "path": [
           11
@@ -91,22 +75,19 @@
         "start_byte": 1035,
         "end_byte": 1146
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 11,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          12,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 1147,
-        "end_byte": 1252
-      },
-      "parent": {
         "tree": "after",
         "path": [
           12
@@ -115,22 +96,19 @@
         "start_byte": 1147,
         "end_byte": 1253
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 12,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          13,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 1254,
-        "end_byte": 1348
-      },
-      "parent": {
         "tree": "after",
         "path": [
           13
@@ -139,22 +117,19 @@
         "start_byte": 1254,
         "end_byte": 1349
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 13,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          14,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 1350,
-        "end_byte": 1449
-      },
-      "parent": {
         "tree": "after",
         "path": [
           14
@@ -163,22 +138,19 @@
         "start_byte": 1350,
         "end_byte": 1450
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 14,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          15,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 1451,
-        "end_byte": 1552
-      },
-      "parent": {
         "tree": "after",
         "path": [
           15
@@ -187,22 +159,19 @@
         "start_byte": 1451,
         "end_byte": 1553
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 15,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          16,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 1554,
-        "end_byte": 1659
-      },
-      "parent": {
         "tree": "after",
         "path": [
           16
@@ -211,22 +180,19 @@
         "start_byte": 1554,
         "end_byte": 1660
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 16,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          21,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2352,
-        "end_byte": 2448
-      },
-      "parent": {
         "tree": "after",
         "path": [
           21
@@ -235,22 +201,19 @@
         "start_byte": 2352,
         "end_byte": 2449
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 29,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          22,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2450,
-        "end_byte": 2556
-      },
-      "parent": {
         "tree": "after",
         "path": [
           22
@@ -259,22 +222,19 @@
         "start_byte": 2450,
         "end_byte": 2557
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 30,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          23,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2558,
-        "end_byte": 2670
-      },
-      "parent": {
         "tree": "after",
         "path": [
           23
@@ -283,22 +243,19 @@
         "start_byte": 2558,
         "end_byte": 2671
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 31,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          24,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2672,
-        "end_byte": 2779
-      },
-      "parent": {
         "tree": "after",
         "path": [
           24
@@ -307,22 +264,19 @@
         "start_byte": 2672,
         "end_byte": 2780
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 32,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          25,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2781,
-        "end_byte": 2877
-      },
-      "parent": {
         "tree": "after",
         "path": [
           25
@@ -331,22 +285,19 @@
         "start_byte": 2781,
         "end_byte": 2878
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 33,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          26,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2879,
-        "end_byte": 2980
-      },
-      "parent": {
         "tree": "after",
         "path": [
           26
@@ -355,22 +306,19 @@
         "start_byte": 2879,
         "end_byte": 2981
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 34,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          27,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 2982,
-        "end_byte": 3085
-      },
-      "parent": {
         "tree": "after",
         "path": [
           27
@@ -379,22 +327,19 @@
         "start_byte": 2982,
         "end_byte": 3086
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 35,
       "subtree": true
     },
     {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          28,
-          0
-        ],
-        "type": "call_expression",
-        "start_byte": 3087,
-        "end_byte": 3194
-      },
-      "parent": {
         "tree": "after",
         "path": [
           28
@@ -403,7 +348,14 @@
         "start_byte": 3087,
         "end_byte": 3195
       },
-      "position": 0,
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "translation_unit",
+        "start_byte": 0,
+        "end_byte": 5604
+      },
+      "position": 36,
       "subtree": true
     },
     {
@@ -414,7 +366,7 @@
           33,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 3799,
@@ -431,7 +383,7 @@
         "start_byte": 3769,
         "end_byte": 3865
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -441,7 +393,7 @@
           34,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 3914,
@@ -458,7 +410,7 @@
         "start_byte": 3884,
         "end_byte": 3979
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -468,7 +420,7 @@
           35,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4028,
@@ -485,7 +437,7 @@
         "start_byte": 3998,
         "end_byte": 4094
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -495,7 +447,7 @@
           36,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4143,
@@ -512,7 +464,7 @@
         "start_byte": 4113,
         "end_byte": 4208
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -522,7 +474,7 @@
           37,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4257,
@@ -539,7 +491,7 @@
         "start_byte": 4227,
         "end_byte": 4323
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -549,7 +501,7 @@
           38,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4372,
@@ -566,7 +518,7 @@
         "start_byte": 4342,
         "end_byte": 4437
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -576,7 +528,7 @@
           39,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4486,
@@ -593,7 +545,7 @@
         "start_byte": 4456,
         "end_byte": 4552
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -603,7 +555,7 @@
           40,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4601,
@@ -620,7 +572,7 @@
         "start_byte": 4571,
         "end_byte": 4666
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -630,7 +582,7 @@
           41,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4715,
@@ -647,7 +599,7 @@
         "start_byte": 4685,
         "end_byte": 4781
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -657,7 +609,7 @@
           42,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4830,
@@ -674,7 +626,7 @@
         "start_byte": 4800,
         "end_byte": 4895
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -684,7 +636,7 @@
           43,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 4944,
@@ -701,7 +653,7 @@
         "start_byte": 4914,
         "end_byte": 5010
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -711,7 +663,7 @@
           44,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 5059,
@@ -728,7 +680,7 @@
         "start_byte": 5029,
         "end_byte": 5124
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -738,7 +690,7 @@
           45,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 5173,
@@ -755,7 +707,7 @@
         "start_byte": 5143,
         "end_byte": 5239
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -765,7 +717,7 @@
           46,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 5288,
@@ -782,7 +734,7 @@
         "start_byte": 5258,
         "end_byte": 5353
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -792,7 +744,7 @@
           47,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 5402,
@@ -809,7 +761,7 @@
         "start_byte": 5372,
         "end_byte": 5468
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "insert",
@@ -819,7 +771,7 @@
           48,
           0,
           1,
-          4
+          2
         ],
         "type": "concatenated_string",
         "start_byte": 5517,
@@ -836,19 +788,18 @@
         "start_byte": 5487,
         "end_byte": 5582
       },
-      "position": 4
+      "position": 2
     },
     {
       "action": "delete",
       "node": {
         "tree": "before",
         "path": [
-          8,
-          0
+          8
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 808,
-        "end_byte": 890
+        "end_byte": 891
       },
       "subtree": true
     },
@@ -857,12 +808,11 @@
       "node": {
         "tree": "before",
         "path": [
-          9,
-          0
+          9
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 892,
-        "end_byte": 984
+        "end_byte": 985
       },
       "subtree": true
     },
@@ -871,12 +821,11 @@
       "node": {
         "tree": "before",
         "path": [
-          10,
-          0
+          10
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 986,
-        "end_byte": 1084
+        "end_byte": 1085
       },
       "subtree": true
     },
@@ -885,12 +834,11 @@
       "node": {
         "tree": "before",
         "path": [
-          11,
-          0
+          11
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 1086,
-        "end_byte": 1179
+        "end_byte": 1180
       },
       "subtree": true
     },
@@ -899,12 +847,11 @@
       "node": {
         "tree": "before",
         "path": [
-          12,
-          0
+          12
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 1181,
-        "end_byte": 1260
+        "end_byte": 1261
       },
       "subtree": true
     },
@@ -913,12 +860,11 @@
       "node": {
         "tree": "before",
         "path": [
-          13,
-          0
+          13
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 1262,
-        "end_byte": 1346
+        "end_byte": 1347
       },
       "subtree": true
     },
@@ -927,12 +873,11 @@
       "node": {
         "tree": "before",
         "path": [
-          14,
-          0
+          14
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 1348,
-        "end_byte": 1434
+        "end_byte": 1435
       },
       "subtree": true
     },
@@ -941,12 +886,11 @@
       "node": {
         "tree": "before",
         "path": [
-          15,
-          0
+          15
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 1436,
-        "end_byte": 1526
+        "end_byte": 1527
       },
       "subtree": true
     },
@@ -955,12 +899,11 @@
       "node": {
         "tree": "before",
         "path": [
-          20,
-          0
+          20
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2219,
-        "end_byte": 2301
+        "end_byte": 2302
       },
       "subtree": true
     },
@@ -969,12 +912,11 @@
       "node": {
         "tree": "before",
         "path": [
-          21,
-          0
+          21
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2303,
-        "end_byte": 2395
+        "end_byte": 2396
       },
       "subtree": true
     },
@@ -983,12 +925,11 @@
       "node": {
         "tree": "before",
         "path": [
-          22,
-          0
+          22
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2397,
-        "end_byte": 2495
+        "end_byte": 2496
       },
       "subtree": true
     },
@@ -997,12 +938,11 @@
       "node": {
         "tree": "before",
         "path": [
-          23,
-          0
+          23
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2497,
-        "end_byte": 2590
+        "end_byte": 2591
       },
       "subtree": true
     },
@@ -1011,12 +951,11 @@
       "node": {
         "tree": "before",
         "path": [
-          24,
-          0
+          24
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2592,
-        "end_byte": 2671
+        "end_byte": 2672
       },
       "subtree": true
     },
@@ -1025,12 +964,11 @@
       "node": {
         "tree": "before",
         "path": [
-          25,
-          0
+          25
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2673,
-        "end_byte": 2757
+        "end_byte": 2758
       },
       "subtree": true
     },
@@ -1039,12 +977,11 @@
       "node": {
         "tree": "before",
         "path": [
-          26,
-          0
+          26
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2759,
-        "end_byte": 2845
+        "end_byte": 2846
       },
       "subtree": true
     },
@@ -1053,12 +990,11 @@
       "node": {
         "tree": "before",
         "path": [
-          27,
-          0
+          27
         ],
-        "type": "call_expression",
+        "type": "expression_statement",
         "start_byte": 2847,
-        "end_byte": 2937
+        "end_byte": 2938
       },
       "subtree": true
     },
@@ -1070,7 +1006,7 @@
           32,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/jeopardy/jeopardy.json\"",
@@ -1086,7 +1022,7 @@
           33,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/jeopardy/jeopardy.json\"",
@@ -1102,7 +1038,7 @@
           34,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/nativejson-benchmark/canada.json\"",
@@ -1118,7 +1054,7 @@
           35,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/nativejson-benchmark/canada.json\"",
@@ -1134,7 +1070,7 @@
           36,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
@@ -1150,7 +1086,7 @@
           37,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/nativejson-benchmark/citm_catalog.json\"",
@@ -1166,7 +1102,7 @@
           38,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/nativejson-benchmark/twitter.json\"",
@@ -1182,7 +1118,7 @@
           39,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/nativejson-benchmark/twitter.json\"",
@@ -1198,7 +1134,7 @@
           40,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/floats.json\"",
@@ -1214,7 +1150,7 @@
           41,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/floats.json\"",
@@ -1230,7 +1166,7 @@
           42,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/signed_ints.json\"",
@@ -1246,7 +1182,7 @@
           43,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/signed_ints.json\"",
@@ -1262,7 +1198,7 @@
           44,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/unsigned_ints.json\"",
@@ -1278,7 +1214,7 @@
           45,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/unsigned_ints.json\"",
@@ -1294,7 +1230,7 @@
           46,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/small_signed_ints.json\"",
@@ -1310,7 +1246,7 @@
           47,
           0,
           1,
-          4
+          2
         ],
         "type": "string_literal",
         "label": "\"data/numbers/small_signed_ints.json\"",

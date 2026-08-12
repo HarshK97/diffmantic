@@ -8,8 +8,8 @@
         "path": [
           2,
           2,
-          5,
-          2
+          3,
+          1
         ],
         "type": "tuple",
         "start_byte": 671,
@@ -20,13 +20,13 @@
         "path": [
           2,
           2,
-          5
+          3
         ],
         "type": "pair",
         "start_byte": 666,
         "end_byte": 700
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -36,8 +36,8 @@
         "path": [
           2,
           2,
-          78,
-          2
+          41,
+          1
         ],
         "type": "tuple",
         "start_byte": 2174,
@@ -48,13 +48,13 @@
         "path": [
           2,
           2,
-          78
+          41
         ],
         "type": "pair",
         "start_byte": 2169,
         "end_byte": 2223
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -64,8 +64,8 @@
         "path": [
           2,
           2,
-          80,
-          2
+          42,
+          1
         ],
         "type": "tuple",
         "start_byte": 2234,
@@ -76,13 +76,13 @@
         "path": [
           2,
           2,
-          80
+          42
         ],
         "type": "pair",
         "start_byte": 2229,
         "end_byte": 2275
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -92,8 +92,8 @@
         "path": [
           2,
           2,
-          92,
-          2
+          48,
+          1
         ],
         "type": "tuple",
         "start_byte": 2601,
@@ -104,13 +104,13 @@
         "path": [
           2,
           2,
-          92
+          48
         ],
         "type": "pair",
         "start_byte": 2596,
         "end_byte": 2667
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -120,8 +120,8 @@
         "path": [
           2,
           2,
-          5,
-          2
+          3,
+          1
         ],
         "type": "tuple",
         "start_byte": 671,
@@ -136,8 +136,8 @@
         "path": [
           2,
           2,
-          78,
-          2
+          41,
+          1
         ],
         "type": "tuple",
         "start_byte": 2160,
@@ -152,8 +152,8 @@
         "path": [
           2,
           2,
-          80,
-          2
+          42,
+          1
         ],
         "type": "tuple",
         "start_byte": 2200,
@@ -168,8 +168,8 @@
         "path": [
           2,
           2,
-          92,
-          2
+          48,
+          1
         ],
         "type": "tuple",
         "start_byte": 2552,

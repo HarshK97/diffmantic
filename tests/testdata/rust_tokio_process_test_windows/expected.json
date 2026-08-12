@@ -2,39 +2,8 @@
   "version": "v1",
   "actions": [
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "assert",
-        "start_byte": 1228,
-        "end_byte": 1234
-      }
-    },
-    {
       "action": "insert",
       "node": {
-        "tree": "after",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "drop",
-        "start_byte": 1228,
-        "end_byte": 1232
-      },
-      "parent": {
         "tree": "after",
         "path": [
           13,
@@ -46,252 +15,35 @@
         "start_byte": 1228,
         "end_byte": 1246
       },
-      "position": 0
-    },
-    {
-      "action": "move",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          0
-        ],
-        "type": "identifier",
-        "label": "child",
-        "start_byte": 1236,
-        "end_byte": 1241
-      },
       "parent": {
         "tree": "after",
         "path": [
           13,
           3,
-          10,
-          0,
-          1,
-          0,
-          0
+          10
         ],
-        "type": "field_expression",
-        "start_byte": 1233,
-        "end_byte": 1243
+        "type": "expression_statement",
+        "start_byte": 1228,
+        "end_byte": 1247
       },
       "position": 0,
-      "old_parent": {
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
         "tree": "before",
         "path": [
           13,
           3,
           10,
-          0,
-          2
+          0
         ],
-        "type": "token_tree",
-        "start_byte": 1235,
+        "type": "macro_invocation",
+        "start_byte": 1228,
         "end_byte": 1257
       },
-      "old_position": 0,
-      "dest_start_byte": 1233,
-      "dest_end_byte": 1238
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 1241,
-        "end_byte": 1242
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          1,
-          0,
-          0,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 1238,
-        "end_byte": 1239
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          1,
-          0,
-          0
-        ],
-        "type": "field_expression",
-        "start_byte": 1233,
-        "end_byte": 1243
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          1,
-          0,
-          0,
-          2
-        ],
-        "type": "field_identifier",
-        "label": "kill",
-        "start_byte": 1239,
-        "end_byte": 1243
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          1,
-          0,
-          0
-        ],
-        "type": "field_expression",
-        "start_byte": 1233,
-        "end_byte": 1243
-      },
-      "position": 2
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          1
-        ],
-        "type": "unary_operator_literal",
-        "label": "!",
-        "start_byte": 1234,
-        "end_byte": 1235
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          2
-        ],
-        "type": "identifier",
-        "label": "kill",
-        "start_byte": 1242,
-        "end_byte": 1246
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          3
-        ],
-        "type": "token_tree",
-        "start_byte": 1246,
-        "end_byte": 1248
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          4
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 1248,
-        "end_byte": 1249
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          5
-        ],
-        "type": "identifier",
-        "label": "is_ok",
-        "start_byte": 1249,
-        "end_byte": 1254
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          13,
-          3,
-          10,
-          0,
-          2,
-          6
-        ],
-        "type": "token_tree",
-        "start_byte": 1254,
-        "end_byte": 1256
-      }
+      "subtree": true
     }
   ],
   "line_alignment": [

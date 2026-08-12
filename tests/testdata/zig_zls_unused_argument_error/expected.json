@@ -16,7 +16,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2
         ],
         "type": "call_expression",
@@ -36,7 +36,7 @@
           3,
           1,
           0,
-          1
+          2
         ],
         "type": "if_expression",
         "start_byte": 22893,
@@ -59,7 +59,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           0
         ],
@@ -80,7 +80,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2
         ],
         "type": "call_expression",
@@ -105,7 +105,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1
         ],
@@ -126,7 +126,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2
         ],
         "type": "call_expression",
@@ -150,7 +150,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1,
           0
@@ -173,7 +173,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1
         ],
@@ -198,10 +198,10 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1,
-          2
+          1
         ],
         "type": "anonymous_struct_initializer",
         "start_byte": 23338,
@@ -220,112 +220,13 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1
         ],
         "type": "arguments",
         "start_byte": 22957,
         "end_byte": 23457
-      },
-      "position": 2
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          22,
-          3,
-          1,
-          10,
-          2,
-          0,
-          0,
-          3,
-          1,
-          0,
-          1,
-          2,
-          1,
-          2,
-          0
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 23338,
-        "end_byte": 23339
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          22,
-          3,
-          1,
-          10,
-          2,
-          0,
-          0,
-          3,
-          1,
-          0,
-          1,
-          2,
-          1,
-          2
-        ],
-        "type": "anonymous_struct_initializer",
-        "start_byte": 23338,
-        "end_byte": 23456
-      },
-      "position": 0
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          22,
-          3,
-          1,
-          10,
-          2,
-          0,
-          0,
-          3,
-          1,
-          0,
-          1,
-          2,
-          1,
-          2,
-          1
-        ],
-        "type": "initializer_list",
-        "start_byte": 23339,
-        "end_byte": 23456
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          22,
-          3,
-          1,
-          10,
-          2,
-          0,
-          0,
-          3,
-          1,
-          0,
-          1,
-          2,
-          1,
-          2
-        ],
-        "type": "anonymous_struct_initializer",
-        "start_byte": 23338,
-        "end_byte": 23456
       },
       "position": 1
     },
@@ -344,11 +245,60 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1,
+          1,
+          0
+        ],
+        "type": "initializer_list",
+        "start_byte": 23339,
+        "end_byte": 23456
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
           2,
           1,
+          1
+        ],
+        "type": "anonymous_struct_initializer",
+        "start_byte": 23338,
+        "end_byte": 23456
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          22,
+          3,
+          1,
+          10,
+          2,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
+          2,
+          1,
+          1,
+          0,
           0
         ],
         "type": "assignment_expression",
@@ -368,11 +318,11 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1,
-          2,
-          1
+          1,
+          0
         ],
         "type": "initializer_list",
         "start_byte": 23339,
@@ -395,9 +345,9 @@
           0,
           3,
           1,
-          2,
           1,
-          4
+          0,
+          2
         ],
         "type": "assignment_expression",
         "start_byte": 23932,
@@ -416,17 +366,17 @@
           3,
           1,
           0,
-          1,
+          2,
           2,
           1,
-          2,
-          1
+          1,
+          0
         ],
         "type": "initializer_list",
         "start_byte": 23339,
         "end_byte": 23456
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -439,14 +389,14 @@
           0,
           3,
           1,
-          2,
-          1
+          1,
+          0
         ],
         "type": "initializer_list",
         "start_byte": 23826,
         "end_byte": 24076
       },
-      "old_position": 4,
+      "old_position": 2,
       "subtree": true,
       "dest_start_byte": 23401,
       "dest_end_byte": 23441
@@ -466,7 +416,7 @@
           3,
           1,
           0,
-          1,
+          2,
           2
         ],
         "type": "multiline_string",

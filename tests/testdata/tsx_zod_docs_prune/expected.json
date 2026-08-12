@@ -72,7 +72,7 @@
           1,
           3,
           0,
-          8
+          4
         ],
         "type": "pair",
         "start_byte": 437,
@@ -95,7 +95,7 @@
         "start_byte": 223,
         "end_byte": 540
       },
-      "position": 8,
+      "position": 4,
       "subtree": true
     },
     {
@@ -111,8 +111,8 @@
           0,
           1,
           3,
-          4,
-          8
+          2,
+          4
         ],
         "type": "pair",
         "start_byte": 1187,
@@ -129,13 +129,13 @@
           0,
           1,
           3,
-          4
+          2
         ],
         "type": "object",
         "start_byte": 893,
         "end_byte": 1286
       },
-      "position": 8,
+      "position": 4,
       "subtree": true
     },
     {
@@ -268,6 +268,90 @@
           1,
           2,
           2,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "object",
+        "start_byte": 348,
+        "end_byte": 658
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          1,
+          1,
+          2,
+          2,
+          0,
+          1,
+          2,
+          2
+        ],
+        "type": "object",
+        "start_byte": 664,
+        "end_byte": 1064
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          1,
+          1,
+          2,
+          2,
+          0,
+          1,
+          2,
+          3
+        ],
+        "type": "object",
+        "start_byte": 1070,
+        "end_byte": 1430
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          1,
+          1,
+          2,
+          2,
+          0,
+          1,
+          2,
+          5
+        ],
+        "type": "object",
+        "start_byte": 1783,
+        "end_byte": 2203
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          1,
+          1,
+          2,
+          2,
           1,
           1,
           0,
@@ -321,221 +405,6 @@
         "start_byte": 3789,
         "end_byte": 3834
       }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2,
-          0
-        ],
-        "type": "pair",
-        "start_byte": 356,
-        "end_byte": 373
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2,
-          2
-        ],
-        "type": "pair",
-        "start_byte": 381,
-        "end_byte": 435
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2,
-          4
-        ],
-        "type": "pair",
-        "start_byte": 443,
-        "end_byte": 506
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2,
-          6
-        ],
-        "type": "pair",
-        "start_byte": 514,
-        "end_byte": 578
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2,
-          8
-        ],
-        "type": "pair",
-        "start_byte": 586,
-        "end_byte": 602
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2,
-          10
-        ],
-        "type": "pair",
-        "start_byte": 610,
-        "end_byte": 651
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          2
-        ],
-        "type": "object",
-        "start_byte": 348,
-        "end_byte": 658
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          4
-        ],
-        "type": "object",
-        "start_byte": 664,
-        "end_byte": 1064
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          6
-        ],
-        "type": "object",
-        "start_byte": 1070,
-        "end_byte": 1430
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          0,
-          1,
-          1,
-          2,
-          2,
-          0,
-          1,
-          2,
-          10
-        ],
-        "type": "object",
-        "start_byte": 1783,
-        "end_byte": 2203
-      },
-      "subtree": true
     }
   ],
   "line_alignment": [
@@ -621,7 +490,7 @@
     },
     {
       "left_line": 9,
-      "right_line": -1
+      "right_line": 20
     },
     {
       "left_line": 10,
@@ -717,7 +586,7 @@
     },
     {
       "left_line": 33,
-      "right_line": 20
+      "right_line": -1
     },
     {
       "left_line": 34,
@@ -749,7 +618,7 @@
     },
     {
       "left_line": 41,
-      "right_line": -1
+      "right_line": 28
     },
     {
       "left_line": 42,
@@ -781,7 +650,7 @@
     },
     {
       "left_line": 49,
-      "right_line": 28
+      "right_line": -1
     },
     {
       "left_line": 50,

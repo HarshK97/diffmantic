@@ -8,7 +8,7 @@
         "path": [
           0,
           1,
-          62
+          32
         ],
         "type": "export_specifier",
         "start_byte": 1356,
@@ -24,7 +24,7 @@
         "start_byte": 7,
         "end_byte": 2812
       },
-      "position": 62,
+      "position": 32,
       "subtree": true
     },
     {
@@ -34,7 +34,7 @@
         "path": [
           1,
           2,
-          12
+          8
         ],
         "type": "comment",
         "label": "/**\n   * @deprecated use `TRPCDataTransformer` instead\n   */",
@@ -51,7 +51,7 @@
         "start_byte": 2868,
         "end_byte": 3823
       },
-      "position": 12
+      "position": 8
     },
     {
       "action": "insert",
@@ -60,7 +60,7 @@
         "path": [
           1,
           2,
-          13
+          9
         ],
         "type": "export_specifier",
         "start_byte": 3273,
@@ -76,7 +76,7 @@
         "start_byte": 2868,
         "end_byte": 3823
       },
-      "position": 13,
+      "position": 9,
       "subtree": true
     }
   ],

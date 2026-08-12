@@ -476,7 +476,7 @@
           1,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 6000,
         "end_byte": 6002
@@ -543,7 +543,7 @@
           0,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 6842,
         "end_byte": 6844

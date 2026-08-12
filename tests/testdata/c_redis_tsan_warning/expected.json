@@ -6,7 +6,7 @@
       "node": {
         "tree": "before",
         "path": [
-          117,
+          116,
           2,
           1
         ],
@@ -20,7 +20,7 @@
       "dest_node": {
         "tree": "after",
         "path": [
-          117,
+          116,
           2,
           1
         ],
@@ -35,7 +35,7 @@
       "node": {
         "tree": "after",
         "path": [
-          117,
+          116,
           2,
           2,
           1,
@@ -50,7 +50,7 @@
       "parent": {
         "tree": "after",
         "path": [
-          117,
+          116,
           2,
           2,
           1,
@@ -67,7 +67,7 @@
       "node": {
         "tree": "after",
         "path": [
-          117,
+          116,
           2,
           2,
           1,
@@ -82,7 +82,7 @@
       "parent": {
         "tree": "after",
         "path": [
-          117,
+          116,
           2,
           2,
           1,
@@ -99,7 +99,7 @@
       "node": {
         "tree": "before",
         "path": [
-          117,
+          116,
           2,
           2,
           1,
@@ -112,7 +112,7 @@
       "parent": {
         "tree": "after",
         "path": [
-          117,
+          116,
           2,
           2,
           1,
@@ -126,7 +126,7 @@
       "old_parent": {
         "tree": "before",
         "path": [
-          117,
+          116,
           2,
           2,
           1

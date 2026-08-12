@@ -163,7 +163,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2,
           7
@@ -179,7 +179,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2
         ],
@@ -195,7 +195,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2
         ],
@@ -218,7 +218,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2,
           6
@@ -234,7 +234,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2
         ],
@@ -250,7 +250,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2
         ],
@@ -273,7 +273,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2,
           5
@@ -289,7 +289,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2
         ],
@@ -305,7 +305,7 @@
           2,
           2,
           3,
-          5,
+          4,
           0,
           2
         ],
@@ -504,12 +504,52 @@
           1,
           2,
           1,
-          2
+          1
         ],
         "type": "identifier",
         "label": "size",
         "start_byte": 1372,
         "end_byte": 1376
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 1354,
+        "end_byte": 1449
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          8,
+          2,
+          2,
+          4,
+          1,
+          0,
+          1,
+          2,
+          1,
+          2
+        ],
+        "type": "identifier",
+        "label": "fmt",
+        "start_byte": 1378,
+        "end_byte": 1381
       },
       "parent": {
         "tree": "after",
@@ -544,47 +584,7 @@
           1,
           2,
           1,
-          4
-        ],
-        "type": "identifier",
-        "label": "fmt",
-        "start_byte": 1378,
-        "end_byte": 1381
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1
-        ],
-        "type": "argument_list",
-        "start_byte": 1354,
-        "end_byte": 1449
-      },
-      "position": 4
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          8,
-          2,
-          2,
-          4,
-          1,
-          0,
-          1,
-          2,
-          1,
-          6,
+          3,
           0
         ],
         "type": "qualified_identifier",
@@ -603,7 +603,7 @@
           1,
           2,
           1,
-          6
+          3
         ],
         "type": "call_expression",
         "start_byte": 1391,
@@ -644,7 +644,7 @@
           1,
           2,
           1,
-          6,
+          3,
           1
         ],
         "type": "argument_list",
@@ -686,7 +686,7 @@
           2,
           2,
           0,
-          2
+          1
         ],
         "type": "call_expression",
         "start_byte": 1404,
@@ -704,14 +704,14 @@
           1,
           2,
           1,
-          6,
+          3,
           1
         ],
         "type": "argument_list",
         "start_byte": 1407,
         "end_byte": 1448
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -728,7 +728,7 @@
         "start_byte": 1391,
         "end_byte": 1430
       },
-      "old_position": 2,
+      "old_position": 1,
       "subtree": true,
       "dest_start_byte": 1421,
       "dest_end_byte": 1447,

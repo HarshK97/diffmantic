@@ -72,7 +72,7 @@
           21,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 34229,
         "end_byte": 34231

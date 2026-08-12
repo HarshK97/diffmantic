@@ -48,23 +48,6 @@
       "group_id": "group-1"
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          39,
-          4,
-          0,
-          1,
-          1
-        ],
-        "type": "path_separator",
-        "label": "::",
-        "start_byte": 4419,
-        "end_byte": 4421
-      }
-    },
-    {
       "action": "insert",
       "node": {
         "tree": "after",
@@ -74,36 +57,6 @@
           0,
           1,
           1
-        ],
-        "type": "path_separator",
-        "label": "::",
-        "start_byte": 4419,
-        "end_byte": 4421
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          39,
-          4,
-          0,
-          1
-        ],
-        "type": "scoped_use_list",
-        "start_byte": 4402,
-        "end_byte": 4443
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          39,
-          4,
-          0,
-          1,
-          2
         ],
         "type": "use_list",
         "start_byte": 4421,
@@ -121,7 +74,7 @@
         "start_byte": 4402,
         "end_byte": 4443
       },
-      "position": 2,
+      "position": 1,
       "subtree": true
     },
     {
@@ -135,38 +88,6 @@
           3,
           0,
           1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 4621,
-        "end_byte": 4622
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          39,
-          4,
-          4,
-          3,
-          0
-        ],
-        "type": "field_expression",
-        "start_byte": 4599,
-        "end_byte": 4633
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          39,
-          4,
-          4,
-          3,
-          0,
-          2
         ],
         "type": "field_identifier",
         "label": "into_raw_fd",
@@ -186,7 +107,7 @@
         "start_byte": 4599,
         "end_byte": 4633
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "move",
@@ -247,40 +168,6 @@
           0,
           1
         ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 4615,
-        "end_byte": 4616
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          39,
-          4,
-          4,
-          3,
-          0,
-          0
-        ],
-        "type": "await_expression",
-        "start_byte": 4599,
-        "end_byte": 4621
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          39,
-          4,
-          4,
-          3,
-          0,
-          0,
-          2
-        ],
         "type": "await",
         "label": "await",
         "start_byte": 4616,
@@ -300,7 +187,7 @@
         "start_byte": 4599,
         "end_byte": 4621
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "update",
@@ -312,7 +199,7 @@
           5,
           3,
           0,
-          2
+          1
         ],
         "type": "field_identifier",
         "label": "as_raw_fd",
@@ -332,7 +219,7 @@
           0,
           0,
           0,
-          2
+          1
         ],
         "type": "field_identifier",
         "label": "into_std",
@@ -349,7 +236,7 @@
           4,
           0,
           1,
-          2
+          1
         ],
         "type": "identifier",
         "label": "AsRawFd",

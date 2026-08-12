@@ -88,7 +88,8 @@
         "start_byte": 5658,
         "end_byte": 6025
       },
-      "position": 3
+      "position": 3,
+      "subtree": true
     },
     {
       "action": "insert",
@@ -207,70 +208,7 @@
         "start_byte": 6733,
         "end_byte": 7100
       },
-      "position": 3
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          4,
-          4,
-          37,
-          4,
-          3,
-          0
-        ],
-        "type": "method_invocation",
-        "start_byte": 5883,
-        "end_byte": 6018
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          4,
-          4,
-          37,
-          4,
-          3
-        ],
-        "type": "expression_statement",
-        "start_byte": 5883,
-        "end_byte": 6019
-      },
-      "position": 0,
-      "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          4,
-          4,
-          41,
-          4,
-          3,
-          0
-        ],
-        "type": "method_invocation",
-        "start_byte": 6958,
-        "end_byte": 7093
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          4,
-          4,
-          41,
-          4,
-          3
-        ],
-        "type": "expression_statement",
-        "start_byte": 6958,
-        "end_byte": 7094
-      },
-      "position": 0,
+      "position": 3,
       "subtree": true
     },
     {
@@ -282,30 +220,11 @@
           4,
           37,
           4,
-          1,
-          0
-        ],
-        "type": "array_type",
-        "start_byte": 5738,
-        "end_byte": 5744
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          4,
-          4,
-          37,
-          4,
-          1,
           1
         ],
-        "type": "variable_declarator",
-        "start_byte": 5745,
-        "end_byte": 5777
+        "type": "local_variable_declaration",
+        "start_byte": 5738,
+        "end_byte": 5778
       },
       "subtree": true
     },
@@ -352,30 +271,11 @@
           4,
           41,
           4,
-          1,
-          0
-        ],
-        "type": "array_type",
-        "start_byte": 6754,
-        "end_byte": 6760
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          4,
-          4,
-          41,
-          4,
-          1,
           1
         ],
-        "type": "variable_declarator",
-        "start_byte": 6761,
-        "end_byte": 6793
+        "type": "local_variable_declaration",
+        "start_byte": 6754,
+        "end_byte": 6794
       },
       "subtree": true
     },
@@ -1071,32 +971,20 @@
       "right_line": 167
     },
     {
-      "left_line": -1,
+      "left_line": 168,
       "right_line": 168
     },
     {
-      "left_line": -1,
+      "left_line": 169,
       "right_line": 169
     },
     {
-      "left_line": -1,
+      "left_line": 170,
       "right_line": 170
     },
     {
-      "left_line": 168,
-      "right_line": 171
-    },
-    {
-      "left_line": 169,
-      "right_line": -1
-    },
-    {
-      "left_line": 170,
-      "right_line": -1
-    },
-    {
       "left_line": 171,
-      "right_line": -1
+      "right_line": 171
     },
     {
       "left_line": 172,
@@ -1207,32 +1095,20 @@
       "right_line": 197
     },
     {
-      "left_line": -1,
+      "left_line": 199,
       "right_line": 198
     },
     {
-      "left_line": -1,
+      "left_line": 200,
       "right_line": 199
     },
     {
-      "left_line": -1,
+      "left_line": 201,
       "right_line": 200
     },
     {
-      "left_line": 199,
-      "right_line": 201
-    },
-    {
-      "left_line": 200,
-      "right_line": -1
-    },
-    {
-      "left_line": 201,
-      "right_line": -1
-    },
-    {
       "left_line": 202,
-      "right_line": -1
+      "right_line": 201
     },
     {
       "left_line": 203,

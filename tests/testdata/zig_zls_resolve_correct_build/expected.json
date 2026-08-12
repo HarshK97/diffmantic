@@ -73,7 +73,7 @@
           7,
           0,
           1,
-          6
+          3
         ],
         "type": "identifier",
         "label": "build_runner",
@@ -95,7 +95,7 @@
         "start_byte": 11050,
         "end_byte": 11105
       },
-      "position": 6
+      "position": 3
     }
   ],
   "line_alignment": [

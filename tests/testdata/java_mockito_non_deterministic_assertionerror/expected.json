@@ -11,7 +11,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           1
@@ -28,7 +28,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2
         ],
@@ -48,7 +48,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -67,7 +67,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0
@@ -88,13 +88,13 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           1,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 6417,
         "end_byte": 6419
@@ -107,7 +107,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           1
@@ -128,47 +128,7 @@
           11,
           4,
           2,
-          5,
-          1,
-          2,
-          1,
-          1
-        ],
-        "type": "parenthesized_expression",
-        "start_byte": 6420,
-        "end_byte": 6462
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          21,
-          3,
-          11,
           4,
-          2,
-          5,
-          1,
-          2,
-          1
-        ],
-        "type": "if_statement",
-        "start_byte": 6417,
-        "end_byte": 6518
-      },
-      "position": 1,
-      "subtree": true
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          21,
-          3,
-          11,
-          4,
-          2,
-          5,
           1,
           2,
           0,
@@ -188,7 +148,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -210,7 +170,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -230,7 +190,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -252,7 +212,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -273,7 +233,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -292,7 +252,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           0,
@@ -320,7 +280,207 @@
           11,
           4,
           2,
-          5,
+          4,
+          1,
+          2,
+          0,
+          1,
+          0,
+          0
+        ],
+        "type": "identifier",
+        "label": "getMockMaker",
+        "start_byte": 6343,
+        "end_byte": 6355
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          1,
+          1,
+          0,
+          0
+        ],
+        "type": "method_invocation",
+        "start_byte": 6421,
+        "end_byte": 6448
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          0,
+          1,
+          0
+        ],
+        "type": "method_invocation",
+        "start_byte": 6343,
+        "end_byte": 6397
+      },
+      "old_position": 0,
+      "dest_start_byte": 6421,
+      "dest_end_byte": 6433,
+      "group_id": "group-1"
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          0,
+          1,
+          1
+        ],
+        "type": "comparison_operator_literal",
+        "label": "==",
+        "start_byte": 6398,
+        "end_byte": 6400
+      }
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          1,
+          1,
+          0,
+          1
+        ],
+        "type": "comparison_operator_literal",
+        "label": "==",
+        "start_byte": 6449,
+        "end_byte": 6451
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          1,
+          1,
+          0
+        ],
+        "type": "binary_expression",
+        "start_byte": 6421,
+        "end_byte": 6461
+      },
+      "position": 1
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          0,
+          1,
+          2
+        ],
+        "type": "identifier",
+        "label": "mockMaker",
+        "start_byte": 6401,
+        "end_byte": 6410
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          1,
+          1,
+          0
+        ],
+        "type": "binary_expression",
+        "start_byte": 6421,
+        "end_byte": 6461
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          0,
+          1
+        ],
+        "type": "binary_expression",
+        "start_byte": 6343,
+        "end_byte": 6410
+      },
+      "old_position": 2,
+      "dest_start_byte": 6452,
+      "dest_end_byte": 6461,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
           1,
           2,
           1
@@ -337,7 +497,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
           1,
@@ -356,7 +516,7 @@
           11,
           4,
           2,
-          5,
+          4,
           1,
           2
         ],
@@ -371,26 +531,50 @@
       "group_id": "group-1"
     },
     {
-      "action": "delete",
+      "action": "insert",
       "node": {
-        "tree": "before",
+        "tree": "after",
         "path": [
           21,
           3,
           11,
           4,
           2,
-          5,
+          4,
           1,
           2,
+          1,
+          1,
+          0,
+          0,
+          1
+        ],
+        "type": "argument_list",
+        "start_byte": 6433,
+        "end_byte": 6448
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          21,
+          3,
+          11,
+          4,
+          2,
+          4,
+          1,
+          2,
+          1,
+          1,
           0,
           0
         ],
-        "type": "assert",
-        "label": "assert",
-        "start_byte": 6336,
-        "end_byte": 6342
-      }
+        "type": "method_invocation",
+        "start_byte": 6421,
+        "end_byte": 6448
+      },
+      "position": 1,
+      "subtree": true
     },
     {
       "action": "delete",
@@ -402,31 +586,7 @@
           11,
           4,
           2,
-          5,
-          1,
-          2,
-          0,
-          1,
-          0,
-          0
-        ],
-        "type": "identifier",
-        "label": "getMockMaker",
-        "start_byte": 6343,
-        "end_byte": 6355
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          21,
-          3,
-          11,
           4,
-          2,
-          5,
           1,
           2,
           0,
@@ -449,40 +609,16 @@
           11,
           4,
           2,
-          5,
-          1,
-          2,
-          0,
-          1,
-          1
-        ],
-        "type": "comparison_operator_literal",
-        "label": "==",
-        "start_byte": 6398,
-        "end_byte": 6400
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          21,
-          3,
-          11,
           4,
-          2,
-          5,
           1,
           2,
           0,
-          1,
-          2
+          0
         ],
-        "type": "identifier",
-        "label": "mockMaker",
-        "start_byte": 6401,
-        "end_byte": 6410
+        "type": "assert",
+        "label": "assert",
+        "start_byte": 6336,
+        "end_byte": 6342
       }
     }
   ],

@@ -6,66 +6,6 @@ flattened:
   - raw_string_literal
   - comment
 aliased:
-  # Keywords
-  "if": "condition_declaration"
-  "else": "else"
-  "switch": "switch"
-  "case": "case"
-  "default": "default"
-  "for": "for"
-  "while": "while"
-  "do": "do"
-  "return": "return"
-  "break": "break"
-  "continue": "continue"
-  "goto": "goto"
-  "struct": "struct"
-  "union": "union"
-  "enum": "enum"
-  "typedef": "typedef"
-  "const": "const"
-  "volatile": "volatile"
-  "static": "static"
-  "extern": "extern"
-  "inline": "inline"
-  "register": "register"
-  "auto": "auto"
-  "restrict": "restrict"
-  "sizeof": "sizeof"
-  "alignof": "alignof"
-  "class": "class"
-  "namespace": "namespace"
-  "template": "template"
-  "typename": "typename"
-  "public": "public"
-  "private": "private"
-  "protected": "protected"
-  "virtual": "virtual"
-  "override": "override"
-  "final": "final"
-  "constexpr": "constexpr"
-  "consteval": "consteval"
-  "constinit": "constinit"
-  "noexcept": "noexcept"
-  "explicit": "explicit"
-  "mutable": "mutable"
-  "friend": "friend"
-  "using": "using"
-  "concept": "concept"
-  "requires": "requires"
-  "try": "try"
-  "catch": "catch"
-  "throw": "throw"
-  "co_return": "co_return"
-  "co_yield": "co_yield"
-  "co_await": "co_await"
-  "new": "new"
-  "delete": "delete"
-  "decltype": "decltype"
-  "static_assert": "static_assert"
-  "nullptr": "nullptr"
-  "this": "this"
-
   # Arithmetic operators
   "+": arithmetic_operator_literal
   "-": arithmetic_operator_literal
@@ -112,15 +52,6 @@ aliased:
   "++": update_operator_literal
   "--": update_operator_literal
 
-  # Scope & Member access & Punctuation
-  "::": scope_resolution
-  ".": dot
-  "->": arrow
-  ",": comma
-  ";": semicolon
-  ":": colon
-  "?": question_mark
-
   # Preprocessor keywords
   "#include": preproc_include
   "#define": preproc_def
@@ -134,6 +65,19 @@ aliased:
 
 ignored:
   - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "?"
+  - "->"
+  - "::"
 
 scaffolding:
   - translation_unit

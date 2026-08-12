@@ -7,9 +7,9 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5,
+          4,
           0,
           1
         ],
@@ -25,7 +25,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           1
         ],
@@ -38,7 +38,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1
         ],
         "type": "assignment",
@@ -53,7 +53,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           0
         ],
@@ -66,7 +66,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1
         ],
         "type": "assignment",
@@ -81,7 +81,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           2,
           0
@@ -94,7 +94,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           2
         ],
@@ -110,7 +110,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           2,
           1
@@ -123,7 +123,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           2
         ],
@@ -140,9 +140,9 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5,
+          4,
           0,
           0,
           1
@@ -155,7 +155,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           2,
           0
@@ -169,9 +169,9 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5,
+          4,
           0,
           0
         ],
@@ -186,62 +186,14 @@
       "group_id": "group-1"
     },
     {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          44,
-          4,
-          2,
-          4
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 15120,
-        "end_byte": 15121
-      }
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          44,
-          4,
-          1,
-          2,
-          0,
-          1
-        ],
-        "type": "colon",
-        "label": ":",
-        "start_byte": 15108,
-        "end_byte": 15109
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          44,
-          4,
-          1,
-          2,
-          0
-        ],
-        "type": "pair",
-        "start_byte": 15097,
-        "end_byte": 15122
-      },
-      "position": 1
-    },
-    {
       "action": "move",
       "node": {
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5,
+          4,
           0,
           2
         ],
@@ -253,7 +205,7 @@
         "tree": "after",
         "path": [
           44,
-          4,
+          3,
           1,
           2,
           0
@@ -262,14 +214,14 @@
         "start_byte": 15097,
         "end_byte": 15122
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5,
+          4,
           0
         ],
         "type": "assignment",
@@ -288,9 +240,9 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5,
+          4,
           0,
           0,
           0
@@ -307,7 +259,7 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           1
         ],
         "type": "assignment",
@@ -322,7 +274,7 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
           0
         ],
@@ -338,7 +290,7 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
           1
         ],
@@ -354,7 +306,7 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
           2
         ],
@@ -370,7 +322,7 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
           3
         ],
@@ -386,9 +338,9 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2,
-          5
+          4
         ],
         "type": "block",
         "start_byte": 15130,
@@ -401,7 +353,7 @@
         "tree": "before",
         "path": [
           44,
-          4,
+          3,
           2
         ],
         "type": "for_statement",

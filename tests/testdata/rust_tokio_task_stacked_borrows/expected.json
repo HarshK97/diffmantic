@@ -121,7 +121,7 @@
           1,
           0,
           0,
-          2
+          1
         ],
         "type": "identifier",
         "label": "from",
@@ -149,7 +149,7 @@
           1,
           0,
           0,
-          2
+          1
         ],
         "type": "identifier",
         "label": "as_raw",

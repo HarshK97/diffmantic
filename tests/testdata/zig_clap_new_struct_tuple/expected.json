@@ -92,7 +92,7 @@
           120,
           4,
           2,
-          3,
+          2,
           0,
           0,
           0,
@@ -109,7 +109,7 @@
           120,
           4,
           2,
-          3
+          2
         ],
         "type": "array_type",
         "start_byte": 31865,
@@ -122,7 +122,7 @@
           120,
           4,
           2,
-          3,
+          2,
           0,
           0,
           0
@@ -174,7 +174,7 @@
           120,
           4,
           2,
-          3,
+          2,
           1
         ],
         "type": "builtin_type",
@@ -187,13 +187,14 @@
           120,
           4,
           2,
-          3
+          2
         ],
         "type": "array_type",
         "start_byte": 31865,
         "end_byte": 31881
       },
-      "position": 1
+      "position": 1,
+      "subtree": true
     },
     {
       "action": "move",
@@ -203,7 +204,7 @@
           135,
           4,
           2,
-          3
+          2
         ],
         "type": "field_expression",
         "start_byte": 35786,
@@ -215,7 +216,7 @@
           135,
           4,
           4,
-          3
+          2
         ],
         "type": "field_expression",
         "start_byte": 35566,
@@ -233,7 +234,7 @@
         "start_byte": 35774,
         "end_byte": 35839
       },
-      "old_position": 3,
+      "old_position": 2,
       "subtree": true,
       "dest_start_byte": 35566,
       "dest_end_byte": 35606
@@ -246,38 +247,8 @@
           135,
           4,
           4,
-          3,
+          2,
           1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 35606,
-        "end_byte": 35607
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          135,
-          4,
-          4,
-          3
-        ],
-        "type": "field_expression",
-        "start_byte": 35566,
-        "end_byte": 35617
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          135,
-          4,
-          4,
-          3,
-          2
         ],
         "type": "identifier",
         "label": "Attributes",
@@ -290,13 +261,13 @@
           135,
           4,
           4,
-          3
+          2
         ],
         "type": "field_expression",
         "start_byte": 35566,
         "end_byte": 35617
       },
-      "position": 2
+      "position": 1
     },
     {
       "action": "update",
@@ -380,18 +351,18 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
+          0,
           1,
-          4,
           2,
           0
         ],
         "type": "bitwise_operator_literal",
         "label": "\u0026",
-        "start_byte": 32760,
-        "end_byte": 32761
+        "start_byte": 32734,
+        "end_byte": 32735
       }
     },
     {
@@ -476,10 +447,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
+          0,
           0,
           2
         ],
@@ -512,10 +483,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
+          0,
           0
         ],
         "type": "assignment_expression",
@@ -538,7 +509,41 @@
           0,
           1,
           1,
-          3
+          1
+        ],
+        "type": "null",
+        "label": "null",
+        "start_byte": 36574,
+        "end_byte": 36578
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          135,
+          4,
+          7,
+          0,
+          1,
+          1
+        ],
+        "type": "arguments",
+        "start_byte": 36549,
+        "end_byte": 36690
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          135,
+          4,
+          7,
+          0,
+          1,
+          1,
+          2
         ],
         "type": "unary_expression",
         "start_byte": 36588,
@@ -558,7 +563,7 @@
         "start_byte": 36549,
         "end_byte": 36690
       },
-      "position": 3,
+      "position": 2,
       "subtree": true
     },
     {
@@ -572,7 +577,7 @@
           0,
           1,
           1,
-          5
+          3
         ],
         "type": "unary_expression",
         "start_byte": 36610,
@@ -592,7 +597,7 @@
         "start_byte": 36549,
         "end_byte": 36690
       },
-      "position": 5,
+      "position": 3,
       "subtree": true
     },
     {
@@ -716,8 +721,8 @@
           0,
           6,
           2,
+          0,
           1,
-          2,
           1
         ],
         "type": "assignment_operator_literal",
@@ -775,8 +780,8 @@
           0,
           6,
           2,
+          0,
           1,
-          2,
           2
         ],
         "type": "builtin_function",
@@ -810,8 +815,8 @@
           0,
           6,
           2,
-          1,
-          2
+          0,
+          1
         ],
         "type": "assignment_expression",
         "start_byte": 36508,
@@ -833,10 +838,10 @@
           0,
           1,
           1,
-          7,
+          4,
           0
         ],
-        "type": "condition_declaration",
+        "type": "if",
         "label": "if",
         "start_byte": 36632,
         "end_byte": 36634
@@ -850,7 +855,7 @@
           0,
           1,
           1,
-          7
+          4
         ],
         "type": "if_expression",
         "start_byte": 36632,
@@ -869,7 +874,7 @@
           0,
           1,
           1,
-          7,
+          4,
           1
         ],
         "type": "binary_expression",
@@ -885,7 +890,7 @@
           0,
           1,
           1,
-          7
+          4
         ],
         "type": "if_expression",
         "start_byte": 36632,
@@ -906,11 +911,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          4,
+          0,
+          2,
           2,
           0
         ],
@@ -931,7 +936,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2,
           0
         ],
@@ -949,7 +954,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2
         ],
         "type": "unary_expression",
@@ -969,7 +974,7 @@
           0,
           1,
           1,
-          7,
+          4,
           3
         ],
         "type": "else",
@@ -986,7 +991,7 @@
           0,
           1,
           1,
-          7
+          4
         ],
         "type": "if_expression",
         "start_byte": 36632,
@@ -1005,7 +1010,7 @@
           0,
           1,
           1,
-          7,
+          4,
           4
         ],
         "type": "unary_expression",
@@ -1021,7 +1026,7 @@
           0,
           1,
           1,
-          7
+          4
         ],
         "type": "if_expression",
         "start_byte": 36632,
@@ -1125,8 +1130,8 @@
           0,
           6,
           2,
-          1,
-          8
+          0,
+          4
         ],
         "type": "assignment_expression",
         "start_byte": 36645,
@@ -1143,13 +1148,13 @@
           0,
           8,
           2,
-          1
+          0
         ],
         "type": "initializer_list",
         "start_byte": 36344,
         "end_byte": 36506
       },
-      "position": 2,
+      "position": 1,
       "old_parent": {
         "tree": "before",
         "path": [
@@ -1161,13 +1166,13 @@
           0,
           6,
           2,
-          1
+          0
         ],
         "type": "initializer_list",
         "start_byte": 36468,
         "end_byte": 36701
       },
-      "old_position": 8,
+      "old_position": 4,
       "subtree": true,
       "dest_start_byte": 36392,
       "dest_end_byte": 36436
@@ -1183,7 +1188,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2,
           1,
           0
@@ -1202,7 +1207,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2,
           1
         ],
@@ -1223,7 +1228,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2,
           1,
           1
@@ -1241,7 +1246,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2,
           1
         ],
@@ -1264,7 +1269,7 @@
           0,
           8,
           2,
-          1,
+          0,
           0,
           0
         ],
@@ -1283,7 +1288,7 @@
           0,
           8,
           2,
-          1,
+          0,
           0
         ],
         "type": "assignment_expression",
@@ -1294,25 +1299,25 @@
       "subtree": true
     },
     {
-      "action": "insert",
+      "action": "move",
       "node": {
-        "tree": "after",
+        "tree": "before",
         "path": [
           135,
           4,
-          6,
+          4,
           0,
           3,
           0,
-          8,
+          6,
           2,
-          1,
           0,
+          3,
           2
         ],
         "type": "boolean",
-        "start_byte": 36373,
-        "end_byte": 36378
+        "start_byte": 36626,
+        "end_byte": 36631
       },
       "parent": {
         "tree": "after",
@@ -1325,14 +1330,36 @@
           0,
           8,
           2,
-          1,
+          0,
           0
         ],
         "type": "assignment_expression",
         "start_byte": 36358,
         "end_byte": 36378
       },
-      "position": 3
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          135,
+          4,
+          4,
+          0,
+          3,
+          0,
+          6,
+          2,
+          0,
+          3
+        ],
+        "type": "assignment_expression",
+        "start_byte": 36611,
+        "end_byte": 36631
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 36373,
+      "dest_end_byte": 36378
     },
     {
       "action": "move",
@@ -1346,11 +1373,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          4,
+          0,
+          2,
           2,
           1
         ],
@@ -1367,7 +1394,7 @@
           0,
           1,
           1,
-          7,
+          4,
           2,
           1,
           1
@@ -1387,11 +1414,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          4,
+          0,
+          2,
           2
         ],
         "type": "unary_expression",
@@ -1416,10 +1443,10 @@
           0,
           6,
           2,
-          1,
-          8,
           0,
-          1
+          4,
+          0,
+          0
         ],
         "type": "identifier",
         "label": "alignment",
@@ -1438,10 +1465,10 @@
           0,
           8,
           2,
-          1,
-          2,
           0,
-          1
+          1,
+          0,
+          0
         ],
         "type": "identifier",
         "start_byte": 36393,
@@ -1461,11 +1488,57 @@
           0,
           8,
           2,
+          0,
           1,
+          0,
+          0,
+          0
+        ],
+        "type": "@",
+        "label": "@",
+        "start_byte": 36393,
+        "end_byte": 36394
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          135,
+          4,
+          6,
+          0,
+          3,
+          0,
+          8,
           2,
           0,
           1,
+          0,
           0
+        ],
+        "type": "identifier",
+        "start_byte": 36393,
+        "end_byte": 36401
+      },
+      "position": 0
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          135,
+          4,
+          6,
+          0,
+          3,
+          0,
+          8,
+          2,
+          0,
+          1,
+          0,
+          0,
+          1
         ],
         "type": "string",
         "label": "\"align\"",
@@ -1483,16 +1556,16 @@
           0,
           8,
           2,
-          1,
-          2,
           0,
-          1
+          1,
+          0,
+          0
         ],
         "type": "identifier",
         "start_byte": 36393,
         "end_byte": 36401
       },
-      "position": 0,
+      "position": 1,
       "subtree": true
     },
     {
@@ -1503,7 +1576,7 @@
           120,
           4,
           2,
-          3,
+          2,
           0,
           0,
           0,
@@ -1523,29 +1596,10 @@
           120,
           4,
           2,
-          3,
+          2,
           0,
           0,
           1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 31875,
-        "end_byte": 31876
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          120,
-          4,
-          2,
-          3,
-          0,
-          0,
-          2
         ],
         "type": "identifier",
         "label": "builtin",
@@ -1561,27 +1615,9 @@
           120,
           4,
           2,
-          3,
+          2,
           0,
           1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 31883,
-        "end_byte": 31884
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          120,
-          4,
-          2,
-          3,
-          0,
-          2
         ],
         "type": "identifier",
         "label": "Type",
@@ -1597,25 +1633,8 @@
           120,
           4,
           2,
-          3,
-          1
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 31888,
-        "end_byte": 31889
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          120,
-          4,
           2,
-          3,
-          2
+          1
         ],
         "type": "identifier",
         "label": "StructField",
@@ -1655,38 +1674,18 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
+          0,
           1,
-          4,
           2,
           1
         ],
-        "type": "anonymous_struct_initializer",
-        "start_byte": 32761,
-        "end_byte": 32764
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          120,
-          4,
-          5,
-          0,
-          1,
-          1,
-          0,
-          0
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 32672,
-        "end_byte": 32673
+        "type": "identifier",
+        "label": "fields",
+        "start_byte": 32735,
+        "end_byte": 32741
       }
     },
     {
@@ -1701,7 +1700,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           0
         ],
@@ -1723,7 +1722,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           1
         ],
@@ -1745,33 +1744,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          0
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 32688,
-        "end_byte": 32689
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          120,
-          4,
-          5,
           0,
-          1,
-          1,
-          0,
-          1,
-          0,
-          2,
-          1,
           0
         ],
         "type": "assignment_expression",
@@ -1792,40 +1768,16 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          2
-        ],
-        "type": "assignment_expression",
-        "start_byte": 32724,
-        "end_byte": 32741
-      },
-      "subtree": true
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          120,
-          4,
-          5,
           0,
           1,
-          1,
-          0,
-          1,
-          0,
-          2,
-          1,
-          4,
           0
         ],
         "type": "field_expression",
-        "start_byte": 32751,
-        "end_byte": 32757
+        "start_byte": 32724,
+        "end_byte": 32731
       },
       "subtree": true
     },
@@ -1841,17 +1793,17 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
+          0,
           1,
-          4,
           1
         ],
         "type": "assignment_operator_literal",
         "label": "=",
-        "start_byte": 32758,
-        "end_byte": 32759
+        "start_byte": 32732,
+        "end_byte": 32733
       }
     },
     {
@@ -1866,11 +1818,35 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
+          0,
+          2
+        ],
+        "type": "assignment_expression",
+        "start_byte": 32751,
+        "end_byte": 32764
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          120,
+          4,
+          5,
+          0,
           1,
-          6
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          3
         ],
         "type": "assignment_expression",
         "start_byte": 32774,
@@ -1890,10 +1866,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1
+          0
         ],
         "type": "initializer_list",
         "start_byte": 32689,
@@ -1912,7 +1888,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2
         ],
@@ -1933,7 +1909,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0
         ],
         "type": "assignment_expression",
@@ -1953,7 +1929,7 @@
           1,
           1,
           0,
-          1
+          0
         ],
         "type": "initializer_list",
         "start_byte": 32673,
@@ -1991,7 +1967,7 @@
           0,
           6,
           2,
-          1,
+          0,
           0,
           0
         ],
@@ -2014,7 +1990,7 @@
           0,
           6,
           2,
-          1,
+          0,
           0,
           2
         ],
@@ -2037,8 +2013,8 @@
           0,
           6,
           2,
+          0,
           1,
-          2,
           0
         ],
         "type": "field_expression",
@@ -2060,12 +2036,13 @@
           0,
           6,
           2,
-          1,
-          6
+          0,
+          3,
+          0
         ],
-        "type": "assignment_expression",
+        "type": "field_expression",
         "start_byte": 36611,
-        "end_byte": 36631
+        "end_byte": 36623
       },
       "subtree": true
     },
@@ -2076,17 +2053,20 @@
         "path": [
           135,
           4,
-          5,
+          4,
           0,
-          1,
-          1,
+          3,
           0,
-          0
+          6,
+          2,
+          0,
+          3,
+          1
         ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 36743,
-        "end_byte": 36744
+        "type": "assignment_operator_literal",
+        "label": "=",
+        "start_byte": 36624,
+        "end_byte": 36625
       }
     },
     {
@@ -2101,7 +2081,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           0
         ],
@@ -2123,7 +2103,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           1
         ],
@@ -2145,33 +2125,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          0
-        ],
-        "type": "dot",
-        "label": ".",
-        "start_byte": 36759,
-        "end_byte": 36760
-      }
-    },
-    {
-      "action": "delete",
-      "node": {
-        "tree": "before",
-        "path": [
-          135,
-          4,
-          5,
           0,
-          1,
-          1,
-          0,
-          1,
-          0,
-          2,
-          1,
           0,
           0
         ],
@@ -2193,10 +2150,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
+          0,
           0,
           1
         ],
@@ -2218,11 +2175,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          2
+          0,
+          1
         ],
         "type": "assignment_expression",
         "start_byte": 36795,
@@ -2242,11 +2199,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          4,
+          0,
+          2,
           0
         ],
         "type": "field_expression",
@@ -2267,11 +2224,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          4,
+          0,
+          2,
           1
         ],
         "type": "assignment_operator_literal",
@@ -2292,11 +2249,11 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1,
-          6
+          0,
+          3
         ],
         "type": "assignment_expression",
         "start_byte": 36845,
@@ -2316,10 +2273,10 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2,
-          1
+          0
         ],
         "type": "initializer_list",
         "start_byte": 36760,
@@ -2338,7 +2295,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0,
           2
         ],
@@ -2359,7 +2316,7 @@
           1,
           1,
           0,
-          1,
+          0,
           0
         ],
         "type": "assignment_expression",
@@ -2379,7 +2336,7 @@
           1,
           1,
           0,
-          1
+          0
         ],
         "type": "initializer_list",
         "start_byte": 36744,
@@ -6540,11 +6497,15 @@
     },
     {
       "left_line": 1029,
-      "right_line": 1022
+      "right_line": -1
     },
     {
       "left_line": 1030,
       "right_line": -1
+    },
+    {
+      "left_line": -1,
+      "right_line": 1022
     },
     {
       "left_line": -1,
@@ -6604,11 +6565,11 @@
     },
     {
       "left_line": 1042,
-      "right_line": -1
+      "right_line": 1035
     },
     {
       "left_line": 1043,
-      "right_line": 1035
+      "right_line": -1
     },
     {
       "left_line": 1044,

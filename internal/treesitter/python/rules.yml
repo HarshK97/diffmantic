@@ -55,57 +55,8 @@ aliased:
   ">>": bitwise_operator_literal
   "~": bitwise_operator_literal
 
-  # Keywords
-  "def": "def"
-  "class": "class"
-  "try": "try"
-  "except": "except"
-  "finally": "finally"
-  "raise": "raise"
-  "del": "del"
-  "for": "for"
-  "while": "while"
-  "if": "condition_declaration"
-  "elif": "condition_declaration"
-  "else": "else"
-  "match": "match"
-  "case": "case"
-  "assert": "assert"
-  "return": "return"
-  "with": "with"
-  "pass": "pass"
-  "break": "break"
-  "continue": "continue"
-  "import": "import"
-  "from": "from"
-  "as": "as"
-  "yield": "yield"
-  "async": "async"
-  "await": "await"
-  "global": "global"
-  "nonlocal": "nonlocal"
-  "exec": "exec"
-  "type": "type"
-  "print": "print"
-  "lambda": "lambda"
-  "in": "in"
-
   # Clauses and Statements
   "for_in_clause": "for_statement"
-
-  # Punctuation
-  # "(": "opening_paren"
-  # ")": "closing_paren"
-  # "{": opening_brace
-  # "}": closing_brace
-  # "[": opening_bracket
-  # "]": closing_bracket
-  ".": dot
-  ":": colon
-  ",": comma
-  ";": semicolon
-  "->": arrow
-  "@": decorator_at
 
 ignored:
   - "_newline"
@@ -113,6 +64,18 @@ ignored:
   - "_dedent"
   - "line_continuation"
   - "escape_sequence"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "->"
+  - "@"
 
 scaffolding:
   - module

@@ -7,7 +7,7 @@
         "tree": "before",
         "path": [
           6,
-          4,
+          3,
           0
         ],
         "type": "string",
@@ -21,7 +21,7 @@
         "tree": "after",
         "path": [
           6,
-          4,
+          3,
           0
         ],
         "type": "string",
@@ -36,7 +36,7 @@
         "tree": "before",
         "path": [
           7,
-          4,
+          3,
           0
         ],
         "type": "string",
@@ -50,7 +50,7 @@
         "tree": "after",
         "path": [
           7,
-          4,
+          3,
           0
         ],
         "type": "string",
@@ -65,7 +65,7 @@
         "tree": "before",
         "path": [
           8,
-          4,
+          3,
           0
         ],
         "type": "string",
@@ -79,7 +79,7 @@
         "tree": "after",
         "path": [
           8,
-          4,
+          3,
           0
         ],
         "type": "string",

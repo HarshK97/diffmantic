@@ -147,7 +147,7 @@
           1,
           0,
           1,
-          4
+          2
         ],
         "type": "call_expression",
         "start_byte": 53769,
@@ -185,7 +185,7 @@
         "start_byte": 53744,
         "end_byte": 53790
       },
-      "old_position": 4,
+      "old_position": 2,
       "subtree": true,
       "dest_start_byte": 53746,
       "dest_end_byte": 53766
@@ -204,7 +204,7 @@
           1,
           0,
           1,
-          4
+          2
         ],
         "type": "conditional_expression",
         "start_byte": 53830,
@@ -227,7 +227,7 @@
         "start_byte": 53792,
         "end_byte": 53875
       },
-      "position": 4,
+      "position": 2,
       "subtree": true
     }
   ],
