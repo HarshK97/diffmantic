@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "a7f422fa484b41f4999e340db1c97bfc78cbee24",
+  "commit": "6cdab150",
+  "message": "docs: misc #41063",
+  "author": "Justin M. Keyes",
+  "date": "2026-07-30T15:09:19-04:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 17,
+  "deletions": 18
+}

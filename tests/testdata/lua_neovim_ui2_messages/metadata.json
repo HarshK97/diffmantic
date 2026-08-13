@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "c7707e2a10dc5551f7362f1dedd8c030f920b37d",
+  "commit": "d343a1e2",
+  "message": "fix(ui2): position message windows without autocmds (#40867)",
+  "author": "Barrett Ruth",
+  "date": "2026-07-20T12:58:30-05:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 3
+}

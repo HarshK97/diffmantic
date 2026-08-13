@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Kong/kong",
+  "parent": "dfa83fb2b1dc2b1b0b6f49baa284829e7f120c5d",
+  "commit": "f4835f2",
+  "message": "fix(db): add missing select statement for export (#14290)",
+  "author": "Haoxuan",
+  "date": "2025-02-19T09:45:33+08:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 25,
+  "deletions": 2
+}

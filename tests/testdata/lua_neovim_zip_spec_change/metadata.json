@@ -1,0 +1,16 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "f6de99d028c27337cdbac2e1d1c1b954e9badc48",
+  "commit": "9c5afe66",
+  "message": "test: unreliable "nvim.zip … incorrect password" #41159",
+  "author": "Justin M. Keyes",
+  "date": "2026-08-04T14:00:13-04:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": FAILED
+…/plugin/zip_spec.lua:453:
+8,
+  "deletions": …/plugin/zip_spec.lua
+in
+4
+}

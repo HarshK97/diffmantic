@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Kong/kong",
+  "parent": "145816122ec8066c03502a794617721dc8058b15",
+  "commit": "51cb5f1",
+  "message": "tests(clustering): dp status ready when use RPC Sync (#14035)",
+  "author": "hanjian",
+  "date": "2024-12-23T14:23:26+08:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 52,
+  "deletions": 6
+}
