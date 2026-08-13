@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Kong/kong",
+  "parent": "b72823235fd668b9d716a1fb18e58dcb52f6f73c",
+  "commit": "dfc955e",
+  "message": "fix(clustering/rpc): sync retry timeout due to block (#14195)",
+  "author": "Xumin",
+  "date": "2025-01-21T15:47:11+08:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 19,
+  "deletions": 15
+}

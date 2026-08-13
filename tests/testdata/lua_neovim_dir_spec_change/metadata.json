@@ -1,0 +1,14 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "fb6fb33d39e376c22ddc2d44d782767b081d9229",
+  "commit": "4975a186",
+  "message": "fix(dir): `:browse edit` opens dir browser #40930",
+  "author": "Barrett Ruth",
+  "date": "2026-07-25T03:56:52-07:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": Solution:
+23,
+  "deletions": Dispatch
+13
+}

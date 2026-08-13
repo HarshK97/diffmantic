@@ -1,0 +1,112 @@
+flattened:
+  - string
+  - comment
+aliased:
+  # Arithmetic operators
+  "+": arithmetic_operator_literal
+  "-": arithmetic_operator_literal
+  "*": arithmetic_operator_literal
+  "/": arithmetic_operator_literal
+  "//": arithmetic_operator_literal
+  "%": arithmetic_operator_literal
+  "^": arithmetic_operator_literal
+
+  # Comparison operators
+  "==": comparison_operator_literal
+  "~=": comparison_operator_literal
+  "<": comparison_operator_literal
+  "<=": comparison_operator_literal
+  ">": comparison_operator_literal
+  ">=": comparison_operator_literal
+
+  # Logical operators
+  "and": logical_operator_literal
+  "or": logical_operator_literal
+  "not": unary_operator_literal
+
+  # Bitwise operators (Lua 5.3+)
+  "&": bitwise_operator_literal
+  "|": bitwise_operator_literal
+  "~": bitwise_operator_literal
+  "<<": bitwise_operator_literal
+  ">>": bitwise_operator_literal
+
+  # String concatenation
+  "..": concat_operator_literal
+
+  # Assignment
+  "=": assignment_operator_literal
+
+  # Length operator
+  "#": length_operator_literal
+
+ignored:
+  - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "."
+  - "::"
+
+scaffolding:
+  - chunk
+  - block
+  - arguments
+  - parameters
+  - parenthesized_expression
+  - expression_list
+  - variable_list
+  - table_constructor
+  - field
+  - function_declaration
+  - function_definition
+  - if_statement
+  - elseif_statement
+  - else_statement
+  - for_statement
+  - for_generic_clause
+  - for_numeric_clause
+  - while_statement
+  - repeat_statement
+  - do_statement
+  - assignment_statement
+  - variable_declaration
+  - return_statement
+  - label_statement
+  - goto_statement
+
+keywords:
+  - function
+  - local
+  - return
+  - if
+  - else
+  - elseif
+  - then
+  - end
+  - for
+  - in
+  - do
+  - while
+  - repeat
+  - until
+  - break
+  - goto
+  - and
+  - or
+  - not
+  - true
+  - false
+  - nil
+
+declarations:
+  - function_declaration
+  - function_definition
+  - variable_declaration
+

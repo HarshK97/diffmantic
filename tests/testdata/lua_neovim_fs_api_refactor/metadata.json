@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "7d2249c579b0a9a19982170823675e25f3fba070",
+  "commit": "9a93ac65",
+  "message": "refactor(vim.fs): slug() minor cleanup",
+  "author": "Justin M. Keyes",
+  "date": "2026-08-05T19:49:08+02:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 6,
+  "deletions": 12
+}

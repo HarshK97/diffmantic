@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Kong/kong",
+  "parent": "716a11b2aa995b7a67f3e6fbaf748669966bb448",
+  "commit": "d5fcb42",
+  "message": "tests(clustering/wasm): enable rpc sync tests for wasm partially (#14256)",
+  "author": "Chrono",
+  "date": "2025-02-17T09:11:10+08:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 16,
+  "deletions": 8
+}

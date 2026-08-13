@@ -1,0 +1,14 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "4121f2cf25c45ec340135847e094e530fc2ff083",
+  "commit": "09a4cc8c",
+  "message": "fix(docs): multi-level list dedent indentation #40850",
+  "author": "Maria Solano",
+  "date": "2026-07-20T02:02:17-07:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": The
+13,
+  "deletions": list-item
+2
+}

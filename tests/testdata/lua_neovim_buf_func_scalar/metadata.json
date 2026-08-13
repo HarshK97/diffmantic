@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "434792787b4c14423ca4003941f95039d3316076",
+  "commit": "30b4c1b4",
+  "message": "fix(ctx): missing options copy when loading hidden buffer #41149",
+  "author": "zeertzjq",
+  "date": "2026-08-04T16:50:36+08:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 16,
+  "deletions": 0
+}

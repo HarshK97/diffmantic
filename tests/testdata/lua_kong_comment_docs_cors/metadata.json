@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/Kong/kong",
+  "parent": "f73549eb136586414c4326ffa1f369ed60eb4c32",
+  "commit": "acb37df",
+  "message": "docs(cors): clarify behavior with no origins specified (#14721)",
+  "author": "Lucie Milan",
+  "date": "2025-08-06T05:35:20+02:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

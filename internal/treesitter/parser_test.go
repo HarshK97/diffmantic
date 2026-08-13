@@ -207,6 +207,17 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 			t.Error("Parse(): expected non-nil AST root")
 		}
 	})
+
+	t.Run("valid lua source", func(t *testing.T) {
+		src := []byte(`local function greet(name) print("Hello, " .. name) end`)
+		ast, err := Parse(src, "main.lua")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")

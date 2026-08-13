@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/neovim/neovim",
+  "parent": "7ba955fe079d4aa2554fea8e7235651fafd40efb",
+  "commit": "689b45dd",
+  "message": "fix(write): show E17 on all platforms #40595",
+  "author": "Willaaaaaaa",
+  "date": "2026-07-20T03:42:59+08:00",
+  "language": "lua",
+  "files_changed": 1,
+  "insertions": 12,
+  "deletions": 16
+}
