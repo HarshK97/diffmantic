@@ -240,6 +240,18 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 			t.Error("Parse(): expected non-nil AST root")
 		}
 	})
+
+	t.Run("valid css source", func(t *testing.T) {
+		src := []byte("body { margin: 0; padding: 0; background-color: #fff; }\nh1, h2 { font-family: sans-serif; }\n")
+		ast, err := Parse(src, "style.css")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
+
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")

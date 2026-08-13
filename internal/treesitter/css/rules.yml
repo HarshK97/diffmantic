@@ -1,0 +1,31 @@
+flattened:
+  - comment
+  - plain_value
+  - color_value
+  - integer_value
+  - float_value
+  - string_value
+
+ignored:
+  - "{"
+  - "}"
+  - ":"
+  - ";"
+  - ","
+  - "("
+  - ")"
+
+scaffolding:
+  - stylesheet
+  - rule_set
+  - selectors
+  - block
+  - declaration
+  - media_statement
+  - keyframes_statement
+
+unordered:
+  - selectors
+
+pairs:
+  - declaration
