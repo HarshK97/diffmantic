@@ -1,0 +1,218 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          1,
+          2,
+          1,
+          1
+        ],
+        "type": "raw_text",
+        "label": "// Call the fetch() method to fetch the image, and store it in a variable\n      let promise = fetch('coffee.jpg');\n\n      // Use a then() block to respond to the promise's successful completion\n      // by taking the returned response and running blob() on it to transform it into a blob\n      let promise2 = promise.then(response =\u003e response.blob());\n\n      // blob() also returns a promise; when it successfully completes it returns\n      // The blob object in the callback\n      let promise3 = promise2.then(myBlob =\u003e {\n        // Create an object URL that points to the blob object\n        let objectURL = URL.createObjectURL(myBlob);\n        // Create an \u003cimg\u003e element to display the blob (it's an image)\n        let image = document.createElement('img');\n        // Set the src of the \u003cimg\u003e to the object URL so the image displays it\n        image.src = objectURL;\n        // Append the \u003cimg\u003e element to the DOM\n        document.body.appendChild(image);\n      })\n      \n      // If there is a problem, log a useful error message to the console\n      let errorCase = promise3.catch(e =\u003e {\n        console.log('There has been a problem with your fetch operation: ' + e.message);\n      });",
+        "start_byte": 124,
+        "end_byte": 1328
+      },
+      "old_value": "// Call the fetch() method to fetch the image, and store it in a variable\n      let promise = fetch('coffee.jpg');\n\n      // Use a then() block to respond to the promise's successful completion\n      // by taking the returned response and running blob() on it to transform it into a blob\n      let promise2 = promise.then(response =\u003e response.blob());\n\n      // blob() also returns a promise; when it successfully completes it returns\n      // The blob object in the callback\n      let promise3 = promise2.then(myBlob =\u003e {\n        // Create an object URL that points to the blob object\n        let objectURL = URL.createObjectURL(myBlob);\n        // Create an \u003cimg\u003e element to display the blob (it's an image)\n        let image = document.createElement('img');\n        // Set the src of the \u003cimg\u003e to the object URL so the image displays it\n        image.src = objectURL;\n        // Append the \u003cimg\u003e element to the DOM\n        document.body.appendChild(image);\n      })\n      \n      // If there is a problem, log a useful error message to the console\n      let errorCase = promise3.catch(e =\u003e {\n        console.log('There has been a problem with your fetch operation: ' + e.message);\n      });",
+      "new_value": "// Call the fetch() method to fetch the image, and store it in a variable\n      let promise = fetch('coffee.jpg');\n\n      // Use a then() block to respond to the promise's successful completion\n      // by taking the returned response and running blob() on it to transform it into a blob\n      let promise2 = promise.then(response =\u003e {\n        // The promise fetch() does NOT reject on HTTP errors,\n        // so we need to check the boolean Response.ok and throw manually a new Error()\n        // for the promise2 to be rejected (for example when a 404 occurs).\n        if (!response.ok) {\n          throw new Error(`HTTP error! status: ${response.status}`);\n        } else {\n          return response.blob();\n        }\n      });\n\n      // blob() also returns a promise; when it successfully completes it returns\n      // The blob object in the callback\n      let promise3 = promise2.then(myBlob =\u003e {\n        // Create an object URL that points to the blob object\n        let objectURL = URL.createObjectURL(myBlob);\n        // Create an \u003cimg\u003e element to display the blob (it's an image)\n        let image = document.createElement('img');\n        // Set the src of the \u003cimg\u003e to the object URL so the image displays it\n        image.src = objectURL;\n        // Append the \u003cimg\u003e element to the DOM\n        document.body.appendChild(image);\n      })\n      \n      // If there is a problem, log a useful error message to the console\n      let errorCase = promise3.catch(e =\u003e {\n        console.log('There has been a problem with your fetch operation: ' + e.message);\n      });",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          1,
+          2,
+          1,
+          1
+        ],
+        "type": "raw_text",
+        "label": "// Call the fetch() method to fetch the image, and store it in a variable\n      let promise = fetch('coffee.jpg');\n\n      // Use a then() block to respond to the promise's successful completion\n      // by taking the returned response and running blob() on it to transform it into a blob\n      let promise2 = promise.then(response =\u003e {\n        // The promise fetch() does NOT reject on HTTP errors,\n        // so we need to check the boolean Response.ok and throw manually a new Error()\n        // for the promise2 to be rejected (for example when a 404 occurs).\n        if (!response.ok) {\n          throw new Error(`HTTP error! status: ${response.status}`);\n        } else {\n          return response.blob();\n        }\n      });\n\n      // blob() also returns a promise; when it successfully completes it returns\n      // The blob object in the callback\n      let promise3 = promise2.then(myBlob =\u003e {\n        // Create an object URL that points to the blob object\n        let objectURL = URL.createObjectURL(myBlob);\n        // Create an \u003cimg\u003e element to display the blob (it's an image)\n        let image = document.createElement('img');\n        // Set the src of the \u003cimg\u003e to the object URL so the image displays it\n        image.src = objectURL;\n        // Append the \u003cimg\u003e element to the DOM\n        document.body.appendChild(image);\n      })\n      \n      // If there is a problem, log a useful error message to the console\n      let errorCase = promise3.catch(e =\u003e {\n        console.log('There has been a problem with your fetch operation: ' + e.message);\n      });",
+        "start_byte": 124,
+        "end_byte": 1707
+      }
+    }
+  ],
+  "line_alignment": [
+    {
+      "left_line": 0,
+      "right_line": 0
+    },
+    {
+      "left_line": 1,
+      "right_line": 1
+    },
+    {
+      "left_line": 2,
+      "right_line": 2
+    },
+    {
+      "left_line": 3,
+      "right_line": 3
+    },
+    {
+      "left_line": 4,
+      "right_line": 4
+    },
+    {
+      "left_line": 5,
+      "right_line": 5
+    },
+    {
+      "left_line": 6,
+      "right_line": 6
+    },
+    {
+      "left_line": 7,
+      "right_line": 7
+    },
+    {
+      "left_line": 8,
+      "right_line": 8
+    },
+    {
+      "left_line": 9,
+      "right_line": 9
+    },
+    {
+      "left_line": 10,
+      "right_line": 10
+    },
+    {
+      "left_line": 11,
+      "right_line": 11
+    },
+    {
+      "left_line": 12,
+      "right_line": 12
+    },
+    {
+      "left_line": 13,
+      "right_line": 13
+    },
+    {
+      "left_line": -1,
+      "right_line": 14
+    },
+    {
+      "left_line": -1,
+      "right_line": 15
+    },
+    {
+      "left_line": -1,
+      "right_line": 16
+    },
+    {
+      "left_line": -1,
+      "right_line": 17
+    },
+    {
+      "left_line": -1,
+      "right_line": 18
+    },
+    {
+      "left_line": -1,
+      "right_line": 19
+    },
+    {
+      "left_line": -1,
+      "right_line": 20
+    },
+    {
+      "left_line": -1,
+      "right_line": 21
+    },
+    {
+      "left_line": -1,
+      "right_line": 22
+    },
+    {
+      "left_line": 14,
+      "right_line": 23
+    },
+    {
+      "left_line": 15,
+      "right_line": 24
+    },
+    {
+      "left_line": 16,
+      "right_line": 25
+    },
+    {
+      "left_line": 17,
+      "right_line": 26
+    },
+    {
+      "left_line": 18,
+      "right_line": 27
+    },
+    {
+      "left_line": 19,
+      "right_line": 28
+    },
+    {
+      "left_line": 20,
+      "right_line": 29
+    },
+    {
+      "left_line": 21,
+      "right_line": 30
+    },
+    {
+      "left_line": 22,
+      "right_line": 31
+    },
+    {
+      "left_line": 23,
+      "right_line": 32
+    },
+    {
+      "left_line": 24,
+      "right_line": 33
+    },
+    {
+      "left_line": 25,
+      "right_line": 34
+    },
+    {
+      "left_line": 26,
+      "right_line": 35
+    },
+    {
+      "left_line": 27,
+      "right_line": 36
+    },
+    {
+      "left_line": 28,
+      "right_line": 37
+    },
+    {
+      "left_line": 29,
+      "right_line": 38
+    },
+    {
+      "left_line": 30,
+      "right_line": 39
+    },
+    {
+      "left_line": 31,
+      "right_line": 40
+    },
+    {
+      "left_line": 32,
+      "right_line": 41
+    },
+    {
+      "left_line": 33,
+      "right_line": 42
+    },
+    {
+      "left_line": 34,
+      "right_line": 43
+    },
+    {
+      "left_line": 35,
+      "right_line": 44
+    }
+  ]
+}

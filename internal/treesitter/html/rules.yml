@@ -1,0 +1,32 @@
+flattened:
+  - text
+  - comment
+  - raw_text
+
+aliased:
+  self_closing_tag: start_tag
+
+ignored:
+  - "<"
+  - ">"
+  - "</"
+  - "/>"
+  - "="
+
+scaffolding:
+  - document
+  - element
+  - start_tag
+  - self_closing_tag
+  - end_tag
+  - attribute
+
+unordered:
+  - start_tag
+  - self_closing_tag
+
+pairs:
+  - attribute
+
+
+
