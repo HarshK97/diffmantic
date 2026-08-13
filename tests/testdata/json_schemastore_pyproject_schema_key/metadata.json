@@ -1,0 +1,6 @@
+{
+  "repository": "SchemaStore/schemastore",
+  "commit": "c103323db817eaa643d0d6c6e0c9b0abf5878dc7",
+  "description": "Update pyproject schema reference key",
+  "language": "json"
+}

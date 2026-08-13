@@ -1,0 +1,6 @@
+{
+  "repository": "SchemaStore/schemastore",
+  "commit": "e775b812562d4deea2899d1dea94595f9b029fca",
+  "description": "Add schema mapping to catalog",
+  "language": "json"
+}

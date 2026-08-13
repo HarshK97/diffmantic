@@ -1,0 +1,6 @@
+{
+  "repository": "SchemaStore/schemastore",
+  "commit": "c4691f3e8bfa6a9bd17d5268812c14a43a981d16",
+  "description": "Update uv pip settings schema",
+  "language": "json"
+}

@@ -1,0 +1,6 @@
+{
+  "repository": "SchemaStore/schemastore",
+  "commit": "76040a6638273c2434500811ecbb1d11ce150a82",
+  "description": "Add cargo workspace members schema",
+  "language": "json"
+}
