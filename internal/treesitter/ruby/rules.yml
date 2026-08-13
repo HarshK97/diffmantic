@@ -1,0 +1,157 @@
+flattened:
+  - string
+  - string_content
+  - heredoc_body
+  - comment
+  - integer
+  - float
+  - simple_symbol
+  - symbol
+  - identifier
+  - instance_variable
+  - class_variable
+  - global_variable
+  - constant
+
+aliased:
+  # Comparison operators
+  "==": comparison_operator_literal
+  "!=": comparison_operator_literal
+  "===": comparison_operator_literal
+  "<=>": comparison_operator_literal
+  "<": comparison_operator_literal
+  "<=": comparison_operator_literal
+  ">": comparison_operator_literal
+  ">=": comparison_operator_literal
+  "=~": comparison_operator_literal
+  "!~": comparison_operator_literal
+
+  # Logical operators
+  "&&": logical_operator_literal
+  "||": logical_operator_literal
+  "!": unary_operator_literal
+
+  # Assignment operators
+  "=": assignment_operator_literal
+  "+=": assignment_operator_literal
+  "-=": assignment_operator_literal
+  "*=": assignment_operator_literal
+  "/=": assignment_operator_literal
+  "%=": assignment_operator_literal
+  "**=": assignment_operator_literal
+  "&=": assignment_operator_literal
+  "|=": assignment_operator_literal
+  "^=": assignment_operator_literal
+  "<<=": assignment_operator_literal
+  ">>=": assignment_operator_literal
+  "||=": assignment_operator_literal
+  "&&=": assignment_operator_literal
+
+  # Arithmetic operators
+  "+": arithmetic_operator_literal
+  "-": arithmetic_operator_literal
+  "*": arithmetic_operator_literal
+  "/": arithmetic_operator_literal
+  "%": arithmetic_operator_literal
+  "**": arithmetic_operator_literal
+
+  # Bitwise operators
+  "&": bitwise_operator_literal
+  "|": bitwise_operator_literal
+  "^": bitwise_operator_literal
+  "<<": bitwise_operator_literal
+  ">>": bitwise_operator_literal
+  "~": bitwise_operator_literal
+
+ignored:
+  - "\n"
+  - "("
+  - ")"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ";"
+  - ":"
+  - "::"
+  - "."
+  - "->"
+  - "|"
+  - "=>"
+
+scaffolding:
+  - program
+  - body_statement
+  - method
+  - singleton_method
+  - class
+  - module
+  - if
+  - unless
+  - elsif
+  - else
+  - while
+  - until
+  - for
+  - case
+  - when
+  - begin
+  - rescue
+  - ensure
+  - call
+  - method_call
+  - argument_list
+  - method_parameters
+  - block_parameters
+  - do_block
+  - block
+  - assignment
+  - operator_assignment
+  - hash
+  - array
+  - pair
+
+keywords:
+  - def
+  - class
+  - module
+  - if
+  - unless
+  - elsif
+  - else
+  - case
+  - when
+  - while
+  - until
+  - for
+  - do
+  - begin
+  - rescue
+  - ensure
+  - end
+  - return
+  - yield
+  - break
+  - next
+  - redo
+  - retry
+  - alias
+  - undef
+  - and
+  - or
+  - not
+  - then
+  - in
+  - self
+  - nil
+  - true
+  - false
+  - super
+
+declarations:
+  - method
+  - singleton_method
+  - class
+  - module
+

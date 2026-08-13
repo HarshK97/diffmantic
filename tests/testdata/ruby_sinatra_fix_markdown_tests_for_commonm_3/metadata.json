@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "0c88089be7668326ec5ed52671732f8565a16353",
+  "commit": "cb22afd7902b566b6eaba6c4ea89739494a65d12",
+  "message": "Fix markdown tests for commonmarker 2.9.0's heading anchor markup (#2182)\n\nFixes #2181.",
+  "author": "hexonal",
+  "date": "2026-07-20T05:59:21-04:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 15,
+  "deletions": 2
+}

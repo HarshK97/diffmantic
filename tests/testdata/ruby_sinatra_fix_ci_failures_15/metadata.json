@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "04134fa830877f1b66d2955eaaa94a143e8dcb14",
+  "commit": "e6a2420e326fe29d029ffb64db7ce09e3fe9e99c",
+  "message": "Fix CI failures",
+  "author": "Jordan Owens",
+  "date": "2022-04-13T21:32:01-04:00",
+  "language": "ruby",
+  "files_changed": 2,
+  "insertions": 6,
+  "deletions": 2
+}

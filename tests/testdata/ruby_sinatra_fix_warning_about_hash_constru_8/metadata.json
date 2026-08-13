@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "273629a76013942ece924369c82b4cc76648b58c",
+  "commit": "167f55579feaeac81bd1d06a924c9e76290bf799",
+  "message": "Fix warning about Hash construction. (#2028)\n\nFixes <https://github.com/sinatra/sinatra/issues/2026>.",
+  "author": "Samuel Williams",
+  "date": "2024-07-12T00:32:32+12:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

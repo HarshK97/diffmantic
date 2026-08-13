@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "e7ccc2be9954c35f32220f7c87216ea158382376",
+  "commit": "e81490eea468f3dce6665490508b6ff7c3625a9a",
+  "message": "Fix content-type leak in Mustermann::Set pass-block routing\n\nThe set-based route! path iterates only matching routes (set.match_all),",
+  "author": "Sean Floyd",
+  "date": "2026-06-25T12:39:33-04:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 7,
+  "deletions": 1
+}

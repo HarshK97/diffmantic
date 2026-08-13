@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "f517a5da89bee6a79edf0338c03d8df7a01f2b8d",
+  "commit": "0721b2aa893be81cab423144ef16122b8400f398",
+  "message": "Use Exception#detailed_message to show backtrace (#1952)",
+  "author": "Yusuke Endoh",
+  "date": "2023-10-14T03:31:21+09:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 13,
+  "deletions": 1
+}

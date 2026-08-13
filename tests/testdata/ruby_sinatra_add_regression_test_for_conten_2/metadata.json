@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "e81490eea468f3dce6665490508b6ff7c3625a9a",
+  "commit": "91d89929011f4b1c909b89d7b94bccdd769f18ad",
+  "message": "Add regression test for content-type leak in pass-block routing\n\nGuards the fix in the previous commit: asserts that a content-type set by a",
+  "author": "Sean Floyd",
+  "date": "2026-06-25T12:40:33-04:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 18,
+  "deletions": 0
+}
