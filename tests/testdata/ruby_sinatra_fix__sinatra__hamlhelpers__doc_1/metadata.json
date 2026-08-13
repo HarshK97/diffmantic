@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "f2fe3e3a1b9f9ab10a3f3adcf842de7d49b554eb",
+  "commit": "ef00c6a0db0ef31143e529e7e6edddf2d5c99653",
+  "message": "Fix `Sinatra::HamlHelpers` docs (#2046)\n\n`helpers` is the one we want to use here:",
+  "author": "Patrik Ragnarsson",
+  "date": "2024-10-21T00:51:08+02:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

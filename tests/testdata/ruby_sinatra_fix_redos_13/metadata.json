@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "ceb49f043c37244bc017c9f33f5fdf18f1662ac7",
+  "commit": "441c06a7eb1a5d59648806aa773f3a27fa89bc1e",
+  "message": "fix ReDoS",
+  "author": "ooooooo_q",
+  "date": "2022-10-08T11:23:45+09:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

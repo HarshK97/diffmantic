@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "39488d93beb0ce47f6fb86d4ee00c927e32455b0",
+  "commit": "97b41fc616678de5b85165f4d6093db96739568d",
+  "message": "Fix memory leaks for proc template (#1719)",
+  "author": "Slevin",
+  "date": "2021-08-31T10:55:07+08:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 22,
+  "deletions": 13
+}

@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "4062e3669c7dff0f59ca1d0b0bfa67f7eef444af",
+  "commit": "8b1c32641ff047c56b98b09cc9d7c0e14c142879",
+  "message": "Fix RDoc 6.16+ compatibility by relaxing the check\n\nWith RDoc 6.16.0, the following test started to fail:",
+  "author": "Vít Ondruch",
+  "date": "2025-12-03T15:52:08+01:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 2
+}

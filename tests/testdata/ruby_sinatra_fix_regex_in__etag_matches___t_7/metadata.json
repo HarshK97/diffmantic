@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "fa99a21461d4f1f5337b9b9d7a38a1b51c8f4e55",
+  "commit": "3fe8c38dc405586f7ad8f2ac748aa53e9c3615bd",
+  "message": "Fix regex in `etag_matches?` to prevent ReDoS (#2121)",
+  "author": "gecunps",
+  "date": "2025-10-08T22:50:03+08:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 1,
+  "deletions": 1
+}

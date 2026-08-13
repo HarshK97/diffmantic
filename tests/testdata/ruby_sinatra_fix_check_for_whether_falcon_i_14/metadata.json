@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "df1633efb26fa71177686dc1add8b37e0e0d6b6b",
+  "commit": "f1ee0a3a6782ced94d1587fda233ba2adc08f426",
+  "message": "Fix check for whether falcon is included\n\n* This is the same check as in lib/sinatra/base.rb",
+  "author": "Benoit Daloze",
+  "date": "2022-07-20T12:18:47+02:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 2,
+  "deletions": 2
+}

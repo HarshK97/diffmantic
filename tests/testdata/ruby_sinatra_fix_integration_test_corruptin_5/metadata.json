@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "f891dd2b6f4911e356600efe6c3b82af97d262c6",
+  "commit": "a0ed7f4cd5df24fce0542b2934b4f9409fed2ce1",
+  "message": "Fix integration test corrupting Gemfile.lock under Bundler 4\n\n`test_app_start_without_rackup` spawns a child Ruby with a custom",
+  "author": "Patrik Ragnarsson",
+  "date": "2026-04-28T21:59:39Z",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 3,
+  "deletions": 1
+}

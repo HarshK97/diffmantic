@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/sinatra/sinatra.git",
+  "parent": "f238dab00870c1e93ed95cb93eac39432e31d54a",
+  "commit": "6ddd6b63bf91609369b0cfa1248aa9c50ead0921",
+  "message": "Fix incorrect documentation for Sinatra::IndifferentHash (#1951)\n\nResolves #1948. Looking over the code, I'm not sure that the",
+  "author": "Jordan Owens",
+  "date": "2023-10-10T09:15:23-04:00",
+  "language": "ruby",
+  "files_changed": 1,
+  "insertions": 4,
+  "deletions": 2
+}
