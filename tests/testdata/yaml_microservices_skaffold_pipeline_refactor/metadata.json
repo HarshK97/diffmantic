@@ -1,0 +1,6 @@
+{
+  "repository": "GoogleCloudPlatform/microservices-demo",
+  "commit": "6e55d976e1b9721c2546941b07d66eaf005bb875",
+  "description": "Refactor skaffold pipeline services",
+  "language": "yaml"
+}

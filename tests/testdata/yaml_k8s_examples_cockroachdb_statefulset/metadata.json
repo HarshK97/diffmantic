@@ -1,0 +1,6 @@
+{
+  "repository": "kubernetes/examples",
+  "commit": "a18e70cdf7d1e66581aa7b6e6507ddf498e22eae",
+  "description": "Update cockroachdb statefulset replica count",
+  "language": "yaml"
+}

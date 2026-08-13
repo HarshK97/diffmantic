@@ -1,0 +1,6 @@
+{
+  "repository": "kubernetes/examples",
+  "commit": "42a29fc41fb5d3d412ede7a0ab30769bf7f3011b",
+  "description": "Update flower controller spec template",
+  "language": "yaml"
+}

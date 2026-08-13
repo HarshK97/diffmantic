@@ -1,0 +1,41 @@
+flattened:
+  - string_scalar
+  - double_quote_scalar
+  - single_quote_scalar
+  - plain_scalar
+  - comment
+
+ignored:
+  - ":"
+  - "-"
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - "?"
+
+scaffolding:
+  - stream
+  - document
+  - block_node
+  - block_mapping
+  - block_mapping_pair
+  - block_sequence
+  - block_sequence_item
+  - flow_mapping
+  - flow_sequence
+
+unordered:
+  - block_mapping
+  - flow_mapping
+
+identifiers:
+  - tag
+  - anchor_name
+  - alias_name
+
+pairs:
+  - block_mapping_pair
+  - flow_pair
+

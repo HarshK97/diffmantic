@@ -1,0 +1,6 @@
+{
+  "repository": "kubernetes/examples",
+  "commit": "906564ac37d234cc18dc01b6a1e1e4a5c0c2076a",
+  "description": "Update sysdig daemonset container args",
+  "language": "yaml"
+}

@@ -1,0 +1,6 @@
+{
+  "repository": "GoogleCloudPlatform/microservices-demo",
+  "commit": "58b6cd21c3f050d064598575d3df6c525a7ceaea",
+  "description": "Update kustomization scalar config",
+  "language": "yaml"
+}

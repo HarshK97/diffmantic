@@ -1,0 +1,6 @@
+{
+  "repository": "kubernetes/examples",
+  "commit": "ce6b8d8c2dd4ce993b3c386db1dcf62f813ac1c0",
+  "description": "Update persistentvolume nfs example spec",
+  "language": "yaml"
+}

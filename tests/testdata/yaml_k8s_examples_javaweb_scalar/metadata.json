@@ -1,0 +1,6 @@
+{
+  "repository": "kubernetes/examples",
+  "commit": "e3c0e941312d3b5c9c957d3223354dc91a746bf2",
+  "description": "Update javaweb pod replica count",
+  "language": "yaml"
+}
