@@ -86,3 +86,42 @@ scaffolding:
   - default_case
   - expression_case
   - type_case
+
+keywords:
+  - func
+  - package
+  - import
+  - var
+  - const
+  - type
+  - struct
+  - interface
+  - if
+  - else
+  - switch
+  - case
+  - default
+  - for
+  - range
+  - return
+  - break
+  - continue
+  - goto
+  - defer
+  - go
+  - select
+  - map
+  - chan
+
+declarations:
+  - function_declaration
+  - method_declaration
+  - type_declaration
+  - type_spec
+  - type_alias
+  - parameter_declaration
+  - field_declaration
+  - const_declaration
+  - var_declaration
+
+

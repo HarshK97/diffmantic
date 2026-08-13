@@ -121,3 +121,70 @@ scaffolding:
   - local_variable_declaration
   - expression_statement
   - lambda_expression
+
+keywords:
+  - class
+  - interface
+  - enum
+  - record
+  - extends
+  - implements
+  - public
+  - private
+  - protected
+  - static
+  - final
+  - abstract
+  - synchronized
+  - volatile
+  - transient
+  - native
+  - strictfp
+  - void
+  - boolean
+  - byte
+  - short
+  - int
+  - long
+  - char
+  - float
+  - double
+  - if
+  - else
+  - switch
+  - case
+  - default
+  - for
+  - while
+  - do
+  - break
+  - continue
+  - return
+  - yield
+  - try
+  - catch
+  - finally
+  - throw
+  - throws
+  - new
+  - this
+  - super
+  - instanceof
+  - var
+  - package
+  - import
+
+declarations:
+  - class_declaration
+  - interface_declaration
+  - enum_declaration
+  - record_declaration
+  - method_declaration
+  - constructor_declaration
+  - annotation_type_declaration
+  - module_declaration
+  - package_declaration
+  - local_variable_declaration
+  - field_declaration
+
+

@@ -86,12 +86,14 @@ func TestMatchDeclarations(t *testing.T) {
 				testutil.Leaf("call", "a()"),
 			),
 		)
+		src.Language = "go"
 		dst := testutil.Node("program", "",
 			testutil.Node("function_declaration", "",
 				testutil.Leaf("identifier", "foo"),
 				testutil.Leaf("call", "b()"),
 			),
 		)
+		dst.Language = "go"
 
 		m := NewMapping()
 		matchDeclarations(src, dst, m)
@@ -113,6 +115,7 @@ func TestMatchDeclarations(t *testing.T) {
 				testutil.Leaf("call", "a()"),
 			),
 		)
+		src.Language = "go"
 		dst := testutil.Node("program", "",
 			testutil.Node("function_declaration", "",
 				testutil.Leaf("identifier", "foo"),
@@ -123,6 +126,7 @@ func TestMatchDeclarations(t *testing.T) {
 				testutil.Leaf("call", "c()"),
 			),
 		)
+		dst.Language = "go"
 
 		m := NewMapping()
 		matchDeclarations(src, dst, m)
@@ -139,11 +143,13 @@ func TestMatchDeclarations(t *testing.T) {
 				testutil.Leaf("identifier", "foo"),
 			),
 		)
+		src.Language = "go"
 		dst := testutil.Node("program", "",
 			testutil.Node("function_declaration", "",
 				testutil.Leaf("identifier", "bar"),
 			),
 		)
+		dst.Language = "go"
 
 		m := NewMapping()
 		matchDeclarations(src, dst, m)
@@ -161,12 +167,14 @@ func TestMatchDeclarations(t *testing.T) {
 				testutil.Leaf("body", "{...}"),
 			),
 		)
+		src.Language = "java"
 		dst := testutil.Node("program", "",
 			testutil.Node("class_declaration", "",
 				testutil.Leaf("identifier", "User"),
 				testutil.Leaf("body", "{...different...}"),
 			),
 		)
+		dst.Language = "java"
 
 		m := NewMapping()
 		matchDeclarations(src, dst, m)
@@ -199,12 +207,14 @@ func TestMatchDeclarations(t *testing.T) {
 				srcParam,
 			),
 		)
+		src.Language = "go"
 		dst := testutil.Node("program", "",
 			testutil.Node("method_declaration", "",
 				testutil.Leaf("field_identifier", "Foo"),
 				dstParam,
 			),
 		)
+		dst.Language = "go"
 
 		m := NewMapping()
 		matchDeclarations(src, dst, m)
@@ -233,12 +243,14 @@ func TestMatchDeclarations(t *testing.T) {
 				srcParam,
 			),
 		)
+		src.Language = "go"
 		dst := testutil.Node("program", "",
 			testutil.Node("method_declaration", "",
 				testutil.Leaf("field_identifier", "Foo"),
 				dstParam,
 			),
 		)
+		dst.Language = "go"
 
 		m := NewMapping()
 		matchDeclarations(src, dst, m)

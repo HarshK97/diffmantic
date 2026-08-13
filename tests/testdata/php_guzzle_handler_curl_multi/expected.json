@@ -34,6 +34,31 @@
         "path": [
           10,
           3,
+          14
+        ],
+        "type": "method_declaration",
+        "start_byte": 5020,
+        "end_byte": 6003
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3
+        ],
+        "type": "declaration_list",
+        "start_byte": 448,
+        "end_byte": 9245
+      },
+      "position": 14
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
           15
         ],
         "type": "comment",
@@ -51,32 +76,7 @@
         "start_byte": 448,
         "end_byte": 9245
       },
-      "position": 16
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          10,
-          3,
-          16
-        ],
-        "type": "method_declaration",
-        "start_byte": 6479,
-        "end_byte": 7015
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          10,
-          3
-        ],
-        "type": "declaration_list",
-        "start_byte": 448,
-        "end_byte": 9245
-      },
-      "position": 17
+      "position": 15
     },
     {
       "action": "insert",
@@ -107,23 +107,36 @@
       "subtree": true
     },
     {
-      "action": "update",
+      "action": "insert",
       "node": {
-        "tree": "before",
+        "tree": "after",
         "path": [
           10,
           3,
           14,
-          2
+          1
         ],
-        "type": "name",
-        "label": "getParamsToSign",
-        "start_byte": 5202,
-        "end_byte": 5217
+        "type": "function",
+        "label": "function",
+        "start_byte": 5030,
+        "end_byte": 5038
       },
-      "old_value": "getParamsToSign",
-      "new_value": "getOauthParams",
-      "dest_node": {
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          14
+        ],
+        "type": "method_declaration",
+        "start_byte": 5020,
+        "end_byte": 6003
+      },
+      "position": 1
+    },
+    {
+      "action": "insert",
+      "node": {
         "tree": "after",
         "path": [
           10,
@@ -135,7 +148,19 @@
         "label": "getOauthParams",
         "start_byte": 5039,
         "end_byte": 5053
-      }
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          14
+        ],
+        "type": "method_declaration",
+        "start_byte": 5020,
+        "end_byte": 6003
+      },
+      "position": 2
     },
     {
       "action": "insert",
@@ -162,7 +187,7 @@
         "start_byte": 5020,
         "end_byte": 6003
       },
-      "position": 4,
+      "position": 3,
       "subtree": true
     },
     {
@@ -173,22 +198,24 @@
           10,
           3,
           14,
+          4,
           0
         ],
-        "type": "visibility_modifier",
-        "start_byte": 5186,
-        "end_byte": 5192
+        "type": "expression_statement",
+        "start_byte": 5279,
+        "end_byte": 5569
       },
       "parent": {
         "tree": "after",
         "path": [
           10,
           3,
-          16
+          14,
+          4
         ],
-        "type": "method_declaration",
-        "start_byte": 6479,
-        "end_byte": 7015
+        "type": "compound_statement",
+        "start_byte": 5073,
+        "end_byte": 6003
       },
       "position": 0,
       "old_parent": {
@@ -196,73 +223,18 @@
         "path": [
           10,
           3,
-          14
+          14,
+          4
         ],
-        "type": "method_declaration",
-        "start_byte": 5186,
+        "type": "compound_statement",
+        "start_byte": 5269,
         "end_byte": 6560
       },
       "old_position": 0,
       "subtree": true,
-      "dest_start_byte": 6479,
-      "dest_end_byte": 6485,
+      "dest_start_byte": 5083,
+      "dest_end_byte": 5373,
       "group_id": "group-1"
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          10,
-          3,
-          16,
-          1
-        ],
-        "type": "function",
-        "label": "function",
-        "start_byte": 6486,
-        "end_byte": 6494
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          10,
-          3,
-          16
-        ],
-        "type": "method_declaration",
-        "start_byte": 6479,
-        "end_byte": 7015
-      },
-      "position": 1
-    },
-    {
-      "action": "insert",
-      "node": {
-        "tree": "after",
-        "path": [
-          10,
-          3,
-          16,
-          2
-        ],
-        "type": "name",
-        "label": "getParamsToSign",
-        "start_byte": 6495,
-        "end_byte": 6510
-      },
-      "parent": {
-        "tree": "after",
-        "path": [
-          10,
-          3,
-          16
-        ],
-        "type": "method_declaration",
-        "start_byte": 6479,
-        "end_byte": 7015
-      },
-      "position": 2
     },
     {
       "action": "move",
@@ -272,11 +244,195 @@
           10,
           3,
           14,
+          4,
+          1
+        ],
+        "type": "comment",
+        "label": "//Optional parameters should not be set if they have not been set in the config as",
+        "start_byte": 5579,
+        "end_byte": 5661
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5073,
+        "end_byte": 6003
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5269,
+        "end_byte": 6560
+      },
+      "old_position": 1,
+      "dest_start_byte": 5383,
+      "dest_end_byte": 5465,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4,
+          2
+        ],
+        "type": "comment",
+        "label": "//the parameter may be considered invalid by the Oauth service.",
+        "start_byte": 5670,
+        "end_byte": 5733
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5073,
+        "end_byte": 6003
+      },
+      "position": 2,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5269,
+        "end_byte": 6560
+      },
+      "old_position": 2,
+      "dest_start_byte": 5474,
+      "dest_end_byte": 5537,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4,
           3
         ],
-        "type": "formal_parameters",
-        "start_byte": 5217,
-        "end_byte": 5264
+        "type": "expression_statement",
+        "start_byte": 5742,
+        "end_byte": 5952
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5073,
+        "end_byte": 6003
+      },
+      "position": 3,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5269,
+        "end_byte": 6560
+      },
+      "old_position": 3,
+      "subtree": true,
+      "dest_start_byte": 5546,
+      "dest_end_byte": 5756,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4,
+          4
+        ],
+        "type": "foreach_statement",
+        "start_byte": 5962,
+        "end_byte": 6169
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5073,
+        "end_byte": 6003
+      },
+      "position": 4,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          10,
+          3,
+          14,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 5269,
+        "end_byte": 6560
+      },
+      "old_position": 4,
+      "subtree": true,
+      "dest_start_byte": 5766,
+      "dest_end_byte": 5973,
+      "group_id": "group-1"
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          10,
+          3,
+          16,
+          4
+        ],
+        "type": "compound_statement",
+        "start_byte": 6562,
+        "end_byte": 7015
       },
       "parent": {
         "tree": "after",
@@ -289,23 +445,7 @@
         "start_byte": 6479,
         "end_byte": 7015
       },
-      "position": 3,
-      "old_parent": {
-        "tree": "before",
-        "path": [
-          10,
-          3,
-          14
-        ],
-        "type": "method_declaration",
-        "start_byte": 5186,
-        "end_byte": 6560
-      },
-      "old_position": 3,
-      "subtree": true,
-      "dest_start_byte": 6510,
-      "dest_end_byte": 6557,
-      "group_id": "group-1"
+      "position": 4
     },
     {
       "action": "insert",
@@ -1390,46 +1530,10 @@
     },
     {
       "left_line": 144,
-      "right_line": -1
-    },
-    {
-      "left_line": 145,
-      "right_line": -1
-    },
-    {
-      "left_line": 146,
-      "right_line": -1
-    },
-    {
-      "left_line": 147,
-      "right_line": -1
-    },
-    {
-      "left_line": 148,
-      "right_line": -1
-    },
-    {
-      "left_line": 149,
-      "right_line": -1
-    },
-    {
-      "left_line": 150,
-      "right_line": -1
-    },
-    {
-      "left_line": 151,
-      "right_line": -1
-    },
-    {
-      "left_line": 152,
-      "right_line": -1
-    },
-    {
-      "left_line": 153,
       "right_line": 144
     },
     {
-      "left_line": -1,
+      "left_line": 145,
       "right_line": 145
     },
     {
@@ -1453,87 +1557,87 @@
       "right_line": 150
     },
     {
-      "left_line": 154,
+      "left_line": -1,
       "right_line": 151
     },
     {
-      "left_line": 155,
+      "left_line": -1,
       "right_line": 152
     },
     {
-      "left_line": 156,
+      "left_line": -1,
       "right_line": 153
     },
     {
-      "left_line": 157,
+      "left_line": -1,
       "right_line": 154
     },
     {
-      "left_line": 158,
+      "left_line": -1,
       "right_line": 155
     },
     {
-      "left_line": 159,
+      "left_line": -1,
       "right_line": 156
     },
     {
-      "left_line": 160,
+      "left_line": -1,
       "right_line": 157
     },
     {
-      "left_line": 161,
+      "left_line": -1,
       "right_line": 158
     },
     {
-      "left_line": 162,
+      "left_line": -1,
       "right_line": 159
     },
     {
-      "left_line": 163,
+      "left_line": -1,
       "right_line": 160
     },
     {
-      "left_line": 164,
+      "left_line": -1,
       "right_line": 161
     },
     {
-      "left_line": 165,
+      "left_line": -1,
       "right_line": 162
     },
     {
-      "left_line": 166,
+      "left_line": -1,
       "right_line": 163
     },
     {
-      "left_line": 167,
+      "left_line": -1,
       "right_line": 164
     },
     {
-      "left_line": 168,
+      "left_line": -1,
       "right_line": 165
     },
     {
-      "left_line": 169,
+      "left_line": -1,
       "right_line": 166
     },
     {
-      "left_line": 170,
+      "left_line": -1,
       "right_line": 167
     },
     {
-      "left_line": 171,
+      "left_line": -1,
       "right_line": 168
     },
     {
-      "left_line": 172,
+      "left_line": -1,
       "right_line": 169
     },
     {
-      "left_line": 173,
+      "left_line": -1,
       "right_line": 170
     },
     {
-      "left_line": 174,
+      "left_line": -1,
       "right_line": 171
     },
     {
@@ -1545,16 +1649,8 @@
       "right_line": 173
     },
     {
-      "left_line": 175,
+      "left_line": -1,
       "right_line": 174
-    },
-    {
-      "left_line": 176,
-      "right_line": -1
-    },
-    {
-      "left_line": 177,
-      "right_line": -1
     },
     {
       "left_line": -1,
@@ -1581,51 +1677,131 @@
       "right_line": 180
     },
     {
-      "left_line": -1,
+      "left_line": 146,
       "right_line": 181
     },
     {
-      "left_line": -1,
+      "left_line": 147,
       "right_line": 182
     },
     {
-      "left_line": -1,
+      "left_line": 148,
       "right_line": 183
     },
     {
-      "left_line": -1,
+      "left_line": 149,
       "right_line": 184
     },
     {
-      "left_line": -1,
+      "left_line": 150,
       "right_line": 185
     },
     {
-      "left_line": -1,
+      "left_line": 151,
       "right_line": 186
     },
     {
-      "left_line": -1,
+      "left_line": 152,
       "right_line": 187
     },
     {
-      "left_line": -1,
+      "left_line": 153,
       "right_line": 188
     },
     {
-      "left_line": -1,
+      "left_line": 154,
       "right_line": 189
     },
     {
-      "left_line": 178,
-      "right_line": 190
-    },
-    {
-      "left_line": 179,
+      "left_line": 155,
       "right_line": -1
     },
     {
-      "left_line": 180,
+      "left_line": 156,
+      "right_line": -1
+    },
+    {
+      "left_line": 157,
+      "right_line": -1
+    },
+    {
+      "left_line": 158,
+      "right_line": -1
+    },
+    {
+      "left_line": 159,
+      "right_line": -1
+    },
+    {
+      "left_line": 160,
+      "right_line": -1
+    },
+    {
+      "left_line": 161,
+      "right_line": -1
+    },
+    {
+      "left_line": 162,
+      "right_line": -1
+    },
+    {
+      "left_line": 163,
+      "right_line": -1
+    },
+    {
+      "left_line": 164,
+      "right_line": -1
+    },
+    {
+      "left_line": 165,
+      "right_line": -1
+    },
+    {
+      "left_line": 166,
+      "right_line": -1
+    },
+    {
+      "left_line": 167,
+      "right_line": -1
+    },
+    {
+      "left_line": 168,
+      "right_line": -1
+    },
+    {
+      "left_line": 169,
+      "right_line": -1
+    },
+    {
+      "left_line": 170,
+      "right_line": -1
+    },
+    {
+      "left_line": 171,
+      "right_line": -1
+    },
+    {
+      "left_line": 172,
+      "right_line": -1
+    },
+    {
+      "left_line": 173,
+      "right_line": -1
+    },
+    {
+      "left_line": 174,
+      "right_line": -1
+    },
+    {
+      "left_line": 175,
+      "right_line": 190
+    },
+    {
+      "left_line": 176,
+      "right_line": -1
+    },
+    {
+      "left_line": 177,
       "right_line": -1
     },
     {
@@ -1637,8 +1813,16 @@
       "right_line": 192
     },
     {
-      "left_line": -1,
+      "left_line": 178,
       "right_line": 193
+    },
+    {
+      "left_line": 179,
+      "right_line": -1
+    },
+    {
+      "left_line": 180,
+      "right_line": -1
     },
     {
       "left_line": -1,

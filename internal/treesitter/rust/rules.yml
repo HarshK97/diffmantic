@@ -103,3 +103,52 @@ scaffolding:
   - let_declaration
   - use_declaration
   - expression_statement
+
+keywords:
+  - fn
+  - let
+  - mut
+  - const
+  - static
+  - struct
+  - enum
+  - union
+  - trait
+  - impl
+  - type
+  - use
+  - mod
+  - pub
+  - crate
+  - self
+  - Super
+  - if
+  - else
+  - match
+  - while
+  - loop
+  - for
+  - in
+  - return
+  - break
+  - continue
+  - async
+  - await
+  - unsafe
+  - where
+  - ref
+  - dyn
+
+declarations:
+  - function_item
+  - struct_item
+  - enum_item
+  - union_item
+  - trait_item
+  - impl_item
+  - type_item
+  - mod_item
+  - const_item
+  - static_item
+
+

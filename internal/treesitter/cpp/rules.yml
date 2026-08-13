@@ -126,3 +126,87 @@ scaffolding:
   - preproc_ifdef
   - preproc_else
   - preproc_elif
+
+keywords:
+  - class
+  - struct
+  - union
+  - enum
+  - typedef
+  - namespace
+  - template
+  - typename
+  - concept
+  - requires
+  - public
+  - private
+  - protected
+  - virtual
+  - override
+  - final
+  - constexpr
+  - consteval
+  - constinit
+  - explicit
+  - inline
+  - friend
+  - static
+  - extern
+  - mutable
+  - const
+  - volatile
+  - auto
+  - decltype
+  - void
+  - bool
+  - char
+  - wchar_t
+  - char8_t
+  - char16_t
+  - char32_t
+  - short
+  - int
+  - long
+  - float
+  - double
+  - signed
+  - unsigned
+  - if
+  - else
+  - switch
+  - case
+  - default
+  - for
+  - while
+  - do
+  - goto
+  - continue
+  - break
+  - return
+  - try
+  - catch
+  - throw
+  - noexcept
+  - new
+  - delete
+  - using
+  - sizeof
+  - co_await
+  - co_yield
+  - co_return
+
+declarations:
+  - function_definition
+  - declaration
+  - class_specifier
+  - struct_specifier
+  - union_specifier
+  - enum_specifier
+  - type_definition
+  - namespace_definition
+  - template_declaration
+  - concept_definition
+  - parameter_declaration
+  - field_declaration
+
+

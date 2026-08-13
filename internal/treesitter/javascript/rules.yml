@@ -124,3 +124,53 @@ scaffolding:
   - jsx_self_closing_element
   - jsx_attribute
   - jsx_expression
+
+keywords:
+  - function
+  - const
+  - let
+  - var
+  - class
+  - extends
+  - import
+  - export
+  - default
+  - from
+  - as
+  - if
+  - else
+  - switch
+  - case
+  - for
+  - while
+  - do
+  - return
+  - break
+  - continue
+  - yield
+  - async
+  - await
+  - try
+  - catch
+  - finally
+  - throw
+  - new
+  - this
+  - super
+  - typeof
+  - instanceof
+  - void
+  - delete
+  - in
+  - of
+
+declarations:
+  - function_declaration
+  - generator_function_declaration
+  - class_declaration
+  - method_definition
+  - variable_declaration
+  - lexical_declaration
+  - field_definition
+
+
