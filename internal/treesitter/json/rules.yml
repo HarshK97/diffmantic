@@ -1,0 +1,24 @@
+flattened:
+  - string
+
+ignored:
+  - "{"
+  - "}"
+  - "["
+  - "]"
+  - ","
+  - ":"
+
+scaffolding:
+  - document
+  - object
+  - array
+  - pair
+
+unordered:
+  - object
+
+keywords:
+  - "true"
+  - "false"
+  - "null"

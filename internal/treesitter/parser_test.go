@@ -218,6 +218,17 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 			t.Error("Parse(): expected non-nil AST root")
 		}
 	})
+
+	t.Run("valid json source", func(t *testing.T) {
+		src := []byte(`{"name": "diffmantic", "version": 1.0, "active": true}`)
+		ast, err := Parse(src, "config.json")
+		if err != nil {
+			t.Fatalf("Parse(): unexpected error: %v", err)
+		}
+		if ast == nil {
+			t.Error("Parse(): expected non-nil AST root")
+		}
+	})
 	t.Run("unknown extension", func(t *testing.T) {
 		src := []byte(`some text`)
 		ast, err := Parse(src, "main.xyz")

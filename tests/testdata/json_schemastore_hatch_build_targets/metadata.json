@@ -1,0 +1,6 @@
+{
+  "repository": "SchemaStore/schemastore",
+  "commit": "7bd9236c5b2548b91748f96d37c2f4aaf7441dd1",
+  "description": "Add hatch build targets schema",
+  "language": "json"
+}

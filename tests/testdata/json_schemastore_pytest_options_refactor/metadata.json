@@ -1,0 +1,6 @@
+{
+  "repository": "SchemaStore/schemastore",
+  "commit": "b5a375a88d99238fc36347c51144d2d8032a56e9",
+  "description": "Refactor pytest schema options",
+  "language": "json"
+}
