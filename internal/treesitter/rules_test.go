@@ -182,3 +182,15 @@ func TestRulesAliased(t *testing.T) {
 		})
 	}
 }
+
+func TestRulesUnordered(t *testing.T) {
+	r := &Rules{
+		Unordered: []string{"object", "start_tag"},
+	}
+	if len(r.Unordered) != 2 {
+		t.Fatalf("expected 2 unordered entries, got %d", len(r.Unordered))
+	}
+	if r.Unordered[0] != "object" || r.Unordered[1] != "start_tag" {
+		t.Errorf("unexpected unordered entries: %v", r.Unordered)
+	}
+}

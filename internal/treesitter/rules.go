@@ -16,6 +16,7 @@ type Rules struct {
 	Scaffolding  []string          `yaml:"scaffolding"`
 	Keywords     []string          `yaml:"keywords"`
 	Declarations []string          `yaml:"declarations"`
+	Unordered    []string          `yaml:"unordered"`
 }
 
 //go:embed */rules.yml

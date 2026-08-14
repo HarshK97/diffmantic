@@ -22,6 +22,7 @@ type ASTNode struct {
 	HasError        bool   // True if parse tree contained any ERROR nodes
 	ParseErrorCount int    // Total count of ERROR nodes in parse tree
 	IsKeyword       bool   // True if node is a keyword token
+	IsUnordered     bool   // True if children of this container node are order-insensitive
 
 	// Hash is the combined hash of node type, label, and children.
 	Hash uint64
@@ -185,6 +186,9 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		}
 		if slices.Contains(rules.Keywords, nodeType) || (label != "" && slices.Contains(rules.Keywords, label)) {
 			node.IsKeyword = true
+		}
+		if slices.Contains(rules.Unordered, node.Type) {
+			node.IsUnordered = true
 		}
 	}
 
