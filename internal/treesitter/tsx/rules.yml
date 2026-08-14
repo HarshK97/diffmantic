@@ -197,6 +197,10 @@ unordered:
   - jsx_self_closing_element
   - object_pattern
 
-
-
+pairs:
+  - pair
+  - property_assignment
+  - pair_pattern
+  - property_signature
+  - jsx_attribute
 

@@ -183,22 +183,6 @@ func candidate(
 	return best
 }
 
-func getKeyLabel(n *treesitter.ASTNode) string {
-	if n == nil || len(n.Children) == 0 {
-		return ""
-	}
-	k := n.Children[0]
-	if k.Label != "" {
-		return k.Label
-	}
-	for _, desc := range k.Descendants() {
-		if desc.Label != "" {
-			return desc.Label
-		}
-	}
-	return ""
-}
-
 // labelOverlap returns the number of shared leaf labels in t2's subtree.
 func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
 	count := 0

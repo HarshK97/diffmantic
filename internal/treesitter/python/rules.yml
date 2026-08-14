@@ -159,5 +159,7 @@ unordered:
   - dictionary
   - set
 
-
+pairs:
+  - pair
+  - keyword_argument
 

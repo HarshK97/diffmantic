@@ -156,4 +156,6 @@ declarations:
   - parameter_declaration
   - field_declaration
 
-
+pairs:
+  - field_designator
+  - initializer_pair

@@ -127,5 +127,7 @@ declarations:
 unordered:
   - interface_type
 
-
+pairs:
+  - key_value_pair
+  - keyed_element
 

@@ -177,6 +177,8 @@ unordered:
   - object
   - object_pattern
 
-
-
+pairs:
+  - pair
+  - property_assignment
+  - pair_pattern
 

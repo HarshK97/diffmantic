@@ -181,6 +181,9 @@ unordered:
   - object_type
   - object_pattern
 
-
-
+pairs:
+  - pair
+  - property_assignment
+  - pair_pattern
+  - property_signature
 

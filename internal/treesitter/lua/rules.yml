@@ -110,3 +110,5 @@ declarations:
   - function_definition
   - variable_declaration
 
+pairs:
+  - field

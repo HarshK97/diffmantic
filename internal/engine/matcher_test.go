@@ -243,3 +243,54 @@ func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
 		t.Errorf("MatchContainerKeywords should map kw1 to kw2 under mapped parents, got %v", m.Src()[kw1])
 	}
 }
+
+func TestMatchPairValues(t *testing.T) {
+	k1 := testutil.Leaf("string", "\"priority\"")
+	val1 := testutil.Node("object", "", testutil.Leaf("string", "\"a\""))
+	p1 := testutil.Node("key_value_pair", "", k1, val1)
+	srcRoot := testutil.Node("root", "", p1)
+	srcRoot.Language = "go"
+
+	k2 := testutil.Leaf("string", "\"priority\"")
+	val2 := testutil.Node("object", "", testutil.Leaf("string", "\"b\""))
+	p2 := testutil.Node("key_value_pair", "", k2, val2)
+	dstRoot := testutil.Node("root", "", p2)
+
+	m := NewMapping()
+	m.Add(p1, p2)
+
+	matchPairValues(srcRoot, dstRoot, m)
+
+	if !m.Has(val1) || m.Src()[val1] != val2 {
+		t.Errorf("matchPairValues should map val1 to val2, got %v", m.Src()[val1])
+	}
+}
+
+func TestMatchPairKeyNameAffinity(t *testing.T) {
+	// Old pair: "priority": { ... }
+	kOld := testutil.Leaf("string", "\"priority\"")
+	valOld := testutil.Node("object", "")
+	pairOld := testutil.Node("pair", "", kOld, valOld)
+	srcObj := testutil.Node("object", "", pairOld)
+
+	// New pair 1: "priority": { ... }
+	kNew1 := testutil.Leaf("string", "\"priority\"")
+	valNew1 := testutil.Node("object", "")
+	pairNew1 := testutil.Node("pair", "", kNew1, valNew1)
+
+	// New pair 2: "oneOf": [ ... ]
+	kNew2 := testutil.Leaf("string", "\"oneOf\"")
+	valNew2 := testutil.Node("array", "")
+	pairNew2 := testutil.Node("pair", "", kNew2, valNew2)
+
+	dstObj := testutil.Node("object", "", pairNew1, pairNew2)
+
+	r := Match(srcObj, dstObj, nil, nil)
+	if r == nil || r.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+
+	if r.Mappings.Src()[pairOld] != pairNew1 {
+		t.Errorf("pairOld ('priority') should match pairNew1 ('priority'), got %v", r.Mappings.Src()[pairOld])
+	}
+}

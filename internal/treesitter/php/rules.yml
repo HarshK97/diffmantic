@@ -176,3 +176,7 @@ unordered:
   - attribute_group
   - attribute_list
 
+pairs:
+  - pair
+  - array_element_initializer
+

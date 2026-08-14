@@ -194,3 +194,15 @@ func TestRulesUnordered(t *testing.T) {
 		t.Errorf("unexpected unordered entries: %v", r.Unordered)
 	}
 }
+
+func TestRulesPairs(t *testing.T) {
+	r := &Rules{
+		Pairs: []string{"pair", "key_value_pair"},
+	}
+	if len(r.Pairs) != 2 {
+		t.Fatalf("expected 2 pairs entries, got %d", len(r.Pairs))
+	}
+	if r.Pairs[0] != "pair" || r.Pairs[1] != "key_value_pair" {
+		t.Errorf("unexpected pairs entries: %v", r.Pairs)
+	}
+}
