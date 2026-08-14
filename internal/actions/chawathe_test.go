@@ -41,3 +41,34 @@ func TestUnorderedNodeMatching(t *testing.T) {
 		}
 	}
 }
+
+func TestHTMLSelfClosingTagMatching(t *testing.T) {
+	// Verify that <meta charset="utf-8"> vs <meta charset="utf-8"/> produces 0 actions
+	src := []byte(`<meta charset="utf-8">`)
+	dst := []byte(`<meta charset="utf-8"/>`)
+
+	srcAST, err := treesitter.Parse(src, "index.html")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "index.html")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	matchResult := engine.Match(srcAST, dstAST, src, dst)
+	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+
+	for _, a := range script.Actions() {
+		if a.Type == Move {
+			t.Errorf("expected 0 Move actions for void self-closing tag conversion, got: %s on node %s", a.Type, a.Node.Type)
+		}
+	}
+
+	if script.Size() != 0 {
+		t.Errorf("expected 0 actions for semantic void tag conversion, got %d actions", script.Size())
+		for _, a := range script.Actions() {
+			t.Logf("unexpected action: %s on node %s (%s)", a.Type, a.Node.Type, a.Node.Label)
+		}
+	}
+}
