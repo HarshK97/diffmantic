@@ -175,4 +175,12 @@ declarations:
   - variable_declaration
   - lexical_declaration
 
+unordered:
+  - object
+  - interface_body
+  - object_type
+  - object_pattern
+
+
+
 

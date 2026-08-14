@@ -187,4 +187,8 @@ declarations:
   - local_variable_declaration
   - field_declaration
 
+unordered:
+  - annotation
+
+
 

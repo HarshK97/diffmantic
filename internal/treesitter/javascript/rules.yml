@@ -173,4 +173,10 @@ declarations:
   - lexical_declaration
   - field_definition
 
+unordered:
+  - object
+  - object_pattern
+
+
+
 

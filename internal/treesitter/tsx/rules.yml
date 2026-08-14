@@ -189,4 +189,14 @@ declarations:
   - variable_declaration
   - lexical_declaration
 
+unordered:
+  - object
+  - interface_body
+  - object_type
+  - jsx_opening_element
+  - jsx_self_closing_element
+  - object_pattern
+
+
+
 

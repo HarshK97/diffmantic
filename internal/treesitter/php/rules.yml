@@ -171,4 +171,8 @@ declarations:
   - property_declaration
   - const_declaration
 
+unordered:
+  - array_creation_expression
+  - attribute_group
+  - attribute_list
 

@@ -124,4 +124,8 @@ declarations:
   - const_declaration
   - var_declaration
 
+unordered:
+  - interface_type
+
+
 
