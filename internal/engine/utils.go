@@ -48,6 +48,22 @@ func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
 	return s
 }
 
+func getKeyLabel(n *treesitter.ASTNode) string {
+	if n == nil || len(n.Children) == 0 {
+		return ""
+	}
+	k := n.Children[0]
+	if k.Label != "" {
+		return k.Label
+	}
+	for _, desc := range k.Descendants() {
+		if desc.Label != "" {
+			return desc.Label
+		}
+	}
+	return ""
+}
+
 func commonMappedDescendants(t1, t2 *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) (common, lenS1, lenS2 int) {
 	s1 := t1.Descendants()
 	s2 := descendantSet(t2)

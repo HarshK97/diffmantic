@@ -348,6 +348,15 @@ func getReceiverTypeName(n *treesitter.ASTNode) string {
 	return ""
 }
 
+func getParentPairKey(n *treesitter.ASTNode) string {
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if label := getKeyLabel(curr.Parent); label != "" {
+			return label
+		}
+	}
+	return ""
+}
+
 func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	if t1 == nil || t1.Language == "" {
 		return
@@ -361,22 +370,51 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		if !slices.Contains(r.Pairs, n1.Type) {
 			continue
 		}
-		n2 := m.Src()[n1]
-		if n2 == nil || !slices.Contains(r.Pairs, n2.Type) {
-			continue
-		}
-		if len(n1.Children) < 2 || len(n2.Children) < 2 {
-			continue
-		}
-		val1 := n1.Children[len(n1.Children)-1]
-		val2 := n2.Children[len(n2.Children)-1]
 
-		if m.Has(val1) || m.HasDst(val2) {
-			continue
+		var n2 *treesitter.ASTNode
+		if m.Has(n1) {
+			n2 = m.Src()[n1]
+			if n2 == nil || !slices.Contains(r.Pairs, n2.Type) {
+				continue
+			}
+		} else {
+			key1 := getKeyLabel(n1)
+			if key1 == "" {
+				continue
+			}
+			anc1 := NearestMatchedAncestor(n1, m, false)
+			pKey1 := getParentPairKey(n1)
+
+			for _, cand := range t2.PostOrder() {
+				if !slices.Contains(r.Pairs, cand.Type) || m.HasDst(cand) {
+					continue
+				}
+				if getKeyLabel(cand) != key1 {
+					continue
+				}
+				anc2 := NearestMatchedAncestor(cand, m, true)
+				if !areAncestorsMatched(anc1, anc2, m) {
+					continue
+				}
+
+				pKey2 := getParentPairKey(cand)
+				if pKey1 != pKey2 {
+					continue
+				}
+
+				n2 = cand
+				m.Add(n1, n2)
+				m.Add(n1.Children[0], n2.Children[0])
+				break
+			}
 		}
 
-		if len(val1.Children) > 0 && len(val2.Children) > 0 && val1.Type == val2.Type {
-			m.Add(val1, val2)
+		if n2 != nil && len(n1.Children) >= 2 && len(n2.Children) >= 2 {
+			val1 := n1.Children[len(n1.Children)-1]
+			val2 := n2.Children[len(n2.Children)-1]
+			if !m.Has(val1) && !m.HasDst(val2) && len(val1.Children) > 0 && len(val2.Children) > 0 && val1.Type == val2.Type {
+				m.Add(val1, val2)
+			}
 		}
 	}
 }
