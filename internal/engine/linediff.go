@@ -50,9 +50,20 @@ func LineDiff(linesA, linesB []string) map[int]int {
 	i, j := lenA, lenB
 	for i > 0 && j > 0 {
 		if subA[i-1] == subB[j-1] {
-			matchedA[start+i-1] = start + j - 1
+			bestJ := j
+			if i-j > 20 || j-i > 20 {
+				for k := j - 1; k >= 1; k-- {
+					if subA[i-1] == subB[k-1] && dp[(i-1)*stride+(k-1)]+1 == dp[i*stride+j] {
+						if i-k <= 20 && k-i <= 20 {
+							bestJ = k
+							break
+						}
+					}
+				}
+			}
+			matchedA[start+i-1] = start + bestJ - 1
 			i--
-			j--
+			j = bestJ - 1
 		} else if dp[(i-1)*stride+j] >= dp[i*stride+(j-1)] {
 			i--
 		} else {
