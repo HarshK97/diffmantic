@@ -154,5 +154,7 @@ declarations:
 unordered:
   - use_declaration
 
-
+pairs:
+  - field_initializer
+  - struct_pattern_field
 

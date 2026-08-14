@@ -16,6 +16,7 @@ type Rules struct {
 	Scaffolding  []string          `yaml:"scaffolding"`
 	Keywords     []string          `yaml:"keywords"`
 	Declarations []string          `yaml:"declarations"`
+	Pairs        []string          `yaml:"pairs"`
 	Unordered    []string          `yaml:"unordered"`
 }
 

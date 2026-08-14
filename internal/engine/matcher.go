@@ -24,6 +24,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
 	// Match AST nodes top-down, by declaration, and bottom-up using line partitioning.
 	TopDown(t1, t2, minHeight, mappings, part)
 	matchDeclarations(t1, t2, mappings)
+	matchPairValues(t1, t2, mappings)
 	BottomUp(t1, t2, mappings, minDice)
 	ContestContainers(t1, t2, mappings)
 
@@ -345,4 +346,37 @@ func getReceiverTypeName(n *treesitter.ASTNode) string {
 		}
 	}
 	return ""
+}
+
+func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	if t1 == nil || t1.Language == "" {
+		return
+	}
+	r := treesitter.GetRules(t1.Language)
+	if r == nil || len(r.Pairs) == 0 {
+		return
+	}
+
+	for _, n1 := range t1.PostOrder() {
+		if !slices.Contains(r.Pairs, n1.Type) {
+			continue
+		}
+		n2 := m.Src()[n1]
+		if n2 == nil || !slices.Contains(r.Pairs, n2.Type) {
+			continue
+		}
+		if len(n1.Children) < 2 || len(n2.Children) < 2 {
+			continue
+		}
+		val1 := n1.Children[len(n1.Children)-1]
+		val2 := n2.Children[len(n2.Children)-1]
+
+		if m.Has(val1) || m.HasDst(val2) {
+			continue
+		}
+
+		if len(val1.Children) > 0 && len(val2.Children) > 0 && val1.Type == val2.Type {
+			m.Add(val1, val2)
+		}
+	}
 }

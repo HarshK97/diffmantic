@@ -131,4 +131,6 @@ declarations:
   - test_declaration
   - using_namespace_declaration
 
-
+pairs:
+  - initializer_pair
+  - field_initializer

@@ -243,3 +243,25 @@ func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
 		t.Errorf("MatchContainerKeywords should map kw1 to kw2 under mapped parents, got %v", m.Src()[kw1])
 	}
 }
+
+func TestMatchPairValues(t *testing.T) {
+	k1 := testutil.Leaf("string", "\"priority\"")
+	val1 := testutil.Node("object", "", testutil.Leaf("string", "\"a\""))
+	p1 := testutil.Node("key_value_pair", "", k1, val1)
+	srcRoot := testutil.Node("root", "", p1)
+	srcRoot.Language = "go"
+
+	k2 := testutil.Leaf("string", "\"priority\"")
+	val2 := testutil.Node("object", "", testutil.Leaf("string", "\"b\""))
+	p2 := testutil.Node("key_value_pair", "", k2, val2)
+	dstRoot := testutil.Node("root", "", p2)
+
+	m := NewMapping()
+	m.Add(p1, p2)
+
+	matchPairValues(srcRoot, dstRoot, m)
+
+	if !m.Has(val1) || m.Src()[val1] != val2 {
+		t.Errorf("matchPairValues should map val1 to val2, got %v", m.Src()[val1])
+	}
+}

@@ -159,5 +159,6 @@ unordered:
   - hash
   - hash_pattern
 
-
+pairs:
+  - pair
 
