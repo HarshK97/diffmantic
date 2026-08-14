@@ -1,0 +1,6 @@
+{
+  "sha": "beadd424cd60127136f7aa7e54b113cbf6c23fcc",
+  "repo": "poetry",
+  "file": "pyproject.toml",
+  "commit_message": "add support for PEP 639 License Clarity (#10413)"
+}

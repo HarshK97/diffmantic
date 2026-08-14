@@ -1,0 +1,6 @@
+{
+  "sha": "dd22b5c09fe4aaf7b6b4e051cbaebfc51d42a725",
+  "repo": "schemastore",
+  "file": "src/test/ryl/01-valid.toml",
+  "commit_message": "feat(ryl): update schema to v0.17.0 (#5815)"
+}

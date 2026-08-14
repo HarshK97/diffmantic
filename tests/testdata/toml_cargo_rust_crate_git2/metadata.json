@@ -1,0 +1,6 @@
+{
+  "sha": "e5fe33aa93b7da23e8ae13fa18dc29d22656584c",
+  "repo": "cargo",
+  "file": "Cargo.toml",
+  "commit_message": "chore(deps): update rust crate git2 to 0.21.0"
+}

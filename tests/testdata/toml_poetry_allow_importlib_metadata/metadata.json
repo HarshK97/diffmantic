@@ -1,0 +1,6 @@
+{
+  "sha": "576016f4606f9011f581ff051fad9501bd43b57f",
+  "repo": "poetry",
+  "file": "pyproject.toml",
+  "commit_message": "deps: allow importlib-metadata 8.7 (#10511)"
+}

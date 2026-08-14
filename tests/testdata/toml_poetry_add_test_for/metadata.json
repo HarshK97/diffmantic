@@ -1,0 +1,6 @@
+{
+  "sha": "c04069d97f2fbf397baf01a5cc51b59e0c9f3b0b",
+  "repo": "poetry",
+  "file": "pyproject.toml",
+  "commit_message": "Add test for Git LFS repository cloning (#10724)"
+}

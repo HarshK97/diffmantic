@@ -1,0 +1,6 @@
+{
+  "sha": "081aa5a8f917a1c909504f01789465c5eef9c0bf",
+  "repo": "cargo",
+  "file": "Cargo.toml",
+  "commit_message": "Unpin opeensl-src"
+}

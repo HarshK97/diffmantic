@@ -1,0 +1,6 @@
+{
+  "sha": "714c0249f5ee5d772c9125a7c74e038709750a37",
+  "repo": "poetry",
+  "file": "pyproject.toml",
+  "commit_message": "chore: update dependencies and fix warnings (#9933)"
+}

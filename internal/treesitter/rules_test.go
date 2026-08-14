@@ -206,3 +206,16 @@ func TestRulesPairs(t *testing.T) {
 		t.Errorf("unexpected pairs entries: %v", r.Pairs)
 	}
 }
+
+func TestRulesTOML(t *testing.T) {
+	rules := GetRules("toml")
+	if rules == nil {
+		t.Fatal("expected toml rules to be loaded")
+	}
+	if len(rules.Scaffolding) == 0 {
+		t.Error("expected scaffolding in toml rules")
+	}
+	if len(rules.Unordered) == 0 {
+		t.Error("expected unordered nodes in toml rules")
+	}
+}
