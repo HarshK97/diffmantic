@@ -1,0 +1,52 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          0
+        ],
+        "type": "comment",
+        "label": "/* Cool Info Box Styling */",
+        "start_byte": 0,
+        "end_byte": 27
+      },
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "stylesheet",
+        "start_byte": 0,
+        "end_byte": 90
+      },
+      "position": 0
+    }
+  ],
+  "line_alignment": [
+    {
+      "left_line": -1,
+      "right_line": 0
+    },
+    {
+      "left_line": 0,
+      "right_line": 1
+    },
+    {
+      "left_line": 1,
+      "right_line": 2
+    },
+    {
+      "left_line": 2,
+      "right_line": 3
+    },
+    {
+      "left_line": 3,
+      "right_line": 4
+    },
+    {
+      "left_line": 4,
+      "right_line": 5
+    }
+  ]
+}
