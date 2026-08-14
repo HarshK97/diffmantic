@@ -217,6 +217,10 @@ func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
 }
 
 func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
+	if w == nil || x == nil {
+		return
+	}
+
 	for _, c := range w.children {
 		delete(s.srcInOrder, c)
 	}
@@ -240,6 +244,16 @@ func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
 				s2 = append(s2, c)
 			}
 		}
+	}
+
+	if x.IsUnordered || (w.orig != nil && w.orig.IsUnordered) {
+		for _, b := range s2 {
+			if a, ok := s.cpyDstToSrc[b]; ok {
+				s.srcInOrder[a] = true
+				s.dstInOrder[b] = true
+			}
+		}
+		return
 	}
 
 	lcsPairs := s.lcs(s1, s2)

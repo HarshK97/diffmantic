@@ -103,8 +103,10 @@ func candidate(
 	bestDice := -1.0
 	bestLabelScore := -1
 	var bestSamePositional bool
+	var bestKeyMatched bool
 
 	t1Labels := t1.LeafLabels()
+	t1Key := getKeyLabel(t1)
 
 	for _, c := range candidates {
 		if m.HasDst(c) {
@@ -138,8 +140,14 @@ func candidate(
 		diff := sim - bestSim
 		isBetter := false
 		ls := labelOverlap(t1Labels, c)
+		cKey := getKeyLabel(c)
+		keyMatched := t1Key != "" && cKey != "" && t1Key == cKey
 
-		if math.Abs(diff) > 0.05 {
+		if t1Key != "" && keyMatched != bestKeyMatched && t1.IsUnordered {
+			if keyMatched {
+				isBetter = true
+			}
+		} else if math.Abs(diff) > 0.05 {
 			if sim > bestSim {
 				isBetter = true
 			}
@@ -169,9 +177,26 @@ func candidate(
 			best = c
 			bestLabelScore = ls
 			bestSamePositional = samePositional
+			bestKeyMatched = keyMatched
 		}
 	}
 	return best
+}
+
+func getKeyLabel(n *treesitter.ASTNode) string {
+	if n == nil || len(n.Children) == 0 {
+		return ""
+	}
+	k := n.Children[0]
+	if k.Label != "" {
+		return k.Label
+	}
+	for _, desc := range k.Descendants() {
+		if desc.Label != "" {
+			return desc.Label
+		}
+	}
+	return ""
 }
 
 // labelOverlap returns the number of shared leaf labels in t2's subtree.
