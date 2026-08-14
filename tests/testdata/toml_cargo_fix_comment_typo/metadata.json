@@ -1,0 +1,6 @@
+{
+  "sha": "a3ca5ff5d44b9b6e0055bb1df48a3fcd057c0632",
+  "repo": "cargo",
+  "file": "Cargo.toml",
+  "commit_message": "fix comment typo in Cargo.toml"
+}

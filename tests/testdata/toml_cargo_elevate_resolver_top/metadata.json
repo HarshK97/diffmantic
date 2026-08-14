@@ -1,0 +1,6 @@
+{
+  "sha": "2a7859217fa316b4c752d5076c67cc34e0d30b95",
+  "repo": "cargo",
+  "file": "triagebot.toml",
+  "commit_message": "chore: Elevate resolver to top-level mod"
+}

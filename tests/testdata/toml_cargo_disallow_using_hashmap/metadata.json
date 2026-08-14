@@ -1,0 +1,6 @@
+{
+  "sha": "38bb216b6eb05b50e5733c668488dd88636100a6",
+  "repo": "cargo",
+  "file": "clippy.toml",
+  "commit_message": "Disallow using stdlib's HashMap/HashSet and IndexMap/IndexSet data structures"
+}

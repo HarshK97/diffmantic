@@ -1,0 +1,6 @@
+{
+  "sha": "fb989d4d1b564f43e17975636029462ad9bc7c61",
+  "repo": "schemastore",
+  "file": "src/test/bunfig/bunfig.toml",
+  "commit_message": "feat: sync bunfig schema with latest docs (#5682)"
+}

@@ -1,0 +1,6 @@
+{
+  "sha": "4e181a1ab7f73e236dfe4fe3fc18c6990490d172",
+  "repo": "poetry",
+  "file": "pyproject.toml",
+  "commit_message": "tests: replace `httpretty` with `responses` (#10620)"
+}

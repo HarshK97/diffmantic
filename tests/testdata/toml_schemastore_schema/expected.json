@@ -1,0 +1,176 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          2
+        ],
+        "type": "table",
+        "start_byte": 61,
+        "end_byte": 97
+      },
+      "parent": {
+        "tree": "after",
+        "path": null,
+        "type": "document",
+        "start_byte": 0,
+        "end_byte": 238
+      },
+      "position": 3
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          2,
+          0
+        ],
+        "type": "bare_key",
+        "label": "files",
+        "start_byte": 62,
+        "end_byte": 67
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          2
+        ],
+        "type": "table",
+        "start_byte": 61,
+        "end_byte": 97
+      },
+      "position": 0
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          1
+        ],
+        "type": "pair",
+        "start_byte": 37,
+        "end_byte": 69
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          2
+        ],
+        "type": "table",
+        "start_byte": 61,
+        "end_byte": 97
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": null,
+        "type": "document",
+        "start_byte": 0,
+        "end_byte": 235
+      },
+      "old_position": 1,
+      "subtree": true,
+      "dest_start_byte": 69,
+      "dest_end_byte": 95
+    },
+    {
+      "action": "update",
+      "node": {
+        "tree": "before",
+        "path": [
+          1,
+          0
+        ],
+        "type": "bare_key",
+        "label": "yaml-files",
+        "start_byte": 37,
+        "end_byte": 47
+      },
+      "old_value": "yaml-files",
+      "new_value": "yaml",
+      "dest_node": {
+        "tree": "after",
+        "path": [
+          2,
+          1,
+          0
+        ],
+        "type": "bare_key",
+        "label": "yaml",
+        "start_byte": 69,
+        "end_byte": 73
+      }
+    }
+  ],
+  "line_alignment": [
+    {
+      "left_line": 0,
+      "right_line": 0
+    },
+    {
+      "left_line": 1,
+      "right_line": -1
+    },
+    {
+      "left_line": 2,
+      "right_line": 1
+    },
+    {
+      "left_line": 3,
+      "right_line": 2
+    },
+    {
+      "left_line": -1,
+      "right_line": 3
+    },
+    {
+      "left_line": -1,
+      "right_line": 4
+    },
+    {
+      "left_line": -1,
+      "right_line": 5
+    },
+    {
+      "left_line": 4,
+      "right_line": 6
+    },
+    {
+      "left_line": 5,
+      "right_line": 7
+    },
+    {
+      "left_line": 6,
+      "right_line": 8
+    },
+    {
+      "left_line": 7,
+      "right_line": 9
+    },
+    {
+      "left_line": 8,
+      "right_line": 10
+    },
+    {
+      "left_line": 9,
+      "right_line": 11
+    },
+    {
+      "left_line": 10,
+      "right_line": 12
+    },
+    {
+      "left_line": 11,
+      "right_line": 13
+    },
+    {
+      "left_line": 12,
+      "right_line": 14
+    }
+  ]
+}

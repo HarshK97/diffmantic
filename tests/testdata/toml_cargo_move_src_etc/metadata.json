@@ -1,0 +1,6 @@
+{
+  "sha": "efe51b587b0614208fc4a31c25574254db36efa0",
+  "repo": "cargo",
+  "file": "triagebot.toml",
+  "commit_message": "chore: Move src/etc/ to etc/"
+}
