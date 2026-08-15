@@ -136,7 +136,7 @@ func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, en
 	}
 
 	if env != nil {
-		m.srcHighlights, m.dstHighlights = buildHighlights(srcBytes, dstBytes, env.Actions)
+		m.srcHighlights, m.dstHighlights = buildHighlights(env.LeftHighlights, env.RightHighlights)
 		var changeRows []int
 		for r, pair := range m.lineAlignment {
 			isChange := false
@@ -453,9 +453,11 @@ func isBinary(data []byte) bool {
 }
 
 func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConflict bool) (*serialize.Envelope, error) {
+	opts := serialize.EnvelopeOptions{IncludeAlignment: true, IncludeHighlights: true}
 	res, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
 		ParseErrorLimit: 0,
 		IsConflict:      isConflict,
+		EnvelopeOpts:    opts,
 	})
 	if err != nil {
 		return nil, err

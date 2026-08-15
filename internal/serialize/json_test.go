@@ -109,8 +109,8 @@ func TestRoundTrip(t *testing.T) {
 		Subtree:  false,
 	})
 
-	// Perform serialization
-	jsonData, err := Marshal(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte))
+	opts := EnvelopeOptions{IncludeActions: true, IncludeAlignment: true, IncludeHighlights: true}
+	jsonData, err := MarshalWithOptions(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte), opts)
 	if err != nil {
 		t.Fatalf("Marshal failed: %v", err)
 	}
@@ -204,7 +204,8 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestNilEditScript(t *testing.T) {
-	_, err := Marshal(nil, nil, nil, nil, nil, nil)
+	opts := EnvelopeOptions{IncludeActions: true}
+	_, err := MarshalWithOptions(nil, nil, nil, nil, nil, nil, opts)
 	if err == nil || !strings.Contains(err.Error(), "edit script is nil") {
 		t.Errorf("expected error for nil edit script, got %v", err)
 	}
@@ -235,7 +236,8 @@ func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
 		Position: 0,
 	})
 
-	_, err := Marshal(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte))
+	opts := EnvelopeOptions{IncludeActions: true}
+	_, err := MarshalWithOptions(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte), opts)
 	if err == nil {
 		t.Fatal("expected Marshal to fail due to unmapped move parent, but it succeeded")
 	}

@@ -9,13 +9,16 @@
 package integration
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -25,6 +28,43 @@ import (
 )
 
 var update = flag.Bool("update", false, "update the golden files")
+
+func readGzOrPlain(filePath string) ([]byte, error) {
+	gzPath := filePath + ".gz"
+	if _, err := os.Stat(gzPath); err == nil {
+		f, err := os.Open(gzPath)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = zr.Close() }()
+		return io.ReadAll(zr)
+	}
+	return os.ReadFile(filePath)
+}
+
+func writeGzFile(filePath string, data []byte) error {
+	f, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	zw := gzip.NewWriter(f)
+	zw.ModTime = time.Unix(0, 0)
+	if _, err := zw.Write(data); err != nil {
+		_ = zw.Close()
+		_ = f.Close()
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
 
 // testdataDir returns the absolute path to tests/testdata/.
 func testdataDir(tb testing.TB) string {
@@ -101,11 +141,12 @@ func mustParse(tb testing.TB, src []byte, path string) *treesitter.ASTNode {
 
 // pipelineResult holds the output of a full engine run.
 type pipelineResult struct {
-	AstA     *treesitter.ASTNode
-	AstB     *treesitter.ASTNode
-	Mappings *engine.Mapping
-	ES       *actions.EditScript
-	JSON     []byte
+	AstA        *treesitter.ASTNode
+	AstB        *treesitter.ASTNode
+	Mappings    *engine.Mapping
+	ES          *actions.EditScript
+	ActionsJSON []byte
+	UIJSON      []byte
 }
 
 // runPipeline runs the entire diffmantic pipeline on a fixture.
@@ -120,9 +161,22 @@ func runPipeline(t *testing.T, f fixture) pipelineResult {
 		t.Fatalf("pipeline run failed: %v", err)
 	}
 
-	jsonData, err := json.MarshalIndent(res.Envelope, "", "  ")
+	actionsEnv, err := serialize.BuildEnvelopeWithOptions(res.EditScript, res.MatchResult.Mappings, res.SrcAST, res.DstAST, f.OldSrc, f.NewSrc, serialize.EnvelopeOptions{IncludeActions: true})
 	if err != nil {
-		t.Fatalf("serializing JSON: %v", err)
+		t.Fatalf("building Actions envelope: %v", err)
+	}
+	actionsJSON, err := json.MarshalIndent(actionsEnv, "", "  ")
+	if err != nil {
+		t.Fatalf("serializing Actions JSON: %v", err)
+	}
+
+	uiEnv, err := serialize.BuildEnvelopeWithOptions(res.EditScript, res.MatchResult.Mappings, res.SrcAST, res.DstAST, f.OldSrc, f.NewSrc, serialize.EnvelopeOptions{IncludeAlignment: true, IncludeHighlights: true})
+	if err != nil {
+		t.Fatalf("building UI envelope: %v", err)
+	}
+	uiJSON, err := json.MarshalIndent(uiEnv, "", "  ")
+	if err != nil {
+		t.Fatalf("serializing UI JSON: %v", err)
 	}
 
 	var mappings *engine.Mapping
@@ -131,11 +185,12 @@ func runPipeline(t *testing.T, f fixture) pipelineResult {
 	}
 
 	return pipelineResult{
-		AstA:     res.SrcAST,
-		AstB:     res.DstAST,
-		Mappings: mappings,
-		ES:       res.EditScript,
-		JSON:     jsonData,
+		AstA:        res.SrcAST,
+		AstB:        res.DstAST,
+		Mappings:    mappings,
+		ES:          res.EditScript,
+		ActionsJSON: actionsJSON,
+		UIJSON:      uiJSON,
 	}
 }
 
@@ -189,14 +244,16 @@ func TestPipeline(t *testing.T) {
 			f := loadFixture(t, name)
 			result := runPipeline(t, f)
 
-			// Make sure the output is valid JSON.
-			var envelope serialize.Envelope
-			if err := json.Unmarshal(result.JSON, &envelope); err != nil {
-				t.Fatalf("output is not valid JSON: %v", err)
+			var actionsEnv, uiEnv serialize.Envelope
+			if err := json.Unmarshal(result.ActionsJSON, &actionsEnv); err != nil {
+				t.Fatalf("actions output is not valid JSON: %v", err)
+			}
+			if err := json.Unmarshal(result.UIJSON, &uiEnv); err != nil {
+				t.Fatalf("UI output is not valid JSON: %v", err)
 			}
 
 			// Make sure the version field is set.
-			if envelope.Version == "" {
+			if actionsEnv.Version == "" || uiEnv.Version == "" {
 				t.Error("JSON envelope missing version field")
 			}
 
@@ -205,14 +262,14 @@ func TestPipeline(t *testing.T) {
 				"insert": true, "delete": true,
 				"update": true, "move": true,
 			}
-			for i, a := range envelope.Actions {
+			for i, a := range actionsEnv.Actions {
 				if !validActions[a.Action] {
 					t.Errorf("action[%d] has invalid type %q", i, a.Action)
 				}
 			}
 
 			// Make sure node references point to a valid tree.
-			for i, a := range envelope.Actions {
+			for i, a := range actionsEnv.Actions {
 				if a.Node != nil {
 					if a.Node.Tree != "before" && a.Node.Tree != "after" {
 						t.Errorf("action[%d].node.tree = %q, want before|after", i, a.Node.Tree)
@@ -220,42 +277,58 @@ func TestPipeline(t *testing.T) {
 				}
 			}
 
-			// Compare results. output against the golden file.
-			goldenPath := filepath.Join(testdataDir(t), name, "expected.json")
+			actionsPath := filepath.Join(testdataDir(t), name, "expected_actions.json.gz")
+			uiPath := filepath.Join(testdataDir(t), name, "expected_ui.json.gz")
+
 			if *update {
-				// Pretty-print the JSON for readable diffs.
-				pretty, err := json.MarshalIndent(envelope, "", "  ")
+				prettyActions, err := json.MarshalIndent(actionsEnv, "", "  ")
 				if err != nil {
-					t.Fatalf("pretty-printing JSON: %v", err)
+					t.Fatalf("pretty-printing actions JSON: %v", err)
 				}
-				if err := os.WriteFile(goldenPath, pretty, 0o644); err != nil {
-					t.Fatalf("writing golden file: %v", err)
+				prettyUI, err := json.MarshalIndent(uiEnv, "", "  ")
+				if err != nil {
+					t.Fatalf("pretty-printing UI JSON: %v", err)
 				}
-				t.Logf("updated golden file: %s", goldenPath)
+
+				if err := writeGzFile(actionsPath, prettyActions); err != nil {
+					t.Fatalf("writing actions golden file: %v", err)
+				}
+				if err := writeGzFile(uiPath, prettyUI); err != nil {
+					t.Fatalf("writing UI golden file: %v", err)
+				}
+
+				legacyPath := filepath.Join(testdataDir(t), name, "expected.json")
+				_ = os.Remove(legacyPath)
+				t.Logf("updated golden files for %s", name)
 				return
 			}
 
-			golden, err := os.ReadFile(goldenPath)
-			if os.IsNotExist(err) {
-				t.Logf("golden file not found: %s (run with -update to create)", goldenPath)
-				return
-			}
+			goldenActionsData, err := readGzOrPlain(filepath.Join(testdataDir(t), name, "expected_actions.json"))
 			if err != nil {
-				t.Fatalf("reading golden file: %v", err)
+				t.Fatalf("reading actions golden file for %s: %v", name, err)
+			}
+			var expectedActions serialize.Envelope
+			if err := json.Unmarshal(goldenActionsData, &expectedActions); err != nil {
+				t.Fatalf("parsing actions golden file for %s: %v", name, err)
+			}
+			gotActionsPretty, _ := json.MarshalIndent(actionsEnv, "", "  ")
+			expActionsPretty, _ := json.MarshalIndent(expectedActions, "", "  ")
+			if string(gotActionsPretty) != string(expActionsPretty) {
+				t.Errorf("actions output differs from golden file for %s.\nRun with -update to regenerate.", name)
 			}
 
-			// Parse both to normalize whitespace for comparison.
-			var expected serialize.Envelope
-			if err := json.Unmarshal(golden, &expected); err != nil {
-				t.Fatalf("parsing golden file: %v", err)
+			goldenUIData, err := readGzOrPlain(filepath.Join(testdataDir(t), name, "expected_ui.json"))
+			if err != nil {
+				t.Fatalf("reading UI golden file for %s: %v", name, err)
 			}
-
-			gotPretty, _ := json.MarshalIndent(envelope, "", "  ")
-			expPretty, _ := json.MarshalIndent(expected, "", "  ")
-
-			if string(gotPretty) != string(expPretty) {
-				t.Errorf("output differs from golden file.\nRun with -update to regenerate.\nGot %d actions, expected %d actions",
-					len(envelope.Actions), len(expected.Actions))
+			var expectedUI serialize.Envelope
+			if err := json.Unmarshal(goldenUIData, &expectedUI); err != nil {
+				t.Fatalf("parsing UI golden file for %s: %v", name, err)
+			}
+			gotUIPretty, _ := json.MarshalIndent(uiEnv, "", "  ")
+			expUIPretty, _ := json.MarshalIndent(expectedUI, "", "  ")
+			if string(gotUIPretty) != string(expUIPretty) {
+				t.Errorf("UI output differs from golden file for %s.\nRun with -update to regenerate.", name)
 			}
 		})
 	}
@@ -276,7 +349,7 @@ func TestPipelineIdenticalFiles(t *testing.T) {
 	result := runPipeline(t, f)
 
 	var envelope serialize.Envelope
-	if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+	if err := json.Unmarshal(result.ActionsJSON, &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
@@ -309,7 +382,7 @@ func TestPipelineEmptyOld(t *testing.T) {
 	result := runPipeline(t, f)
 
 	var envelope serialize.Envelope
-	if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+	if err := json.Unmarshal(result.ActionsJSON, &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
@@ -341,7 +414,7 @@ func TestPipelineEmptyNew(t *testing.T) {
 	result := runPipeline(t, f)
 
 	var envelope serialize.Envelope
-	if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+	if err := json.Unmarshal(result.ActionsJSON, &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
@@ -362,7 +435,7 @@ func TestRoundTripMarshalUnmarshal(t *testing.T) {
 
 			// Marshal first.
 			var original serialize.Envelope
-			if err := json.Unmarshal(result.JSON, &original); err != nil {
+			if err := json.Unmarshal(result.ActionsJSON, &original); err != nil {
 				t.Fatalf("unmarshal original: %v", err)
 			}
 
@@ -410,7 +483,7 @@ func TestCrossLanguageParsing(t *testing.T) {
 			if result.ES == nil {
 				t.Fatal("pipeline returned nil edit script")
 			}
-			if len(result.JSON) == 0 {
+			if len(result.ActionsJSON) == 0 {
 				t.Fatal("pipeline returned empty JSON")
 			}
 		})
@@ -428,7 +501,7 @@ func TestActionSemantics(t *testing.T) {
 			result := runPipeline(t, f)
 
 			var envelope serialize.Envelope
-			if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+			if err := json.Unmarshal(result.ActionsJSON, &envelope); err != nil {
 				t.Fatalf("invalid JSON: %v", err)
 			}
 
@@ -477,7 +550,7 @@ func TestActionCountNonZero(t *testing.T) {
 			result := runPipeline(t, f)
 
 			var envelope serialize.Envelope
-			if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+			if err := json.Unmarshal(result.ActionsJSON, &envelope); err != nil {
 				t.Fatalf("invalid JSON: %v", err)
 			}
 

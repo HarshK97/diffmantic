@@ -241,6 +241,29 @@ func TestCLI_OneArg(t *testing.T) {
 	}
 }
 
+func TestCLI_JSONFormat_UIFlags(t *testing.T) {
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
+
+	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "--ui")
+	if err != nil {
+		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
+	}
+
+	var envelope serialize.Envelope
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatalf("invalid JSON output for --ui: %v", err)
+	}
+	if len(envelope.LineAlignment) == 0 {
+		t.Error("expected line_alignment in --ui mode")
+	}
+	if len(envelope.LeftHighlights) == 0 && len(envelope.RightHighlights) == 0 {
+		t.Error("expected highlight spans in --ui mode")
+	}
+	if len(envelope.Actions) != 0 {
+		t.Error("expected zero actions in --ui mode")
+	}
+}
+
 func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "large_old.ts")
@@ -259,7 +282,7 @@ func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
 		t.Fatalf("writing new file: %v", err)
 	}
 
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json")
+	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "--ui")
 	if err != nil {
 		t.Fatalf("diffm failed on >400KB file: %v\nstderr: %s", err, stderr)
 	}

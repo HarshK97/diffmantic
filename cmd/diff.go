@@ -29,6 +29,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
+	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -71,14 +72,8 @@ Examples:
 			os.Exit(1)
 		}
 
-		parseErrorLimit := getParseErrorLimit(cmd)
-		dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
-			ParseErrorLimit: parseErrorLimit,
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		uiMode, _ := cmd.Flags().GetBool("ui")
+		fullMode, _ := cmd.Flags().GetBool("full")
 
 		if format == "" {
 			if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsTerminal(os.Stderr.Fd()) {
@@ -86,6 +81,23 @@ Examples:
 			} else {
 				format = "json"
 			}
+		}
+
+		includeUI := format == "tui" || uiMode || fullMode
+		opts := serialize.EnvelopeOptions{
+			IncludeActions:    format != "tui" && !uiMode || fullMode,
+			IncludeAlignment:  includeUI,
+			IncludeHighlights: includeUI,
+		}
+
+		parseErrorLimit := getParseErrorLimit(cmd)
+		dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
+			ParseErrorLimit: parseErrorLimit,
+			EnvelopeOpts:    opts,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 
 		switch format {
@@ -123,4 +135,6 @@ func init() {
 	rootCmd.AddCommand(diffCmd)
 	diffCmd.Flags().StringP("format", "f", "", "Output format: json, actions, tui (default: tui if interactive, json otherwise)")
 	diffCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
+	diffCmd.Flags().Bool("ui", false, "Include line alignment and highlight spans in JSON output")
+	diffCmd.Flags().Bool("full", false, "Include actions, line alignment, and highlight spans in JSON output")
 }

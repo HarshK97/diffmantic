@@ -102,7 +102,9 @@ func TestBuildHighlightsGroupingAndMerging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srcBytes := []byte(tt.src)
 			dstBytes := []byte(tt.dst)
-			srcHL, dstHL := buildHighlights(srcBytes, dstBytes, tt.actions)
+			leftSpans := serialize.BuildHighlightSpans(srcBytes, tt.actions, "left")
+			rightSpans := serialize.BuildHighlightSpans(dstBytes, tt.actions, "right")
+			srcHL, dstHL := buildHighlights(leftSpans, rightSpans)
 
 			var hl *highlights
 			if tt.checkPane == "src" {

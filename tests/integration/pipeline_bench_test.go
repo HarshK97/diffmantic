@@ -104,6 +104,11 @@ func BenchmarkPipeline(b *testing.B) {
 				res, err := pipeline.Run(f.OldSrc, f.NewSrc, f.OldPath, f.NewPath, pipeline.DiffOptions{
 					DisableErrorFallback: true,
 					DisableSizeLimit:     true,
+					EnvelopeOpts: serialize.EnvelopeOptions{
+						IncludeActions:    true,
+						IncludeAlignment:  true,
+						IncludeHighlights: true,
+					},
 				})
 				if err != nil {
 					b.Fatalf("pipeline run failed: %v", err)
@@ -197,6 +202,15 @@ func BenchmarkPostprocess(b *testing.B) {
 
 // Time JSON envelope creation and marshalling on pre-postprocessed edit scripts.
 func BenchmarkSerialize(b *testing.B) {
+	modes := []struct {
+		name string
+		opts serialize.EnvelopeOptions
+	}{
+		{"ActionsOnly", serialize.EnvelopeOptions{IncludeActions: true}},
+		{"UIMode", serialize.EnvelopeOptions{IncludeAlignment: true, IncludeHighlights: true}},
+		{"FullMode", serialize.EnvelopeOptions{IncludeActions: true, IncludeAlignment: true, IncludeHighlights: true}},
+	}
+
 	for _, name := range allFixtures(b) {
 		f := loadFixture(b, name)
 		b.Run(name, func(b *testing.B) {
@@ -206,11 +220,15 @@ func BenchmarkSerialize(b *testing.B) {
 			es := actions.GenerateEditScript(astA, astB, res.Mappings)
 			es = postprocess.Run(es, res.Mappings, astA, astB)
 
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := serialize.Marshal(es, res.Mappings, astA, astB, f.OldSrc, f.NewSrc); err != nil {
-					b.Fatalf("serializing: %v", err)
-				}
+			for _, m := range modes {
+				b.Run(m.name, func(b *testing.B) {
+					b.ReportAllocs()
+					for b.Loop() {
+						if _, err := serialize.MarshalWithOptions(es, res.Mappings, astA, astB, f.OldSrc, f.NewSrc, m.opts); err != nil {
+							b.Fatalf("serializing: %v", err)
+						}
+					}
+				})
 			}
 		})
 	}
