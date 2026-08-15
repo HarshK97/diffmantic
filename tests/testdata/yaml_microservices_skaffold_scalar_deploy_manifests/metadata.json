@@ -1,0 +1,6 @@
+{
+  "repository": "GoogleCloudPlatform/microservices-demo",
+  "commit": "7be0cd19a855b59e86dccdeaa0338012df82e483",
+  "description": "Update skaffold deployment manifests",
+  "language": "yaml"
+}

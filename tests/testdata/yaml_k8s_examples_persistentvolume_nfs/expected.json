@@ -1,0 +1,742 @@
+{
+  "version": "v1",
+  "actions": [
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "type": "flow_node",
+        "start_byte": 74,
+        "end_byte": 82
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 76,
+        "end_byte": 102
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 74,
+        "end_byte": 152
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 76,
+      "dest_end_byte": 84
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          2
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 136,
+        "end_byte": 151
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 90,
+        "end_byte": 102
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 90,
+        "end_byte": 152
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 90,
+      "dest_end_byte": 102
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 0,
+        "end_byte": 10
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 0,
+        "end_byte": 183
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 0,
+        "end_byte": 152
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 0,
+      "dest_end_byte": 19
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 11,
+        "end_byte": 33
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 0,
+        "end_byte": 183
+      },
+      "position": 1,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 0,
+        "end_byte": 152
+      },
+      "old_position": 1,
+      "subtree": true,
+      "dest_start_byte": 20,
+      "dest_end_byte": 42,
+      "group_id": "group-1"
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          2
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 43,
+        "end_byte": 67
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 0,
+        "end_byte": 183
+      },
+      "position": 2
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          0
+        ],
+        "type": "flow_node",
+        "start_byte": 62,
+        "end_byte": 68
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          2
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 43,
+        "end_byte": 67
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 62,
+        "end_byte": 152
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 43,
+      "dest_end_byte": 51
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          0
+        ],
+        "type": "flow_node",
+        "start_byte": 54,
+        "end_byte": 58
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 68,
+        "end_byte": 183
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 54,
+        "end_byte": 152
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 68,
+      "dest_end_byte": 72,
+      "group_id": "group-1"
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          2
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 34,
+        "end_byte": 53
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          2,
+          1,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 55,
+        "end_byte": 67
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0
+        ],
+        "type": "block_mapping",
+        "start_byte": 0,
+        "end_byte": 152
+      },
+      "old_position": 2,
+      "subtree": true,
+      "dest_start_byte": 55,
+      "dest_end_byte": 67
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "type": "flow_node",
+        "start_byte": 90,
+        "end_byte": 96
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 105,
+        "end_byte": 137
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 90,
+        "end_byte": 110
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 105,
+      "dest_end_byte": 116
+    },
+    {
+      "action": "move",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "type": "flow_node",
+        "start_byte": 117,
+        "end_byte": 121
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 140,
+        "end_byte": 183
+      },
+      "position": 0,
+      "old_parent": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 117,
+        "end_byte": 129
+      },
+      "old_position": 0,
+      "subtree": true,
+      "dest_start_byte": 140,
+      "dest_end_byte": 143
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "block_node",
+        "start_byte": 122,
+        "end_byte": 137
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          1
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 105,
+        "end_byte": 137
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "insert",
+      "node": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2,
+          1
+        ],
+        "type": "block_node",
+        "start_byte": 149,
+        "end_byte": 183
+      },
+      "parent": {
+        "tree": "after",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          2
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 140,
+        "end_byte": 183
+      },
+      "position": 1,
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1
+        ],
+        "type": "block_node",
+        "start_byte": 62,
+        "end_byte": 152
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3
+        ],
+        "type": "block_mapping_pair",
+        "start_byte": 54,
+        "end_byte": 152
+      }
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1
+        ],
+        "type": "flow_node",
+        "start_byte": 98,
+        "end_byte": 110
+      },
+      "subtree": true
+    },
+    {
+      "action": "delete",
+      "node": {
+        "tree": "before",
+        "path": [
+          0,
+          0,
+          0,
+          3,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1
+        ],
+        "type": "flow_node",
+        "start_byte": 123,
+        "end_byte": 129
+      },
+      "subtree": true
+    }
+  ],
+  "line_alignment": [
+    {
+      "left_line": 0,
+      "right_line": 0
+    },
+    {
+      "left_line": 1,
+      "right_line": 1
+    },
+    {
+      "left_line": -1,
+      "right_line": 2
+    },
+    {
+      "left_line": 2,
+      "right_line": 3
+    },
+    {
+      "left_line": 3,
+      "right_line": -1
+    },
+    {
+      "left_line": 4,
+      "right_line": -1
+    },
+    {
+      "left_line": -1,
+      "right_line": 4
+    },
+    {
+      "left_line": 5,
+      "right_line": 5
+    },
+    {
+      "left_line": 6,
+      "right_line": -1
+    },
+    {
+      "left_line": 7,
+      "right_line": -1
+    },
+    {
+      "left_line": 8,
+      "right_line": 6
+    },
+    {
+      "left_line": -1,
+      "right_line": 7
+    },
+    {
+      "left_line": -1,
+      "right_line": 8
+    },
+    {
+      "left_line": -1,
+      "right_line": 9
+    },
+    {
+      "left_line": -1,
+      "right_line": 10
+    },
+    {
+      "left_line": -1,
+      "right_line": 11
+    },
+    {
+      "left_line": 9,
+      "right_line": 12
+    }
+  ]
+}

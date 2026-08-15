@@ -1,0 +1,6 @@
+{
+  "repository": "GoogleCloudPlatform/microservices-demo",
+  "commit": "0be5e7b1e265941a9d933d001665455990705e8b",
+  "description": "Update cartservice container specification",
+  "language": "yaml"
+}

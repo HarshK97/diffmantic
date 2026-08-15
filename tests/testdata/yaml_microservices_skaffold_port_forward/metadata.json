@@ -1,0 +1,6 @@
+{
+  "repository": "GoogleCloudPlatform/microservices-demo",
+  "commit": "c6b825f846a58cf46b3eddcab1de0d392d0aa88a",
+  "description": "Update skaffold port forward options",
+  "language": "yaml"
+}
