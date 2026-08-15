@@ -460,5 +460,21 @@
       "left_line": 103,
       "right_line": 103
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 2,
+      "start_col": 4,
+      "end_col": 17,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 2,
+      "start_col": 4,
+      "end_col": 16,
+      "action": "insert"
+    }
   ]
 }

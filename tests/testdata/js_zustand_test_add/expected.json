@@ -394,5 +394,13 @@
       "left_line": 92,
       "right_line": 91
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 84,
+      "start_col": 6,
+      "end_col": 35,
+      "action": "delete"
+    }
   ]
 }

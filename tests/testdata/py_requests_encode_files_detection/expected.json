@@ -5001,5 +5001,39 @@
       "left_line": 1185,
       "right_line": 1187
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 238,
+      "start_col": 17,
+      "end_col": 86,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 238,
+      "start_col": 12,
+      "end_col": 78,
+      "action": "insert"
+    },
+    {
+      "line": 239,
+      "start_col": 12,
+      "end_col": 49,
+      "action": "move"
+    },
+    {
+      "line": 240,
+      "start_col": 17,
+      "end_col": 46,
+      "action": "move"
+    },
+    {
+      "line": 240,
+      "start_col": 47,
+      "end_col": 69,
+      "action": "insert"
+    }
   ]
 }

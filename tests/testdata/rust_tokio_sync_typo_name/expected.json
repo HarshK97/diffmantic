@@ -1514,5 +1514,21 @@
       "left_line": 370,
       "right_line": 370
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 357,
+      "start_col": 9,
+      "end_col": 57,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 357,
+      "start_col": 9,
+      "end_col": 57,
+      "action": "update"
+    }
   ]
 }

@@ -280,5 +280,21 @@
       "left_line": 54,
       "right_line": 54
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 33,
+      "start_col": 38,
+      "end_col": 262,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 33,
+      "start_col": 38,
+      "end_col": 335,
+      "action": "update"
+    }
   ]
 }

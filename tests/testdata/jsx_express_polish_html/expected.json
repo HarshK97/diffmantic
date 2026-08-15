@@ -4362,5 +4362,39 @@
       "left_line": 1053,
       "right_line": 1054
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 852,
+      "start_col": 13,
+      "end_col": 18,
+      "action": "delete"
+    },
+    {
+      "line": 852,
+      "start_col": 74,
+      "end_col": 80,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 852,
+      "start_col": 13,
+      "end_col": 90,
+      "action": "insert"
+    },
+    {
+      "line": 853,
+      "start_col": 0,
+      "end_col": 20,
+      "action": "insert"
+    },
+    {
+      "line": 853,
+      "start_col": 76,
+      "end_col": 89,
+      "action": "update"
+    }
   ]
 }

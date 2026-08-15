@@ -308,5 +308,13 @@
       "left_line": 72,
       "right_line": 71
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 3,
+      "start_col": 0,
+      "end_col": 26,
+      "action": "delete"
+    }
   ]
 }

@@ -4034,5 +4034,45 @@
       "left_line": 934,
       "right_line": 934
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 323,
+      "start_col": 12,
+      "end_col": 42,
+      "action": "move"
+    },
+    {
+      "line": 323,
+      "start_col": 43,
+      "end_col": 44,
+      "action": "delete"
+    },
+    {
+      "line": 323,
+      "start_col": 45,
+      "end_col": 74,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 323,
+      "start_col": 12,
+      "end_col": 42,
+      "action": "move"
+    },
+    {
+      "line": 323,
+      "start_col": 12,
+      "end_col": 80,
+      "action": "insert"
+    },
+    {
+      "line": 323,
+      "start_col": 51,
+      "end_col": 80,
+      "action": "move"
+    }
   ]
 }

@@ -1915,5 +1915,27 @@
       "left_line": 453,
       "right_line": 453
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 419,
+      "start_col": 12,
+      "end_col": 32,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 419,
+      "start_col": 12,
+      "end_col": 32,
+      "action": "move"
+    },
+    {
+      "line": 419,
+      "start_col": 33,
+      "end_col": 37,
+      "action": "insert"
+    }
   ]
 }

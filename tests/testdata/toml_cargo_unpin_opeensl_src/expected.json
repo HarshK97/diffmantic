@@ -1272,5 +1272,33 @@
       "left_line": 302,
       "right_line": 300
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 80,
+      "start_col": 0,
+      "end_col": 49,
+      "action": "delete"
+    },
+    {
+      "line": 81,
+      "start_col": 0,
+      "end_col": 49,
+      "action": "delete"
+    },
+    {
+      "line": 82,
+      "start_col": 14,
+      "end_col": 24,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 80,
+      "start_col": 14,
+      "end_col": 23,
+      "action": "update"
+    }
   ]
 }

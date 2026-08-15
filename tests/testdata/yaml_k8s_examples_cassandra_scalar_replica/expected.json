@@ -167,5 +167,19 @@
       "left_line": 33,
       "right_line": 31
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 28,
+      "start_col": 4,
+      "end_col": 35,
+      "action": "delete"
+    },
+    {
+      "line": 29,
+      "start_col": 0,
+      "end_col": 17,
+      "action": "delete"
+    }
   ]
 }

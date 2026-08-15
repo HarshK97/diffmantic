@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `left_highlights` and `right_highlights` to the JSON envelope, providing precomputed line and column spans so editor plugins can render inline diff highlights directly without recalculating visual coordinates from raw AST byte offsets.
+
 ### Changed
+- Centralized inline highlight span generation in `internal/serialize` and refactored the TUI to consume the shared engine instead of keeping a separate implementation.
 - Lowered the minimum Go toolchain requirement in `go.mod` from Go 1.26 to Go 1.24 to relax build constraints.
 
 ## [0.5.0] - 2026-08-15

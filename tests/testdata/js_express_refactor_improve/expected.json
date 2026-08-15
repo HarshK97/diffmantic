@@ -423,5 +423,33 @@
       "left_line": 73,
       "right_line": 74
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 34,
+      "start_col": 6,
+      "end_col": 26,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 34,
+      "start_col": 2,
+      "end_col": 22,
+      "action": "insert"
+    },
+    {
+      "line": 34,
+      "start_col": 2,
+      "end_col": 22,
+      "action": "move"
+    },
+    {
+      "line": 35,
+      "start_col": 6,
+      "end_col": 14,
+      "action": "insert"
+    }
   ]
 }

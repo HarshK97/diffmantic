@@ -15974,5 +15974,87 @@
       "left_line": 3914,
       "right_line": 3913
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 250,
+      "start_col": 42,
+      "end_col": 59,
+      "action": "delete"
+    },
+    {
+      "line": 251,
+      "start_col": 1,
+      "end_col": 19,
+      "action": "delete"
+    },
+    {
+      "line": 252,
+      "start_col": 0,
+      "end_col": 49,
+      "action": "delete"
+    },
+    {
+      "line": 253,
+      "start_col": 0,
+      "end_col": 3,
+      "action": "delete"
+    },
+    {
+      "line": 254,
+      "start_col": 35,
+      "end_col": 52,
+      "action": "delete"
+    },
+    {
+      "line": 256,
+      "start_col": 17,
+      "end_col": 35,
+      "action": "move"
+    },
+    {
+      "line": 274,
+      "start_col": 40,
+      "end_col": 62,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 250,
+      "start_col": 1,
+      "end_col": 63,
+      "action": "insert"
+    },
+    {
+      "line": 251,
+      "start_col": 42,
+      "end_col": 45,
+      "action": "insert"
+    },
+    {
+      "line": 252,
+      "start_col": 35,
+      "end_col": 38,
+      "action": "insert"
+    },
+    {
+      "line": 254,
+      "start_col": 23,
+      "end_col": 41,
+      "action": "move"
+    },
+    {
+      "line": 272,
+      "start_col": 1,
+      "end_col": 61,
+      "action": "insert"
+    },
+    {
+      "line": 273,
+      "start_col": 40,
+      "end_col": 43,
+      "action": "insert"
+    }
   ]
 }

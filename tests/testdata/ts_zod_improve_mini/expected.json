@@ -7739,5 +7739,33 @@
       "left_line": 1916,
       "right_line": 1916
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 1,
+      "start_col": 7,
+      "end_col": 15,
+      "action": "delete"
+    },
+    {
+      "line": 1,
+      "start_col": 21,
+      "end_col": 39,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 1,
+      "start_col": 7,
+      "end_col": 16,
+      "action": "insert"
+    },
+    {
+      "line": 1,
+      "start_col": 22,
+      "end_col": 39,
+      "action": "update"
+    }
   ]
 }

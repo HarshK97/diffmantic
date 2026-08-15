@@ -375,5 +375,25 @@
       "left_line": 65,
       "right_line": 68
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 38,
+      "start_col": 4,
+      "end_col": 76,
+      "action": "insert"
+    },
+    {
+      "line": 39,
+      "start_col": 4,
+      "end_col": 67,
+      "action": "insert"
+    },
+    {
+      "line": 40,
+      "start_col": 4,
+      "end_col": 24,
+      "action": "insert"
+    }
   ]
 }

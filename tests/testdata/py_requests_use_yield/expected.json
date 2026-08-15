@@ -4419,5 +4419,39 @@
       "left_line": 1035,
       "right_line": 1034
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 815,
+      "start_col": 20,
+      "end_col": 82,
+      "action": "delete"
+    },
+    {
+      "line": 815,
+      "start_col": 33,
+      "end_col": 81,
+      "action": "move"
+    },
+    {
+      "line": 816,
+      "start_col": 0,
+      "end_col": 35,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 815,
+      "start_col": 20,
+      "end_col": 30,
+      "action": "insert"
+    },
+    {
+      "line": 815,
+      "start_col": 31,
+      "end_col": 79,
+      "action": "move"
+    }
   ]
 }

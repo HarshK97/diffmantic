@@ -244,5 +244,25 @@
       "left_line": -1,
       "right_line": 54
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 51,
+      "start_col": 0,
+      "end_col": 3,
+      "action": "insert"
+    },
+    {
+      "line": 52,
+      "start_col": 0,
+      "end_col": 36,
+      "action": "insert"
+    },
+    {
+      "line": 53,
+      "start_col": 0,
+      "end_col": 1,
+      "action": "insert"
+    }
   ]
 }

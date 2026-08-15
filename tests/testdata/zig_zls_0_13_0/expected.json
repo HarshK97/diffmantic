@@ -2084,5 +2084,33 @@
       "left_line": 499,
       "right_line": 499
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 9,
+      "start_col": 0,
+      "end_col": 59,
+      "action": "update"
+    },
+    {
+      "line": 12,
+      "start_col": 28,
+      "end_col": 53,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 9,
+      "start_col": 0,
+      "end_col": 67,
+      "action": "update"
+    },
+    {
+      "line": 12,
+      "start_col": 28,
+      "end_col": 53,
+      "action": "update"
+    }
   ]
 }

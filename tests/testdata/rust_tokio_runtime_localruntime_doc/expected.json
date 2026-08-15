@@ -1678,5 +1678,33 @@
       "left_line": 393,
       "right_line": 395
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 198,
+      "start_col": 4,
+      "end_col": 7,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 169,
+      "start_col": 4,
+      "end_col": 20,
+      "action": "move"
+    },
+    {
+      "line": 200,
+      "start_col": 4,
+      "end_col": 77,
+      "action": "insert"
+    },
+    {
+      "line": 201,
+      "start_col": 4,
+      "end_col": 29,
+      "action": "insert"
+    }
   ]
 }

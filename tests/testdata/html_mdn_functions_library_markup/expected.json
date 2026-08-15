@@ -230,5 +230,147 @@
       "left_line": 38,
       "right_line": 47
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 7,
+      "start_col": 0,
+      "end_col": 21,
+      "action": "update"
+    },
+    {
+      "line": 8,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 9,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 11,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "update"
+    },
+    {
+      "line": 12,
+      "start_col": 0,
+      "end_col": 32,
+      "action": "update"
+    },
+    {
+      "line": 13,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 15,
+      "start_col": 0,
+      "end_col": 11,
+      "action": "update"
+    },
+    {
+      "line": 16,
+      "start_col": 0,
+      "end_col": 28,
+      "action": "update"
+    },
+    {
+      "line": 17,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 18,
+      "start_col": 0,
+      "end_col": 4,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 7,
+      "start_col": 0,
+      "end_col": 21,
+      "action": "update"
+    },
+    {
+      "line": 8,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 9,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 11,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "update"
+    },
+    {
+      "line": 12,
+      "start_col": 0,
+      "end_col": 32,
+      "action": "update"
+    },
+    {
+      "line": 13,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 15,
+      "start_col": 0,
+      "end_col": 11,
+      "action": "update"
+    },
+    {
+      "line": 16,
+      "start_col": 0,
+      "end_col": 28,
+      "action": "update"
+    },
+    {
+      "line": 17,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 18,
+      "start_col": 0,
+      "end_col": 12,
+      "action": "update"
+    },
+    {
+      "line": 19,
+      "start_col": 0,
+      "end_col": 30,
+      "action": "update"
+    },
+    {
+      "line": 20,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "update"
+    },
+    {
+      "line": 21,
+      "start_col": 0,
+      "end_col": 4,
+      "action": "update"
+    }
   ]
 }

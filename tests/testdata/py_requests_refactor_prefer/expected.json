@@ -4743,5 +4743,51 @@
       "left_line": 1094,
       "right_line": 1090
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 468,
+      "start_col": 4,
+      "end_col": 20,
+      "action": "delete"
+    },
+    {
+      "line": 470,
+      "start_col": 4,
+      "end_col": 21,
+      "action": "delete"
+    },
+    {
+      "line": 471,
+      "start_col": 0,
+      "end_col": 47,
+      "action": "delete"
+    },
+    {
+      "line": 471,
+      "start_col": 20,
+      "end_col": 31,
+      "action": "move"
+    },
+    {
+      "line": 471,
+      "start_col": 35,
+      "end_col": 47,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 468,
+      "start_col": 4,
+      "end_col": 61,
+      "action": "insert"
+    },
+    {
+      "line": 468,
+      "start_col": 19,
+      "end_col": 44,
+      "action": "move"
+    }
   ]
 }

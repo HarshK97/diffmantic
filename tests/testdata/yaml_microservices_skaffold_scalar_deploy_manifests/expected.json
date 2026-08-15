@@ -491,5 +491,49 @@
       "left_line": 107,
       "right_line": 114
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 107,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "insert"
+    },
+    {
+      "line": 108,
+      "start_col": 0,
+      "end_col": 11,
+      "action": "insert"
+    },
+    {
+      "line": 109,
+      "start_col": 0,
+      "end_col": 8,
+      "action": "insert"
+    },
+    {
+      "line": 110,
+      "start_col": 0,
+      "end_col": 21,
+      "action": "insert"
+    },
+    {
+      "line": 111,
+      "start_col": 0,
+      "end_col": 21,
+      "action": "insert"
+    },
+    {
+      "line": 112,
+      "start_col": 0,
+      "end_col": 32,
+      "action": "insert"
+    },
+    {
+      "line": 113,
+      "start_col": 0,
+      "end_col": 20,
+      "action": "insert"
+    }
   ]
 }

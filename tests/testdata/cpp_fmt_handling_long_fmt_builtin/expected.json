@@ -135,5 +135,13 @@
       "left_line": 24,
       "right_line": 25
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 15,
+      "start_col": 2,
+      "end_col": 42,
+      "action": "insert"
+    }
   ]
 }

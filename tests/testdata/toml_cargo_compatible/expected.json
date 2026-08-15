@@ -1244,5 +1244,21 @@
       "left_line": 302,
       "right_line": 302
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 82,
+      "start_col": 14,
+      "end_col": 24,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 82,
+      "start_col": 14,
+      "end_col": 24,
+      "action": "update"
+    }
   ]
 }

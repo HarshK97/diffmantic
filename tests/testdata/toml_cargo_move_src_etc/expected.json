@@ -1636,5 +1636,33 @@
       "left_line": 384,
       "right_line": 384
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 107,
+      "start_col": 34,
+      "end_col": 48,
+      "action": "update"
+    },
+    {
+      "line": 110,
+      "start_col": 17,
+      "end_col": 62,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 107,
+      "start_col": 34,
+      "end_col": 44,
+      "action": "update"
+    },
+    {
+      "line": 110,
+      "start_col": 17,
+      "end_col": 54,
+      "action": "update"
+    }
   ]
 }

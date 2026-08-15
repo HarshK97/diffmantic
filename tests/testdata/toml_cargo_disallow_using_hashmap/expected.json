@@ -195,5 +195,31 @@
       "left_line": 17,
       "right_line": 21
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 16,
+      "start_col": 4,
+      "end_col": 140,
+      "action": "insert"
+    },
+    {
+      "line": 17,
+      "start_col": 4,
+      "end_col": 140,
+      "action": "insert"
+    },
+    {
+      "line": 18,
+      "start_col": 4,
+      "end_col": 134,
+      "action": "insert"
+    },
+    {
+      "line": 19,
+      "start_col": 4,
+      "end_col": 134,
+      "action": "insert"
+    }
   ]
 }

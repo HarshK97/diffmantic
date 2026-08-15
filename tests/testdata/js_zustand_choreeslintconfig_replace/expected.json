@@ -433,5 +433,27 @@
       "left_line": 90,
       "right_line": 91
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 9,
+      "start_col": 15,
+      "end_col": 30,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 2,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "insert"
+    },
+    {
+      "line": 10,
+      "start_col": 15,
+      "end_col": 27,
+      "action": "insert"
+    }
   ]
 }

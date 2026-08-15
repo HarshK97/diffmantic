@@ -7615,5 +7615,117 @@
       "left_line": 1816,
       "right_line": 1816
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 81,
+      "start_col": 0,
+      "end_col": 67,
+      "action": "delete"
+    },
+    {
+      "line": 724,
+      "start_col": 0,
+      "end_col": 75,
+      "action": "delete"
+    },
+    {
+      "line": 746,
+      "start_col": 8,
+      "end_col": 86,
+      "action": "update"
+    },
+    {
+      "line": 897,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "delete"
+    },
+    {
+      "line": 1047,
+      "start_col": 4,
+      "end_col": 91,
+      "action": "delete"
+    },
+    {
+      "line": 1051,
+      "start_col": 4,
+      "end_col": 96,
+      "action": "delete"
+    },
+    {
+      "line": 1073,
+      "start_col": 4,
+      "end_col": 41,
+      "action": "delete"
+    },
+    {
+      "line": 1090,
+      "start_col": 4,
+      "end_col": 91,
+      "action": "delete"
+    },
+    {
+      "line": 1724,
+      "start_col": 12,
+      "end_col": 90,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 81,
+      "start_col": 0,
+      "end_col": 68,
+      "action": "insert"
+    },
+    {
+      "line": 724,
+      "start_col": 0,
+      "end_col": 74,
+      "action": "insert"
+    },
+    {
+      "line": 746,
+      "start_col": 8,
+      "end_col": 87,
+      "action": "update"
+    },
+    {
+      "line": 897,
+      "start_col": 0,
+      "end_col": 32,
+      "action": "insert"
+    },
+    {
+      "line": 1047,
+      "start_col": 4,
+      "end_col": 92,
+      "action": "insert"
+    },
+    {
+      "line": 1051,
+      "start_col": 4,
+      "end_col": 97,
+      "action": "insert"
+    },
+    {
+      "line": 1073,
+      "start_col": 4,
+      "end_col": 42,
+      "action": "insert"
+    },
+    {
+      "line": 1090,
+      "start_col": 4,
+      "end_col": 93,
+      "action": "insert"
+    },
+    {
+      "line": 1724,
+      "start_col": 12,
+      "end_col": 90,
+      "action": "update"
+    }
   ]
 }

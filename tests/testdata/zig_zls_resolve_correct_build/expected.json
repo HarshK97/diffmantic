@@ -2767,5 +2767,25 @@
       "left_line": 663,
       "right_line": 666
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 251,
+      "start_col": 8,
+      "end_col": 138,
+      "action": "insert"
+    },
+    {
+      "line": 252,
+      "start_col": 8,
+      "end_col": 103,
+      "action": "insert"
+    },
+    {
+      "line": 255,
+      "start_col": 102,
+      "end_col": 114,
+      "action": "insert"
+    }
   ]
 }

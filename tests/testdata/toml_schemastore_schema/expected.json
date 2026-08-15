@@ -172,5 +172,45 @@
       "left_line": 12,
       "right_line": 14
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 1,
+      "start_col": 0,
+      "end_col": 10,
+      "action": "update"
+    },
+    {
+      "line": 1,
+      "start_col": 0,
+      "end_col": 32,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 3,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "insert"
+    },
+    {
+      "line": 4,
+      "start_col": 0,
+      "end_col": 4,
+      "action": "update"
+    },
+    {
+      "line": 4,
+      "start_col": 0,
+      "end_col": 26,
+      "action": "insert"
+    },
+    {
+      "line": 4,
+      "start_col": 0,
+      "end_col": 26,
+      "action": "move"
+    }
   ]
 }
