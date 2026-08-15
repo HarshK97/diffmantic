@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/git"
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -49,7 +50,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
 					hasMarkers := false
 					if data, err := os.ReadFile(filepath.Join(m.repoPath, item.path)); err == nil {
-						hasMarkers = hasConflictMarkers(data)
+						hasMarkers = pipeline.HasConflictMarkers(data)
 					}
 
 					if isConflict || hasMarkers {

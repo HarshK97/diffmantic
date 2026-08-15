@@ -19,7 +19,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -112,29 +112,29 @@ type pipelineResult struct {
 func runPipeline(t *testing.T, f fixture) pipelineResult {
 	t.Helper()
 
-	astA, err := treesitter.Parse(f.OldSrc, f.OldPath)
+	res, err := pipeline.Run(f.OldSrc, f.NewSrc, f.OldPath, f.NewPath, pipeline.DiffOptions{
+		DisableErrorFallback: true,
+		DisableSizeLimit:     true,
+	})
 	if err != nil {
-		t.Fatalf("parsing %s: %v", f.OldPath, err)
-	}
-	astB, err := treesitter.Parse(f.NewSrc, f.NewPath)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", f.NewPath, err)
+		t.Fatalf("pipeline run failed: %v", err)
 	}
 
-	result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
-	es := actions.GenerateEditScript(astA, astB, result.Mappings)
-	es = postprocess.Run(es, result.Mappings, astA, astB)
-
-	jsonData, err := serialize.Marshal(es, result.Mappings, astA, astB, f.OldSrc, f.NewSrc)
+	jsonData, err := json.MarshalIndent(res.Envelope, "", "  ")
 	if err != nil {
 		t.Fatalf("serializing JSON: %v", err)
 	}
 
+	var mappings *engine.Mapping
+	if res.MatchResult != nil {
+		mappings = res.MatchResult.Mappings
+	}
+
 	return pipelineResult{
-		AstA:     astA,
-		AstB:     astB,
-		Mappings: result.Mappings,
-		ES:       es,
+		AstA:     res.SrcAST,
+		AstB:     res.DstAST,
+		Mappings: mappings,
+		ES:       res.EditScript,
 		JSON:     jsonData,
 	}
 }

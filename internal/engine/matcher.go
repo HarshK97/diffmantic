@@ -13,10 +13,12 @@ type MatchResult struct {
 	Mappings *Mapping
 }
 
-func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte) *MatchResult {
+func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *MatchResult {
 	mappings := NewMapping()
 
-	part := NewLinePartition(srcA, srcB)
+	if part == nil {
+		part = NewLinePartition(srcA, srcB)
+	}
 
 	minHeight := 2
 	minDice := 0.5

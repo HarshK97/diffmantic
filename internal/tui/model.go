@@ -6,12 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/HarshK97/diffmantic/internal/actions"
-	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/git"
-	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -455,26 +452,15 @@ func isBinary(data []byte) bool {
 	return bytes.IndexByte(data[:min(len(data), 8000)], 0) != -1
 }
 
-func hasConflictMarkers(data []byte) bool {
-	return bytes.Contains(data, []byte("<<<<<<<")) || bytes.Contains(data, []byte("=======")) || bytes.Contains(data, []byte(">>>>>>>"))
-}
-
 func computeBytesDiff(srcBytes, dstBytes []byte, srcFile, dstFile string, isConflict bool) (*serialize.Envelope, error) {
-	if isConflict || hasConflictMarkers(srcBytes) || hasConflictMarkers(dstBytes) || len(srcBytes) > 400*1024 || len(dstBytes) > 400*1024 {
-		return serialize.BuildLineDiffEnvelope(srcBytes, dstBytes), nil
+	res, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
+		ParseErrorLimit: 0,
+		IsConflict:      isConflict,
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	srcAST, _ := treesitter.Parse(srcBytes, srcFile)
-	dstAST, _ := treesitter.Parse(dstBytes, dstFile)
-	if srcAST == nil || dstAST == nil || srcAST.ParseErrorCount > 0 || dstAST.ParseErrorCount > 0 {
-		return serialize.BuildLineDiffEnvelope(srcBytes, dstBytes), nil
-	}
-
-	matchResult := engine.Match(srcAST, dstAST, srcBytes, dstBytes)
-	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
-	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
-
-	return serialize.BuildEnvelope(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes)
+	return res.Envelope, nil
 }
 
 // rebuildVirtualLines updates display mappings and virtual change indices after folding/unfolding.

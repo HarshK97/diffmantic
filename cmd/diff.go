@@ -28,6 +28,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -71,7 +72,9 @@ Examples:
 		}
 
 		parseErrorLimit := getParseErrorLimit(cmd)
-		dr, err := computeDiffWithOptions(fileA, fileB, parseErrorLimit)
+		dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
+			ParseErrorLimit: parseErrorLimit,
+		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

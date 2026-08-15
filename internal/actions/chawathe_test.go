@@ -56,7 +56,7 @@ func TestHTMLSelfClosingTagMatching(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
 	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 
 	for _, a := range script.Actions() {
