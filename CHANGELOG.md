@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Lowered the minimum Go toolchain requirement in `go.mod` from Go 1.26 to Go 1.24 to relax build constraints.
+
 ## [0.5.0] - 2026-08-15
 
 ### Added

@@ -7,7 +7,7 @@
     <a href="https://github.com/HarshK97/diffmantic/actions/workflows/ci.yml"><img src="https://github.com/HarshK97/diffmantic/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="https://github.com/HarshK97/diffmantic/releases/latest"><img src="https://img.shields.io/github/v/release/HarshK97/diffmantic?label=release" alt="Latest Release"></a>
     <a href="https://github.com/HarshK97/diffmantic/blob/main/LICENSE"><img src="https://img.shields.io/github/license/HarshK97/diffmantic" alt="License: MIT"></a>
-    <a href="https://pkg.go.dev/github.com/HarshK97/diffmantic"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go Version"></a>
+    <a href="https://pkg.go.dev/github.com/HarshK97/diffmantic"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go Version"></a>
   </p>
 </p>
 
@@ -100,7 +100,7 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64 + arm64) are on the [Rele
 
 ### Build from Source
 
-Requires Go 1.26+. No C compiler or CGo required (`CGO_ENABLED=0`).
+Requires Go 1.24+. No C compiler or CGo required (`CGO_ENABLED=0`).
 
 ```bash
 git clone https://github.com/HarshK97/diffmantic.git
