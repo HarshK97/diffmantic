@@ -22,9 +22,11 @@ type LineAlignmentPair struct {
 
 // Envelope wraps the serialized actions list with a schema version.
 type Envelope struct {
-	Version       string              `json:"version"`
-	Actions       []Action            `json:"actions"`
-	LineAlignment []LineAlignmentPair `json:"line_alignment,omitempty"`
+	Version         string              `json:"version"`
+	Actions         []Action            `json:"actions"`
+	LineAlignment   []LineAlignmentPair `json:"line_alignment,omitempty"`
+	LeftHighlights  []HighlightSpan     `json:"left_highlights,omitempty"`
+	RightHighlights []HighlightSpan     `json:"right_highlights,omitempty"`
 }
 
 // Action represents a serialized edit-script action.
@@ -96,11 +98,14 @@ func BuildLineDiffEnvelope(srcBytes, dstBytes []byte) *Envelope {
 		}
 	}
 
-	return &Envelope{
+	env := &Envelope{
 		Version:       SchemaVersion,
 		Actions:       actionsList,
 		LineAlignment: alignment,
 	}
+	env.LeftHighlights = BuildHighlightSpans(srcBytes, env.Actions, "left")
+	env.RightHighlights = BuildHighlightSpans(dstBytes, env.Actions, "right")
+	return env
 }
 
 // BuildEnvelope bundles the edit script, AST mappings, and metadata into a unified envelope.
@@ -283,6 +288,9 @@ func BuildEnvelope(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot 
 
 		env.Actions = append(env.Actions, ja)
 	}
+
+	env.LeftHighlights = BuildHighlightSpans(srcBytes, env.Actions, "left")
+	env.RightHighlights = BuildHighlightSpans(dstBytes, env.Actions, "right")
 
 	return &env, nil
 }

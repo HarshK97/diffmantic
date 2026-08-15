@@ -6,68 +6,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
-func TestMergeAllSpansByKind(t *testing.T) {
-	srcBytes := []byte("    for cookie in cj:\n")
-
-	moveA := &serialize.Action{
-		Action:  "move",
-		Node:    &serialize.NodeRef{Type: "for", Label: "for", StartByte: 4, EndByte: 7},
-		GroupID: "group-1",
-	}
-	moveB := &serialize.Action{
-		Action:  "move",
-		Node:    &serialize.NodeRef{Type: "identifier", Label: "cookie", StartByte: 8, EndByte: 14},
-		GroupID: "group-1",
-	}
-	moveC := &serialize.Action{
-		Action:  "move",
-		Node:    &serialize.NodeRef{Type: "in", Label: "in", StartByte: 15, EndByte: 17},
-		GroupID: "group-1",
-	}
-	moveD := &serialize.Action{
-		Action:  "move",
-		Node:    &serialize.NodeRef{Type: "identifier", Label: "cj", StartByte: 18, EndByte: 20},
-		GroupID: "group-1",
-	}
-	deleteContainer := &serialize.Action{
-		Action: "delete",
-		Node:   &serialize.NodeRef{Type: "for_statement", StartByte: 0, EndByte: 21},
-	}
-
-	// Spans are purposefully interleaved with a full-line container delete span.
-	hl := &highlights{
-		spans: map[int][]span{
-			0: {
-				{startCol: 0, endCol: 21, kind: kindDelete, totalLen: 21, action: deleteContainer},
-				{startCol: 4, endCol: 7, kind: kindMove, totalLen: 3, action: moveA},
-				{startCol: 8, endCol: 14, kind: kindMove, totalLen: 6, action: moveB},
-				{startCol: 15, endCol: 17, kind: kindMove, totalLen: 2, action: moveC},
-				{startCol: 18, endCol: 20, kind: kindMove, totalLen: 2, action: moveD},
-			},
-		},
-		tinted: map[int]actionKind{0: kindDelete},
-	}
-
-	mergeAllSpans(hl, srcBytes)
-
-	spans := hl.spans[0]
-	var moveSpans []span
-	for _, s := range spans {
-		if s.kind == kindMove {
-			moveSpans = append(moveSpans, s)
-		}
-	}
-
-	if len(moveSpans) != 1 {
-		t.Fatalf("expected 1 merged move span, got %d", len(moveSpans))
-	}
-
-	ms := moveSpans[0]
-	if ms.startCol != 4 || ms.endCol != 20 {
-		t.Errorf("expected merged move span cols 4..20, got %d..%d", ms.startCol, ms.endCol)
-	}
-}
-
 func TestBuildHighlightsGroupingAndMerging(t *testing.T) {
 	tests := []struct {
 		name         string

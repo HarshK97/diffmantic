@@ -423,10 +423,7 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 			ec = runeLen
 		}
 		if sc >= 0 && ec > sc {
-			candidateLen := s.totalLen
-			if candidateLen <= 0 {
-				candidateLen = ec - sc
-			}
+			candidateLen := ec - sc
 			for col := sc; col < ec && col < runeLen; col++ {
 				if s.kind == kindMove || s.kind == kindMoveUpdate {
 					colHasMove[col] = true

@@ -1,16 +1,13 @@
 package tui
 
 import (
-	"bytes"
 	"maps"
 	"slices"
-	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-// actionKind is the type of edit (insert, delete, move, update) that dictates how we color the line.
+// actionKind dictates how a line or span is colored in the TUI.
 type actionKind int
 
 const (
@@ -21,24 +18,22 @@ const (
 	kindMoveUpdate
 )
 
-// span is a range of columns to highlight in a single line.
-// Columns are 0-indexed byte offsets from the beginning of the line.
+// span is a 0-indexed byte column range to highlight on a single line.
 type span struct {
 	startCol int
 	endCol   int
 	kind     actionKind
-	totalLen int
 	action   *serialize.Action
 }
 
-// highlights tracks all highlighted spans and changed lines for one file.
+// highlights tracks highlighted spans and changed lines for one pane.
 type highlights struct {
 	spans       map[int][]span
 	tinted      map[int]actionKind
 	changeLines []int // Sorted list of edited lines
 }
 
-// buildHighlights converts byte ranges from actions into inline highlights for the old and new files.
+// buildHighlights converts serialized actions into inline highlights for both panes.
 func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (srcHL, dstHL *highlights) {
 	srcHL = &highlights{
 		spans:  make(map[int][]span),
@@ -49,46 +44,34 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 		tinted: make(map[int]actionKind),
 	}
 
-	srcIndex := serialize.BuildLineIndex(srcBytes)
-	dstIndex := serialize.BuildLineIndex(dstBytes)
+	leftSpans := serialize.BuildHighlightSpans(srcBytes, actions, "left")
+	rightSpans := serialize.BuildHighlightSpans(dstBytes, actions, "right")
 
-	for i := range actions {
-		a := &actions[i]
-		switch a.Action {
-		case "delete":
-			if a.Node != nil {
-				addHighlight(srcHL, srcIndex, srcBytes, a.Node.StartByte, a.Node.EndByte, kindDelete, a)
-			}
-
-		case "insert":
-			if a.Node != nil {
-				addHighlight(dstHL, dstIndex, dstBytes, a.Node.StartByte, a.Node.EndByte, kindInsert, a)
-			}
-
-		case "update":
-			if a.Node != nil {
-				addHighlight(srcHL, srcIndex, srcBytes, a.Node.StartByte, a.Node.EndByte, kindUpdate, a)
-			}
-			if a.DestNode != nil {
-				addHighlight(dstHL, dstIndex, dstBytes, a.DestNode.StartByte, a.DestNode.EndByte, kindUpdate, a)
-			}
-
-		case "move":
-			kind := kindMove
-			if a.NewValue != "" || a.OldValue != "" || a.DestNode != nil {
-				kind = kindMoveUpdate
-			}
-			if a.Node != nil {
-				addHighlight(srcHL, srcIndex, srcBytes, a.Node.StartByte, a.Node.EndByte, kind, a)
-			}
-			if a.DestStartByte != nil && a.DestEndByte != nil {
-				addHighlight(dstHL, dstIndex, dstBytes, *a.DestStartByte, *a.DestEndByte, kind, a)
-			}
+	for _, s := range leftSpans {
+		k := parseActionKind(s.Action)
+		srcHL.spans[s.Line] = append(srcHL.spans[s.Line], span{
+			startCol: s.StartCol,
+			endCol:   s.EndCol,
+			kind:     k,
+			action:   s.ActionRef,
+		})
+		if existing, ok := srcHL.tinted[s.Line]; !ok || k < existing {
+			srcHL.tinted[s.Line] = k
 		}
 	}
 
-	mergeAllSpans(srcHL, srcBytes)
-	mergeAllSpans(dstHL, dstBytes)
+	for _, s := range rightSpans {
+		k := parseActionKind(s.Action)
+		dstHL.spans[s.Line] = append(dstHL.spans[s.Line], span{
+			startCol: s.StartCol,
+			endCol:   s.EndCol,
+			kind:     k,
+			action:   s.ActionRef,
+		})
+		if existing, ok := dstHL.tinted[s.Line]; !ok || k < existing {
+			dstHL.tinted[s.Line] = k
+		}
+	}
 
 	// Track edited lines so the user can jump between them with n/N.
 	srcHL.changeLines = slices.Sorted(maps.Keys(srcHL.tinted))
@@ -97,135 +80,17 @@ func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (src
 	return srcHL, dstHL
 }
 
-// Break a byte range into line-by-line highlights.
-func addHighlight(hl *highlights, lineIndex []int, fileBytes []byte, startByte, endByte uint32, kind actionKind, action *serialize.Action) {
-	totLen := int(endByte - startByte)
-	serialize.ForEachLineSpan(lineIndex, fileBytes, startByte, endByte, func(line, sc, ec int) {
-		hl.spans[line] = append(hl.spans[line], span{
-			startCol: sc,
-			endCol:   ec,
-			kind:     kind,
-			totalLen: totLen,
-			action:   action,
-		})
-		if existing, ok := hl.tinted[line]; !ok || kind < existing {
-			hl.tinted[line] = kind
-		}
-	})
-}
-
-func mergeAllSpans(hl *highlights, fileBytes []byte) {
-	lineIndex := serialize.BuildLineIndex(fileBytes)
-	for line, lineSpans := range hl.spans {
-		if len(lineSpans) <= 1 {
-			continue
-		}
-
-		// Group spans by actionKind so spans of the same kind (e.g. moves)
-		// can merge across gaps without being blocked by interleaved spans of other kinds.
-		var spansByKind [4][]span
-		for _, s := range lineSpans {
-			if int(s.kind) >= 0 && int(s.kind) < len(spansByKind) {
-				spansByKind[int(s.kind)] = append(spansByKind[int(s.kind)], s)
-			}
-		}
-
-		var allMerged []span
-		for _, kSpans := range spansByKind {
-			if len(kSpans) == 0 {
-				continue
-			}
-			sort.Slice(kSpans, func(i, j int) bool {
-				return kSpans[i].startCol < kSpans[j].startCol
-			})
-
-			curr := kSpans[0]
-			for i := 1; i < len(kSpans); i++ {
-				next := kSpans[i]
-				canMerge := false
-
-				if curr.kind == next.kind {
-					gap := next.startCol - curr.endCol
-					if gap <= 3 {
-						// Check if the gap contains only non-word characters like spaces or punctuation.
-						onlyNonChars := true
-						if gap > 0 && line < len(lineIndex) {
-							lineStart := lineIndex[line]
-							gapStart := lineStart + curr.endCol
-							gapEnd := lineStart + next.startCol
-							if gapStart < len(fileBytes) && gapEnd <= len(fileBytes) {
-								onlyNonChars = isOnlyNonCharacters(fileBytes[gapStart:gapEnd])
-							}
-						}
-
-						if onlyNonChars {
-							// For updates and moves, make sure they share the same parents in the tree.
-							if curr.kind == kindUpdate || curr.kind == kindMove {
-								if curr.action != nil && next.action != nil {
-									if curr.action.GroupID != "" && curr.action.GroupID == next.action.GroupID {
-										canMerge = true
-									} else if curr.kind == kindUpdate {
-										canMerge = sharesLineage(curr.action.Parent, next.action.Parent)
-									} else {
-										// Moves must share both their original and destination lineage.
-										canMerge = sharesLineage(curr.action.Parent, next.action.Parent) &&
-											sharesLineage(curr.action.OldParent, next.action.OldParent)
-									}
-								}
-							} else {
-								// We can always merge inserts and deletes if there are no word characters in the gap.
-								canMerge = true
-							}
-						}
-					}
-				}
-
-				if canMerge {
-					// Extend current span to cover the next one.
-					if next.endCol > curr.endCol {
-						curr.endCol = next.endCol
-					}
-					if next.totalLen > curr.totalLen {
-						curr.totalLen = next.totalLen
-					}
-				} else {
-					allMerged = append(allMerged, curr)
-					curr = next
-				}
-			}
-			allMerged = append(allMerged, curr)
-		}
-
-		hl.spans[line] = allMerged
+func parseActionKind(act string) actionKind {
+	switch act {
+	case "delete":
+		return kindDelete
+	case "insert":
+		return kindInsert
+	case "update":
+		return kindUpdate
+	case "move":
+		return kindMove
+	default:
+		return kindUpdate
 	}
-}
-
-func isOnlyNonCharacters(b []byte) bool {
-	if bytes.ContainsAny(b, "<>=+-*/%!&|^~?") {
-		return false
-	}
-	for _, c := range b {
-		if treesitter.IsWordChar(c) {
-			return false
-		}
-	}
-	return true
-}
-
-func nodeRefsEqual(n1, n2 *serialize.NodeRef) bool {
-	if n1 == nil || n2 == nil {
-		return n1 == nil && n2 == nil
-	}
-	return slices.Equal(n1.Path, n2.Path)
-}
-
-func isAncestorRef(a, b *serialize.NodeRef) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	return len(b.Path) >= len(a.Path) && slices.Equal(a.Path, b.Path[:len(a.Path)])
-}
-
-func sharesLineage(n1, n2 *serialize.NodeRef) bool {
-	return nodeRefsEqual(n1, n2) || isAncestorRef(n1, n2) || isAncestorRef(n2, n1)
 }
