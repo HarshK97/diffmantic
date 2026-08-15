@@ -29,12 +29,23 @@ jobs:
       - name: Run test suite (pre-release verification)
         run: go test -v ./...
 
+      - name: Extract Release Notes from CHANGELOG.md
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v tag="$VERSION" '$0 ~ "^## \\[" tag "\\]" { flag=1; next } flag && /^## \[/ { flag=0 } flag { print }' CHANGELOG.md > /tmp/RELEASE_NOTES.md
+          if [ ! -s /tmp/RELEASE_NOTES.md ]; then
+            echo "Release notes for version $VERSION." > /tmp/RELEASE_NOTES.md
+          fi
+          echo "" >> /tmp/RELEASE_NOTES.md
+          echo "---" >> /tmp/RELEASE_NOTES.md
+          echo "**Full Changelog**: https://github.com/HarshK97/diffmantic/blob/main/CHANGELOG.md" >> /tmp/RELEASE_NOTES.md
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: v2.16.0
-          args: release --clean
+          args: release --clean --release-notes=/tmp/RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}

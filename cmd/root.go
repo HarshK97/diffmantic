@@ -32,7 +32,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:     "diffm [refA] [refB]",
-	Version: "0.4.0",
+	Version: "0.5.0",
 	Short:   "Semantic diff engine powered by Tree-sitter",
 	Long: `diffmantic is a structural source code diff engine.
 
@@ -41,9 +41,7 @@ differences. It detects not just what lines changed, but what code structures
 were inserted, deleted, updated, moved, or renamed.
 
 Works as a standalone CLI, a git difftool, or a backend engine for editor
-plugins (Neovim, VS Code) via JSON output.
-
-Supported languages: Go, JavaScript, TypeScript, Python.`,
+plugins (Neovim, VS Code) via JSON output.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if git.IsGitRepository(".") {

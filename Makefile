@@ -1,7 +1,17 @@
-.PHONY: build test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short clean
+.PHONY: build build-core build-all test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short clean
 
-build: ## Build the diffm binary
-	go build -o diffm ./cmd/diffm
+TAGS_16LANGS := grammar_subset grammar_subset_c grammar_subset_cpp grammar_subset_css grammar_subset_go grammar_subset_html grammar_subset_java grammar_subset_javascript grammar_subset_json grammar_subset_lua grammar_subset_php grammar_subset_python grammar_subset_ruby grammar_subset_rust grammar_subset_toml grammar_subset_tsx grammar_subset_typescript grammar_subset_yaml grammar_subset_zig
+
+build: ## Build default binary with 16 core languages (13 MB)
+	go build -tags '$(TAGS_16LANGS)' -ldflags="-s -w" -trimpath -o diffm ./cmd/diffm
+
+build-core: ## Build binary with ~100 core grammars (22 MB)
+	go build -tags grammar_set_core -ldflags="-s -w" -trimpath -o diffm ./cmd/diffm
+
+build-all: ## Build binary with all ~200+ embedded grammars (29 MB)
+	go build -ldflags="-s -w" -trimpath -o diffm ./cmd/diffm
+
+
 
 clean: ## Remove built binaries and coverage files
 	rm -f diffm coverage.out coverage.html
