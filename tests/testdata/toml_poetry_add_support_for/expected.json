@@ -1035,5 +1035,39 @@
       "left_line": 232,
       "right_line": 232
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 18,
+      "start_col": 4,
+      "end_col": 24,
+      "action": "update"
+    },
+    {
+      "line": 46,
+      "start_col": 10,
+      "end_col": 26,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 18,
+      "start_col": 4,
+      "end_col": 24,
+      "action": "update"
+    },
+    {
+      "line": 18,
+      "start_col": 27,
+      "end_col": 62,
+      "action": "insert"
+    },
+    {
+      "line": 46,
+      "start_col": 10,
+      "end_col": 15,
+      "action": "insert"
+    }
   ]
 }

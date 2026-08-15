@@ -2385,5 +2385,123 @@
       "left_line": 450,
       "right_line": 448
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 131,
+      "start_col": 1,
+      "end_col": 3,
+      "action": "move"
+    },
+    {
+      "line": 131,
+      "start_col": 4,
+      "end_col": 31,
+      "action": "delete"
+    },
+    {
+      "line": 132,
+      "start_col": 0,
+      "end_col": 32,
+      "action": "delete"
+    },
+    {
+      "line": 132,
+      "start_col": 16,
+      "end_col": 24,
+      "action": "move"
+    },
+    {
+      "line": 133,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "delete"
+    },
+    {
+      "line": 134,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "delete"
+    },
+    {
+      "line": 134,
+      "start_col": 2,
+      "end_col": 27,
+      "action": "move"
+    },
+    {
+      "line": 134,
+      "start_col": 11,
+      "end_col": 22,
+      "action": "update"
+    },
+    {
+      "line": 135,
+      "start_col": 0,
+      "end_col": 2,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 131,
+      "start_col": 1,
+      "end_col": 9,
+      "action": "move"
+    },
+    {
+      "line": 131,
+      "start_col": 10,
+      "end_col": 19,
+      "action": "insert"
+    },
+    {
+      "line": 131,
+      "start_col": 19,
+      "end_col": 24,
+      "action": "move"
+    },
+    {
+      "line": 133,
+      "start_col": 1,
+      "end_col": 3,
+      "action": "move"
+    },
+    {
+      "line": 133,
+      "start_col": 4,
+      "end_col": 5,
+      "action": "insert"
+    },
+    {
+      "line": 133,
+      "start_col": 5,
+      "end_col": 21,
+      "action": "move"
+    },
+    {
+      "line": 133,
+      "start_col": 14,
+      "end_col": 21,
+      "action": "update"
+    },
+    {
+      "line": 133,
+      "start_col": 21,
+      "end_col": 25,
+      "action": "insert"
+    },
+    {
+      "line": 134,
+      "start_col": 0,
+      "end_col": 37,
+      "action": "insert"
+    },
+    {
+      "line": 135,
+      "start_col": 0,
+      "end_col": 2,
+      "action": "insert"
+    }
   ]
 }

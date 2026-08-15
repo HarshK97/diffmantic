@@ -1378,5 +1378,129 @@
       "left_line": 269,
       "right_line": 267
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 168,
+      "start_col": 8,
+      "end_col": 48,
+      "action": "delete"
+    },
+    {
+      "line": 169,
+      "start_col": 8,
+      "end_col": 70,
+      "action": "delete"
+    },
+    {
+      "line": 170,
+      "start_col": 0,
+      "end_col": 58,
+      "action": "delete"
+    },
+    {
+      "line": 171,
+      "start_col": 0,
+      "end_col": 41,
+      "action": "delete"
+    },
+    {
+      "line": 172,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "delete"
+    },
+    {
+      "line": 198,
+      "start_col": 8,
+      "end_col": 69,
+      "action": "delete"
+    },
+    {
+      "line": 199,
+      "start_col": 8,
+      "end_col": 48,
+      "action": "delete"
+    },
+    {
+      "line": 200,
+      "start_col": 8,
+      "end_col": 70,
+      "action": "delete"
+    },
+    {
+      "line": 201,
+      "start_col": 0,
+      "end_col": 58,
+      "action": "delete"
+    },
+    {
+      "line": 202,
+      "start_col": 0,
+      "end_col": 41,
+      "action": "delete"
+    },
+    {
+      "line": 203,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 168,
+      "start_col": 8,
+      "end_col": 75,
+      "action": "insert"
+    },
+    {
+      "line": 169,
+      "start_col": 8,
+      "end_col": 68,
+      "action": "insert"
+    },
+    {
+      "line": 170,
+      "start_col": 8,
+      "end_col": 49,
+      "action": "insert"
+    },
+    {
+      "line": 171,
+      "start_col": 0,
+      "end_col": 94,
+      "action": "insert"
+    },
+    {
+      "line": 197,
+      "start_col": 8,
+      "end_col": 69,
+      "action": "insert"
+    },
+    {
+      "line": 198,
+      "start_col": 8,
+      "end_col": 75,
+      "action": "insert"
+    },
+    {
+      "line": 199,
+      "start_col": 8,
+      "end_col": 68,
+      "action": "insert"
+    },
+    {
+      "line": 200,
+      "start_col": 8,
+      "end_col": 49,
+      "action": "insert"
+    },
+    {
+      "line": 201,
+      "start_col": 0,
+      "end_col": 94,
+      "action": "insert"
+    }
   ]
 }

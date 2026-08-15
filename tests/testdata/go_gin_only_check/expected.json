@@ -2458,5 +2458,147 @@
       "left_line": 453,
       "right_line": 453
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 360,
+      "start_col": 2,
+      "end_col": 8,
+      "action": "update"
+    },
+    {
+      "line": 362,
+      "start_col": 18,
+      "end_col": 41,
+      "action": "update"
+    },
+    {
+      "line": 363,
+      "start_col": 16,
+      "end_col": 39,
+      "action": "update"
+    },
+    {
+      "line": 364,
+      "start_col": 12,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 365,
+      "start_col": 17,
+      "end_col": 40,
+      "action": "update"
+    },
+    {
+      "line": 366,
+      "start_col": 17,
+      "end_col": 40,
+      "action": "update"
+    },
+    {
+      "line": 367,
+      "start_col": 18,
+      "end_col": 41,
+      "action": "update"
+    },
+    {
+      "line": 368,
+      "start_col": 16,
+      "end_col": 39,
+      "action": "update"
+    },
+    {
+      "line": 369,
+      "start_col": 20,
+      "end_col": 43,
+      "action": "update"
+    },
+    {
+      "line": 376,
+      "start_col": 30,
+      "end_col": 40,
+      "action": "move"
+    },
+    {
+      "line": 376,
+      "start_col": 46,
+      "end_col": 52,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 360,
+      "start_col": 2,
+      "end_col": 10,
+      "action": "update"
+    },
+    {
+      "line": 362,
+      "start_col": 18,
+      "end_col": 25,
+      "action": "update"
+    },
+    {
+      "line": 363,
+      "start_col": 16,
+      "end_col": 23,
+      "action": "update"
+    },
+    {
+      "line": 364,
+      "start_col": 12,
+      "end_col": 15,
+      "action": "update"
+    },
+    {
+      "line": 365,
+      "start_col": 17,
+      "end_col": 24,
+      "action": "update"
+    },
+    {
+      "line": 366,
+      "start_col": 17,
+      "end_col": 24,
+      "action": "update"
+    },
+    {
+      "line": 367,
+      "start_col": 18,
+      "end_col": 25,
+      "action": "update"
+    },
+    {
+      "line": 368,
+      "start_col": 16,
+      "end_col": 23,
+      "action": "update"
+    },
+    {
+      "line": 369,
+      "start_col": 20,
+      "end_col": 27,
+      "action": "update"
+    },
+    {
+      "line": 376,
+      "start_col": 30,
+      "end_col": 40,
+      "action": "move"
+    },
+    {
+      "line": 376,
+      "start_col": 41,
+      "end_col": 56,
+      "action": "insert"
+    },
+    {
+      "line": 376,
+      "start_col": 62,
+      "end_col": 70,
+      "action": "update"
+    }
   ]
 }

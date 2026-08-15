@@ -139,5 +139,39 @@
       "left_line": 4,
       "right_line": 5
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 1,
+      "start_col": 2,
+      "end_col": 6,
+      "action": "delete"
+    },
+    {
+      "line": 2,
+      "start_col": 2,
+      "end_col": 4,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 1,
+      "start_col": 2,
+      "end_col": 4,
+      "action": "insert"
+    },
+    {
+      "line": 2,
+      "start_col": 2,
+      "end_col": 23,
+      "action": "insert"
+    },
+    {
+      "line": 3,
+      "start_col": 2,
+      "end_col": 6,
+      "action": "insert"
+    }
   ]
 }

@@ -8320,5 +8320,135 @@
       "left_line": 1949,
       "right_line": 1963
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 1332,
+      "start_col": 4,
+      "end_col": 67,
+      "action": "delete"
+    },
+    {
+      "line": 1333,
+      "start_col": 19,
+      "end_col": 48,
+      "action": "update"
+    },
+    {
+      "line": 1333,
+      "start_col": 19,
+      "end_col": 52,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 1331,
+      "start_col": 0,
+      "end_col": 81,
+      "action": "insert"
+    },
+    {
+      "line": 1332,
+      "start_col": 0,
+      "end_col": 81,
+      "action": "insert"
+    },
+    {
+      "line": 1333,
+      "start_col": 0,
+      "end_col": 81,
+      "action": "insert"
+    },
+    {
+      "line": 1334,
+      "start_col": 0,
+      "end_col": 80,
+      "action": "insert"
+    },
+    {
+      "line": 1335,
+      "start_col": 0,
+      "end_col": 23,
+      "action": "insert"
+    },
+    {
+      "line": 1336,
+      "start_col": 0,
+      "end_col": 3,
+      "action": "insert"
+    },
+    {
+      "line": 1338,
+      "start_col": 4,
+      "end_col": 34,
+      "action": "insert"
+    },
+    {
+      "line": 1339,
+      "start_col": 19,
+      "end_col": 32,
+      "action": "insert"
+    },
+    {
+      "line": 1340,
+      "start_col": 4,
+      "end_col": 27,
+      "action": "insert"
+    },
+    {
+      "line": 1341,
+      "start_col": 4,
+      "end_col": 56,
+      "action": "insert"
+    },
+    {
+      "line": 1342,
+      "start_col": 4,
+      "end_col": 31,
+      "action": "insert"
+    },
+    {
+      "line": 1343,
+      "start_col": 4,
+      "end_col": 46,
+      "action": "insert"
+    },
+    {
+      "line": 1344,
+      "start_col": 4,
+      "end_col": 12,
+      "action": "insert"
+    },
+    {
+      "line": 1344,
+      "start_col": 13,
+      "end_col": 37,
+      "action": "update"
+    },
+    {
+      "line": 1344,
+      "start_col": 13,
+      "end_col": 41,
+      "action": "move"
+    },
+    {
+      "line": 1345,
+      "start_col": 4,
+      "end_col": 34,
+      "action": "insert"
+    },
+    {
+      "line": 1346,
+      "start_col": 4,
+      "end_col": 43,
+      "action": "insert"
+    },
+    {
+      "line": 1347,
+      "start_col": 0,
+      "end_col": 38,
+      "action": "insert"
+    }
   ]
 }

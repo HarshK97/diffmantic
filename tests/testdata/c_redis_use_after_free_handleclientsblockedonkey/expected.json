@@ -3998,5 +3998,123 @@
       "left_line": 842,
       "right_line": 853
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 627,
+      "start_col": 8,
+      "end_col": 20,
+      "action": "move"
+    },
+    {
+      "line": 628,
+      "start_col": 8,
+      "end_col": 20,
+      "action": "delete"
+    },
+    {
+      "line": 629,
+      "start_col": 8,
+      "end_col": 32,
+      "action": "delete"
+    },
+    {
+      "line": 634,
+      "start_col": 15,
+      "end_col": 38,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 630,
+      "start_col": 23,
+      "end_col": 26,
+      "action": "insert"
+    },
+    {
+      "line": 631,
+      "start_col": 12,
+      "end_col": 74,
+      "action": "insert"
+    },
+    {
+      "line": 632,
+      "start_col": 0,
+      "end_col": 76,
+      "action": "insert"
+    },
+    {
+      "line": 633,
+      "start_col": 12,
+      "end_col": 58,
+      "action": "insert"
+    },
+    {
+      "line": 634,
+      "start_col": 12,
+      "end_col": 27,
+      "action": "insert"
+    },
+    {
+      "line": 635,
+      "start_col": 12,
+      "end_col": 43,
+      "action": "insert"
+    },
+    {
+      "line": 636,
+      "start_col": 12,
+      "end_col": 24,
+      "action": "move"
+    },
+    {
+      "line": 636,
+      "start_col": 25,
+      "end_col": 45,
+      "action": "insert"
+    },
+    {
+      "line": 637,
+      "start_col": 12,
+      "end_col": 29,
+      "action": "insert"
+    },
+    {
+      "line": 639,
+      "start_col": 12,
+      "end_col": 76,
+      "action": "insert"
+    },
+    {
+      "line": 640,
+      "start_col": 0,
+      "end_col": 79,
+      "action": "insert"
+    },
+    {
+      "line": 641,
+      "start_col": 0,
+      "end_col": 80,
+      "action": "insert"
+    },
+    {
+      "line": 642,
+      "start_col": 0,
+      "end_col": 78,
+      "action": "insert"
+    },
+    {
+      "line": 643,
+      "start_col": 0,
+      "end_col": 60,
+      "action": "insert"
+    },
+    {
+      "line": 644,
+      "start_col": 12,
+      "end_col": 42,
+      "action": "insert"
+    }
   ]
 }

@@ -909,5 +909,33 @@
       "left_line": 192,
       "right_line": 192
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 11,
+      "start_col": 26,
+      "end_col": 60,
+      "action": "update"
+    },
+    {
+      "line": 66,
+      "start_col": 65,
+      "end_col": 68,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 11,
+      "start_col": 26,
+      "end_col": 59,
+      "action": "update"
+    },
+    {
+      "line": 66,
+      "start_col": 65,
+      "end_col": 68,
+      "action": "insert"
+    }
   ]
 }

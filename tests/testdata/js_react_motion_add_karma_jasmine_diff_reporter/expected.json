@@ -423,5 +423,61 @@
       "left_line": 76,
       "right_line": 84
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 55,
+      "start_col": 16,
+      "end_col": 30,
+      "action": "insert"
+    },
+    {
+      "line": 56,
+      "start_col": 4,
+      "end_col": 26,
+      "action": "insert"
+    },
+    {
+      "line": 57,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "insert"
+    },
+    {
+      "line": 58,
+      "start_col": 0,
+      "end_col": 14,
+      "action": "insert"
+    },
+    {
+      "line": 59,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "insert"
+    },
+    {
+      "line": 60,
+      "start_col": 0,
+      "end_col": 25,
+      "action": "insert"
+    },
+    {
+      "line": 61,
+      "start_col": 0,
+      "end_col": 25,
+      "action": "insert"
+    },
+    {
+      "line": 62,
+      "start_col": 0,
+      "end_col": 7,
+      "action": "insert"
+    },
+    {
+      "line": 63,
+      "start_col": 0,
+      "end_col": 5,
+      "action": "insert"
+    }
   ]
 }

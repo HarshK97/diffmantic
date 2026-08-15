@@ -234,5 +234,21 @@
       "left_line": 50,
       "right_line": 50
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 15,
+      "start_col": 2,
+      "end_col": 37,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 15,
+      "start_col": 2,
+      "end_col": 36,
+      "action": "update"
+    }
   ]
 }

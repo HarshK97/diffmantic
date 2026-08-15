@@ -1216,5 +1216,27 @@
       "left_line": 266,
       "right_line": 266
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 149,
+      "start_col": 19,
+      "end_col": 41,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 149,
+      "start_col": 19,
+      "end_col": 44,
+      "action": "insert"
+    },
+    {
+      "line": 149,
+      "start_col": 45,
+      "end_col": 67,
+      "action": "move"
+    }
   ]
 }

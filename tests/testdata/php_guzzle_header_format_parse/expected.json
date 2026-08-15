@@ -633,5 +633,63 @@
       "left_line": 113,
       "right_line": 114
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 49,
+      "start_col": 8,
+      "end_col": 56,
+      "action": "update"
+    },
+    {
+      "line": 50,
+      "start_col": 8,
+      "end_col": 47,
+      "action": "delete"
+    },
+    {
+      "line": 51,
+      "start_col": 0,
+      "end_col": 92,
+      "action": "delete"
+    },
+    {
+      "line": 52,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 49,
+      "start_col": 8,
+      "end_col": 56,
+      "action": "insert"
+    },
+    {
+      "line": 50,
+      "start_col": 8,
+      "end_col": 87,
+      "action": "insert"
+    },
+    {
+      "line": 51,
+      "start_col": 8,
+      "end_col": 50,
+      "action": "insert"
+    },
+    {
+      "line": 52,
+      "start_col": 8,
+      "end_col": 95,
+      "action": "update"
+    },
+    {
+      "line": 53,
+      "start_col": 8,
+      "end_col": 12,
+      "action": "insert"
+    }
   ]
 }

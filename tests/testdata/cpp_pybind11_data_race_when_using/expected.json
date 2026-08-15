@@ -373,5 +373,31 @@
       "left_line": 66,
       "right_line": 72
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 30,
+      "start_col": 0,
+      "end_col": 21,
+      "action": "insert"
+    },
+    {
+      "line": 31,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "insert"
+    },
+    {
+      "line": 66,
+      "start_col": 4,
+      "end_col": 45,
+      "action": "insert"
+    },
+    {
+      "line": 67,
+      "start_col": 0,
+      "end_col": 64,
+      "action": "insert"
+    }
   ]
 }

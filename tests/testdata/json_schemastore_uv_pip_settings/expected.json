@@ -10214,5 +10214,123 @@
       "left_line": 2466,
       "right_line": 2459
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 739,
+      "start_col": 10,
+      "end_col": 26,
+      "action": "delete"
+    },
+    {
+      "line": 740,
+      "start_col": 10,
+      "end_col": 25,
+      "action": "delete"
+    },
+    {
+      "line": 741,
+      "start_col": 0,
+      "end_col": 21,
+      "action": "delete"
+    },
+    {
+      "line": 742,
+      "start_col": 0,
+      "end_col": 30,
+      "action": "delete"
+    },
+    {
+      "line": 742,
+      "start_col": 14,
+      "end_col": 29,
+      "action": "move"
+    },
+    {
+      "line": 743,
+      "start_col": 0,
+      "end_col": 24,
+      "action": "delete"
+    },
+    {
+      "line": 743,
+      "start_col": 14,
+      "end_col": 24,
+      "action": "move"
+    },
+    {
+      "line": 744,
+      "start_col": 0,
+      "end_col": 49,
+      "action": "delete"
+    },
+    {
+      "line": 744,
+      "start_col": 0,
+      "end_col": 49,
+      "action": "move"
+    },
+    {
+      "line": 745,
+      "start_col": 0,
+      "end_col": 15,
+      "action": "delete"
+    },
+    {
+      "line": 745,
+      "start_col": 0,
+      "end_col": 15,
+      "action": "move"
+    },
+    {
+      "line": 746,
+      "start_col": 0,
+      "end_col": 13,
+      "action": "delete"
+    },
+    {
+      "line": 747,
+      "start_col": 0,
+      "end_col": 11,
+      "action": "delete"
+    },
+    {
+      "line": 748,
+      "start_col": 10,
+      "end_col": 39,
+      "action": "delete"
+    },
+    {
+      "line": 749,
+      "start_col": 10,
+      "end_col": 30,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 739,
+      "start_col": 10,
+      "end_col": 25,
+      "action": "move"
+    },
+    {
+      "line": 740,
+      "start_col": 10,
+      "end_col": 20,
+      "action": "move"
+    },
+    {
+      "line": 741,
+      "start_col": 0,
+      "end_col": 45,
+      "action": "move"
+    },
+    {
+      "line": 742,
+      "start_col": 0,
+      "end_col": 11,
+      "action": "move"
+    }
   ]
 }

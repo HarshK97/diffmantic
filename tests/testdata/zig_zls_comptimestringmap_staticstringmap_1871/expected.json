@@ -1913,5 +1913,45 @@
       "left_line": 448,
       "right_line": 448
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 3,
+      "start_col": 62,
+      "end_col": 64,
+      "action": "update"
+    },
+    {
+      "line": 8,
+      "start_col": 0,
+      "end_col": 41,
+      "action": "update"
+    },
+    {
+      "line": 9,
+      "start_col": 23,
+      "end_col": 50,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 3,
+      "start_col": 62,
+      "end_col": 64,
+      "action": "update"
+    },
+    {
+      "line": 8,
+      "start_col": 0,
+      "end_col": 42,
+      "action": "update"
+    },
+    {
+      "line": 9,
+      "start_col": 23,
+      "end_col": 48,
+      "action": "update"
+    }
   ]
 }

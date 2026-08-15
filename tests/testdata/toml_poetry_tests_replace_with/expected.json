@@ -999,5 +999,33 @@
       "left_line": 231,
       "right_line": 229
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 79,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "delete"
+    },
+    {
+      "line": 86,
+      "start_col": 0,
+      "end_col": 77,
+      "action": "delete"
+    },
+    {
+      "line": 188,
+      "start_col": 4,
+      "end_col": 17,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 79,
+      "start_col": 0,
+      "end_col": 22,
+      "action": "insert"
+    }
   ]
 }

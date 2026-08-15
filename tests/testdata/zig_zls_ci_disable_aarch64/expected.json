@@ -2831,5 +2831,27 @@
       "left_line": 687,
       "right_line": 688
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 32,
+      "start_col": 4,
+      "end_col": 49,
+      "action": "delete"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 32,
+      "start_col": 4,
+      "end_col": 50,
+      "action": "insert"
+    },
+    {
+      "line": 33,
+      "start_col": 4,
+      "end_col": 53,
+      "action": "insert"
+    }
   ]
 }

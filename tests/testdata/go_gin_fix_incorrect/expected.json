@@ -674,5 +674,21 @@
       "left_line": 160,
       "right_line": 160
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 89,
+      "start_col": 5,
+      "end_col": 28,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 89,
+      "start_col": 5,
+      "end_col": 29,
+      "action": "update"
+    }
   ]
 }

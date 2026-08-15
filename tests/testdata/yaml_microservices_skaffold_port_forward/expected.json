@@ -526,5 +526,39 @@
       "left_line": 69,
       "right_line": 68
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 49,
+      "start_col": 2,
+      "end_col": 59,
+      "action": "update"
+    },
+    {
+      "line": 63,
+      "start_col": 4,
+      "end_col": 13,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 47,
+      "start_col": 0,
+      "end_col": 56,
+      "action": "update"
+    },
+    {
+      "line": 61,
+      "start_col": 2,
+      "end_col": 11,
+      "action": "insert"
+    },
+    {
+      "line": 67,
+      "start_col": 6,
+      "end_col": 20,
+      "action": "move"
+    }
   ]
 }

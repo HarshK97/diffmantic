@@ -1977,5 +1977,45 @@
       "left_line": 445,
       "right_line": 449
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 275,
+      "start_col": 8,
+      "end_col": 78,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 276,
+      "start_col": 8,
+      "end_col": 67,
+      "action": "insert"
+    },
+    {
+      "line": 277,
+      "start_col": 8,
+      "end_col": 41,
+      "action": "insert"
+    },
+    {
+      "line": 278,
+      "start_col": 0,
+      "end_col": 82,
+      "action": "insert"
+    },
+    {
+      "line": 278,
+      "start_col": 12,
+      "end_col": 82,
+      "action": "move"
+    },
+    {
+      "line": 279,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "insert"
+    }
   ]
 }

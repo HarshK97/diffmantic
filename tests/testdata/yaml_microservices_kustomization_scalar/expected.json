@@ -677,5 +677,141 @@
       "left_line": -1,
       "right_line": 40
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 29,
+      "start_col": 0,
+      "end_col": 11,
+      "action": "delete"
+    },
+    {
+      "line": 30,
+      "start_col": 0,
+      "end_col": 43,
+      "action": "move"
+    },
+    {
+      "line": 31,
+      "start_col": 0,
+      "end_col": 51,
+      "action": "move"
+    },
+    {
+      "line": 32,
+      "start_col": 0,
+      "end_col": 39,
+      "action": "move"
+    },
+    {
+      "line": 33,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "move"
+    },
+    {
+      "line": 34,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "move"
+    },
+    {
+      "line": 35,
+      "start_col": 0,
+      "end_col": 35,
+      "action": "move"
+    },
+    {
+      "line": 36,
+      "start_col": 0,
+      "end_col": 48,
+      "action": "move"
+    },
+    {
+      "line": 37,
+      "start_col": 0,
+      "end_col": 55,
+      "action": "move"
+    },
+    {
+      "line": 38,
+      "start_col": 0,
+      "end_col": 53,
+      "action": "move"
+    },
+    {
+      "line": 39,
+      "start_col": 0,
+      "end_col": 52,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 29,
+      "start_col": 0,
+      "end_col": 13,
+      "action": "insert"
+    },
+    {
+      "line": 30,
+      "start_col": 0,
+      "end_col": 43,
+      "action": "move"
+    },
+    {
+      "line": 31,
+      "start_col": 0,
+      "end_col": 51,
+      "action": "move"
+    },
+    {
+      "line": 32,
+      "start_col": 0,
+      "end_col": 39,
+      "action": "move"
+    },
+    {
+      "line": 33,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "move"
+    },
+    {
+      "line": 34,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "move"
+    },
+    {
+      "line": 35,
+      "start_col": 0,
+      "end_col": 35,
+      "action": "move"
+    },
+    {
+      "line": 36,
+      "start_col": 0,
+      "end_col": 48,
+      "action": "move"
+    },
+    {
+      "line": 37,
+      "start_col": 0,
+      "end_col": 55,
+      "action": "move"
+    },
+    {
+      "line": 38,
+      "start_col": 0,
+      "end_col": 53,
+      "action": "move"
+    },
+    {
+      "line": 39,
+      "start_col": 0,
+      "end_col": 52,
+      "action": "move"
+    }
   ]
 }

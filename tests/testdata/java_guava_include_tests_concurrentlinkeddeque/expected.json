@@ -1086,5 +1086,121 @@
       "left_line": 223,
       "right_line": 244
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 30,
+      "start_col": 0,
+      "end_col": 50,
+      "action": "insert"
+    },
+    {
+      "line": 55,
+      "start_col": 4,
+      "end_col": 51,
+      "action": "insert"
+    },
+    {
+      "line": 76,
+      "start_col": 2,
+      "end_col": 67,
+      "action": "insert"
+    },
+    {
+      "line": 77,
+      "start_col": 0,
+      "end_col": 22,
+      "action": "insert"
+    },
+    {
+      "line": 78,
+      "start_col": 0,
+      "end_col": 3,
+      "action": "insert"
+    },
+    {
+      "line": 151,
+      "start_col": 2,
+      "end_col": 47,
+      "action": "insert"
+    },
+    {
+      "line": 152,
+      "start_col": 0,
+      "end_col": 39,
+      "action": "insert"
+    },
+    {
+      "line": 153,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "insert"
+    },
+    {
+      "line": 154,
+      "start_col": 0,
+      "end_col": 23,
+      "action": "insert"
+    },
+    {
+      "line": 155,
+      "start_col": 0,
+      "end_col": 65,
+      "action": "insert"
+    },
+    {
+      "line": 156,
+      "start_col": 0,
+      "end_col": 83,
+      "action": "insert"
+    },
+    {
+      "line": 157,
+      "start_col": 0,
+      "end_col": 15,
+      "action": "insert"
+    },
+    {
+      "line": 158,
+      "start_col": 0,
+      "end_col": 14,
+      "action": "insert"
+    },
+    {
+      "line": 159,
+      "start_col": 0,
+      "end_col": 39,
+      "action": "insert"
+    },
+    {
+      "line": 160,
+      "start_col": 0,
+      "end_col": 22,
+      "action": "insert"
+    },
+    {
+      "line": 161,
+      "start_col": 0,
+      "end_col": 97,
+      "action": "insert"
+    },
+    {
+      "line": 162,
+      "start_col": 0,
+      "end_col": 56,
+      "action": "insert"
+    },
+    {
+      "line": 163,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "insert"
+    },
+    {
+      "line": 164,
+      "start_col": 0,
+      "end_col": 3,
+      "action": "insert"
+    }
   ]
 }

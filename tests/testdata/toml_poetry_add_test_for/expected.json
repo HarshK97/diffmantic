@@ -955,5 +955,25 @@
       "left_line": 216,
       "right_line": 219
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 74,
+      "start_col": 0,
+      "end_col": 55,
+      "action": "insert"
+    },
+    {
+      "line": 75,
+      "start_col": 0,
+      "end_col": 58,
+      "action": "insert"
+    },
+    {
+      "line": 76,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "insert"
+    }
   ]
 }

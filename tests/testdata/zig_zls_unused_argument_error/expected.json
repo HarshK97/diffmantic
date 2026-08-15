@@ -2583,5 +2583,135 @@
       "left_line": 499,
       "right_line": 503
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 475,
+      "start_col": 11,
+      "end_col": 13,
+      "action": "delete"
+    },
+    {
+      "line": 476,
+      "start_col": 12,
+      "end_col": 101,
+      "action": "delete"
+    },
+    {
+      "line": 477,
+      "start_col": 0,
+      "end_col": 14,
+      "action": "delete"
+    },
+    {
+      "line": 478,
+      "start_col": 0,
+      "end_col": 56,
+      "action": "delete"
+    },
+    {
+      "line": 479,
+      "start_col": 0,
+      "end_col": 59,
+      "action": "delete"
+    },
+    {
+      "line": 480,
+      "start_col": 0,
+      "end_col": 110,
+      "action": "delete"
+    },
+    {
+      "line": 481,
+      "start_col": 8,
+      "end_col": 12,
+      "action": "delete"
+    },
+    {
+      "line": 492,
+      "start_col": 12,
+      "end_col": 52,
+      "action": "move"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 475,
+      "start_col": 11,
+      "end_col": 13,
+      "action": "insert"
+    },
+    {
+      "line": 476,
+      "start_col": 12,
+      "end_col": 34,
+      "action": "insert"
+    },
+    {
+      "line": 477,
+      "start_col": 0,
+      "end_col": 105,
+      "action": "insert"
+    },
+    {
+      "line": 478,
+      "start_col": 0,
+      "end_col": 18,
+      "action": "insert"
+    },
+    {
+      "line": 479,
+      "start_col": 0,
+      "end_col": 60,
+      "action": "insert"
+    },
+    {
+      "line": 480,
+      "start_col": 0,
+      "end_col": 63,
+      "action": "insert"
+    },
+    {
+      "line": 481,
+      "start_col": 0,
+      "end_col": 114,
+      "action": "insert"
+    },
+    {
+      "line": 482,
+      "start_col": 0,
+      "end_col": 16,
+      "action": "insert"
+    },
+    {
+      "line": 483,
+      "start_col": 0,
+      "end_col": 43,
+      "action": "insert"
+    },
+    {
+      "line": 484,
+      "start_col": 0,
+      "end_col": 57,
+      "action": "insert"
+    },
+    {
+      "line": 484,
+      "start_col": 16,
+      "end_col": 56,
+      "action": "move"
+    },
+    {
+      "line": 485,
+      "start_col": 0,
+      "end_col": 14,
+      "action": "insert"
+    },
+    {
+      "line": 486,
+      "start_col": 8,
+      "end_col": 12,
+      "action": "insert"
+    }
   ]
 }

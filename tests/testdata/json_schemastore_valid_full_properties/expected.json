@@ -382,5 +382,45 @@
       "left_line": 69,
       "right_line": 69
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 42,
+      "start_col": 22,
+      "end_col": 41,
+      "action": "update"
+    },
+    {
+      "line": 48,
+      "start_col": 22,
+      "end_col": 94,
+      "action": "update"
+    },
+    {
+      "line": 55,
+      "start_col": 16,
+      "end_col": 35,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 42,
+      "start_col": 22,
+      "end_col": 39,
+      "action": "update"
+    },
+    {
+      "line": 48,
+      "start_col": 22,
+      "end_col": 95,
+      "action": "update"
+    },
+    {
+      "line": 55,
+      "start_col": 16,
+      "end_col": 33,
+      "action": "update"
+    }
   ]
 }

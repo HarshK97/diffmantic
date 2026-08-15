@@ -173,5 +173,49 @@
       "left_line": 20,
       "right_line": 27
     }
+  ],
+  "right_highlights": [
+    {
+      "line": 20,
+      "start_col": 8,
+      "end_col": 22,
+      "action": "insert"
+    },
+    {
+      "line": 21,
+      "start_col": 0,
+      "end_col": 18,
+      "action": "insert"
+    },
+    {
+      "line": 22,
+      "start_col": 0,
+      "end_col": 84,
+      "action": "insert"
+    },
+    {
+      "line": 23,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "insert"
+    },
+    {
+      "line": 24,
+      "start_col": 0,
+      "end_col": 20,
+      "action": "insert"
+    },
+    {
+      "line": 25,
+      "start_col": 0,
+      "end_col": 33,
+      "action": "insert"
+    },
+    {
+      "line": 26,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "insert"
+    }
   ]
 }

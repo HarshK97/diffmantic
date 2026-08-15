@@ -5192,5 +5192,21 @@
       "left_line": 1286,
       "right_line": 1286
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 773,
+      "start_col": 8,
+      "end_col": 93,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 773,
+      "start_col": 8,
+      "end_col": 89,
+      "action": "update"
+    }
   ]
 }

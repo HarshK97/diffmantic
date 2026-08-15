@@ -519,5 +519,25 @@
       "left_line": 122,
       "right_line": 119
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 66,
+      "start_col": 8,
+      "end_col": 44,
+      "action": "delete"
+    },
+    {
+      "line": 67,
+      "start_col": 0,
+      "end_col": 94,
+      "action": "delete"
+    },
+    {
+      "line": 68,
+      "start_col": 0,
+      "end_col": 9,
+      "action": "delete"
+    }
   ]
 }

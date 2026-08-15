@@ -276,5 +276,237 @@
       "left_line": 56,
       "right_line": 56
     }
+  ],
+  "left_highlights": [
+    {
+      "line": 28,
+      "start_col": 0,
+      "end_col": 51,
+      "action": "update"
+    },
+    {
+      "line": 29,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "update"
+    },
+    {
+      "line": 31,
+      "start_col": 0,
+      "end_col": 24,
+      "action": "update"
+    },
+    {
+      "line": 32,
+      "start_col": 0,
+      "end_col": 38,
+      "action": "update"
+    },
+    {
+      "line": 33,
+      "start_col": 0,
+      "end_col": 39,
+      "action": "update"
+    },
+    {
+      "line": 35,
+      "start_col": 0,
+      "end_col": 40,
+      "action": "update"
+    },
+    {
+      "line": 36,
+      "start_col": 0,
+      "end_col": 20,
+      "action": "update"
+    },
+    {
+      "line": 37,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "update"
+    },
+    {
+      "line": 39,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "update"
+    },
+    {
+      "line": 41,
+      "start_col": 0,
+      "end_col": 38,
+      "action": "update"
+    },
+    {
+      "line": 43,
+      "start_col": 0,
+      "end_col": 37,
+      "action": "update"
+    },
+    {
+      "line": 44,
+      "start_col": 0,
+      "end_col": 37,
+      "action": "update"
+    },
+    {
+      "line": 45,
+      "start_col": 0,
+      "end_col": 5,
+      "action": "update"
+    },
+    {
+      "line": 47,
+      "start_col": 0,
+      "end_col": 54,
+      "action": "update"
+    },
+    {
+      "line": 49,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "update"
+    },
+    {
+      "line": 50,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "update"
+    },
+    {
+      "line": 51,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 52,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 53,
+      "start_col": 0,
+      "end_col": 2,
+      "action": "update"
+    }
+  ],
+  "right_highlights": [
+    {
+      "line": 28,
+      "start_col": 0,
+      "end_col": 54,
+      "action": "update"
+    },
+    {
+      "line": 30,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "update"
+    },
+    {
+      "line": 31,
+      "start_col": 0,
+      "end_col": 44,
+      "action": "update"
+    },
+    {
+      "line": 32,
+      "start_col": 0,
+      "end_col": 51,
+      "action": "update"
+    },
+    {
+      "line": 33,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "update"
+    },
+    {
+      "line": 35,
+      "start_col": 0,
+      "end_col": 24,
+      "action": "update"
+    },
+    {
+      "line": 36,
+      "start_col": 0,
+      "end_col": 38,
+      "action": "update"
+    },
+    {
+      "line": 37,
+      "start_col": 0,
+      "end_col": 39,
+      "action": "update"
+    },
+    {
+      "line": 39,
+      "start_col": 0,
+      "end_col": 40,
+      "action": "update"
+    },
+    {
+      "line": 40,
+      "start_col": 0,
+      "end_col": 20,
+      "action": "update"
+    },
+    {
+      "line": 41,
+      "start_col": 0,
+      "end_col": 19,
+      "action": "update"
+    },
+    {
+      "line": 43,
+      "start_col": 0,
+      "end_col": 27,
+      "action": "update"
+    },
+    {
+      "line": 45,
+      "start_col": 0,
+      "end_col": 38,
+      "action": "update"
+    },
+    {
+      "line": 47,
+      "start_col": 0,
+      "end_col": 37,
+      "action": "update"
+    },
+    {
+      "line": 48,
+      "start_col": 0,
+      "end_col": 37,
+      "action": "update"
+    },
+    {
+      "line": 49,
+      "start_col": 0,
+      "end_col": 5,
+      "action": "update"
+    },
+    {
+      "line": 51,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 52,
+      "start_col": 0,
+      "end_col": 31,
+      "action": "update"
+    },
+    {
+      "line": 53,
+      "start_col": 0,
+      "end_col": 2,
+      "action": "update"
+    }
   ]
 }
