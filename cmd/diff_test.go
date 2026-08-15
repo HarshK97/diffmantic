@@ -3,6 +3,8 @@ package cmd
 import (
 	"os"
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 )
 
 func TestDiffCmdRegistered(t *testing.T) {
@@ -36,17 +38,17 @@ func TestComputeDiffWithDevNull(t *testing.T) {
 	}
 
 	devNull := os.DevNull
-	res, err := computeDiff(devNull, tmpFile)
+	res, err := pipeline.RunFiles(devNull, tmpFile, pipeline.DiffOptions{})
 	if err != nil {
-		t.Fatalf("computeDiff(/dev/null, sample.go) failed: %v", err)
+		t.Fatalf("pipeline.RunFiles(/dev/null, sample.go) failed: %v", err)
 	}
 	if res == nil || res.Envelope == nil {
 		t.Fatal("expected non-nil diff result and envelope")
 	}
 
-	res2, err := computeDiff(tmpFile, devNull)
+	res2, err := pipeline.RunFiles(tmpFile, devNull, pipeline.DiffOptions{})
 	if err != nil {
-		t.Fatalf("computeDiff(sample.go, /dev/null) failed: %v", err)
+		t.Fatalf("pipeline.RunFiles(sample.go, /dev/null) failed: %v", err)
 	}
 	if res2 == nil || res2.Envelope == nil {
 		t.Fatal("expected non-nil diff result and envelope for deleted file")
@@ -61,9 +63,9 @@ func TestComputeDiffUnsupportedLanguage(t *testing.T) {
 	_ = os.WriteFile(fileA, []byte("line 1\nline 2\nline 3\n"), 0o644)
 	_ = os.WriteFile(fileB, []byte("line 1\nline 2 modified\nline 3\nline 4\n"), 0o644)
 
-	res, err := computeDiff(fileA, fileB)
+	res, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{})
 	if err != nil {
-		t.Fatalf("computeDiff failed for unsupported files: %v", err)
+		t.Fatalf("pipeline.RunFiles failed for unsupported files: %v", err)
 	}
 	if res == nil || res.Envelope == nil {
 		t.Fatal("expected non-nil result and envelope for unsupported file diff")
@@ -96,18 +98,18 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	_ = os.WriteFile(fileB, []byte("package main\n\nfunc foo() {\n\tx := 10\n}\n"), 0o644)
 
 	// Default (limit = 0): should fall back to line diff
-	resDefault, err := computeDiffWithOptions(fileA, fileB, 0)
+	resDefault, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 0})
 	if err != nil {
-		t.Fatalf("computeDiffWithOptions(0) failed: %v", err)
+		t.Fatalf("pipeline.RunFiles(0) failed: %v", err)
 	}
 	if resDefault.MatchResult != nil {
 		t.Error("expected line diff fallback (nil MatchResult) when limit is 0")
 	}
 
 	// Allowed limit (limit = 5): should perform AST structural matching
-	resAllowed, err := computeDiffWithOptions(fileA, fileB, 5)
+	resAllowed, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 5})
 	if err != nil {
-		t.Fatalf("computeDiffWithOptions(5) failed: %v", err)
+		t.Fatalf("pipeline.RunFiles(5) failed: %v", err)
 	}
 	if resAllowed.MatchResult == nil {
 		t.Error("expected structural AST match result when limit is 5")

@@ -22,7 +22,7 @@ func TestMatchIdenticalTrees(t *testing.T) {
 		),
 	)
 
-	r := Match(src, dst, nil, nil)
+	r := Match(src, dst, nil, nil, nil)
 	if r == nil || r.Mappings == nil {
 		t.Fatal("Match returned nil")
 	}
@@ -40,7 +40,7 @@ func TestMatchDifferentLeafLabels(t *testing.T) {
 	src := testutil.Node("func", "main", testutil.Leaf("id", "x"))
 	dst := testutil.Node("func", "main", testutil.Leaf("id", "y"))
 
-	r := Match(src, dst, nil, nil)
+	r := Match(src, dst, nil, nil, nil)
 	if r == nil {
 		t.Fatal("Match returned nil")
 		return
@@ -55,7 +55,7 @@ func TestMatchRootAlwaysMapped(t *testing.T) {
 	src := testutil.Node("func", "a", testutil.Leaf("id", "x"))
 	dst := testutil.Node("func", "b", testutil.Leaf("str", "hello"))
 
-	r := Match(src, dst, nil, nil)
+	r := Match(src, dst, nil, nil, nil)
 	if !r.Mappings.Has(src) {
 		t.Error("src root should always be mapped")
 	}
@@ -67,7 +67,7 @@ func TestMatchRootAlwaysMapped(t *testing.T) {
 func TestMatchSingleLeaves(t *testing.T) {
 	src := testutil.Leaf("id", "x")
 	dst := testutil.Leaf("id", "x")
-	r := Match(src, dst, nil, nil)
+	r := Match(src, dst, nil, nil, nil)
 	if !r.Mappings.Has(src) || r.Mappings.Src()[src] != dst {
 		t.Error("single identical leaves should be mapped")
 	}
@@ -80,7 +80,7 @@ func TestMatchPairsPreOrder(t *testing.T) {
 	src := testutil.Node("block", "", c1, c2)
 	dst := testutil.Node("block", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))
 
-	r := Match(src, dst, nil, nil)
+	r := Match(src, dst, nil, nil, nil)
 	if len(r.Mappings.Pairs) < 3 {
 		t.Fatalf("expected at least 3 pairs, got %d", len(r.Mappings.Pairs))
 	}
@@ -285,7 +285,7 @@ func TestMatchPairKeyNameAffinity(t *testing.T) {
 
 	dstObj := testutil.Node("object", "", pairNew1, pairNew2)
 
-	r := Match(srcObj, dstObj, nil, nil)
+	r := Match(srcObj, dstObj, nil, nil, nil)
 	if r == nil || r.Mappings == nil {
 		t.Fatal("Match returned nil")
 	}

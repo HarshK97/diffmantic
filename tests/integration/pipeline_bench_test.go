@@ -1,10 +1,12 @@
 package integration
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -99,14 +101,14 @@ func BenchmarkPipeline(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				astA := mustParse(b, f.OldSrc, f.OldPath)
-				astB := mustParse(b, f.NewSrc, f.NewPath)
-
-				result := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
-				es := actions.GenerateEditScript(astA, astB, result.Mappings)
-				es = postprocess.Run(es, result.Mappings, astA, astB)
-
-				if _, err := serialize.Marshal(es, result.Mappings, astA, astB, f.OldSrc, f.NewSrc); err != nil {
+				res, err := pipeline.Run(f.OldSrc, f.NewSrc, f.OldPath, f.NewPath, pipeline.DiffOptions{
+					DisableErrorFallback: true,
+					DisableSizeLimit:     true,
+				})
+				if err != nil {
+					b.Fatalf("pipeline run failed: %v", err)
+				}
+				if _, err := json.Marshal(res.Envelope); err != nil {
 					b.Fatalf("serializing: %v", err)
 				}
 			}
@@ -143,7 +145,7 @@ func BenchmarkMatch(b *testing.B) {
 				astB := cloneAST(baseB)
 				b.StartTimer()
 
-				engine.Match(astA, astB, f.OldSrc, f.NewSrc)
+				engine.Match(astA, astB, f.OldSrc, f.NewSrc, nil)
 			}
 		})
 	}
@@ -156,7 +158,7 @@ func BenchmarkEditScript(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			baseA := mustParse(b, f.OldSrc, f.OldPath)
 			baseB := mustParse(b, f.NewSrc, f.NewPath)
-			baseRes := engine.Match(baseA, baseB, f.OldSrc, f.NewSrc)
+			baseRes := engine.Match(baseA, baseB, f.OldSrc, f.NewSrc, nil)
 
 			b.ReportAllocs()
 			for b.Loop() {
@@ -177,7 +179,7 @@ func BenchmarkPostprocess(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			baseA := mustParse(b, f.OldSrc, f.OldPath)
 			baseB := mustParse(b, f.NewSrc, f.NewPath)
-			baseRes := engine.Match(baseA, baseB, f.OldSrc, f.NewSrc)
+			baseRes := engine.Match(baseA, baseB, f.OldSrc, f.NewSrc, nil)
 			baseES := actions.GenerateEditScript(baseA, baseB, baseRes.Mappings)
 
 			b.ReportAllocs()
@@ -200,7 +202,7 @@ func BenchmarkSerialize(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			astA := mustParse(b, f.OldSrc, f.OldPath)
 			astB := mustParse(b, f.NewSrc, f.NewPath)
-			res := engine.Match(astA, astB, f.OldSrc, f.NewSrc)
+			res := engine.Match(astA, astB, f.OldSrc, f.NewSrc, nil)
 			es := actions.GenerateEditScript(astA, astB, res.Mappings)
 			es = postprocess.Run(es, res.Mappings, astA, astB)
 
