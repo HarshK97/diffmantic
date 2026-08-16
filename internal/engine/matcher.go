@@ -174,24 +174,35 @@ func MatchContainerKeywords(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			continue
 		}
 		for _, c1 := range p1.Children {
-			if c1.IsKeyword && !m.Has(c1) {
-				k2 := findMatchingKeywordChild(p2, c1, m)
-				if k2 != nil {
-					m.Add(c1, k2)
+			if !m.Has(c1) {
+				if c1.IsKeyword {
+					k2 := findMatchingKeywordChild(p1, p2, c1, m)
+					if k2 != nil {
+						m.Add(c1, k2)
+					}
+				} else if c1.IsScaffolding() && len(c1.Children) == 1 && c1.Children[0].IsKeyword {
+					k2 := findMatchingScaffoldKeywordChild(p1, p2, c1, m)
+					if k2 != nil {
+						m.Add(c1, k2)
+						m.Add(c1.Children[0], k2.Children[0])
+					}
 				}
 			}
 		}
 	}
 }
 
-func findMatchingKeywordChild(p2 *treesitter.ASTNode, k1 *treesitter.ASTNode, m *Mapping) *treesitter.ASTNode {
-	if p2 == nil || k1 == nil {
+func findMatchingKeywordChild(p1, p2 *treesitter.ASTNode, k1 *treesitter.ASTNode, m *Mapping) *treesitter.ASTNode {
+	if p1 == nil || p2 == nil || k1 == nil {
 		return nil
 	}
 	k1Idx := k1.ChildIndex()
 	var fallback *treesitter.ASTNode
 	for _, c2 := range p2.Children {
 		if c2.IsKeyword && c2.Type == k1.Type && !m.HasDst(c2) {
+			if !isKeywordClauseConsistent(p1, p2, k1, c2, m) {
+				continue
+			}
 			if c2.ChildIndex() == k1Idx {
 				return c2
 			}
@@ -201,6 +212,121 @@ func findMatchingKeywordChild(p2 *treesitter.ASTNode, k1 *treesitter.ASTNode, m 
 		}
 	}
 	return fallback
+}
+
+func findMatchingScaffoldKeywordChild(p1, p2 *treesitter.ASTNode, s1 *treesitter.ASTNode, m *Mapping) *treesitter.ASTNode {
+	if p1 == nil || p2 == nil || s1 == nil || len(s1.Children) != 1 {
+		return nil
+	}
+	k1 := s1.Children[0]
+	s1Idx := s1.ChildIndex()
+	var fallback *treesitter.ASTNode
+	for _, c2 := range p2.Children {
+		if c2.Type == s1.Type && len(c2.Children) == 1 && c2.Children[0].IsKeyword && c2.Children[0].Type == k1.Type && !m.HasDst(c2) && !m.HasDst(c2.Children[0]) {
+			if !isKeywordClauseConsistent(p1, p2, s1, c2, m) {
+				continue
+			}
+			if c2.ChildIndex() == s1Idx {
+				return c2
+			}
+			if fallback == nil {
+				fallback = c2
+			}
+		}
+	}
+	return fallback
+}
+
+func isKeywordClauseConsistent(p1, p2, k1, c2 *treesitter.ASTNode, m *Mapping) bool {
+	if p1 == nil || p2 == nil || k1 == nil || c2 == nil {
+		return false
+	}
+	k1Idx := k1.ChildIndex()
+	c2Idx := c2.ChildIndex()
+
+	var prev1, next1 *treesitter.ASTNode
+	for i := k1Idx - 1; i >= 0; i-- {
+		if !p1.Children[i].IsKeyword && !p1.Children[i].IsBracketOrParen() {
+			prev1 = p1.Children[i]
+			break
+		}
+	}
+	for i := k1Idx + 1; i < len(p1.Children); i++ {
+		if !p1.Children[i].IsKeyword && !p1.Children[i].IsBracketOrParen() {
+			next1 = p1.Children[i]
+			break
+		}
+	}
+
+	var prev2, next2 *treesitter.ASTNode
+	for i := c2Idx - 1; i >= 0; i-- {
+		if !p2.Children[i].IsKeyword && !p2.Children[i].IsBracketOrParen() {
+			prev2 = p2.Children[i]
+			break
+		}
+	}
+	for i := c2Idx + 1; i < len(p2.Children); i++ {
+		if !p2.Children[i].IsKeyword && !p2.Children[i].IsBracketOrParen() {
+			next2 = p2.Children[i]
+			break
+		}
+	}
+
+	// If k1 is preceded by an expression in p1 and c2 is preceded by an expression in p2,
+	// ensure they share mapping overlap.
+	if prev1 != nil && prev2 != nil {
+		if hasMappedDescendant(prev1, m) && hasMappedDescendant(prev2, m) {
+			if !hasSubtreeMappingOverlap(prev1, prev2, m) {
+				return false
+			}
+		}
+	}
+
+	// If k1 is followed by an expression/statement in p1 and c2 is followed by an expression/statement in p2,
+	// ensure they share mapping overlap.
+	if next1 != nil && next2 != nil {
+		if hasMappedDescendant(next1, m) && hasMappedDescendant(next2, m) {
+			if !hasSubtreeMappingOverlap(next1, next2, m) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func hasMappedDescendant(n *treesitter.ASTNode, m *Mapping) bool {
+	if n == nil || m == nil {
+		return false
+	}
+	if m.Has(n) || m.HasDst(n) {
+		return true
+	}
+	for _, l := range n.Leaves() {
+		if m.Has(l) || m.HasDst(l) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSubtreeMappingOverlap(n1, n2 *treesitter.ASTNode, m *Mapping) bool {
+	if n1 == nil || n2 == nil || m == nil {
+		return false
+	}
+	if m.Src()[n1] == n2 || m.Dst()[n2] == n1 {
+		return true
+	}
+	for _, l1 := range n1.Leaves() {
+		if dst := m.Src()[l1]; dst != nil {
+			for curr := dst; curr != nil; curr = curr.Parent {
+				if curr == n2 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // sortMappingsByPreOrder sorts mapped pairs by T1 pre-order index.
@@ -280,10 +406,14 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 }
 
 func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
-	if root == nil || root.Language == "" {
+	if root == nil {
 		return nil
 	}
-	r := treesitter.GetRules(root.Language)
+	lang := root.GetLanguage()
+	if lang == "" {
+		return nil
+	}
+	r := treesitter.GetRules(lang)
 	if r == nil || len(r.Declarations) == 0 {
 		return nil
 	}
@@ -313,8 +443,24 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
 	}
+	var idTypes []string
+	lang := n.GetLanguage()
+	if lang != "" {
+		if r := treesitter.GetRules(lang); r != nil {
+			if len(r.Declarations) > 0 && !slices.Contains(r.Declarations, n.Type) {
+				return ""
+			}
+			if len(r.Identifiers) > 0 {
+				idTypes = r.Identifiers
+			}
+		}
+	}
+	if len(idTypes) == 0 {
+		idTypes = []string{"identifier", "field_identifier", "type_identifier", "name", "tag_name"}
+	}
+
 	for _, child := range n.Children {
-		if child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "type_identifier" || child.Type == "name" {
+		if slices.Contains(idTypes, child.Type) {
 			if child.Label != "" {
 				return child.Label
 			}

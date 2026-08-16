@@ -8,9 +8,11 @@ import (
 )
 
 type scoredPair struct {
-	pair   [2]*treesitter.ASTNode
-	dice   float64
-	ancSim int
+	pair        [2]*treesitter.ASTNode
+	dice        float64
+	ancSim      int
+	nameMatched bool
+	mismatched  bool
 }
 
 // TopDown matches largest isomorphic subtrees top-down by height.
@@ -94,33 +96,63 @@ func TopDown(
 		}
 	}
 
-	scored := make([]scoredPair, len(A))
-	for i, pair := range A {
-		di := Dice(pair[0].Parent, pair[1].Parent, m.Src())
-		si := AncestorNameSimilarity(pair[0], pair[1])
-		scored[i] = scoredPair{pair: pair, dice: di, ancSim: si}
+	scored := make([]scoredPair, 0, len(A))
+	for _, pair := range A {
+		t1, t2 := pair[0], pair[1]
+
+		name1 := getDeclarationName(t1)
+		name2 := getDeclarationName(t2)
+		if name1 == "" && name2 == "" {
+			enc1 := GetEnclosingDeclaration(t1)
+			enc2 := GetEnclosingDeclaration(t2)
+			name1 = getDeclarationName(enc1)
+			name2 = getDeclarationName(enc2)
+		}
+
+		nameMatched := name1 != "" && name2 != "" && name1 == name2
+		mismatched := name1 != "" && name2 != "" && name1 != name2
+
+		di := Dice(t1.Parent, t2.Parent, m.Src())
+		si := AncestorNameSimilarity(t1, t2)
+		scored = append(scored, scoredPair{
+			pair:        pair,
+			dice:        di,
+			ancSim:      si,
+			nameMatched: nameMatched,
+			mismatched:  mismatched,
+		})
 	}
 
 	sort.SliceStable(scored, func(i, j int) bool {
-		if scored[i].dice != scored[j].dice {
-			return scored[i].dice > scored[j].dice
+		if scored[i].nameMatched != scored[j].nameMatched {
+			return scored[i].nameMatched
 		}
-		return scored[i].ancSim > scored[j].ancSim
+		if scored[i].mismatched != scored[j].mismatched {
+			return !scored[i].mismatched
+		}
+		if scored[i].ancSim != scored[j].ancSim {
+			return scored[i].ancSim > scored[j].ancSim
+		}
+		return scored[i].dice > scored[j].dice
 	})
 
 	for len(scored) > 0 {
-		pair := scored[0].pair
+		sp := scored[0]
+		pair := sp.pair
 		scored = scored[1:]
 		t1, t2 := pair[0], pair[1]
 
 		if m.Has(t1) || m.HasDst(t2) {
 			continue
 		}
+		if sp.mismatched && Height(t1) <= 2 {
+			continue
+		}
 
 		addIsomorphicPairs(t1, t2, m)
 
-		scored = slices.DeleteFunc(scored, func(sp scoredPair) bool {
-			return sp.pair[0] == t1 || sp.pair[1] == t2
+		scored = slices.DeleteFunc(scored, func(s scoredPair) bool {
+			return s.pair[0] == t1 || s.pair[1] == t2
 		})
 	}
 }
