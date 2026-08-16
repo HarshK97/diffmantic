@@ -31,8 +31,8 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 	ContestContainers(t1, t2, mappings)
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
-	MatchContainerKeywords(t1, t2, mappings)
 	RollupMatchedContainers(t1, t2, mappings)
+	MatchContainerKeywords(t1, t2, mappings)
 
 	if !mappings.Has(t1) && !mappings.HasDst(t2) {
 		mappings.Add(t1, t2)

@@ -28,7 +28,7 @@ test-e2e: ## E2E CLI tests
 	go test ./tests/e2e/ -count=1 -v
 
 test-update: ## Regenerate golden files
-	go test ./tests/integration/ -v -update
+	go test ./tests/integration/ -v -update -count=1
 
 bench: ## Run all benchmarks
 	go test ./tests/integration/ -bench=. -benchmem -run=^$$ -count=1
