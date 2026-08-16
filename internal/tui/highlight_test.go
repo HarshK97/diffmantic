@@ -50,15 +50,15 @@ func TestBuildHighlightsGroupingAndMerging(t *testing.T) {
 				{
 					Action:    "move",
 					Node:      &serialize.NodeRef{StartByte: 4, EndByte: 5},
-					Parent:    &serialize.NodeRef{Tree: "after", Path: []int{0}},
-					OldParent: &serialize.NodeRef{Tree: "before", Path: []int{0}},
+					Parent:    &serialize.NodeRef{Tree: "after", StartByte: 0, EndByte: 5},
+					OldParent: &serialize.NodeRef{Tree: "before", StartByte: 0, EndByte: 5},
 					GroupID:   "grp1",
 				},
 				{
 					Action:    "move",
 					Node:      &serialize.NodeRef{StartByte: 6, EndByte: 7},
-					Parent:    &serialize.NodeRef{Tree: "after", Path: []int{1}},
-					OldParent: &serialize.NodeRef{Tree: "before", Path: []int{1}},
+					Parent:    &serialize.NodeRef{Tree: "after", StartByte: 6, EndByte: 10},
+					OldParent: &serialize.NodeRef{Tree: "before", StartByte: 6, EndByte: 10},
 					GroupID:   "grp2",
 				},
 			},
@@ -102,7 +102,9 @@ func TestBuildHighlightsGroupingAndMerging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srcBytes := []byte(tt.src)
 			dstBytes := []byte(tt.dst)
-			srcHL, dstHL := buildHighlights(srcBytes, dstBytes, tt.actions)
+			leftSpans := serialize.BuildHighlightSpans(srcBytes, tt.actions, "left")
+			rightSpans := serialize.BuildHighlightSpans(dstBytes, tt.actions, "right")
+			srcHL, dstHL := buildHighlights(leftSpans, rightSpans)
 
 			var hl *highlights
 			if tt.checkPane == "src" {

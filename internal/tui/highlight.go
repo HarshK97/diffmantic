@@ -33,51 +33,29 @@ type highlights struct {
 	changeLines []int // Sorted list of edited lines
 }
 
-// buildHighlights converts serialized actions into inline highlights for both panes.
-func buildHighlights(srcBytes, dstBytes []byte, actions []serialize.Action) (srcHL, dstHL *highlights) {
-	srcHL = &highlights{
+func buildHighlights(leftSpans, rightSpans []serialize.HighlightSpan) (srcHL, dstHL *highlights) {
+	return populateHL(leftSpans), populateHL(rightSpans)
+}
+
+func populateHL(hlSpans []serialize.HighlightSpan) *highlights {
+	hl := &highlights{
 		spans:  make(map[int][]span),
 		tinted: make(map[int]actionKind),
 	}
-	dstHL = &highlights{
-		spans:  make(map[int][]span),
-		tinted: make(map[int]actionKind),
-	}
-
-	leftSpans := serialize.BuildHighlightSpans(srcBytes, actions, "left")
-	rightSpans := serialize.BuildHighlightSpans(dstBytes, actions, "right")
-
-	for _, s := range leftSpans {
+	for _, s := range hlSpans {
 		k := parseActionKind(s.Action)
-		srcHL.spans[s.Line] = append(srcHL.spans[s.Line], span{
+		hl.spans[s.Line] = append(hl.spans[s.Line], span{
 			startCol: s.StartCol,
 			endCol:   s.EndCol,
 			kind:     k,
 			action:   s.ActionRef,
 		})
-		if existing, ok := srcHL.tinted[s.Line]; !ok || k < existing {
-			srcHL.tinted[s.Line] = k
+		if existing, ok := hl.tinted[s.Line]; !ok || k < existing {
+			hl.tinted[s.Line] = k
 		}
 	}
-
-	for _, s := range rightSpans {
-		k := parseActionKind(s.Action)
-		dstHL.spans[s.Line] = append(dstHL.spans[s.Line], span{
-			startCol: s.StartCol,
-			endCol:   s.EndCol,
-			kind:     k,
-			action:   s.ActionRef,
-		})
-		if existing, ok := dstHL.tinted[s.Line]; !ok || k < existing {
-			dstHL.tinted[s.Line] = k
-		}
-	}
-
-	// Track edited lines so the user can jump between them with n/N.
-	srcHL.changeLines = slices.Sorted(maps.Keys(srcHL.tinted))
-	dstHL.changeLines = slices.Sorted(maps.Keys(dstHL.tinted))
-
-	return srcHL, dstHL
+	hl.changeLines = slices.Sorted(maps.Keys(hl.tinted))
+	return hl
 }
 
 func parseActionKind(act string) actionKind {

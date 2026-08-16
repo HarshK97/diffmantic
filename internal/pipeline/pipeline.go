@@ -20,6 +20,7 @@ type DiffOptions struct {
 	DisableErrorFallback bool
 	DisableSizeLimit     bool
 	IsConflict           bool
+	EnvelopeOpts         serialize.EnvelopeOptions
 }
 
 type DiffResult struct {
@@ -43,6 +44,15 @@ func HasConflictMarkers(data []byte) bool {
 // Run executes the diffmantic semantic diff pipeline on in-memory buffers.
 // It parses ASTs and computes line partitions concurrently.
 func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (*DiffResult, error) {
+	envOpts := opts.EnvelopeOpts
+	if !envOpts.IncludeActions && !envOpts.IncludeAlignment && !envOpts.IncludeHighlights {
+		envOpts = serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		}
+	}
+
 	if opts.IsConflict || (HasConflictMarkers(srcBytes) || HasConflictMarkers(dstBytes)) ||
 		(!opts.DisableSizeLimit && (len(srcBytes) > MaxASTFileSize || len(dstBytes) > MaxASTFileSize)) {
 		return &DiffResult{
@@ -50,7 +60,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 			DstBytes: dstBytes,
 			SrcFile:  srcFile,
 			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelope(srcBytes, dstBytes),
+			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
 		}, nil
 	}
 
@@ -64,7 +74,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 			DstBytes: dstBytes,
 			SrcFile:  srcFile,
 			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelope(srcBytes, dstBytes),
+			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
 		}, nil
 	}
 
@@ -103,7 +113,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 			DstBytes: dstBytes,
 			SrcFile:  srcFile,
 			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelope(srcBytes, dstBytes),
+			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
 		}, nil
 	}
 
@@ -111,7 +121,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
 
-	env, err := serialize.BuildEnvelope(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes)
+	env, err := serialize.BuildEnvelopeWithOptions(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes, envOpts)
 	if err != nil {
 		return nil, fmt.Errorf("building envelope: %w", err)
 	}

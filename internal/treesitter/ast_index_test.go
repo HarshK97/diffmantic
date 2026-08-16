@@ -11,18 +11,25 @@ import (
 
 func TestASTIndexMatchesRecursiveTraversal(t *testing.T) {
 	fixtures := []string{
-		"go_panic_findcaseinsensitivepathrec_redirectfixedpath",
-		"ts_circular_import",
-		"tsx_fix_test",
-		"py_delimiter_fix",
-		"rust_expr_call_precedence",
-		"json_key_reorder_simple",
-		"yaml_value_update_github_action",
-		"html_attribute_reorder",
-		"css_selector_reorder",
-		"lua_table_list_reorder",
-		"zig_short_only_params_fields",
-		"bash_windows_cpu_whitespace",
+		"c_redis_write_handler",
+		"cpp_fmt_avoid_instantiating_formatter_const",
+		"css_mdn_box_model_sizing_example",
+		"go_gin_fix_lint",
+		"html_mdn_stopwatch_controls",
+		"java_commons_lang_reject_non_ascii",
+		"js_express_call_callback",
+		"json_schemastore_workflow_step_reorder",
+		"jsx_express_feat_add",
+		"lua_neovim_ui2_messages",
+		"php_guzzle_client_pool_options",
+		"py_requests_make_json",
+		"ruby_sinatra_add_regression_test_for_conten_2",
+		"rust_tokio_time_test_util",
+		"toml_cargo_fix_comment_typo",
+		"ts_zod_json_schema",
+		"tsx_zod_docs",
+		"yaml_microservices_kustomization_scalar",
+		"zig_clap_compile_error_when",
 	}
 
 	for _, fixture := range fixtures {

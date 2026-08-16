@@ -2,9 +2,11 @@ package serialize
 
 import (
 	"bytes"
+	"cmp"
+	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
-	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
@@ -16,6 +18,17 @@ type HighlightSpan struct {
 	EndCol    int     `json:"end_col"`
 	Action    string  `json:"action"` // "insert", "delete", "update", "move"
 	ActionRef *Action `json:"-"`
+}
+
+func (s HighlightSpan) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]any{s.Line, s.StartCol, s.EndCol, s.Action})
+}
+
+func (s *HighlightSpan) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &[]any{&s.Line, &s.StartCol, &s.EndCol, &s.Action}); err != nil {
+		return fmt.Errorf("invalid highlight span tuple: %w", err)
+	}
+	return nil
 }
 
 type internalSpan struct {
@@ -89,11 +102,11 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []High
 			if len(gSpans) == 0 {
 				continue
 			}
-			sort.Slice(gSpans, func(i, j int) bool {
-				if gSpans[i].startCol != gSpans[j].startCol {
-					return gSpans[i].startCol < gSpans[j].startCol
-				}
-				return gSpans[i].endCol < gSpans[j].endCol
+			slices.SortFunc(gSpans, func(a, b internalSpan) int {
+				return cmp.Or(
+					cmp.Compare(a.startCol, b.startCol),
+					cmp.Compare(a.endCol, b.endCol),
+				)
 			})
 
 			curr := gSpans[0]
@@ -143,14 +156,12 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []High
 			lineMerged = append(lineMerged, curr)
 		}
 
-		sort.Slice(lineMerged, func(i, j int) bool {
-			if lineMerged[i].startCol != lineMerged[j].startCol {
-				return lineMerged[i].startCol < lineMerged[j].startCol
-			}
-			if lineMerged[i].endCol != lineMerged[j].endCol {
-				return lineMerged[i].endCol < lineMerged[j].endCol
-			}
-			return lineMerged[i].action < lineMerged[j].action
+		slices.SortFunc(lineMerged, func(a, b internalSpan) int {
+			return cmp.Or(
+				cmp.Compare(a.startCol, b.startCol),
+				cmp.Compare(a.endCol, b.endCol),
+				cmp.Compare(a.action, b.action),
+			)
 		})
 
 		for _, mSpan := range lineMerged {
@@ -191,14 +202,20 @@ func isOnlyNonCharacters(b []byte) bool {
 }
 
 func nodeRefsEqual(n1, n2 *NodeRef) bool {
-	return n1 == n2 || (n1 != nil && n2 != nil && slices.Equal(n1.Path, n2.Path))
+	if n1 == n2 {
+		return true
+	}
+	if n1 == nil || n2 == nil {
+		return false
+	}
+	return n1.Tree == n2.Tree && n1.StartByte == n2.StartByte && n1.EndByte == n2.EndByte && n1.Type == n2.Type
 }
 
 func isAncestorRef(a, b *NodeRef) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return len(b.Path) >= len(a.Path) && slices.Equal(a.Path, b.Path[:len(a.Path)])
+	return a.Tree == b.Tree && a.StartByte <= b.StartByte && a.EndByte >= b.EndByte
 }
 
 func sharesLineage(n1, n2 *NodeRef) bool {

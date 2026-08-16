@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/pipeline"
+	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
 func TestDiffCmdRegistered(t *testing.T) {
@@ -38,7 +39,8 @@ func TestComputeDiffWithDevNull(t *testing.T) {
 	}
 
 	devNull := os.DevNull
-	res, err := pipeline.RunFiles(devNull, tmpFile, pipeline.DiffOptions{})
+	opts := serialize.EnvelopeOptions{IncludeActions: true}
+	res, err := pipeline.RunFiles(devNull, tmpFile, pipeline.DiffOptions{EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles(/dev/null, sample.go) failed: %v", err)
 	}
@@ -46,7 +48,7 @@ func TestComputeDiffWithDevNull(t *testing.T) {
 		t.Fatal("expected non-nil diff result and envelope")
 	}
 
-	res2, err := pipeline.RunFiles(tmpFile, devNull, pipeline.DiffOptions{})
+	res2, err := pipeline.RunFiles(tmpFile, devNull, pipeline.DiffOptions{EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles(sample.go, /dev/null) failed: %v", err)
 	}
@@ -63,7 +65,8 @@ func TestComputeDiffUnsupportedLanguage(t *testing.T) {
 	_ = os.WriteFile(fileA, []byte("line 1\nline 2\nline 3\n"), 0o644)
 	_ = os.WriteFile(fileB, []byte("line 1\nline 2 modified\nline 3\nline 4\n"), 0o644)
 
-	res, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{})
+	opts := serialize.EnvelopeOptions{IncludeActions: true}
+	res, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles failed for unsupported files: %v", err)
 	}
@@ -97,8 +100,9 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	_ = os.WriteFile(fileA, []byte("package main\n\nfunc foo() {\n\tx :=\n}\n"), 0o644)
 	_ = os.WriteFile(fileB, []byte("package main\n\nfunc foo() {\n\tx := 10\n}\n"), 0o644)
 
+	opts := serialize.EnvelopeOptions{IncludeActions: true}
 	// Default (limit = 0): should fall back to line diff
-	resDefault, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 0})
+	resDefault, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 0, EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles(0) failed: %v", err)
 	}
@@ -107,7 +111,7 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	}
 
 	// Allowed limit (limit = 5): should perform AST structural matching
-	resAllowed, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 5})
+	resAllowed, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 5, EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles(5) failed: %v", err)
 	}
