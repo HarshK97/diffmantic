@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switched line alignment and highlight spans to compact JSON tuples (`[left_line, right_line]` and `[line, start_col, end_col, action]`), cutting UI payload sizes by over 70%.
 - Lowered the minimum Go requirement in `go.mod` from Go 1.26 to Go 1.24.
 
+### Fixed
+- Fixed an issue where keywords (like `if`, `then`, or type specifiers) were stolen or marked as moved across adjacent variable declarations and `if/else` clauses.
+- Fixed false-positive matches between deleted and surviving variables when expressions have the exact same shape.
+
 ## [0.5.0] - 2026-08-15
 
 ### Added

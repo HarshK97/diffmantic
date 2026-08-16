@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -183,6 +184,24 @@ func SharedMatchedAncestor(t1, t2 *treesitter.ASTNode, m *Mapping) (*treesitter.
 	return nil, nil
 }
 
+// GetEnclosingDeclaration traverses up from n to find the nearest ancestor registered in rules.Declarations.
+func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	lang := n.GetLanguage()
+	r := treesitter.GetRules(lang)
+	if r == nil || len(r.Declarations) == 0 {
+		return nil
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if slices.Contains(r.Declarations, curr.Type) {
+			return curr
+		}
+	}
+	return nil
+}
+
 // AncestorNameSimilarity calculates the number of matching identifier labels
 // among the ancestors of t1 and t2. This helps break ties in top-down matching
 // by preferring pairs located in similarly named functions or classes.
@@ -193,25 +212,50 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 	labels1 := make(map[string]bool)
 	curr := t1.Parent
 	for curr != nil {
+		if name := getDeclarationName(curr); name != "" {
+			labels1[name] = true
+		}
 		for _, child := range curr.Children {
-			if child.Type == "identifier" && child.Label != "" {
+			if child.Label != "" && (child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "type_identifier") {
 				labels1[child.Label] = true
+			}
+			if child.IsScaffolding() {
+				for _, sub := range child.Children {
+					if sub.Label != "" && (sub.Type == "identifier" || sub.Type == "field_identifier" || sub.Type == "type_identifier") {
+						labels1[sub.Label] = true
+					}
+				}
+			}
+		}
+		curr = curr.Parent
+	}
+
+	labels2 := make(map[string]bool)
+	curr = t2.Parent
+	for curr != nil {
+		if name := getDeclarationName(curr); name != "" {
+			labels2[name] = true
+		}
+		for _, child := range curr.Children {
+			if child.Label != "" && (child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "type_identifier") {
+				labels2[child.Label] = true
+			}
+			if child.IsScaffolding() {
+				for _, sub := range child.Children {
+					if sub.Label != "" && (sub.Type == "identifier" || sub.Type == "field_identifier" || sub.Type == "type_identifier") {
+						labels2[sub.Label] = true
+					}
+				}
 			}
 		}
 		curr = curr.Parent
 	}
 
 	overlap := 0
-	curr = t2.Parent
-	for curr != nil {
-		for _, child := range curr.Children {
-			if child.Type == "identifier" && child.Label != "" {
-				if labels1[child.Label] {
-					overlap++
-				}
-			}
+	for l := range labels2 {
+		if labels1[l] {
+			overlap++
 		}
-		curr = curr.Parent
 	}
 	return overlap
 }
