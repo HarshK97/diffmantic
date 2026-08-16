@@ -202,14 +202,20 @@ func isOnlyNonCharacters(b []byte) bool {
 }
 
 func nodeRefsEqual(n1, n2 *NodeRef) bool {
-	return n1 == n2 || (n1 != nil && n2 != nil && slices.Equal(n1.Path, n2.Path))
+	if n1 == n2 {
+		return true
+	}
+	if n1 == nil || n2 == nil {
+		return false
+	}
+	return n1.Tree == n2.Tree && n1.StartByte == n2.StartByte && n1.EndByte == n2.EndByte && n1.Type == n2.Type
 }
 
 func isAncestorRef(a, b *NodeRef) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return len(b.Path) >= len(a.Path) && slices.Equal(a.Path, b.Path[:len(a.Path)])
+	return a.Tree == b.Tree && a.StartByte <= b.StartByte && a.EndByte >= b.EndByte
 }
 
 func sharesLineage(n1, n2 *NodeRef) bool {

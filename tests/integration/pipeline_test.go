@@ -512,9 +512,9 @@ func TestActionSemantics(t *testing.T) {
 					if a.Node != nil && a.Node.Tree != "after" {
 						t.Errorf("action[%d] insert: node.tree=%q, want after", i, a.Node.Tree)
 					}
-					// Non-root inserts must have a parent.
-					if a.Parent == nil && a.Node != nil && len(a.Node.Path) > 0 {
-						t.Errorf("action[%d] insert: missing parent for non-root node", i)
+					// Inserts must have a parent.
+					if a.Parent == nil && a.Node != nil {
+						t.Errorf("action[%d] insert: missing parent for node", i)
 					}
 				case "delete":
 					// Deletes must point to the old tree.

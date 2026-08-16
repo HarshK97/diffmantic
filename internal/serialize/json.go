@@ -3,7 +3,6 @@ package serialize
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -71,7 +70,6 @@ type Action struct {
 // NodeRef is a stable and self-describing reference to an AST node.
 type NodeRef struct {
 	Tree      string `json:"tree"` // "before" or "after"
-	Path      []int  `json:"path"`
 	Type      string `json:"type"`
 	Label     string `json:"label,omitempty"`
 	StartByte uint32 `json:"start_byte"`
@@ -350,33 +348,13 @@ func makeNodeRef(n *treesitter.ASTNode, treeName string) (*NodeRef, error) {
 	if n == nil {
 		return nil, nil
 	}
-	path := getIndexPath(n)
-	if path == nil && n.Parent != nil {
-		return nil, fmt.Errorf("node %s of tree %s has broken parent link", n.Type, treeName)
-	}
 	return &NodeRef{
 		Tree:      treeName,
-		Path:      path,
 		Type:      n.Type,
 		Label:     n.Label,
 		StartByte: n.StartByte,
 		EndByte:   n.EndByte,
 	}, nil
-}
-
-func getIndexPath(node *treesitter.ASTNode) []int {
-	var path []int
-	curr := node
-	for curr.Parent != nil {
-		idx := curr.ChildIndex()
-		if idx == -1 {
-			return nil
-		}
-		path = append(path, idx)
-		curr = curr.Parent
-	}
-	slices.Reverse(path)
-	return path
 }
 
 // adjustRangeForHeader limits the node's range to its header by cutting off at the first code block.
