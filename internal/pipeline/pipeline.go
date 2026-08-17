@@ -88,11 +88,10 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	var (
 		srcAST *treesitter.ASTNode
 		dstAST *treesitter.ASTNode
-		part   *engine.LinePartition
 		wg     sync.WaitGroup
 	)
 
-	wg.Add(3)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		srcAST, _ = treesitter.ParseWithLanguage(srcBytes, langA)
@@ -101,10 +100,8 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		defer wg.Done()
 		dstAST, _ = treesitter.ParseWithLanguage(dstBytes, langB)
 	}()
-	go func() {
-		defer wg.Done()
-		part = engine.NewLinePartition(srcBytes, dstBytes)
-	}()
+
+	part := engine.NewLinePartition(srcBytes, dstBytes)
 	wg.Wait()
 
 	if srcAST == nil || dstAST == nil || (!opts.DisableErrorFallback && (srcAST.ParseErrorCount > opts.ParseErrorLimit || dstAST.ParseErrorCount > opts.ParseErrorLimit)) {

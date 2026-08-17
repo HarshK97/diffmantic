@@ -233,52 +233,7 @@ func TestGitDiffCache(t *testing.T) {
 		}
 	}
 
-	// Check text file cache entry
-	textEntry, ok := m.gitDiffCache[textFile]
-	if !ok {
-		t.Fatalf("expected %s in gitDiffCache", textFile)
-	}
-	if textEntry.isBinary {
-		t.Errorf("expected %s not to be marked binary", textFile)
-	}
-	if len(textEntry.srcBytes) == 0 || len(textEntry.dstBytes) == 0 {
-		t.Errorf("expected non-empty srcBytes and dstBytes for %s", textFile)
-	}
-	if textEntry.env == nil {
-		t.Errorf("expected non-nil AST envelope for %s", textFile)
-	}
-
-	// Check unsupported plain text file cache entry (handled via line diff)
-	plainEntry, ok := m.gitDiffCache[plainFile]
-	if !ok {
-		t.Fatalf("expected %s in gitDiffCache", plainFile)
-	}
-	if plainEntry.isBinary {
-		t.Errorf("expected %s not to be marked binary", plainFile)
-	}
-	if plainEntry.env == nil {
-		t.Errorf("expected non-nil line-diff envelope for %s", plainFile)
-	}
-
-	// Check binary file cache entry
-	binEntry, ok := m.gitDiffCache[binFile]
-	if !ok {
-		t.Fatalf("expected %s in gitDiffCache", binFile)
-	}
-	if !binEntry.isBinary {
-		t.Errorf("expected %s to be marked as binary", binFile)
-	}
-
-	// Check staged file cache entry
-	stagedEntry, ok := m.gitDiffCache[stagedFile]
-	if !ok {
-		t.Fatalf("expected %s in gitDiffCache", stagedFile)
-	}
-	if len(stagedEntry.dstBytes) == 0 {
-		t.Errorf("expected non-empty dstBytes for staged file %s", stagedFile)
-	}
-
-	// Verify binary files set the placeholder message on load
+	// Verify binary files set the placeholder message on load and populate diff cache on demand
 	for i, item := range m.gitItems {
 		if item.isHeader {
 			continue
@@ -294,6 +249,59 @@ func TestGitDiffCache(t *testing.T) {
 		}
 	}
 
+	// Check text file cache entry
+	m.gitCache.mu.RLock()
+	textEntry, ok := m.gitCache.entries[gitCacheKey{path: textFile, isStaged: false}]
+	m.gitCache.mu.RUnlock()
+	if !ok {
+		t.Fatalf("expected %s in gitCache", textFile)
+	}
+	if textEntry.isBinary {
+		t.Errorf("expected %s not to be marked binary", textFile)
+	}
+	if len(textEntry.srcBytes) == 0 || len(textEntry.dstBytes) == 0 {
+		t.Errorf("expected non-empty srcBytes and dstBytes for %s", textFile)
+	}
+	if textEntry.env == nil {
+		t.Errorf("expected non-nil AST envelope for %s", textFile)
+	}
+
+	// Check unsupported plain text file cache entry (handled via line diff)
+	m.gitCache.mu.RLock()
+	plainEntry, ok := m.gitCache.entries[gitCacheKey{path: plainFile, isStaged: false}]
+	m.gitCache.mu.RUnlock()
+	if !ok {
+		t.Fatalf("expected %s in gitCache", plainFile)
+	}
+	if plainEntry.isBinary {
+		t.Errorf("expected %s not to be marked binary", plainFile)
+	}
+	if plainEntry.env == nil {
+		t.Errorf("expected non-nil line-diff envelope for %s", plainFile)
+	}
+
+	// Check binary file cache entry
+	m.gitCache.mu.RLock()
+	binEntry, ok := m.gitCache.entries[gitCacheKey{path: binFile, isStaged: false}]
+	m.gitCache.mu.RUnlock()
+	if !ok {
+		t.Fatalf("expected %s in gitCache", binFile)
+	}
+	if !binEntry.isBinary {
+		t.Errorf("expected %s to be marked as binary", binFile)
+	}
+
+	// Check staged file cache entry
+	m.gitCache.mu.RLock()
+	stagedEntry, ok := m.gitCache.entries[gitCacheKey{path: stagedFile, isStaged: true}]
+	m.gitCache.mu.RUnlock()
+	if !ok {
+		t.Fatalf("expected %s in gitCache", stagedFile)
+	}
+	if len(stagedEntry.dstBytes) == 0 {
+		t.Errorf("expected non-empty dstBytes for staged file %s", stagedFile)
+	}
+
 	// Verify cache updates when refresh is called after a disk change
 	err = os.WriteFile(filepath.Join(tempDir, textFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v3 updated\")\n}\n"), 0o644)
 	if err != nil {
@@ -301,10 +309,20 @@ func TestGitDiffCache(t *testing.T) {
 	}
 
 	m.refreshGitStatus()
+	for i, item := range m.gitItems {
+		if item.path == textFile {
+			if err := m.loadGitFileDiff(i); err != nil {
+				t.Fatalf("failed loadGitFileDiff for %s: %v", textFile, err)
+			}
+			break
+		}
+	}
 
-	updatedTextEntry, ok := m.gitDiffCache[textFile]
+	m.gitCache.mu.RLock()
+	updatedTextEntry, ok := m.gitCache.entries[gitCacheKey{path: textFile, isStaged: false}]
+	m.gitCache.mu.RUnlock()
 	if !ok {
-		t.Fatalf("expected %s in gitDiffCache after refresh", textFile)
+		t.Fatalf("expected %s in gitCache after refresh", textFile)
 	}
 	if !strings.Contains(string(updatedTextEntry.dstBytes), "v3 updated") {
 		t.Errorf("expected dstBytes to contain 'v3 updated', got: %s", string(updatedTextEntry.dstBytes))
@@ -353,5 +371,67 @@ func TestComputeSingleGitDiffWorkerThrottling(t *testing.T) {
 				t.Errorf("expected sem capacity to be 0 after completion, got %d", len(sem))
 			}
 		})
+	}
+}
+
+func TestGitDiffCachePartiallyStagedFile(t *testing.T) {
+	tempDir := t.TempDir()
+	initGitRepo(t, tempDir)
+
+	testFile := "partial.go"
+	// Initial commit
+	_ = os.WriteFile(filepath.Join(tempDir, testFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v1\")\n}\n"), 0o644)
+	_ = git.StageFile(tempDir, testFile)
+	_ = git.Commit(tempDir, "initial commit")
+
+	// Stage v2 change
+	_ = os.WriteFile(filepath.Join(tempDir, testFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v2 staged\")\n}\n"), 0o644)
+	_ = git.StageFile(tempDir, testFile)
+
+	// Modify to v3 in working copy (unstaged change on top of staged change)
+	_ = os.WriteFile(filepath.Join(tempDir, testFile), []byte("package main\n\nfunc main() {\n\tprintln(\"v3 working tree\")\n}\n"), 0o644)
+
+	m := newGitModel(tempDir, "", "", "", false)
+
+	// Ensure both staged and unstaged entries were loaded in m.gitItems
+	var hasStaged, hasUnstaged bool
+	for i, item := range m.gitItems {
+		if item.path == testFile {
+			if err := m.loadGitFileDiff(i); err != nil {
+				t.Fatalf("failed loadGitFileDiff: %v", err)
+			}
+			if item.isStaged {
+				hasStaged = true
+			} else {
+				hasUnstaged = true
+			}
+		}
+	}
+
+	if !hasStaged || !hasUnstaged {
+		t.Fatalf("expected both staged and unstaged items in gitItems, got staged: %v, unstaged: %v", hasStaged, hasUnstaged)
+	}
+
+	stagedKey := gitCacheKey{path: testFile, isStaged: true}
+	unstagedKey := gitCacheKey{path: testFile, isStaged: false}
+
+	m.gitCache.mu.RLock()
+	stagedEntry, ok := m.gitCache.entries[stagedKey]
+	m.gitCache.mu.RUnlock()
+	if !ok {
+		t.Fatalf("expected staged entry in gitCache for key %+v", stagedKey)
+	}
+	if !strings.Contains(string(stagedEntry.dstBytes), "v2 staged") {
+		t.Errorf("expected staged dstBytes to contain 'v2 staged', got: %s", string(stagedEntry.dstBytes))
+	}
+
+	m.gitCache.mu.RLock()
+	unstagedEntry, ok := m.gitCache.entries[unstagedKey]
+	m.gitCache.mu.RUnlock()
+	if !ok {
+		t.Fatalf("expected unstaged entry in gitCache for key %+v", unstagedKey)
+	}
+	if !strings.Contains(string(unstagedEntry.dstBytes), "v3 working tree") {
+		t.Errorf("expected unstaged dstBytes to contain 'v3 working tree', got: %s", string(unstagedEntry.dstBytes))
 	}
 }

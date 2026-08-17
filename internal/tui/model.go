@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
@@ -47,6 +46,10 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 }
 
 func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOnly bool) model {
+	cache := &gitCache{
+		sem:     make(chan struct{}, 8),
+		entries: make(map[gitCacheKey]gitDiffCacheEntry),
+	}
 	m := model{
 		gitMode:       true,
 		gitTreeOpen:   true,
@@ -56,8 +59,7 @@ func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOn
 		gitStagedOnly: stagedOnly,
 		pathFilter:    pathFilter,
 		activePane:    "left",
-		gitDiffCache:  make(map[string]gitDiffCacheEntry),
-		gitDiffMu:     &sync.RWMutex{},
+		gitCache:      cache,
 	}
 
 	ti := textinput.New()
@@ -272,32 +274,35 @@ func (m *model) refreshGitStatus() {
 		m.gitCursorY = 0
 	}
 
-	if m.gitDiffMu == nil {
-		m.gitDiffMu = &sync.RWMutex{}
+	if m.gitCache == nil {
+		m.gitCache = &gitCache{
+			sem:     make(chan struct{}, 8),
+			entries: make(map[gitCacheKey]gitDiffCacheEntry),
+		}
 	}
-	m.gitDiffMu.Lock()
-	m.gitDiffCache = make(map[string]gitDiffCacheEntry)
-	m.gitDiffMu.Unlock()
 
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8) // Cap at 8, no point hitting git with more
+	m.gitCache.mu.Lock()
+	m.gitCache.epoch++
+	currentEpoch := m.gitCache.epoch
+	m.gitCache.entries = make(map[gitCacheKey]gitDiffCacheEntry)
+	m.gitCache.mu.Unlock()
 
+	sem := m.gitCache.sem
 	for _, item := range m.gitItems {
 		if item.isHeader {
 			continue
 		}
-		wg.Add(1)
-		go func(it gitTreeItem) {
-			defer wg.Done()
+		go func(it gitTreeItem, ep uint64, s chan struct{}) {
+			entry := m.computeSingleGitDiff(it, s)
+			key := gitCacheKey{path: it.path, isStaged: it.isStaged}
 
-			entry := m.computeSingleGitDiff(it, sem)
-
-			m.gitDiffMu.Lock()
-			m.gitDiffCache[it.path] = entry
-			m.gitDiffMu.Unlock()
-		}(item)
+			m.gitCache.mu.Lock()
+			defer m.gitCache.mu.Unlock()
+			if ep == m.gitCache.epoch {
+				m.gitCache.entries[key] = entry
+			}
+		}(item, currentEpoch, sem)
 	}
-	wg.Wait()
 }
 
 func (m *model) computeSingleGitDiff(item gitTreeItem, sem chan struct{}) gitDiffCacheEntry {
@@ -315,50 +320,50 @@ func (m *model) computeSingleGitDiff(item gitTreeItem, sem chan struct{}) gitDif
 	if isConflict {
 		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 	} else if m.refA != "" {
 		srcBytes, err = git.GetContent(m.repoPath, beforeFile, m.refA)
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 		dstBytes, err = git.GetContent(m.repoPath, afterFile, m.refB)
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 	} else if item.isStaged {
 		srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 		dstBytes, err = git.GetContent(m.repoPath, afterFile, ":")
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 	} else {
 		srcBytes, err = git.GetContent(m.repoPath, beforeFile, ":")
 		if err != nil || len(srcBytes) == 0 {
 			srcBytes, err = git.GetContent(m.repoPath, beforeFile, "HEAD")
 			if err != nil {
-				return gitDiffCacheEntry{}
+				return gitDiffCacheEntry{computed: true}
 			}
 		}
 		dstBytes, err = git.GetContent(m.repoPath, afterFile, "")
 		if err != nil {
-			return gitDiffCacheEntry{}
+			return gitDiffCacheEntry{computed: true}
 		}
 	}
 
 	if isBinary(srcBytes) || isBinary(dstBytes) {
-		return gitDiffCacheEntry{isBinary: true}
+		return gitDiffCacheEntry{isBinary: true, computed: true}
 	}
 
 	if len(srcBytes) == 0 && len(dstBytes) == 0 {
-		return gitDiffCacheEntry{}
+		return gitDiffCacheEntry{computed: true}
 	}
 
 	// Calculate worker weight based on max file size to throttle memory consumption
@@ -389,6 +394,7 @@ func (m *model) computeSingleGitDiff(item gitTreeItem, sem chan struct{}) gitDif
 		srcBytes: srcBytes,
 		dstBytes: dstBytes,
 		env:      env,
+		computed: true,
 	}
 }
 
@@ -409,11 +415,23 @@ func (m *model) loadGitFileDiff(idx int) error {
 	}
 	afterFile := item.path
 
+	key := gitCacheKey{path: item.path, isStaged: item.isStaged}
+
 	var cacheEntry gitDiffCacheEntry
-	if m.gitDiffMu != nil {
-		m.gitDiffMu.RLock()
-		cacheEntry = m.gitDiffCache[item.path]
-		m.gitDiffMu.RUnlock()
+	var hasEntry bool
+	if m.gitCache != nil {
+		m.gitCache.mu.RLock()
+		cacheEntry, hasEntry = m.gitCache.entries[key]
+		m.gitCache.mu.RUnlock()
+	}
+
+	if !hasEntry || !cacheEntry.computed {
+		cacheEntry = m.computeSingleGitDiff(item, nil)
+		if m.gitCache != nil {
+			m.gitCache.mu.Lock()
+			m.gitCache.entries[key] = cacheEntry
+			m.gitCache.mu.Unlock()
+		}
 	}
 
 	if cacheEntry.isBinary {

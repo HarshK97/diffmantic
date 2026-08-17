@@ -66,8 +66,22 @@ type model struct {
 	gitStagedOnly      bool
 	pathFilter         string
 	conflictWarning    string
-	gitDiffCache       map[string]gitDiffCacheEntry
-	gitDiffMu          *sync.RWMutex
+	gitCache           *gitCache
+}
+
+// gitCacheKey uniquely identifies a cached diff entry by path and staged state.
+type gitCacheKey struct {
+	path     string
+	isStaged bool
+}
+
+// gitCache coordinates thread-safe diff caching, worker pool concurrency (sem),
+// and epoch-based invalidation to drop lagging background diff computations.
+type gitCache struct {
+	mu      sync.RWMutex
+	epoch   uint64
+	sem     chan struct{}
+	entries map[gitCacheKey]gitDiffCacheEntry
 }
 
 type gitTreeItem struct {
@@ -87,6 +101,7 @@ type gitDiffCacheEntry struct {
 	dstBytes []byte
 	env      *serialize.Envelope
 	isBinary bool
+	computed bool
 }
 
 const (
