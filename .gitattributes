@@ -4,5 +4,5 @@
 
 # Ensure test fixtures always use LF line endings on all platforms (including Windows)
 tests/testdata/** text eol=lf
-*.gz binary
-tests/testdata/**/*.gz binary
+*.gz binary diff=gzip
+tests/testdata/**/*.gz binary diff=gzip
