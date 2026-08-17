@@ -162,3 +162,10 @@ unordered:
 pairs:
   - pair
 
+equivalent_types:
+  - [method, singleton_method]
+  - [class, module, singleton_class]
+  - [if, unless]
+  - [while, until, for]
+
+

@@ -131,3 +131,8 @@ pairs:
   - key_value_pair
   - keyed_element
 
+equivalent_types:
+  - [function_declaration, method_declaration]
+  - [var_declaration, short_var_declaration]
+
+

@@ -40,3 +40,7 @@ keywords:
 
 pairs:
   - pair
+
+equivalent_types:
+  - [table, inline_table]
+

@@ -204,3 +204,12 @@ pairs:
   - property_signature
   - jsx_attribute
 
+equivalent_types:
+  - [function_declaration, function_expression, arrow_function, generator_function_declaration, generator_function]
+  - [method_definition, method_signature]
+  - [class_declaration, abstract_class_declaration, interface_declaration, type_alias_declaration, enum_declaration]
+  - [lexical_declaration, variable_declaration]
+  - [for_statement, for_in_statement]
+  - [jsx_element, jsx_self_closing_element]
+
+

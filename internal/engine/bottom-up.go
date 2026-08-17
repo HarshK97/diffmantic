@@ -61,10 +61,15 @@ func findCandidatesWithCommonDescendants(t1 *treesitter.ASTNode, m *Mapping) []*
 	candMap := make(map[*treesitter.ASTNode]bool)
 	var cands []*treesitter.ASTNode
 
+	var rules *treesitter.Rules
+	if t1 != nil {
+		rules = treesitter.GetRules(t1.GetLanguage())
+	}
+
 	for _, d1 := range t1.Descendants() {
 		if d2, ok := m.Src()[d1]; ok {
 			for anc := d2.Parent; anc != nil; anc = anc.Parent {
-				if anc.Type == t1.Type && !m.HasDst(anc) {
+				if TypesMatch(t1.Type, anc.Type, rules) && !m.HasDst(anc) {
 					if !candMap[anc] {
 						candMap[anc] = true
 						cands = append(cands, anc)
@@ -208,6 +213,7 @@ func hasCommonDescendant(
 // RollupMatchedContainers pairs unmatched container nodes in post-order when their
 // mapped children predominantly belong to the same unmatched parent container in T2.
 func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	rules := rulesFor(t1Root)
 	for _, t1 := range t1Root.PostOrder() {
 		if m.Has(t1) || len(t1.Children) == 0 {
 			continue
@@ -217,7 +223,7 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		var bestParent *treesitter.ASTNode
 		bestCount := 0
 		for _, c := range t1.Children {
-			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && c2.Parent.Type == t1.Type {
+			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && TypesMatch(t1.Type, c2.Parent.Type, rules) {
 				cnt := parentCounts[c2.Parent] + 1
 				parentCounts[c2.Parent] = cnt
 				if cnt > bestCount {
@@ -241,6 +247,7 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 // real function body unmapped and generates a mess of spurious Move actions.
 func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	dstMap := m.Dst()
+	rules := rulesFor(t1Root)
 
 	for _, t2 := range t2Root.PostOrder() {
 		if !m.HasDst(t2) || len(t2.Children) == 0 || t2.Parent == nil {
@@ -261,7 +268,7 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 		// T1 sits deeper than expected. Look for an unmapped sibling at the expected depth.
 		for _, candidate := range t1MappedParent.Children {
-			if candidate.Type != t2.Type || m.Has(candidate) {
+			if !TypesMatch(candidate.Type, t2.Type, rules) || m.Has(candidate) {
 				continue
 			}
 			if !candidate.Contains(currentT1) {

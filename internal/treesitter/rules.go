@@ -9,16 +9,42 @@ import (
 )
 
 type Rules struct {
-	Flattened    []string          `yaml:"flattened"`
-	Ignored      []string          `yaml:"ignored"`
-	Aliased      map[string]string `yaml:"aliased"`
-	LabelIgnored []string          `yaml:"label_ignored"`
-	Scaffolding  []string          `yaml:"scaffolding"`
-	Keywords     []string          `yaml:"keywords"`
-	Declarations []string          `yaml:"declarations"`
-	Identifiers  []string          `yaml:"identifiers"`
-	Pairs        []string          `yaml:"pairs"`
-	Unordered    []string          `yaml:"unordered"`
+	Flattened       []string          `yaml:"flattened"`
+	Ignored         []string          `yaml:"ignored"`
+	Aliased         map[string]string `yaml:"aliased"`
+	LabelIgnored    []string          `yaml:"label_ignored"`
+	Scaffolding     []string          `yaml:"scaffolding"`
+	Keywords        []string          `yaml:"keywords"`
+	Declarations    []string          `yaml:"declarations"`
+	Identifiers     []string          `yaml:"identifiers"`
+	Pairs           []string          `yaml:"pairs"`
+	Unordered       []string          `yaml:"unordered"`
+	EquivalentTypes [][]string        `yaml:"equivalent_types"`
+}
+
+// AreTypesEquivalent checks if t1 and t2 belong to the same equivalent_types group.
+func (r *Rules) AreTypesEquivalent(t1, t2 string) bool {
+	if r == nil || t1 == "" || t2 == "" {
+		return t1 == t2
+	}
+	if t1 == t2 {
+		return true
+	}
+	for _, group := range r.EquivalentTypes {
+		has1, has2 := false, false
+		for _, typ := range group {
+			if typ == t1 {
+				has1 = true
+			}
+			if typ == t2 {
+				has2 = true
+			}
+		}
+		if has1 && has2 {
+			return true
+		}
+	}
+	return false
 }
 
 //go:embed */rules.yml

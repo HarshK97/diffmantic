@@ -212,3 +212,9 @@ declarations:
 pairs:
   - field_designator
   - initializer_pair
+
+equivalent_types:
+  - [function_definition, template_declaration]
+  - [class_specifier, struct_specifier, union_specifier, enum_specifier]
+  - [for_statement, for_range_loop, while_statement, do_statement]
+

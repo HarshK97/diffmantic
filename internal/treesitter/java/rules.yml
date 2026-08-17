@@ -193,3 +193,9 @@ unordered:
 pairs:
   - element_value_pair
 
+equivalent_types:
+  - [method_declaration, constructor_declaration, compact_constructor_declaration]
+  - [class_declaration, interface_declaration, record_declaration, enum_declaration, annotation_type_declaration]
+  - [for_statement, enhanced_for_statement, while_statement, do_statement]
+
+

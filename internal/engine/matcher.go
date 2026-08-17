@@ -375,6 +375,7 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	t1Decs := findDeclarations(t1Root)
 	t2Decs := findDeclarations(t2Root)
+	rules := rulesFor(t1Root)
 
 	for _, d1 := range t1Decs {
 		if m.Has(d1) {
@@ -393,7 +394,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			if m.HasDst(d2) {
 				continue
 			}
-			if d2.Type == d1.Type && getDeclarationName(d2) == name1 && getReceiverTypeName(d2) == rec1 {
+			if TypesMatch(d2.Type, d1.Type, rules) && getDeclarationName(d2) == name1 && getReceiverTypeName(d2) == rec1 {
 				bestMatch = d2
 				matchCount++
 			}

@@ -182,3 +182,9 @@ pairs:
   - property_assignment
   - pair_pattern
 
+equivalent_types:
+  - [function_declaration, function_expression, arrow_function, generator_function_declaration, generator_function]
+  - [lexical_declaration, variable_declaration]
+  - [for_statement, for_in_statement]
+
+

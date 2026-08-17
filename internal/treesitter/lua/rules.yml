@@ -112,3 +112,10 @@ declarations:
 
 pairs:
   - field
+
+equivalent_types:
+  - [function_declaration, function_definition, variable_declaration]
+  - [assignment_statement, variable_declaration]
+  - [for_statement, while_statement, repeat_statement]
+  - [if_statement, elseif_statement]
+
