@@ -36,6 +36,25 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 	return true
 }
 
+// TypesMatch checks if t1 and t2 are the same type, falling back to the
+// language's equivalent_types rules when they're not.
+func TypesMatch(t1, t2 string, rules *treesitter.Rules) bool {
+	if t1 == t2 {
+		return true
+	}
+	if rules != nil {
+		return rules.AreTypesEquivalent(t1, t2)
+	}
+	return false
+}
+
+func rulesFor(root *treesitter.ASTNode) *treesitter.Rules {
+	if root == nil {
+		return nil
+	}
+	return treesitter.GetRules(root.GetLanguage())
+}
+
 func areAncestorsMatched(anc1, anc2 *treesitter.ASTNode, m *Mapping) bool {
 	return (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
 }

@@ -39,3 +39,7 @@ pairs:
   - block_mapping_pair
   - flow_pair
 
+equivalent_types:
+  - [block_mapping, flow_mapping]
+  - [block_sequence, flow_sequence]
+

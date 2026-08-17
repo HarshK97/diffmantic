@@ -158,3 +158,8 @@ pairs:
   - field_initializer
   - struct_pattern_field
 
+equivalent_types:
+  - [struct_item, enum_item, union_item, trait_item]
+  - [for_expression, while_expression, loop_expression]
+
+

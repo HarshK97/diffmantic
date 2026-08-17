@@ -163,3 +163,8 @@ pairs:
   - pair
   - keyword_argument
 
+equivalent_types:
+  - [for_statement, for_in_clause, while_statement]
+  - [if_statement, elif_clause]
+
+
