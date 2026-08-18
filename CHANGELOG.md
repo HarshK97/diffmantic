@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added rule-driven `equivalent_types` cross-construct matching across 14 languages to pair related AST nodes (such as standard function declarations and arrow functions) during refactorings (PR #105).
 - Added `--ui` and `--full` flags for JSON output. `--ui` returns side-by-side line alignment and inline highlight spans without the AST action tree, while `--full` includes both.
 - Added `left_highlights` and `right_highlights` to the JSON output so editor plugins and frontends can render inline diff highlights directly.
 
@@ -16,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lowered the minimum Go requirement in `go.mod` from Go 1.26 to Go 1.24.
 
 ### Fixed
+- Fixed a cache collision bug in Git status mode where partially staged files shared the same diff cache entry between staged and unstaged views (PR #106).
 - Fixed an issue where keywords (like `if`, `then`, or type specifiers) were stolen or marked as moved across adjacent variable declarations and `if/else` clauses.
 - Fixed false-positive matches between deleted and surviving variables when expressions have the exact same shape.
+
+### Performance
+- Made Git diff computations run asynchronously during status refresh in the TUI, preventing UI freezes while background diffs compute (PR #106).
 
 ## [0.5.0] - 2026-08-15
 
