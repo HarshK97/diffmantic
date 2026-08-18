@@ -41,7 +41,7 @@ jobs:
           echo "**Full Changelog**: https://github.com/HarshK97/diffmantic/blob/main/CHANGELOG.md" >> /tmp/RELEASE_NOTES.md
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: v2.16.0
