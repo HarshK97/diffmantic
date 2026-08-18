@@ -260,6 +260,43 @@ func TestMatchDeclarations(t *testing.T) {
 			t.Error("methods with different receivers should not be matched")
 		}
 	})
+
+	t.Run("matches remaining unmatched declarations when duplicate is already mapped", func(t *testing.T) {
+		fn1Src := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Leaf("call", "a()"),
+		)
+		fn2Src := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Leaf("call", "b()"),
+		)
+		src := testutil.Node("program", "", fn1Src, fn2Src)
+		src.Language = "go"
+
+		fn1Dst := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Leaf("call", "a()"),
+		)
+		fn2Dst := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Leaf("call", "c()"),
+		)
+		dst := testutil.Node("program", "", fn1Dst, fn2Dst)
+		dst.Language = "go"
+
+		m := NewMapping()
+		// Simulate TopDown having already matched fn1Src -> fn1Dst
+		m.Add(fn1Src, fn1Dst)
+
+		matchDeclarations(src, dst, m)
+
+		if !m.Has(fn2Src) {
+			t.Fatal("fn2Src should be matched to fn2Dst")
+		}
+		if got := m.Src()[fn2Src]; got != fn2Dst {
+			t.Errorf("m.Src()[fn2Src] = %v, want %v", got, fn2Dst)
+		}
+	})
 }
 
 func TestMatchDeclarationIntegration(t *testing.T) {
