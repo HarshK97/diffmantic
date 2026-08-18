@@ -372,36 +372,49 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 	return err
 }
 
+type decKey struct {
+	name string
+	rec  string
+}
+
 func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	t1Decs := findDeclarations(t1Root)
 	t2Decs := findDeclarations(t2Root)
 	rules := rulesFor(t1Root)
 
+	t1Map := make(map[decKey][]*treesitter.ASTNode, len(t1Decs))
 	for _, d1 := range t1Decs {
 		if m.Has(d1) {
 			continue
 		}
-		name1 := getDeclarationName(d1)
-		if name1 == "" {
+		key := decKey{name: getDeclarationName(d1), rec: getReceiverTypeName(d1)}
+		if key.name != "" {
+			t1Map[key] = append(t1Map[key], d1)
+		}
+	}
+	t2Map := make(map[decKey][]*treesitter.ASTNode, len(t2Decs))
+	for _, d2 := range t2Decs {
+		if m.HasDst(d2) {
 			continue
 		}
-		rec1 := getReceiverTypeName(d1)
-
-		var bestMatch *treesitter.ASTNode
-		matchCount := 0
-
-		for _, d2 := range t2Decs {
-			if m.HasDst(d2) {
-				continue
-			}
-			if TypesMatch(d2.Type, d1.Type, rules) && getDeclarationName(d2) == name1 && getReceiverTypeName(d2) == rec1 {
-				bestMatch = d2
-				matchCount++
-			}
+		key := decKey{name: getDeclarationName(d2), rec: getReceiverTypeName(d2)}
+		if key.name != "" {
+			t2Map[key] = append(t2Map[key], d2)
 		}
+	}
 
-		if matchCount == 1 {
-			m.Add(d1, bestMatch)
+	for key, d2List := range t2Map {
+		if len(d2List) != 1 {
+			continue
+		}
+		d1List, ok := t1Map[key]
+		if !ok || len(d1List) != 1 {
+			continue
+		}
+		d1 := d1List[0]
+		d2 := d2List[0]
+		if TypesMatch(d1.Type, d2.Type, rules) {
+			m.Add(d1, d2)
 		}
 	}
 }
