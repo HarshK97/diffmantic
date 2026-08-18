@@ -228,6 +228,16 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 	if t1 == nil || t2 == nil {
 		return 0
 	}
+	r1 := rulesFor(t1)
+	r2 := rulesFor(t2)
+
+	isID := func(r *treesitter.Rules, typ string) bool {
+		if r != nil && len(r.Identifiers) > 0 {
+			return slices.Contains(r.Identifiers, typ)
+		}
+		return typ == "identifier" || typ == "field_identifier" || typ == "type_identifier" || typ == "name"
+	}
+
 	labels1 := make(map[string]bool)
 	curr := t1.Parent
 	for curr != nil {
@@ -235,12 +245,12 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 			labels1[name] = true
 		}
 		for _, child := range curr.Children {
-			if child.Label != "" && (child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "type_identifier") {
+			if child.Label != "" && isID(r1, child.Type) {
 				labels1[child.Label] = true
 			}
 			if child.IsScaffolding() {
 				for _, sub := range child.Children {
-					if sub.Label != "" && (sub.Type == "identifier" || sub.Type == "field_identifier" || sub.Type == "type_identifier") {
+					if sub.Label != "" && isID(r1, sub.Type) {
 						labels1[sub.Label] = true
 					}
 				}
@@ -256,12 +266,12 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 			labels2[name] = true
 		}
 		for _, child := range curr.Children {
-			if child.Label != "" && (child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "type_identifier") {
+			if child.Label != "" && isID(r2, child.Type) {
 				labels2[child.Label] = true
 			}
 			if child.IsScaffolding() {
 				for _, sub := range child.Children {
-					if sub.Label != "" && (sub.Type == "identifier" || sub.Type == "field_identifier" || sub.Type == "type_identifier") {
+					if sub.Label != "" && isID(r2, sub.Type) {
 						labels2[sub.Label] = true
 					}
 				}

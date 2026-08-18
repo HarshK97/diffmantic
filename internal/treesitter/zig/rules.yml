@@ -131,7 +131,11 @@ declarations:
   - test_declaration
   - using_namespace_declaration
 
+identifiers:
+  - identifier
+
 pairs:
+
   - initializer_pair
   - field_initializer
   - container_field
@@ -140,4 +144,5 @@ equivalent_types:
   - [struct_declaration, enum_declaration, union_declaration, error_set_declaration, opaque_declaration]
   - [variable_declaration, comptime_declaration]
   - [for_statement, while_statement]
+
 

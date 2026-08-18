@@ -151,7 +151,11 @@ declarations:
   - const_item
   - static_item
 
+identifiers:
+  - identifier
+
 unordered:
+
   - use_declaration
 
 pairs:
@@ -161,5 +165,6 @@ pairs:
 equivalent_types:
   - [struct_item, enum_item, union_item, trait_item]
   - [for_expression, while_expression, loop_expression]
+
 
 

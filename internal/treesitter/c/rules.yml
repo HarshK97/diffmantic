@@ -156,11 +156,16 @@ declarations:
   - parameter_declaration
   - field_declaration
 
+identifiers:
+  - identifier
+
 pairs:
+
   - field_designator
   - initializer_pair
 
 equivalent_types:
   - [struct_specifier, union_specifier, enum_specifier]
   - [for_statement, while_statement, do_statement]
+
 

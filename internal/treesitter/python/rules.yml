@@ -155,7 +155,11 @@ declarations:
   - function_definition
   - class_definition
 
+identifiers:
+  - identifier
+
 unordered:
+
   - dictionary
   - set
 
@@ -166,5 +170,6 @@ pairs:
 equivalent_types:
   - [for_statement, for_in_clause, while_statement]
   - [if_statement, elif_clause]
+
 
 

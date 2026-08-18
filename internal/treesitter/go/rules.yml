@@ -124,7 +124,14 @@ declarations:
   - const_declaration
   - var_declaration
 
+identifiers:
+  - identifier
+  - field_identifier
+  - type_identifier
+  - package_identifier
+
 unordered:
+
   - interface_type
 
 pairs:
@@ -134,5 +141,6 @@ pairs:
 equivalent_types:
   - [function_declaration, method_declaration]
   - [var_declaration, short_var_declaration]
+
 
 
