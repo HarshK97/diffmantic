@@ -451,20 +451,18 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 			if len(r.Declarations) > 0 && !slices.Contains(r.Declarations, n.Type) {
 				return ""
 			}
-			if len(r.Identifiers) > 0 {
-				idTypes = r.Identifiers
-			}
+			idTypes = r.Identifiers
 		}
+	} else {
+		idTypes = []string{"identifier", "field_identifier", "name"}
 	}
 	if len(idTypes) == 0 {
-		idTypes = []string{"identifier", "field_identifier", "type_identifier", "name", "tag_name"}
+		return ""
 	}
 
 	for _, child := range n.Children {
-		if slices.Contains(idTypes, child.Type) {
-			if child.Label != "" {
-				return child.Label
-			}
+		if slices.Contains(idTypes, child.Type) && child.Label != "" {
+			return child.Label
 		}
 	}
 	return ""

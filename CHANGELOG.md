@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added rule-driven `identifiers` configuration across 13 languages to support language-specific identifier and declaration symbol matching (such as PHP variable names, Ruby constants, and C++ operator names).
 - Added rule-driven `equivalent_types` cross-construct matching across 14 languages to pair related AST nodes (such as standard function declarations and arrow functions) during refactorings (PR #105).
 - Added `--ui` and `--full` flags for JSON output. `--ui` returns side-by-side line alignment and inline highlight spans without the AST action tree, while `--full` includes both.
 - Added `left_highlights` and `right_highlights` to the JSON output so editor plugins and frontends can render inline diff highlights directly.

@@ -171,7 +171,12 @@ declarations:
   - property_declaration
   - const_declaration
 
+identifiers:
+  - name
+  - variable_name
+
 unordered:
+
   - array_creation_expression
   - attribute_group
   - attribute_list
@@ -185,5 +190,6 @@ equivalent_types:
   - [class_declaration, interface_declaration, trait_declaration, enum_declaration]
   - [for_statement, foreach_statement, while_statement, do_statement]
   - [if_statement, else_if_clause]
+
 
 

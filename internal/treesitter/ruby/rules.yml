@@ -155,7 +155,12 @@ declarations:
   - class
   - module
 
+identifiers:
+  - identifier
+  - constant
+
 unordered:
+
   - hash
   - hash_pattern
 
@@ -167,5 +172,6 @@ equivalent_types:
   - [class, module, singleton_class]
   - [if, unless]
   - [while, until, for]
+
 
 
