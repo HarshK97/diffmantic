@@ -214,6 +214,9 @@ identifiers:
   - destructor_name
   - operator_name
 
+blocks:
+  - compound_statement
+
 pairs:
 
   - field_designator

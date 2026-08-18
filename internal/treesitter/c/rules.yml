@@ -159,6 +159,9 @@ declarations:
 identifiers:
   - identifier
 
+blocks:
+  - compound_statement
+
 pairs:
 
   - field_designator

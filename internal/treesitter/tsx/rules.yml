@@ -195,6 +195,9 @@ identifiers:
   - nested_type_identifier
   - private_property_identifier
 
+blocks:
+  - statement_block
+
 unordered:
 
   - object

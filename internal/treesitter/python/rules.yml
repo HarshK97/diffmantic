@@ -158,6 +158,9 @@ declarations:
 identifiers:
   - identifier
 
+blocks:
+  - block
+
 unordered:
 
   - dictionary

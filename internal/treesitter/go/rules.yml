@@ -130,6 +130,9 @@ identifiers:
   - type_identifier
   - package_identifier
 
+blocks:
+  - block
+
 unordered:
 
   - interface_type

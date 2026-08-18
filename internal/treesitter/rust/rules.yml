@@ -154,6 +154,9 @@ declarations:
 identifiers:
   - identifier
 
+blocks:
+  - block
+
 unordered:
 
   - use_declaration

@@ -113,6 +113,9 @@ declarations:
 identifiers:
   - identifier
 
+blocks:
+  - block
+
 pairs:
 
   - field

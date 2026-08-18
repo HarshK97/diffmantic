@@ -134,6 +134,9 @@ declarations:
 identifiers:
   - identifier
 
+blocks:
+  - block
+
 pairs:
 
   - initializer_pair

@@ -159,6 +159,9 @@ identifiers:
   - identifier
   - constant
 
+blocks:
+  - block
+
 unordered:
 
   - hash

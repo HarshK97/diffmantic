@@ -177,6 +177,9 @@ identifiers:
   - identifier
   - private_property_identifier
 
+blocks:
+  - statement_block
+
 unordered:
 
   - object

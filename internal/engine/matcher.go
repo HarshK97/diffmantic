@@ -424,20 +424,90 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 	}
 
-	for key, d2List := range t2Map {
+	visited := make(map[decKey]bool, len(t2Map))
+	for _, d2 := range t2Decs {
+		if m.HasDst(d2) {
+			continue
+		}
+		key := decKey{name: getDeclarationName(d2), rec: getReceiverTypeName(d2)}
+		if key.name == "" || visited[key] {
+			continue
+		}
+		visited[key] = true
+
+		d2List := t2Map[key]
 		if len(d2List) != 1 {
 			continue
 		}
 		d1List, ok := t1Map[key]
-		if !ok || len(d1List) != 1 {
+		if !ok || len(d1List) == 0 {
 			continue
 		}
-		d1 := d1List[0]
-		d2 := d2List[0]
-		if TypesMatch(d1.Type, d2.Type, rules) {
-			m.Add(d1, d2)
+
+		var matchingD1s []*treesitter.ASTNode
+		for _, d1 := range d1List {
+			if TypesMatch(d1.Type, d2.Type, rules) {
+				matchingD1s = append(matchingD1s, d1)
+			}
+		}
+
+		if len(matchingD1s) > 0 {
+			bestD1 := matchingD1s[0]
+			if len(matchingD1s) > 1 {
+				// If one is a forward decl and the other is a full definition,
+				// pick the one whose subtree size is closest to d2.
+				d2Size := d2.Size()
+				bestDiff := max(bestD1.Size()-d2Size, d2Size-bestD1.Size())
+				for _, cand := range matchingD1s[1:] {
+					if diff := max(cand.Size()-d2Size, d2Size-cand.Size()); diff < bestDiff {
+						bestDiff = diff
+						bestD1 = cand
+					}
+				}
+			}
+			m.Add(bestD1, d2)
+			matchDeclarationBodies(bestD1, d2, m, rules)
 		}
 	}
+}
+
+func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *treesitter.Rules) {
+	if d1 == nil || d2 == nil || m == nil {
+		return
+	}
+	var b1, b2 *treesitter.ASTNode
+	for _, c1 := range d1.Children {
+		if isBlockNode(c1, rules) {
+			b1 = c1
+			break
+		}
+	}
+	for _, c2 := range d2.Children {
+		if isBlockNode(c2, rules) {
+			b2 = c2
+			break
+		}
+	}
+	if b1 != nil && b2 != nil {
+		if cur := m.Dst()[b2]; cur != nil && cur != b1 {
+			m.Remove(cur)
+		}
+		if cur := m.Src()[b1]; cur != nil && cur != b2 {
+			m.Remove(b1)
+		}
+		m.Add(b1, b2)
+		Recover(b1, b2, m)
+	}
+}
+
+func isBlockNode(n *treesitter.ASTNode, rules *treesitter.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if rules != nil && len(rules.Blocks) > 0 {
+		return slices.Contains(rules.Blocks, n.Type)
+	}
+	return n.Type == "block"
 }
 
 func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
