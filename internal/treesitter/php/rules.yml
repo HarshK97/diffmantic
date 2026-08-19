@@ -175,6 +175,9 @@ identifiers:
   - name
   - variable_name
 
+blocks:
+  - compound_statement
+
 unordered:
 
   - array_creation_expression

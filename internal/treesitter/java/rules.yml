@@ -190,6 +190,10 @@ declarations:
 identifiers:
   - identifier
 
+blocks:
+  - block
+  - constructor_body
+
 unordered:
 
   - annotation

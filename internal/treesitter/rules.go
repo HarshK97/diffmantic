@@ -17,6 +17,7 @@ type Rules struct {
 	Keywords        []string          `yaml:"keywords"`
 	Declarations    []string          `yaml:"declarations"`
 	Identifiers     []string          `yaml:"identifiers"`
+	Blocks          []string          `yaml:"blocks"`
 	Pairs           []string          `yaml:"pairs"`
 	Unordered       []string          `yaml:"unordered"`
 	EquivalentTypes [][]string        `yaml:"equivalent_types"`

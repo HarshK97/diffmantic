@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestGetDeclarationName(t *testing.T) {
@@ -329,4 +330,128 @@ func TestMatchDeclarationIntegration(t *testing.T) {
 	if r.Mappings.Src()[srcFn] != dstFn {
 		t.Error("declaration pre-match should map foo -> foo")
 	}
+}
+
+func TestBottomUpDeclarationNameAffinity(t *testing.T) {
+	// BottomUp should skip c1 because its declaration name doesn't match t1.
+	leafA1 := testutil.Leaf("id", "x")
+	leafA2 := testutil.Leaf("id", "x")
+	leafB1 := testutil.Leaf("id", "y")
+	leafB2 := testutil.Leaf("id", "y")
+
+	t1 := testutil.Node("function_declaration", "",
+		testutil.Leaf("identifier", "foo"),
+		leafA1,
+		leafB1,
+	)
+	t1.Language = "go"
+
+	c1 := testutil.Node("function_declaration", "",
+		testutil.Leaf("identifier", "bar"),
+		leafA2,
+	)
+	c1.Language = "go"
+
+	c2 := testutil.Node("function_declaration", "",
+		testutil.Leaf("identifier", "foo"),
+		leafB2,
+	)
+	c2.Language = "go"
+
+	m := NewMapping()
+	m.Add(leafA1, leafA2)
+	m.Add(leafB1, leafB2)
+
+	picked := candidate(t1, []*treesitter.ASTNode{c1, c2}, m)
+	if picked != c2 {
+		t.Errorf("candidate() selected %v, want c2 (%v)", picked, c2)
+	}
+}
+
+func TestMatchDeclarationsEquivalentTypes(t *testing.T) {
+	t.Run("matches function_declaration with variable_declaration in lua", func(t *testing.T) {
+		src := testutil.Node("chunk", "",
+			testutil.Node("function_declaration", "",
+				testutil.Leaf("identifier", "sync_once_impl"),
+				testutil.Node("block", "",
+					testutil.Leaf("return_statement", "return"),
+				),
+			),
+		)
+		src.Language = "lua"
+
+		dst := testutil.Node("chunk", "",
+			testutil.Node("variable_declaration", "",
+				testutil.Leaf("identifier", "sync_once_impl"),
+				testutil.Node("block", "",
+					testutil.Leaf("return_statement", "return"),
+				),
+			),
+		)
+		dst.Language = "lua"
+
+		m := NewMapping()
+		matchDeclarations(src, dst, m)
+
+		srcFn := src.Children[0]
+		dstFn := dst.Children[0]
+		if !m.Has(srcFn) {
+			t.Fatal("src function_declaration should map to dst variable_declaration under equivalent types")
+		}
+		if m.Src()[srcFn] != dstFn {
+			t.Errorf("expected %v to map to %v, got %v", srcFn, dstFn, m.Src()[srcFn])
+		}
+
+		srcBlock := srcFn.Children[1]
+		dstBlock := dstFn.Children[1]
+		if m.Src()[srcBlock] != dstBlock {
+			t.Errorf("expected body blocks to be matched and recovered")
+		}
+	})
+
+	t.Run("disambiguates forward declaration vs full definition by size", func(t *testing.T) {
+		srcForward := testutil.Node("variable_declaration", "",
+			testutil.Leaf("identifier", "sync_once_impl"),
+		)
+		srcForward.Language = "lua"
+
+		srcFull := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "sync_once_impl"),
+			testutil.Node("parameters", ""),
+			testutil.Node("block", "",
+				testutil.Leaf("statement", "a"),
+				testutil.Leaf("statement", "b"),
+				testutil.Leaf("statement", "c"),
+			),
+		)
+		srcFull.Language = "lua"
+
+		src := testutil.Node("chunk", "", srcForward, srcFull)
+		src.Language = "lua"
+
+		dstFull := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "sync_once_impl"),
+			testutil.Node("parameters", ""),
+			testutil.Node("block", "",
+				testutil.Leaf("statement", "a"),
+				testutil.Leaf("statement", "b"),
+			),
+		)
+		dstFull.Language = "lua"
+		dst := testutil.Node("chunk", "", dstFull)
+		dst.Language = "lua"
+
+		m := NewMapping()
+		matchDeclarations(src, dst, m)
+
+		if m.Has(srcForward) {
+			t.Errorf("forward declaration should not steal destination function")
+		}
+		if !m.Has(srcFull) {
+			t.Fatalf("full definition should map to destination function")
+		}
+		if m.Src()[srcFull] != dstFull {
+			t.Errorf("expected srcFull to map to dstFull")
+		}
+	})
 }
