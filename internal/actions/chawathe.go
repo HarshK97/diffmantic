@@ -155,9 +155,8 @@ func (s *chawatheState) generate() *EditScript {
 						Node:     w.orig,
 						Parent:   z.orig,
 						Position: k,
+						Subtree:  len(w.orig.Children) > 0,
 					})
-
-					s.addDescendantMoves(w)
 
 					oldk := w.ChildIndex()
 					if oldk >= 0 {
@@ -279,9 +278,8 @@ func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
 						Node:     a.orig,
 						Parent:   w.orig,
 						Position: k,
+						Subtree:  len(a.orig.Children) > 0,
 					})
-
-					s.addDescendantMoves(a)
 
 					insertChild(w, a, k)
 
@@ -359,23 +357,4 @@ func insertChild(parent, child *cnode, k int) {
 	child.parent = parent
 	k = max(0, min(k, len(parent.children)))
 	parent.children = slices.Insert(parent.children, k, child)
-}
-
-func (s *chawatheState) addDescendantMoves(n *cnode) {
-	var traverse func(curr *cnode)
-	traverse = func(curr *cnode) {
-		for _, child := range curr.children {
-			if dst, ok := s.cpySrcToDst[child]; ok {
-				pos := max(0, dst.ChildIndex())
-				s.script.Add(Action{
-					Type:     Move,
-					Node:     child.orig,
-					Parent:   dst.Parent,
-					Position: pos,
-				})
-			}
-			traverse(child)
-		}
-	}
-	traverse(n)
 }

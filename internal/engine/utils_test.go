@@ -195,6 +195,19 @@ func TestAncestorNameSimilarity(t *testing.T) {
 	}
 }
 
+func TestAncestorNameSimilarityPairKey(t *testing.T) {
+	// Ancestor pair keys (like in JSON/YAML) should contribute to similarity overlap.
+	pair1 := testutil.Node("pair", "", testutil.Leaf("string", "\"priority\""), testutil.Node("object", "", testutil.Leaf("string", "min")))
+	pair2 := testutil.Node("pair", "", testutil.Leaf("string", "\"priority\""), testutil.Node("object", "", testutil.Leaf("string", "max")))
+	leaf1 := pair1.Children[1].Children[0]
+	leaf2 := pair2.Children[1].Children[0]
+
+	overlap := AncestorNameSimilarity(leaf1, leaf2)
+	if overlap != 1 {
+		t.Errorf("expected overlap=1 for pair key 'priority', got %d", overlap)
+	}
+}
+
 func TestAncestorNameSimilarityNil(t *testing.T) {
 	if AncestorNameSimilarity(nil, testutil.Leaf("id", "x")) != 0 {
 		t.Error("nil input should return 0")

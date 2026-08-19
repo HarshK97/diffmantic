@@ -238,47 +238,38 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 		return typ == "identifier" || typ == "field_identifier" || typ == "type_identifier" || typ == "name"
 	}
 
-	labels1 := make(map[string]bool)
-	curr := t1.Parent
-	for curr != nil {
-		if name := getDeclarationName(curr); name != "" {
-			labels1[name] = true
-		}
-		for _, child := range curr.Children {
-			if child.Label != "" && isID(r1, child.Type) {
-				labels1[child.Label] = true
+	collectLabels := func(t *treesitter.ASTNode, r *treesitter.Rules) map[string]bool {
+		labels := make(map[string]bool, 8)
+		curr := t.Parent
+		for curr != nil {
+			if name := getDeclarationName(curr); name != "" {
+				labels[name] = true
 			}
-			if child.IsScaffolding() {
-				for _, sub := range child.Children {
-					if sub.Label != "" && isID(r1, sub.Type) {
-						labels1[sub.Label] = true
+			if key := getKeyLabel(curr); key != "" {
+				labels[key] = true
+			}
+			for _, child := range curr.Children {
+				if child.Label != "" && isID(r, child.Type) {
+					labels[child.Label] = true
+				}
+				if child.IsScaffolding() {
+					for _, sub := range child.Children {
+						if sub.Label != "" && isID(r, sub.Type) {
+							labels[sub.Label] = true
+						}
+						if key := getKeyLabel(sub); key != "" {
+							labels[key] = true
+						}
 					}
 				}
 			}
+			curr = curr.Parent
 		}
-		curr = curr.Parent
+		return labels
 	}
 
-	labels2 := make(map[string]bool)
-	curr = t2.Parent
-	for curr != nil {
-		if name := getDeclarationName(curr); name != "" {
-			labels2[name] = true
-		}
-		for _, child := range curr.Children {
-			if child.Label != "" && isID(r2, child.Type) {
-				labels2[child.Label] = true
-			}
-			if child.IsScaffolding() {
-				for _, sub := range child.Children {
-					if sub.Label != "" && isID(r2, sub.Type) {
-						labels2[sub.Label] = true
-					}
-				}
-			}
-		}
-		curr = curr.Parent
-	}
+	labels1 := collectLabels(t1, r1)
+	labels2 := collectLabels(t2, r2)
 
 	overlap := 0
 	for l := range labels2 {
