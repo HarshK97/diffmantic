@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed false-positive matches between deleted and surviving variables when expressions have the exact same shape.
 
 ### Performance
+- Compiled Tree-sitter AST transformation rules into O(1) hash sets and cached rule pointers, eliminating repeated slice scans and struct copies on every AST node (PR #118).
 - Sped up declaration matching across files with many functions or components, cutting matching time by up to 20% on large refactors (PR #108).
 - Made Git diff computations run asynchronously during status refresh in the TUI, preventing UI freezes while background diffs compute (PR #106).
 

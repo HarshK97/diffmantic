@@ -242,6 +242,158 @@ func TestRulesAreTypesEquivalent(t *testing.T) {
 	}
 }
 
+func TestRulesHelperMethods(t *testing.T) {
+	newSampleRules := func() *Rules {
+		return &Rules{
+			Ignored:      []string{"comment", ";"},
+			Keywords:     []string{"func", "return"},
+			Aliased:      map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
+			LabelIgnored: []string{"identifier"},
+			Unordered:    []string{"object", "hash"},
+			Flattened:    []string{"string_literal"},
+			Blocks:       []string{"block", "compound_statement"},
+			EquivalentTypes: [][]string{
+				{"function_declaration", "function_definition", "variable_declaration"},
+				{"assignment_statement", "variable_declaration"},
+			},
+		}
+	}
+
+	t.Run("compiled sets", func(t *testing.T) {
+		r := newSampleRules()
+		r.compileSets()
+
+		if !r.IsIgnored("comment", "") {
+			t.Errorf("IsIgnored(comment) = false, want true")
+		}
+		if !r.IsIgnored("other", ";") {
+			t.Errorf("IsIgnored(other, ;) = false, want true")
+		}
+		if r.IsIgnored("node", "val") {
+			t.Errorf("IsIgnored(node, val) = true, want false")
+		}
+
+		if !r.IsKeyword("func", "") {
+			t.Errorf("IsKeyword(func) = false, want true")
+		}
+		if !r.IsKeyword("other", "return") {
+			t.Errorf("IsKeyword(other, return) = false, want true")
+		}
+		if r.IsKeyword("node", "val") {
+			t.Errorf("IsKeyword(node, val) = true, want false")
+		}
+
+		if !r.IsLabelIgnored("identifier") {
+			t.Errorf("IsLabelIgnored(identifier) = false, want true")
+		}
+		if r.IsLabelIgnored("other") {
+			t.Errorf("IsLabelIgnored(other) = true, want false")
+		}
+
+		if !r.IsUnordered("object") {
+			t.Errorf("IsUnordered(object) = false, want true")
+		}
+		if r.IsUnordered("array") {
+			t.Errorf("IsUnordered(array) = true, want false")
+		}
+
+		if !r.IsFlattened("string_literal") {
+			t.Errorf("IsFlattened(string_literal) = false, want true")
+		}
+		if r.IsFlattened("other") {
+			t.Errorf("IsFlattened(other) = true, want false")
+		}
+
+		if !r.IsBlock("compound_statement") {
+			t.Errorf("IsBlock(compound_statement) = false, want true")
+		}
+		if r.IsBlock("other") {
+			t.Errorf("IsBlock(other) = true, want false")
+		}
+
+		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
+			t.Errorf("AreTypesEquivalent(function_declaration, variable_declaration) = false, want true")
+		}
+		if !r.AreTypesEquivalent("assignment_statement", "variable_declaration") {
+			t.Errorf("AreTypesEquivalent(assignment_statement, variable_declaration) = false, want true")
+		}
+		if r.AreTypesEquivalent("function_declaration", "assignment_statement") {
+			t.Errorf("AreTypesEquivalent(function_declaration, assignment_statement) = true, want false")
+		}
+
+		if got, ok := r.Alias("type_alias", ""); !ok || got != "aliased_type" {
+			t.Errorf("Alias(type_alias, \"\") = (%q, %v), want (\"aliased_type\", true)", got, ok)
+		}
+		if got, ok := r.Alias("other", "label_val"); !ok || got != "aliased_label" {
+			t.Errorf("Alias(other, label_val) = (%q, %v), want (\"aliased_label\", true)", got, ok)
+		}
+		if _, ok := r.Alias("other", "unknown"); ok {
+			t.Errorf("Alias(other, unknown) returned ok = true, want false")
+		}
+	})
+
+	t.Run("uncompiled fallback", func(t *testing.T) {
+		r := newSampleRules()
+
+		if !r.IsIgnored("comment", "") || !r.IsIgnored("other", ";") || r.IsIgnored("node", "val") {
+			t.Errorf("IsIgnored uncompiled fallback failed")
+		}
+		if !r.IsKeyword("func", "") || !r.IsKeyword("other", "return") || r.IsKeyword("node", "val") {
+			t.Errorf("IsKeyword uncompiled fallback failed")
+		}
+		if !r.IsLabelIgnored("identifier") || r.IsLabelIgnored("other") {
+			t.Errorf("IsLabelIgnored uncompiled fallback failed")
+		}
+		if !r.IsUnordered("object") || r.IsUnordered("array") {
+			t.Errorf("IsUnordered uncompiled fallback failed")
+		}
+		if !r.IsFlattened("string_literal") || r.IsFlattened("other") {
+			t.Errorf("IsFlattened uncompiled fallback failed")
+		}
+		if !r.IsBlock("compound_statement") || r.IsBlock("other") {
+			t.Errorf("IsBlock uncompiled fallback failed")
+		}
+		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
+			t.Errorf("AreTypesEquivalent uncompiled fallback failed")
+		}
+		if got, ok := r.Alias("type_alias", ""); !ok || got != "aliased_type" {
+			t.Errorf("Alias uncompiled fallback failed")
+		}
+	})
+
+	t.Run("nil receiver safe", func(t *testing.T) {
+		var r *Rules
+
+		if r.IsIgnored("a", "b") {
+			t.Errorf("nil.IsIgnored returned true")
+		}
+		if r.IsKeyword("a", "b") {
+			t.Errorf("nil.IsKeyword returned true")
+		}
+		if r.IsLabelIgnored("a") {
+			t.Errorf("nil.IsLabelIgnored returned true")
+		}
+		if r.IsUnordered("a") {
+			t.Errorf("nil.IsUnordered returned true")
+		}
+		if r.IsFlattened("a") {
+			t.Errorf("nil.IsFlattened returned true")
+		}
+		if r.IsBlock("a") {
+			t.Errorf("nil.IsBlock returned true")
+		}
+		if !r.AreTypesEquivalent("a", "a") {
+			t.Errorf("nil.AreTypesEquivalent(a, a) returned false, want true")
+		}
+		if r.AreTypesEquivalent("a", "b") {
+			t.Errorf("nil.AreTypesEquivalent(a, b) returned true, want false")
+		}
+		if _, ok := r.Alias("a", "b"); ok {
+			t.Errorf("nil.Alias returned ok = true, want false")
+		}
+	})
+}
+
 func TestEveryLanguageEquivalentTypesAreValidSymbols(t *testing.T) {
 	for _, ext := range []string{
 		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",

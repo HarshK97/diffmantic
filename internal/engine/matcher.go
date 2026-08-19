@@ -16,6 +16,12 @@ type MatchResult struct {
 func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *MatchResult {
 	mappings := NewMapping()
 
+	if t1 != nil && t2 != nil && Isomorphic(t1, t2) {
+		addIsomorphicPairs(t1, t2, mappings)
+		sortMappingsByPreOrder(mappings)
+		return &MatchResult{Mappings: mappings}
+	}
+
 	if part == nil {
 		part = NewLinePartition(srcA, srcB)
 	}
@@ -505,7 +511,7 @@ func isBlockNode(n *treesitter.ASTNode, rules *treesitter.Rules) bool {
 		return false
 	}
 	if rules != nil && len(rules.Blocks) > 0 {
-		return slices.Contains(rules.Blocks, n.Type)
+		return rules.IsBlock(n.Type)
 	}
 	return n.Type == "block"
 }
