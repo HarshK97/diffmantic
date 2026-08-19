@@ -11,6 +11,7 @@ type scoredPair struct {
 	pair        [2]*treesitter.ASTNode
 	dice        float64
 	ancSim      int
+	lineageSim  int
 	nameMatched bool
 	mismatched  bool
 }
@@ -114,10 +115,12 @@ func TopDown(
 
 		di := Dice(t1.Parent, t2.Parent, m.Src())
 		si := AncestorNameSimilarity(t1, t2)
+		li := parentLineageSimilarity(t1, t2)
 		scored = append(scored, scoredPair{
 			pair:        pair,
 			dice:        di,
 			ancSim:      si,
+			lineageSim:  li,
 			nameMatched: nameMatched,
 			mismatched:  mismatched,
 		})
@@ -133,7 +136,10 @@ func TopDown(
 		if scored[i].ancSim != scored[j].ancSim {
 			return scored[i].ancSim > scored[j].ancSim
 		}
-		return scored[i].dice > scored[j].dice
+		if scored[i].dice != scored[j].dice {
+			return scored[i].dice > scored[j].dice
+		}
+		return scored[i].lineageSim > scored[j].lineageSim
 	})
 
 	for len(scored) > 0 {
@@ -217,4 +223,19 @@ func openUnmatched(
 			targetList.Open(n)
 		}
 	}
+}
+
+// Checks if the immediate parent and grandparent node types match to help break
+// ties when identical subtrees appear in different parts of the file.
+func parentLineageSimilarity(t1, t2 *treesitter.ASTNode) int {
+	score := 0
+	p1, p2 := t1.Parent, t2.Parent
+	if p1 != nil && p2 != nil && p1.Type == p2.Type {
+		score += 2
+		gp1, gp2 := p1.Parent, p2.Parent
+		if gp1 != nil && gp2 != nil && gp1.Type == gp2.Type {
+			score += 1
+		}
+	}
+	return score
 }
