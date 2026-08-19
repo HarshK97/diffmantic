@@ -154,7 +154,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		label = strings.TrimSpace(string(src[start:end]))
 	}
 
-	if isIgnored(nodeType, label, rules.Ignored) {
+	if rules.IsIgnored(nodeType, label) {
 		return nil
 	}
 
@@ -174,22 +174,17 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		node.Label = label
 	}
 
-	if rules != nil {
-		if alias, ok := rules.Aliased[nodeType]; ok {
-			node.Type = alias
-		}
-		if alias, ok := rules.Aliased[label]; ok {
-			node.Type = alias
-		}
-		if slices.Contains(rules.LabelIgnored, node.Type) {
-			node.Label = ""
-		}
-		if slices.Contains(rules.Keywords, nodeType) || (label != "" && slices.Contains(rules.Keywords, label)) {
-			node.IsKeyword = true
-		}
-		if slices.Contains(rules.Unordered, node.Type) {
-			node.IsUnordered = true
-		}
+	if alias, ok := rules.Alias(nodeType, label); ok {
+		node.Type = alias
+	}
+	if rules.IsLabelIgnored(node.Type) {
+		node.Label = ""
+	}
+	if rules.IsKeyword(nodeType, label) {
+		node.IsKeyword = true
+	}
+	if rules.IsUnordered(node.Type) {
+		node.IsUnordered = true
 	}
 
 	for i := 0; i < n.ChildCount(); i++ {
@@ -198,7 +193,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		}
 	}
 
-	if rules != nil && slices.Contains(rules.Flattened, nodeType) {
+	if rules.IsFlattened(nodeType) {
 		var flattenedChildren []*ASTNode
 		for _, child := range node.Children {
 			flattenedChildren = append(flattenedChildren, child.Children...)
@@ -218,10 +213,6 @@ func unwrapErrorNode(n *gotreesitter.Node, src []byte, lang *gotreesitter.Langua
 			parent.Children = append(parent.Children, child)
 		}
 	}
-}
-
-func isIgnored(nodeType, label string, ignored []string) bool {
-	return slices.Contains(ignored, nodeType) || slices.Contains(ignored, label)
 }
 
 // Size returns the total number of nodes in the subtree rooted at n.
