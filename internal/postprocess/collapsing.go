@@ -6,6 +6,9 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+// Collapse cleans up fine-grained actions in the edit script by folding
+// fully inserted or deleted children into subtree actions, and dropping redundant
+// scaffolding and wrapper actions.
 func Collapse(
 	es *actions.EditScript,
 	ms *engine.Mapping,
@@ -25,7 +28,6 @@ func Collapse(
 	moved := make(map[*treesitter.ASTNode]*actions.Action)
 	updated := make(map[*treesitter.ASTNode]*actions.Action)
 	suppressed := make(map[*actions.Action]bool)
-	contentMoveSuppressed := make(map[*actions.Action]bool)
 
 	for _, a := range actionPtrs {
 		switch a.Type {
@@ -52,37 +54,19 @@ func Collapse(
 		}
 	}
 
-	// Collapse/Clean Inserts bottom-up on the destination tree
+	// Fold child inserts into parent subtree inserts when the whole branch is new.
 	for _, parent := range dstRoot.PostOrder() {
 		if act, ok := inserted[parent]; ok && len(parent.Children) > 0 {
 			allChildrenInserted := true
 			for _, child := range parent.Children {
 				childAct, ok := inserted[child]
-				if !ok {
+				if !ok || suppressed[childAct] {
 					allChildrenInserted = false
 					break
 				}
 				if len(child.Children) > 0 && !childAct.Subtree {
 					allChildrenInserted = false
 					break
-				}
-				if suppressed[childAct] {
-					if contentMoveSuppressed[childAct] {
-						hasActiveInsertChildren := false
-						for _, gc := range child.Children {
-							if gcAct, gcIns := inserted[gc]; gcIns && !suppressed[gcAct] {
-								hasActiveInsertChildren = true
-								break
-							}
-						}
-						if hasActiveInsertChildren {
-							allChildrenInserted = false
-							break
-						}
-					} else {
-						allChildrenInserted = false
-						break
-					}
 				}
 			}
 
@@ -93,23 +77,7 @@ func Collapse(
 		}
 	}
 
-	// Suppress redundant scaffolding Insert actions in a second pass, after
-	// all Subtree:true/KillChildren determinations are finalized. This avoids
-	// a cascade bug where prematurely suppressing a scaffolding child's Insert
-	// prevents its parent from reaching Subtree:true.
-	for _, node := range dstRoot.PostOrder() {
-		if node.IsScaffolding() {
-			if sAct, ok := inserted[node]; ok && !suppressed[sAct] && !sAct.Subtree {
-				if node.Parent != nil {
-					if pAct, ok := inserted[node.Parent]; ok && !suppressed[pAct] {
-						suppressed[sAct] = true
-					}
-				}
-			}
-		}
-	}
-
-	// Collapse/Clean Deletes bottom-up on the source tree
+	// Fold child deletes into parent subtree deletes when the whole branch was removed.
 	for _, parent := range srcRoot.PostOrder() {
 		if act, ok := deleted[parent]; ok && len(parent.Children) > 0 {
 			allChildrenDeleted := true
@@ -132,79 +100,12 @@ func Collapse(
 		}
 	}
 
-	// Collapse/Clean Moves bottom-up on the source tree
-	for _, parentSrc := range srcRoot.PostOrder() {
-		if act, ok := moved[parentSrc]; ok && len(parentSrc.Children) > 0 {
-			allChildrenMovedToSameParent := true
-			dstParent := ms.Src()[parentSrc]
-			if dstParent == nil {
-				allChildrenMovedToSameParent = false
-			} else {
-				for _, childSrc := range parentSrc.Children {
-					childAct, ok := moved[childSrc]
-					if !ok || suppressed[childAct] {
-						allChildrenMovedToSameParent = false
-						break
-					}
-					childDst := ms.Src()[childSrc]
-					if childDst == nil || childDst.Parent != dstParent || childAct.Parent != dstParent {
-						allChildrenMovedToSameParent = false
-						break
-					}
-					if len(childAct.Node.Children) > 0 && !childAct.Subtree {
-						allChildrenMovedToSameParent = false
-						break
-					}
-				}
-			}
-
-			if allChildrenMovedToSameParent {
-				// Children all move under the same destination parent.
-				// Now verify if their destination positions are contiguous.
-				var destPositions []int
-				for _, childSrc := range parentSrc.Children {
-					childDst := ms.Src()[childSrc]
-					pos := childDst.ChildIndex()
-					destPositions = append(destPositions, pos)
-				}
-
-				contiguous := true
-				for _, pos := range destPositions {
-					if pos < 0 {
-						contiguous = false
-						break
-					}
-				}
-				if contiguous {
-					for i := 0; i < len(destPositions)-1; i++ {
-						if destPositions[i+1] != destPositions[i]+1 {
-							contiguous = false
-							break
-						}
-					}
-				}
-
-				if contiguous {
-					// Pass both parent-equality and contiguity -> collapse
-					KillChildren(parentSrc, moved, suppressed)
-					act.Subtree = true
-				} else {
-					// Pass parent-equality but FAIL contiguity -> do NOT collapse.
-					// Both parent move and children moves survive without suppression.
-					act.Subtree = false
-				}
-			} else {
-				// FAIL parent-equality -> Kill parent's move, children survive.
-				// NOTE: This assumes parent-equality failure indicates a dissolved/rewrapped
-				// identity (e.g. boolean operator nesting shifts) where suppressing the parent
-				// move avoids misleading highlights of newly inserted sibling elements as moved.
-				// This has only been validated against cases where parent-equality failure
-				// correctly indicated a dissolved/rewrapped identity, not yet against a case
-				// where it might fragment a legitimately-coherent parent-level container move.
-				suppressed[act] = true
-			}
-		}
-	}
+	// Scaffolding nodes (like statement_list or block) shouldn't emit separate
+	// actions if their parent already handles them. We run this after subtree
+	// collapsing so child suppressions don't prevent parents from becoming subtrees.
+	suppressRedundantScaffolding(dstRoot, inserted, suppressed)
+	suppressRedundantScaffolding(srcRoot, deleted, suppressed)
+	suppressRedundantScaffolding(srcRoot, moved, suppressed)
 
 	suppressInlineParentRedundancy(actionPtrs, inserted, deleted, suppressed)
 
@@ -217,6 +118,7 @@ func Collapse(
 	return result
 }
 
+// KillChildren marks all descendant actions as suppressed under a collapsed subtree.
 func KillChildren(
 	parent *treesitter.ASTNode,
 	actionMap map[*treesitter.ASTNode]*actions.Action,
@@ -232,9 +134,28 @@ func KillChildren(
 	}
 }
 
-// suppressInlineParentRedundancy kills a parent Insert/Delete when an inline
-// child of the same type already covers the same line. Subtree:true parents
-// are never killed (they cover more than the line). Looks one level up only.
+func suppressRedundantScaffolding(
+	root *treesitter.ASTNode,
+	actionMap map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+) {
+	for _, node := range root.PostOrder() {
+		if !node.IsScaffolding() || node.Parent == nil {
+			continue
+		}
+		sAct, ok := actionMap[node]
+		if !ok || suppressed[sAct] || sAct.Subtree {
+			continue
+		}
+		if pAct, ok := actionMap[node.Parent]; ok && !suppressed[pAct] {
+			suppressed[sAct] = true
+		}
+	}
+}
+
+// If a child action already covers the deletion or insertion on a line, drop
+// its single-line parent wrappers so we don't highlight the same line twice.
+// Multi-line subtree actions are kept since they span past the single line.
 func suppressInlineParentRedundancy(
 	actionPtrs []*actions.Action,
 	inserted, deleted map[*treesitter.ASTNode]*actions.Action,
@@ -251,30 +172,21 @@ func suppressInlineParentRedundancy(
 		if node.StartRow != node.EndRow {
 			continue
 		}
-		parent := node.Parent
-		if parent == nil {
-			continue
+
+		actionMap := inserted
+		if a.Type == actions.Delete {
+			actionMap = deleted
 		}
-		var parentAct *actions.Action
-		switch a.Type {
-		case actions.Insert:
-			parentAct = inserted[parent]
-		case actions.Delete:
-			parentAct = deleted[parent]
+
+		for parent := node.Parent; parent != nil; parent = parent.Parent {
+			if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
+				break
+			}
+			parentAct := actionMap[parent]
+			if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
+				suppressed[parentAct] = true
+			}
 		}
-		if parentAct == nil || suppressed[parentAct] {
-			continue
-		}
-		if parentAct.Subtree {
-			continue
-		}
-		if parent.StartRow != parent.EndRow {
-			continue
-		}
-		if parent.StartRow != node.StartRow {
-			continue
-		}
-		suppressed[parentAct] = true
 	}
 }
 

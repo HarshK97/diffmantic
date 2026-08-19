@@ -38,37 +38,29 @@ func TestCollapseDivergence(t *testing.T) {
 
 	// Construct EditScript:
 	// P moves to Q
-	// C moves with Parent = qDst (manually set, diverging from dDst.Parent = rDst)
 	es := actions.NewEditScript()
 	es.Add(actions.Action{
 		Type:     actions.Move,
 		Node:     pSrc,
 		Parent:   qDst,
 		Position: 0,
-	})
-	es.Add(actions.Action{
-		Type:     actions.Move,
-		Node:     cSrc,
-		Parent:   qDst, // Manually set to match P's destination to trigger the divergence
-		Position: 0,
+		Subtree:  true,
 	})
 
 	// Run Collapse
 	collapsed := Collapse(es, ms, pSrc, qDst)
 
-	// Since C's mapped destination dDst.Parent (rDst) != dstParent (qDst),
-	// parent-equality should fail. Thus, P's Move is suppressed, and C's Move survives.
 	if collapsed.Size() != 1 {
 		t.Fatalf("expected collapsed edit script to have size 1, got %d", collapsed.Size())
 	}
 
 	collapsedActions := collapsed.Actions()
 	survivingAction := collapsedActions[0]
-	if survivingAction.Node != cSrc {
-		t.Errorf("expected surviving action node to be cSrc, got %v", survivingAction.Node)
+	if survivingAction.Node != pSrc {
+		t.Errorf("expected surviving action node to be pSrc, got %v", survivingAction.Node)
 	}
-	if survivingAction.Subtree {
-		t.Errorf("expected surviving action to not be a subtree move, but Subtree is true")
+	if !survivingAction.Subtree {
+		t.Errorf("expected surviving action to be a subtree move, but Subtree is false")
 	}
 }
 
@@ -863,8 +855,7 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 	ms.Add(c1Src, c1Dst)
 
 	// Construct EditScript:
-	// - pSrc moves under qDst
-	// - c1Src moves under pDst
+	// - pSrc moves under qDst (subtree move)
 	// - c2Src is deleted
 	es := actions.NewEditScript()
 	pMove := actions.Action{
@@ -872,42 +863,171 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 		Node:     pSrc,
 		Parent:   qDst,
 		Position: 0,
-	}
-	c1Move := actions.Action{
-		Type:     actions.Move,
-		Node:     c1Src,
-		Parent:   pDst,
-		Position: 0,
+		Subtree:  true,
 	}
 	c2Delete := actions.Action{
 		Type: actions.Delete,
 		Node: c2Src,
 	}
 	es.Add(pMove)
-	es.Add(c1Move)
 	es.Add(c2Delete)
 
 	// Run Collapse
 	collapsed := Collapse(es, ms, pSrc, qDst)
 
-	// Since c2Src is deleted, it doesn't have a Move action in 'moved' map.
-	// So parent-equality check for pSrc will fail (allChildrenMovedToSameParent is false).
-	// This triggers the else branch: P's Move is suppressed, but c1Src's Move survives.
 	pMoveSurvives := false
-	c1MoveSurvives := false
+	c2DeleteSurvives := false
 	for _, act := range collapsed.Actions() {
 		if act.Node == pSrc && act.Type == actions.Move {
 			pMoveSurvives = true
 		}
-		if act.Node == c1Src && act.Type == actions.Move {
-			c1MoveSurvives = true
+		if act.Node == c2Src && act.Type == actions.Delete {
+			c2DeleteSurvives = true
 		}
 	}
 
-	if pMoveSurvives {
-		t.Error("expected parent block Move to be suppressed since one child (c2Src) was deleted")
+	if !pMoveSurvives {
+		t.Error("expected parent block Move to survive as subtree move")
 	}
-	if !c1MoveSurvives {
-		t.Error("expected child c1Src Move to survive")
+	if !c2DeleteSurvives {
+		t.Error("expected child c2Src Delete to survive")
+	}
+}
+
+func TestScaffoldingDeleteSuppression(t *testing.T) {
+	// P=block (Delete, scaffolding) -> S=statement_list (Delete, scaffolding) -> C=expression_statement (Delete)
+	// S's Delete should be suppressed as redundant when under parent block Delete.
+	stmt := &treesitter.ASTNode{Type: "expression_statement", StartByte: 10, EndByte: 30}
+	stmtList := &treesitter.ASTNode{
+		Type: "statement_list", StartByte: 10, EndByte: 30,
+		Children: []*treesitter.ASTNode{stmt},
+	}
+	block := &treesitter.ASTNode{
+		Type: "block", StartByte: 0, EndByte: 35,
+		Children: []*treesitter.ASTNode{stmtList},
+	}
+	block.Language = "go"
+	stmt.Parent = stmtList
+	stmtList.Parent = block
+
+	ms := engine.NewMapping()
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Delete, Node: block})
+	es.Add(actions.Action{Type: actions.Delete, Node: stmtList})
+	es.Add(actions.Action{Type: actions.Delete, Node: stmt})
+
+	collapsed := Collapse(es, ms, block, nil)
+
+	blockSurvives := false
+	stmtListSurvives := false
+	for _, a := range collapsed.Actions() {
+		if a.Node == block && a.Type == actions.Delete {
+			blockSurvives = true
+		}
+		if a.Node == stmtList && a.Type == actions.Delete {
+			stmtListSurvives = true
+		}
+	}
+
+	if !blockSurvives {
+		t.Error("expected parent block Delete action to survive")
+	}
+	if stmtListSurvives {
+		t.Error("expected child statement_list Delete action to be suppressed as redundant scaffolding")
+	}
+}
+
+func TestScaffoldingMoveSuppression(t *testing.T) {
+	// P=call (Move) -> S=argument_list (Move, scaffolding)
+	s := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 20}
+	parent := &treesitter.ASTNode{
+		Type: "call_expression", StartByte: 0, EndByte: 20,
+		Children: []*treesitter.ASTNode{s},
+	}
+	parent.Language = "go"
+	s.Parent = parent
+
+	dstS := &treesitter.ASTNode{Type: "argument_list", StartByte: 111, EndByte: 120}
+	dstParent := &treesitter.ASTNode{
+		Type: "call_expression", StartByte: 100, EndByte: 120,
+		Children: []*treesitter.ASTNode{dstS},
+	}
+	dstParent.Language = "go"
+	dstS.Parent = dstParent
+
+	ms := engine.NewMapping()
+	ms.Add(parent, dstParent)
+	ms.Add(s, dstS)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: parent, Parent: dstParent, Position: 0})
+	es.Add(actions.Action{Type: actions.Move, Node: s, Parent: dstParent, Position: 0})
+
+	collapsed := Collapse(es, ms, parent, dstParent)
+
+	pSurvives := false
+	sSurvives := false
+	for _, a := range collapsed.Actions() {
+		if a.Node == parent && a.Type == actions.Move {
+			pSurvives = true
+		}
+		if a.Node == s && a.Type == actions.Move {
+			sSurvives = true
+		}
+	}
+
+	if !pSurvives {
+		t.Error("expected parent call_expression Move to survive")
+	}
+	if sSurvives {
+		t.Error("expected argument_list Move to be suppressed as redundant child scaffolding")
+	}
+}
+
+func TestMultiLevelInlineDeleteSuppression(t *testing.T) {
+	// Hierarchy on line 133:
+	// expression_statement (Delete, L133)
+	//   call_expression (not deleted because argument_list moved)
+	//     selector_expression (Delete, L133)
+	// expression_statement should be suppressed by selector_expression because
+	// selector_expression is on the exact same line and is the specific deleted function.
+	sel := &treesitter.ASTNode{Type: "selector_expression", StartByte: 10, EndByte: 25, StartRow: 133, EndRow: 133}
+	argList := &treesitter.ASTNode{Type: "argument_list", StartByte: 25, EndByte: 40, StartRow: 133, EndRow: 133}
+	call := &treesitter.ASTNode{
+		Type: "call_expression", StartByte: 10, EndByte: 40, StartRow: 133, EndRow: 133,
+		Children: []*treesitter.ASTNode{sel, argList},
+	}
+	exprStmt := &treesitter.ASTNode{
+		Type: "expression_statement", StartByte: 10, EndByte: 40, StartRow: 133, EndRow: 133,
+		Children: []*treesitter.ASTNode{call},
+	}
+	exprStmt.Language = "go"
+	call.Parent = exprStmt
+	sel.Parent = call
+	argList.Parent = call
+
+	ms := engine.NewMapping()
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Delete, Node: exprStmt})
+	es.Add(actions.Action{Type: actions.Delete, Node: sel})
+
+	collapsed := Collapse(es, ms, exprStmt, nil)
+
+	exprSurvives := false
+	selSurvives := false
+	for _, a := range collapsed.Actions() {
+		if a.Node == exprStmt && a.Type == actions.Delete {
+			exprSurvives = true
+		}
+		if a.Node == sel && a.Type == actions.Delete {
+			selSurvives = true
+		}
+	}
+
+	if exprSurvives {
+		t.Error("expected multi-level inline ancestor expression_statement Delete to be suppressed")
+	}
+	if !selSurvives {
+		t.Error("expected leaf selector_expression Delete to survive")
 	}
 }
