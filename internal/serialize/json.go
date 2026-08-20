@@ -180,11 +180,9 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 				ja.Parent = parentRef
 
-				pos := a.Position
-				ja.Position = &pos
+				ja.Position = new(a.Position)
 				if a.Subtree {
-					st := true
-					ja.Subtree = &st
+					ja.Subtree = new(true)
 				}
 
 			case actions.Delete:
@@ -209,11 +207,9 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 				ja.Parent = parentRef
 
-				pos := a.Position
-				ja.Position = &pos
+				ja.Position = new(a.Position)
 				if a.Subtree {
-					st := true
-					ja.Subtree = &st
+					ja.Subtree = new(true)
 				}
 
 			case actions.Update:
@@ -258,7 +254,6 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				} else if ms != nil {
 					newParentDst = ms.Src()[a.Parent]
 				}
-				pos := a.Position
 
 				if newParentDst == nil && ms != nil && ms.Src() != nil {
 					curr := a.Parent
@@ -280,7 +275,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					return nil, fmt.Errorf("failed to build parent reference for move: %w", err)
 				}
 				ja.Parent = parentRef
-				ja.Position = &pos
+				ja.Position = new(a.Position)
 
 				if a.Node.Parent == nil {
 					return nil, fmt.Errorf("moved node %s has nil OldParent", a.Node.Type)
@@ -295,11 +290,10 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if oldPos == -1 {
 					return nil, fmt.Errorf("moved node %s not found in its old parent's children", a.Node.Type)
 				}
-				ja.OldPosition = &oldPos
+				ja.OldPosition = new(oldPos)
 
 				if a.Subtree {
-					st := true
-					ja.Subtree = &st
+					ja.Subtree = new(true)
 				}
 
 				if ms != nil {
@@ -309,8 +303,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 						if !a.Subtree {
 							adjustRangeForHeader(destNodeDst, &startByte, &endByte)
 						}
-						ja.DestStartByte = &startByte
-						ja.DestEndByte = &endByte
+						ja.DestStartByte = new(startByte)
+						ja.DestEndByte = new(endByte)
 					}
 				}
 			}

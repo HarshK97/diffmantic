@@ -36,8 +36,6 @@ func TestActionsAtCursor(t *testing.T) {
 		NewValue: "bar",
 	}
 
-	dstStart := uint32(14)
-	dstEnd := uint32(28)
 	moveAction := serialize.Action{
 		Action: "move",
 		Node: &serialize.NodeRef{
@@ -47,8 +45,8 @@ func TestActionsAtCursor(t *testing.T) {
 			StartByte: 14,
 			EndByte:   28,
 		},
-		DestStartByte: &dstStart,
-		DestEndByte:   &dstEnd,
+		DestStartByte: new(uint32(14)),
+		DestEndByte:   new(uint32(28)),
 	}
 
 	m.srcHighlights = &highlights{
