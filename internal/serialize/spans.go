@@ -112,8 +112,15 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []High
 			curr := gSpans[0]
 			for i := 1; i < len(gSpans); i++ {
 				next := gSpans[i]
-				canMerge := false
 
+				if next.startCol >= curr.startCol && next.endCol <= curr.endCol {
+					if next.actRef != curr.actRef {
+						lineMerged = append(lineMerged, next)
+					}
+					continue
+				}
+
+				canMerge := false
 				gap := next.startCol - curr.endCol
 				if gap <= 3 {
 					onlyNonChars := true
@@ -146,6 +153,25 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []High
 
 				if canMerge {
 					if next.endCol > curr.endCol {
+						// When curr is an inner sub-span coaligned at the start with
+						// a wider container next (e.g. curr: 0..3, next: 0..18),
+						// preserve curr before expanding to the outer container.
+						if curr.startCol == next.startCol && next.actRef != nil && curr.actRef != nil && next.actRef != curr.actRef {
+							lineMerged = append(lineMerged, curr)
+						}
+
+						// Adopt the wider actRef so the merged span's
+						// AST length reflects the true outer container,
+						// preventing a small inner node from falsely winning
+						// layering priority over overlapping spans of
+						// other action types.
+						if next.actRef != nil && curr.actRef != nil {
+							currNodeLen := nodeLen(curr.actRef, side)
+							nextNodeLen := nodeLen(next.actRef, side)
+							if nextNodeLen > currNodeLen {
+								curr.actRef = next.actRef
+							}
+						}
 						curr.endCol = next.endCol
 					}
 				} else {
@@ -220,4 +246,27 @@ func isAncestorRef(a, b *NodeRef) bool {
 
 func sharesLineage(n1, n2 *NodeRef) bool {
 	return nodeRefsEqual(n1, n2) || isAncestorRef(n1, n2) || isAncestorRef(n2, n1)
+}
+
+// nodeLen returns the AST byte range of an action on the specified side.
+func nodeLen(a *Action, side string) int {
+	if a == nil {
+		return 0
+	}
+	if side == "left" {
+		if a.Node != nil {
+			return int(a.Node.EndByte - a.Node.StartByte)
+		}
+	} else {
+		if a.DestStartByte != nil && a.DestEndByte != nil {
+			return int(*a.DestEndByte - *a.DestStartByte)
+		}
+		if a.DestNode != nil {
+			return int(a.DestNode.EndByte - a.DestNode.StartByte)
+		}
+		if a.Node != nil {
+			return int(a.Node.EndByte - a.Node.StartByte)
+		}
+	}
+	return 0
 }

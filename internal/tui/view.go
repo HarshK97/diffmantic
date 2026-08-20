@@ -405,11 +405,13 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 	// Inner (smaller) AST nodes override outer container nodes.
 	colHighlight := make([]int, runeLen)
 	colSpanLen := make([]int, runeLen)
+	colCandidateLen := make([]int, runeLen)
 	colHasMove := make([]bool, runeLen)
 	colHasUpdate := make([]bool, runeLen)
 	for i := range colHighlight {
 		colHighlight[i] = -1
 		colSpanLen[i] = 1<<31 - 1 // max int sentinel
+		colCandidateLen[i] = 1<<31 - 1
 	}
 	for _, s := range lineSpans {
 		sc := -1
@@ -424,6 +426,7 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 		}
 		if sc >= 0 && ec > sc {
 			candidateLen := ec - sc
+			astLen := getSpanASTLen(s, pane)
 			for col := sc; col < ec && col < runeLen; col++ {
 				if s.kind == kindMove || s.kind == kindMoveUpdate {
 					colHasMove[col] = true
@@ -433,16 +436,19 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 				}
 
 				curLen := colSpanLen[col]
-				if colHighlight[col] == -1 || candidateLen < curLen || (candidateLen == curLen && s.kind > actionKind(colHighlight[col])) {
+				if colHighlight[col] == -1 || astLen < curLen ||
+					(astLen == curLen && candidateLen < colCandidateLen[col]) ||
+					(astLen == curLen && candidateLen == colCandidateLen[col] && actionPriority(s.kind) > actionPriority(actionKind(colHighlight[col]))) {
 					colHighlight[col] = int(s.kind)
-					colSpanLen[col] = candidateLen
+					colSpanLen[col] = astLen
+					colCandidateLen[col] = candidateLen
 				}
 			}
 		}
 	}
 
 	for col := range colHighlight {
-		if colHasMove[col] && colHasUpdate[col] {
+		if colHighlight[col] == int(kindUpdate) && colHasMove[col] {
 			colHighlight[col] = int(kindMoveUpdate)
 		}
 	}
