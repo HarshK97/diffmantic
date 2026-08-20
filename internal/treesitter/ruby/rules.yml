@@ -2,6 +2,7 @@ flattened:
   - string
   - string_content
   - heredoc_body
+  - regex
   - comment
   - integer
   - float

@@ -1,6 +1,6 @@
 {
   "repository": "GoogleCloudPlatform/microservices-demo",
-  "commit": "7c83802b9e5fa663f4cd7924b8c94e13f80d5bb4",
-  "description": "Update cartservice memory limits",
+  "commit": "157ef700208683999b756e2c55454ca82a5a2994",
+  "description": "Use native Kubernetes grpc health probes instead of exec probe binary",
   "language": "yaml"
 }

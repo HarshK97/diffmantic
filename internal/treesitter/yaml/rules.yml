@@ -19,12 +19,14 @@ scaffolding:
   - stream
   - document
   - block_node
+  - flow_node
   - block_mapping
   - block_mapping_pair
   - block_sequence
   - block_sequence_item
   - flow_mapping
   - flow_sequence
+  - flow_pair
 
 unordered:
   - block_mapping

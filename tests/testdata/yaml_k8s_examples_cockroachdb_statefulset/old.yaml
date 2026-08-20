@@ -101,9 +101,9 @@ spec:
               fieldRef:
                 apiVersion: v1
                 fieldPath: metadata.namespace
-       volumeMounts:
-       - name: datadir
-         mountPath: "/cockroach/cockroach-data"
+        volumeMounts:
+        - name: datadir
+          mountPath: "/cockroach/cockroach-data"
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
