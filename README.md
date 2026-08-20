@@ -100,7 +100,7 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64 + arm64) are on the [Rele
 
 ### Build from Source
 
-Requires Go 1.24+. No C compiler or CGo required (`CGO_ENABLED=0`).
+Requires Go 1.26+. No C compiler or CGo required (`CGO_ENABLED=0`).
 
 ```bash
 git clone https://github.com/HarshK97/diffmantic.git

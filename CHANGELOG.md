@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Switched line alignment and highlight spans to compact JSON tuples (`[left_line, right_line]` and `[line, start_col, end_col, action]`), cutting UI payload sizes by over 70%.
-- Lowered the minimum Go requirement in `go.mod` from Go 1.26 to Go 1.24.
+- Bumped the minimum Go requirement in `go.mod` to Go 1.26.
 
 ### Fixed
 - Fixed a cache collision bug in Git status mode where partially staged files shared the same diff cache entry between staged and unstaged views (PR #106).
