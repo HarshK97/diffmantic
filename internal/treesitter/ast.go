@@ -128,6 +128,12 @@ var stringLiteralTypes = []string{
 	"interpreted_string_literal",
 	"raw_string_literal",
 	"template_string",
+	"plain_scalar",
+	"string_scalar",
+	"double_quote_scalar",
+	"single_quote_scalar",
+	"block_scalar",
+	"regex",
 }
 
 func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) *ASTNode {
