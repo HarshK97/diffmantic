@@ -15,10 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Switched line alignment and highlight spans to compact JSON tuples (`[left_line, right_line]` and `[line, start_col, end_col, action]`), cutting UI payload sizes by over 70%.
+- Cleaned up noisy edit scripts by pruning redundant scaffolding moves, inserts, and deletes under active parent containers (PR #119).
+- Improved `TopDown` candidate matching to break ties between identical subtrees using two-level parent lineage and ancestor pair keys (PR #119).
 - Bumped the minimum Go requirement in `go.mod` to Go 1.26.
 
 ### Fixed
 - Fixed a cache collision bug in Git status mode where partially staged files shared the same diff cache entry between staged and unstaged views (PR #106).
+- Fixed TUI highlight collisions where outer container actions overwrote inner moved or updated expressions, prioritizing smaller AST nodes for character-level highlights (PR #120).
+- Fixed highlight span merging dropping nested and start-coaligned sub-spans under multiline containers (PR #120).
 - Fixed an issue where keywords (like `if`, `then`, or type specifiers) were stolen or marked as moved across adjacent variable declarations and `if/else` clauses.
 - Fixed false-positive matches between deleted and surviving variables when expressions have the exact same shape.
 

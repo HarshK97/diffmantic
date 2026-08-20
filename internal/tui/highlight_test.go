@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
@@ -129,5 +130,201 @@ func TestBuildHighlightsGroupingAndMerging(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestInnerInsertOverridingContainerMove(t *testing.T) {
+	// Destination code:
+	// Line 0: if !c.Writer.Written() {
+	// Line 1:     c.String(404, "404 page not found")
+	// Line 2: }
+	//
+	// Move action covers lines 0..2 (bytes 0..80, astLen=80)
+	// Insert action covers line 1 (bytes 25..65, astLen=40)
+	destBytes := []byte("if !c.Writer.Written() {\n    c.String(404, \"404 page not found\")\n}\n")
+
+	destStartMove := uint32(0)
+	destEndMove := uint32(len(destBytes))
+
+	destStartInsert := uint32(25)
+	destEndInsert := uint32(65)
+
+	actions := []serialize.Action{
+		{
+			Action:        "move",
+			DestStartByte: &destStartMove,
+			DestEndByte:   &destEndMove,
+		},
+		{
+			Action: "insert",
+			Node: &serialize.NodeRef{
+				Tree:      "after",
+				StartByte: destStartInsert,
+				EndByte:   destEndInsert,
+			},
+		},
+	}
+
+	rightSpans := serialize.BuildHighlightSpans(destBytes, actions, "right")
+	_, dstHL := buildHighlights(nil, rightSpans)
+
+	// Verify line tint on line 1 is kindInsert (not kindMove)
+	if kind, ok := dstHL.tinted[1]; !ok || kind != kindInsert {
+		t.Fatalf("expected line 1 tint to be kindInsert (%v), got %v", kindInsert, kind)
+	}
+
+	// Verify character rendering via renderStyledLine on model
+	m := model{}
+	rendered := m.renderStyledLine(
+		"    c.String(404, \"404 page not found\")",
+		dstHL.spans[1],
+		nil,
+		nil,
+		0,
+		80,
+		-1,
+		"right",
+		1,
+	)
+
+	if rendered == "" {
+		t.Fatal("expected non-empty rendered line")
+	}
+	// Verify that the inner inserted content gets the insert background tint
+	insertBgSample := hlInsertStyle.Render("c")
+	if !strings.Contains(rendered, insertBgSample) {
+		t.Errorf("expected rendered line to contain insert-styled characters, got %q", rendered)
+	}
+}
+
+func TestLeftPaneInnerMoveOverridingContainerDelete(t *testing.T) {
+	// Source code:
+	// Line 0: } else {
+	// Line 1:     c.Writer.WriteHeader(404)
+	// Line 2: }
+	//
+	// Delete block covers lines 0..2 (bytes 0..50, astLen=50)
+	// Move expression_statement covers line 1 (bytes 13..38, astLen=25)
+	// Update field_identifier covers WriteHeader on line 1 (bytes 22..33, astLen=11)
+	srcBytes := []byte("} else {\n    c.Writer.WriteHeader(404)\n}\n")
+
+	actions := []serialize.Action{
+		{
+			Action: "delete",
+			Node: &serialize.NodeRef{
+				Tree:      "before",
+				StartByte: 0,
+				EndByte:   50,
+			},
+		},
+		{
+			Action: "move",
+			Node: &serialize.NodeRef{
+				Tree:      "before",
+				StartByte: 13,
+				EndByte:   38,
+			},
+		},
+		{
+			Action: "update",
+			Node: &serialize.NodeRef{
+				Tree:      "before",
+				StartByte: 22,
+				EndByte:   33,
+			},
+			OldValue: "WriteHeader",
+			NewValue: "setStatus",
+		},
+	}
+
+	leftSpans := serialize.BuildHighlightSpans(srcBytes, actions, "left")
+	srcHL, _ := buildHighlights(leftSpans, nil)
+
+	// Verify line tint on line 1 is kindMove or kindUpdate (not kindDelete)
+	if kind, ok := srcHL.tinted[1]; !ok || kind == kindDelete {
+		t.Fatalf("expected line 1 tint on left pane not to be kindDelete, got %v", kind)
+	}
+
+	m := model{}
+	rendered := m.renderStyledLine(
+		"    c.Writer.WriteHeader(404)",
+		srcHL.spans[1],
+		nil,
+		nil,
+		0,
+		80,
+		-1,
+		"left",
+		1,
+	)
+	if rendered == "" {
+		t.Fatal("expected non-empty rendered line")
+	}
+	// Inner move should override container delete
+	moveBgSample := hlMoveStyle.Render("c")
+	if !strings.Contains(rendered, moveBgSample) {
+		t.Errorf("expected rendered line to contain move-styled characters overriding delete, got %q", rendered)
+	}
+}
+
+func TestMoveInsideInsertedContainerHighlight(t *testing.T) {
+	// Destination line:
+	// return *(*[]byte)(unsafe.Pointer(\n
+	//
+	// TypeConversion: insert 7..34 (astLen=79)
+	// CallExpr: move 19..34 (astLen=67)
+	// ArgList: insert 33..34 (astLen=53)
+	dstBytes := []byte("\treturn *(*[]byte)(unsafe.Pointer(\n")
+
+	destStartMove := uint32(337)
+	destEndMove := uint32(404)
+
+	actions := []serialize.Action{
+		{
+			Action: "insert",
+			Node: &serialize.NodeRef{
+				Tree:      "after",
+				StartByte: 326,
+				EndByte:   405,
+			},
+		},
+		{
+			Action:        "move",
+			DestStartByte: &destStartMove,
+			DestEndByte:   &destEndMove,
+		},
+		{
+			Action: "insert",
+			Node: &serialize.NodeRef{
+				Tree:      "after",
+				StartByte: 351,
+				EndByte:   404,
+			},
+		},
+	}
+
+	rightSpans := serialize.BuildHighlightSpans(dstBytes, actions, "right")
+	_, dstHL := buildHighlights(nil, rightSpans)
+
+	m := model{}
+	rendered := m.renderStyledLine(
+		"\treturn *(*[]byte)(unsafe.Pointer(",
+		dstHL.spans[0],
+		nil,
+		nil,
+		0,
+		80,
+		-1,
+		"right",
+		0,
+	)
+
+	if rendered == "" {
+		t.Fatal("expected non-empty rendered line")
+	}
+	// Inner move should override outer insert for the CallExpr span
+	moveBgSample := hlMoveStyle.Render("u")
+	if !strings.Contains(rendered, moveBgSample) {
+		t.Errorf("expected rendered line to contain inner move-styled characters, got %q", rendered)
 	}
 }

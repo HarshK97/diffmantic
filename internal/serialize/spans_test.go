@@ -85,3 +85,66 @@ func TestBuildHighlightSpansInterleavedActions(t *testing.T) {
 		t.Errorf("expected merged move span cols 4..20, got %d..%d", moveSpans[0].StartCol, moveSpans[0].EndCol)
 	}
 }
+
+func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
+	fileBytes := []byte("def hello_world():\n")
+	// Container delete covers 0..18 (astLen=18)
+	// Inner delete covers 4..15 (astLen=11)
+	actions := []Action{
+		{
+			Action: "delete",
+			Node:   &NodeRef{Type: "function_definition", StartByte: 0, EndByte: 18},
+		},
+		{
+			Action: "delete",
+			Node:   &NodeRef{Type: "identifier", StartByte: 4, EndByte: 15},
+		},
+	}
+
+	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
+	if len(leftSpans) != 2 {
+		t.Fatalf("expected 2 delete spans (outer and inner preserved), got %d", len(leftSpans))
+	}
+
+	// Also test when inner starts at same start col (e.g. 0..10 and 0..18)
+	actionsCoaligned := []Action{
+		{
+			Action: "delete",
+			Node:   &NodeRef{Type: "def", StartByte: 0, EndByte: 3},
+		},
+		{
+			Action: "delete",
+			Node:   &NodeRef{Type: "function_definition", StartByte: 0, EndByte: 18},
+		},
+	}
+
+	coalignedSpans := BuildHighlightSpans(fileBytes, actionsCoaligned, "left")
+	if len(coalignedSpans) != 2 {
+		t.Fatalf("expected 2 delete spans for coaligned start (inner 0..3 and outer 0..18), got %d", len(coalignedSpans))
+	}
+}
+
+func TestBuildHighlightSpansRightSideMoveNodeLen(t *testing.T) {
+	destBytes := []byte("    c.String(404, \"not found\")\n")
+	destStart := uint32(4)
+	destEnd := uint32(30)
+	actions := []Action{
+		{
+			Action:        "move",
+			DestStartByte: &destStart,
+			DestEndByte:   &destEnd,
+		},
+	}
+
+	rightSpans := BuildHighlightSpans(destBytes, actions, "right")
+	if len(rightSpans) != 1 {
+		t.Fatalf("expected 1 move span on right pane, got %d", len(rightSpans))
+	}
+	if rightSpans[0].ActionRef == nil {
+		t.Fatal("expected non-nil ActionRef")
+	}
+	nl := nodeLen(rightSpans[0].ActionRef, "right")
+	if nl != 26 {
+		t.Errorf("expected nodeLen=26 on right pane, got %d", nl)
+	}
+}
