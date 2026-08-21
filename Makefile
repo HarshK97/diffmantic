@@ -11,10 +11,8 @@ build-core: ## Build binary with ~100 core grammars (22 MB)
 build-all: ## Build binary with all ~200+ embedded grammars (29 MB)
 	go build -ldflags="-s -w" -trimpath -o diffm ./cmd/diffm
 
-
-
 clean: ## Remove built binaries and coverage files
-	rm -f diffm coverage.out coverage.html
+	rm -rf diffm dist coverage.out coverage.html
 
 test: lint test-unit test-integration test-e2e ## Run everything
 

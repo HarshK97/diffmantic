@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-21
+
 ### Added
-- Added rule-driven `identifiers` configuration across 13 languages to support language-specific identifier and declaration symbol matching (such as PHP variable names, Ruby constants, and C++ operator names).
+- Added rule-driven `identifiers` configuration across 13 languages to support language-specific identifier and declaration symbol matching (such as PHP variable names, Ruby constants, and C++ operator names) (PR #107).
 - Added rule-driven `equivalent_types` cross-construct matching across 14 languages to pair related AST nodes (such as standard function declarations and arrow functions) during refactorings (PR #105).
 - Added scalar type equivalence (`plain_scalar`, `double_quote_scalar`, `single_quote_scalar`) to YAML rules with quote-insensitive literal comparison in Zhang-Shasha recovery (PR #123).
 - Added `--ui` and `--full` flags for JSON output. `--ui` returns side-by-side line alignment and inline highlight spans without the AST action tree, while `--full` includes both.
@@ -157,7 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/HarshK97/diffmantic/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HarshK97/diffmantic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HarshK97/diffmantic/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HarshK97/diffmantic/compare/v0.2.0...v0.3.0

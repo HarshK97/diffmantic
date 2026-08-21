@@ -7,7 +7,7 @@
     <a href="https://github.com/HarshK97/diffmantic/actions/workflows/ci.yml"><img src="https://github.com/HarshK97/diffmantic/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="https://github.com/HarshK97/diffmantic/releases/latest"><img src="https://img.shields.io/github/v/release/HarshK97/diffmantic?label=release" alt="Latest Release"></a>
     <a href="https://github.com/HarshK97/diffmantic/blob/main/LICENSE"><img src="https://img.shields.io/github/license/HarshK97/diffmantic" alt="License: MIT"></a>
-    <a href="https://pkg.go.dev/github.com/HarshK97/diffmantic"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go Version"></a>
+    <a href="https://pkg.go.dev/github.com/HarshK97/diffmantic"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go Version"></a>
   </p>
 </p>
 
@@ -18,6 +18,9 @@
 </p>
 
 ---
+
+> [!NOTE]
+> **Diffmantic is under active development and not yet ready for public use.** We're getting closer to a public release, but features and internals are still shifting quickly.
 
 ## Why diffmantic?
 
@@ -35,7 +38,7 @@ It works as a standalone CLI, a drop-in for `git diff`, or a backend for editor 
 - **Update & Rename Detection.** Shows exactly what changed inside a syntax node. A variable rename, a string literal swap, a type change, you see the precise edit, not a wall of red and green.
 - **Git Integration.** Run `diffm` in any Git repo and it launches an interactive TUI. Browse modified files, stage/unstage changes, commit, all without leaving the terminal.
 - **Interactive TUI.** Side-by-side diff view with syntax highlighting, code folding, search, Action Inspector panel (`i`), change indicators, and jump-to-change keys (`n`, `N`, `[`, `]`). Built with [Bubbletea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
-- **JSON Output.** Stable schema with child-index paths (e.g., `[0, 2, 1]`) instead of line numbers. So editor plugins can keep highlights intact even as you edit the file.
+- **JSON Output.** Stable schema with AST actions, line alignment, and character-level highlight spans. Includes selective `--ui` and `--full` modes for editor plugins and frontends.
 - **16 Core Languages.** Go, Java, JavaScript, TypeScript, Python, Rust, Zig, C, C++, PHP, Ruby, JSON, YAML, TOML, HTML, CSS, Lua. Full AST normalization and matching rules powered by Tree-sitter.
 - **Line Diff Fallback.** For unsupported file types or plain text files, Diffmantic automatically falls back to line-based diffing so you can diff any file.
 
@@ -85,7 +88,7 @@ It auto-detects your OS and architecture, grabs the right binary from [GitHub Re
 curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --dir=/usr/local/bin
 
 # Install a specific version
-curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --version=v0.5.0
+curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --version=v0.6.0
 ```
 
 ### Homebrew
@@ -166,11 +169,14 @@ diffm diff before.go after.go
 # JSON output for editor plugins and automation
 diffm diff before.go after.go -f json
 
+# Fast UI mode (line alignment and highlight spans without action tree)
+diffm diff before.go after.go -f json --ui
+
+# Full envelope (actions, line alignment, and highlight spans)
+diffm diff before.go after.go -f json --full
+
 # Human-readable action list
 diffm diff before.go after.go -f actions
-
-# Override language detection
-diffm diff config.txt config2.txt --lang json
 ```
 
 ## How It Works

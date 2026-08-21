@@ -40,6 +40,19 @@ jobs:
           echo "---" >> /tmp/RELEASE_NOTES.md
           echo "**Full Changelog**: https://github.com/HarshK97/diffmantic/blob/main/CHANGELOG.md" >> /tmp/RELEASE_NOTES.md
 
+      - name: Verify CLI version matches release tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CLI_OUTPUT=$(go run ./cmd/diffm --version)
+          CLI_VERSION=$(echo "$CLI_OUTPUT" | awk '{print $NF}')
+          echo "Release tag version: $TAG_VERSION"
+          echo "CLI version output:  $CLI_OUTPUT ($CLI_VERSION)"
+          if [ "$TAG_VERSION" != "$CLI_VERSION" ]; then
+            echo "::error::Version mismatch! Release tag is v$TAG_VERSION but diffm --version outputs $CLI_VERSION. Please bump Version in cmd/root.go."
+            exit 1
+          fi
+          echo "Version check passed: $TAG_VERSION matches CLI binary."
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
