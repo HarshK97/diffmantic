@@ -55,6 +55,61 @@ func rulesFor(root *treesitter.ASTNode) *treesitter.Rules {
 	return treesitter.GetRules(root.GetLanguage())
 }
 
+// PairRole identifies whether a node acts as a key or a value inside a key-value pair.
+type PairRole int
+
+const (
+	PairRoleNone PairRole = iota
+	PairRoleKey
+	PairRoleValue
+)
+
+// NodePairRole checks if n sits on the key or value side of a pair.
+func NodePairRole(n *treesitter.ASTNode) PairRole {
+	if n == nil {
+		return PairRoleNone
+	}
+	r := rulesFor(n)
+	if r == nil || len(r.Pairs) == 0 {
+		return PairRoleNone
+	}
+
+	for curr := n; curr != nil && curr.Parent != nil; curr = curr.Parent {
+		p := curr.Parent
+		if slices.Contains(r.Pairs, p.Type) {
+			idx := curr.ChildIndex()
+			if idx == 0 {
+				return PairRoleKey
+			}
+			if idx > 0 {
+				return PairRoleValue
+			}
+			return PairRoleNone
+		}
+		if !curr.IsScaffolding() && curr != n {
+			break
+		}
+	}
+	return PairRoleNone
+}
+
+// Unquote strips surrounding quotes from s if the start and end match.
+func Unquote(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '`' && s[len(s)-1] == '`') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+// CompatiblePairRoles reports whether n1 and n2 can match without crossing key/value boundaries.
+func CompatiblePairRoles(n1, n2 *treesitter.ASTNode) bool {
+	r1 := NodePairRole(n1)
+	r2 := NodePairRole(n2)
+	return r1 == PairRoleNone || r2 == PairRoleNone || r1 == r2
+}
+
 func areAncestorsMatched(anc1, anc2 *treesitter.ASTNode, m *Mapping) bool {
 	return (anc1 == nil && anc2 == nil) || (anc1 != nil && anc2 != nil && m.Src()[anc1] == anc2)
 }

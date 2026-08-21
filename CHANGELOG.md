@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added rule-driven `identifiers` configuration across 13 languages to support language-specific identifier and declaration symbol matching (such as PHP variable names, Ruby constants, and C++ operator names).
 - Added rule-driven `equivalent_types` cross-construct matching across 14 languages to pair related AST nodes (such as standard function declarations and arrow functions) during refactorings (PR #105).
+- Added scalar type equivalence (`plain_scalar`, `double_quote_scalar`, `single_quote_scalar`) to YAML rules with quote-insensitive literal comparison in Zhang-Shasha recovery (PR #123).
 - Added `--ui` and `--full` flags for JSON output. `--ui` returns side-by-side line alignment and inline highlight spans without the AST action tree, while `--full` includes both.
 - Added `left_highlights` and `right_highlights` to the JSON output so editor plugins and frontends can render inline diff highlights directly.
 
@@ -25,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed highlight span merging dropping nested and start-coaligned sub-spans under multiline containers (PR #120).
 - Fixed an issue where keywords (like `if`, `then`, or type specifiers) were stolen or marked as moved across adjacent variable declarations and `if/else` clauses.
 - Fixed false-positive matches between deleted and surviving variables when expressions have the exact same shape.
+- Fixed YAML scalar label loss during AST construction by including scalar types (plain, string, single-quote, and double-quote scalars) in string literal classifications (PR #122).
+- Cleaned up AST diff noise by marking YAML flow wrappers (`flow_node`, `flow_pair`) as scaffolding and flattening Ruby regular expressions into atomic literals (PR #122).
+- Fixed cross-role node matching by enforcing key-value pair role compatibility in Bottom-Up candidate selection, unmatched leaf matching, and recovery (PR #123).
 
 ### Performance
 - Compiled Tree-sitter AST transformation rules into O(1) hash sets and cached rule pointers, eliminating repeated slice scans and struct copies on every AST node (PR #118).

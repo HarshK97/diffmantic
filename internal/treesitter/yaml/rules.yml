@@ -44,4 +44,5 @@ pairs:
 equivalent_types:
   - [block_mapping, flow_mapping]
   - [block_sequence, flow_sequence]
+  - [plain_scalar, double_quote_scalar, single_quote_scalar]
 
