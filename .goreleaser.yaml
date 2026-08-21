@@ -63,9 +63,6 @@ checksum:
 release:
   mode: replace
 
-changelog:
-  disable: true
-
 brews:
   - name: diffmantic
     repository:

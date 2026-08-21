@@ -29,16 +29,24 @@ jobs:
       - name: Run test suite (pre-release verification)
         run: go test -v ./...
 
-      - name: Extract Release Notes from CHANGELOG.md
+      - name: Verify CHANGELOG has release version header and extract notes
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
+            echo "::error::Missing release section '## [${VERSION}]' in CHANGELOG.md! Please update CHANGELOG.md before tagging."
+            exit 1
+          fi
+
           awk -v tag="$VERSION" '$0 ~ "^## \\[" tag "\\]" { flag=1; next } flag && /^## \[/ { flag=0 } flag { print }' CHANGELOG.md > /tmp/RELEASE_NOTES.md
           if [ ! -s /tmp/RELEASE_NOTES.md ]; then
-            echo "Release notes for version $VERSION." > /tmp/RELEASE_NOTES.md
+            echo "::error::Release section '## [${VERSION}]' in CHANGELOG.md is empty! Please add release notes before tagging."
+            exit 1
           fi
+
           echo "" >> /tmp/RELEASE_NOTES.md
           echo "---" >> /tmp/RELEASE_NOTES.md
           echo "**Full Changelog**: https://github.com/HarshK97/diffmantic/blob/main/CHANGELOG.md" >> /tmp/RELEASE_NOTES.md
+          echo "Extracted release notes for version $VERSION successfully."
 
       - name: Verify CLI version matches release tag
         run: |
