@@ -121,6 +121,9 @@ func candidate(
 		if !hasCommonDescendant(t1, c, m) {
 			continue
 		}
+		if !CompatiblePairRoles(t1, c) {
+			continue
+		}
 
 		sim := ChawatheSimilarity(t1, c, m.Src())
 		d := Dice(t1, c, m.Src())

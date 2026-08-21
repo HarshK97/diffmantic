@@ -88,6 +88,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			if m.HasDst(t2) {
 				continue
 			}
+			if !CompatiblePairRoles(t1, t2) {
+				continue
+			}
 			if part != nil && !part.CanMatch(t1, t2) {
 				continue
 			}
@@ -669,7 +672,7 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		if n2 != nil && len(n1.Children) >= 2 && len(n2.Children) >= 2 {
 			val1 := n1.Children[len(n1.Children)-1]
 			val2 := n2.Children[len(n2.Children)-1]
-			if !m.Has(val1) && !m.HasDst(val2) && len(val1.Children) > 0 && len(val2.Children) > 0 && val1.Type == val2.Type {
+			if !m.Has(val1) && !m.HasDst(val2) && TypesMatch(val1.Type, val2.Type, r) {
 				m.Add(val1, val2)
 			}
 		}

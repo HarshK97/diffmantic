@@ -74,7 +74,7 @@ func uniqueTypePairs(
 		seen[typ] = true
 		nodes1 := count1[typ]
 		nodes2 := count2[typ]
-		if len(nodes1) == 1 && len(nodes2) == 1 {
+		if len(nodes1) == 1 && len(nodes2) == 1 && CompatiblePairRoles(nodes1[0], nodes2[0]) {
 			pairs = append(pairs, [2]*treesitter.ASTNode{nodes1[0], nodes2[0]})
 		}
 	}

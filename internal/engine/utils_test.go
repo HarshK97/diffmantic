@@ -278,3 +278,131 @@ func TestLeafSimilarityAndHasLongLeafToken(t *testing.T) {
 		t.Errorf("LeafSimilarity(t1, t3) = %f, want > 0", sim)
 	}
 }
+
+func TestUnquote(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty string", "", ""},
+		{"single quote char", "\"", "\""},
+		{"single char", "a", "a"},
+		{"double quotes empty", `""`, ""},
+		{"single quotes empty", `''`, ""},
+		{"backticks empty", "``", ""},
+		{"double quotes text", `"hello world"`, "hello world"},
+		{"single quotes text", `'hello world'`, "hello world"},
+		{"backtick text", "`hello world`", "hello world"},
+		{"mismatched quotes", `"hello'`, `"hello'`},
+		{"inner quotes preserved", `"hello 'world'"`, "hello 'world'"},
+		{"plain unquoted", "hello", "hello"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Unquote(tt.in); got != tt.want {
+				t.Errorf("Unquote(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNodePairRole(t *testing.T) {
+	t.Run("nil node", func(t *testing.T) {
+		if got := NodePairRole(nil); got != PairRoleNone {
+			t.Errorf("NodePairRole(nil) = %v, want %v", got, PairRoleNone)
+		}
+	})
+
+	t.Run("orphan node", func(t *testing.T) {
+		orphan := testutil.Leaf("plain_scalar", "val")
+		orphan.Language = "yaml"
+		if got := NodePairRole(orphan); got != PairRoleNone {
+			t.Errorf("NodePairRole(orphan) = %v, want %v", got, PairRoleNone)
+		}
+	})
+
+	t.Run("yaml pair key and value", func(t *testing.T) {
+		key := testutil.Leaf("plain_scalar", "name")
+		val := testutil.Leaf("plain_scalar", "service")
+		pair := testutil.Node("block_mapping_pair", "", key, val)
+		root := testutil.Node("block_mapping", "", pair)
+		root.Language = "yaml"
+
+		if got := NodePairRole(key); got != PairRoleKey {
+			t.Errorf("NodePairRole(key) = %v, want %v", got, PairRoleKey)
+		}
+		if got := NodePairRole(val); got != PairRoleValue {
+			t.Errorf("NodePairRole(val) = %v, want %v", got, PairRoleValue)
+		}
+	})
+
+	t.Run("yaml pair with scaffolding flow_node wrapper", func(t *testing.T) {
+		keyLeaf := testutil.Leaf("plain_scalar", "image")
+		keyWrap := testutil.Node("flow_node", "", keyLeaf)
+		valLeaf := testutil.Leaf("double_quote_scalar", `"nginx"`)
+		valWrap := testutil.Node("flow_node", "", valLeaf)
+		pair := testutil.Node("block_mapping_pair", "", keyWrap, valWrap)
+		root := testutil.Node("block_mapping", "", pair)
+		root.Language = "yaml"
+
+		if got := NodePairRole(keyLeaf); got != PairRoleKey {
+			t.Errorf("NodePairRole(keyLeaf) = %v, want %v", got, PairRoleKey)
+		}
+		if got := NodePairRole(valLeaf); got != PairRoleValue {
+			t.Errorf("NodePairRole(valLeaf) = %v, want %v", got, PairRoleValue)
+		}
+	})
+
+	t.Run("non-pair node in hierarchy", func(t *testing.T) {
+		item1 := testutil.Leaf("plain_scalar", "item1")
+		item2 := testutil.Leaf("plain_scalar", "item2")
+		root := testutil.Node("block_sequence", "", item1, item2)
+		root.Language = "yaml"
+
+		if got := NodePairRole(item1); got != PairRoleNone {
+			t.Errorf("NodePairRole(item1) = %v, want %v", got, PairRoleNone)
+		}
+	})
+}
+
+func TestCompatiblePairRoles(t *testing.T) {
+	key1 := testutil.Leaf("plain_scalar", "k1")
+	val1 := testutil.Leaf("plain_scalar", "v1")
+	pair1 := testutil.Node("block_mapping_pair", "", key1, val1)
+	root1 := testutil.Node("block_mapping", "", pair1)
+	root1.Language = "yaml"
+
+	key2 := testutil.Leaf("plain_scalar", "k2")
+	val2 := testutil.Leaf("plain_scalar", "v2")
+	pair2 := testutil.Node("block_mapping_pair", "", key2, val2)
+	root2 := testutil.Node("block_mapping", "", pair2)
+	root2.Language = "yaml"
+
+	nonPairNode := testutil.Leaf("plain_scalar", "plain")
+	root3 := testutil.Node("block_sequence", "", nonPairNode)
+	root3.Language = "yaml"
+
+	tests := []struct {
+		name string
+		n1   *treesitter.ASTNode
+		n2   *treesitter.ASTNode
+		want bool
+	}{
+		{"both keys", key1, key2, true},
+		{"both values", val1, val2, true},
+		{"key and value", key1, val2, false},
+		{"value and key", val1, key2, false},
+		{"key and non-pair", key1, nonPairNode, true},
+		{"value and non-pair", val1, nonPairNode, true},
+		{"non-pair and non-pair", nonPairNode, nonPairNode, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CompatiblePairRoles(tt.n1, tt.n2); got != tt.want {
+				t.Errorf("CompatiblePairRoles(%s, %s) = %v, want %v", tt.name, tt.name, got, tt.want)
+			}
+		})
+	}
+}
