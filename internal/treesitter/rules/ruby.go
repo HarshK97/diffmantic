@@ -66,6 +66,7 @@ var rubyRules = &Rules{
 		">=":  "comparison_operator_literal",
 		">>":  "bitwise_operator_literal",
 		">>=": "assignment_operator_literal",
+		"?":   "ternary_operator_literal",
 		"^":   "bitwise_operator_literal",
 		"^=":  "assignment_operator_literal",
 		"|":   "bitwise_operator_literal",

@@ -41,7 +41,7 @@ func TestRulesAliased(t *testing.T) {
 				"=", "+=", "-=", "*=", "/=", "%=", "**=",
 				"&&=", "||=", "??=",
 				"&", "|", "^", "<<", ">>", ">>>",
-				"!", "~", "++", "--",
+				"!", "~", "++", "--", "?",
 				"=>",
 			},
 		},
@@ -54,7 +54,7 @@ func TestRulesAliased(t *testing.T) {
 				"=", "+=", "-=", "*=", "/=", "%=", "**=",
 				"&&=", "||=", "??=",
 				"&", "|", "^", "<<", ">>", ">>>",
-				"!", "~", "++", "--",
+				"!", "~", "++", "--", "?",
 			},
 		},
 		{
@@ -77,7 +77,7 @@ func TestRulesAliased(t *testing.T) {
 				"=", "+=", "-=", "*=", "/=", "%=", "**=",
 				"&&=", "||=", "??=",
 				"&", "|", "^", "<<", ">>", ">>>",
-				"!", "~", "++", "--",
+				"!", "~", "++", "--", "?",
 				"=>",
 				"/>", "</",
 			},
@@ -87,7 +87,7 @@ func TestRulesAliased(t *testing.T) {
 			operators: []string{
 				"+", "-", "*", "/", "%",
 				"==", "!=", "<", "<=", ">", ">=",
-				"&&", "||", "!",
+				"&&", "||", "!", "?",
 				"=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=",
 				"&", "|", "^", "<<", ">>",
 				"..", "..=",
@@ -98,7 +98,7 @@ func TestRulesAliased(t *testing.T) {
 			operators: []string{
 				"+", "-", "*", "/", "%",
 				"==", "!=", "<", "<=", ">", ">=",
-				"&&", "||", "!",
+				"&&", "||", "!", "?",
 				"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
 				"&", "|", "^", "~", "<<", ">>",
 				"++", "--",
@@ -109,7 +109,7 @@ func TestRulesAliased(t *testing.T) {
 			operators: []string{
 				"+", "-", "*", "/", "%",
 				"==", "!=", "<", "<=", ">", ">=",
-				"&&", "||", "!",
+				"&&", "||", "!", "?",
 				"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
 				"&", "|", "^", "~", "<<", ">>",
 				"++", "--",
@@ -120,7 +120,7 @@ func TestRulesAliased(t *testing.T) {
 			operators: []string{
 				"+", "-", "*", "/", "%",
 				"==", "!=", "<", "<=", ">", ">=",
-				"&&", "||", "!",
+				"&&", "||", "!", "?",
 				"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", ">>>=",
 				"&", "|", "^", "~", "<<", ">>", ">>>",
 				"++", "--",
@@ -133,14 +133,14 @@ func TestRulesAliased(t *testing.T) {
 				"==", "!=", "<>", "===", "!==", "<", "<=", ">", ">=", "<=>",
 				"&&", "||", "!", "and", "or", "xor",
 				"=", "+=", "-=", "*=", "/=", "%=", ".=", "**=", "<<=", ">>=", "&=", "^=", "|=", "??=",
-				"++", "--", "??",
+				"++", "--", "??", "?",
 			},
 		},
 		{
 			lang: "ruby",
 			operators: []string{
 				"==", "!=", "===", "<=>", "<", "<=", ">", ">=", "=~", "!~",
-				"&&", "||", "!",
+				"&&", "||", "!", "?",
 				"=", "+=", "-=", "*=", "/=", "%=", "**=", "&=", "|=", "^=", "<<=", ">>=", "||=", "&&=",
 				"+", "-", "*", "/", "%", "**",
 				"&", "|", "^", "<<", ">>", "~",
@@ -416,4 +416,56 @@ func TestRulesHelperMethods(t *testing.T) {
 			t.Errorf("IsFlattened(\"\") = true, want false")
 		}
 	})
+}
+
+func TestRulesIsOperatorLiteral(t *testing.T) {
+	r := &Rules{}
+
+	positive := []string{
+		"arithmetic_operator_literal",
+		"logical_operator_literal",
+		"comparison_operator_literal",
+		"assignment_operator_literal",
+		"bitwise_operator_literal",
+		"unary_operator_literal",
+		"channel_operator_literal",
+		"update_operator_literal",
+		"range_operator_literal",
+		"concat_operator_literal",
+		"length_operator_literal",
+		"null_coalescing_operator_literal",
+		"ternary_operator_literal",
+		"try_operator_literal",
+	}
+
+	for _, p := range positive {
+		if !r.IsOperatorLiteral(p) {
+			t.Errorf("r.IsOperatorLiteral(%q) = false, want true", p)
+		}
+		if !IsOperatorLiteral(p) {
+			t.Errorf("IsOperatorLiteral(%q) = false, want true", p)
+		}
+	}
+
+	negative := []string{
+		"",
+		"identifier",
+		"field_identifier",
+		"block",
+		"function_declaration",
+		"literal",
+		"string",
+		"is_operator",
+		"is_not_operator",
+		"not_in_operator",
+	}
+
+	for _, n := range negative {
+		if r.IsOperatorLiteral(n) {
+			t.Errorf("r.IsOperatorLiteral(%q) = true, want false", n)
+		}
+		if IsOperatorLiteral(n) {
+			t.Errorf("IsOperatorLiteral(%q) = true, want false", n)
+		}
+	}
 }
