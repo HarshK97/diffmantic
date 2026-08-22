@@ -7,22 +7,28 @@ import (
 	"sync"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
+	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/odvcencio/gotreesitter"
 )
 
+// MaxASTFileSize caps the file size for AST parsing before falling back to line diffing.
 const MaxASTFileSize = 400 * 1024
 
+// DiffOptions configures parsing limits, comment handling, and output options.
 type DiffOptions struct {
 	ParseErrorLimit      int
 	DisableErrorFallback bool
 	DisableSizeLimit     bool
 	IsConflict           bool
+	IgnoreComments       bool
 	EnvelopeOpts         serialize.EnvelopeOptions
 }
 
+// DiffResult holds the computed ASTs, mappings, edit script, and serialized envelope.
 type DiffResult struct {
 	SrcBytes    []byte
 	DstBytes    []byte
@@ -35,6 +41,7 @@ type DiffResult struct {
 	Envelope    *serialize.Envelope
 }
 
+// HasConflictMarkers checks if the buffer contains Git merge conflict markers.
 func HasConflictMarkers(data []byte) bool {
 	hasStart := bytes.HasPrefix(data, []byte("<<<<<<<")) || bytes.Contains(data, []byte("\n<<<<<<<"))
 	hasEnd := bytes.Contains(data, []byte("\n>>>>>>>")) || bytes.Contains(data, []byte(">>>>>>>\n"))
@@ -67,7 +74,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	langA, _ := treesitter.DetectLanguage(srcFile)
 	langB, _ := treesitter.DetectLanguage(dstFile)
 
-	// Fall back to line diff if tree-sitter cannot detect the language.
+	// If tree-sitter doesn't support the language, fall back to line diffing.
 	if langA == nil && langB == nil {
 		return &DiffResult{
 			SrcBytes: srcBytes,
@@ -85,20 +92,33 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		langB = langA
 	}
 
+	rulesA := treesitter.GetRules(langA.Name)
+	rulesB := treesitter.GetRules(langB.Name)
+
 	var (
-		srcAST *treesitter.ASTNode
-		dstAST *treesitter.ASTNode
-		wg     sync.WaitGroup
+		srcAST      *treesitter.ASTNode
+		dstAST      *treesitter.ASTNode
+		srcTree     *gotreesitter.Tree
+		dstTree     *gotreesitter.Tree
+		srcComments []comments.CommentBlock
+		dstComments []comments.CommentBlock
+		wg          sync.WaitGroup
 	)
 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		srcAST, _ = treesitter.ParseWithLanguage(srcBytes, langA)
+		srcAST, srcTree, _ = treesitter.ParseWithLanguageAndTree(srcBytes, langA)
+		if srcTree != nil && !opts.IgnoreComments {
+			srcComments = comments.ExtractComments(srcTree.RootNode(), srcBytes, langA, rulesA)
+		}
 	}()
 	go func() {
 		defer wg.Done()
-		dstAST, _ = treesitter.ParseWithLanguage(dstBytes, langB)
+		dstAST, dstTree, _ = treesitter.ParseWithLanguageAndTree(dstBytes, langB)
+		if dstTree != nil && !opts.IgnoreComments {
+			dstComments = comments.ExtractComments(dstTree.RootNode(), dstBytes, langB, rulesB)
+		}
 	}()
 
 	part := engine.NewLinePartition(srcBytes, dstBytes)
@@ -114,8 +134,36 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		}, nil
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+	var (
+		matchResult *engine.MatchResult
+		commentRes  *comments.DiffResult
+		matchWg     sync.WaitGroup
+	)
+
+	matchWg.Add(1)
+	go func() {
+		defer matchWg.Done()
+		matchResult = engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+	}()
+
+	if !opts.IgnoreComments && (len(srcComments) > 0 || len(dstComments) > 0) {
+		matchWg.Add(1)
+		go func() {
+			defer matchWg.Done()
+			commentRes = comments.DiffComments(srcComments, dstComments)
+		}()
+	}
+
+	matchWg.Wait()
+
 	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+
+	if commentRes != nil && len(commentRes.Actions) > 0 {
+		for _, act := range commentRes.Actions {
+			es.Add(act)
+		}
+	}
+
 	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
 
 	env, err := serialize.BuildEnvelopeWithOptions(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes, envOpts)

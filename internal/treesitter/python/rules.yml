@@ -1,7 +1,6 @@
 flattened:
   - string
   - concatenated_string
-  - comment
 aliased:
   # Comparison operators
   "==": comparison_operator_literal
@@ -76,6 +75,7 @@ ignored:
   - "."
   - "->"
   - "@"
+  - comment
 
 scaffolding:
   - module
@@ -173,6 +173,9 @@ pairs:
 equivalent_types:
   - [for_statement, for_in_clause, while_statement]
   - [if_statement, elif_clause]
+
+comments:
+  - comment
 
 
 

@@ -3,7 +3,6 @@ flattened:
   - char_literal
   - system_lib_string
   - concatenated_string
-  - comment
 aliased:
   # Arithmetic operators
   "+": arithmetic_operator_literal
@@ -75,6 +74,7 @@ ignored:
   - "."
   - "?"
   - "->"
+  - comment
 
 scaffolding:
   - translation_unit
@@ -171,4 +171,6 @@ equivalent_types:
   - [struct_specifier, union_specifier, enum_specifier]
   - [for_statement, while_statement, do_statement]
 
+comments:
+  - comment
 

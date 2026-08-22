@@ -3,7 +3,6 @@ flattened:
   - string_content
   - heredoc_body
   - regex
-  - comment
   - integer
   - float
   - simple_symbol
@@ -80,6 +79,7 @@ ignored:
   - "->"
   - "|"
   - "=>"
+  - comment
 
 scaffolding:
   - program
@@ -176,6 +176,9 @@ equivalent_types:
   - [class, module, singleton_class]
   - [if, unless]
   - [while, until, for]
+
+comments:
+  - comment
 
 
 

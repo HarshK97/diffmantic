@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -21,16 +22,17 @@ func DetectLanguage(filename string) (*gotreesitter.Language, error) {
 	return entry.Language(), nil
 }
 
-func ParseWithLanguage(src []byte, lang *gotreesitter.Language) (*ASTNode, error) {
+// ParseWithLanguageAndTree parses source bytes and returns both the AST and raw tree-sitter tree.
+func ParseWithLanguageAndTree(src []byte, lang *gotreesitter.Language) (*ASTNode, *gotreesitter.Tree, error) {
 	if lang == nil {
-		return nil, fmt.Errorf("nil language")
+		return nil, nil, errors.New("nil language")
 	}
 	parser := gotreesitter.NewParser(lang)
 	tree, err := parser.Parse(src)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return BuildAST(tree.RootNode(), src, lang, nil), nil
+	return BuildAST(tree.RootNode(), src, lang, nil), tree, nil
 }
 
 func Parse(src []byte, filename string) (*ASTNode, error) {
@@ -38,5 +40,6 @@ func Parse(src []byte, filename string) (*ASTNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ParseWithLanguage(src, lang)
+	ast, _, err := ParseWithLanguageAndTree(src, lang)
+	return ast, err
 }

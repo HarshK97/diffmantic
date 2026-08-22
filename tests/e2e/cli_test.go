@@ -299,3 +299,45 @@ func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
 		t.Error("expected line alignment entries in fallback envelope")
 	}
 }
+
+func TestCLI_IgnoreComments(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.go")
+	newPath := filepath.Join(dir, "new.go")
+
+	oldContent := "package main\n\n// Old Comment\nfunc main() {}\n"
+	newContent := "package main\n\n// New Comment\nfunc main() {}\n"
+
+	if err := os.WriteFile(oldPath, []byte(oldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath, []byte(newContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// When comments aren't ignored, comment edits show up as actions.
+	stdoutWith, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json")
+	if err != nil {
+		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
+	}
+	var envWith serialize.Envelope
+	if err := json.Unmarshal([]byte(stdoutWith), &envWith); err != nil {
+		t.Fatal(err)
+	}
+	if len(envWith.Actions) == 0 {
+		t.Errorf("expected action for comment change when not ignored")
+	}
+
+	// With --ignore-comments, comment-only changes should produce zero actions.
+	stdoutIgnored, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "--ignore-comments")
+	if err != nil {
+		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
+	}
+	var envIgnored serialize.Envelope
+	if err := json.Unmarshal([]byte(stdoutIgnored), &envIgnored); err != nil {
+		t.Fatal(err)
+	}
+	if len(envIgnored.Actions) != 0 {
+		t.Errorf("expected 0 actions with --ignore-comments, got %d actions", len(envIgnored.Actions))
+	}
+}

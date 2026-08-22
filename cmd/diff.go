@@ -91,8 +91,10 @@ Examples:
 		}
 
 		parseErrorLimit := getParseErrorLimit(cmd)
+		ignoreComments, _ := cmd.Flags().GetBool("ignore-comments")
 		dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
 			ParseErrorLimit: parseErrorLimit,
+			IgnoreComments:  ignoreComments,
 			EnvelopeOpts:    opts,
 		})
 		if err != nil {
@@ -137,4 +139,5 @@ func init() {
 	diffCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
 	diffCmd.Flags().Bool("ui", false, "Include line alignment and highlight spans in JSON output")
 	diffCmd.Flags().Bool("full", false, "Include actions, line alignment, and highlight spans in JSON output")
+	diffCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
 }

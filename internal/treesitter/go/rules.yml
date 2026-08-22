@@ -1,5 +1,6 @@
 flattened:
   - interpreted_string_literal
+  - raw_string_literal
 aliased:
   # Arithmetic operators
   "+": arithmetic_operator_literal
@@ -63,6 +64,7 @@ ignored:
   - ";"
   - ":"
   - "."
+  - comment
 
 scaffolding:
   - source_file
@@ -144,6 +146,9 @@ pairs:
 equivalent_types:
   - [function_declaration, method_declaration]
   - [var_declaration, short_var_declaration]
+
+comments:
+  - comment
 
 
 
