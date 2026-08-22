@@ -3,7 +3,6 @@ flattened:
   - encapsed_string
   - heredoc
   - nowdoc
-  - comment
   - integer
   - float
   - boolean
@@ -77,6 +76,7 @@ ignored:
   - "->"
   - "?->"
   - "::"
+  - comment
 
 scaffolding:
   - program
@@ -193,6 +193,9 @@ equivalent_types:
   - [class_declaration, interface_declaration, trait_declaration, enum_declaration]
   - [for_statement, foreach_statement, while_statement, do_statement]
   - [if_statement, else_if_clause]
+
+comments:
+  - comment
 
 
 

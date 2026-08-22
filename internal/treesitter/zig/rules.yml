@@ -2,8 +2,6 @@ flattened:
   - string_literal
   - multiline_string_literal
   - char_literal
-  - line_comment
-  - doc_comment
 
 aliased:
   # Arithmetic operators
@@ -71,6 +69,7 @@ ignored:
   - "."
   - "=>"
   - "->"
+  - comment
 
 scaffolding:
   - source_file
@@ -148,4 +147,6 @@ equivalent_types:
   - [variable_declaration, comptime_declaration]
   - [for_statement, while_statement]
 
+comments:
+  - comment
 

@@ -1,6 +1,5 @@
 flattened:
   - text
-  - comment
   - raw_text
 
 aliased:
@@ -12,6 +11,7 @@ ignored:
   - "</"
   - "/>"
   - "="
+  - comment
 
 scaffolding:
   - document
@@ -27,6 +27,9 @@ unordered:
 
 pairs:
   - attribute
+
+comments:
+  - comment
 
 
 

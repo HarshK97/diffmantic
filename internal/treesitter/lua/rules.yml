@@ -1,6 +1,5 @@
 flattened:
   - string
-  - comment
 aliased:
   # Arithmetic operators
   "+": arithmetic_operator_literal
@@ -53,6 +52,7 @@ ignored:
   - ":"
   - "."
   - "::"
+  - comment
 
 scaffolding:
   - chunk
@@ -126,4 +126,6 @@ equivalent_types:
   - [for_statement, while_statement, repeat_statement]
   - [if_statement, elseif_statement]
 
+comments:
+  - comment
 

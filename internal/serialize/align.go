@@ -34,16 +34,35 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 	// Identify moved nodes and track which lines they are on.
 	movedSrcNodes := make(map[*treesitter.ASTNode]bool)
 	movedDstNodes := make(map[*treesitter.ASTNode]bool)
+	movedSrcLines := make(map[int]bool)
+	movedDstLines := make(map[int]bool)
+
+	var r *treesitter.Rules
+	if srcRoot != nil {
+		r = treesitter.GetRules(srcRoot.GetLanguage())
+	}
+	if r == nil && dstRoot != nil {
+		r = treesitter.GetRules(dstRoot.GetLanguage())
+	}
 
 	if es != nil {
 		for _, a := range es.Actions() {
 			if a.Type == actions.Move && a.Node != nil {
-				if ms != nil {
-					if destNode := ms.Src()[a.Node]; destNode != nil {
-						if a.Node.Parent == nil || destNode.Parent == nil || ms.Src()[a.Node.Parent] != destNode.Parent {
-							if isDisplacedMove(a.Node, destNode, ms) {
-								movedSrcNodes[a.Node] = true
-								movedDstNodes[destNode] = true
+				destNode := a.DestNode
+				if destNode == nil && ms != nil {
+					destNode = ms.Src()[a.Node]
+				}
+				if destNode != nil {
+					if a.Node.Parent == nil || destNode.Parent == nil || ms == nil || ms.Src()[a.Node.Parent] != destNode.Parent {
+						isComment := r != nil && (r.IsComment(a.Node.Type) || r.IsComment(destNode.Type))
+						if ms == nil || isDisplacedMove(a.Node, destNode, ms) || isComment {
+							movedSrcNodes[a.Node] = true
+							movedDstNodes[destNode] = true
+							for row := int(a.Node.StartRow); row <= int(a.Node.EndRow); row++ {
+								movedSrcLines[row] = true
+							}
+							for row := int(destNode.StartRow); row <= int(destNode.EndRow); row++ {
+								movedDstLines[row] = true
 							}
 						}
 					}
@@ -51,9 +70,6 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			}
 		}
 	}
-
-	movedSrcLines := make(map[int]bool)
-	movedDstLines := make(map[int]bool)
 
 	// Collect leaf nodes to map their line numbers.
 	srcLeaves := srcRoot.Leaves()

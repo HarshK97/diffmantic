@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added a dedicated comment diffing pipeline (`internal/comments`) that diffs single-line and multiline comments alongside AST matching (PR #124).
+- Added `-C` / `--ignore-comments` flag to skip comment diffing when you only care about code logic changes (PR #124).
+- Added `comments` grammar rules across supported languages so Tree-sitter identifies comment node types accurately (PR #124).
+
+### Fixed
+- Fixed noisy whole-block delete/insert actions on multiline docstrings by running line-level diffs inside comment blocks (PR #124).
+- Fixed comments falsely matching similar comments in other functions or branches by locking comment matching to their enclosing scope (PR #124).
+
+### Performance
+- Ran comment extraction and diffing concurrently with Tree-sitter parsing and AST matching, keeping comment diffing overhead near zero wall-clock time (PR #124).
+
 ## [0.6.0] - 2026-08-21
 
 ### Added

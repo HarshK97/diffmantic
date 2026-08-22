@@ -1,7 +1,6 @@
 flattened:
   - string
   - template_string
-  - comment
 
 aliased:
   # Comparison operators
@@ -80,6 +79,8 @@ ignored:
   - "."
   - "..."
   - "?."
+  - comment
+  - html_comment
 
 scaffolding:
   - program
@@ -221,6 +222,10 @@ equivalent_types:
   - [lexical_declaration, variable_declaration]
   - [for_statement, for_in_statement]
   - [jsx_element, jsx_self_closing_element]
+
+comments:
+  - comment
+  - html_comment
 
 
 

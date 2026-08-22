@@ -68,9 +68,36 @@ func splitMoveToDeleteInsert(result *actions.EditScript, srcNode, dstNode *trees
 	}
 }
 
-func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+func isCommentASTNode(node *treesitter.ASTNode, rulesSrc, rulesDst *treesitter.Rules) bool {
+	if node == nil {
+		return false
+	}
+	if node.Type == "comment" {
+		return true
+	}
+	if rulesSrc != nil && rulesSrc.IsComment(node.Type) {
+		return true
+	}
+	if rulesDst != nil && rulesDst.IsComment(node.Type) {
+		return true
+	}
+	if r := treesitter.GetRules(node.GetLanguage()); r != nil && r.IsComment(node.Type) {
+		return true
+	}
+	return false
+}
+
+func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping, roots ...*treesitter.ASTNode) *actions.EditScript {
 	if ms == nil {
 		return es
+	}
+
+	var rulesSrc, rulesDst *treesitter.Rules
+	if len(roots) > 0 && roots[0] != nil {
+		rulesSrc = treesitter.GetRules(roots[0].GetLanguage())
+	}
+	if len(roots) > 1 && roots[1] != nil {
+		rulesDst = treesitter.GetRules(roots[1].GetLanguage())
 	}
 
 	convertedSrc := make(map[*treesitter.ASTNode]bool)
@@ -125,7 +152,11 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping) *acti
 		}
 
 		if a.Type == actions.Move {
-			if a.Node == nil || ms.Src()[a.Node] == nil {
+			if a.Node == nil {
+				continue
+			}
+			isComment := isCommentASTNode(a.Node, rulesSrc, rulesDst)
+			if !isComment && a.DestNode == nil && (ms == nil || ms.Src()[a.Node] == nil) {
 				// The node is unmapped (e.g. because its ancestor was normalized and broke the mapping),
 				// so any Move action on it is invalid/redundant and should be dropped.
 				continue
@@ -190,9 +221,21 @@ func commentTextSimilarity(s1, s2 string) float64 {
 // normalizeCommentMoves turns comment Moves into Delete+Insert, but only when
 // the text differs enough (below commentSimilarityThreshold). Similar comments
 // keep their Move and any paired Update.
-func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
-	if ms == nil {
+func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping, roots ...*treesitter.ASTNode) *actions.EditScript {
+	if es == nil {
 		return es
+	}
+
+	var rulesSrc, rulesDst *treesitter.Rules
+	if len(roots) > 0 && roots[0] != nil {
+		rulesSrc = treesitter.GetRules(roots[0].GetLanguage())
+	}
+	if len(roots) > 1 && roots[1] != nil {
+		rulesDst = treesitter.GetRules(roots[1].GetLanguage())
+	}
+
+	isComment := func(node *treesitter.ASTNode) bool {
+		return isCommentASTNode(node, rulesSrc, rulesDst)
 	}
 
 	commentMovedFuzzy := make(map[*treesitter.ASTNode]bool)
@@ -200,8 +243,12 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 	commentMovedConvertedDst := make(map[*treesitter.ASTNode]bool)
 
 	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil && a.Node.Type == "comment" {
-			if dstNode := ms.Src()[a.Node]; dstNode != nil {
+		if a.Type == actions.Move && a.Node != nil && isComment(a.Node) {
+			dstNode := a.DestNode
+			if dstNode == nil && ms != nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil {
 				sim := commentTextSimilarity(a.Node.Label, dstNode.Label)
 				if sim >= commentSimilarityThreshold {
 					commentMovedFuzzy[a.Node] = true
@@ -222,21 +269,26 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.
 			continue
 		}
 
-		if a.Type == actions.Update && a.Node.Type == "comment" {
+		if a.Type == actions.Update && isComment(a.Node) {
 			if commentMovedConverted[a.Node] || commentMovedConvertedDst[a.Node] {
 				continue
 			}
 		}
 
-		if a.Type == actions.Move && a.Node.Type == "comment" {
+		if a.Type == actions.Move && isComment(a.Node) {
 			if commentMovedFuzzy[a.Node] {
 				result.Add(a)
 				continue
 			}
 
 			if commentMovedConverted[a.Node] {
-				dstNode := ms.Src()[a.Node]
-				removeSubtreeMappings(a.Node, ms)
+				dstNode := a.DestNode
+				if dstNode == nil && ms != nil {
+					dstNode = ms.Src()[a.Node]
+				}
+				if ms != nil {
+					removeSubtreeMappings(a.Node, ms)
+				}
 				splitMoveToDeleteInsert(result, a.Node, dstNode)
 				continue
 			}

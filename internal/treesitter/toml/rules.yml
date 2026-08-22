@@ -1,6 +1,5 @@
 flattened:
   - string
-  - comment
   - offset_date_time
   - local_date_time
   - local_date
@@ -20,6 +19,7 @@ ignored:
   - "\"\"\""
   - "'"
   - "'''"
+  - comment
 
 scaffolding:
   - document
@@ -43,4 +43,7 @@ pairs:
 
 equivalent_types:
   - [table, inline_table]
+
+comments:
+  - comment
 

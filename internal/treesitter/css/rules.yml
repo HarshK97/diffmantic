@@ -1,5 +1,4 @@
 flattened:
-  - comment
   - plain_value
   - color_value
   - integer_value
@@ -14,6 +13,7 @@ ignored:
   - ","
   - "("
   - ")"
+  - comment
 
 scaffolding:
   - stylesheet
@@ -29,3 +29,7 @@ unordered:
 
 pairs:
   - declaration
+
+comments:
+  - comment
+

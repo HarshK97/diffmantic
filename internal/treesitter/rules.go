@@ -23,13 +23,18 @@ type Rules struct {
 	Pairs           []string          `yaml:"pairs"`
 	Unordered       []string          `yaml:"unordered"`
 	EquivalentTypes [][]string        `yaml:"equivalent_types"`
+	Comments        []string          `yaml:"comments"`
 
 	flattenedSet    map[string]struct{}
 	ignoredSet      map[string]struct{}
 	labelIgnoredSet map[string]struct{}
 	keywordsSet     map[string]struct{}
+	declarationsSet map[string]struct{}
+	identifiersSet  map[string]struct{}
+	scaffoldingSet  map[string]struct{}
 	blocksSet       map[string]struct{}
 	unorderedSet    map[string]struct{}
+	commentsSet     map[string]struct{}
 	equivGroups     map[string][]int
 }
 
@@ -58,6 +63,24 @@ func (r *Rules) compileSets() {
 			r.keywordsSet[s] = struct{}{}
 		}
 	}
+	if len(r.Declarations) > 0 {
+		r.declarationsSet = make(map[string]struct{}, len(r.Declarations))
+		for _, s := range r.Declarations {
+			r.declarationsSet[s] = struct{}{}
+		}
+	}
+	if len(r.Identifiers) > 0 {
+		r.identifiersSet = make(map[string]struct{}, len(r.Identifiers))
+		for _, s := range r.Identifiers {
+			r.identifiersSet[s] = struct{}{}
+		}
+	}
+	if len(r.Scaffolding) > 0 {
+		r.scaffoldingSet = make(map[string]struct{}, len(r.Scaffolding))
+		for _, s := range r.Scaffolding {
+			r.scaffoldingSet[s] = struct{}{}
+		}
+	}
 	if len(r.Blocks) > 0 {
 		r.blocksSet = make(map[string]struct{}, len(r.Blocks))
 		for _, s := range r.Blocks {
@@ -70,6 +93,12 @@ func (r *Rules) compileSets() {
 			r.unorderedSet[s] = struct{}{}
 		}
 	}
+	if len(r.Comments) > 0 {
+		r.commentsSet = make(map[string]struct{}, len(r.Comments))
+		for _, s := range r.Comments {
+			r.commentsSet[s] = struct{}{}
+		}
+	}
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -80,7 +109,55 @@ func (r *Rules) compileSets() {
 	}
 }
 
-// AreTypesEquivalent checks if t1 and t2 belong to the same equivalence group.
+// IsComment reports whether nodeType is a comment in the language grammar.
+func (r *Rules) IsComment(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.commentsSet) > 0 {
+		_, ok := r.commentsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Comments, nodeType)
+}
+
+// IsDeclaration reports whether nodeType is a declaration.
+func (r *Rules) IsDeclaration(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.declarationsSet) > 0 {
+		_, ok := r.declarationsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Declarations, nodeType)
+}
+
+// IsIdentifier reports whether nodeType is an identifier token.
+func (r *Rules) IsIdentifier(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.identifiersSet) > 0 {
+		_, ok := r.identifiersSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Identifiers, nodeType)
+}
+
+// IsScaffolding reports whether nodeType is scaffolding.
+func (r *Rules) IsScaffolding(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.scaffoldingSet) > 0 {
+		_, ok := r.scaffoldingSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Scaffolding, nodeType)
+}
+
+// AreTypesEquivalent reports whether t1 and t2 belong to the same equivalent_types group.
 func (r *Rules) AreTypesEquivalent(t1, t2 string) bool {
 	if r == nil || t1 == "" || t2 == "" {
 		return t1 == t2

@@ -171,14 +171,13 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 				ja.Node = nodeRef
 
-				if a.Node.Parent == nil {
-					return nil, fmt.Errorf("inserted node %s has nil Parent", a.Node.Type)
+				if a.Node.Parent != nil {
+					parentRef, err := makeNodeRef(a.Node.Parent, "after")
+					if err != nil {
+						return nil, fmt.Errorf("failed to build parent reference for insert: %w", err)
+					}
+					ja.Parent = parentRef
 				}
-				parentRef, err := makeNodeRef(a.Node.Parent, "after")
-				if err != nil {
-					return nil, fmt.Errorf("failed to build parent reference for insert: %w", err)
-				}
-				ja.Parent = parentRef
 
 				ja.Position = new(a.Position)
 				if a.Subtree {
@@ -198,14 +197,13 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 				ja.Node = nodeRef
 
-				if a.Node.Parent == nil {
-					return nil, fmt.Errorf("deleted node %s has nil Parent", a.Node.Type)
+				if a.Node.Parent != nil {
+					parentRef, err := makeNodeRef(a.Node.Parent, "before")
+					if err != nil {
+						return nil, fmt.Errorf("failed to build parent reference for delete: %w", err)
+					}
+					ja.Parent = parentRef
 				}
-				parentRef, err := makeNodeRef(a.Node.Parent, "before")
-				if err != nil {
-					return nil, fmt.Errorf("failed to build parent reference for delete: %w", err)
-				}
-				ja.Parent = parentRef
 
 				ja.Position = new(a.Position)
 				if a.Subtree {
@@ -224,14 +222,19 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				ja.OldValue = a.Node.Label
 				ja.NewValue = a.Value
 
-				if ms != nil {
-					if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
-						destRef, err := makeNodeRef(destNodeDst, "after")
-						if err != nil {
-							return nil, fmt.Errorf("failed to build dest_node reference for update: %w", err)
-						}
-						ja.DestNode = destRef
+				var destNodeDst *treesitter.ASTNode
+				if a.DestNode != nil {
+					destNodeDst = a.DestNode
+				} else if ms != nil {
+					destNodeDst = ms.Src()[a.Node]
+				}
+
+				if destNodeDst != nil {
+					destRef, err := makeNodeRef(destNodeDst, "after")
+					if err != nil {
+						return nil, fmt.Errorf("failed to build dest_node reference for update: %w", err)
 					}
+					ja.DestNode = destRef
 				}
 
 			case actions.Move:
@@ -244,19 +247,24 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 				ja.Node = nodeRef
 
-				if a.Parent == nil {
+				parent := a.Parent
+				if parent == nil && a.DestNode != nil && a.DestNode.Parent != nil {
+					parent = a.DestNode.Parent
+				}
+
+				if parent == nil {
 					return nil, fmt.Errorf("move action for node %s has nil Parent", a.Node.Type)
 				}
 
 				var newParentDst *treesitter.ASTNode
-				if a.Parent.Root() == dstRoot.Root() {
-					newParentDst = a.Parent
+				if dstRoot != nil && parent.Root() == dstRoot.Root() {
+					newParentDst = parent
 				} else if ms != nil {
-					newParentDst = ms.Src()[a.Parent]
+					newParentDst = ms.Src()[parent]
 				}
 
 				if newParentDst == nil && ms != nil && ms.Src() != nil {
-					curr := a.Parent
+					curr := parent
 					for curr != nil {
 						if mapped := ms.Src()[curr]; mapped != nil {
 							newParentDst = mapped
@@ -267,7 +275,11 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 
 				if newParentDst == nil {
-					return nil, fmt.Errorf("failed to resolve move parent %s in destination tree", a.Parent.Type)
+					if a.DestNode != nil && a.DestNode.Parent != nil {
+						newParentDst = a.DestNode.Parent
+					} else {
+						return nil, fmt.Errorf("failed to resolve move parent %s in destination tree", parent.Type)
+					}
 				}
 
 				parentRef, err := makeNodeRef(newParentDst, "after")
@@ -277,18 +289,17 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				ja.Parent = parentRef
 				ja.Position = new(a.Position)
 
-				if a.Node.Parent == nil {
-					return nil, fmt.Errorf("moved node %s has nil OldParent", a.Node.Type)
+				if a.Node.Parent != nil {
+					oldParentRef, err := makeNodeRef(a.Node.Parent, "before")
+					if err != nil {
+						return nil, fmt.Errorf("failed to build old parent reference for move: %w", err)
+					}
+					ja.OldParent = oldParentRef
 				}
-				oldParentRef, err := makeNodeRef(a.Node.Parent, "before")
-				if err != nil {
-					return nil, fmt.Errorf("failed to build old parent reference for move: %w", err)
-				}
-				ja.OldParent = oldParentRef
 
 				oldPos := a.Node.ChildIndex()
 				if oldPos == -1 {
-					return nil, fmt.Errorf("moved node %s not found in its old parent's children", a.Node.Type)
+					oldPos = 0
 				}
 				ja.OldPosition = new(oldPos)
 
@@ -296,7 +307,17 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					ja.Subtree = new(true)
 				}
 
-				if ms != nil {
+				if a.DestNode != nil {
+					startByte := a.DestNode.StartByte
+					endByte := a.DestNode.EndByte
+					ja.DestStartByte = &startByte
+					ja.DestEndByte = &endByte
+					destRef, err := makeNodeRef(a.DestNode, "after")
+					if err != nil {
+						return nil, fmt.Errorf("failed to build dest_node reference for move: %w", err)
+					}
+					ja.DestNode = destRef
+				} else if ms != nil {
 					if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 						startByte := destNodeDst.StartByte
 						endByte := destNodeDst.EndByte

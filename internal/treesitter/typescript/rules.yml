@@ -1,7 +1,6 @@
 flattened:
   - string
   - template_string
-  - comment
 
 aliased:
   # Comparison operators
@@ -76,6 +75,8 @@ ignored:
   - "."
   - "..."
   - "?."
+  - comment
+  - html_comment
 
 scaffolding:
   - program
@@ -203,6 +204,10 @@ equivalent_types:
   - [class_declaration, abstract_class_declaration, interface_declaration, type_alias_declaration, enum_declaration]
   - [lexical_declaration, variable_declaration]
   - [for_statement, for_in_statement]
+
+comments:
+  - comment
+  - html_comment
 
 
 

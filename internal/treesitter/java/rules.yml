@@ -2,14 +2,10 @@ leaf_containers:
   - string_literal
   - character_literal
   - text_block
-  - line_comment
-  - block_comment
 flattened:
   - string_literal
   - character_literal
   - text_block
-  - line_comment
-  - block_comment
 aliased:
   # Arithmetic operators
   "+": arithmetic_operator_literal
@@ -73,6 +69,8 @@ ignored:
   - "?"
   - "->"
   - "::"
+  - line_comment
+  - block_comment
 
 scaffolding:
   - program
@@ -205,6 +203,10 @@ equivalent_types:
   - [method_declaration, constructor_declaration, compact_constructor_declaration]
   - [class_declaration, interface_declaration, record_declaration, enum_declaration, annotation_type_declaration]
   - [for_statement, enhanced_for_statement, while_statement, do_statement]
+
+comments:
+  - line_comment
+  - block_comment
 
 
 

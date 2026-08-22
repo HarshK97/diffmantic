@@ -25,8 +25,10 @@ func (t ActionType) String() string {
 }
 
 type Action struct {
-	Type     ActionType
-	Node     *treesitter.ASTNode
+	Type ActionType
+	Node *treesitter.ASTNode
+	// DestNode is the target AST node for Move and Update actions, when matched.
+	DestNode *treesitter.ASTNode
 	Parent   *treesitter.ASTNode
 	Position int
 	Value    string

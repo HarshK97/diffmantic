@@ -264,6 +264,41 @@ func TestNormalizeCommentMovesKeepsSimilar(t *testing.T) {
 	}
 }
 
+func TestNormalizeCommentMovesDifferentCommentType(t *testing.T) {
+	srcComment := mkLeaf("line_comment", "// fix the bug here")
+	dstComment := mkLeaf("line_comment", "// completely different thing")
+	srcRoot := mkNode("source_file", "", srcComment)
+	srcRoot.Language = "rust"
+	dstRoot := mkNode("source_file", "", dstComment)
+	dstRoot.Language = "rust"
+
+	ms := engine.NewMapping()
+	ms.Add(srcComment, dstComment)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:   actions.Move,
+		Node:   srcComment,
+		Parent: mkNode("block", ""),
+	})
+
+	result := normalizeCommentMoves(es, ms, srcRoot, dstRoot)
+
+	hasDelete := false
+	hasInsert := false
+	for _, a := range result.Actions() {
+		if a.Type == actions.Delete {
+			hasDelete = true
+		}
+		if a.Type == actions.Insert {
+			hasInsert = true
+		}
+	}
+	if !hasDelete || !hasInsert {
+		t.Error("dissimilar line_comment move in Rust should be converted to delete+insert")
+	}
+}
+
 func TestRemoveSubtreeMappings(t *testing.T) {
 	child := mkLeaf("id", "x")
 	root := mkNode("call", "", child)
