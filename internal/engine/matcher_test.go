@@ -2,9 +2,11 @@ package engine
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestMatchIdenticalTrees(t *testing.T) {
@@ -292,5 +294,48 @@ func TestMatchPairKeyNameAffinity(t *testing.T) {
 
 	if r.Mappings.Src()[pairOld] != pairNew1 {
 		t.Errorf("pairOld ('priority') should match pairNew1 ('priority'), got %v", r.Mappings.Src()[pairOld])
+	}
+}
+
+func TestBottomUpOuterAncestorPreservation(t *testing.T) {
+	srcBytes, err := os.ReadFile("../../tests/testdata/lua_neovim_write_spec_refactor/old.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstBytes, err := os.ReadFile("../../tests/testdata/lua_neovim_write_spec_refactor/new.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srcAST, err := treesitter.Parse(srcBytes, "test.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, "test.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := Match(srcAST, dstAST, srcBytes, dstBytes, nil)
+	// Find the function_definition at line 96 in src and verify its block maps to dst outer block.
+	found := false
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_definition" && n.StartRow == 95 {
+			for _, child := range n.Children {
+				if child.Type == "block" {
+					found = true
+					mappedBlock := res.Mappings.Src()[child]
+					if mappedBlock == nil {
+						t.Fatalf("src outer block at line 96 should be mapped")
+					}
+					if mappedBlock.StartRow != 96 {
+						t.Errorf("mappedBlock.StartRow = %d, want 96", mappedBlock.StartRow)
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("target function_definition or block at row 95 not found in AST")
 	}
 }
