@@ -129,3 +129,5 @@ equivalent_types:
 comments:
   - comment
 
+calls:
+  - function_call

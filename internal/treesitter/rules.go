@@ -24,6 +24,7 @@ type Rules struct {
 	Unordered       []string          `yaml:"unordered"`
 	EquivalentTypes [][]string        `yaml:"equivalent_types"`
 	Comments        []string          `yaml:"comments"`
+	Calls           []string          `yaml:"calls"`
 
 	flattenedSet    map[string]struct{}
 	ignoredSet      map[string]struct{}
@@ -35,6 +36,7 @@ type Rules struct {
 	blocksSet       map[string]struct{}
 	unorderedSet    map[string]struct{}
 	commentsSet     map[string]struct{}
+	callsSet        map[string]struct{}
 	equivGroups     map[string][]int
 }
 
@@ -99,6 +101,12 @@ func (r *Rules) compileSets() {
 			r.commentsSet[s] = struct{}{}
 		}
 	}
+	if len(r.Calls) > 0 {
+		r.callsSet = make(map[string]struct{}, len(r.Calls))
+		for _, s := range r.Calls {
+			r.callsSet[s] = struct{}{}
+		}
+	}
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -107,6 +115,31 @@ func (r *Rules) compileSets() {
 			}
 		}
 	}
+}
+
+// IsCall reports whether nodeType is a function, method, or macro invocation.
+func (r *Rules) IsCall(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.callsSet) > 0 {
+		_, ok := r.callsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Calls, nodeType)
+}
+
+// IsCall reports whether nodeType is configured as a call in any language rule set.
+func IsCall(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range rulesCache {
+		if r.IsCall(nodeType) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsComment reports whether nodeType is a comment in the language grammar.

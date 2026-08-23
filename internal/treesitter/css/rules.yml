@@ -33,3 +33,5 @@ pairs:
 comments:
   - comment
 
+calls:
+  - call_expression

@@ -339,3 +339,39 @@ func TestBottomUpOuterAncestorPreservation(t *testing.T) {
 		t.Fatalf("target function_definition or block at row 95 not found in AST")
 	}
 }
+
+func TestZipSpecChangeInsertedCallback(t *testing.T) {
+	srcBytes, err := os.ReadFile("../../tests/testdata/lua_neovim_zip_spec_change/old.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstBytes, err := os.ReadFile("../../tests/testdata/lua_neovim_zip_spec_change/new.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srcAST, err := treesitter.Parse(srcBytes, "test.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, "test.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := Match(srcAST, dstAST, srcBytes, dstBytes, nil)
+	// The return statement inside vim.wait is newly added, so it shouldn't match
+	// an existing return in an unrelated callback.
+	found := false
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "return_statement" && n.StartRow == 449 {
+			found = true
+			if src := res.Mappings.Dst()[n]; src != nil {
+				t.Errorf("expected return vim.wait statement to be unmapped (insert), got mapped from %v", src)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("target return_statement at row 449 not found")
+	}
+}
