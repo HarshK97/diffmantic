@@ -113,6 +113,8 @@ func candidate(
 	t1Labels := t1.LeafLabels()
 	t1Key := getKeyLabel(t1)
 
+	rules := rulesFor(t1)
+
 	for _, c := range candidates {
 		if m.HasDst(c) {
 			continue
@@ -122,6 +124,21 @@ func candidate(
 			continue
 		}
 		if !CompatiblePairRoles(t1, c) {
+			continue
+		}
+
+		// If t1's parent construct does not match c's parent construct, but an enclosing ancestor of t1
+		// matches c's parent construct, preserve c for the true outer ancestor.
+		hasBetterAncestor := false
+		if t1.Parent != nil && c.Parent != nil && !TypesMatch(t1.Parent.Type, c.Parent.Type, rules) {
+			for anc := t1.Parent; anc != nil; anc = anc.Parent {
+				if TypesMatch(anc.Type, c.Type, rules) && anc.Parent != nil && TypesMatch(anc.Parent.Type, c.Parent.Type, rules) {
+					hasBetterAncestor = true
+					break
+				}
+			}
+		}
+		if hasBetterAncestor {
 			continue
 		}
 
