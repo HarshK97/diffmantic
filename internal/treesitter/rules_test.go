@@ -527,3 +527,36 @@ func TestEveryLanguageBlocksAreValidSymbols(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryLanguageCallsAreValidSymbols(t *testing.T) {
+	for _, ext := range []string{
+		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
+		"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
+		"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
+		"yaml.yaml", "zig.zig",
+	} {
+		entry := DetectGrammarEntry(ext)
+		if entry == nil {
+			continue
+		}
+		lang := entry.Language()
+		namedSymbols := make(map[string]bool)
+		for i := 0; i < int(lang.SymbolCount) && i < len(lang.SymbolNames); i++ {
+			name := lang.SymbolNames[i]
+			isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
+			if name != "" && isNamed {
+				namedSymbols[name] = true
+			}
+		}
+
+		rules := GetRules(entry.Name)
+		if rules == nil {
+			continue
+		}
+		for _, sym := range rules.Calls {
+			if !namedSymbols[sym] {
+				t.Errorf("language %s: calls symbol %q is not a valid named symbol in grammar", entry.Name, sym)
+			}
+		}
+	}
+}

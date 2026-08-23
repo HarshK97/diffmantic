@@ -66,6 +66,14 @@ func TopDown(
 						continue
 					}
 					if Isomorphic(t1, t2) {
+						if Height(t1) <= 2 {
+							s1 := getScopeName(t1)
+							s2 := getScopeName(t2)
+							if s1 != "" && s2 != "" && s1 != s2 {
+								continue
+							}
+						}
+
 						ambiguous := false
 
 						for _, ta := range candidates {
@@ -101,14 +109,8 @@ func TopDown(
 	for _, pair := range A {
 		t1, t2 := pair[0], pair[1]
 
-		name1 := getDeclarationName(t1)
-		name2 := getDeclarationName(t2)
-		if name1 == "" && name2 == "" {
-			enc1 := GetEnclosingDeclaration(t1)
-			enc2 := GetEnclosingDeclaration(t2)
-			name1 = getDeclarationName(enc1)
-			name2 = getDeclarationName(enc2)
-		}
+		name1 := getScopeName(t1)
+		name2 := getScopeName(t2)
 
 		nameMatched := name1 != "" && name2 != "" && name1 == name2
 		mismatched := name1 != "" && name2 != "" && name1 != name2
@@ -238,4 +240,55 @@ func parentLineageSimilarity(t1, t2 *treesitter.ASTNode) int {
 		}
 	}
 	return score
+}
+
+// getScopeName returns the identifier of n, its enclosing declaration, or
+// the enclosing call expression for anonymous callbacks/closures.
+func getScopeName(n *treesitter.ASTNode) string {
+	if n == nil {
+		return ""
+	}
+	if name := getDeclarationName(n); name != "" {
+		return name
+	}
+	enc := GetEnclosingDeclaration(n)
+	if enc != nil {
+		if name := getDeclarationName(enc); name != "" {
+			return name
+		}
+		// Anonymous callbacks lack a declaration name, so resolve scope
+		// from the caller (e.g. vim.wait, describe, or t.Run).
+		r := rulesFor(enc)
+		for curr := enc.Parent; curr != nil; curr = curr.Parent {
+			if isCallNode(curr, r) {
+				if len(curr.Children) > 0 {
+					c := curr.Children[0]
+					if c.Label != "" {
+						return c.Label
+					}
+					if len(c.Children) > 0 {
+						last := c.Children[len(c.Children)-1]
+						if last.Label != "" {
+							return last.Label
+						}
+					}
+				}
+			}
+			if r != nil && r.IsDeclaration(curr.Type) {
+				break
+			}
+		}
+	}
+	return ""
+}
+
+// isCallNode reports whether n is a function or method invocation node.
+func isCallNode(n *treesitter.ASTNode, r *treesitter.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r != nil {
+		return r.IsCall(n.Type)
+	}
+	return treesitter.IsCall(n.Type)
 }

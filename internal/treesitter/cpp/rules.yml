@@ -230,3 +230,5 @@ equivalent_types:
 comments:
   - comment
 
+calls:
+  - call_expression

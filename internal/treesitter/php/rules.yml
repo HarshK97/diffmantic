@@ -197,5 +197,8 @@ equivalent_types:
 comments:
   - comment
 
-
-
+calls:
+  - function_call_expression
+  - member_call_expression
+  - scoped_call_expression
+  - nullsafe_member_call_expression

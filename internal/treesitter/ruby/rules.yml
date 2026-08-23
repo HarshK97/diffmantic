@@ -180,5 +180,5 @@ equivalent_types:
 comments:
   - comment
 
-
-
+calls:
+  - call

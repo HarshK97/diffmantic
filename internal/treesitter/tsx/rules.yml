@@ -227,5 +227,5 @@ comments:
   - comment
   - html_comment
 
-
-
+calls:
+  - call_expression
