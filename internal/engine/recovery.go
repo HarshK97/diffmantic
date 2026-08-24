@@ -14,8 +14,25 @@ func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
 }
 
 // SimpleRecovery maps unmatched children inside container pair (t1, t2) using
-// label LCS, structural LCS, and unique-type matching.
+// positional anchors, label/structural LCS, and unique-type matching.
 func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	// If an unmatched node is sandwiched between already-matched neighbors at the exact same index, pair it up.
+	for idx, c1 := range t1.Children {
+		if m.Has(c1) || IsTrivialLeaf(c1) {
+			continue
+		}
+		if idx > 0 && idx+1 < len(t1.Children) && idx+1 < len(t2.Children) {
+			c2 := t2.Children[idx]
+			if !m.HasDst(c2) && c1.Label != "" && Isomorphic(c1, c2) {
+				left1, left2 := t1.Children[idx-1], t2.Children[idx-1]
+				right1, right2 := t1.Children[idx+1], t2.Children[idx+1]
+				if m.Src()[left1] == left2 && m.Src()[right1] == right2 {
+					addIsomorphicPairs(c1, c2, m)
+				}
+			}
+		}
+	}
+
 	uc1 := unmatchedChildren(t1, m.Has)
 	uc2 := unmatchedChildren(t2, m.HasDst)
 
