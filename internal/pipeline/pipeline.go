@@ -166,6 +166,10 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 
 	es = postprocess.Run(es, matchResult.Mappings, srcAST, dstAST)
 
+	if commentRes != nil {
+		envOpts.CommentLineMappings = commentRes.LineMappings
+	}
+
 	env, err := serialize.BuildEnvelopeWithOptions(es, matchResult.Mappings, srcAST, dstAST, srcBytes, dstBytes, envOpts)
 	if err != nil {
 		return nil, fmt.Errorf("building envelope: %w", err)

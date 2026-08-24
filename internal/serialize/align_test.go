@@ -222,7 +222,7 @@ func TestAlignLines(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			es, ms, srcRoot, dstRoot := tt.setup()
-			got := AlignLines(tt.srcBytes, tt.dstBytes, es, ms, srcRoot, dstRoot)
+			got := AlignLines(tt.srcBytes, tt.dstBytes, es, ms, srcRoot, dstRoot, nil)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("AlignLines() got = %v, want = %v", got, tt.want)
 			}
@@ -288,7 +288,7 @@ func TestCoalesceAlignmentGrid(t *testing.T) {
 		{LeftLine: 3, RightLine: 4},
 	}
 
-	got := coalesceAlignmentGrid(grid, srcLines, dstLines, nil, nil)
+	got := coalesceAlignmentGrid(grid, srcLines, dstLines, nil, nil, nil)
 	want := []LineAlignmentPair{
 		{LeftLine: 0, RightLine: 0},
 		{LeftLine: 1, RightLine: 1},
@@ -331,5 +331,45 @@ func TestTrivialLineContainerMatching(t *testing.T) {
 	// Once mapped, matching braces should align.
 	if !areContainersMatched(srcRoot, dstRoot, 2, 5, ms) {
 		t.Errorf("expected areContainersMatched to return true for mapped blocks")
+	}
+}
+
+func TestAlignLinesWithCommentMappings(t *testing.T) {
+	src := []byte("/**\n * original doc\n */\nfunc foo() {}")
+	dst := []byte("func inserted() {}\n\n/**\n * updated doc\n */\nfunc foo() {}")
+
+	commentMappings := map[int]int{
+		0: 2, // /** -> /**
+		1: 3, // * original doc -> * updated doc
+		2: 4, // */ -> */
+	}
+
+	srcRoot := &treesitter.ASTNode{Type: "root", StartRow: 0, EndRow: 3}
+	dstRoot := &treesitter.ASTNode{Type: "root", StartRow: 0, EndRow: 5}
+
+	fooSrc := &treesitter.ASTNode{Type: "function_declaration", StartRow: 3, EndRow: 3}
+	fooDst := &treesitter.ASTNode{Type: "function_declaration", StartRow: 5, EndRow: 5}
+	srcRoot.Children = []*treesitter.ASTNode{fooSrc}
+	dstRoot.Children = []*treesitter.ASTNode{fooDst}
+	fooSrc.Parent = srcRoot
+	fooDst.Parent = dstRoot
+
+	ms := engine.NewMapping()
+	ms.Add(fooSrc, fooDst)
+
+	grid := AlignLines(src, dst, nil, ms, srcRoot, dstRoot, commentMappings)
+
+	// The comment at src lines 0-2 should align with dst lines 2-4, below the inserted func at lines 0-1.
+	wantPrefix := []LineAlignmentPair{
+		{LeftLine: -1, RightLine: 0},
+		{LeftLine: -1, RightLine: 1},
+		{LeftLine: 0, RightLine: 2},
+		{LeftLine: 1, RightLine: 3},
+		{LeftLine: 2, RightLine: 4},
+		{LeftLine: 3, RightLine: 5},
+	}
+
+	if !reflect.DeepEqual(grid, wantPrefix) {
+		t.Errorf("AlignLines with commentMappings got = %v, want = %v", grid, wantPrefix)
 	}
 }

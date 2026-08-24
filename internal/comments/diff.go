@@ -11,12 +11,15 @@ import (
 
 // DiffResult holds actions produced from diffing comments.
 type DiffResult struct {
-	Actions []actions.Action
+	Actions      []actions.Action
+	LineMappings map[int]int
 }
 
 // DiffComments matches and diffs comments between source and destination files.
 func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
-	res := &DiffResult{}
+	res := &DiffResult{
+		LineMappings: make(map[int]int),
+	}
 	if len(srcComments) == 0 && len(dstComments) == 0 {
 		return res
 	}
@@ -24,7 +27,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 	srcMatched := make([]bool, len(srcComments))
 	dstMatched := make([]bool, len(dstComments))
 
-	// 1. Exact text match in the same scope.
+	// Exact text matches in the same scope.
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
@@ -50,10 +53,15 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 		if bestJ >= 0 {
 			srcMatched[i] = true
 			dstMatched[bestJ] = true
+			dc := &dstComments[bestJ]
+			nLines := min(sc.EndRow-sc.StartRow+1, dc.EndRow-dc.StartRow+1)
+			for k := 0; k < nLines; k++ {
+				res.LineMappings[sc.StartRow+k] = dc.StartRow + k
+			}
 		}
 	}
 
-	// 2. Exact text match across different scopes (detected as a move).
+	// Exact text matches across different scopes (treated as moved comments).
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
@@ -80,6 +88,10 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 			srcMatched[i] = true
 			dstMatched[bestJ] = true
 			dc := &dstComments[bestJ]
+			nLines := min(sc.EndRow-sc.StartRow+1, dc.EndRow-dc.StartRow+1)
+			for k := 0; k < nLines; k++ {
+				res.LineMappings[sc.StartRow+k] = dc.StartRow + k
+			}
 
 			if sc.ScopeKey != dc.ScopeKey {
 				srcNode := createCommentNode(sc)
@@ -94,7 +106,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 		}
 	}
 
-	// 3. Fuzzy match modified comments in the same scope.
+	// Fuzzy match edited comments in the same scope.
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
@@ -140,7 +152,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 		}
 	}
 
-	// 4. Remaining unmatched comments become deletes and inserts.
+	// Anything left over becomes an insert or delete.
 	for i := range srcComments {
 		if !srcMatched[i] {
 			sc := &srcComments[i]
@@ -171,6 +183,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 	dstIsMulti := strings.Contains(dc.Text, "\n")
 
 	if !srcIsMulti && !dstIsMulti {
+		res.LineMappings[sc.StartRow] = dc.StartRow
 		srcNode := createCommentNode(sc)
 		dstNode := createCommentNode(dc)
 		res.Actions = append(res.Actions, actions.Action{
@@ -182,7 +195,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 		return
 	}
 
-	// Diff line by line for multiline comments.
+	// Line-by-line diff for multiline comments.
 	srcLines := strings.Split(sc.Text, "\n")
 	dstLines := strings.Split(dc.Text, "\n")
 
@@ -192,7 +205,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 		matchedB[b] = a
 	}
 
-	// Fuzzy match lines with minor edits.
+	// Fuzzy match lines with small edits.
 	for i := range srcLines {
 		if _, ok := matchedA[i]; ok {
 			continue
@@ -215,6 +228,10 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 			matchedA[i] = bestJ
 			matchedB[bestJ] = i
 		}
+	}
+
+	for i, j := range matchedA {
+		res.LineMappings[sc.StartRow+i] = dc.StartRow + j
 	}
 
 	srcOffsets := computeLineOffsets(sc.StartByte, srcLines)
