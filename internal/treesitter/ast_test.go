@@ -198,3 +198,21 @@ func TestIsLeafOrStringLiteral(t *testing.T) {
 		t.Error("non-string parent node should not be leaf")
 	}
 }
+
+func TestASTNodeKeywordsOnlyOnLeaves(t *testing.T) {
+	src := []byte(`
+def foo():
+    if True:
+        pass
+`)
+	ast, err := Parse(src, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse python snippet: %v", err)
+	}
+
+	for _, n := range ast.LevelOrder() {
+		if !n.IsLeafOrStringLiteral() && n.IsKeyword {
+			t.Errorf("non-leaf node %q should not be tagged as keyword", n.Type)
+		}
+	}
+}

@@ -186,7 +186,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	if rules.IsLabelIgnored(node.Type) {
 		node.Label = ""
 	}
-	if rules.IsKeyword(nodeType, label) {
+	if isLeaf && rules.IsKeyword(nodeType, label) {
 		node.IsKeyword = true
 	}
 	if rules.IsUnordered(node.Type) {

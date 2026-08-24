@@ -104,3 +104,29 @@ func TestUniqueTypePairsAmbiguous(t *testing.T) {
 		t.Errorf("ambiguous type should not pair, got %d", len(pairs))
 	}
 }
+
+func TestSimpleRecoveryStationaryNeighbors(t *testing.T) {
+	leftSrc := testutil.Leaf("id", "a")
+	midSrc := testutil.Leaf("id", "b")
+	rightSrc := testutil.Leaf("id", "c")
+	srcRoot := testutil.Node("block", "", leftSrc, midSrc, rightSrc)
+
+	leftDst := testutil.Leaf("id", "a")
+	midDst := testutil.Leaf("id", "b")
+	rightDst := testutil.Leaf("id", "c")
+	dstRoot := testutil.Node("block", "", leftDst, midDst, rightDst)
+
+	m := NewMapping()
+	m.Add(srcRoot, dstRoot)
+	m.Add(leftSrc, leftDst)
+	m.Add(rightSrc, rightDst)
+
+	SimpleRecovery(srcRoot, dstRoot, m)
+
+	if !m.Has(midSrc) {
+		t.Fatal("stationary middle child was not recovered")
+	}
+	if m.Src()[midSrc] != midDst {
+		t.Errorf("got %v, want %v", m.Src()[midSrc], midDst)
+	}
+}
