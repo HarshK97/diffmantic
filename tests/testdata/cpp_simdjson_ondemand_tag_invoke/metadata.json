@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/simdjson/simdjson",
+  "commit": "6464edbd26a147976c2dc6642da96c6a25635a3b",
+  "message": "Making tag_invoke support ondemand::document as well",
+  "action_count": 6
+}

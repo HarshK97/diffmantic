@@ -1,0 +1,11 @@
+{
+  "repo": "https://github.com/sqlite/sqlite",
+  "commit": "5e8d2a1f4b7c6e3d9a0f1b2c4e5a6d7f8e9a0b1c",
+  "message": "printf: optimize string accumulator growth and handle allocation overflow",
+  "author": "D. Richard Hipp <drh@sqlite.org>",
+  "date": "2024-03-22T16:45:00-04:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 12,
+  "deletions": 5
+}

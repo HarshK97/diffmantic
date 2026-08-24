@@ -12,7 +12,7 @@ import (
 func TestASTIndexMatchesRecursiveTraversal(t *testing.T) {
 	fixtures := []string{
 		"c_redis_write_handler",
-		"cpp_fmt_avoid_instantiating_formatter_const",
+		"cpp_fmt_handling_pointers_format_string",
 		"css_mdn_box_model_sizing_example",
 		"go_gin_fix_lint",
 		"html_mdn_stopwatch_controls",

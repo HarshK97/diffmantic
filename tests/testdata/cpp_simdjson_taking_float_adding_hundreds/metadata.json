@@ -1,6 +1,0 @@
-{
-  "repo": "https://github.com/simdjson",
-  "commit": "7dbe4caf3f737dcd3ecda1ad0bba28d47886c08e",
-  "message": "Taking a float and adding hundreds of zeros, you may get a truncated value that is just one over the desired value (bug fix) (#1388)\n\n* Found a bug where if take some float and add many zeros, you may get a truncated value that is just one over the desired value.",
-  "action_count": 16
-}

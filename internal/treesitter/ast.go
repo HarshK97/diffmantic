@@ -73,30 +73,6 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 		return nil
 	}
 	r := rules.Get(lang.Name)
-	if parent == nil && n.Type(lang) == "ERROR" {
-		rootType := r.DefaultRootType()
-		if rootType == "" {
-			rootType = n.Type(lang)
-		}
-		errCount := countErrorNodes(n, lang)
-		root := &ASTNode{
-			Type:            rootType,
-			StartByte:       n.StartByte(),
-			EndByte:         n.EndByte(),
-			StartRow:        n.StartPoint().Row,
-			StartCol:        n.StartPoint().Column,
-			EndRow:          n.EndPoint().Row,
-			EndCol:          n.EndPoint().Column,
-			Language:        lang.Name,
-			HasError:        errCount > 0,
-			ParseErrorCount: errCount,
-		}
-		unwrapErrorNode(n, src, lang, root, r)
-		root.ComputeHashes()
-		EnsureIndex(root)
-		return root
-	}
-
 	node := buildASTWithRules(n, src, lang, parent, r)
 	if node != nil && parent == nil {
 		errCount := countErrorNodes(n, lang)
@@ -125,11 +101,8 @@ func countErrorNodes(n *gotreesitter.Node, lang *gotreesitter.Language) int {
 
 func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, r *rules.Rules) *ASTNode {
 	nodeType := n.Type(lang)
-	if nodeType == "ERROR" {
-		if parent != nil {
-			unwrapErrorNode(n, src, lang, parent, r)
-			return nil
-		}
+	if n.IsMissing() {
+		nodeType = "MISSING " + nodeType
 	}
 
 	isLeaf := n.ChildCount() == 0 || (r != nil && r.IsFlattened(nodeType))
@@ -196,14 +169,6 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	}
 
 	return node
-}
-
-func unwrapErrorNode(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, r *rules.Rules) {
-	for i := range n.ChildCount() {
-		if child := buildASTWithRules(n.Child(i), src, lang, parent, r); child != nil {
-			parent.Children = append(parent.Children, child)
-		}
-	}
 }
 
 // Size returns the total number of nodes in the subtree rooted at n.

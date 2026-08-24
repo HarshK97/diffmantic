@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/catchorg/Catch2",
+  "commit": "afea5b45101c9af7546f53e604f043b750e54b00",
+  "message": "Compiler compatibility for template friend operator == (#2792)",
+  "action_count": 4
+}
