@@ -11,7 +11,13 @@ import (
 
 // AlignLines computes a visual side-by-side alignment grid for the source and
 // destination lines, using line-level similarity and AST mappings.
-func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) []LineAlignmentPair {
+func AlignLines(
+	srcBytes, dstBytes []byte,
+	es *actions.EditScript,
+	ms *engine.Mapping,
+	srcRoot, dstRoot *treesitter.ASTNode,
+	commentLineMappings map[int]int,
+) []LineAlignmentPair {
 	srcLines := strings.Split(string(srcBytes), "\n")
 	dstLines := strings.Split(string(dstBytes), "\n")
 
@@ -107,6 +113,34 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			dstLineMapsTo[dstRow][srcRow] = true
 		}
 	}
+	for srcRow, dstRow := range commentLineMappings {
+		if srcLineMapsTo[srcRow] == nil {
+			srcLineMapsTo[srcRow] = make(map[int]bool)
+		}
+		srcLineMapsTo[srcRow][dstRow] = true
+
+		if dstLineMapsTo[dstRow] == nil {
+			dstLineMapsTo[dstRow] = make(map[int]bool)
+		}
+		dstLineMapsTo[dstRow][srcRow] = true
+	}
+	if es != nil {
+		for _, a := range es.Actions() {
+			if a.Type == actions.Update && a.Node != nil && a.DestNode != nil {
+				srcRow := int(a.Node.StartRow)
+				dstRow := int(a.DestNode.StartRow)
+				if srcLineMapsTo[srcRow] == nil {
+					srcLineMapsTo[srcRow] = make(map[int]bool)
+				}
+				srcLineMapsTo[srcRow][dstRow] = true
+
+				if dstLineMapsTo[dstRow] == nil {
+					dstLineMapsTo[dstRow] = make(map[int]bool)
+				}
+				dstLineMapsTo[dstRow][srcRow] = true
+			}
+		}
+	}
 
 	isLineMappedToOther := func(srcIdx, dstIdx int) bool {
 		srcTargets := srcLineMapsTo[srcIdx]
@@ -184,6 +218,19 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 			prefixLimit++
 		}
 
+		// Back up past trailing blanks or comment openers so they don't greedily lock down the prefix.
+		if prefixLimit < n && prefixLimit < m {
+			for prefixLimit > 0 {
+				lastSrc := srcStart + prefixLimit - 1
+				trimmed := strings.TrimSpace(srcLines[lastSrc])
+				if trimmed == "" || isTrivialAnchorLine(srcLines[lastSrc]) {
+					prefixLimit--
+				} else {
+					break
+				}
+			}
+		}
+
 		suffixLimit := 0
 		for suffixLimit < n-prefixLimit && suffixLimit < m-prefixLimit {
 			srcIdx := srcEnd - 1 - suffixLimit
@@ -198,6 +245,19 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 				break
 			}
 			suffixLimit++
+		}
+
+		// Back up past leading blanks or comment delimiters so the suffix doesn't greedily grab them.
+		if suffixLimit < n-prefixLimit && suffixLimit < m-prefixLimit {
+			for suffixLimit > 0 {
+				firstSrc := srcEnd - suffixLimit
+				trimmed := strings.TrimSpace(srcLines[firstSrc])
+				if trimmed == "" || isTrivialAnchorLine(srcLines[firstSrc]) {
+					suffixLimit--
+				} else {
+					break
+				}
+			}
 		}
 
 		grid := make([]LineAlignmentPair, 0, n+m)
@@ -243,7 +303,7 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 						continue
 					}
 
-					weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, subOverlap, ms, srcRoot, dstRoot)
+					weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, subOverlap, ms, srcRoot, dstRoot, isLineMappedToOther, srcLineMapsTo)
 					if weight > 0 {
 						dp[i][j] = max(dp[i-1][j-1]+weight, max(dp[i-1][j], dp[i][j-1]))
 					} else {
@@ -261,7 +321,7 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 					dstLineIdx := middleDstStart + j - 1
 
 					if !movedSrcLines[srcLineIdx] && !movedDstLines[dstLineIdx] {
-						if weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, subOverlap, ms, srcRoot, dstRoot); weight > 0 && dp[i][j] == dp[i-1][j-1]+weight {
+						if weight := computeLineWeight(srcLineIdx, dstLineIdx, srcLines, dstLines, subOverlap, ms, srcRoot, dstRoot, isLineMappedToOther, srcLineMapsTo); weight > 0 && dp[i][j] == dp[i-1][j-1]+weight {
 							reversedMiddle = append(reversedMiddle, LineAlignmentPair{LeftLine: srcLineIdx, RightLine: dstLineIdx})
 							i--
 							j--
@@ -305,17 +365,22 @@ func AlignLines(srcBytes, dstBytes []byte, es *actions.EditScript, ms *engine.Ma
 
 	grid = append(grid, alignRegion(currentSrc, len(srcLines), currentDst, len(dstLines))...)
 
-	return coalesceAlignmentGrid(grid, srcLines, dstLines, movedSrcLines, movedDstLines)
+	return coalesceAlignmentGrid(grid, srcLines, dstLines, movedSrcLines, movedDstLines, srcLineMapsTo)
 }
 
 // coalesceAlignmentGrid pairs unaligned left/right lines side-by-side within changed blocks
 // so modified lines render next to each other instead of producing interleaved gaps.
-func coalesceAlignmentGrid(grid []LineAlignmentPair, srcLines, dstLines []string, movedSrcLines, movedDstLines map[int]bool) []LineAlignmentPair {
+func coalesceAlignmentGrid(
+	grid []LineAlignmentPair,
+	srcLines, dstLines []string,
+	movedSrcLines, movedDstLines map[int]bool,
+	srcLineMapsTo map[int]map[int]bool,
+) []LineAlignmentPair {
 	var result []LineAlignmentPair
 	var unalignedLeft []int
 	var unalignedRight []int
 
-	flushUnaligned := func() {
+	flushUnaligned := func(nextPair *LineAlignmentPair) {
 		if len(unalignedLeft) == 0 && len(unalignedRight) == 0 {
 			return
 		}
@@ -323,9 +388,44 @@ func coalesceAlignmentGrid(grid []LineAlignmentPair, srcLines, dstLines []string
 		var stdLeft []int
 		var stdRight []int
 
-		flushStd := func() {
+		flushStd := func(isEnd bool) {
 			nLeft := len(stdLeft)
 			nRight := len(stdRight)
+			if nLeft == 0 && nRight == 0 {
+				return
+			}
+			if isEnd && nLeft > 0 && nRight > 0 && nLeft != nRight {
+				alignBottom := false
+				if nextPair != nil && nextPair.LeftLine != -1 && nextPair.RightLine != -1 {
+					if stdLeft[nLeft-1]+1 == nextPair.LeftLine && stdRight[nRight-1]+1 == nextPair.RightLine {
+						alignBottom = true
+					}
+				}
+				if alignBottom {
+					if nLeft < nRight {
+						for k := 0; k < nRight-nLeft; k++ {
+							result = append(result, LineAlignmentPair{LeftLine: -1, RightLine: stdRight[k]})
+						}
+						for k := 0; k < nLeft; k++ {
+							result = append(result, LineAlignmentPair{LeftLine: stdLeft[k], RightLine: stdRight[nRight-nLeft+k]})
+						}
+						stdLeft = nil
+						stdRight = nil
+						return
+					} else if nLeft > nRight {
+						for k := 0; k < nLeft-nRight; k++ {
+							result = append(result, LineAlignmentPair{LeftLine: stdLeft[k], RightLine: -1})
+						}
+						for k := 0; k < nRight; k++ {
+							result = append(result, LineAlignmentPair{LeftLine: stdLeft[nLeft-nRight+k], RightLine: stdRight[k]})
+						}
+						stdLeft = nil
+						stdRight = nil
+						return
+					}
+				}
+			}
+
 			minLen := min(nLeft, nRight)
 			for k := 0; k < minLen; k++ {
 				result = append(result, LineAlignmentPair{LeftLine: stdLeft[k], RightLine: stdRight[k]})
@@ -342,7 +442,7 @@ func coalesceAlignmentGrid(grid []LineAlignmentPair, srcLines, dstLines []string
 
 		for _, l := range unalignedLeft {
 			if movedSrcLines[l] {
-				flushStd()
+				flushStd(false)
 				result = append(result, LineAlignmentPair{LeftLine: l, RightLine: -1})
 			} else {
 				stdLeft = append(stdLeft, l)
@@ -351,27 +451,28 @@ func coalesceAlignmentGrid(grid []LineAlignmentPair, srcLines, dstLines []string
 
 		for _, r := range unalignedRight {
 			if movedDstLines[r] {
-				flushStd()
+				flushStd(false)
 				result = append(result, LineAlignmentPair{LeftLine: -1, RightLine: r})
 			} else {
 				stdRight = append(stdRight, r)
 			}
 		}
 
-		flushStd()
+		flushStd(true)
 		unalignedLeft = nil
 		unalignedRight = nil
 	}
 
 	for _, pair := range grid {
 		if pair.LeftLine != -1 && pair.RightLine != -1 {
-			// Don't let bare comment delimiters (like "/**" or "*/") split up an unaligned block
-			if (len(unalignedLeft) > 0 || len(unalignedRight) > 0) && isTrivialAnchorLine(srcLines[pair.LeftLine]) {
+			// Bare delimiters like "/**" or "*/" shouldn't break up an unaligned block unless explicitly mapped.
+			isMapped := srcLineMapsTo[pair.LeftLine] != nil && srcLineMapsTo[pair.LeftLine][pair.RightLine]
+			if !isMapped && (len(unalignedLeft) > 0 || len(unalignedRight) > 0) && isTrivialAnchorLine(srcLines[pair.LeftLine]) {
 				unalignedLeft = append(unalignedLeft, pair.LeftLine)
 				unalignedRight = append(unalignedRight, pair.RightLine)
 				continue
 			}
-			flushUnaligned()
+			flushUnaligned(&pair)
 			result = append(result, pair)
 		} else {
 			if pair.LeftLine != -1 {
@@ -382,7 +483,7 @@ func coalesceAlignmentGrid(grid []LineAlignmentPair, srcLines, dstLines []string
 			}
 		}
 	}
-	flushUnaligned()
+	flushUnaligned(nil)
 	return result
 }
 
@@ -397,17 +498,39 @@ func isTrivialAnchorLine(s string) bool {
 }
 
 // computeLineWeight rates how strongly two lines align. Standalone brackets only match if their parent AST containers map.
-func computeLineWeight(srcLineIdx, dstLineIdx int, srcLines, dstLines []string, overlap map[int]map[int]int, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode) int {
+func computeLineWeight(
+	srcLineIdx, dstLineIdx int,
+	srcLines, dstLines []string,
+	overlap map[int]map[int]int,
+	ms *engine.Mapping,
+	srcRoot, dstRoot *treesitter.ASTNode,
+	isMappedOther func(int, int) bool,
+	srcLineMapsTo map[int]map[int]bool,
+) int {
+	if isMappedOther != nil && isMappedOther(srcLineIdx, dstLineIdx) {
+		return 0
+	}
+
+	isMapped := false
+	if targets, ok := srcLineMapsTo[srcLineIdx]; ok && targets[dstLineIdx] {
+		isMapped = true
+	}
+
 	count := overlap[srcLineIdx][dstLineIdx]
 
 	if srcLines[srcLineIdx] == dstLines[dstLineIdx] {
-		if count > 0 {
+		if count > 0 || isMapped {
 			return 1000 + 10*count
 		}
 		if isTrivialLine(srcLines[srcLineIdx]) && !areContainersMatched(srcRoot, dstRoot, srcLineIdx, dstLineIdx, ms) {
 			return 0
 		}
+		if isTrivialAnchorLine(srcLines[srcLineIdx]) {
+			return 10
+		}
 		return 1000
+	} else if isMapped {
+		return 500
 	} else if count > 0 {
 		return 100 * count
 	}
