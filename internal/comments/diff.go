@@ -1,7 +1,6 @@
 package comments
 
 import (
-	"math"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -27,36 +26,61 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 	srcMatched := make([]bool, len(srcComments))
 	dstMatched := make([]bool, len(dstComments))
 
-	// Exact text matches in the same scope.
+	// Match identical comments within each scope using LCS so repeated comments don't cross over.
+	scopeSrcMap := make(map[string][]int)
+	scopeDstMap := make(map[string][]int)
 	for i := range srcComments {
-		if srcMatched[i] {
+		scopeSrcMap[srcComments[i].ScopeKey] = append(scopeSrcMap[srcComments[i].ScopeKey], i)
+	}
+	for j := range dstComments {
+		scopeDstMap[dstComments[j].ScopeKey] = append(scopeDstMap[dstComments[j].ScopeKey], j)
+	}
+
+	for scopeKey, srcIdxs := range scopeSrcMap {
+		dstIdxs := scopeDstMap[scopeKey]
+		if len(dstIdxs) == 0 {
 			continue
 		}
-		sc := &srcComments[i]
-		bestJ := -1
-		bestDist := math.MaxInt
 
-		for j := range dstComments {
-			if dstMatched[j] {
-				continue
-			}
-			dc := &dstComments[j]
-			if sc.Text == dc.Text && sc.ScopeKey == dc.ScopeKey {
-				dist := max(sc.StartRow, dc.StartRow) - min(sc.StartRow, dc.StartRow)
-				if dist < bestDist {
-					bestDist = dist
-					bestJ = j
+		n := len(srcIdxs)
+		m := len(dstIdxs)
+		dp := make([][]int, n+1)
+		for i := range dp {
+			dp[i] = make([]int, m+1)
+		}
+
+		for i := 1; i <= n; i++ {
+			si := srcIdxs[i-1]
+			for j := 1; j <= m; j++ {
+				dj := dstIdxs[j-1]
+				if srcComments[si].Text == dstComments[dj].Text {
+					dp[i][j] = dp[i-1][j-1] + 1
+				} else {
+					dp[i][j] = max(dp[i-1][j], dp[i][j-1])
 				}
 			}
 		}
 
-		if bestJ >= 0 {
-			srcMatched[i] = true
-			dstMatched[bestJ] = true
-			dc := &dstComments[bestJ]
-			nLines := min(sc.EndRow-sc.StartRow+1, dc.EndRow-dc.StartRow+1)
-			for k := 0; k < nLines; k++ {
-				res.LineMappings[sc.StartRow+k] = dc.StartRow + k
+		// Step backwards through the DP table to pair up matched comments.
+		i, j := n, m
+		for i > 0 && j > 0 {
+			si := srcIdxs[i-1]
+			dj := dstIdxs[j-1]
+			if srcComments[si].Text == dstComments[dj].Text && dp[i][j] == dp[i-1][j-1]+1 {
+				srcMatched[si] = true
+				dstMatched[dj] = true
+				sc := &srcComments[si]
+				dc := &dstComments[dj]
+				nLines := min(sc.EndRow-sc.StartRow+1, dc.EndRow-dc.StartRow+1)
+				for k := 0; k < nLines; k++ {
+					res.LineMappings[sc.StartRow+k] = dc.StartRow + k
+				}
+				i--
+				j--
+			} else if dp[i-1][j] >= dp[i][j-1] {
+				i--
+			} else {
+				j--
 			}
 		}
 	}

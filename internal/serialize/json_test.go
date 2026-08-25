@@ -245,3 +245,37 @@ func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
 		t.Errorf("expected error message to mention 'failed to resolve move parent', got: %v", err)
 	}
 }
+
+func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
+	// Fallback line diff should emit a delete on the left and insert on the right for edited lines.
+	srcBytes := []byte("func main() {\n\tprintln(\"old\")\n}\n")
+	dstBytes := []byte("func main() {\n\tprintln(\"new\")\n}\n")
+
+	opts := EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeAlignment:  true,
+		IncludeHighlights: true,
+	}
+	env := BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, opts)
+	if env == nil {
+		t.Fatal("expected non-nil envelope")
+	}
+
+	if len(env.Actions) != 2 {
+		t.Fatalf("expected 2 actions (delete + insert), got %d: %+v", len(env.Actions), env.Actions)
+	}
+
+	if env.Actions[0].Action != "delete" || env.Actions[0].Node.Tree != "before" {
+		t.Errorf("expected delete action on before tree, got %+v", env.Actions[0])
+	}
+	if env.Actions[1].Action != "insert" || env.Actions[1].Node.Tree != "after" {
+		t.Errorf("expected insert action on after tree, got %+v", env.Actions[1])
+	}
+
+	if len(env.LeftHighlights) == 0 {
+		t.Error("expected left highlights for deleted line")
+	}
+	if len(env.RightHighlights) == 0 {
+		t.Error("expected right highlights for inserted line")
+	}
+}
