@@ -202,3 +202,25 @@ func TestDiffCommentsGuzzlePhp(t *testing.T) {
 		t.Errorf("expected 1 Move action for Optional parameters comment, got %d", moveCount)
 	}
 }
+
+func TestDiffCommentsScopedLCSNoCrossover(t *testing.T) {
+	// Repeated comments in the same function should pair up in order rather than crossing over.
+	srcComments := []CommentBlock{
+		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 10, EndRow: 10},
+		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 20, EndRow: 20},
+		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 30, EndRow: 30},
+	}
+	dstComments := []CommentBlock{
+		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 12, EndRow: 12},
+		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 22, EndRow: 22},
+		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 32, EndRow: 32},
+	}
+
+	res := DiffComments(srcComments, dstComments)
+	if len(res.Actions) != 0 {
+		t.Fatalf("expected 0 actions for matched identical comments, got %d", len(res.Actions))
+	}
+	if res.LineMappings[10] != 12 || res.LineMappings[20] != 22 || res.LineMappings[30] != 32 {
+		t.Errorf("expected mappings 10->12, 20->22, 30->32; got %v", res.LineMappings)
+	}
+}
