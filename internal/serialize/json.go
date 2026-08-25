@@ -3,6 +3,7 @@ package serialize
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -100,6 +101,9 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 			return uint32(offsets[lineIdx]), end
 		}
 
+		srcLines := strings.Split(string(srcBytes), "\n")
+		dstLines := strings.Split(string(dstBytes), "\n")
+
 		var actionsList []Action
 		for _, pair := range alignment {
 			if pair.RightLine == -1 && pair.LeftLine != -1 {
@@ -122,6 +126,28 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 						EndByte:   end,
 					},
 				})
+			} else if pair.LeftLine != -1 && pair.RightLine != -1 {
+				// Paired lines with differing text turn into a delete on the left and insert on the right.
+				if pair.LeftLine < len(srcLines) && pair.RightLine < len(dstLines) && srcLines[pair.LeftLine] != dstLines[pair.RightLine] {
+					startSrc, endSrc := getBounds(pair.LeftLine, offsetsSrc, len(srcBytes))
+					startDst, endDst := getBounds(pair.RightLine, offsetsDst, len(dstBytes))
+					actionsList = append(actionsList, Action{
+						Action: "delete",
+						Node: &NodeRef{
+							Tree:      "before",
+							StartByte: startSrc,
+							EndByte:   endSrc,
+						},
+					})
+					actionsList = append(actionsList, Action{
+						Action: "insert",
+						Node: &NodeRef{
+							Tree:      "after",
+							StartByte: startDst,
+							EndByte:   endDst,
+						},
+					})
+				}
 			}
 		}
 
