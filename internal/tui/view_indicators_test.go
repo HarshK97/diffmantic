@@ -47,16 +47,16 @@ func TestGutterBadgeRendering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			renderedLeft := renderGutterBadge(tt.spans, tt.isCursor, true)
+			renderedLeft := renderGutterBadgeWithTheme(tt.spans, tt.isCursor, true, defaultTheme)
 			plainLeft := parseAnsiString(renderedLeft)
 			if len([]rune(plainLeft)) != 1 {
-				t.Errorf("renderGutterBadge(left) len = %d, want 1", len([]rune(plainLeft)))
+				t.Errorf("renderGutterBadgeWithTheme(left) len = %d, want 1", len([]rune(plainLeft)))
 			}
 
-			renderedRight := renderGutterBadge(tt.spans, tt.isCursor, false)
+			renderedRight := renderGutterBadgeWithTheme(tt.spans, tt.isCursor, false, defaultTheme)
 			plainRight := parseAnsiString(renderedRight)
 			if len([]rune(plainRight)) != 1 {
-				t.Errorf("renderGutterBadge(right) len = %d, want 1", len([]rune(plainRight)))
+				t.Errorf("renderGutterBadgeWithTheme(right) len = %d, want 1", len([]rune(plainRight)))
 			}
 		})
 	}

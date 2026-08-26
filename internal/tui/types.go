@@ -4,13 +4,20 @@ import (
 	"sync"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/theme"
 	"github.com/charmbracelet/bubbles/textinput"
 )
+
+// Theme aliases the standalone theme.Theme type.
+type Theme = theme.Theme
+
+var defaultTheme = theme.CatppuccinMochaTheme()
 
 type model struct {
 	width  int
 	height int
 	ready  bool
+	theme  *theme.Theme
 
 	srcFile  string
 	dstFile  string

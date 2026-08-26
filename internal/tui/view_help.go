@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,8 @@ func (m model) renderHelpModal() string {
 		return ""
 	}
 
+	t := m.getTheme()
+
 	cardWidth := 90
 	if width < cardWidth {
 		cardWidth = max(width-4, 20)
@@ -25,15 +28,12 @@ func (m model) renderHelpModal() string {
 	// Center title before applying styles so ANSI escape codes don't break padding calculation.
 	titleText := "HELP & KEYBINDINGS"
 	centeredTitle := centerPad(titleText, cardWidth)
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorLavender).
-		Render(centeredTitle)
+	title := t.Styles.HelpTitle.Render(centeredTitle)
 
 	colWidth := max((cardWidth-6)/2, 10)
 
-	leftCol := renderLeftColumn()
-	rightCol := renderRightColumn()
+	leftCol := renderLeftColumn(t)
+	rightCol := renderRightColumn(t)
 
 	leftLines := strings.Split(leftCol, "\n")
 	rightLines := strings.Split(rightCol, "\n")
@@ -62,19 +62,19 @@ func (m model) renderHelpModal() string {
 		fmt.Fprintf(&colsBuilder, "  %s   %s\n", l, r)
 	}
 
-	sep := inspectDimStyle.Render(strings.Repeat("─", cardWidth))
+	sep := t.Styles.InspectDim.Render(strings.Repeat("─", cardWidth))
 
-	legendTitle := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("COLOR LEGEND")
+	legendTitle := t.Styles.HelpSectionHeader.Render("COLOR LEGEND")
 	legend := fmt.Sprintf(
 		"  %s   %s   %s   %s   %s",
-		hlInsertStyle.Render(" ✚ INSERT "),
-		hlDeleteStyle.Render(" ✘ DELETE "),
-		hlUpdateStyle.Render(" ✎ UPDATE "),
-		hlMoveStyle.Render(" ➤ MOVE "),
-		hlMoveUpdateStyle.Render(" ✎ MOVE+UPDATE "),
+		t.Styles.HlInsert.Render(" ✚ INSERT "),
+		t.Styles.HlDelete.Render(" ✘ DELETE "),
+		t.Styles.HlUpdate.Render(" ✎ UPDATE "),
+		t.Styles.HlMove.Render(" ➤ MOVE "),
+		t.Styles.HlMoveUpdate.Render(" ✎ MOVE+UPDATE "),
 	)
 
-	mouseTitle := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("MOUSE CONTROLS")
+	mouseTitle := t.Styles.HelpSectionHeader.Render("MOUSE CONTROLS")
 	mouseHelp := []string{
 		"  • Scroll Wheel : Scroll vertical view",
 		"  • Shift+Scroll : Scroll horizontal view",
@@ -94,17 +94,10 @@ func (m model) renderHelpModal() string {
 
 	footerText := "Press Esc or ? to return to diff view"
 	centeredFooter := centerPad(footerText, cardWidth)
-	footer := inspectDimStyle.Render(centeredFooter)
+	footer := t.Styles.HelpFooter.Render(centeredFooter)
 	b.WriteString(footer + "\n")
 
-	cardStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorLavender).
-		Background(colorBase).
-		Padding(1, 1, 1, 1).
-		Width(cardWidth + 2) // +2 for border
-
-	renderedCard := cardStyle.Render(b.String())
+	renderedCard := t.Styles.HelpCard.Width(cardWidth + 2).Render(b.String())
 
 	return lipgloss.Place(
 		width,
@@ -112,12 +105,13 @@ func (m model) renderHelpModal() string {
 		lipgloss.Center,
 		lipgloss.Center,
 		renderedCard,
-		lipgloss.WithWhitespaceBackground(colorBase),
+		lipgloss.WithWhitespaceBackground(t.UI.Base),
 	)
 }
 
-func renderLeftColumn() string {
-	b := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("NAVIGATION")
+func renderLeftColumn(t *Theme) string {
+	t = cmp.Or(t, defaultTheme)
+	b := t.Styles.HelpSectionHeader.Render("NAVIGATION")
 	lines := []string{
 		b,
 		"  j / k  : Scroll row up/down",
@@ -133,8 +127,9 @@ func renderLeftColumn() string {
 	return strings.Join(lines, "\n")
 }
 
-func renderRightColumn() string {
-	b := lipgloss.NewStyle().Bold(true).Foreground(colorSubtext0).Render("ACTIONS & FOLDING")
+func renderRightColumn(t *Theme) string {
+	t = cmp.Or(t, defaultTheme)
+	b := t.Styles.HelpSectionHeader.Render("ACTIONS & FOLDING")
 	lines := []string{
 		b,
 		"  i      : Toggle inspect panel",

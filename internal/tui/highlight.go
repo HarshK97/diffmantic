@@ -5,17 +5,18 @@ import (
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/theme"
 )
 
 // actionKind dictates how a line or span is colored in the TUI.
-type actionKind int
+type actionKind = theme.ActionKind
 
 const (
-	kindDelete actionKind = iota
-	kindInsert
-	kindUpdate
-	kindMove
-	kindMoveUpdate
+	kindDelete     = theme.ActionDelete
+	kindInsert     = theme.ActionInsert
+	kindUpdate     = theme.ActionUpdate
+	kindMove       = theme.ActionMove
+	kindMoveUpdate = theme.ActionMoveUpdate
 )
 
 // span is a 0-indexed byte column range to highlight on a single line.

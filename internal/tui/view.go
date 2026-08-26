@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -40,7 +41,9 @@ func (m model) View() string {
 }
 
 func (m model) renderTitleBar() string {
+	t := m.getTheme()
 	pw := m.paneWidth()
+	bg := t.UI.Surface0
 
 	leftTitle := m.srcFile
 	if m.gitTreeOpen {
@@ -49,10 +52,13 @@ func (m model) renderTitleBar() string {
 	left := truncateStr(" "+leftTitle, pw)
 	right := truncateStr(" "+m.dstFile, pw)
 
+	titleStyle := t.Styles.Title.Background(bg)
+	divStyle := lipgloss.NewStyle().Foreground(t.UI.Surface1).Background(bg)
+
 	leftRendered := titleStyle.Render(padRight(left, pw))
 	rightRendered := titleStyle.Render(padRight(right, pw))
 
-	div := titleStyle.Render(dividerStyle.Render("│"))
+	div := divStyle.Render("│")
 
 	// Pad any extra column if the screen width is odd.
 	totalUsed := pw + dividerWidth + pw
@@ -70,6 +76,7 @@ func (m model) renderContent() string {
 		return ""
 	}
 
+	t := m.getTheme()
 	pw := m.paneWidth()
 	gw := m.gutterWidth()
 	tw := max(pw-gw, 1)
@@ -98,8 +105,8 @@ func (m model) renderContent() string {
 
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorLavender).
-			Background(colorBase)
+			BorderForeground(t.UI.Lavender).
+			Background(t.UI.Base)
 
 		treeContentLines := m.renderGitTreeOverlay(innerHeight, innerWidth)
 		treeContent := strings.Join(treeContentLines, "\n")
@@ -109,7 +116,7 @@ func (m model) renderContent() string {
 		offsetX := 0
 		offsetY := 0
 
-		for i := 0; i < treeHeight; i++ {
+		for i := range treeHeight {
 			row := offsetY + i
 			if row < height && i < len(boxedTreeLines) {
 				leftLines[row] = overlayAnsi(leftLines[row], boxedTreeLines[i], offsetX)
@@ -117,7 +124,7 @@ func (m model) renderContent() string {
 		}
 	}
 
-	div := dividerStyle.Render("│")
+	div := t.Styles.Divider.Render("│")
 
 	var b strings.Builder
 	for i := range height {
@@ -128,7 +135,7 @@ func (m model) renderContent() string {
 		vIdx := m.scrollY + i
 		if !m.gitTreeOpen && vIdx < len(m.virtualLines) && m.virtualLines[vIdx].foldIdx >= 0 {
 			b.WriteString(leftLines[i])
-			b.WriteString(dividerStyle.Background(colorSurface0).Render("│"))
+			b.WriteString(t.Styles.Divider.Background(t.UI.Surface0).Render("│"))
 			b.WriteString(rightLines[i])
 		} else {
 			b.WriteString(leftLines[i])
@@ -141,6 +148,7 @@ func (m model) renderContent() string {
 }
 
 func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]syntaxSpan, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
+	t := m.getTheme()
 	result := make([]string, height)
 
 	lineNumWidth := max(gutterW-4, 1)
@@ -149,8 +157,8 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 
 		// Past the end of virtual lines.
 		if vIdx >= len(m.virtualLines) {
-			gutter := lineNumStyle.Render(padRight("~", gutterW))
-			content := contentStyle.Render(strings.Repeat(" ", textW))
+			gutter := t.Styles.LineNum.Render(padRight("~", gutterW))
+			content := t.Styles.Content.Render(strings.Repeat(" ", textW))
 			result[i] = gutter + content
 			continue
 		}
@@ -176,22 +184,22 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 
 		if lineIdx == -1 {
 			emptyLineNum := strings.Repeat(" ", lineNumWidth)
-			badgeStr := renderGutterBadge(nil, isCursorRow && isActivePane, isLeftPane)
+			badgeStr := renderGutterBadgeWithTheme(nil, isCursorRow && isActivePane, isLeftPane, t)
 
 			var gutter string
 			if isCursorRow && isActivePane {
-				gutter = cursorGutterStyle.Render(" "+emptyLineNum+" ") + badgeStr + cursorGutterStyle.Render(" ")
+				gutter = t.Styles.CursorGutter.Render(" "+emptyLineNum+" ") + badgeStr + t.Styles.CursorGutter.Render(" ")
 			} else {
-				gutter = lineNumStyle.Render(" "+emptyLineNum+" ") + badgeStr + lineNumStyle.Render(" ")
+				gutter = t.Styles.LineNum.Render(" "+emptyLineNum+" ") + badgeStr + t.Styles.LineNum.Render(" ")
 			}
 
 			var content string
 			fillerText := strings.Repeat("╱", textW)
 
 			if isCursor {
-				content = cursorContentStyle.Render(fillerText)
+				content = t.Styles.CursorContent.Render(fillerText)
 			} else {
-				content = lineNumStyle.Render(fillerText)
+				content = t.Styles.LineNum.Render(fillerText)
 			}
 
 			result[i] = gutter + content
@@ -202,24 +210,24 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 			lineSpans := hl.spans[lineIdx]
 
 			symbol := " "
-			symStyle := lineNumStyle
+			symStyle := t.Styles.LineNum
 			if m.foldStartingAt(vl.alignedRow) >= 0 {
 				symbol = "▼"
-				symStyle = gutterFoldStyle
+				symStyle = t.Styles.GutterFold
 			} else if m.foldContaining(vl.alignedRow) >= 0 {
 				symbol = "·"
-				symStyle = lineNumStyle
+				symStyle = t.Styles.LineNum
 			}
 
 			// Leave 1 slot for cursor indicator, 1 space, 1 badge slot, and 1 for fold symbol.
 			lineNumStr := fmt.Sprintf("%*d", lineNumWidth, lineIdx+1)
-			badgeStr := renderGutterBadge(lineSpans, isCursorRow && isActivePane, isLeftPane)
+			badgeStr := renderGutterBadgeWithTheme(lineSpans, isCursorRow && isActivePane, isLeftPane, t)
 
 			var gutter string
 			if isCursorRow && isActivePane {
-				gutter = cursorGutterStyle.Render(" "+lineNumStr+" ") + badgeStr + cursorGutterStyle.Render(symbol)
+				gutter = t.Styles.CursorGutter.Render(" "+lineNumStr+" ") + badgeStr + t.Styles.CursorGutter.Render(symbol)
 			} else {
-				gutter = lineNumStyle.Render(" "+lineNumStr+" ") + badgeStr + symStyle.Render(symbol)
+				gutter = t.Styles.LineNum.Render(" "+lineNumStr+" ") + badgeStr + symStyle.Render(symbol)
 			}
 
 			rawLine := lines[lineIdx]
@@ -244,16 +252,16 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 				runes := []rune(line)
 				runeLen := len(runes)
 
-				style := contentStyle
+				style := t.Styles.Content
 				if isCursor {
-					style = cursorContentStyle
+					style = t.Styles.CursorContent
 				} else if kind, ok := hl.tinted[lineIdx]; ok {
-					style = hlStyle(kind)
+					style = t.HlStyle(kind)
 				}
 
-				padStyle := lipgloss.NewStyle()
+				padStyle := lipgloss.NewStyle().Background(t.UI.Base)
 				if isCursor {
-					padStyle = padStyle.Background(colorSurface0)
+					padStyle = padStyle.Background(t.UI.Surface0)
 				}
 
 				var b strings.Builder
@@ -280,8 +288,8 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 			result[i] = gutter + content
 		} else {
 			// EOF for this side (the other side might still have lines).
-			gutter := lineNumStyle.Render(padRight("~", gutterW))
-			content := contentStyle.Render(strings.Repeat(" ", textW))
+			gutter := t.Styles.LineNum.Render(padRight("~", gutterW))
+			content := t.Styles.Content.Render(strings.Repeat(" ", textW))
 			result[i] = gutter + content
 		}
 	}
@@ -290,12 +298,13 @@ func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]synta
 }
 
 func (m model) renderFoldLine(foldIdx, paneWidth int, isCursor bool) string {
+	t := m.getTheme()
 	f := m.folds[foldIdx]
 	count := f.endLine - f.startLine + 1
 	label := fmt.Sprintf("⋯ %d lines hidden ⋯", count)
-	style := foldStyle
+	style := t.Styles.Fold
 	if isCursor {
-		style = cursorFoldStyle
+		style = t.Styles.CursorFold
 	}
 	return style.Render(centerPad(label, paneWidth))
 }
@@ -311,7 +320,8 @@ func centerPad(s string, width int) string {
 	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
 }
 
-func renderGutterBadge(spans []span, isCursor bool, isLeftPane bool) string {
+func renderGutterBadgeWithTheme(spans []span, isCursor bool, isLeftPane bool, t *Theme) string {
+	t = cmp.Or(t, defaultTheme)
 	var hasUpdate, hasInsert, hasDelete, hasMove bool
 	for _, s := range spans {
 		switch s.kind {
@@ -329,27 +339,27 @@ func renderGutterBadge(spans []span, isCursor bool, isLeftPane bool) string {
 		}
 	}
 
-	inactiveBg := colorCrust
+	inactiveBg := t.UI.Base
 	if isCursor {
-		inactiveBg = lipgloss.Color("#222230")
+		inactiveBg = t.UI.Surface1
 	}
 
 	// Left Pipe (Foreground of ▌)
 	leftColor := inactiveBg
 	if isLeftPane && hasDelete {
-		leftColor = colorRed
+		leftColor = t.Actions.DeleteFg
 	} else if !isLeftPane && hasInsert {
-		leftColor = colorGreen
+		leftColor = t.Actions.InsertFg
 	}
 
 	// Right Pipe (Background of ▌)
 	rightColor := inactiveBg
 	if hasUpdate && hasMove {
-		rightColor = colorTeal
+		rightColor = t.Actions.MoveUpdateFg
 	} else if hasUpdate {
-		rightColor = colorYellow
+		rightColor = t.Actions.UpdateFg
 	} else if hasMove {
-		rightColor = colorBlue
+		rightColor = t.Actions.MoveFg
 	}
 
 	if leftColor == inactiveBg && rightColor == inactiveBg {
@@ -360,6 +370,7 @@ func renderGutterBadge(spans []span, isCursor bool, isLeftPane bool) string {
 }
 
 func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syntaxSpan, matches []searchMatch, scrollX, textW int, cursorCol int, pane string, virtualRow int) string {
+	t := m.getTheme()
 	// Expand tabs and map original byte offsets to visual column positions.
 	expanded, byteToVisual := expandLine(rawLine)
 	runeLen := len([]rune(expanded))
@@ -474,9 +485,9 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 		}
 	}
 
-	basePadStyle := lipgloss.NewStyle()
+	basePadStyle := lipgloss.NewStyle().Background(t.UI.Base)
 	if cursorCol >= 0 {
-		basePadStyle = basePadStyle.Background(colorSurface0)
+		basePadStyle = basePadStyle.Background(t.UI.Surface0)
 	}
 
 	expRunes := []rune(expanded)
@@ -488,15 +499,15 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 
 		if idx == 0 && hasLeftChevron {
 			r = '<'
-			style = lipgloss.NewStyle().Foreground(actionFg(leftChevronKind))
+			style = lipgloss.NewStyle().Foreground(t.ActionFg(leftChevronKind)).Background(t.UI.Base)
 			if cursorCol >= 0 {
-				style = style.Background(colorSurface0)
+				style = style.Background(t.UI.Surface0)
 			}
 		} else if idx == textW-1 && hasRightChevron {
 			r = '>'
-			style = lipgloss.NewStyle().Foreground(actionFg(rightChevronKind))
+			style = lipgloss.NewStyle().Foreground(t.ActionFg(rightChevronKind)).Background(t.UI.Base)
 			if cursorCol >= 0 {
-				style = style.Background(colorSurface0)
+				style = style.Background(t.UI.Surface0)
 			}
 		} else if col < runeLen {
 			r = expRunes[col]
@@ -516,31 +527,33 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 
 			switch searchStyleState {
 			case 1:
-				style = searchActiveHlStyle
+				style = t.Styles.SearchActiveHl
 			case 0:
-				style = searchHlStyle
+				style = t.Styles.SearchHl
 			default:
 				actionIdx := colHighlight[col]
 				synColor := colSyntax[col]
 
 				if actionIdx >= 0 {
-					style = hlStyle(actionKind(actionIdx))
+					style = t.HlStyle(actionKind(actionIdx))
 					if actionKind(actionIdx) == kindMoveUpdate {
-						style = style.Foreground(colorYellow).Underline(true)
+						style = style.Foreground(t.Actions.UpdateFg).Underline(true)
 					} else if synColor != "" {
 						style = style.Foreground(synColor)
+					} else {
+						style = style.Foreground(t.UI.Text)
 					}
 				} else if synColor != "" {
 					if cursorCol >= 0 {
-						style = cursorContentStyle.Foreground(synColor)
+						style = t.Styles.CursorContent.Foreground(synColor)
 					} else {
-						style = contentStyle.Foreground(synColor)
+						style = t.Styles.Content.Foreground(synColor)
 					}
 				} else {
 					if cursorCol >= 0 {
-						style = cursorContentStyle
+						style = t.Styles.CursorContent
 					} else {
-						style = contentStyle
+						style = t.Styles.Content
 					}
 				}
 			}
@@ -555,41 +568,19 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 			b.WriteString(style.Render(string(r)))
 		}
 	}
+
 	return b.String()
 }
 
-func expandLine(line string) (string, []int) {
-	byteToVisual := make([]int, len(line)+1)
-	var expanded strings.Builder
-	visualCol := 0
-
-	for i := 0; i < len(line); i++ {
-		byteToVisual[i] = visualCol
-		if line[i] == '\t' {
-			expanded.WriteString("    ")
-			visualCol += 4
-		} else {
-			expanded.WriteByte(line[i])
-			visualCol++
-		}
-	}
-	byteToVisual[len(line)] = visualCol
-
-	return expanded.String(), byteToVisual
-}
-
 func (m model) renderStatusBar() string {
-	if m.searchActive {
-		return statusStyle.Render(padRight(m.textinput.View(), m.width))
-	}
-
+	t := m.getTheme()
+	bg := t.UI.Surface0
 	hasActions := len(m.inspectActions) > 0
 
-	// Use compact key hints when action preview needs room.
 	var keys string
 	if m.gitMode {
 		if m.gitTreeOpen {
-			if m.refA != "" {
+			if m.gitStagedOnly {
 				keys = " j/k: scroll • t: toggle tree • enter: open diff • q: quit"
 			} else {
 				keys = " j/k: scroll • s/u: stage/unstage • c: commit • t: toggle tree • enter: open diff • q: quit"
@@ -632,31 +623,29 @@ func (m model) renderStatusBar() string {
 	} else if hasActions {
 		availForPreview := m.width - keysWidth - 2
 		if availForPreview > 10 {
-			preview = formatActionPreview(m.inspectActions, availForPreview)
+			preview = formatActionPreview(m.inspectActions, availForPreview, t)
 		}
 	}
 
-	var bar string
+	baseStyle := t.Styles.Status.Background(bg)
 	if preview != "" {
-		var formattedPreview string
-		if warningStyle {
-			formattedPreview = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(preview)
-		} else {
-			formattedPreview = preview
-		}
 		previewWidth := lipgloss.Width(preview)
 		padding := m.width - keysWidth - previewWidth
 		if padding >= 0 {
-			bar = keysPart + strings.Repeat(" ", padding) + formattedPreview
-		} else {
-			bar = truncateStr(keysPart, m.width)
-			bar = padRight(bar, m.width)
+			var formattedPreview string
+			if warningStyle {
+				formattedPreview = lipgloss.NewStyle().Foreground(t.UI.Red).Background(bg).Render(preview)
+			} else {
+				formattedPreview = preview
+			}
+			keysRendered := baseStyle.Render(keysPart)
+			padRendered := lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", padding))
+			return keysRendered + padRendered + formattedPreview
 		}
-	} else {
-		bar = truncateStr(keysPart, m.width)
-		bar = padRight(bar, m.width)
 	}
-	return statusStyle.Render(bar)
+
+	truncatedKeys := truncateStr(keysPart, m.width)
+	return baseStyle.Render(padRight(truncatedKeys, m.width))
 }
 
 func truncateStr(s string, maxLen int) string {
@@ -673,23 +662,6 @@ func truncateStr(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
-func truncateAnsi(s string, maxLen int) string {
-	if maxLen <= 0 {
-		return ""
-	}
-	cells := parseAnsi(s)
-	if len(cells) <= maxLen {
-		return s
-	}
-	if maxLen <= 1 {
-		return "…"
-	}
-	truncated := make([]ansiCell, maxLen)
-	copy(truncated, cells[:maxLen-1])
-	truncated[maxLen-1] = ansiCell{char: '…', style: cells[maxLen-2].style}
-	return cellsToAnsi(truncated)
-}
-
 func padRight(s string, width int) string {
 	w := lipgloss.Width(s)
 	if w >= width {
@@ -699,6 +671,7 @@ func padRight(s string, width int) string {
 }
 
 func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
+	t := m.getTheme()
 	result := make([]string, height)
 
 	scrollY := 0
@@ -712,7 +685,7 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 	for i := range height {
 		idx := scrollY + i
 		if idx >= len(m.gitItems) {
-			result[i] = lipgloss.NewStyle().Background(colorBase).Render(strings.Repeat(" ", paneWidth))
+			result[i] = lipgloss.NewStyle().Background(t.UI.Base).Render(strings.Repeat(" ", paneWidth))
 			continue
 		}
 
@@ -721,32 +694,28 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 
 		var line string
 		if item.isHeader {
-			headerStyle := lipgloss.NewStyle().
-				Bold(true).
-				Foreground(colorMauve).
-				Background(colorBase)
-			line = headerStyle.Render(" " + item.headerText)
+			line = t.Styles.GitHeader.Render(" " + item.headerText)
 		} else {
-			statusColor := colorSubtext0
+			statusColor := t.UI.Subtext0
 			statusChar := item.status
 
-			// Highlight conflict files in pink.
+			// Conflicts show up in pink so they pop immediately.
 			isConflict := strings.Contains(item.rawStatus, "U") || item.rawStatus == "AA" || item.rawStatus == "DD"
 			if isConflict {
 				statusChar = "CF"
-				statusColor = colorPink
+				statusColor = t.UI.Pink
 			} else {
 				cleanStatus := strings.TrimSpace(statusChar)
 				switch cleanStatus {
 				case "M":
-					statusColor = colorYellow
+					statusColor = t.UI.Yellow
 				case "A", "??":
-					statusColor = colorGreen
+					statusColor = t.UI.Green
 				case "D":
-					statusColor = colorRed
+					statusColor = t.UI.Red
 				default:
 					if strings.HasPrefix(cleanStatus, "R") {
-						statusColor = colorBlue
+						statusColor = t.UI.Blue
 					}
 				}
 			}
@@ -754,19 +723,17 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 			statusStyle := lipgloss.NewStyle().
 				Bold(true).
 				Foreground(statusColor).
-				Background(colorBase)
+				Background(t.UI.Base)
 
 			if isCursorRow {
-				statusStyle = statusStyle.Background(colorSurface1)
+				statusStyle = statusStyle.Background(t.UI.Surface1)
 			}
 
 			cursorStr := "  "
-			itemStyle := contentStyle.Background(colorBase)
+			itemStyle := t.Styles.Content.Background(t.UI.Base)
 			if isCursorRow {
 				cursorStr = "█ "
-				itemStyle = lipgloss.NewStyle().
-					Background(colorSurface1).
-					Foreground(colorText)
+				itemStyle = t.Styles.GitCursor
 			}
 
 			renderedStatus := statusStyle.Render(statusChar)
@@ -782,22 +749,22 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 			lineContent := renderedStatus + " " + itemStyle.Render(truncatedPath)
 
 			if isCursorRow {
-				cursorStyle := lipgloss.NewStyle().Background(colorSurface1).Foreground(colorText)
+				cursorStyle := t.Styles.GitCursor
 				line = cursorStyle.Render(cursorStr) + lineContent
 			} else {
-				normalStyle := lipgloss.NewStyle().Background(colorBase).Foreground(colorOverlay0)
+				normalStyle := t.Styles.GitNormal
 				line = normalStyle.Render(cursorStr) + lineContent
 			}
 		}
 
-		// Ensure the line has exact paneWidth
+		// Pad short lines to the full pane width.
 		lineLen := lipgloss.Width(line)
 		if lineLen < paneWidth {
 			bgStyle := lipgloss.NewStyle()
 			if isCursorRow {
-				bgStyle = bgStyle.Background(colorSurface1)
+				bgStyle = bgStyle.Background(t.UI.Surface1)
 			} else {
-				bgStyle = bgStyle.Background(colorBase)
+				bgStyle = bgStyle.Background(t.UI.Base)
 			}
 			line += bgStyle.Render(strings.Repeat(" ", paneWidth-lineLen))
 		}
@@ -809,12 +776,10 @@ func (m model) renderGitTreeOverlay(height, paneWidth int) []string {
 }
 
 func (m model) renderCommitPanel() string {
+	t := m.getTheme()
 	pw := m.width
 	inputView := m.gitCommitInput.View()
-	panelStyle := lipgloss.NewStyle().
-		Background(colorSurface0).
-		Foreground(colorText)
-	return panelStyle.Render(padRight(inputView, pw))
+	return t.Styles.CommitPanel.Render(padRight(inputView, pw))
 }
 
 type ansiCell struct {
@@ -886,4 +851,23 @@ func overlayAnsi(bg, fg string, x int) string {
 	fgCells := parseAnsi(fg)
 	overlaid := overlayCells(bgCells, fgCells, x)
 	return cellsToAnsi(overlaid)
+}
+
+func expandLine(line string) (string, []int) {
+	var b strings.Builder
+	byteToVisual := make([]int, len(line)+1)
+	visualCol := 0
+
+	for byteIdx, r := range line {
+		byteToVisual[byteIdx] = visualCol
+		if r == '\t' {
+			b.WriteString("    ")
+			visualCol += 4
+		} else {
+			b.WriteRune(r)
+			visualCol++
+		}
+	}
+	byteToVisual[len(line)] = visualCol
+	return b.String(), byteToVisual
 }
