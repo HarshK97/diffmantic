@@ -26,6 +26,7 @@ import (
 	"os"
 
 	"github.com/HarshK97/diffmantic/internal/git"
+	"github.com/HarshK97/diffmantic/internal/theme"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -67,8 +68,15 @@ plugins (Neovim, VS Code) via JSON output.`,
 				pathFilter = paths[0]
 			}
 
-			if err := tui.RunGit(".", refA, refB, pathFilter, stagedOnly); err != nil {
-				fmt.Fprintf(os.Stderr, "error running Git interactive diff: %v\n", err)
+			themeName, _ := cmd.Flags().GetString("theme")
+			th, err := theme.ResolveTheme(themeName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := tui.RunGit(".", refA, refB, pathFilter, stagedOnly, th); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: running Git interactive diff: %v\n", err)
 				os.Exit(1)
 			}
 		} else {
@@ -91,4 +99,5 @@ func Execute() {
 
 func init() {
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
+	rootCmd.Flags().StringP("theme", "t", "mocha", "Color theme: mocha (dark), latte (light)")
 }

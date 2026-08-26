@@ -119,3 +119,27 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 		t.Error("expected structural AST match result when limit is 5")
 	}
 }
+
+func TestThemeFlag(t *testing.T) {
+	fDiff := diffCmd.Flags().Lookup("theme")
+	if fDiff == nil {
+		t.Fatal("theme flag not registered on diffCmd")
+	}
+	if fDiff.Shorthand != "t" {
+		t.Errorf("diffCmd theme shorthand = %q, want %q", fDiff.Shorthand, "t")
+	}
+	if fDiff.DefValue != "mocha" {
+		t.Errorf("diffCmd theme default = %q, want %q", fDiff.DefValue, "mocha")
+	}
+
+	fRoot := rootCmd.Flags().Lookup("theme")
+	if fRoot == nil {
+		t.Fatal("theme flag not registered on rootCmd")
+	}
+	if fRoot.Shorthand != "t" {
+		t.Errorf("rootCmd theme shorthand = %q, want %q", fRoot.Shorthand, "t")
+	}
+	if fRoot.DefValue != "mocha" {
+		t.Errorf("rootCmd theme default = %q, want %q", fRoot.DefValue, "mocha")
+	}
+}

@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 		binaryName = "diffm.exe"
 	}
 	binaryPath = filepath.Join(tmp, binaryName)
-	cmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/diffm")
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", binaryPath, "../../cmd/diffm")
 	cmd.Dir, _ = os.Getwd()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		panic("failed to build diffm: " + string(out) + ": " + err.Error())
@@ -339,5 +339,31 @@ func TestCLI_IgnoreComments(t *testing.T) {
 	}
 	if len(envIgnored.Actions) != 0 {
 		t.Errorf("expected 0 actions with --ignore-comments, got %d actions", len(envIgnored.Actions))
+	}
+}
+
+func TestCLI_ThemeFlag(t *testing.T) {
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
+
+	// Valid theme: latte
+	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "-t", "latte")
+	if err != nil {
+		t.Fatalf("diffm with -t latte failed: %v\nstderr: %s", err, stderr)
+	}
+	var env serialize.Envelope
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("invalid JSON output with -t latte: %v", err)
+	}
+	if env.Version == "" {
+		t.Error("missing version in JSON output with -t latte")
+	}
+
+	// Invalid theme
+	_, stderr, err = runDiffm("diff", oldPath, newPath, "-t", "unknown_theme")
+	if err == nil {
+		t.Fatal("expected non-zero exit for unknown theme")
+	}
+	if !strings.Contains(stderr, "unsupported theme") {
+		t.Errorf("expected 'unsupported theme' error, got: %s", stderr)
 	}
 }

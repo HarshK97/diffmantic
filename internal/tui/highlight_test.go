@@ -191,7 +191,7 @@ func TestInnerInsertOverridingContainerMove(t *testing.T) {
 		t.Fatal("expected non-empty rendered line")
 	}
 	// Verify that the inner inserted content gets the insert background tint
-	insertBgSample := hlInsertStyle.Render("c")
+	insertBgSample := defaultTheme.Styles.HlInsert.Render("c")
 	if !strings.Contains(rendered, insertBgSample) {
 		t.Errorf("expected rendered line to contain insert-styled characters, got %q", rendered)
 	}
@@ -261,44 +261,35 @@ func TestLeftPaneInnerMoveOverridingContainerDelete(t *testing.T) {
 		t.Fatal("expected non-empty rendered line")
 	}
 	// Inner move should override container delete
-	moveBgSample := hlMoveStyle.Render("c")
+	moveBgSample := defaultTheme.Styles.HlMove.Render("c")
 	if !strings.Contains(rendered, moveBgSample) {
 		t.Errorf("expected rendered line to contain move-styled characters overriding delete, got %q", rendered)
 	}
 }
 
 func TestMoveInsideInsertedContainerHighlight(t *testing.T) {
-	// Destination line:
-	// return *(*[]byte)(unsafe.Pointer(\n
+	// Source code:
+	// Line 0: u.SetName("alice")
 	//
-	// TypeConversion: insert 7..34 (astLen=79)
-	// CallExpr: move 19..34 (astLen=67)
-	// ArgList: insert 33..34 (astLen=53)
-	dstBytes := []byte("\treturn *(*[]byte)(unsafe.Pointer(\n")
-
-	destStartMove := uint32(337)
-	destEndMove := uint32(404)
+	// Outer insert covers entire line (bytes 0..18, astLen=18)
+	// Inner move covers u.SetName (bytes 0..9, astLen=9)
+	dstBytes := []byte("u.SetName(\"alice\")\n")
 
 	actions := []serialize.Action{
 		{
 			Action: "insert",
-			Node: &serialize.NodeRef{
+			DestNode: &serialize.NodeRef{
 				Tree:      "after",
-				StartByte: 326,
-				EndByte:   405,
+				StartByte: 0,
+				EndByte:   18,
 			},
 		},
 		{
-			Action:        "move",
-			DestStartByte: &destStartMove,
-			DestEndByte:   &destEndMove,
-		},
-		{
-			Action: "insert",
-			Node: &serialize.NodeRef{
+			Action: "move",
+			DestNode: &serialize.NodeRef{
 				Tree:      "after",
-				StartByte: 351,
-				EndByte:   404,
+				StartByte: 0,
+				EndByte:   9,
 			},
 		},
 	}
@@ -308,7 +299,7 @@ func TestMoveInsideInsertedContainerHighlight(t *testing.T) {
 
 	m := model{}
 	rendered := m.renderStyledLine(
-		"\treturn *(*[]byte)(unsafe.Pointer(",
+		"u.SetName(\"alice\")",
 		dstHL.spans[0],
 		nil,
 		nil,
@@ -323,7 +314,7 @@ func TestMoveInsideInsertedContainerHighlight(t *testing.T) {
 		t.Fatal("expected non-empty rendered line")
 	}
 	// Inner move should override outer insert for the CallExpr span
-	moveBgSample := hlMoveStyle.Render("u")
+	moveBgSample := defaultTheme.Styles.HlMove.Render("u")
 	if !strings.Contains(rendered, moveBgSample) {
 		t.Errorf("expected rendered line to contain inner move-styled characters, got %q", rendered)
 	}

@@ -30,6 +30,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/theme"
 	"github.com/HarshK97/diffmantic/internal/tui"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -45,35 +46,35 @@ algorithm to detect inserts, deletes, updates, moves, and renames at the syntax
 node level, not just changed lines.
 
 Examples:
-  diffm diff before.go after.go                 Interactive TUI (default)
-  diffm diff before.go after.go -f json         JSON output for editor plugins
-  diffm diff before.go after.go -f actions      Print structural actions list`,
+  diffm diff before.go after.go             Interactive TUI (default)
+  diffm diff before.go after.go -f json     JSON output for editor plugins
+  diffm diff before.go after.go -f actions  Print structural actions list
+  diffm diff before.go after.go --ui        Full JSON with line alignment & highlight spans
+  diffm diff before.go after.go -t latte    Use Catppuccin Latte (light) theme`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		fileA, fileB := args[0], args[1]
-		format, _ := cmd.Flags().GetString("format")
-		if format != "" && format != "json" && format != "actions" && format != "tui" {
-			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, tui\n", format)
-			os.Exit(1)
-		}
+		fileA := args[0]
+		fileB := args[1]
 
 		infoA, err := os.Stat(fileA)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error stating %s: %v\n", fileA, err)
+		if err == nil && infoA.IsDir() {
+			fmt.Fprintln(os.Stderr, "Error: Directory diffing is not supported yet")
 			os.Exit(1)
 		}
 		infoB, err := os.Stat(fileB)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error stating %s: %v\n", fileB, err)
-			os.Exit(1)
-		}
-		if infoA.IsDir() || infoB.IsDir() {
+		if err == nil && infoB.IsDir() {
 			fmt.Fprintln(os.Stderr, "Error: Directory diffing is not supported yet")
 			os.Exit(1)
 		}
 
+		format, _ := cmd.Flags().GetString("format")
 		uiMode, _ := cmd.Flags().GetBool("ui")
 		fullMode, _ := cmd.Flags().GetBool("full")
+
+		if format != "" && format != "json" && format != "actions" && format != "tui" {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, tui\n", format)
+			os.Exit(1)
+		}
 
 		if format == "" {
 			if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsTerminal(os.Stderr.Fd()) {
@@ -90,15 +91,23 @@ Examples:
 			IncludeHighlights: includeUI,
 		}
 
-		parseErrorLimit := getParseErrorLimit(cmd)
 		ignoreComments, _ := cmd.Flags().GetBool("ignore-comments")
+		parseErrorLimit := getParseErrorLimit(cmd)
+
 		dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
 			ParseErrorLimit: parseErrorLimit,
 			IgnoreComments:  ignoreComments,
 			EnvelopeOpts:    opts,
 		})
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		themeName, _ := cmd.Flags().GetString("theme")
+		th, err := theme.ResolveTheme(themeName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -106,7 +115,7 @@ Examples:
 		case "json":
 			jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error serializing JSON: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Error: serializing JSON: %v\n", err)
 				os.Exit(1)
 			}
 			_, _ = os.Stdout.Write(jsonData)
@@ -116,8 +125,8 @@ Examples:
 			_ = engine.FprintMappings(os.Stdout, dr.MatchResult)
 			_ = actions.FprintActions(os.Stdout, dr.EditScript)
 		case "tui":
-			if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes, dr.Envelope); err != nil {
-				fmt.Fprintf(os.Stderr, "error running TUI: %v\n", err)
+			if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes, dr.Envelope, th); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: running TUI: %v\n", err)
 				os.Exit(1)
 			}
 		}
@@ -140,4 +149,5 @@ func init() {
 	diffCmd.Flags().Bool("ui", false, "Include line alignment and highlight spans in JSON output")
 	diffCmd.Flags().Bool("full", false, "Include actions, line alignment, and highlight spans in JSON output")
 	diffCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
+	diffCmd.Flags().StringP("theme", "t", "mocha", "Color theme: mocha (dark), latte (light)")
 }

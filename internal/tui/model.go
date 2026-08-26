@@ -2,35 +2,49 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/theme"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Run launches the side-by-side terminal diff viewer.
-func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) error {
-	m := newModel(srcFile, dstFile, srcBytes, dstBytes, env)
+func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope, themeOpt ...*theme.Theme) error {
+	m := newModel(srcFile, dstFile, srcBytes, dstBytes, env, themeOpt...)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
 
 // RunGit starts the TUI in Git mode inside the specified repository path.
-func RunGit(repoPath string, refA, refB string, pathFilter string, stagedOnly bool) error {
-	m := newGitModel(repoPath, refA, refB, pathFilter, stagedOnly)
+func RunGit(repoPath string, refA, refB string, pathFilter string, stagedOnly bool, themeOpt ...*theme.Theme) error {
+	m := newGitModel(repoPath, refA, refB, pathFilter, stagedOnly, themeOpt...)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
 
-func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) model {
+func (m *model) getTheme() *theme.Theme {
+	if m == nil {
+		return defaultTheme
+	}
+	return cmp.Or(m.theme, defaultTheme)
+}
+
+func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope, themeOpt ...*theme.Theme) model {
+	t := defaultTheme
+	if len(themeOpt) > 0 {
+		t = cmp.Or(themeOpt[0], defaultTheme)
+	}
 	m := model{
 		activePane: "left",
+		theme:      t,
 	}
 
 	m.setupDiff(srcFile, dstFile, srcBytes, dstBytes, env)
@@ -45,10 +59,14 @@ func newModel(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize
 	return m
 }
 
-func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOnly bool) model {
+func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOnly bool, themeOpt ...*theme.Theme) model {
 	cache := &gitCache{
 		sem:     make(chan struct{}, 8),
 		entries: make(map[gitCacheKey]gitDiffCacheEntry),
+	}
+	t := defaultTheme
+	if len(themeOpt) > 0 {
+		t = cmp.Or(themeOpt[0], defaultTheme)
 	}
 	m := model{
 		gitMode:       true,
@@ -60,6 +78,7 @@ func newGitModel(repoPath string, refA, refB string, pathFilter string, stagedOn
 		pathFilter:    pathFilter,
 		activePane:    "left",
 		gitCache:      cache,
+		theme:         t,
 	}
 
 	ti := textinput.New()
@@ -168,8 +187,8 @@ func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, en
 	m.rebuildVirtualLines()
 
 	// Pre-compute syntax colors upfront so rendering stays fast on scroll.
-	m.srcSyntax = highlightSyntax(srcFile, srcBytes)
-	m.dstSyntax = highlightSyntax(dstFile, dstBytes)
+	m.srcSyntax = highlightSyntax(srcFile, srcBytes, m.getTheme())
+	m.dstSyntax = highlightSyntax(dstFile, dstBytes, m.getTheme())
 
 	// Reset scroll and cursor.
 	m.cursorY = 0
@@ -292,16 +311,16 @@ func (m *model) refreshGitStatus() {
 		if item.isHeader {
 			continue
 		}
-		go func(it gitTreeItem, ep uint64, s chan struct{}) {
-			entry := m.computeSingleGitDiff(it, s)
-			key := gitCacheKey{path: it.path, isStaged: it.isStaged}
+		go func() {
+			entry := m.computeSingleGitDiff(item, sem)
+			key := gitCacheKey{path: item.path, isStaged: item.isStaged}
 
 			m.gitCache.mu.Lock()
 			defer m.gitCache.mu.Unlock()
-			if ep == m.gitCache.epoch {
+			if currentEpoch == m.gitCache.epoch {
 				m.gitCache.entries[key] = entry
 			}
-		}(item, currentEpoch, sem)
+		}()
 	}
 }
 

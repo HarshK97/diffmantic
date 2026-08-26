@@ -258,16 +258,22 @@ func actionKindFromString(s string) actionKind {
 	}
 }
 
-// formatActionPreview formats a one-line action preview for the status bar.
-func formatActionPreview(actions []*serialize.Action, maxWidth int) string {
-	if len(actions) == 0 {
+// formatActionPreview creates a single-line summary of an action for the status bar.
+func formatActionPreview(actions []*serialize.Action, maxWidth int, themeOpt ...*Theme) string {
+	if len(actions) == 0 || maxWidth <= 0 {
 		return ""
 	}
 
+	t := defaultTheme
+	if len(themeOpt) > 0 && themeOpt[0] != nil {
+		t = themeOpt[0]
+	}
+	bg := t.UI.Surface0
+
 	a := actions[0]
 	kind := actionKindFromString(a.Action)
-	icon := actionIcon(kind)
-	fg := actionFg(kind)
+	icon := t.ActionIcon(kind)
+	fg := t.ActionFg(kind)
 
 	label := strings.ToUpper(a.Action)
 	nodeType := ""
@@ -297,17 +303,23 @@ func formatActionPreview(actions []*serialize.Action, maxWidth int) string {
 		}
 	}
 
-	iconStyled := lipgloss.NewStyle().Foreground(fg).Render(icon)
-	labelStyled := lipgloss.NewStyle().Foreground(fg).Bold(true).Render(label)
-
-	preview := fmt.Sprintf(" ▸ %s %s  %s", iconStyled, labelStyled, detail)
-
-	if len(actions) > 1 {
-		badge := inspectDimStyle.Render(fmt.Sprintf("  (+%d more)", len(actions)-1))
-		preview += badge
+	parts := []styledPart{
+		{text: " ▸ ", style: t.Styles.Status},
+		{text: icon, style: lipgloss.NewStyle().Foreground(fg)},
+		{text: " ", style: lipgloss.NewStyle()},
+		{text: label, style: lipgloss.NewStyle().Foreground(fg).Bold(true)},
+		{text: "  ", style: lipgloss.NewStyle()},
+		{text: detail, style: t.Styles.Status},
 	}
 
-	return truncateStr(preview, maxWidth)
+	if len(actions) > 1 {
+		parts = append(parts, styledPart{
+			text:  fmt.Sprintf("  (+%d more)", len(actions)-1),
+			style: t.Styles.InspectDim,
+		})
+	}
+
+	return renderInspectRow(parts, maxWidth, bg)
 }
 
 // formatByteRange formats byte offsets to human-readable line and column offsets.
@@ -333,90 +345,168 @@ func byteToLineColFromLines(lines []string, byteOffset uint32) (int, int) {
 	return serialize.ByteToLineCol(lineIndex, byteOffset)
 }
 
-// formatActionColumn formats an action into three detail lines padded to colWidth.
-func formatActionColumn(lines []string, a *serialize.Action, colWidth int) []string {
-	colLines := make([]string, 3)
+type styledPart struct {
+	text  string
+	style lipgloss.Style
+}
+
+func renderInspectRow(parts []styledPart, totalWidth int, bg lipgloss.Color) string {
+	var b strings.Builder
+	used := 0
+	baseStyle := lipgloss.NewStyle().Background(bg)
+
+	for _, p := range parts {
+		if used >= totalWidth || p.text == "" {
+			continue
+		}
+		runes := []rune(p.text)
+		avail := totalWidth - used
+		if len(runes) > avail {
+			if avail > 1 {
+				runes = append(runes[:avail-1], '…')
+			} else {
+				runes = []rune{'…'}
+			}
+		}
+		st := p.style.Background(bg)
+		b.WriteString(st.Render(string(runes)))
+		used += len(runes)
+	}
+
+	if used < totalWidth {
+		b.WriteString(baseStyle.Render(strings.Repeat(" ", totalWidth-used)))
+	}
+	return b.String()
+}
+
+func padStyledParts(parts []styledPart, targetWidth int) []styledPart {
+	used := 0
+	var res []styledPart
+	for _, p := range parts {
+		if used >= targetWidth || p.text == "" {
+			continue
+		}
+		runes := []rune(p.text)
+		avail := targetWidth - used
+		if len(runes) > avail {
+			if avail > 1 {
+				runes = append(runes[:avail-1], '…')
+			} else {
+				runes = []rune{'…'}
+			}
+		}
+		res = append(res, styledPart{text: string(runes), style: p.style})
+		used += len(runes)
+	}
+	if used < targetWidth {
+		res = append(res, styledPart{text: strings.Repeat(" ", targetWidth-used), style: lipgloss.NewStyle()})
+	}
+	return res
+}
+
+func formatActionParts(lines []string, a *serialize.Action, colWidth int, t *Theme) [][]styledPart {
+	if t == nil {
+		t = defaultTheme
+	}
+
+	rows := make([][]styledPart, 3)
 
 	kind := actionKindFromString(a.Action)
-	fg := actionFg(kind)
-	icon := actionIcon(kind)
+	fg := t.ActionFg(kind)
+	icon := t.ActionIcon(kind)
 
-	iconStyled := lipgloss.NewStyle().Foreground(fg).Render(icon)
-	labelStyled := lipgloss.NewStyle().Foreground(fg).Bold(true).Render(strings.ToUpper(a.Action))
-
-	nodeDesc := ""
+	// Row 0: icon + " " + ACTION + (" " + nodeDesc)
+	row0 := []styledPart{
+		{text: icon, style: lipgloss.NewStyle().Foreground(fg)},
+		{text: " ", style: lipgloss.NewStyle()},
+		{text: strings.ToUpper(a.Action), style: lipgloss.NewStyle().Foreground(fg).Bold(true)},
+	}
 	if a.Node != nil {
-		nodeDesc = humanizeNodeType(a.Node.Type)
+		nodeDesc := humanizeNodeType(a.Node.Type)
 		if a.Node.Label != "" {
 			nodeDesc += " '" + a.Node.Label + "'"
 		}
+		row0 = append(row0,
+			styledPart{text: " ", style: lipgloss.NewStyle()},
+			styledPart{text: nodeDesc, style: lipgloss.NewStyle().Foreground(t.UI.Text)},
+		)
 	}
+	rows[0] = row0
 
-	// Line 0: Icon + Action Type + Node Type/Label
-	line0 := fmt.Sprintf("%s %s %s", iconStyled, labelStyled, nodeDesc)
-	colLines[0] = truncateAnsi(line0, colWidth)
-
-	// Line 1: Parent or Destination
-	var line1 string
+	// Row 1: Parent or Destination
+	var row1 []styledPart
 	switch a.Action {
 	case "update":
 		if a.OldValue != "" && a.NewValue != "" {
 			old := truncateStr(a.OldValue, colWidth/2-2)
 			newVal := truncateStr(a.NewValue, colWidth/2-2)
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("'%s' → '%s'", old, newVal))
+			row1 = []styledPart{
+				{text: fmt.Sprintf("'%s' → '%s'", old, newVal), style: t.Styles.InspectDetail},
+			}
 		} else if a.Parent != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", humanizeNodeType(a.Parent.Type), a.Parent.Label))
+			row1 = []styledPart{
+				{text: fmt.Sprintf("parent: %s '%s'", humanizeNodeType(a.Parent.Type), a.Parent.Label), style: t.Styles.InspectDetail},
+			}
 		}
 	case "move":
 		if a.DestNode != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("→ dest: %s '%s' (Enter to jump)", humanizeNodeType(a.DestNode.Type), a.DestNode.Label))
+			row1 = []styledPart{
+				{text: fmt.Sprintf("→ dest: %s '%s' (Enter to jump)", humanizeNodeType(a.DestNode.Type), a.DestNode.Label), style: t.Styles.InspectDetail},
+			}
 		} else if a.DestStartByte != nil && a.DestEndByte != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("→ dest: %s (Enter to jump)", formatByteRange(lines, *a.DestStartByte, *a.DestEndByte)))
+			row1 = []styledPart{
+				{text: fmt.Sprintf("→ dest: %s (Enter to jump)", formatByteRange(lines, *a.DestStartByte, *a.DestEndByte)), style: t.Styles.InspectDetail},
+			}
 		}
 	default:
 		if a.Parent != nil {
-			line1 = inspectDetailStyle.Render(fmt.Sprintf("parent: %s '%s'", humanizeNodeType(a.Parent.Type), a.Parent.Label))
+			row1 = []styledPart{
+				{text: fmt.Sprintf("parent: %s '%s'", humanizeNodeType(a.Parent.Type), a.Parent.Label), style: t.Styles.InspectDetail},
+			}
 		}
 	}
-	colLines[1] = truncateAnsi(line1, colWidth)
+	rows[1] = row1
 
-	// Line 2: Line/Col range and Group ID
-	var line2 string
+	// Row 2: Line/Col range and Group ID
+	var row2 []styledPart
 	if a.Node != nil {
-		line2 = inspectDimStyle.Render(formatByteRange(lines, a.Node.StartByte, a.Node.EndByte))
+		row2 = append(row2, styledPart{
+			text:  formatByteRange(lines, a.Node.StartByte, a.Node.EndByte),
+			style: t.Styles.InspectDim,
+		})
 	}
 	if a.GroupID != "" && a.Action != "move" {
-		if line2 != "" {
-			line2 += inspectDimStyle.Render(" │ grp: " + a.GroupID)
-		} else {
-			line2 = inspectDimStyle.Render("grp: " + a.GroupID)
+		sep := ""
+		if len(row2) > 0 {
+			sep = " │ "
 		}
+		row2 = append(row2, styledPart{
+			text:  sep + "grp: " + a.GroupID,
+			style: t.Styles.InspectDim,
+		})
 	}
-	colLines[2] = truncateAnsi(line2, colWidth)
+	rows[2] = row2
 
-	// Pad lines to colWidth.
-	for idx := range 3 {
-		colLines[idx] = padRight(colLines[idx], colWidth)
-	}
-
-	return colLines
+	return rows
 }
 
-// renderInspectPanel renders the inspect panel.
 func (m model) renderInspectPanel() string {
 	width := m.width
 	if width <= 0 {
 		return ""
 	}
 
+	t := m.getTheme()
+	bg := t.UI.Surface0
 	panelLines := make([]string, inspectPanelHeight)
 
 	if len(m.inspectActions) == 0 {
-		// No action at cursor.
-		noAction := inspectDimStyle.Render("  No action at cursor")
-		panelLines[0] = inspectPanelStyle.Render(padRight(noAction, width))
+		panelLines[0] = renderInspectRow([]styledPart{
+			{text: "  No action at cursor", style: t.Styles.InspectDim},
+		}, width, bg)
+		emptyRow := renderInspectRow(nil, width, bg)
 		for i := 1; i < inspectPanelHeight; i++ {
-			panelLines[i] = inspectPanelStyle.Render(strings.Repeat(" ", width))
+			panelLines[i] = emptyRow
 		}
 		return strings.Join(panelLines, "\n")
 	}
@@ -429,46 +519,68 @@ func (m model) renderInspectPanel() string {
 	}
 
 	if len(m.inspectActions) == 1 {
-		colWidth := width - 4 // border/padding
-		accent := actionFg(actionKindFromString(m.inspectActions[0].Action))
-		border := lipgloss.NewStyle().Foreground(accent).Render("│")
+		colWidth := max(width-4, 10)
+		accent := t.ActionFg(actionKindFromString(m.inspectActions[0].Action))
+		borderStyle := lipgloss.NewStyle().Foreground(accent)
+		titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
 
-		colLines := formatActionColumn(lines, m.inspectActions[0], colWidth)
+		titleParts := []styledPart{
+			{text: "│", style: borderStyle},
+			{text: " ", style: lipgloss.NewStyle()},
+			{text: "SEMANTIC INSPECTOR", style: titleStyle},
+		}
+		panelLines[0] = renderInspectRow(titleParts, width, bg)
 
-		titleLine := border + " " + lipgloss.NewStyle().Foreground(accent).Bold(true).Render("SEMANTIC INSPECTOR")
-		panelLines[0] = inspectPanelStyle.Render(padRight(titleLine, width))
-
+		actionParts := formatActionParts(lines, m.inspectActions[0], colWidth, t)
 		for i := range 3 {
-			panelLines[i+1] = inspectPanelStyle.Render(border + " " + colLines[i])
+			colParts := padStyledParts(actionParts[i], colWidth)
+			rowParts := []styledPart{
+				{text: "│", style: borderStyle},
+				{text: " ", style: lipgloss.NewStyle()},
+			}
+			rowParts = append(rowParts, colParts...)
+			panelLines[i+1] = renderInspectRow(rowParts, width, bg)
 		}
 	} else {
-		// Side-by-side columns, capped at 2 for clean readability.
+		// Cap at 2 side-by-side columns so the drawer stays readable.
 		numCols := min(len(m.inspectActions), 2)
 
 		divSpacing := 3 * (numCols - 1)
 		availWidth := width - 4 - divSpacing
 		colWidth := max(availWidth/numCols, 15)
 
-		colData := make([][]string, numCols)
+		colsParts := make([][][]styledPart, numCols)
 		for c := range numCols {
-			colData[c] = formatActionColumn(lines, m.inspectActions[c], colWidth)
+			colsParts[c] = formatActionParts(lines, m.inspectActions[c], colWidth, t)
 		}
 
-		accent := actionFg(actionKindFromString(m.inspectActions[0].Action))
-		border := lipgloss.NewStyle().Foreground(accent).Render("│")
-		titleLine := border + " " + lipgloss.NewStyle().Foreground(accent).Bold(true).Render("SEMANTIC INSPECTOR")
-		panelLines[0] = inspectPanelStyle.Render(padRight(titleLine, width))
+		accent := t.ActionFg(actionKindFromString(m.inspectActions[0].Action))
+		borderStyle := lipgloss.NewStyle().Foreground(accent)
+		titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
+
+		titleParts := []styledPart{
+			{text: "│", style: borderStyle},
+			{text: " ", style: lipgloss.NewStyle()},
+			{text: "SEMANTIC INSPECTOR", style: titleStyle},
+		}
+		panelLines[0] = renderInspectRow(titleParts, width, bg)
 
 		for i := range 3 {
-			var rowParts []string
-			rowParts = append(rowParts, border+" ")
+			rowParts := []styledPart{
+				{text: "│", style: borderStyle},
+				{text: " ", style: lipgloss.NewStyle()},
+			}
 			for c := range numCols {
 				if c > 0 {
-					rowParts = append(rowParts, inspectDimStyle.Render(" │ "))
+					rowParts = append(rowParts, styledPart{
+						text:  " │ ",
+						style: t.Styles.InspectDim,
+					})
 				}
-				rowParts = append(rowParts, colData[c][i])
+				colParts := padStyledParts(colsParts[c][i], colWidth)
+				rowParts = append(rowParts, colParts...)
 			}
-			panelLines[i+1] = inspectPanelStyle.Render(strings.Join(rowParts, ""))
+			panelLines[i+1] = renderInspectRow(rowParts, width, bg)
 		}
 	}
 
