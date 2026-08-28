@@ -17,7 +17,7 @@ import (
 // Run launches the side-by-side terminal diff viewer.
 func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope, themeOpt ...*theme.Theme) error {
 	m := newModel(srcFile, dstFile, srcBytes, dstBytes, env, themeOpt...)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion())
 	_, err := p.Run()
 	return err
 }
@@ -25,7 +25,7 @@ func Run(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Enve
 // RunGit starts the TUI in Git mode inside the specified repository path.
 func RunGit(repoPath string, refA, refB string, pathFilter string, stagedOnly bool, themeOpt ...*theme.Theme) error {
 	m := newGitModel(repoPath, refA, refB, pathFilter, stagedOnly, themeOpt...)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion())
 	_, err := p.Run()
 	return err
 }
@@ -130,6 +130,8 @@ func (m *model) setupEmptyPlaceholder() {
 	m.rebuildVirtualLines()
 	m.srcSyntax = nil
 	m.dstSyntax = nil
+	m.hoverOpen = false
+	m.hoverActions = nil
 }
 
 func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope) {
@@ -137,6 +139,8 @@ func (m *model) setupDiff(srcFile, dstFile string, srcBytes, dstBytes []byte, en
 	m.dstFile = dstFile
 	m.srcLines = strings.Split(string(srcBytes), "\n")
 	m.dstLines = strings.Split(string(dstBytes), "\n")
+	m.hoverOpen = false
+	m.hoverActions = nil
 
 	if env == nil || len(env.LineAlignment) == 0 {
 		total := max(len(m.dstLines), len(m.srcLines))
@@ -518,9 +522,6 @@ func (m *model) rebuildVirtualLines() {
 
 func (m model) contentHeight() int {
 	h := m.height - titleBarHeight - statusBarHeight
-	if m.inspectOpen {
-		h -= inspectPanelHeight
-	}
 	if m.gitCommitOpen {
 		h -= 1 // 1 line for the commit input bar
 	}

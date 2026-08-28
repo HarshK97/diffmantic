@@ -48,8 +48,11 @@ type model struct {
 	srcSyntax map[int][]syntaxSpan
 	dstSyntax map[int][]syntaxSpan
 
-	inspectOpen    bool                // whether the expanded inspect panel is visible
-	inspectActions []*serialize.Action // actions at the current cursor position
+	hoverOpen    bool
+	hoverX       int
+	hoverY       int
+	hoverSource  string // "keyboard" or "mouse"
+	hoverActions []*serialize.Action
 
 	searchActive   bool
 	searchQuery    string
@@ -112,10 +115,9 @@ type gitDiffCacheEntry struct {
 }
 
 const (
-	titleBarHeight     = 1
-	statusBarHeight    = 1
-	gutterPadding      = 4
-	dividerWidth       = 1
-	foldContext        = 3 // Unchanged lines to keep visible around changes
-	inspectPanelHeight = 4
+	titleBarHeight  = 1
+	statusBarHeight = 1
+	gutterPadding   = 4
+	dividerWidth    = 1
+	foldContext     = 3 // Unchanged lines to keep visible around changes
 )

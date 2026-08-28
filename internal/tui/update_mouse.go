@@ -7,26 +7,81 @@ import (
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Vertical scroll
 	if msg.Button == tea.MouseButtonWheelUp {
+		m.hoverOpen = false
 		m.scrollY = clamp(m.scrollY-3, 0, m.maxScrollY())
 		return m, nil
 	}
 	if msg.Button == tea.MouseButtonWheelDown {
+		m.hoverOpen = false
 		m.scrollY = clamp(m.scrollY+3, 0, m.maxScrollY())
 		return m, nil
 	}
 
 	// Horizontal scroll
 	if msg.Button == tea.MouseButtonWheelLeft {
+		m.hoverOpen = false
 		m.scrollHorizontal(-4)
 		return m, nil
 	}
 	if msg.Button == tea.MouseButtonWheelRight {
+		m.hoverOpen = false
 		m.scrollHorizontal(4)
+		return m, nil
+	}
+
+	if msg.Action == tea.MouseActionMotion {
+		if m.helpOpen || m.gitTreeOpen || m.gitCommitOpen {
+			if m.hoverSource == "mouse" {
+				m.hoverOpen = false
+			}
+			return m, nil
+		}
+		Y := msg.Y
+		X := msg.X
+		contentH := m.contentHeight()
+		if Y >= titleBarHeight && Y < titleBarHeight+contentH {
+			visualRow := Y - titleBarHeight
+			vIdx := m.scrollY + visualRow
+			if vIdx >= 0 && vIdx < len(m.virtualLines) {
+				vl := m.virtualLines[vIdx]
+				if vl.foldIdx < 0 {
+					pw := m.paneWidth()
+					gw := m.gutterWidth()
+					var pane string
+					var lineIdx int
+					var visualCol int
+					if X >= gw && X < pw {
+						pane = "left"
+						lineIdx = vl.leftLine
+						visualCol = m.scrollXLeft + (X - gw)
+					} else if X >= pw+dividerWidth+gw && X < pw+dividerWidth+pw {
+						pane = "right"
+						lineIdx = vl.rightLine
+						visualCol = m.scrollXRight + (X - (pw + dividerWidth + gw))
+					}
+					if pane != "" && lineIdx >= 0 {
+						actions := actionsAtCoord(&m, pane, lineIdx, visualCol)
+						if len(actions) > 0 {
+							m.hoverOpen = true
+							m.hoverActions = actions
+							m.hoverSource = "mouse"
+							m.hoverX = X
+							m.hoverY = visualRow
+							return m, nil
+						}
+					}
+				}
+			}
+		}
+		if m.hoverSource == "mouse" {
+			m.hoverOpen = false
+		}
 		return m, nil
 	}
 
 	// Left click
 	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		m.hoverOpen = false
 		Y := msg.Y
 		X := msg.X
 
@@ -44,7 +99,6 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 				if vl.foldIdx >= 0 {
 					m.toggleFoldAt(vIdx)
-					m.updateInspectActions()
 					return m, nil
 				}
 
@@ -64,7 +118,6 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 							m.activePane = "right"
 						}
 						m.toggleFoldAt(vIdx)
-						m.updateInspectActions()
 						return m, nil
 					}
 				}
@@ -78,7 +131,6 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				}
 				m.clampCursor()
 				m.keepCursorInViewport()
-				m.updateInspectActions()
 			}
 		}
 	}

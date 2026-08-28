@@ -113,3 +113,19 @@ func TestThemeActionHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestCardBorderBackgrounds(t *testing.T) {
+	themes := []*Theme{CatppuccinMochaTheme(), CatppuccinLatteTheme()}
+	for _, th := range themes {
+		t.Run(th.Name, func(t *testing.T) {
+			hoverBorderBg := th.Styles.HoverCard.GetBorderTopBackground()
+			if hoverBorderBg != th.UI.Surface0 {
+				t.Errorf("HoverCard border background = %v, want %v (Surface0)", hoverBorderBg, th.UI.Surface0)
+			}
+			helpBorderBg := th.Styles.HelpCard.GetBorderTopBackground()
+			if helpBorderBg != th.UI.Base {
+				t.Errorf("HelpCard border background = %v, want %v (Base)", helpBorderBg, th.UI.Base)
+			}
+		})
+	}
+}

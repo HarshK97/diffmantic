@@ -185,28 +185,28 @@ func TestCenterPad(t *testing.T) {
 
 func TestContentHeight(t *testing.T) {
 	tests := []struct {
-		name        string
-		height      int
-		inspectOpen bool
-		want        int
+		name          string
+		height        int
+		gitCommitOpen bool
+		want          int
 	}{
 		{
-			name:        "normal height (24 - 1 title - 1 status = 22)",
-			height:      24,
-			inspectOpen: false,
-			want:        22,
+			name:          "normal height (24 - 1 title - 1 status = 22)",
+			height:        24,
+			gitCommitOpen: false,
+			want:          22,
 		},
 		{
-			name:        "with inspectOpen (22 - 4 inspect = 18)",
-			height:      24,
-			inspectOpen: true,
-			want:        18,
+			name:          "with gitCommitOpen (22 - 1 = 21)",
+			height:        24,
+			gitCommitOpen: true,
+			want:          21,
 		},
 		{
-			name:        "very small height clamps to 1",
-			height:      2,
-			inspectOpen: false,
-			want:        1,
+			name:          "very small height clamps to 1",
+			height:        2,
+			gitCommitOpen: false,
+			want:          1,
 		},
 	}
 
@@ -214,7 +214,7 @@ func TestContentHeight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := testModel(t, nil, nil)
 			m.height = tt.height
-			m.inspectOpen = tt.inspectOpen
+			m.gitCommitOpen = tt.gitCommitOpen
 			if got := m.contentHeight(); got != tt.want {
 				t.Errorf("contentHeight() = %d, want %d", got, tt.want)
 			}
