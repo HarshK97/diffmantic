@@ -92,9 +92,9 @@ func actionPriority(k actionKind) int {
 		return 5
 	case kindUpdate:
 		return 4
-	case kindInsert:
-		return 3
 	case kindMove:
+		return 3
+	case kindInsert:
 		return 2
 	case kindDelete:
 		return 1

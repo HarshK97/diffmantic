@@ -24,11 +24,6 @@ func (m model) View() string {
 
 	b.WriteString(m.renderContent())
 
-	if m.inspectOpen {
-		b.WriteByte('\n')
-		b.WriteString(m.renderInspectPanel())
-	}
-
 	if m.gitCommitOpen {
 		b.WriteByte('\n')
 		b.WriteString(m.renderCommitPanel())
@@ -106,6 +101,7 @@ func (m model) renderContent() string {
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(t.UI.Lavender).
+			BorderBackground(t.UI.Base).
 			Background(t.UI.Base)
 
 		treeContentLines := m.renderGitTreeOverlay(innerHeight, innerWidth)
@@ -126,25 +122,62 @@ func (m model) renderContent() string {
 
 	div := t.Styles.Divider.Render("│")
 
-	var b strings.Builder
+	contentRows := make([]string, height)
 	for i := range height {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
 		// Check if this row is a fold marker: render a unified fold line across the divider.
 		vIdx := m.scrollY + i
 		if !m.gitTreeOpen && vIdx < len(m.virtualLines) && m.virtualLines[vIdx].foldIdx >= 0 {
-			b.WriteString(leftLines[i])
-			b.WriteString(t.Styles.Divider.Background(t.UI.Surface0).Render("│"))
-			b.WriteString(rightLines[i])
+			contentRows[i] = leftLines[i] + t.Styles.Divider.Background(t.UI.Surface0).Render("│") + rightLines[i]
 		} else {
-			b.WriteString(leftLines[i])
-			b.WriteString(div)
-			b.WriteString(rightLines[i])
+			contentRows[i] = leftLines[i] + div + rightLines[i]
 		}
 	}
 
-	return b.String()
+	if m.hoverOpen && !m.gitTreeOpen && !m.gitCommitOpen && len(m.hoverActions) > 0 {
+		hoverPane := m.activePane
+		if m.hoverSource == "mouse" {
+			if m.hoverX >= pw+dividerWidth {
+				hoverPane = "right"
+			} else {
+				hoverPane = "left"
+			}
+		}
+		boxStr := renderHoverBox(m.srcLines, m.dstLines, m.hoverActions, max(m.width-4, 20), hoverPane, t)
+		if boxStr != "" {
+			boxLines := strings.Split(boxStr, "\n")
+			boxHeight := len(boxLines)
+			boxWidth := 0
+			for _, l := range boxLines {
+				boxWidth = max(boxWidth, lipgloss.Width(l))
+			}
+
+			targetX := m.hoverX
+			if targetX+boxWidth > m.width {
+				targetX = m.width - boxWidth
+			}
+			if targetX < 0 {
+				targetX = 0
+			}
+
+			var targetY int
+			if m.hoverY-boxHeight >= 0 {
+				targetY = m.hoverY - boxHeight
+			} else if m.hoverY+1+boxHeight <= height {
+				targetY = m.hoverY + 1
+			} else {
+				targetY = max(0, height-boxHeight)
+			}
+
+			for i := range boxHeight {
+				row := targetY + i
+				if row >= 0 && row < height && i < len(boxLines) {
+					contentRows[row] = overlayAnsi(contentRows[row], boxLines[i], targetX)
+				}
+			}
+		}
+	}
+
+	return strings.Join(contentRows, "\n")
 }
 
 func (m model) renderPane(lines []string, hl *highlights, syntax map[int][]syntaxSpan, scrollX, height, paneWidth, gutterW, textW int, isLeftPane bool) []string {
@@ -575,7 +608,8 @@ func (m model) renderStyledLine(rawLine string, lineSpans []span, synSpans []syn
 func (m model) renderStatusBar() string {
 	t := m.getTheme()
 	bg := t.UI.Surface0
-	hasActions := len(m.inspectActions) > 0
+	cursorActions := actionsAtCursor(&m)
+	hasActions := len(cursorActions) > 0
 
 	var keys string
 	if m.gitMode {
@@ -586,14 +620,14 @@ func (m model) renderStatusBar() string {
 				keys = " j/k: scroll • s/u: stage/unstage • c: commit • t: toggle tree • enter: open diff • q: quit"
 			}
 		} else if hasActions {
-			keys = " j/k: scroll • t: tree • za: fold • i: inspect • ?: help • q: quit"
+			keys = " j/k: scroll • t: tree • za: fold • K: hover • ?: help • q: quit"
 		} else {
-			keys = " j/k: scroll • t: toggle tree • za: fold • i: inspect • ?: help • q: quit"
+			keys = " j/k: scroll • t: toggle tree • za: fold • K: hover • ?: help • q: quit"
 		}
 	} else if hasActions {
-		keys = " j/k • za • i • ?: help • q"
+		keys = " j/k • za • K • ?: help • q"
 	} else {
-		keys = " j/k: scroll • za: fold • i: inspect • ?: help • q: quit"
+		keys = " j/k: scroll • za: fold • K: hover • ?: help • q: quit"
 	}
 
 	prefix := m.digitBuffer
@@ -620,10 +654,10 @@ func (m model) renderStatusBar() string {
 	if m.conflictWarning != "" {
 		preview = m.conflictWarning
 		warningStyle = true
-	} else if hasActions {
+	} else if hasActions && !m.gitTreeOpen && !m.gitCommitOpen {
 		availForPreview := m.width - keysWidth - 2
 		if availForPreview > 10 {
-			preview = formatActionPreview(m.inspectActions, availForPreview, t)
+			preview = formatActionPreview(cursorActions, availForPreview, t)
 		}
 	}
 
@@ -853,21 +887,21 @@ func overlayAnsi(bg, fg string, x int) string {
 	return cellsToAnsi(overlaid)
 }
 
-func expandLine(line string) (string, []int) {
-	var b strings.Builder
+func byteToVisualMapping(line string) []int {
 	byteToVisual := make([]int, len(line)+1)
 	visualCol := 0
-
 	for byteIdx, r := range line {
 		byteToVisual[byteIdx] = visualCol
 		if r == '\t' {
-			b.WriteString("    ")
 			visualCol += 4
 		} else {
-			b.WriteRune(r)
 			visualCol++
 		}
 	}
 	byteToVisual[len(line)] = visualCol
-	return b.String(), byteToVisual
+	return byteToVisual
+}
+
+func expandLine(line string) (string, []int) {
+	return strings.ReplaceAll(line, "\t", "    "), byteToVisualMapping(line)
 }

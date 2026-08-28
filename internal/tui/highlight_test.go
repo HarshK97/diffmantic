@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/theme"
 )
 
 func TestBuildHighlightsGroupingAndMerging(t *testing.T) {
@@ -143,17 +144,14 @@ func TestInnerInsertOverridingContainerMove(t *testing.T) {
 	// Insert action covers line 1 (bytes 25..65, astLen=40)
 	destBytes := []byte("if !c.Writer.Written() {\n    c.String(404, \"404 page not found\")\n}\n")
 
-	destStartMove := uint32(0)
-	destEndMove := uint32(len(destBytes))
-
 	destStartInsert := uint32(25)
 	destEndInsert := uint32(65)
 
 	actions := []serialize.Action{
 		{
 			Action:        "move",
-			DestStartByte: &destStartMove,
-			DestEndByte:   &destEndMove,
+			DestStartByte: new(uint32(0)),
+			DestEndByte:   new(uint32(len(destBytes))),
 		},
 		{
 			Action: "insert",
@@ -190,8 +188,8 @@ func TestInnerInsertOverridingContainerMove(t *testing.T) {
 	if rendered == "" {
 		t.Fatal("expected non-empty rendered line")
 	}
-	// Verify that the inner inserted content gets the insert background tint
-	insertBgSample := defaultTheme.Styles.HlInsert.Render("c")
+	th := theme.CatppuccinMochaTheme()
+	insertBgSample := th.HlStyle(kindInsert).Render("c")
 	if !strings.Contains(rendered, insertBgSample) {
 		t.Errorf("expected rendered line to contain insert-styled characters, got %q", rendered)
 	}
@@ -260,8 +258,8 @@ func TestLeftPaneInnerMoveOverridingContainerDelete(t *testing.T) {
 	if rendered == "" {
 		t.Fatal("expected non-empty rendered line")
 	}
-	// Inner move should override container delete
-	moveBgSample := defaultTheme.Styles.HlMove.Render("c")
+	th := theme.CatppuccinMochaTheme()
+	moveBgSample := th.HlStyle(kindMove).Render("c")
 	if !strings.Contains(rendered, moveBgSample) {
 		t.Errorf("expected rendered line to contain move-styled characters overriding delete, got %q", rendered)
 	}
@@ -313,8 +311,9 @@ func TestMoveInsideInsertedContainerHighlight(t *testing.T) {
 	if rendered == "" {
 		t.Fatal("expected non-empty rendered line")
 	}
+	th := theme.CatppuccinMochaTheme()
 	// Inner move should override outer insert for the CallExpr span
-	moveBgSample := defaultTheme.Styles.HlMove.Render("u")
+	moveBgSample := th.HlStyle(kindMove).Render("u")
 	if !strings.Contains(rendered, moveBgSample) {
 		t.Errorf("expected rendered line to contain inner move-styled characters, got %q", rendered)
 	}

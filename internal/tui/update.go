@@ -17,6 +17,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		m.hoverOpen = false
 		m.scrollY = clamp(m.scrollY, 0, m.maxScrollY())
 		m.scrollXLeft = clamp(m.scrollXLeft, 0, maxScrollX(m.srcLines, m.textWidth()))
 		m.scrollXRight = clamp(m.scrollXRight, 0, maxScrollX(m.dstLines, m.textWidth()))

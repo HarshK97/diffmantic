@@ -62,7 +62,7 @@ func (m model) renderHelpModal() string {
 		fmt.Fprintf(&colsBuilder, "  %s   %s\n", l, r)
 	}
 
-	sep := t.Styles.InspectDim.Render(strings.Repeat("─", cardWidth))
+	sep := t.Styles.HoverDim.Render(strings.Repeat("─", cardWidth))
 
 	legendTitle := t.Styles.HelpSectionHeader.Render("COLOR LEGEND")
 	legend := fmt.Sprintf(
@@ -79,6 +79,7 @@ func (m model) renderHelpModal() string {
 		"  • Scroll Wheel : Scroll vertical view",
 		"  • Shift+Scroll : Scroll horizontal view",
 		"  • Left Click   : Select pane/row, toggle fold (on gutter)",
+		"  • Hover Mouse  : Show token info popover",
 	}
 
 	b.WriteString("\n")
@@ -132,7 +133,7 @@ func renderRightColumn(t *Theme) string {
 	b := t.Styles.HelpSectionHeader.Render("ACTIONS & FOLDING")
 	lines := []string{
 		b,
-		"  i      : Toggle inspect panel",
+		"  K      : Show hover info",
 		"  za     : Toggle fold under cursor",
 		"  zo / zc: Open / close fold",
 		"  zR / zM: Open / close all folds",

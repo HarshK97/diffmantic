@@ -106,7 +106,7 @@ func (m *model) jumpToSearchMatch() {
 
 	m.clampCursor()
 	m.keepCursorInViewport()
-	m.updateInspectActions()
+	m.hoverOpen = false
 }
 
 func (m model) searchMatchesFor(virtualRow int, pane string) []searchMatch {

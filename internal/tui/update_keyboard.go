@@ -120,7 +120,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "M":
 			m.closeAllFolds()
 		}
-		m.updateInspectActions()
+		m.hoverOpen = false
 		return m, nil
 	}
 
@@ -145,7 +145,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.jumpToPrevSpan(count)
 			}
 		}
-		m.updateInspectActions()
+		m.hoverOpen = false
 		return m, nil
 	}
 
@@ -160,47 +160,61 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	resetBuffer := true
 
 	switch keyStr {
-	case "q", "esc", "ctrl+c":
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		if m.hoverOpen {
+			m.hoverOpen = false
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case "j", "down":
+		m.hoverOpen = false
 		m.cursorY = clamp(m.cursorY+count, 0, len(m.virtualLines)-1)
 		m.clampCursor()
 		m.keepCursorInViewport()
 	case "k", "up":
+		m.hoverOpen = false
 		m.cursorY = clamp(m.cursorY-count, 0, len(m.virtualLines)-1)
 		m.clampCursor()
 		m.keepCursorInViewport()
 	case "ctrl+d", "pgdown":
+		m.hoverOpen = false
 		half := m.contentHeight() / 2
 		m.cursorY = clamp(m.cursorY+(half*count), 0, len(m.virtualLines)-1)
 		m.scrollY = clamp(m.scrollY+(half*count), 0, m.maxScrollY())
 		m.clampCursor()
 		m.keepCursorInViewport()
 	case "ctrl+u", "pgup":
+		m.hoverOpen = false
 		half := m.contentHeight() / 2
 		m.cursorY = clamp(m.cursorY-(half*count), 0, len(m.virtualLines)-1)
 		m.scrollY = clamp(m.scrollY-(half*count), 0, m.maxScrollY())
 		m.clampCursor()
 		m.keepCursorInViewport()
 	case "g", "home":
+		m.hoverOpen = false
 		m.cursorY = 0
 		m.cursorX = 0
 		m.scrollY = 0
 		m.scrollXLeft = 0
 		m.scrollXRight = 0
 	case "G", "end":
+		m.hoverOpen = false
 		m.cursorY = len(m.virtualLines) - 1
 		m.cursorX = 0
 		m.scrollY = m.maxScrollY()
 		m.keepCursorInViewport()
 
 	case "n":
+		m.hoverOpen = false
 		if m.searchQuery != "" && len(m.searchMatches) > 0 {
 			m.searchMatchIdx = (m.searchMatchIdx + count) % len(m.searchMatches)
 			m.jumpToSearchMatch()
 		} else {
-			for i := 0; i < count; i++ {
+			for range count {
 				m.cursorY = m.nextChange()
 			}
 			m.cursorX = 0
@@ -208,6 +222,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.keepCursorInViewport()
 		}
 	case "N":
+		m.hoverOpen = false
 		if m.searchQuery != "" && len(m.searchMatches) > 0 {
 			m.searchMatchIdx = (m.searchMatchIdx - count) % len(m.searchMatches)
 			if m.searchMatchIdx < 0 {
@@ -215,7 +230,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.jumpToSearchMatch()
 		} else {
-			for i := 0; i < count; i++ {
+			for range count {
 				m.cursorY = m.prevChange()
 			}
 			m.cursorX = 0
@@ -236,20 +251,24 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		resetBuffer = false
 
 	case "h", "left":
+		m.hoverOpen = false
 		m.cursorX -= count
 		m.clampCursor()
 		m.keepCursorInViewport()
 	case "l", "right":
+		m.hoverOpen = false
 		m.cursorX += count
 		m.clampCursor()
 		m.keepCursorInViewport()
 
 	case "0":
+		m.hoverOpen = false
 		// Move to the start of the line on '0' (if we're not typing a count).
 		m.cursorX = 0
 		m.keepCursorInViewport()
 
 	case "$":
+		m.hoverOpen = false
 		runes := m.lineVisualRunes(m.cursorY)
 		if len(runes) > 0 {
 			m.cursorX = len(runes) - 1
@@ -259,6 +278,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.keepCursorInViewport()
 
 	case "^":
+		m.hoverOpen = false
 		runes := m.lineVisualRunes(m.cursorY)
 		m.cursorX = 0
 		for i, r := range runes {
@@ -270,19 +290,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.keepCursorInViewport()
 
 	case "w":
-		for i := 0; i < count; i++ {
+		m.hoverOpen = false
+		for range count {
 			m.moveWordForward()
 		}
 		m.keepCursorInViewport()
 
 	case "b":
-		for i := 0; i < count; i++ {
+		m.hoverOpen = false
+		for range count {
 			m.moveWordBackward()
 		}
 		m.keepCursorInViewport()
 
 	case "e":
-		for i := 0; i < count; i++ {
+		m.hoverOpen = false
+		for range count {
 			m.moveWordEnd()
 		}
 		m.keepCursorInViewport()
@@ -295,26 +318,51 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.clampCursor()
 		m.keepCursorInViewport()
+		m.hoverOpen = false
 
 	case "t":
 		if m.gitMode {
 			m.gitTreeOpen = true
 		}
+		m.hoverOpen = false
 
-	case "i":
-		m.inspectOpen = !m.inspectOpen
-		m.keepCursorInViewport()
+	case "K", "shift+k":
+		if m.hoverOpen && m.hoverSource == "keyboard" {
+			m.hoverOpen = false
+		} else {
+			actions := actionsAtCursor(&m)
+			if len(actions) > 0 {
+				m.hoverOpen = true
+				m.hoverActions = actions
+				m.hoverSource = "keyboard"
+				screenY := m.cursorY - m.scrollY
+				pw := m.paneWidth()
+				gw := m.gutterWidth()
+				var screenX int
+				if m.activePane == "left" {
+					screenX = gw + (m.cursorX - m.scrollXLeft)
+				} else {
+					screenX = pw + dividerWidth + gw + (m.cursorX - m.scrollXRight)
+				}
+				m.hoverX = screenX
+				m.hoverY = screenY
+			} else {
+				m.hoverOpen = false
+			}
+		}
 
 	case "enter":
 		m.jumpToMoveCounterpart()
 
 	case "/":
+		m.hoverOpen = false
 		m.searchActive = true
 		m.textinput.Focus()
 		m.textinput.SetValue(m.searchQuery)
 		m.textinput.CursorEnd()
 
 	case "?":
+		m.hoverOpen = false
 		m.helpOpen = true
 
 	default:
@@ -327,8 +375,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if resetBuffer {
 		m.digitBuffer = ""
 	}
-
-	m.updateInspectActions()
 
 	return m, nil
 }

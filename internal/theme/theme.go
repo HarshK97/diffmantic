@@ -92,9 +92,9 @@ type Styles struct {
 	HlMove       lipgloss.Style
 	HlMoveUpdate lipgloss.Style
 
-	InspectDetail lipgloss.Style
-	InspectDim    lipgloss.Style
-	InspectPanel  lipgloss.Style
+	HoverCard   lipgloss.Style
+	HoverDetail lipgloss.Style
+	HoverDim    lipgloss.Style
 
 	GitHeader   lipgloss.Style
 	GitCursor   lipgloss.Style
@@ -189,16 +189,19 @@ func newTheme(name string, isDark bool, ui UIColors, actions ActionColors) *Them
 		HlMove:       hlMove,
 		HlMoveUpdate: hlMoveUpdate,
 
-		InspectDetail: lipgloss.NewStyle().
+		HoverCard: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ui.Lavender).
+			BorderBackground(ui.Surface0).
+			Background(ui.Surface0).
+			Padding(0, 1),
+
+		HoverDetail: lipgloss.NewStyle().
 			Foreground(ui.Subtext0).
 			Background(ui.Surface0),
 
-		InspectDim: lipgloss.NewStyle().
+		HoverDim: lipgloss.NewStyle().
 			Foreground(ui.Overlay0).
-			Background(ui.Surface0),
-
-		InspectPanel: lipgloss.NewStyle().
-			Foreground(ui.Text).
 			Background(ui.Surface0),
 
 		GitHeader: lipgloss.NewStyle().
@@ -221,6 +224,7 @@ func newTheme(name string, isDark bool, ui UIColors, actions ActionColors) *Them
 		HelpCard: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ui.Lavender).
+			BorderBackground(ui.Base).
 			Background(ui.Base).
 			Padding(1, 1, 1, 1),
 
