@@ -2,38 +2,44 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
-func TestDiffCmdRegistered(t *testing.T) {
-	// Make sure the diff subcommand is registered on the root command.
-	found := false
-	for _, c := range rootCmd.Commands() {
-		if c.Name() == "diff" {
-			found = true
-			break
-		}
+func TestRootCmdFlags(t *testing.T) {
+	flags := []struct {
+		name      string
+		shorthand string
+		defValue  string
+	}{
+		{name: "format", shorthand: "f", defValue: ""},
+		{name: "theme", shorthand: "t", defValue: ""},
+		{name: "ignore-comments", shorthand: "C", defValue: "false"},
+		{name: "parse-error-limit", shorthand: "e", defValue: "0"},
+		{name: "ui", shorthand: "", defValue: "false"},
+		{name: "full", shorthand: "", defValue: "false"},
+		{name: "cached", shorthand: "", defValue: "false"},
 	}
-	if !found {
-		t.Error("diff command not registered on rootCmd")
-	}
-}
 
-func TestDiffCmdFlags(t *testing.T) {
-	f := diffCmd.Flags().Lookup("format")
-	if f == nil {
-		t.Fatal("format flag not registered")
-	}
-	if f.DefValue != "" {
-		t.Errorf("format default = %q, want %q", f.DefValue, "")
+	for _, tt := range flags {
+		f := rootCmd.Flags().Lookup(tt.name)
+		if f == nil {
+			t.Fatalf("flag %q not registered on rootCmd", tt.name)
+		}
+		if tt.shorthand != "" && f.Shorthand != tt.shorthand {
+			t.Errorf("flag %q shorthand = %q, want %q", tt.name, f.Shorthand, tt.shorthand)
+		}
+		if f.DefValue != tt.defValue {
+			t.Errorf("flag %q default = %q, want %q", tt.name, f.DefValue, tt.defValue)
+		}
 	}
 }
 
 func TestComputeDiffWithDevNull(t *testing.T) {
-	tmpFile := t.TempDir() + "/sample.go"
+	tmpFile := filepath.Join(t.TempDir(), "sample.go")
 	if err := os.WriteFile(tmpFile, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
@@ -59,8 +65,8 @@ func TestComputeDiffWithDevNull(t *testing.T) {
 
 func TestComputeDiffUnsupportedLanguage(t *testing.T) {
 	dir := t.TempDir()
-	fileA := dir + "/a.unknown"
-	fileB := dir + "/b.unknown"
+	fileA := filepath.Join(dir, "a.unknown")
+	fileB := filepath.Join(dir, "b.unknown")
 
 	_ = os.WriteFile(fileA, []byte("line 1\nline 2\nline 3\n"), 0o644)
 	_ = os.WriteFile(fileB, []byte("line 1\nline 2 modified\nline 3\nline 4\n"), 0o644)
@@ -78,30 +84,17 @@ func TestComputeDiffUnsupportedLanguage(t *testing.T) {
 	}
 }
 
-func TestParseErrorLimitFlag(t *testing.T) {
-	f := diffCmd.Flags().Lookup("parse-error-limit")
-	if f == nil {
-		t.Fatal("parse-error-limit flag not registered")
-	}
-	if f.Shorthand != "e" {
-		t.Errorf("shorthand = %q, want %q", f.Shorthand, "e")
-	}
-	if f.DefValue != "0" {
-		t.Errorf("default = %q, want %q", f.DefValue, "0")
-	}
-}
-
 func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	dir := t.TempDir()
-	fileA := dir + "/a.go"
-	fileB := dir + "/b.go"
+	fileA := filepath.Join(dir, "a.go")
+	fileB := filepath.Join(dir, "b.go")
 
-	// File with a syntax error (missing expression after :=)
+	// File with syntax error (missing := RHS)
 	_ = os.WriteFile(fileA, []byte("package main\n\nfunc foo() {\n\tx :=\n}\n"), 0o644)
 	_ = os.WriteFile(fileB, []byte("package main\n\nfunc foo() {\n\tx := 10\n}\n"), 0o644)
 
 	opts := serialize.EnvelopeOptions{IncludeActions: true}
-	// Default (limit = 0): should fall back to line diff
+	// Zero error limit should fall back to line diff
 	resDefault, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 0, EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles(0) failed: %v", err)
@@ -110,7 +103,7 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 		t.Error("expected line diff fallback (nil MatchResult) when limit is 0")
 	}
 
-	// Allowed limit (limit = 5): should perform AST structural matching
+	// Tolerated errors should keep AST matching enabled
 	resAllowed, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 5, EnvelopeOpts: opts})
 	if err != nil {
 		t.Fatalf("pipeline.RunFiles(5) failed: %v", err)
@@ -120,26 +113,17 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	}
 }
 
-func TestThemeFlag(t *testing.T) {
-	fDiff := diffCmd.Flags().Lookup("theme")
-	if fDiff == nil {
-		t.Fatal("theme flag not registered on diffCmd")
-	}
-	if fDiff.Shorthand != "t" {
-		t.Errorf("diffCmd theme shorthand = %q, want %q", fDiff.Shorthand, "t")
-	}
-	if fDiff.DefValue != "mocha" {
-		t.Errorf("diffCmd theme default = %q, want %q", fDiff.DefValue, "mocha")
-	}
+func TestIsFileOrDevNull(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "sample.go")
+	_ = os.WriteFile(tmpFile, []byte("package main\n"), 0o644)
 
-	fRoot := rootCmd.Flags().Lookup("theme")
-	if fRoot == nil {
-		t.Fatal("theme flag not registered on rootCmd")
+	if !isFileOrDevNull(tmpFile) {
+		t.Errorf("isFileOrDevNull(%q) = false, want true", tmpFile)
 	}
-	if fRoot.Shorthand != "t" {
-		t.Errorf("rootCmd theme shorthand = %q, want %q", fRoot.Shorthand, "t")
+	if !isFileOrDevNull(os.DevNull) {
+		t.Errorf("isFileOrDevNull(%q) = false, want true", os.DevNull)
 	}
-	if fRoot.DefValue != "mocha" {
-		t.Errorf("rootCmd theme default = %q, want %q", fRoot.DefValue, "mocha")
+	if isFileOrDevNull("/path/does/not/exist/surely.go") {
+		t.Errorf("isFileOrDevNull(nonexistent) = true, want false")
 	}
 }

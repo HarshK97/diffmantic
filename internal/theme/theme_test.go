@@ -2,6 +2,8 @@ package theme
 
 import (
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/config"
 )
 
 func TestResolveTheme(t *testing.T) {
@@ -28,21 +30,21 @@ func TestResolveTheme(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("input="+tt.input, func(t *testing.T) {
-			th, err := ResolveTheme(tt.input)
+			th, err := ResolveThemeWithConfig(tt.input, "dark", nil)
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("ResolveTheme(%q) expected error, got nil", tt.input)
+					t.Errorf("ResolveThemeWithConfig(%q) expected error, got nil", tt.input)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("ResolveTheme(%q) unexpected error: %v", tt.input, err)
+				t.Fatalf("ResolveThemeWithConfig(%q) unexpected error: %v", tt.input, err)
 			}
 			if th.Name != tt.wantName {
-				t.Errorf("ResolveTheme(%q).Name = %q, want %q", tt.input, th.Name, tt.wantName)
+				t.Errorf("ResolveThemeWithConfig(%q).Name = %q, want %q", tt.input, th.Name, tt.wantName)
 			}
 			if th.IsDark != tt.wantDark {
-				t.Errorf("ResolveTheme(%q).IsDark = %v, want %v", tt.input, th.IsDark, tt.wantDark)
+				t.Errorf("ResolveThemeWithConfig(%q).IsDark = %v, want %v", tt.input, th.IsDark, tt.wantDark)
 			}
 		})
 	}
@@ -127,5 +129,85 @@ func TestCardBorderBackgrounds(t *testing.T) {
 				t.Errorf("HelpCard border background = %v, want %v (Base)", helpBorderBg, th.UI.Base)
 			}
 		})
+	}
+}
+
+func TestResolveThemeWithConfig(t *testing.T) {
+	customThemes := map[string]config.ThemeConfig{
+		"my-nord": {
+			Name: "my-nord",
+			Dark: new(true),
+			UI: config.UIColorsConfig{
+				Base: "#2e3440",
+				Text: "#eceff4",
+			},
+			Actions: config.ActionColorsConfig{
+				InsertFg: "#a3be8c",
+				DeleteFg: "#bf616a",
+			},
+		},
+		"solarized-light": {
+			Name: "solarized-light",
+			Dark: new(false),
+			UI: config.UIColorsConfig{
+				Base: "#fdf6e3",
+				Text: "#657b83",
+			},
+		},
+	}
+
+	// Style preference fallback when no theme name is given
+	th, err := ResolveThemeWithConfig("", "light", customThemes)
+	if err != nil {
+		t.Fatalf("unexpected error resolving empty theme with light style: %v", err)
+	}
+	if th.Name != "latte" || th.IsDark {
+		t.Errorf("expected latte light theme, got name=%q dark=%v", th.Name, th.IsDark)
+	}
+
+	// Default to dark mocha when style="dark"
+	th, err = ResolveThemeWithConfig("", "dark", customThemes)
+	if err != nil {
+		t.Fatalf("unexpected error resolving empty theme with dark style: %v", err)
+	}
+	if th.Name != "mocha" || !th.IsDark {
+		t.Errorf("expected mocha dark theme, got name=%q dark=%v", th.Name, th.IsDark)
+	}
+
+	// Custom theme with partial color overrides
+	th, err = ResolveThemeWithConfig("my-nord", "dark", customThemes)
+	if err != nil {
+		t.Fatalf("unexpected error resolving custom theme 'my-nord': %v", err)
+	}
+	if th.Name != "my-nord" || !th.IsDark {
+		t.Errorf("expected my-nord dark theme, got name=%q dark=%v", th.Name, th.IsDark)
+	}
+	if th.UI.Base != "#2e3440" {
+		t.Errorf("th.UI.Base = %v, want '#2e3440'", th.UI.Base)
+	}
+	if th.Actions.InsertFg != "#a3be8c" {
+		t.Errorf("th.Actions.InsertFg = %v, want '#a3be8c'", th.Actions.InsertFg)
+	}
+	// Lavender wasn't overridden, so it should inherit from mocha
+	if th.UI.Lavender != CatppuccinMochaTheme().UI.Lavender {
+		t.Errorf("th.UI.Lavender = %v, want inherited %v", th.UI.Lavender, CatppuccinMochaTheme().UI.Lavender)
+	}
+
+	// Light custom theme
+	th, err = ResolveThemeWithConfig("solarized-light", "dark", customThemes)
+	if err != nil {
+		t.Fatalf("unexpected error resolving 'solarized-light': %v", err)
+	}
+	if th.IsDark {
+		t.Errorf("expected light theme for solarized-light")
+	}
+	if th.UI.Base != "#fdf6e3" {
+		t.Errorf("th.UI.Base = %v, want '#fdf6e3'", th.UI.Base)
+	}
+
+	// Unregistered theme returns an error
+	_, err = ResolveThemeWithConfig("nonexistent", "dark", customThemes)
+	if err == nil {
+		t.Error("expected error for nonexistent theme, got nil")
 	}
 }

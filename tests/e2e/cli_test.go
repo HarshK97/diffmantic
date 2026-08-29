@@ -129,7 +129,7 @@ func sampleFixture(t *testing.T) string {
 func TestCLI_JSONFormat_ValidOutput(t *testing.T) {
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json")
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "json")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
@@ -152,7 +152,7 @@ func TestCLI_NonInteractive_DefaultsToJSON(t *testing.T) {
 	// terminals (like in a CI runner or pipe). The CLI should fall back to JSON
 	// output here. The TUI remains the default in actual interactive terminal sessions.
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath)
+	stdout, stderr, err := runDiffm(oldPath, newPath)
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
@@ -169,7 +169,7 @@ func TestCLI_NonInteractive_DefaultsToJSON(t *testing.T) {
 func TestCLI_ActionsFormat(t *testing.T) {
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "actions")
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "actions")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
@@ -185,7 +185,7 @@ func TestCLI_ActionsFormat(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestCLI_MissingFile(t *testing.T) {
-	_, stderr, err := runDiffm("diff", "/nonexistent/file.go", "/also/nonexistent.go")
+	_, stderr, err := runDiffm("/nonexistent/file.go", "/also/nonexistent.go")
 	if err == nil {
 		t.Fatal("expected non-zero exit for missing files")
 	}
@@ -197,7 +197,7 @@ func TestCLI_MissingFile(t *testing.T) {
 func TestCLI_UnsupportedFormat(t *testing.T) {
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
-	_, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "xml")
+	_, stderr, err := runDiffm(oldPath, newPath, "-f", "xml")
 	if err == nil {
 		t.Fatal("expected non-zero exit for unsupported format")
 	}
@@ -210,7 +210,7 @@ func TestCLI_DirectoryInput(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()
 
-	_, stderr, err := runDiffm("diff", dirA, dirB)
+	_, stderr, err := runDiffm(dirA, dirB)
 	if err == nil {
 		t.Fatal("expected non-zero exit for directory input")
 	}
@@ -219,32 +219,25 @@ func TestCLI_DirectoryInput(t *testing.T) {
 	}
 }
 
-func TestCLI_NoArgs(t *testing.T) {
-	_, stderr, err := runDiffm("diff")
-	if err == nil {
-		t.Fatal("expected non-zero exit with no args")
-	}
-	if !strings.Contains(stderr, "accepts 2 arg(s)") {
-		t.Errorf("expected arg count error, got: %s", stderr)
-	}
-}
-
-func TestCLI_OneArg(t *testing.T) {
+func TestCLI_NonGitRepo_OneArg(t *testing.T) {
 	oldPath, _ := fixtureFiles(t, sampleFixture(t))
 
-	_, stderr, err := runDiffm("diff", oldPath)
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	_, stderr, err := runDiffm(oldPath)
 	if err == nil {
-		t.Fatal("expected non-zero exit with one arg")
+		t.Fatal("expected non-zero exit with one arg in non-git repo")
 	}
-	if !strings.Contains(stderr, "accepts 2 arg(s)") {
-		t.Errorf("expected arg count error, got: %s", stderr)
+	if !strings.Contains(stderr, "Git mode requires a valid Git repository") {
+		t.Errorf("expected git repo error, got: %s", stderr)
 	}
 }
 
 func TestCLI_JSONFormat_UIFlags(t *testing.T) {
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "--ui")
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "json", "--ui")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
@@ -282,7 +275,7 @@ func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
 		t.Fatalf("writing new file: %v", err)
 	}
 
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "--ui")
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "json", "--ui")
 	if err != nil {
 		t.Fatalf("diffm failed on >400KB file: %v\nstderr: %s", err, stderr)
 	}
@@ -316,7 +309,7 @@ func TestCLI_IgnoreComments(t *testing.T) {
 	}
 
 	// When comments aren't ignored, comment edits show up as actions.
-	stdoutWith, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json")
+	stdoutWith, stderr, err := runDiffm(oldPath, newPath, "-f", "json")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
@@ -329,7 +322,7 @@ func TestCLI_IgnoreComments(t *testing.T) {
 	}
 
 	// With --ignore-comments, comment-only changes should produce zero actions.
-	stdoutIgnored, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "--ignore-comments")
+	stdoutIgnored, stderr, err := runDiffm(oldPath, newPath, "-f", "json", "--ignore-comments")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
@@ -346,7 +339,7 @@ func TestCLI_ThemeFlag(t *testing.T) {
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 
 	// Valid theme: latte
-	stdout, stderr, err := runDiffm("diff", oldPath, newPath, "-f", "json", "-t", "latte")
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "json", "-t", "latte")
 	if err != nil {
 		t.Fatalf("diffm with -t latte failed: %v\nstderr: %s", err, stderr)
 	}
@@ -359,11 +352,87 @@ func TestCLI_ThemeFlag(t *testing.T) {
 	}
 
 	// Invalid theme
-	_, stderr, err = runDiffm("diff", oldPath, newPath, "-t", "unknown_theme")
+	_, stderr, err = runDiffm(oldPath, newPath, "-t", "unknown_theme")
 	if err == nil {
 		t.Fatal("expected non-zero exit for unknown theme")
 	}
 	if !strings.Contains(stderr, "unsupported theme") {
 		t.Errorf("expected 'unsupported theme' error, got: %s", stderr)
+	}
+}
+
+func TestCLI_ConfigFileDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "diffmantic")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	configYAML := `
+ignore_comments: true
+format: actions
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.yml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.go")
+	newPath := filepath.Join(dir, "new.go")
+
+	oldContent := "package main\n\n// Comment 1\nfunc main() {}\n"
+	newContent := "package main\n\n// Comment 2\nfunc main() {}\n"
+
+	_ = os.WriteFile(oldPath, []byte(oldContent), 0o644)
+	_ = os.WriteFile(newPath, []byte(newContent), 0o644)
+
+	// No CLI flags passed — should pick up format=actions and ignore_comments from config
+	stdout, stderr, err := runDiffm(oldPath, newPath)
+	if err != nil {
+		t.Fatalf("diffm failed with custom config: %v\nstderr: %s", err, stderr)
+	}
+
+	if !strings.Contains(stdout, "Diffing") {
+		t.Errorf("expected actions output with 'Diffing' header from config default, got: %s", stdout)
+	}
+}
+
+func TestCLI_GitMode_TypoFailFast(t *testing.T) {
+	// In the current git repo, diffm with a typo file should fail fast
+	_, stderr, err := runDiffm("HEAD", "nonexistent_typo_file_12345.go")
+	if err == nil {
+		t.Fatal("expected error for nonexistent typo file in git mode")
+	}
+	if !strings.Contains(stderr, "neither a valid file nor a valid Git revision") {
+		t.Errorf("expected fail-fast error, got stderr: %s", stderr)
+	}
+}
+
+func TestCLI_GitMode_HeadlessSingleFileJSON(t *testing.T) {
+	// Diffing a tracked file in cwd at HEAD against working tree with -f json
+	stdout, stderr, err := runDiffm("HEAD", "cli_test.go", "-f", "json")
+	if err != nil {
+		t.Fatalf("diffm HEAD cli_test.go -f json failed: %v\nstderr: %s", err, stderr)
+	}
+
+	var env serialize.Envelope
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("invalid JSON from Git headless diff: %v\noutput: %s", err, stdout)
+	}
+	if env.Version == "" {
+		t.Error("expected valid Envelope with non-empty version")
+	}
+}
+
+func TestCLI_GitMode_HeadlessRequiresPathFilter(t *testing.T) {
+	// Running diffm -f json in git mode without a path filter in non-interactive mode should fail fast
+	_, stderr, err := runDiffm("HEAD", "-f", "json")
+	if err == nil {
+		t.Fatal("expected error when running git mode without path filter in non-interactive json format")
+	}
+	if !strings.Contains(stderr, "requires an explicit file path") {
+		t.Errorf("expected path requirement error, got: %s", stderr)
 	}
 }
