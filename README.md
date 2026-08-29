@@ -164,19 +164,51 @@ diffm main...feature-branch
 
 ```bash
 # Interactive TUI (default when a terminal is attached)
-diffm diff before.go after.go
+diffm before.go after.go
 
 # JSON output for editor plugins and automation
-diffm diff before.go after.go -f json
+diffm before.go after.go -f json
 
 # Fast UI mode (line alignment and highlight spans without action tree)
-diffm diff before.go after.go -f json --ui
+diffm before.go after.go -f json --ui
 
 # Full envelope (actions, line alignment, and highlight spans)
-diffm diff before.go after.go -f json --full
+diffm before.go after.go -f json --full
 
 # Human-readable action list
-diffm diff before.go after.go -f actions
+diffm before.go after.go -f actions
+```
+
+## Configuration
+
+`diffmantic` loads configuration from `~/.config/diffmantic/config.yml` (or `$XDG_CONFIG_HOME/diffmantic/config.yml`).
+
+```yaml
+# Theme & style preferences
+theme: mocha              # "mocha", "latte", or custom theme name
+theme_style: dark         # "dark" | "light" (fallback if theme is not set)
+
+# Flag defaults
+format: tui               # "tui" | "json" | "actions"
+ignore_comments: false    # ignore comments during AST diffing
+parse_error_limit: 0      # max parse errors before fallback to line diff
+
+# TUI display preferences
+tui:
+  tab_width: 4
+  mouse: true
+  icons: unicode          # "unicode" | "ascii" | "nerd-font"
+
+# Embedded custom themes (or place in ~/.config/diffmantic/themes/<name>.yml)
+themes:
+  my-theme:
+    dark: true
+    ui:
+      base: "#1e1e2e"
+      text: "#cdd6f4"
+    actions:
+      insert_fg: "#a6e3a1"
+      delete_fg: "#f38ba8"
 ```
 
 ## How It Works
@@ -200,7 +232,7 @@ Planned. The JSON output is built to support editor integration, so if you want 
 
 ### JSON Schema
 
-`diffm diff -f json` outputs a stable `v1` schema with child-index paths. Take a look at `diffm diff file-a file-b -f json` to see the full structure.
+`diffm -f json` outputs a stable `v1` schema with child-index paths. Take a look at `diffm file-a file-b -f json` to see the full structure.
 
 ## License
 

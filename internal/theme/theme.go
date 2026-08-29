@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/HarshK97/diffmantic/internal/config"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -364,16 +365,102 @@ func (t *Theme) CaptureColor(capture string) lipgloss.Color {
 	return ""
 }
 
-// ResolveTheme resolves a theme name string (case-insensitive) to a Theme instance.
-// Supported names: "mocha", "latte", "dark", "light", "catppuccin-mocha", "catppuccin-latte".
-func ResolveTheme(name string) (*Theme, error) {
+// BuildCustomTheme builds a Theme from a ThemeConfig, filling in any unconfigured
+// colors from Mocha (dark) or Latte (light).
+func BuildCustomTheme(tc config.ThemeConfig) *Theme {
+	isDark := true
+	if tc.Dark != nil {
+		isDark = *tc.Dark
+	}
+
+	var baseTheme *Theme
+	if isDark {
+		baseTheme = CatppuccinMochaTheme()
+	} else {
+		baseTheme = CatppuccinLatteTheme()
+	}
+
+	ui := baseTheme.UI
+	actions := baseTheme.Actions
+
+	applyColorOverride(&ui.Base, tc.UI.Base)
+	applyColorOverride(&ui.Mantle, tc.UI.Mantle)
+	applyColorOverride(&ui.Crust, tc.UI.Crust)
+	applyColorOverride(&ui.Surface0, tc.UI.Surface0)
+	applyColorOverride(&ui.Surface1, tc.UI.Surface1)
+	applyColorOverride(&ui.Surface2, tc.UI.Surface2)
+	applyColorOverride(&ui.Overlay0, tc.UI.Overlay0)
+	applyColorOverride(&ui.Overlay1, tc.UI.Overlay1)
+	applyColorOverride(&ui.Overlay2, tc.UI.Overlay2)
+	applyColorOverride(&ui.Subtext0, tc.UI.Subtext0)
+	applyColorOverride(&ui.Subtext1, tc.UI.Subtext1)
+	applyColorOverride(&ui.Text, tc.UI.Text)
+	applyColorOverride(&ui.Lavender, tc.UI.Lavender)
+	applyColorOverride(&ui.Mauve, tc.UI.Mauve)
+	applyColorOverride(&ui.Blue, tc.UI.Blue)
+	applyColorOverride(&ui.Green, tc.UI.Green)
+	applyColorOverride(&ui.Peach, tc.UI.Peach)
+	applyColorOverride(&ui.Sky, tc.UI.Sky)
+	applyColorOverride(&ui.Yellow, tc.UI.Yellow)
+	applyColorOverride(&ui.Pink, tc.UI.Pink)
+	applyColorOverride(&ui.Red, tc.UI.Red)
+	applyColorOverride(&ui.Teal, tc.UI.Teal)
+	applyColorOverride(&ui.Rosewater, tc.UI.Rosewater)
+	applyColorOverride(&ui.Sapphire, tc.UI.Sapphire)
+	applyColorOverride(&ui.Maroon, tc.UI.Maroon)
+	applyColorOverride(&ui.Flamingo, tc.UI.Flamingo)
+
+	applyColorOverride(&actions.DeleteFg, tc.Actions.DeleteFg)
+	applyColorOverride(&actions.InsertFg, tc.Actions.InsertFg)
+	applyColorOverride(&actions.UpdateFg, tc.Actions.UpdateFg)
+	applyColorOverride(&actions.MoveFg, tc.Actions.MoveFg)
+	applyColorOverride(&actions.MoveUpdateFg, tc.Actions.MoveUpdateFg)
+	applyColorOverride(&actions.DeleteBg, tc.Actions.DeleteBg)
+	applyColorOverride(&actions.InsertBg, tc.Actions.InsertBg)
+	applyColorOverride(&actions.UpdateBg, tc.Actions.UpdateBg)
+	applyColorOverride(&actions.MoveBg, tc.Actions.MoveBg)
+	applyColorOverride(&actions.MoveUpdateBg, tc.Actions.MoveUpdateBg)
+
+	name := cmp.Or(tc.Name, "custom")
+
+	return newTheme(name, isDark, ui, actions)
+}
+
+func applyColorOverride(target *lipgloss.Color, hex string) {
+	hex = strings.TrimSpace(hex)
+	if hex != "" {
+		*target = lipgloss.Color(hex)
+	}
+}
+
+// ResolveThemeWithConfig finds a theme by name, applying the style preference and any custom config themes.
+func ResolveThemeWithConfig(name string, style string, customThemes map[string]config.ThemeConfig) (*Theme, error) {
 	norm := strings.ToLower(strings.TrimSpace(name))
+	if norm == "" {
+		if strings.ToLower(strings.TrimSpace(style)) == "light" {
+			return CatppuccinLatteTheme(), nil
+		}
+		return CatppuccinMochaTheme(), nil
+	}
+
 	switch norm {
-	case "", "mocha", "dark", "catppuccin-mocha":
+	case "mocha", "dark", "catppuccin-mocha":
 		return CatppuccinMochaTheme(), nil
 	case "latte", "light", "catppuccin-latte":
 		return CatppuccinLatteTheme(), nil
-	default:
-		return nil, fmt.Errorf("unsupported theme %q: supported themes are mocha (dark), latte (light)", name)
 	}
+
+	// Look up custom themes — exact key first, then case-insensitive
+	if tc, ok := customThemes[norm]; ok {
+		tc.Name = cmp.Or(tc.Name, norm)
+		return BuildCustomTheme(tc), nil
+	}
+	for k, tc := range customThemes {
+		if strings.ToLower(strings.TrimSpace(k)) == norm || strings.ToLower(strings.TrimSpace(tc.Name)) == norm {
+			tc.Name = cmp.Or(tc.Name, k)
+			return BuildCustomTheme(tc), nil
+		}
+	}
+
+	return nil, fmt.Errorf("unsupported theme %q: supported themes are mocha (dark), latte (light), or custom themes defined in config", name)
 }

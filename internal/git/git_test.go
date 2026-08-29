@@ -80,3 +80,25 @@ func TestGetChangedFiles(t *testing.T) {
 		t.Log("Skipping ref mode test because HEAD~1 is not available (e.g. shallow clone or initial commit)")
 	}
 }
+
+func TestIsTrackedFile(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get current working directory: %v", err)
+	}
+
+	// git.go is a tracked file in this package directory
+	if !IsTrackedFile(cwd, "git.go") {
+		t.Errorf("expected git.go to be tracked")
+	}
+
+	// Nonexistent file is not tracked
+	if IsTrackedFile(cwd, "nonexistent_file_123456789.go") {
+		t.Errorf("expected nonexistent file to NOT be tracked")
+	}
+
+	// Empty string
+	if IsTrackedFile(cwd, "") {
+		t.Errorf("expected empty string to NOT be tracked")
+	}
+}

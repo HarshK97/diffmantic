@@ -47,6 +47,15 @@ func IsValidRevision(cwd, ref string) bool {
 	return err == nil
 }
 
+// IsTrackedFile checks if a path is tracked in the Git repository index or tree.
+func IsTrackedFile(cwd, path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := RunGit(cwd, "ls-files", "--error-unmatch", "--", path)
+	return err == nil
+}
+
 // GetStatus returns the Git status of the repository.
 func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
 	args := []string{"status", "--porcelain=v1"}
