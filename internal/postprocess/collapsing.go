@@ -108,7 +108,7 @@ func Collapse(
 	suppressRedundantScaffolding(srcRoot, deleted, suppressed)
 	suppressRedundantScaffolding(srcRoot, moved, suppressed)
 
-	suppressInlineParentRedundancy(actionPtrs, inserted, deleted, suppressed)
+	suppressInlineParentRedundancy(actionPtrs, ms, inserted, deleted, suppressed)
 
 	result := actions.NewEditScript()
 	for _, a := range actionPtrs {
@@ -154,11 +154,12 @@ func suppressRedundantScaffolding(
 	}
 }
 
-// If a child action already covers the deletion or insertion on a line, drop
-// its single-line parent wrappers so we don't highlight the same line twice.
+// If a child action already covers the deletion, insertion, or move destination on a line, drop
+// its single-line parent wrappers so we don't highlight the same line twice or mask moved nodes.
 // Multi-line subtree actions are kept since they span past the single line.
 func suppressInlineParentRedundancy(
 	actionPtrs []*actions.Action,
+	ms *engine.Mapping,
 	inserted, deleted map[*treesitter.ASTNode]*actions.Action,
 	suppressed map[*actions.Action]bool,
 ) {
@@ -166,26 +167,67 @@ func suppressInlineParentRedundancy(
 		if suppressed[a] || a.Node == nil {
 			continue
 		}
-		if a.Type != actions.Insert && a.Type != actions.Delete {
-			continue
-		}
-		node := a.Node
-		if node.StartRow != node.EndRow {
-			continue
-		}
 
-		actionMap := inserted
-		if a.Type == actions.Delete {
-			actionMap = deleted
-		}
-
-		for parent := node.Parent; parent != nil; parent = parent.Parent {
-			if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
-				break
+		switch a.Type {
+		case actions.Insert, actions.Delete:
+			node := a.Node
+			if node.StartRow != node.EndRow {
+				continue
 			}
-			parentAct := actionMap[parent]
-			if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
-				suppressed[parentAct] = true
+
+			actionMap := inserted
+			if a.Type == actions.Delete {
+				actionMap = deleted
+			}
+
+			for parent := node.Parent; parent != nil; parent = parent.Parent {
+				if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
+					break
+				}
+				parentAct := actionMap[parent]
+				if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
+					suppressed[parentAct] = true
+				}
+			}
+
+		case actions.Move:
+			// 1. Destination-side suppression (suppress phantom Insert wrappers)
+			dstNode := a.DestNode
+			if dstNode == nil && ms != nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil && dstNode.StartRow == dstNode.EndRow {
+				suppressCoextensiveWrappers(dstNode, inserted, suppressed)
+			}
+
+			// 2. Source-side suppression (suppress phantom Delete wrappers)
+			srcNode := a.Node
+			if srcNode != nil && srcNode.StartRow == srcNode.EndRow {
+				suppressCoextensiveWrappers(srcNode, deleted, suppressed)
+			}
+		}
+	}
+}
+
+// suppressCoextensiveWrappers climbs single-line parents and suppresses wrapper actions
+// that introduce no opening delimiters and contain at most trailing punctuation (e.g. semicolons).
+func suppressCoextensiveWrappers(
+	node *treesitter.ASTNode,
+	actionMap map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+) {
+	for parent := node.Parent; parent != nil; parent = parent.Parent {
+		if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
+			break
+		}
+		// Strict opening invariant: parent must not start before child (protects {hash}, [array], (expr))
+		if parent.StartByte == node.StartByte {
+			// Single child or scaffolding wrapper with at most trailing terminator punctuation
+			if parent.EndByte == node.EndByte || len(parent.Children) <= 1 || parent.IsScaffolding() {
+				parentAct := actionMap[parent]
+				if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
+					suppressed[parentAct] = true
+				}
 			}
 		}
 	}
