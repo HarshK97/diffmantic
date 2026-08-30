@@ -150,6 +150,7 @@ var pythonRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"type",
 	},
 	Blocks: []string{
 		"block",

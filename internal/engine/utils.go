@@ -53,7 +53,11 @@ func rulesFor(root *treesitter.ASTNode) *rules.Rules {
 	if root == nil {
 		return nil
 	}
-	return rules.Get(root.GetLanguage())
+	lang := root.GetLanguage()
+	if lang == "" {
+		return nil
+	}
+	return rules.Get(lang)
 }
 
 // PairRole identifies whether a node acts as a key or a value inside a key-value pair.
@@ -198,7 +202,11 @@ func StructureIsomorphic(a, b *treesitter.ASTNode) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	if a.Type == "comment" || b.Type == "comment" {
+	ra := rulesFor(a)
+	rb := rulesFor(b)
+	aComment := (ra != nil && ra.IsComment(a.Type)) || (ra == nil && rules.IsComment(a.Type))
+	bComment := (rb != nil && rb.IsComment(b.Type)) || (rb == nil && rules.IsComment(b.Type))
+	if aComment || bComment {
 		if a.Type != b.Type {
 			return false
 		}
@@ -288,10 +296,10 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 	r2 := rulesFor(t2)
 
 	isID := func(r *rules.Rules, typ string) bool {
-		if r != nil && len(r.Identifiers) > 0 {
-			return slices.Contains(r.Identifiers, typ)
+		if r != nil {
+			return r.IsIdentifier(typ)
 		}
-		return typ == "identifier" || typ == "field_identifier" || typ == "type_identifier" || typ == "name"
+		return rules.IsIdentifier(typ)
 	}
 
 	collectLabels := func(t *treesitter.ASTNode, r *rules.Rules) map[string]bool {
