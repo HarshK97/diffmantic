@@ -8,6 +8,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // SchemaVersion defines the stable, versioned JSON output format version.
@@ -405,8 +406,9 @@ func adjustRangeForHeader(n *treesitter.ASTNode, start, end *uint32) {
 	if n == nil || start == nil || end == nil {
 		return
 	}
+	r := rules.Get(n.GetLanguage())
 	for _, child := range n.Children {
-		if child.Type == "block" || child.Type == "statement_block" {
+		if r != nil && r.IsBlock(child.Type) {
 			if child.StartByte > *start && child.StartByte < *end {
 				*end = child.StartByte
 				break

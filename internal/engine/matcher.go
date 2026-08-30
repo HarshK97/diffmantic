@@ -377,8 +377,8 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 }
 
 type decKey struct {
-	name string
-	rec  string
+	name  string
+	scope string
 }
 
 func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
@@ -415,14 +415,14 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 	t1Map := make(map[decKey][]*treesitter.ASTNode, len(u1))
 	for _, d1 := range u1 {
-		key := decKey{name: getDeclarationName(d1), rec: getReceiverTypeName(d1)}
+		key := decKey{name: getDeclarationName(d1), scope: getDeclarationScope(d1)}
 		if key.name != "" {
 			t1Map[key] = append(t1Map[key], d1)
 		}
 	}
 	t2Map := make(map[decKey][]*treesitter.ASTNode, len(u2))
 	for _, d2 := range u2 {
-		key := decKey{name: getDeclarationName(d2), rec: getReceiverTypeName(d2)}
+		key := decKey{name: getDeclarationName(d2), scope: getDeclarationScope(d2)}
 		if key.name != "" {
 			t2Map[key] = append(t2Map[key], d2)
 		}
@@ -433,7 +433,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		if m.HasDst(d2) {
 			continue
 		}
-		key := decKey{name: getDeclarationName(d2), rec: getReceiverTypeName(d2)}
+		key := decKey{name: getDeclarationName(d2), scope: getDeclarationScope(d2)}
 		if key.name == "" || visited[key] {
 			continue
 		}
@@ -504,14 +504,17 @@ func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *rules
 	}
 }
 
-func isBlockNode(n *treesitter.ASTNode, rules *rules.Rules) bool {
+func isBlockNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
 	}
-	if rules != nil && len(rules.Blocks) > 0 {
-		return rules.IsBlock(n.Type)
+	if r == nil {
+		r = rulesFor(n)
 	}
-	return n.Type == "block"
+	if r != nil {
+		return r.IsBlock(n.Type)
+	}
+	return rules.IsBlock(n.Type)
 }
 
 func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
@@ -548,46 +551,42 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
 	}
-	lang := n.GetLanguage()
-	if lang != "" {
-		if r := rules.Get(lang); r != nil {
-			if len(r.Declarations) > 0 && !r.IsDeclaration(n.Type) {
-				return ""
-			}
-			for _, child := range n.Children {
-				if r.IsIdentifier(child.Type) && child.Label != "" {
-					return child.Label
-				}
-			}
-			return ""
-		}
+	r := rulesFor(n)
+	isDec := (r != nil && r.IsDeclaration(n.Type)) || (r == nil && rules.IsDeclaration(n.Type))
+	if !isDec {
+		return ""
 	}
-
 	for _, child := range n.Children {
-		if (child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "name") && child.Label != "" {
+		isID := (r != nil && r.IsIdentifier(child.Type)) || (r == nil && rules.IsIdentifier(child.Type))
+		if isID && child.Label != "" {
 			return child.Label
 		}
 	}
 	return ""
 }
 
-func getReceiverTypeName(n *treesitter.ASTNode) string {
-	if n == nil || n.Type != "method_declaration" {
+func getDeclarationScope(n *treesitter.ASTNode) string {
+	if n == nil {
+		return ""
+	}
+	r := rulesFor(n)
+	isScoped := (r != nil && r.IsScopedDeclaration(n.Type)) || (r == nil && rules.IsScopedDeclaration(n.Type))
+	if !isScoped {
 		return ""
 	}
 	for _, child := range n.Children {
-		if child.Type == "parameter_list" {
+		isScaff := (r != nil && r.IsScaffolding(child.Type)) || (r == nil && rules.IsScaffolding(child.Type))
+		if isScaff {
 			for _, p := range child.Children {
-				if p.Type == "parameter_declaration" {
+				isParamDec := (r != nil && r.IsDeclaration(p.Type)) || (r == nil && rules.IsDeclaration(p.Type))
+				if isParamDec {
 					for _, t := range p.Children {
-						if t.Type == "type_identifier" {
+						if t.Type == "type_identifier" && t.Label != "" {
 							return t.Label
 						}
-						if t.Type == "pointer_type" {
-							for _, pt := range t.Children {
-								if pt.Type == "type_identifier" {
-									return pt.Label
-								}
+						for _, pt := range t.Children {
+							if pt.Type == "type_identifier" && pt.Label != "" {
+								return pt.Label
 							}
 						}
 					}

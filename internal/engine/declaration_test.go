@@ -42,24 +42,53 @@ func TestGetDeclarationName(t *testing.T) {
 	})
 }
 
-func TestGetReceiverTypeName(t *testing.T) {
+func TestGetDeclarationScope(t *testing.T) {
 	ptrReceiver := testutil.Node("pointer_type", "",
 		testutil.Leaf("type_identifier", "Type"),
 	)
 	receiver := testutil.Node("parameter_declaration", "",
+		testutil.Leaf("identifier", "s"),
 		ptrReceiver,
 	)
 	paramList := testutil.Node("parameter_list", "",
 		receiver,
 	)
 	method := testutil.Node("method_declaration", "",
-		testutil.Leaf("field_identifier", "Foo"),
 		paramList,
+		testutil.Leaf("field_identifier", "Foo"),
 	)
 
-	t.Run("method with pointer receiver", func(t *testing.T) {
-		if got := getReceiverTypeName(method); got != "Type" {
-			t.Errorf("getReceiverTypeName = %q, want %q", got, "Type")
+	t.Run("method with named pointer receiver", func(t *testing.T) {
+		if got := getDeclarationScope(method); got != "Type" {
+			t.Errorf("getDeclarationScope = %q, want %q", got, "Type")
+		}
+	})
+
+	t.Run("method with named value receiver", func(t *testing.T) {
+		valReceiver := testutil.Node("parameter_declaration", "",
+			testutil.Leaf("identifier", "s"),
+			testutil.Leaf("type_identifier", "MyStruct"),
+		)
+		valMethod := testutil.Node("method_declaration", "",
+			testutil.Node("parameter_list", "", valReceiver),
+			testutil.Leaf("field_identifier", "Bar"),
+		)
+		if got := getDeclarationScope(valMethod); got != "MyStruct" {
+			t.Errorf("getDeclarationScope = %q, want %q", got, "MyStruct")
+		}
+	})
+
+	t.Run("function with parameters returns empty", func(t *testing.T) {
+		fnParam := testutil.Node("parameter_declaration", "",
+			testutil.Leaf("identifier", "a"),
+			testutil.Leaf("type_identifier", "int"),
+		)
+		fn := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Node("parameter_list", "", fnParam),
+		)
+		if got := getDeclarationScope(fn); got != "" {
+			t.Errorf("getDeclarationScope for function with parameters = %q, want empty", got)
 		}
 	})
 
@@ -67,14 +96,14 @@ func TestGetReceiverTypeName(t *testing.T) {
 		fn := testutil.Node("function_declaration", "",
 			testutil.Leaf("identifier", "foo"),
 		)
-		if got := getReceiverTypeName(fn); got != "" {
-			t.Errorf("getReceiverTypeName for function = %q, want empty", got)
+		if got := getDeclarationScope(fn); got != "" {
+			t.Errorf("getDeclarationScope for function = %q, want empty", got)
 		}
 	})
 
 	t.Run("nil node", func(t *testing.T) {
-		if got := getReceiverTypeName(nil); got != "" {
-			t.Errorf("getReceiverTypeName(nil) = %q, want empty", got)
+		if got := getDeclarationScope(nil); got != "" {
+			t.Errorf("getDeclarationScope(nil) = %q, want empty", got)
 		}
 	})
 }

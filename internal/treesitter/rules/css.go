@@ -27,6 +27,9 @@ var cssRules = &Rules{
 		"media_statement",
 		"keyframes_statement",
 	},
+	Blocks: []string{
+		"block",
+	},
 	Pairs: []string{
 		"declaration",
 	},

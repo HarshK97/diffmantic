@@ -4,6 +4,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // FilterPunctuation removes noisy punctuation edits or converts move/update actions on punctuation into separate delete and insert steps.
@@ -27,8 +28,7 @@ func FilterPunctuation(es *actions.EditScript, ms *engine.Mapping) *actions.Edit
 			continue
 		}
 
-		// Skip commas and semicolons so they don't produce clutter in diffs.
-		if a.Node.Type == "semicolon" || a.Node.Type == "comma" || a.Node.Label == ";" || a.Node.Label == "," {
+		if isDelimiterPunctuation(a.Node) {
 			continue
 		}
 
@@ -52,6 +52,20 @@ func hasActiveContainer(n *treesitter.ASTNode, activeNodes map[*treesitter.ASTNo
 		return false
 	}
 	return activeNodes[n.Parent] || (n.Parent.Parent != nil && activeNodes[n.Parent.Parent])
+}
+
+func isDelimiterPunctuation(n *treesitter.ASTNode) bool {
+	if n == nil {
+		return false
+	}
+	lang := n.GetLanguage()
+	if lang != "" {
+		r := rules.Get(lang)
+		if r != nil {
+			return r.IsDelimiter(n.Type, n.Label)
+		}
+	}
+	return rules.IsDelimiter(n.Type, n.Label)
 }
 
 // isStrictPunctuation checks if a node is punctuation, ignoring structural boundaries like braces and parens.

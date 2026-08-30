@@ -171,3 +171,17 @@ func TestEveryLanguageUnorderedAreValidSymbols(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryLanguageScopedDeclarationsAreValidSymbols(t *testing.T) {
+	for _, ext := range allLanguageExtensions {
+		name, namedSymbols, r := getNamedGrammarSymbols(ext)
+		if r == nil || namedSymbols == nil {
+			continue
+		}
+		for _, sym := range r.ScopedDeclarations {
+			if !namedSymbols[sym] {
+				t.Errorf("language %s: scoped_declarations symbol %q is not a valid named symbol in grammar", name, sym)
+			}
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // Collapse cleans up fine-grained actions in the edit script by folding
@@ -190,19 +191,13 @@ func suppressInlineParentRedundancy(
 	}
 }
 
-var genuineBareOperatorLiterals = map[string]bool{
-	"comparison_operator_literal": true,
-	"logical_operator_literal":    true,
-	"assignment_operator_literal": true,
-	"arithmetic_operator_literal": true,
-	"bitwise_operator_literal":    true,
-	"unary_operator_literal":      true,
-	"channel_operator_literal":    true,
-	"update_operator_literal":     true,
-	"is_operator":                 true,
-	"is_not_operator":             true,
-}
-
 func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
-	return genuineBareOperatorLiterals[node.Type]
+	if node == nil {
+		return false
+	}
+	r := rules.Get(node.GetLanguage())
+	if r != nil {
+		return r.IsOperatorLiteral(node.Type)
+	}
+	return rules.IsOperatorLiteral(node.Type)
 }

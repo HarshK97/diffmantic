@@ -2,37 +2,40 @@ package rules
 
 import (
 	"slices"
+	"strings"
 )
 
 // Rules configures language-specific AST transformations and node matching.
 type Rules struct {
-	Flattened       []string
-	Ignored         []string
-	Aliased         map[string]string
-	LabelIgnored    []string
-	Scaffolding     []string
-	Keywords        []string
-	Declarations    []string
-	Identifiers     []string
-	Blocks          []string
-	Pairs           []string
-	Unordered       []string
-	EquivalentTypes [][]string
-	Comments        []string
-	Calls           []string
+	Flattened          []string
+	Ignored            []string
+	Aliased            map[string]string
+	LabelIgnored       []string
+	Scaffolding        []string
+	Keywords           []string
+	Declarations       []string
+	Identifiers        []string
+	Blocks             []string
+	Pairs              []string
+	Unordered          []string
+	EquivalentTypes    [][]string
+	Comments           []string
+	Calls              []string
+	ScopedDeclarations []string
 
-	flattenedSet    map[string]struct{}
-	ignoredSet      map[string]struct{}
-	labelIgnoredSet map[string]struct{}
-	keywordsSet     map[string]struct{}
-	declarationsSet map[string]struct{}
-	identifiersSet  map[string]struct{}
-	scaffoldingSet  map[string]struct{}
-	blocksSet       map[string]struct{}
-	unorderedSet    map[string]struct{}
-	commentsSet     map[string]struct{}
-	callsSet        map[string]struct{}
-	equivGroups     map[string][]int
+	flattenedSet          map[string]struct{}
+	ignoredSet            map[string]struct{}
+	labelIgnoredSet       map[string]struct{}
+	keywordsSet           map[string]struct{}
+	declarationsSet       map[string]struct{}
+	identifiersSet        map[string]struct{}
+	scaffoldingSet        map[string]struct{}
+	blocksSet             map[string]struct{}
+	unorderedSet          map[string]struct{}
+	commentsSet           map[string]struct{}
+	callsSet              map[string]struct{}
+	scopedDeclarationsSet map[string]struct{}
+	equivGroups           map[string][]int
 }
 
 // CompileSets builds the internal lookup sets for fast querying.
@@ -103,6 +106,12 @@ func (r *Rules) CompileSets() {
 			r.callsSet[s] = struct{}{}
 		}
 	}
+	if len(r.ScopedDeclarations) > 0 {
+		r.scopedDeclarationsSet = make(map[string]struct{}, len(r.ScopedDeclarations))
+		for _, s := range r.ScopedDeclarations {
+			r.scopedDeclarationsSet[s] = struct{}{}
+		}
+	}
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -123,19 +132,6 @@ func (r *Rules) IsCall(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Calls, nodeType)
-}
-
-// IsCall reports whether nodeType is configured as a call in any language rule set.
-func IsCall(nodeType string) bool {
-	if nodeType == "" {
-		return false
-	}
-	for _, r := range registry {
-		if r.IsCall(nodeType) {
-			return true
-		}
-	}
-	return false
 }
 
 // IsComment reports whether nodeType is a comment in the language grammar.
@@ -160,6 +156,18 @@ func (r *Rules) IsDeclaration(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Declarations, nodeType)
+}
+
+// IsScopedDeclaration reports whether nodeType is a declaration with an explicit signature receiver or scope.
+func (r *Rules) IsScopedDeclaration(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.scopedDeclarationsSet) > 0 {
+		_, ok := r.scopedDeclarationsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.ScopedDeclarations, nodeType)
 }
 
 // IsIdentifier reports whether nodeType is an identifier token.
@@ -328,6 +336,127 @@ func (r *Rules) Alias(nodeType, label string) (string, bool) {
 		return a, true
 	}
 	return "", false
+}
+
+// IsDelimiter reports whether nodeType or label is a delimiter token (semicolon or comma).
+func (r *Rules) IsDelimiter(nodeType, label string) bool {
+	return label == ";" || label == "," || nodeType == "semicolon" || nodeType == "comma" || nodeType == "_automatic_semicolon"
+}
+
+// IsOperatorLiteral reports whether nodeType is an aliased operator literal.
+func (r *Rules) IsOperatorLiteral(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	return strings.HasSuffix(nodeType, "_operator_literal") || nodeType == "is_operator" || nodeType == "is_not_operator"
+}
+
+// DefaultRootType returns the top-level root AST node type for the language.
+func (r *Rules) DefaultRootType() string {
+	if r != nil && len(r.Scaffolding) > 0 {
+		return r.Scaffolding[0]
+	}
+	return ""
+}
+
+// IsFlattenedType reports whether nodeType is configured as flattened in any language rule set.
+func IsFlattenedType(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsFlattened(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsComment reports whether nodeType is configured as a comment in any language rule set.
+func IsComment(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsComment(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDeclaration reports whether nodeType is configured as a declaration in any language rule set.
+func IsDeclaration(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsDeclaration(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsIdentifier reports whether nodeType is configured as an identifier in any language rule set.
+func IsIdentifier(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsIdentifier(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsScaffolding reports whether nodeType is configured as scaffolding in any language rule set.
+func IsScaffolding(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsScaffolding(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsBlock reports whether nodeType is configured as a block in any language rule set.
+func IsBlock(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsBlock(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsOperatorLiteral reports whether nodeType is configured as an operator literal in any language rule set.
+func IsOperatorLiteral(nodeType string) bool {
+	return defaultRules.IsOperatorLiteral(nodeType)
+}
+
+// IsKeyword reports whether nodeType or label is configured as a keyword in any language rule set.
+func IsKeyword(nodeType, label string) bool {
+	for _, r := range registry {
+		if r.IsKeyword(nodeType, label) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDelimiter reports whether nodeType or label is a delimiter token (semicolon or comma).
+func IsDelimiter(nodeType, label string) bool {
+	return label == ";" || label == "," || nodeType == "semicolon" || nodeType == "comma" || nodeType == "_automatic_semicolon"
+}
+
+// IsCall reports whether nodeType is configured as a call in any language rule set.
+func IsCall(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsCall(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsScopedDeclaration reports whether nodeType is configured as a scoped declaration in any language rule set.
+func IsScopedDeclaration(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsScopedDeclaration(nodeType) {
+			return true
+		}
+	}
+	return false
 }
 
 var registry = map[string]*Rules{

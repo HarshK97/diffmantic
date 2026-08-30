@@ -9,10 +9,8 @@ import (
 
 const commentSimilarityThreshold = 0.7
 
-// Converts spurious moves on bare literals (like "=", "+", "and") and isolated keywords
-// into delete/insert pairs. We only split moves when the literal or keyword matched across
-// unrelated parent contexts. If the parent moved along with the node, keep the move so
-// parent collapsing still works.
+// isSpuriousMoveCandidate checks if a bare literal or isolated keyword moved
+// across unrelated parent contexts without its enclosing container.
 func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
 	if node == nil {
 		return false
@@ -23,13 +21,14 @@ func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
 	if isBareAliasedLiteral(node) {
 		return true
 	}
-	switch node.Type {
-	case "type", "type_identifier", "primitive_type", "placeholder_type_specifier",
-		"integer", "float", "string", "true", "false", "none", "nil",
-		"identifier", "field_identifier", "property_identifier":
-		return true
+	lang := node.GetLanguage()
+	if lang != "" {
+		r := rules.Get(lang)
+		if r != nil {
+			return r.IsIdentifier(node.Type) || (len(node.Children) == 0 && r.IsKeyword(node.Type, node.Label))
+		}
 	}
-	return false
+	return rules.IsIdentifier(node.Type) || (len(node.Children) == 0 && rules.IsKeyword(node.Type, node.Label))
 }
 
 func isPureKeywordTree(node *treesitter.ASTNode) bool {
@@ -85,7 +84,7 @@ func isCommentASTNode(node *treesitter.ASTNode, rulesSrc, rulesDst *rules.Rules)
 	if r := rules.Get(node.GetLanguage()); r != nil && r.IsComment(node.Type) {
 		return true
 	}
-	return false
+	return rules.IsComment(node.Type)
 }
 
 func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping, roots ...*treesitter.ASTNode) *actions.EditScript {

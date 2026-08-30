@@ -74,9 +74,9 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	}
 	r := rules.Get(lang.Name)
 	if parent == nil && n.Type(lang) == "ERROR" {
-		rootType := "translation_unit"
-		if r != nil && len(r.Scaffolding) > 0 {
-			rootType = r.Scaffolding[0]
+		rootType := r.DefaultRootType()
+		if rootType == "" {
+			rootType = n.Type(lang)
 		}
 		errCount := countErrorNodes(n, lang)
 		root := &ASTNode{
