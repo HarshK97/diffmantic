@@ -809,6 +809,260 @@ func TestInlineParentSuppression(t *testing.T) {
 			t.Error("expected parent Insert on a different line to survive")
 		}
 	})
+
+	// (f) Move destination on the same line suppresses single-line parent wrapper Insert
+	t.Run("moved-child-suppresses-inline-parent-insert", func(t *testing.T) {
+		srcChild := &treesitter.ASTNode{
+			Type:      "assignment_expression",
+			StartByte: 634, EndByte: 654,
+			StartRow: 34, EndRow: 34,
+		}
+		srcChild.Language = "javascript"
+
+		dstChild := &treesitter.ASTNode{
+			Type:      "assignment_expression",
+			StartByte: 630, EndByte: 650,
+			StartRow: 34, EndRow: 34,
+		}
+		parent := &treesitter.ASTNode{
+			Type:      "expression_statement",
+			StartByte: 630, EndByte: 650,
+			StartRow: 34, EndRow: 34,
+			Children: []*treesitter.ASTNode{dstChild},
+		}
+		parent.Language = "javascript"
+		dstChild.Parent = parent
+
+		ms := engine.NewMapping()
+		ms.Add(srcChild, dstChild)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: parent})
+		es.Add(actions.Action{Type: actions.Move, Node: srcChild, Parent: parent, Position: 0})
+
+		collapsed := Collapse(es, ms, srcChild, parent)
+
+		parentSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Type == actions.Insert {
+				parentSurvives = true
+			}
+			if a.Node == srcChild && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if parentSurvives {
+			t.Error("expected parent expression_statement Insert to be suppressed by inline Move child")
+		}
+		if !moveSurvives {
+			t.Error("expected child assignment_expression Move to survive")
+		}
+	})
+
+	// (g) Wider parent container (e.g. hash braces "{...}") is NOT suppressed
+	// so the newly added braces/syntax retain their Insert highlight.
+	t.Run("wider-container-insert-preserved-around-moved-child", func(t *testing.T) {
+		srcChild := &treesitter.ASTNode{
+			Type:      "pair",
+			StartByte: 10, EndByte: 20,
+			StartRow: 28, EndRow: 28,
+		}
+		srcChild.Language = "ruby"
+
+		dstChild := &treesitter.ASTNode{
+			Type:      "pair",
+			StartByte: 11, EndByte: 21,
+			StartRow: 28, EndRow: 28,
+		}
+		// Parent hash spans bytes 10..22 (wider due to { and })
+		parent := &treesitter.ASTNode{
+			Type:      "hash",
+			StartByte: 10, EndByte: 22,
+			StartRow: 28, EndRow: 28,
+			Children: []*treesitter.ASTNode{dstChild},
+		}
+		parent.Language = "ruby"
+		dstChild.Parent = parent
+
+		ms := engine.NewMapping()
+		ms.Add(srcChild, dstChild)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: parent})
+		es.Add(actions.Action{Type: actions.Move, Node: srcChild, Parent: parent, Position: 0})
+
+		collapsed := Collapse(es, ms, srcChild, parent)
+
+		parentSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Type == actions.Insert {
+				parentSurvives = true
+			}
+			if a.Node == srcChild && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if !parentSurvives {
+			t.Error("expected wider parent hash Insert to survive (preserve container braces)")
+		}
+		if !moveSurvives {
+			t.Error("expected child pair Move to survive")
+		}
+	})
+
+	// (h) Trailing statement terminator (semicolon) in single-child expression_statement
+	// must STILL suppress the parent wrapper Insert even though parent.EndByte > dstChild.EndByte.
+	t.Run("moved-child-suppresses-inline-parent-insert-with-semicolon", func(t *testing.T) {
+		srcChild := &treesitter.ASTNode{
+			Type:      "assignment_expression",
+			StartByte: 634, EndByte: 654,
+			StartRow: 34, EndRow: 34,
+		}
+		srcChild.Language = "javascript"
+
+		dstChild := &treesitter.ASTNode{
+			Type:      "assignment_expression",
+			StartByte: 630, EndByte: 650,
+			StartRow: 34, EndRow: 34,
+		}
+		// Parent expression_statement includes trailing semicolon (630..651)
+		parent := &treesitter.ASTNode{
+			Type:      "expression_statement",
+			StartByte: 630, EndByte: 651,
+			StartRow: 34, EndRow: 34,
+			Children: []*treesitter.ASTNode{dstChild},
+		}
+		parent.Language = "javascript"
+		dstChild.Parent = parent
+
+		ms := engine.NewMapping()
+		ms.Add(srcChild, dstChild)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: parent})
+		es.Add(actions.Action{Type: actions.Move, Node: srcChild, Parent: parent, Position: 0})
+
+		collapsed := Collapse(es, ms, srcChild, parent)
+
+		parentSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == parent && a.Type == actions.Insert {
+				parentSurvives = true
+			}
+			if a.Node == srcChild && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if parentSurvives {
+			t.Error("expected parent expression_statement Insert with trailing semicolon to be suppressed")
+		}
+		if !moveSurvives {
+			t.Error("expected child assignment_expression Move to survive")
+		}
+	})
+
+	// (i) Bidirectional symmetry: source-side single-line statement wrapper Delete is suppressed
+	// when child node is moved out.
+	t.Run("moved-child-suppresses-source-side-parent-delete", func(t *testing.T) {
+		srcChild := &treesitter.ASTNode{
+			Type:      "assignment_expression",
+			StartByte: 100, EndByte: 120,
+			StartRow: 10, EndRow: 10,
+		}
+		srcChild.Language = "javascript"
+
+		srcParent := &treesitter.ASTNode{
+			Type:      "expression_statement",
+			StartByte: 100, EndByte: 121,
+			StartRow: 10, EndRow: 10,
+			Children: []*treesitter.ASTNode{srcChild},
+		}
+		srcParent.Language = "javascript"
+		srcChild.Parent = srcParent
+
+		dstChild := &treesitter.ASTNode{
+			Type:      "assignment_expression",
+			StartByte: 200, EndByte: 220,
+			StartRow: 20, EndRow: 20,
+		}
+		dstChild.Language = "javascript"
+
+		ms := engine.NewMapping()
+		ms.Add(srcChild, dstChild)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Delete, Node: srcParent})
+		es.Add(actions.Action{Type: actions.Move, Node: srcChild, Parent: dstChild, Position: 0})
+
+		collapsed := Collapse(es, ms, srcParent, dstChild)
+
+		srcParentSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == srcParent && a.Type == actions.Delete {
+				srcParentSurvives = true
+			}
+			if a.Node == srcChild && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if srcParentSurvives {
+			t.Error("expected source-side parent expression_statement Delete to be suppressed")
+		}
+		if !moveSurvives {
+			t.Error("expected child Move action to survive")
+		}
+	})
+
+	// (j) Multi-child non-scaffolding container (e.g. binary_expression) is NOT suppressed
+	// when one child is moved into it.
+	t.Run("multi-child-container-not-suppressed-on-move", func(t *testing.T) {
+		srcLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 10, EndByte: 20, StartRow: 5, EndRow: 5}
+		srcLeft.Language = "javascript"
+
+		dstLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 50, EndByte: 60, StartRow: 15, EndRow: 15}
+		dstOp := &treesitter.ASTNode{Type: "+", StartByte: 61, EndByte: 62, StartRow: 15, EndRow: 15}
+		dstRight := &treesitter.ASTNode{Type: "call_expression", StartByte: 63, EndByte: 73, StartRow: 15, EndRow: 15}
+		dstBin := &treesitter.ASTNode{
+			Type:      "binary_expression",
+			StartByte: 50, EndByte: 73,
+			StartRow: 15, EndRow: 15,
+			Children: []*treesitter.ASTNode{dstLeft, dstOp, dstRight},
+		}
+		dstBin.Language = "javascript"
+		dstLeft.Parent = dstBin
+		dstOp.Parent = dstBin
+		dstRight.Parent = dstBin
+
+		ms := engine.NewMapping()
+		ms.Add(srcLeft, dstLeft)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: dstBin})
+		es.Add(actions.Action{Type: actions.Move, Node: srcLeft, Parent: dstBin, Position: 0})
+
+		collapsed := Collapse(es, ms, srcLeft, dstBin)
+
+		binSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == dstBin && a.Type == actions.Insert {
+				binSurvives = true
+			}
+			if a.Node == srcLeft && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if !binSurvives {
+			t.Error("expected multi-child binary_expression Insert to survive (not suppressed)")
+		}
+		if !moveSurvives {
+			t.Error("expected child Move action to survive")
+		}
+	})
 }
 
 func TestParentMoveWithDeletedDescendant(t *testing.T) {
