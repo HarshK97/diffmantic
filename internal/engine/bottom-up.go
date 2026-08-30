@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // BottomUp pairs unmatched container nodes in post-order when they share matched
@@ -61,15 +62,15 @@ func findCandidatesWithCommonDescendants(t1 *treesitter.ASTNode, m *Mapping) []*
 	candMap := make(map[*treesitter.ASTNode]bool)
 	var cands []*treesitter.ASTNode
 
-	var rules *treesitter.Rules
+	var r *rules.Rules
 	if t1 != nil {
-		rules = treesitter.GetRules(t1.GetLanguage())
+		r = rules.Get(t1.GetLanguage())
 	}
 
 	for _, d1 := range t1.Descendants() {
 		if d2, ok := m.Src()[d1]; ok {
 			for anc := d2.Parent; anc != nil; anc = anc.Parent {
-				if TypesMatch(t1.Type, anc.Type, rules) && !m.HasDst(anc) {
+				if TypesMatch(t1.Type, anc.Type, r) && !m.HasDst(anc) {
 					if !candMap[anc] {
 						candMap[anc] = true
 						cands = append(cands, anc)
@@ -113,7 +114,7 @@ func candidate(
 	t1Labels := t1.LeafLabels()
 	t1Key := getKeyLabel(t1)
 
-	rules := rulesFor(t1)
+	r := rulesFor(t1)
 
 	for _, c := range candidates {
 		if m.HasDst(c) {
@@ -130,9 +131,9 @@ func candidate(
 		// If t1's parent construct does not match c's parent construct, but an enclosing ancestor of t1
 		// matches c's parent construct, preserve c for the true outer ancestor.
 		hasBetterAncestor := false
-		if t1.Parent != nil && c.Parent != nil && !TypesMatch(t1.Parent.Type, c.Parent.Type, rules) {
+		if t1.Parent != nil && c.Parent != nil && !TypesMatch(t1.Parent.Type, c.Parent.Type, r) {
 			for anc := t1.Parent; anc != nil; anc = anc.Parent {
-				if TypesMatch(anc.Type, c.Type, rules) && anc.Parent != nil && TypesMatch(anc.Parent.Type, c.Parent.Type, rules) {
+				if TypesMatch(anc.Type, c.Type, r) && anc.Parent != nil && TypesMatch(anc.Parent.Type, c.Parent.Type, r) {
 					hasBetterAncestor = true
 					break
 				}

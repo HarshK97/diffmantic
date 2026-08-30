@@ -4,6 +4,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 const commentSimilarityThreshold = 0.7
@@ -68,7 +69,7 @@ func splitMoveToDeleteInsert(result *actions.EditScript, srcNode, dstNode *trees
 	}
 }
 
-func isCommentASTNode(node *treesitter.ASTNode, rulesSrc, rulesDst *treesitter.Rules) bool {
+func isCommentASTNode(node *treesitter.ASTNode, rulesSrc, rulesDst *rules.Rules) bool {
 	if node == nil {
 		return false
 	}
@@ -81,7 +82,7 @@ func isCommentASTNode(node *treesitter.ASTNode, rulesSrc, rulesDst *treesitter.R
 	if rulesDst != nil && rulesDst.IsComment(node.Type) {
 		return true
 	}
-	if r := treesitter.GetRules(node.GetLanguage()); r != nil && r.IsComment(node.Type) {
+	if r := rules.Get(node.GetLanguage()); r != nil && r.IsComment(node.Type) {
 		return true
 	}
 	return false
@@ -92,12 +93,12 @@ func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping, roots
 		return es
 	}
 
-	var rulesSrc, rulesDst *treesitter.Rules
+	var rulesSrc, rulesDst *rules.Rules
 	if len(roots) > 0 && roots[0] != nil {
-		rulesSrc = treesitter.GetRules(roots[0].GetLanguage())
+		rulesSrc = rules.Get(roots[0].GetLanguage())
 	}
 	if len(roots) > 1 && roots[1] != nil {
-		rulesDst = treesitter.GetRules(roots[1].GetLanguage())
+		rulesDst = rules.Get(roots[1].GetLanguage())
 	}
 
 	convertedSrc := make(map[*treesitter.ASTNode]bool)
@@ -226,12 +227,12 @@ func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping, roots ...
 		return es
 	}
 
-	var rulesSrc, rulesDst *treesitter.Rules
+	var rulesSrc, rulesDst *rules.Rules
 	if len(roots) > 0 && roots[0] != nil {
-		rulesSrc = treesitter.GetRules(roots[0].GetLanguage())
+		rulesSrc = rules.Get(roots[0].GetLanguage())
 	}
 	if len(roots) > 1 && roots[1] != nil {
-		rulesDst = treesitter.GetRules(roots[1].GetLanguage())
+		rulesDst = rules.Get(roots[1].GetLanguage())
 	}
 
 	isComment := func(node *treesitter.ASTNode) bool {

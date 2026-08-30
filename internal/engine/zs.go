@@ -34,12 +34,12 @@ func RunZSRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 
 	mappings := zsBacktrack(size1, size2, lld1, lld2, nodes1, nodes2, treedist, forestdist)
 
-	rules := treesitter.GetRules(t1.GetLanguage())
+	r := rulesFor(t1)
 	for _, pair := range mappings {
 		if pair[0] != 0 && pair[1] != 0 {
 			srcg := nodes1[pair[0]-1]
 			dstg := nodes2[pair[1]-1]
-			if TypesMatch(srcg.Type, dstg.Type, rules) && CompatiblePairRoles(srcg, dstg) && !m.Has(srcg) && !m.HasDst(dstg) {
+			if TypesMatch(srcg.Type, dstg.Type, r) && CompatiblePairRoles(srcg, dstg) && !m.Has(srcg) && !m.HasDst(dstg) {
 				m.Add(srcg, dstg)
 			}
 		}
@@ -76,8 +76,8 @@ func computeKeyRoots(nodes []*treesitter.ASTNode, lld []int) []int {
 }
 
 func zsMatchCost(n1, n2 *treesitter.ASTNode) float64 {
-	rules := treesitter.GetRules(n1.GetLanguage())
-	if !TypesMatch(n1.Type, n2.Type, rules) || !CompatiblePairRoles(n1, n2) {
+	r := rulesFor(n1)
+	if !TypesMatch(n1.Type, n2.Type, r) || !CompatiblePairRoles(n1, n2) {
 		return 1000.0
 	}
 	if n1.Label == n2.Label || Unquote(n1.Label) == Unquote(n2.Label) {

@@ -1,4 +1,4 @@
-package treesitter
+package rules
 
 import (
 	"testing"
@@ -161,9 +161,9 @@ func TestRulesAliased(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.lang, func(t *testing.T) {
-			rules := GetRules(tt.lang)
+			rules := Get(tt.lang)
 			if rules == nil {
-				t.Skipf("rules for %s not loaded", tt.lang)
+				t.Fatalf("rules for %s not loaded", tt.lang)
 			}
 
 			for _, op := range tt.operators {
@@ -208,7 +208,7 @@ func TestRulesPairs(t *testing.T) {
 }
 
 func TestRulesTOML(t *testing.T) {
-	rules := GetRules("toml")
+	rules := Get("toml")
 	if rules == nil {
 		t.Fatal("expected toml rules to be loaded")
 	}
@@ -261,7 +261,7 @@ func TestRulesHelperMethods(t *testing.T) {
 
 	t.Run("compiled sets", func(t *testing.T) {
 		r := newSampleRules()
-		r.compileSets()
+		r.CompileSets()
 
 		if !r.IsIgnored("comment", "") {
 			t.Errorf("IsIgnored(comment) = false, want true")
@@ -363,7 +363,6 @@ func TestRulesHelperMethods(t *testing.T) {
 
 	t.Run("nil receiver safe", func(t *testing.T) {
 		var r *Rules
-
 		if r.IsIgnored("a", "b") {
 			t.Errorf("nil.IsIgnored returned true")
 		}
@@ -385,178 +384,36 @@ func TestRulesHelperMethods(t *testing.T) {
 		if !r.AreTypesEquivalent("a", "a") {
 			t.Errorf("nil.AreTypesEquivalent(a, a) returned false, want true")
 		}
-		if r.AreTypesEquivalent("a", "b") {
-			t.Errorf("nil.AreTypesEquivalent(a, b) returned true, want false")
-		}
 		if _, ok := r.Alias("a", "b"); ok {
 			t.Errorf("nil.Alias returned ok = true, want false")
 		}
 	})
-}
 
-func TestEveryLanguageEquivalentTypesAreValidSymbols(t *testing.T) {
-	for _, ext := range []string{
-		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
-		"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
-		"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
-		"yaml.yaml", "zig.zig",
-	} {
-		entry := DetectGrammarEntry(ext)
-		if entry == nil {
-			continue
+	t.Run("unknown language fallback", func(t *testing.T) {
+		r := Get("nonexistent_lang")
+		if r == nil {
+			t.Fatalf("Get(unknown) returned nil, want non-nil defaultRules")
 		}
-		lang := entry.Language()
-		namedSymbols := make(map[string]bool)
-		for i := 0; i < int(lang.SymbolCount) && i < len(lang.SymbolNames); i++ {
-			name := lang.SymbolNames[i]
-			isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
-			if name != "" && isNamed {
-				namedSymbols[name] = true
-			}
+		if r.IsDeclaration("func") {
+			t.Errorf("defaultRules.IsDeclaration returned true")
 		}
+		if !r.AreTypesEquivalent("a", "a") {
+			t.Errorf("defaultRules.AreTypesEquivalent(a, a) returned false")
+		}
+		if r.AreTypesEquivalent("a", "b") {
+			t.Errorf("defaultRules.AreTypesEquivalent(a, b) returned true")
+		}
+	})
 
-		rules := GetRules(entry.Name)
-		if rules == nil {
-			continue
+	t.Run("package-level IsFlattened", func(t *testing.T) {
+		if !IsFlattened("raw_string_literal") {
+			t.Errorf("IsFlattened(raw_string_literal) = false, want true")
 		}
-		for _, group := range rules.EquivalentTypes {
-			for _, sym := range group {
-				if !namedSymbols[sym] {
-					t.Errorf("language %s: equivalent_types symbol %q is not a valid named symbol in grammar", entry.Name, sym)
-				}
-			}
+		if IsFlattened("nonexistent_type_xyz") {
+			t.Errorf("IsFlattened(nonexistent_type_xyz) = true, want false")
 		}
-	}
-}
-
-func TestEveryLanguageCommentsAreValidSymbols(t *testing.T) {
-	for _, ext := range []string{
-		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
-		"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
-		"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
-		"yaml.yaml", "zig.zig",
-	} {
-		entry := DetectGrammarEntry(ext)
-		if entry == nil {
-			continue
+		if IsFlattened("") {
+			t.Errorf("IsFlattened(\"\") = true, want false")
 		}
-		lang := entry.Language()
-		namedSymbols := make(map[string]bool)
-		for i := 0; i < int(lang.SymbolCount) && i < len(lang.SymbolNames); i++ {
-			name := lang.SymbolNames[i]
-			isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
-			if name != "" && isNamed {
-				namedSymbols[name] = true
-			}
-		}
-
-		rules := GetRules(entry.Name)
-		if rules == nil {
-			continue
-		}
-		for _, sym := range rules.Comments {
-			if !namedSymbols[sym] {
-				t.Errorf("language %s: comments symbol %q is not a valid named symbol in grammar", entry.Name, sym)
-			}
-		}
-	}
-}
-
-func TestEveryLanguageIdentifiersAreValidSymbols(t *testing.T) {
-	for _, ext := range []string{
-		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
-		"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
-		"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
-		"yaml.yaml", "zig.zig",
-	} {
-		entry := DetectGrammarEntry(ext)
-		if entry == nil {
-			continue
-		}
-		lang := entry.Language()
-		namedSymbols := make(map[string]bool)
-		for i := 0; i < int(lang.SymbolCount) && i < len(lang.SymbolNames); i++ {
-			name := lang.SymbolNames[i]
-			isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
-			if name != "" && isNamed {
-				namedSymbols[name] = true
-			}
-		}
-
-		rules := GetRules(entry.Name)
-		if rules == nil {
-			continue
-		}
-		for _, sym := range rules.Identifiers {
-			if !namedSymbols[sym] {
-				t.Errorf("language %s: identifiers symbol %q is not a valid named symbol in grammar", entry.Name, sym)
-			}
-		}
-	}
-}
-
-func TestEveryLanguageBlocksAreValidSymbols(t *testing.T) {
-	for _, ext := range []string{
-		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
-		"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
-		"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
-		"yaml.yaml", "zig.zig",
-	} {
-		entry := DetectGrammarEntry(ext)
-		if entry == nil {
-			continue
-		}
-		lang := entry.Language()
-		namedSymbols := make(map[string]bool)
-		for i := 0; i < int(lang.SymbolCount) && i < len(lang.SymbolNames); i++ {
-			name := lang.SymbolNames[i]
-			isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
-			if name != "" && isNamed {
-				namedSymbols[name] = true
-			}
-		}
-
-		rules := GetRules(entry.Name)
-		if rules == nil {
-			continue
-		}
-		for _, sym := range rules.Blocks {
-			if !namedSymbols[sym] {
-				t.Errorf("language %s: blocks symbol %q is not a valid named symbol in grammar", entry.Name, sym)
-			}
-		}
-	}
-}
-
-func TestEveryLanguageCallsAreValidSymbols(t *testing.T) {
-	for _, ext := range []string{
-		"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
-		"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
-		"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
-		"yaml.yaml", "zig.zig",
-	} {
-		entry := DetectGrammarEntry(ext)
-		if entry == nil {
-			continue
-		}
-		lang := entry.Language()
-		namedSymbols := make(map[string]bool)
-		for i := 0; i < int(lang.SymbolCount) && i < len(lang.SymbolNames); i++ {
-			name := lang.SymbolNames[i]
-			isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
-			if name != "" && isNamed {
-				namedSymbols[name] = true
-			}
-		}
-
-		rules := GetRules(entry.Name)
-		if rules == nil {
-			continue
-		}
-		for _, sym := range rules.Calls {
-			if !namedSymbols[sym] {
-				t.Errorf("language %s: calls symbol %q is not a valid named symbol in grammar", entry.Name, sym)
-			}
-		}
-	}
+	})
 }

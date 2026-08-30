@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // Height returns the height of a subtree rooted at n.
@@ -38,21 +39,21 @@ func IsTrivialLeaf(n *treesitter.ASTNode) bool {
 
 // TypesMatch checks if t1 and t2 are the same type, falling back to the
 // language's equivalent_types rules when they're not.
-func TypesMatch(t1, t2 string, rules *treesitter.Rules) bool {
+func TypesMatch(t1, t2 string, r *rules.Rules) bool {
 	if t1 == t2 {
 		return true
 	}
-	if rules != nil {
-		return rules.AreTypesEquivalent(t1, t2)
+	if r != nil {
+		return r.AreTypesEquivalent(t1, t2)
 	}
 	return false
 }
 
-func rulesFor(root *treesitter.ASTNode) *treesitter.Rules {
+func rulesFor(root *treesitter.ASTNode) *rules.Rules {
 	if root == nil {
 		return nil
 	}
-	return treesitter.GetRules(root.GetLanguage())
+	return rules.Get(root.GetLanguage())
 }
 
 // PairRole identifies whether a node acts as a key or a value inside a key-value pair.
@@ -264,7 +265,7 @@ func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {
 		return nil
 	}
 	lang := n.GetLanguage()
-	r := treesitter.GetRules(lang)
+	r := rules.Get(lang)
 	if r == nil || len(r.Declarations) == 0 {
 		return nil
 	}
@@ -286,14 +287,14 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 	r1 := rulesFor(t1)
 	r2 := rulesFor(t2)
 
-	isID := func(r *treesitter.Rules, typ string) bool {
+	isID := func(r *rules.Rules, typ string) bool {
 		if r != nil && len(r.Identifiers) > 0 {
 			return slices.Contains(r.Identifiers, typ)
 		}
 		return typ == "identifier" || typ == "field_identifier" || typ == "type_identifier" || typ == "name"
 	}
 
-	collectLabels := func(t *treesitter.ASTNode, r *treesitter.Rules) map[string]bool {
+	collectLabels := func(t *treesitter.ASTNode, r *rules.Rules) map[string]bool {
 		labels := make(map[string]bool, 8)
 		curr := t.Parent
 		for curr != nil {

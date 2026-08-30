@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 	"github.com/odvcencio/gotreesitter"
 )
 
@@ -41,7 +42,7 @@ const (
 )
 
 func hashString(h uint64, s string) uint64 {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		h ^= uint64(s[i])
 		h *= fnvPrime
 	}
@@ -71,11 +72,11 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 	if n == nil {
 		return nil
 	}
-	rules := GetRules(lang.Name)
+	r := rules.Get(lang.Name)
 	if parent == nil && n.Type(lang) == "ERROR" {
 		rootType := "translation_unit"
-		if rules != nil && len(rules.Scaffolding) > 0 {
-			rootType = rules.Scaffolding[0]
+		if r != nil && len(r.Scaffolding) > 0 {
+			rootType = r.Scaffolding[0]
 		}
 		errCount := countErrorNodes(n, lang)
 		root := &ASTNode{
@@ -90,13 +91,13 @@ func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, par
 			HasError:        errCount > 0,
 			ParseErrorCount: errCount,
 		}
-		unwrapErrorNode(n, src, lang, root, rules)
+		unwrapErrorNode(n, src, lang, root, r)
 		root.ComputeHashes()
 		EnsureIndex(root)
 		return root
 	}
 
-	node := buildASTWithRules(n, src, lang, parent, rules)
+	node := buildASTWithRules(n, src, lang, parent, r)
 	if node != nil && parent == nil {
 		errCount := countErrorNodes(n, lang)
 		node.Language = lang.Name
@@ -116,40 +117,22 @@ func countErrorNodes(n *gotreesitter.Node, lang *gotreesitter.Language) int {
 	if n.Type(lang) == "ERROR" || n.IsError() || n.IsMissing() {
 		count = 1
 	}
-	for i := 0; i < n.ChildCount(); i++ {
+	for i := range n.ChildCount() {
 		count += countErrorNodes(n.Child(i), lang)
 	}
 	return count
 }
 
-var stringLiteralTypes = []string{
-	"string",
-	"string_literal",
-	"interpreted_string_literal",
-	"raw_string_literal",
-	"template_string",
-	"plain_scalar",
-	"string_scalar",
-	"double_quote_scalar",
-	"single_quote_scalar",
-	"block_scalar",
-	"regex",
-}
-
-func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) *ASTNode {
+func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, r *rules.Rules) *ASTNode {
 	nodeType := n.Type(lang)
 	if nodeType == "ERROR" {
 		if parent != nil {
-			unwrapErrorNode(n, src, lang, parent, rules)
+			unwrapErrorNode(n, src, lang, parent, r)
 			return nil
 		}
 	}
 
-	if rules == nil {
-		return nil
-	}
-
-	isLeaf := n.ChildCount() == 0 || slices.Contains(stringLiteralTypes, nodeType)
+	isLeaf := n.ChildCount() == 0 || (r != nil && r.IsFlattened(nodeType))
 	var label string
 	if isLeaf {
 		srcLen := uint32(len(src))
@@ -160,7 +143,7 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		label = strings.TrimSpace(string(src[start:end]))
 	}
 
-	if rules.IsIgnored(nodeType, label) {
+	if r != nil && r.IsIgnored(nodeType, label) {
 		return nil
 	}
 
@@ -180,26 +163,28 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 		node.Label = label
 	}
 
-	if alias, ok := rules.Alias(nodeType, label); ok {
-		node.Type = alias
-	}
-	if rules.IsLabelIgnored(node.Type) {
-		node.Label = ""
-	}
-	if isLeaf && rules.IsKeyword(nodeType, label) {
-		node.IsKeyword = true
-	}
-	if rules.IsUnordered(node.Type) {
-		node.IsUnordered = true
+	if r != nil {
+		if alias, ok := r.Alias(nodeType, label); ok {
+			node.Type = alias
+		}
+		if r.IsLabelIgnored(node.Type) {
+			node.Label = ""
+		}
+		if isLeaf && r.IsKeyword(nodeType, label) {
+			node.IsKeyword = true
+		}
+		if r.IsUnordered(node.Type) {
+			node.IsUnordered = true
+		}
 	}
 
-	for i := 0; i < n.ChildCount(); i++ {
-		if child := buildASTWithRules(n.Child(i), src, lang, node, rules); child != nil {
+	for i := range n.ChildCount() {
+		if child := buildASTWithRules(n.Child(i), src, lang, node, r); child != nil {
 			node.Children = append(node.Children, child)
 		}
 	}
 
-	if rules.IsFlattened(nodeType) {
+	if r != nil && r.IsFlattened(nodeType) {
 		var flattenedChildren []*ASTNode
 		for _, child := range node.Children {
 			flattenedChildren = append(flattenedChildren, child.Children...)
@@ -213,9 +198,9 @@ func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Lang
 	return node
 }
 
-func unwrapErrorNode(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, rules *Rules) {
-	for i := 0; i < n.ChildCount(); i++ {
-		if child := buildASTWithRules(n.Child(i), src, lang, parent, rules); child != nil {
+func unwrapErrorNode(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, r *rules.Rules) {
+	for i := range n.ChildCount() {
+		if child := buildASTWithRules(n.Child(i), src, lang, parent, r); child != nil {
 			parent.Children = append(parent.Children, child)
 		}
 	}
@@ -274,14 +259,14 @@ func IsWordChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
 
-// IsScaffolding checks rules.yml to see if this node type is a variable-arity container.
+// IsScaffolding checks language rules to see if this node type is a variable-arity container.
 func (n *ASTNode) IsScaffolding() bool {
 	lang := n.GetLanguage()
-	rules := GetRules(lang)
-	if rules == nil {
+	r := rules.Get(lang)
+	if r == nil {
 		return false
 	}
-	return slices.Contains(rules.Scaffolding, n.Type)
+	return r.IsScaffolding(n.Type)
 }
 
 // Descendants returns all child nodes under n in pre-order.
@@ -309,10 +294,7 @@ func (n *ASTNode) Descendants() []*ASTNode {
 func (n *ASTNode) LeafLabels() map[string]int {
 	labels := make(map[string]int)
 	if n.Index != nil && n.PreSize > 0 {
-		start := int(n.ID)
-		end := int(n.ID + n.PreSize)
-		for i := start; i < end; i++ {
-			d := n.Index.Nodes[i]
+		for _, d := range n.Index.Nodes[n.ID : n.ID+n.PreSize] {
 			if len(d.Children) == 0 && d.Label != "" {
 				labels[d.Label]++
 			}
@@ -386,7 +368,13 @@ func (n *ASTNode) IsLeafOrStringLiteral() bool {
 	if n == nil {
 		return false
 	}
-	return len(n.Children) == 0 || slices.Contains(stringLiteralTypes, n.Type)
+	if len(n.Children) == 0 {
+		return true
+	}
+	if lang := n.GetLanguage(); lang != "" {
+		return rules.Get(lang).IsFlattened(n.Type)
+	}
+	return rules.IsFlattened(n.Type)
 }
 
 // Leaves returns all leaf nodes (and atomic string literals) in pre-order under n.
@@ -396,10 +384,7 @@ func (n *ASTNode) Leaves() []*ASTNode {
 	}
 	var leaves []*ASTNode
 	if n.Index != nil && n.PreSize > 0 {
-		start := int(n.ID)
-		end := int(n.ID + n.PreSize)
-		for i := start; i < end; i++ {
-			node := n.Index.Nodes[i]
+		for _, node := range n.Index.Nodes[n.ID : n.ID+n.PreSize] {
 			if node.IsLeafOrStringLiteral() {
 				leaves = append(leaves, node)
 			}
