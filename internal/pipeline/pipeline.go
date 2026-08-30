@@ -12,6 +12,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 	"github.com/odvcencio/gotreesitter"
 )
 
@@ -92,8 +93,8 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		langB = langA
 	}
 
-	rulesA := treesitter.GetRules(langA.Name)
-	rulesB := treesitter.GetRules(langB.Name)
+	rulesA := rules.Get(langA.Name)
+	rulesB := rules.Get(langB.Name)
 
 	var (
 		srcAST      *treesitter.ASTNode

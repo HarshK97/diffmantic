@@ -7,6 +7,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 	"github.com/odvcencio/gotreesitter"
 )
 
@@ -78,7 +79,7 @@ func TestExtractCommentsWithTreeSitter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rules := treesitter.GetRules("go")
+	rules := rules.Get("go")
 	src := []byte("package main\n\n// Line comment 1\nfunc main() {\n\t// Line comment 2\n}\n")
 
 	parser := gotreesitter.NewParser(lang)
@@ -168,7 +169,7 @@ func TestDiffCommentsGuzzlePhp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := treesitter.GetRules("php")
+	r := rules.Get("php")
 	src, err := os.ReadFile("../../tests/testdata/php_guzzle_handler_curl_multi/old.php")
 	if err != nil {
 		t.Fatal(err)

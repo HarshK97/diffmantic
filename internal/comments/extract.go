@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 	"github.com/odvcencio/gotreesitter"
 )
 
@@ -28,21 +28,21 @@ type CommentBlock struct {
 }
 
 // ExtractComments walks the AST and returns all comment blocks.
-func ExtractComments(root *gotreesitter.Node, src []byte, lang *gotreesitter.Language, rules *treesitter.Rules) []CommentBlock {
+func ExtractComments(root *gotreesitter.Node, src []byte, lang *gotreesitter.Language, r *rules.Rules) []CommentBlock {
 	if root == nil || lang == nil {
 		return nil
 	}
 	var list []CommentBlock
-	traverseForComments(root, src, lang, rules, &list)
+	traverseForComments(root, src, lang, r, &list)
 	return list
 }
 
-func traverseForComments(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, rules *treesitter.Rules, list *[]CommentBlock) {
+func traverseForComments(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, r *rules.Rules, list *[]CommentBlock) {
 	if n == nil {
 		return
 	}
 	nodeType := n.Type(lang)
-	if (rules != nil && rules.IsComment(nodeType)) || (rules == nil && nodeType == "comment") {
+	if (r != nil && r.IsComment(nodeType)) || (r == nil && nodeType == "comment") {
 		srcLen := uint32(len(src))
 		start := min(n.StartByte(), srcLen)
 		end := min(n.EndByte(), srcLen)
@@ -64,7 +64,7 @@ func traverseForComments(n *gotreesitter.Node, src []byte, lang *gotreesitter.La
 			parentEnd = srcLen
 		}
 
-		scopeKey := findEnclosingDeclaration(n, src, lang, rules)
+		scopeKey := findEnclosingDeclaration(n, src, lang, r)
 
 		*list = append(*list, CommentBlock{
 			Type:         nodeType,
@@ -84,21 +84,21 @@ func traverseForComments(n *gotreesitter.Node, src []byte, lang *gotreesitter.La
 		})
 		return
 	}
-	for i := 0; i < n.ChildCount(); i++ {
-		traverseForComments(n.Child(i), src, lang, rules, list)
+	for i := range n.ChildCount() {
+		traverseForComments(n.Child(i), src, lang, r, list)
 	}
 }
 
-func findEnclosingDeclaration(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, rules *treesitter.Rules) string {
-	if rules == nil || n == nil {
+func findEnclosingDeclaration(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, r *rules.Rules) string {
+	if r == nil || n == nil {
 		return "root"
 	}
 	var containers []string
 	curr := n.Parent()
 	for curr != nil {
 		t := curr.Type(lang)
-		if rules.IsDeclaration(t) {
-			name := getDeclarationIdentifier(curr, src, lang, rules)
+		if r.IsDeclaration(t) {
+			name := getDeclarationIdentifier(curr, src, lang, r)
 			decl := t
 			if name != "" {
 				decl = t + ":" + name
@@ -109,7 +109,7 @@ func findEnclosingDeclaration(n *gotreesitter.Node, src []byte, lang *gotreesitt
 			}
 			return decl
 		}
-		if rules.IsBlock(t) || rules.IsScaffolding(t) {
+		if r.IsBlock(t) || r.IsScaffolding(t) {
 			containers = append(containers, t)
 		}
 		curr = curr.Parent()
@@ -121,27 +121,27 @@ func findEnclosingDeclaration(n *gotreesitter.Node, src []byte, lang *gotreesitt
 	return "root"
 }
 
-func getDeclarationIdentifier(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, rules *treesitter.Rules) string {
-	if n == nil || rules == nil {
+func getDeclarationIdentifier(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, r *rules.Rules) string {
+	if n == nil || r == nil {
 		return ""
 	}
-	for i := 0; i < n.ChildCount(); i++ {
+	for i := range n.ChildCount() {
 		child := n.Child(i)
 		if child == nil {
 			continue
 		}
 		ct := child.Type(lang)
-		if rules.IsIdentifier(ct) {
+		if r.IsIdentifier(ct) {
 			s := min(child.StartByte(), uint32(len(src)))
 			e := min(child.EndByte(), uint32(len(src)))
 			if s < e {
 				return string(src[s:e])
 			}
 		}
-		if rules.IsScaffolding(ct) {
-			for j := 0; j < child.ChildCount(); j++ {
+		if r.IsScaffolding(ct) {
+			for j := range child.ChildCount() {
 				sub := child.Child(j)
-				if sub != nil && rules.IsIdentifier(sub.Type(lang)) {
+				if sub != nil && r.IsIdentifier(sub.Type(lang)) {
 					s := min(sub.StartByte(), uint32(len(src)))
 					e := min(sub.EndByte(), uint32(len(src)))
 					if s < e {

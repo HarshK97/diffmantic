@@ -249,13 +249,13 @@ func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
 func TestMatchPairValues(t *testing.T) {
 	k1 := testutil.Leaf("string", "\"priority\"")
 	val1 := testutil.Node("object", "", testutil.Leaf("string", "\"a\""))
-	p1 := testutil.Node("key_value_pair", "", k1, val1)
+	p1 := testutil.Node("keyed_element", "", k1, val1)
 	srcRoot := testutil.Node("root", "", p1)
 	srcRoot.Language = "go"
 
 	k2 := testutil.Leaf("string", "\"priority\"")
 	val2 := testutil.Node("object", "", testutil.Leaf("string", "\"b\""))
-	p2 := testutil.Node("key_value_pair", "", k2, val2)
+	p2 := testutil.Node("keyed_element", "", k2, val2)
 	dstRoot := testutil.Node("root", "", p2)
 
 	m := NewMapping()

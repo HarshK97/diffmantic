@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 type scoredPair struct {
@@ -283,12 +284,12 @@ func getScopeName(n *treesitter.ASTNode) string {
 }
 
 // isCallNode reports whether n is a function or method invocation node.
-func isCallNode(n *treesitter.ASTNode, r *treesitter.Rules) bool {
+func isCallNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
 	}
 	if r != nil {
 		return r.IsCall(n.Type)
 	}
-	return treesitter.IsCall(n.Type)
+	return rules.IsCall(n.Type)
 }

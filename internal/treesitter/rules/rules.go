@@ -1,30 +1,25 @@
-package treesitter
+package rules
 
 import (
-	"embed"
-	"io/fs"
-	"path"
 	"slices"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Rules configures language-specific AST transformations and node matching.
 type Rules struct {
-	Flattened       []string          `yaml:"flattened"`
-	Ignored         []string          `yaml:"ignored"`
-	Aliased         map[string]string `yaml:"aliased"`
-	LabelIgnored    []string          `yaml:"label_ignored"`
-	Scaffolding     []string          `yaml:"scaffolding"`
-	Keywords        []string          `yaml:"keywords"`
-	Declarations    []string          `yaml:"declarations"`
-	Identifiers     []string          `yaml:"identifiers"`
-	Blocks          []string          `yaml:"blocks"`
-	Pairs           []string          `yaml:"pairs"`
-	Unordered       []string          `yaml:"unordered"`
-	EquivalentTypes [][]string        `yaml:"equivalent_types"`
-	Comments        []string          `yaml:"comments"`
-	Calls           []string          `yaml:"calls"`
+	Flattened       []string
+	Ignored         []string
+	Aliased         map[string]string
+	LabelIgnored    []string
+	Scaffolding     []string
+	Keywords        []string
+	Declarations    []string
+	Identifiers     []string
+	Blocks          []string
+	Pairs           []string
+	Unordered       []string
+	EquivalentTypes [][]string
+	Comments        []string
+	Calls           []string
 
 	flattenedSet    map[string]struct{}
 	ignoredSet      map[string]struct{}
@@ -40,7 +35,8 @@ type Rules struct {
 	equivGroups     map[string][]int
 }
 
-func (r *Rules) compileSets() {
+// CompileSets builds the internal lookup sets for fast querying.
+func (r *Rules) CompileSets() {
 	if len(r.Flattened) > 0 {
 		r.flattenedSet = make(map[string]struct{}, len(r.Flattened))
 		for _, s := range r.Flattened {
@@ -134,7 +130,7 @@ func IsCall(nodeType string) bool {
 	if nodeType == "" {
 		return false
 	}
-	for _, r := range rulesCache {
+	for _, r := range registry {
 		if r.IsCall(nodeType) {
 			return true
 		}
@@ -205,25 +201,14 @@ func (r *Rules) AreTypesEquivalent(t1, t2 string) bool {
 			return false
 		}
 		for _, id1 := range g1 {
-			for _, id2 := range g2 {
-				if id1 == id2 {
-					return true
-				}
+			if slices.Contains(g2, id1) {
+				return true
 			}
 		}
 		return false
 	}
 	for _, group := range r.EquivalentTypes {
-		has1, has2 := false, false
-		for _, typ := range group {
-			if typ == t1 {
-				has1 = true
-			}
-			if typ == t2 {
-				has2 = true
-			}
-		}
-		if has1 && has2 {
+		if slices.Contains(group, t1) && slices.Contains(group, t2) {
 			return true
 		}
 	}
@@ -304,6 +289,19 @@ func (r *Rules) IsFlattened(nodeType string) bool {
 	return slices.Contains(r.Flattened, nodeType)
 }
 
+// IsFlattened reports whether nodeType is configured as flattened in any language rule set.
+func IsFlattened(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsFlattened(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsBlock checks if this node type is a code block.
 func (r *Rules) IsBlock(nodeType string) bool {
 	if r == nil {
@@ -313,10 +311,7 @@ func (r *Rules) IsBlock(nodeType string) bool {
 		_, ok := r.blocksSet[nodeType]
 		return ok
 	}
-	if len(r.Blocks) > 0 {
-		return slices.Contains(r.Blocks, nodeType)
-	}
-	return false
+	return slices.Contains(r.Blocks, nodeType)
 }
 
 // Alias returns the replacement node type if one exists for the label or node type.
@@ -335,39 +330,40 @@ func (r *Rules) Alias(nodeType, label string) (string, bool) {
 	return "", false
 }
 
-//go:embed */rules.yml
-var rulesFS embed.FS
+var registry = map[string]*Rules{
+	"c":          cRules,
+	"cpp":        cppRules,
+	"css":        cssRules,
+	"go":         golangRules,
+	"html":       htmlRules,
+	"java":       javaRules,
+	"javascript": javascriptRules,
+	"json":       jsonRules,
+	"lua":        luaRules,
+	"php":        phpRules,
+	"python":     pythonRules,
+	"ruby":       rubyRules,
+	"rust":       rustRules,
+	"toml":       tomlRules,
+	"tsx":        tsxRules,
+	"typescript": typescriptRules,
+	"yaml":       yamlRules,
+	"zig":        zigRules,
+}
 
-var rulesCache map[string]*Rules
+var defaultRules = &Rules{}
 
-// GetRules returns the compiled AST rules for a language, or nil if none exist.
-func GetRules(lang string) *Rules {
-	if rulesCache == nil {
-		return nil
+// Get returns the compiled AST rules for a language, or a default empty rule set if none exist.
+func Get(lang string) *Rules {
+	if r, ok := registry[lang]; ok && r != nil {
+		return r
 	}
-	return rulesCache[lang]
+	return defaultRules
 }
 
 func init() {
-	rulesCache = make(map[string]*Rules)
-	entries, err := fs.ReadDir(rulesFS, ".")
-	if err != nil {
-		panic("failed to read embedded rules directory: " + err.Error())
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			lang := entry.Name()
-			rulePath := path.Join(lang, "rules.yml")
-			data, err := rulesFS.ReadFile(rulePath)
-			if err != nil {
-				continue
-			}
-			var r Rules
-			if err := yaml.Unmarshal(data, &r); err != nil {
-				panic("failed to load " + rulePath + ": " + err.Error())
-			}
-			r.compileSets()
-			rulesCache[lang] = &r
-		}
+	defaultRules.CompileSets()
+	for _, r := range registry {
+		r.CompileSets()
 	}
 }

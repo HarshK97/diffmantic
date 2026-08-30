@@ -7,6 +7,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // AlignLines computes a visual side-by-side alignment grid for the source and
@@ -43,12 +44,12 @@ func AlignLines(
 	movedSrcLines := make(map[int]bool)
 	movedDstLines := make(map[int]bool)
 
-	var r *treesitter.Rules
+	var r *rules.Rules
 	if srcRoot != nil {
-		r = treesitter.GetRules(srcRoot.GetLanguage())
+		r = rules.Get(srcRoot.GetLanguage())
 	}
 	if r == nil && dstRoot != nil {
-		r = treesitter.GetRules(dstRoot.GetLanguage())
+		r = rules.Get(dstRoot.GetLanguage())
 	}
 
 	if es != nil {

@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 type MatchResult struct {
@@ -364,14 +365,8 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 		return err
 	}
 	for i, p := range pairs {
-		t1Label := p.Src.Label
-		if t1Label == "" {
-			t1Label = "-"
-		}
-		t2Label := p.Dst.Label
-		if t2Label == "" {
-			t2Label = "-"
-		}
+		t1Label := cmp.Or(p.Src.Label, "-")
+		t2Label := cmp.Or(p.Dst.Label, "-")
 		if _, err := fmt.Fprintf(w, "%-4d  %-30s %-20s  →  %-30s %-20s\n",
 			i+1, p.Src.Type, t1Label, p.Dst.Type, t2Label); err != nil {
 			return err
@@ -480,7 +475,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	}
 }
 
-func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *treesitter.Rules) {
+func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *rules.Rules) {
 	if d1 == nil || d2 == nil || m == nil {
 		return
 	}
@@ -509,7 +504,7 @@ func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *trees
 	}
 }
 
-func isBlockNode(n *treesitter.ASTNode, rules *treesitter.Rules) bool {
+func isBlockNode(n *treesitter.ASTNode, rules *rules.Rules) bool {
 	if n == nil {
 		return false
 	}
@@ -527,13 +522,9 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	if lang == "" {
 		return nil
 	}
-	r := treesitter.GetRules(lang)
+	r := rules.Get(lang)
 	if r == nil || len(r.Declarations) == 0 {
 		return nil
-	}
-	decMap := make(map[string]bool, len(r.Declarations))
-	for _, d := range r.Declarations {
-		decMap[d] = true
 	}
 
 	var decs []*treesitter.ASTNode
@@ -542,7 +533,7 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 		if n == nil {
 			return
 		}
-		if decMap[n.Type] {
+		if r.IsDeclaration(n.Type) {
 			decs = append(decs, n)
 		}
 		for _, child := range n.Children {
@@ -557,24 +548,23 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
 	}
-	var idTypes []string
 	lang := n.GetLanguage()
 	if lang != "" {
-		if r := treesitter.GetRules(lang); r != nil {
-			if len(r.Declarations) > 0 && !slices.Contains(r.Declarations, n.Type) {
+		if r := rules.Get(lang); r != nil {
+			if len(r.Declarations) > 0 && !r.IsDeclaration(n.Type) {
 				return ""
 			}
-			idTypes = r.Identifiers
+			for _, child := range n.Children {
+				if r.IsIdentifier(child.Type) && child.Label != "" {
+					return child.Label
+				}
+			}
+			return ""
 		}
-	} else {
-		idTypes = []string{"identifier", "field_identifier", "name"}
-	}
-	if len(idTypes) == 0 {
-		return ""
 	}
 
 	for _, child := range n.Children {
-		if slices.Contains(idTypes, child.Type) && child.Label != "" {
+		if (child.Type == "identifier" || child.Type == "field_identifier" || child.Type == "name") && child.Label != "" {
 			return child.Label
 		}
 	}
@@ -621,7 +611,7 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	if t1 == nil || t1.Language == "" {
 		return
 	}
-	r := treesitter.GetRules(t1.Language)
+	r := rules.Get(t1.Language)
 	if r == nil || len(r.Pairs) == 0 {
 		return
 	}
