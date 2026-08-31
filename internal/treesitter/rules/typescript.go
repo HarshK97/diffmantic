@@ -60,6 +60,7 @@ var typescriptRules = &Rules{
 		">>=":  "assignment_operator_literal",
 		">>>":  "bitwise_operator_literal",
 		">>>=": "assignment_operator_literal",
+		"?":    "ternary_operator_literal",
 		"??":   "logical_operator_literal",
 		"??=":  "assignment_operator_literal",
 		"^":    "bitwise_operator_literal",

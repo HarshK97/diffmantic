@@ -348,7 +348,7 @@ func (r *Rules) IsOperatorLiteral(nodeType string) bool {
 	if nodeType == "" {
 		return false
 	}
-	return strings.HasSuffix(nodeType, "_operator_literal") || nodeType == "is_operator" || nodeType == "is_not_operator"
+	return strings.HasSuffix(nodeType, "_operator_literal")
 }
 
 // DefaultRootType returns the top-level root AST node type for the language.
