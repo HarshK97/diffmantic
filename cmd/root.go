@@ -22,15 +22,20 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/config"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/git"
+	"github.com/HarshK97/diffmantic/internal/inline"
+	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/theme"
@@ -54,11 +59,13 @@ editor plugins (Neovim, VS Code) via JSON output.
 
 Examples:
   diffm before.go after.go                 Interactive TUI (default)
+  diffm before.go after.go -f inline       Print AST-aware inline diff with pager
   diffm before.go after.go -f json         JSON output for editor plugins
   diffm before.go after.go -f actions      Print structural actions list
   diffm                                    Interactive Git mode (unstaged diff)
-  diffm --cached                           Interactive Git mode (staged diff)
-  diffm HEAD~1 HEAD                        Interactive Git mode comparing revisions`,
+  diffm -f inline                          Git mode inline diff with pager
+  diffm --cached -f inline                 Git staged changes inline diff
+  diffm HEAD~1 HEAD -f inline              Git revision comparison in inline diff`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Load()
@@ -70,12 +77,20 @@ Examples:
 			cfg = &defaultCfg
 		}
 
+		noPager, _ := cmd.Flags().GetBool("no-pager")
+		patchMode, _ := cmd.Flags().GetBool("patch")
+		if patchMode && !cmd.Flags().Changed("no-pager") {
+			noPager = true
+		}
+
 		format, _ := cmd.Flags().GetString("format")
-		if !cmd.Flags().Changed("format") && cfg.Format != "" {
+		if patchMode && !cmd.Flags().Changed("format") {
+			format = "inline"
+		} else if !cmd.Flags().Changed("format") && cfg.Format != "" {
 			format = cfg.Format
 		}
-		if format != "" && !slices.Contains([]string{"json", "actions", "tui"}, format) {
-			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, tui\n", format)
+		if format != "" && !slices.Contains([]string{"json", "actions", "tui", "inline"}, format) {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, tui, inline\n", format)
 			os.Exit(1)
 		}
 
@@ -112,7 +127,7 @@ Examples:
 
 			// Case 1: Both exist on disk as files or /dev/null
 			if isFileOrDevNull(argA) && isFileOrDevNull(argB) {
-				runFileDiff(cmd, argA, argB, format, ignoreComments, parseErrorLimit, th)
+				runFileDiff(cmd, argA, argB, format, ignoreComments, parseErrorLimit, th, noPager)
 				return
 			}
 
@@ -125,17 +140,17 @@ Examples:
 
 				// Case 2: Two Git revisions (e.g. diffm main feature-branch)
 				if isRevA && isRevB {
-					runGitMode(cmd, []string{argA, argB}, format, ignoreComments, parseErrorLimit, th)
+					runGitMode(cmd, []string{argA, argB}, format, ignoreComments, parseErrorLimit, th, noPager)
 					return
 				}
 
 				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/config.go)
 				if isRevA && isTrackedOrFileB {
-					runGitMode(cmd, []string{argA, argB}, format, ignoreComments, parseErrorLimit, th)
+					runGitMode(cmd, []string{argA, argB}, format, ignoreComments, parseErrorLimit, th, noPager)
 					return
 				}
 				if isRevB && isTrackedOrFileA {
-					runGitMode(cmd, []string{argB, argA}, format, ignoreComments, parseErrorLimit, th)
+					runGitMode(cmd, []string{argB, argA}, format, ignoreComments, parseErrorLimit, th, noPager)
 					return
 				}
 
@@ -174,7 +189,7 @@ Examples:
 
 		// In a git repo, launch interactive mode (optionally filtered by ref or path)
 		if git.IsGitRepository(".") {
-			runGitMode(cmd, args, format, ignoreComments, parseErrorLimit, th)
+			runGitMode(cmd, args, format, ignoreComments, parseErrorLimit, th, noPager)
 			return
 		}
 
@@ -187,7 +202,7 @@ Examples:
 	},
 }
 
-func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, th *theme.Theme) {
+func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, th *theme.Theme, noPager bool) {
 	stagedOnly, _ := cmd.Flags().GetBool("cached")
 
 	var refs, paths []string
@@ -210,124 +225,245 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		pathFilter = paths[0]
 	}
 
-	// Handle headless / non-interactive output formats in Git mode
-	if format == "json" || format == "actions" {
-		if pathFilter != "" {
-			runGitFileDiff(cmd, refA, refB, pathFilter, stagedOnly, format, ignoreComments, parseErrorLimit, th)
-			return
-		}
-		if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsTerminal(os.Stderr.Fd()) {
-			refLabel := refA
-			if refLabel == "" {
-				refLabel = "HEAD"
-			}
-			fmt.Fprintf(os.Stderr, "Error: Git mode non-interactive output (%s) requires an explicit file path (e.g. diffm %s <file> -f %s)\n", format, refLabel, format)
-			os.Exit(1)
+	if format == "" {
+		if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsTerminal(os.Stderr.Fd()) {
+			format = "tui"
+		} else {
+			format = "json"
 		}
 	}
 
-	if err := tui.RunGit(".", refA, refB, pathFilter, stagedOnly, th); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: running Git interactive diff: %v\n", err)
+	if format == "tui" {
+		if err := tui.RunGit(".", refA, refB, pathFilter, stagedOnly, th); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: running Git interactive diff: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Non-TUI Git modes: inline, json, actions
+	files, err := git.GetChangedFiles(".", refA, refB, pathFilter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: retrieving git status: %v\n", err)
 		os.Exit(1)
-	}
-}
-
-func runGitFileDiff(cmd *cobra.Command, refA, refB, pathFilter string, stagedOnly bool, format string, ignoreComments bool, parseErrorLimit int, th *theme.Theme) {
-	var srcBytes, dstBytes []byte
-	var err error
-
-	if stagedOnly {
-		srcBytes, err = git.GetContent(".", pathFilter, "HEAD")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading HEAD:%s: %v\n", pathFilter, err)
-			os.Exit(1)
-		}
-		dstBytes, err = git.GetContent(".", pathFilter, ":")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading index:%s: %v\n", pathFilter, err)
-			os.Exit(1)
-		}
-	} else if refA != "" && refB != "" {
-		srcBytes, err = git.GetContent(".", pathFilter, refA)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading %s:%s: %v\n", refA, pathFilter, err)
-			os.Exit(1)
-		}
-		dstBytes, err = git.GetContent(".", pathFilter, refB)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading %s:%s: %v\n", refB, pathFilter, err)
-			os.Exit(1)
-		}
-	} else if refA != "" {
-		srcBytes, err = git.GetContent(".", pathFilter, refA)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading %s:%s: %v\n", refA, pathFilter, err)
-			os.Exit(1)
-		}
-		dstBytes, err = git.GetContent(".", pathFilter, "")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading working tree %s: %v\n", pathFilter, err)
-			os.Exit(1)
-		}
-	} else {
-		// Working tree unstaged changes
-		srcBytes, err = git.GetContent(".", pathFilter, ":")
-		if err != nil || len(srcBytes) == 0 {
-			srcBytes, _ = git.GetContent(".", pathFilter, "HEAD")
-		}
-		dstBytes, err = git.GetContent(".", pathFilter, "")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading working tree %s: %v\n", pathFilter, err)
-			os.Exit(1)
-		}
 	}
 
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
-	includeUI := format == "tui" || uiMode || fullMode
+	includeUI := format == "inline" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format != "tui" && !uiMode || fullMode,
+		IncludeActions:    format == "inline" || (format != "tui" && !uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
 
-	dr, err := pipeline.Run(srcBytes, dstBytes, pathFilter, pathFilter, pipeline.DiffOptions{
-		ParseErrorLimit: parseErrorLimit,
-		IgnoreComments:  ignoreComments,
-		EnvelopeOpts:    opts,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	renderOpts := resolveRenderOptions(cmd)
+
+	type diffTarget struct {
+		srcFile  string
+		dstFile  string
+		srcBytes []byte
+		dstBytes []byte
 	}
 
-	switch format {
-	case "json":
-		jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
+	var targets []diffTarget
+
+	if refA == "" {
+		for _, f := range files {
+			if stagedOnly && !f.Staged {
+				continue
+			}
+
+			srcFile := f.Path
+			if f.OldPath != "" {
+				srcFile = f.OldPath
+			}
+			dstFile := f.Path
+
+			if f.Staged {
+				srcBytes, _ := git.GetContent(".", srcFile, "HEAD")
+				dstBytes, _ := git.GetContent(".", dstFile, ":")
+				if !bytes.Equal(srcBytes, dstBytes) {
+					targets = append(targets, diffTarget{
+						srcFile:  srcFile,
+						dstFile:  dstFile,
+						srcBytes: srcBytes,
+						dstBytes: dstBytes,
+					})
+				}
+			}
+
+			if f.Unstaged && !stagedOnly {
+				revA := ":"
+				if !f.Staged {
+					revA = "HEAD"
+				}
+				srcBytes, _ := git.GetContent(".", srcFile, revA)
+				dstBytes, _ := git.GetContent(".", dstFile, "")
+				if !bytes.Equal(srcBytes, dstBytes) {
+					targets = append(targets, diffTarget{
+						srcFile:  srcFile,
+						dstFile:  dstFile,
+						srcBytes: srcBytes,
+						dstBytes: dstBytes,
+					})
+				}
+			}
+		}
+	} else {
+		for _, f := range files {
+			srcFile := f.Path
+			if f.OldPath != "" {
+				srcFile = f.OldPath
+			}
+			dstFile := f.Path
+
+			srcBytes, _ := git.GetContent(".", srcFile, refA)
+			dstBytes, _ := git.GetContent(".", dstFile, refB)
+
+			if !bytes.Equal(srcBytes, dstBytes) {
+				targets = append(targets, diffTarget{
+					srcFile:  srcFile,
+					dstFile:  dstFile,
+					srcBytes: srcBytes,
+					dstBytes: dstBytes,
+				})
+			}
+		}
+	}
+
+	if len(targets) == 0 && pathFilter != "" && (isFileOrDevNull(pathFilter) || git.IsTrackedFile(".", pathFilter)) {
+		var srcBytes, dstBytes []byte
+		if refA == "" {
+			if stagedOnly {
+				srcBytes, _ = git.GetContent(".", pathFilter, "HEAD")
+				dstBytes, _ = git.GetContent(".", pathFilter, ":")
+			} else {
+				srcBytes, _ = git.GetContent(".", pathFilter, ":")
+				if len(srcBytes) == 0 {
+					srcBytes, _ = git.GetContent(".", pathFilter, "HEAD")
+				}
+				dstBytes, _ = git.GetContent(".", pathFilter, "")
+			}
+		} else {
+			srcBytes, _ = git.GetContent(".", pathFilter, refA)
+			dstBytes, _ = git.GetContent(".", pathFilter, refB)
+		}
+
+		if format == "json" || !bytes.Equal(srcBytes, dstBytes) {
+			targets = append(targets, diffTarget{
+				srcFile:  pathFilter,
+				dstFile:  pathFilter,
+				srcBytes: srcBytes,
+				dstBytes: dstBytes,
+			})
+		}
+	}
+
+	if len(targets) == 0 {
+		return
+	}
+
+	var p *pager.Pager
+	var writer io.Writer = os.Stdout
+
+	if format == "inline" || format == "actions" {
+		p, writer = pager.Start(noPager)
+		defer p.Close()
+	}
+
+	for _, t := range targets {
+		dr, err := pipeline.Run(t.srcBytes, t.dstBytes, t.srcFile, t.dstFile, pipeline.DiffOptions{
+			ParseErrorLimit: parseErrorLimit,
+			IgnoreComments:  ignoreComments,
+			EnvelopeOpts:    opts,
+		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: serializing JSON: %v\n", err)
-			os.Exit(1)
+			continue
 		}
-		_, _ = os.Stdout.Write(jsonData)
-		_, _ = os.Stdout.Write([]byte("\n"))
-	case "actions":
-		refSrc := refA
-		if refSrc == "" {
-			refSrc = "HEAD"
+
+		switch format {
+		case "inline":
+			output := inline.Render(t.srcFile, t.dstFile, t.srcBytes, t.dstBytes, dr.Envelope, renderOpts, th)
+			if output != "" {
+				if _, err := io.WriteString(writer, output); err != nil {
+					if pager.IsBrokenPipe(err) {
+						return
+					}
+				}
+				if !strings.HasSuffix(output, "\n") {
+					if _, err := io.WriteString(writer, "\n"); err != nil {
+						if pager.IsBrokenPipe(err) {
+							return
+						}
+					}
+				}
+			}
+		case "json":
+			jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
+			if err == nil {
+				if _, err := writer.Write(jsonData); err != nil {
+					if pager.IsBrokenPipe(err) {
+						return
+					}
+				}
+				if _, err := writer.Write([]byte("\n")); err != nil {
+					if pager.IsBrokenPipe(err) {
+						return
+					}
+				}
+			}
+		case "actions":
+			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", t.srcFile, t.dstFile); err != nil {
+				if pager.IsBrokenPipe(err) {
+					return
+				}
+			}
+			_ = engine.FprintMappings(writer, dr.MatchResult)
+			_ = actions.FprintActions(writer, dr.EditScript)
 		}
-		refDst := refB
-		if refDst == "" {
-			refDst = "working"
-		}
-		fmt.Printf("Diffing  %s:%s  →  %s:%s\n\n", refSrc, pathFilter, refDst, pathFilter)
-		_ = engine.FprintMappings(os.Stdout, dr.MatchResult)
-		_ = actions.FprintActions(os.Stdout, dr.EditScript)
-	case "tui":
-		if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes, dr.Envelope, th); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: running TUI: %v\n", err)
-			os.Exit(1)
-		}
+	}
+}
+
+func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
+	patchMode, _ := cmd.Flags().GetBool("patch")
+
+	colorFlag, _ := cmd.Flags().GetString("color")
+	if patchMode && !cmd.Flags().Changed("color") {
+		colorFlag = "never"
+	}
+
+	contextLines, _ := cmd.Flags().GetInt("context")
+	if contextLines < 0 {
+		contextLines = 3
+	}
+
+	lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
+	if patchMode && !cmd.Flags().Changed("line-numbers") {
+		lineNumbers = false
+	}
+
+	annotations, _ := cmd.Flags().GetBool("annotations")
+	if patchMode && !cmd.Flags().Changed("annotations") {
+		annotations = false
+	}
+
+	var useColor bool
+	switch colorFlag {
+	case "always":
+		useColor = true
+	case "never":
+		useColor = false
+	default:
+		useColor = isatty.IsTerminal(os.Stdout.Fd())
+	}
+
+	return inline.RenderOptions{
+		Color:              useColor,
+		ContextLines:       contextLines,
+		LineNumbers:        lineNumbers,
+		DisableAnnotations: !annotations,
 	}
 }
 
@@ -339,7 +475,7 @@ func isFileOrDevNull(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreComments bool, parseErrorLimit int, th *theme.Theme) {
+func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreComments bool, parseErrorLimit int, th *theme.Theme, noPager bool) {
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
@@ -351,9 +487,9 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 		}
 	}
 
-	includeUI := format == "tui" || uiMode || fullMode
+	includeUI := format == "tui" || format == "inline" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format != "tui" && !uiMode || fullMode,
+		IncludeActions:    format == "inline" || (format != "tui" && !uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
@@ -369,6 +505,26 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 	}
 
 	switch format {
+	case "inline":
+		p, writer := pager.Start(noPager)
+		defer p.Close()
+
+		renderOpts := resolveRenderOptions(cmd)
+		output := inline.Render(fileA, fileB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts, th)
+		if output != "" {
+			if _, err := io.WriteString(writer, output); err != nil {
+				if pager.IsBrokenPipe(err) {
+					return
+				}
+			}
+			if !strings.HasSuffix(output, "\n") {
+				if _, err := io.WriteString(writer, "\n"); err != nil {
+					if pager.IsBrokenPipe(err) {
+						return
+					}
+				}
+			}
+		}
 	case "json":
 		jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
 		if err != nil {
@@ -378,9 +534,11 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 		_, _ = os.Stdout.Write(jsonData)
 		_, _ = os.Stdout.Write([]byte("\n"))
 	case "actions":
-		fmt.Printf("Diffing  %s  →  %s\n\n", fileA, fileB)
-		_ = engine.FprintMappings(os.Stdout, dr.MatchResult)
-		_ = actions.FprintActions(os.Stdout, dr.EditScript)
+		p, writer := pager.Start(noPager)
+		defer p.Close()
+		_, _ = fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", fileA, fileB)
+		_ = engine.FprintMappings(writer, dr.MatchResult)
+		_ = actions.FprintActions(writer, dr.EditScript)
 	case "tui":
 		if err := tui.Run(dr.SrcFile, dr.DstFile, dr.SrcBytes, dr.DstBytes, dr.Envelope, th); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: running TUI: %v\n", err)
@@ -398,11 +556,17 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().StringP("format", "f", "", "Output format: json, actions, tui (default: tui if interactive, json otherwise)")
+	rootCmd.Flags().StringP("format", "f", "", "Output format: json, actions, tui, inline (default: tui if interactive, json otherwise)")
 	rootCmd.Flags().StringP("theme", "t", "", "Color theme: mocha (dark), latte (light), or custom theme name")
 	rootCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
 	rootCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
 	rootCmd.Flags().Bool("ui", false, "Include line alignment and highlight spans in JSON output")
 	rootCmd.Flags().Bool("full", false, "Include actions, line alignment, and highlight spans in JSON output")
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
+	rootCmd.Flags().String("color", "auto", "Color output: always, never, auto")
+	rootCmd.Flags().IntP("context", "U", 3, "Lines of context to show for inline diff")
+	rootCmd.Flags().BoolP("line-numbers", "n", true, "Show line numbers in inline diff output")
+	rootCmd.Flags().Bool("annotations", true, "Include AST move annotations in inline diff")
+	rootCmd.Flags().BoolP("patch", "p", false, "Generate a standard patch suitable for git apply / patch tools")
+	rootCmd.Flags().Bool("no-pager", false, "Do not pipe output into a pager")
 }

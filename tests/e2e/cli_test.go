@@ -426,13 +426,130 @@ func TestCLI_GitMode_HeadlessSingleFileJSON(t *testing.T) {
 	}
 }
 
-func TestCLI_GitMode_HeadlessRequiresPathFilter(t *testing.T) {
-	// Running diffm -f json in git mode without a path filter in non-interactive mode should fail fast
-	_, stderr, err := runDiffm("HEAD", "-f", "json")
-	if err == nil {
-		t.Fatal("expected error when running git mode without path filter in non-interactive json format")
+func TestCLI_InlineFormat(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.go")
+	newPath := filepath.Join(dir, "new.go")
+
+	oldContent := "package main\n\nfunc main() {\n\tprintln(\"old code\")\n}\n"
+	newContent := "package main\n\nfunc main() {\n\tprintln(\"new code\")\n}\n"
+
+	if err := os.WriteFile(oldPath, []byte(oldContent), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(stderr, "requires an explicit file path") {
-		t.Errorf("expected path requirement error, got: %s", stderr)
+	if err := os.WriteFile(newPath, []byte(newContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Basic inline diff
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "inline")
+	if err != nil {
+		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
+	}
+
+	if !strings.Contains(stdout, "--- a/") || !strings.Contains(stdout, "+++ b/") {
+		t.Errorf("missing standard file headers in inline diff:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "println(\"old code\")") {
+		t.Errorf("missing deleted line in inline diff:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "println(\"new code\")") {
+		t.Errorf("missing inserted line in inline diff:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "│") {
+		t.Errorf("expected line number separator in default inline diff:\n%s", stdout)
+	}
+
+	// 2. Color = always
+	stdoutColor, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--color", "always")
+	if err != nil {
+		t.Fatalf("diffm --color=always failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdoutColor, "\x1b[") {
+		t.Errorf("expected ANSI escapes with --color=always, got:\n%q", stdoutColor)
+	}
+
+	// 3. Color = never
+	stdoutNoColor, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--color", "never")
+	if err != nil {
+		t.Fatalf("diffm --color=never failed: %v\nstderr: %s", err, stderr)
+	}
+	if strings.Contains(stdoutNoColor, "\x1b[") {
+		t.Errorf("did not expect ANSI escapes with --color=never, got:\n%q", stdoutNoColor)
+	}
+
+	// 4. Custom context lines: -U1
+	stdoutU1, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "-U", "1")
+	if err != nil {
+		t.Fatalf("diffm -U1 failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdoutU1, "@@ ") {
+		t.Errorf("missing hunk header with -U1:\n%s", stdoutU1)
+	}
+
+	// 5. Line numbers disabled: --line-numbers=false
+	stdoutNoNumbers, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--line-numbers=false")
+	if err != nil {
+		t.Fatalf("diffm --line-numbers=false failed: %v\nstderr: %s", err, stderr)
+	}
+	if strings.Contains(stdoutNoNumbers, "│") {
+		t.Errorf("did not expect line number separator with --line-numbers=false:\n%s", stdoutNoNumbers)
+	}
+	if !strings.Contains(stdoutNoNumbers, "-\tprintln(\"old code\")") {
+		t.Errorf("expected standard minus prefix with --line-numbers=false:\n%s", stdoutNoNumbers)
+	}
+
+	// 6. Ignore comments with inline diff
+	commentOld := filepath.Join(dir, "comment_old.go")
+	commentNew := filepath.Join(dir, "comment_new.go")
+	if err := os.WriteFile(commentOld, []byte("package main\n\n// old comment\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(commentNew, []byte("package main\n\n// new comment\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdoutWithComments, _, err := runDiffm(commentOld, commentNew, "-f", "inline", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm inline with comments failed: %v", err)
+	}
+	if !strings.Contains(stdoutWithComments, "comment") {
+		t.Errorf("expected comment change in inline diff without -C, got: %s", stdoutWithComments)
+	}
+
+	// 7. Annotations disabled: --annotations=false
+	moveOld, moveNew := fixtureFiles(t, "go_gin_prevent_flush")
+	stdoutAnnotOff, stderr, err := runDiffm(moveOld, moveNew, "-f", "inline", "--annotations=false", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm --annotations=false failed: %v\nstderr: %s", err, stderr)
+	}
+	if strings.Contains(stdoutAnnotOff, "moved") || strings.Contains(stdoutAnnotOff, "←") {
+		t.Errorf("expected no move annotations with --annotations=false, got:\n%s", stdoutAnnotOff)
+	}
+
+	// 8. Patch mode: -p / --patch
+	stdoutPatch, stderrPatch, err := runDiffm(moveOld, moveNew, "-p", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm -p failed: %v\nstderr: %s", err, stderrPatch)
+	}
+	if strings.Contains(stdoutPatch, "│") || strings.Contains(stdoutPatch, "←") || strings.Contains(stdoutPatch, "\x1b[") {
+		t.Errorf("expected clean standard patch with -p, got:\n%s", stdoutPatch)
+	}
+	if !strings.Contains(stdoutPatch, "-	w.ResponseWriter.(http.Flusher).Flush()") {
+		t.Errorf("expected clean minus line in patch, got:\n%s", stdoutPatch)
+	}
+}
+
+func TestCLI_GitInlineFormat(t *testing.T) {
+	// Running inside diffmantic repo with -f inline and --no-pager
+	stdout, stderr, err := runDiffm("-f", "inline", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm -f inline in git repo failed: %v\nstderr: %s", err, stderr)
+	}
+
+	if len(stdout) > 0 {
+		if !strings.Contains(stdout, "--- a/") || !strings.Contains(stdout, "+++ b/") {
+			t.Errorf("expected git inline diff output with standard headers, got:\n%s", stdout)
+		}
 	}
 }

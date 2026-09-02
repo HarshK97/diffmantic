@@ -579,15 +579,16 @@ func getDeclarationScope(n *treesitter.ASTNode) string {
 		if isScaff {
 			for _, p := range child.Children {
 				isParamDec := (r != nil && r.IsDeclaration(p.Type)) || (r == nil && rules.IsDeclaration(p.Type))
-				if isParamDec {
-					for _, t := range p.Children {
-						if t.Type == "type_identifier" && t.Label != "" {
-							return t.Label
-						}
-						for _, pt := range t.Children {
-							if pt.Type == "type_identifier" && pt.Label != "" {
-								return pt.Label
-							}
+				if isParamDec && len(p.Children) > 0 {
+					target := p.Children[len(p.Children)-1]
+					isIdent := (r != nil && r.IsIdentifier(target.Type)) || (r == nil && rules.IsIdentifier(target.Type))
+					if isIdent && target.Label != "" {
+						return target.Label
+					}
+					for _, pt := range target.Children {
+						isSubIdent := (r != nil && r.IsIdentifier(pt.Type)) || (r == nil && rules.IsIdentifier(pt.Type))
+						if isSubIdent && pt.Label != "" {
+							return pt.Label
 						}
 					}
 				}
