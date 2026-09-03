@@ -7,14 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-03
+
 ### Added
 - Added a dedicated comment diffing pipeline (`internal/comments`) that diffs single-line and multiline comments alongside AST matching (PR #124).
 - Added `-C` / `--ignore-comments` flag to skip comment diffing when you only care about code logic changes (PR #124).
 - Added `comments` grammar rules across supported languages so Tree-sitter identifies comment node types accurately (PR #124).
+- Added an AST-aware inline diff renderer (`-f inline` or `-p`/`--patch`) with syntax highlighting, hunk headers, and terminal pager support (PR #138).
+- Unified CLI commands: combined file and git diffing under `diffm` with automatic routing for revisions and file paths, plus support for `~/.config/diffmantic/config.yml` (PR #133).
+- Added Catppuccin Mocha (dark) and Latte (light) themes with auto terminal background detection and custom YAML theme support (PR #131).
+- Added an interactive hover popover in the TUI to inspect AST node types and action details on the fly (PR #132).
+- Added rule-driven aliasing for ternary (`? :`), Elvis (`?:`), and try/catch operators across supported languages (PR #137).
+
+### Changed
+- Preserved in-place updates for modified operators (like changing `==` to `!=`, `<` to `<=`, or `+=` to `-=`) instead of splitting them into noisy delete and insert pairs (PR #139).
+- Suppressed redundant outer wrapper actions when inner code moves, cutting duplicate highlight boxes and phantom move annotations (PR #136).
+- Migrated language rule definitions to native Go static declarations for faster startup and zero registry overhead (PR #134, #135).
 
 ### Fixed
 - Fixed noisy whole-block delete/insert actions on multiline docstrings by running line-level diffs inside comment blocks (PR #124).
 - Fixed comments falsely matching similar comments in other functions or branches by locking comment matching to their enclosing scope (PR #124).
+- Fixed small subtrees matching across unrelated scopes in TopDown diffing (PR #126).
+- Restricted keyword tagging to terminal leaf nodes and anchored stationary containers during recovery (PR #127).
+- Fixed multiline comment continuity in sequence line alignment (PR #129).
+- Preserved outer container peer matching in BottomUp candidate selection (PR #125).
 
 ### Performance
 - Ran comment extraction and diffing concurrently with Tree-sitter parsing and AST matching, keeping comment diffing overhead near zero wall-clock time (PR #124).
@@ -171,7 +187,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/HarshK97/diffmantic/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HarshK97/diffmantic/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HarshK97/diffmantic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HarshK97/diffmantic/compare/v0.3.0...v0.4.0

@@ -62,6 +62,7 @@ checksum:
 
 release:
   mode: replace
+  prerelease: true
 
 brews:
   - name: diffmantic

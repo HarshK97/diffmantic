@@ -88,7 +88,7 @@ It auto-detects your OS and architecture, grabs the right binary from [GitHub Re
 curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --dir=/usr/local/bin
 
 # Install a specific version
-curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --version=v0.6.0
+curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --version=v0.7.0
 ```
 
 ### Homebrew
