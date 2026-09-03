@@ -43,13 +43,8 @@ func groupingNewParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 	return n
 }
 
-func isStructuralPunctuation(n *treesitter.ASTNode) bool {
-	return n.IsBracketOrParen()
-}
-
-// GroupMoves assigns grouping metadata (GroupID) to Move actions that share
-// the exact same source parent and destination parent context.
-// Bare aliased literals are excluded from group membership.
+// GroupMoves groups Move actions that share the same source and destination parents.
+// Bare aliased literals are excluded.
 func GroupMoves(es *actions.EditScript) *actions.EditScript {
 	if es == nil {
 		return nil
@@ -60,7 +55,6 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 		return es
 	}
 
-	// Group indices of Move actions by (oldParent, newParent)
 	groups := make(map[groupKey][]int)
 	var keyOrder []groupKey
 
@@ -80,7 +74,7 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 		}
 	}
 
-	groupIDMap := make(map[int]string)
+	groupIDMap := make(map[int]string, len(actionsSlice))
 	groupCounter := 1
 
 	for _, k := range keyOrder {
@@ -105,10 +99,7 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 	result := actions.NewEditScript()
 	for i, act := range actionsSlice {
 		if act.Type == actions.Move {
-			act.GroupID = ""
-			if gid, ok := groupIDMap[i]; ok {
-				act.GroupID = gid
-			}
+			act.GroupID = groupIDMap[i]
 		}
 		result.Add(act)
 	}

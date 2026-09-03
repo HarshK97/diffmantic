@@ -6,6 +6,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+// Run applies postprocessing passes (collapsing subtrees and grouping moves) to the edit script.
 func Run(
 	es *actions.EditScript,
 	ms *engine.Mapping,
@@ -15,6 +16,5 @@ func Run(
 		return nil
 	}
 	es = Collapse(es, ms, srcRoot, dstRoot)
-	es = FilterPunctuation(es, ms)
 	return GroupMoves(es)
 }
