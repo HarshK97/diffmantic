@@ -570,24 +570,19 @@ func getDeclarationScope(n *treesitter.ASTNode) string {
 		return ""
 	}
 	r := rulesFor(n)
-	isScoped := (r != nil && r.IsScopedDeclaration(n.Type)) || (r == nil && rules.IsScopedDeclaration(n.Type))
-	if !isScoped {
+	if r == nil || !r.IsScopedDeclaration(n.Type) {
 		return ""
 	}
 	for _, child := range n.Children {
-		isScaff := (r != nil && r.IsScaffolding(child.Type)) || (r == nil && rules.IsScaffolding(child.Type))
-		if isScaff {
+		if r.IsScaffolding(child.Type) {
 			for _, p := range child.Children {
-				isParamDec := (r != nil && r.IsDeclaration(p.Type)) || (r == nil && rules.IsDeclaration(p.Type))
-				if isParamDec && len(p.Children) > 0 {
+				if r.IsDeclaration(p.Type) && len(p.Children) > 0 {
 					target := p.Children[len(p.Children)-1]
-					isIdent := (r != nil && r.IsIdentifier(target.Type)) || (r == nil && rules.IsIdentifier(target.Type))
-					if isIdent && target.Label != "" {
+					if r.IsIdentifier(target.Type) && target.Label != "" {
 						return target.Label
 					}
 					for _, pt := range target.Children {
-						isSubIdent := (r != nil && r.IsIdentifier(pt.Type)) || (r == nil && rules.IsIdentifier(pt.Type))
-						if isSubIdent && pt.Label != "" {
+						if r.IsIdentifier(pt.Type) && pt.Label != "" {
 							return pt.Label
 						}
 					}

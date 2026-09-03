@@ -226,7 +226,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	}
 
 	if format == "" {
-		if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsTerminal(os.Stderr.Fd()) {
+		if isatty.IsTerminal(os.Stdout.Fd()) {
 			format = "tui"
 		} else {
 			format = "json"
@@ -391,12 +391,16 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 					if pager.IsBrokenPipe(err) {
 						return
 					}
+					fmt.Fprintf(os.Stderr, "Error: writing diff output: %v\n", err)
+					return
 				}
 				if !strings.HasSuffix(output, "\n") {
 					if _, err := io.WriteString(writer, "\n"); err != nil {
 						if pager.IsBrokenPipe(err) {
 							return
 						}
+						fmt.Fprintf(os.Stderr, "Error: writing newline: %v\n", err)
+						return
 					}
 				}
 			}
@@ -516,12 +520,16 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 				if pager.IsBrokenPipe(err) {
 					return
 				}
+				fmt.Fprintf(os.Stderr, "Error: writing diff output: %v\n", err)
+				os.Exit(1)
 			}
 			if !strings.HasSuffix(output, "\n") {
 				if _, err := io.WriteString(writer, "\n"); err != nil {
 					if pager.IsBrokenPipe(err) {
 						return
 					}
+					fmt.Fprintf(os.Stderr, "Error: writing newline: %v\n", err)
+					os.Exit(1)
 				}
 			}
 		}

@@ -7,12 +7,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/theme"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -35,6 +39,73 @@ type hunkLine struct {
 	srcLineIdx int
 	dstLineIdx int
 	text       string
+}
+
+type inlineScratch struct {
+	colHighlight    []int
+	colSpanID       []int
+	colSpanLen      []int
+	colCandidateLen []int
+	colHasMove      []bool
+}
+
+func newInlineScratch(capacity int) *inlineScratch {
+	if capacity < 256 {
+		capacity = 256
+	}
+	return &inlineScratch{
+		colHighlight:    make([]int, capacity),
+		colSpanID:       make([]int, capacity),
+		colSpanLen:      make([]int, capacity),
+		colCandidateLen: make([]int, capacity),
+		colHasMove:      make([]bool, capacity),
+	}
+}
+
+func (s *inlineScratch) ensureCapacity(n int) {
+	if len(s.colHighlight) >= n {
+		return
+	}
+	newCap := max(n, len(s.colHighlight)*2)
+	s.colHighlight = make([]int, newCap)
+	s.colSpanID = make([]int, newCap)
+	s.colSpanLen = make([]int, newCap)
+	s.colCandidateLen = make([]int, newCap)
+	s.colHasMove = make([]bool, newCap)
+}
+
+type renderStyles struct {
+	headerStyle    lipgloss.Style
+	hunkHdrStyle   lipgloss.Style
+	deleteStyle    lipgloss.Style
+	insertStyle    lipgloss.Style
+	updateStyle    lipgloss.Style
+	moveStyle      lipgloss.Style
+	moveUpdStyle   lipgloss.Style
+	moveAnnotStyle lipgloss.Style
+	numStyle       lipgloss.Style
+	sepStyle       lipgloss.Style
+}
+
+func initRenderStyles(th *theme.Theme, renderer *lipgloss.Renderer) renderStyles {
+	return renderStyles{
+		headerStyle:    renderer.NewStyle().Bold(true).Foreground(th.UI.Text),
+		hunkHdrStyle:   renderer.NewStyle().Foreground(th.UI.Lavender),
+		deleteStyle:    renderer.NewStyle().Foreground(th.Actions.DeleteFg),
+		insertStyle:    renderer.NewStyle().Foreground(th.Actions.InsertFg),
+		updateStyle:    renderer.NewStyle().Foreground(th.Actions.UpdateFg).Bold(true),
+		moveStyle:      renderer.NewStyle().Foreground(th.Actions.MoveFg).Bold(true),
+		moveUpdStyle:   renderer.NewStyle().Foreground(th.Actions.MoveUpdateFg).Bold(true).Underline(true),
+		moveAnnotStyle: renderer.NewStyle().Foreground(th.UI.Overlay0).Italic(true),
+		numStyle:       renderer.NewStyle().Foreground(th.UI.Overlay0),
+		sepStyle:       renderer.NewStyle().Foreground(th.UI.Surface1),
+	}
+}
+
+type hunkMoveMetadata struct {
+	srcLine1Badges map[int]string // Line index -> " ➔ L..."
+	dstLine1Badges map[int]string // Line index -> " ⤹ L..."
+	hunkHeaders    map[int]string // Hunk index -> " <sig> (moved {from/to} L...[, modified])"
 }
 
 // Render formats the diff envelope as an inline diff with AST highlights and move markers.
@@ -78,7 +149,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		dstEOFLine = len(dstLines) - 1
 	}
 
-	// Drop the synthetic empty line at EOF so it doesn't show up as an edit.
+	// Bidirectional synthetic EOF line remapping
 	filteredPairs := make([]serialize.LineAlignmentPair, 0, len(env.LineAlignment))
 	for _, pair := range env.LineAlignment {
 		if srcEOFLine != -1 && pair.LeftLine == srcEOFLine && (pair.RightLine == dstEOFLine || pair.RightLine == -1) {
@@ -86,6 +157,12 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		}
 		if dstEOFLine != -1 && pair.RightLine == dstEOFLine && (pair.LeftLine == srcEOFLine || pair.LeftLine == -1) {
 			continue
+		}
+		if srcEOFLine != -1 && pair.LeftLine == srcEOFLine && pair.RightLine != -1 {
+			pair.LeftLine = -1
+		}
+		if dstEOFLine != -1 && pair.RightLine == dstEOFLine && pair.LeftLine != -1 {
+			pair.RightLine = -1
 		}
 		filteredPairs = append(filteredPairs, pair)
 	}
@@ -143,7 +220,15 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 	srcOffsets := serialize.BuildLineIndex(srcBytes)
 	dstOffsets := serialize.BuildLineIndex(dstBytes)
 
-	srcBlockMoves, dstBlockMoves, srcInBlockMove, dstInBlockMove := buildBlockMoveAnnotations(env.Actions, srcOffsets, dstOffsets, srcLines, dstLines, leftSpansByLine, rightSpansByLine)
+	// Resolve language rules for declaration classification
+	var r *rules.Rules
+	if entry := treesitter.DetectGrammarEntry(srcFile); entry != nil {
+		r = rules.Get(entry.Name)
+	} else if entry := treesitter.DetectGrammarEntry(dstFile); entry != nil {
+		r = rules.Get(entry.Name)
+	}
+
+	meta := buildHunkMoveMetadata(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r)
 
 	renderer := lipgloss.NewRenderer(io.Discard)
 	if opts.Color {
@@ -152,41 +237,29 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		renderer.SetColorProfile(termenv.Ascii)
 	}
 
-	var (
-		headerStyle    lipgloss.Style
-		hunkHdrStyle   lipgloss.Style
-		deleteStyle    lipgloss.Style
-		insertStyle    lipgloss.Style
-		moveAnnotStyle lipgloss.Style
-	)
-
-	if opts.Color {
-		headerStyle = renderer.NewStyle().Bold(true).Foreground(th.UI.Text)
-		hunkHdrStyle = renderer.NewStyle().Foreground(th.UI.Lavender)
-		deleteStyle = renderer.NewStyle().Foreground(th.Actions.DeleteFg)
-		insertStyle = renderer.NewStyle().Foreground(th.Actions.InsertFg)
-		moveAnnotStyle = renderer.NewStyle().Foreground(th.UI.Overlay0).Italic(true)
-	}
+	styles := initRenderStyles(th, renderer)
+	scratch := newInlineScratch(256)
 
 	maxLine := max(len(srcLines), len(dstLines))
 	numWidth := max(3, len(strconv.Itoa(maxLine)))
 
 	var out strings.Builder
+	out.Grow(len(srcBytes) + len(dstBytes))
 
 	srcHeaderPath := formatFilePath(srcFile, "a/")
 	dstHeaderPath := formatFilePath(dstFile, "b/")
 
 	if opts.Color {
-		out.WriteString(headerStyle.Render("--- " + srcHeaderPath))
+		out.WriteString(styles.headerStyle.Render("--- " + srcHeaderPath))
 		out.WriteByte('\n')
-		out.WriteString(headerStyle.Render("+++ " + dstHeaderPath))
+		out.WriteString(styles.headerStyle.Render("+++ " + dstHeaderPath))
 		out.WriteByte('\n')
 	} else {
 		out.WriteString("--- " + srcHeaderPath + "\n")
 		out.WriteString("+++ " + dstHeaderPath + "\n")
 	}
 
-	for _, h := range hunks {
+	for hunkIdx, h := range hunks {
 		var lines []hunkLine
 		k := h.start
 		for k <= h.end {
@@ -267,7 +340,11 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				}
 			}
 			if srcStart == -1 {
-				srcStart = 0
+				if len(srcBytes) > 0 && srcFile != os.DevNull && srcFile != "/dev/null" {
+					srcStart = 1
+				} else {
+					srcStart = 0
+				}
 			}
 		}
 		if dstStart == -1 {
@@ -278,13 +355,18 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				}
 			}
 			if dstStart == -1 {
-				dstStart = 0
+				if len(dstBytes) > 0 && dstFile != os.DevNull && dstFile != "/dev/null" {
+					dstStart = 1
+				} else {
+					dstStart = 0
+				}
 			}
 		}
 
-		hunkHeader := fmt.Sprintf("@@ -%s +%s @@", formatRange(srcStart, srcCount), formatRange(dstStart, dstCount))
+		hunkHdrExtra := meta.hunkHeaders[hunkIdx]
+		hunkHeader := fmt.Sprintf("@@ -%s +%s @@%s", formatRange(srcStart, srcCount), formatRange(dstStart, dstCount), hunkHdrExtra)
 		if opts.Color {
-			out.WriteString(hunkHdrStyle.Render(hunkHeader))
+			out.WriteString(styles.hunkHdrStyle.Render(hunkHeader))
 		} else {
 			out.WriteString(hunkHeader)
 		}
@@ -301,13 +383,17 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				if l.dstLineIdx >= 0 {
 					dNum = l.dstLineIdx + 1
 				}
-				gutter = formatLineGutter(sNum, dNum, numWidth, opts.Color, l.kind, th, renderer)
+				gutter = formatLineGutter(sNum, dNum, numWidth, opts.Color, l.kind, &styles)
 			}
 
 			switch l.kind {
 			case kindContext:
 				if opts.LineNumbers {
-					out.WriteString(gutter + " " + l.text + "\n")
+					if opts.Color {
+						out.WriteString(gutter + l.text + "\n")
+					} else {
+						out.WriteString(gutter + " " + l.text + "\n")
+					}
 				} else {
 					out.WriteString(" " + l.text + "\n")
 				}
@@ -316,29 +402,26 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				}
 
 			case kindDelete:
-				var annot string
+				var badge string
 				if !opts.DisableAnnotations {
-					annot = srcBlockMoves[l.srcLineIdx]
-					if annot == "" && !srcInBlockMove[l.srcLineIdx] {
-						annot = buildTokenMoveAnnotation(l.text, leftSpansByLine[l.srcLineIdx], "left", srcOffsets, dstOffsets)
-					}
+					badge = meta.srcLine1Badges[l.srcLineIdx]
 				}
-				lineRendered := renderLineWithSpans(l.text, leftSpansByLine[l.srcLineIdx], true, "left", opts.Color, th, renderer)
+				lineRendered := renderLineWithSpans(l.text, leftSpansByLine[l.srcLineIdx], true, "left", opts.Color, &styles, scratch)
 				if opts.Color {
-					if annot != "" {
-						annot = moveAnnotStyle.Render(annot)
+					if badge != "" {
+						badge = styles.moveAnnotStyle.Render(badge)
 					}
-					prefix := deleteStyle.Render("-")
 					if opts.LineNumbers {
-						out.WriteString(gutter + prefix + lineRendered + annot + "\n")
+						out.WriteString(gutter + lineRendered + badge + "\n")
 					} else {
-						out.WriteString(prefix + lineRendered + annot + "\n")
+						prefix := styles.deleteStyle.Render("-")
+						out.WriteString(prefix + lineRendered + badge + "\n")
 					}
 				} else {
 					if opts.LineNumbers {
-						out.WriteString(gutter + "-" + lineRendered + annot + "\n")
+						out.WriteString(gutter + "-" + lineRendered + badge + "\n")
 					} else {
-						out.WriteString("-" + lineRendered + annot + "\n")
+						out.WriteString("-" + lineRendered + badge + "\n")
 					}
 				}
 				if !srcEndsWithNL && l.srcLineIdx == lastSrcLineIdx {
@@ -346,29 +429,26 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				}
 
 			case kindInsert:
-				var annot string
+				var badge string
 				if !opts.DisableAnnotations {
-					annot = dstBlockMoves[l.dstLineIdx]
-					if annot == "" && !dstInBlockMove[l.dstLineIdx] {
-						annot = buildTokenMoveAnnotation(l.text, rightSpansByLine[l.dstLineIdx], "right", srcOffsets, dstOffsets)
-					}
+					badge = meta.dstLine1Badges[l.dstLineIdx]
 				}
-				lineRendered := renderLineWithSpans(l.text, rightSpansByLine[l.dstLineIdx], false, "right", opts.Color, th, renderer)
+				lineRendered := renderLineWithSpans(l.text, rightSpansByLine[l.dstLineIdx], false, "right", opts.Color, &styles, scratch)
 				if opts.Color {
-					if annot != "" {
-						annot = moveAnnotStyle.Render(annot)
+					if badge != "" {
+						badge = styles.moveAnnotStyle.Render(badge)
 					}
-					prefix := insertStyle.Render("+")
 					if opts.LineNumbers {
-						out.WriteString(gutter + prefix + lineRendered + annot + "\n")
+						out.WriteString(gutter + lineRendered + badge + "\n")
 					} else {
-						out.WriteString(prefix + lineRendered + annot + "\n")
+						prefix := styles.insertStyle.Render("+")
+						out.WriteString(prefix + lineRendered + badge + "\n")
 					}
 				} else {
 					if opts.LineNumbers {
-						out.WriteString(gutter + "+" + lineRendered + annot + "\n")
+						out.WriteString(gutter + "+" + lineRendered + badge + "\n")
 					} else {
-						out.WriteString("+" + lineRendered + annot + "\n")
+						out.WriteString("+" + lineRendered + badge + "\n")
 					}
 				}
 				if !dstEndsWithNL && l.dstLineIdx == lastDstLineIdx {
@@ -381,7 +461,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 	return out.String()
 }
 
-func formatLineGutter(srcLine, dstLine int, numWidth int, color bool, kind lineKind, th *theme.Theme, renderer *lipgloss.Renderer) string {
+func formatLineGutter(srcLine, dstLine int, numWidth int, color bool, kind lineKind, styles *renderStyles) string {
 	srcStr := ""
 	if srcLine > 0 {
 		srcStr = strconv.Itoa(srcLine)
@@ -394,16 +474,14 @@ func formatLineGutter(srcLine, dstLine int, numWidth int, color bool, kind lineK
 	srcPad := fmt.Sprintf("%*s", numWidth, srcStr)
 	dstPad := fmt.Sprintf("%*s", numWidth, dstStr)
 
-	if color {
-		numStyle := renderer.NewStyle().Foreground(th.UI.Overlay0)
-		sepStyle := renderer.NewStyle().Foreground(th.UI.Surface1)
+	if color && styles != nil {
 		switch kind {
 		case kindDelete:
-			return renderer.NewStyle().Foreground(th.Actions.DeleteFg).Render(srcPad) + " " + numStyle.Render(dstPad) + " " + sepStyle.Render("│") + " "
+			return styles.deleteStyle.Render(srcPad) + " " + styles.numStyle.Render(dstPad) + " " + styles.sepStyle.Render("│") + " "
 		case kindInsert:
-			return numStyle.Render(srcPad) + " " + renderer.NewStyle().Foreground(th.Actions.InsertFg).Render(dstPad) + " " + sepStyle.Render("│") + " "
+			return styles.numStyle.Render(srcPad) + " " + styles.insertStyle.Render(dstPad) + " " + styles.sepStyle.Render("│") + " "
 		default:
-			return numStyle.Render(srcPad) + " " + numStyle.Render(dstPad) + " " + sepStyle.Render("│") + " "
+			return styles.numStyle.Render(srcPad) + " " + styles.numStyle.Render(dstPad) + " " + styles.sepStyle.Render("│") + " "
 		}
 	}
 	return srcPad + " " + dstPad + " │ "
@@ -448,24 +526,26 @@ func mergeHunks(changeIntervals []interval, totalPairs, contextLines int) []inte
 	return hunks
 }
 
-func resolveColHighlights(lineText string, spans []serialize.HighlightSpan, pane string) ([]int, []int) {
+func resolveColHighlights(lineText string, spans []serialize.HighlightSpan, pane string, scratch *inlineScratch) ([]int, []int) {
 	lineBytes := []byte(lineText)
 	n := len(lineBytes)
 	if n == 0 {
 		return nil, nil
 	}
 
-	colHighlight := make([]int, n)
-	colSpanID := make([]int, n)
-	colSpanLen := make([]int, n)
-	colCandidateLen := make([]int, n)
-	colHasMove := make([]bool, n)
+	scratch.ensureCapacity(n)
+	colHighlight := scratch.colHighlight[:n]
+	colSpanID := scratch.colSpanID[:n]
+	colSpanLen := scratch.colSpanLen[:n]
+	colCandidateLen := scratch.colCandidateLen[:n]
+	colHasMove := scratch.colHasMove[:n]
 
-	for i := range colHighlight {
+	for i := 0; i < n; i++ {
 		colHighlight[i] = -1
 		colSpanID[i] = -1
 		colSpanLen[i] = 1<<31 - 1
 		colCandidateLen[i] = 1<<31 - 1
+		colHasMove[i] = false
 	}
 
 	for sIdx, s := range spans {
@@ -494,7 +574,7 @@ func resolveColHighlights(lineText string, spans []serialize.HighlightSpan, pane
 		}
 	}
 
-	for col := range colHighlight {
+	for col := 0; col < n; col++ {
 		if colHighlight[col] == int(theme.ActionUpdate) && colHasMove[col] {
 			colHighlight[col] = int(theme.ActionMoveUpdate)
 		}
@@ -503,104 +583,148 @@ func resolveColHighlights(lineText string, spans []serialize.HighlightSpan, pane
 	return colHighlight, colSpanID
 }
 
-func lineMoveCoverage(lineText string, colHighlight []int) float64 {
-	trimmed := strings.TrimSpace(lineText)
-	if len(trimmed) == 0 || len(colHighlight) == 0 {
-		return 0
+func buildHunkMoveMetadata(actions []serialize.Action, hunks []interval, pairs []serialize.LineAlignmentPair, srcOffsets, dstOffsets []int, srcLines, dstLines []string, r *rules.Rules) hunkMoveMetadata {
+	meta := hunkMoveMetadata{
+		srcLine1Badges: make(map[int]string),
+		dstLine1Badges: make(map[int]string),
+		hunkHeaders:    make(map[int]string),
 	}
-	n := len(lineText)
-	movedCount := 0
-	nonSpaceCount := 0
-	for i := 0; i < n; i++ {
-		if lineText[i] != ' ' && lineText[i] != '\t' {
-			nonSpaceCount++
-			if colHighlight[i] == int(theme.ActionMove) ||
-				colHighlight[i] == int(theme.ActionUpdate) ||
-				colHighlight[i] == int(theme.ActionMoveUpdate) {
-				movedCount++
-			}
-		}
-	}
-	if nonSpaceCount == 0 {
-		return 0
-	}
-	return float64(movedCount) / float64(nonSpaceCount)
-}
-
-func buildBlockMoveAnnotations(actions []serialize.Action, srcOffsets, dstOffsets []int, srcLines, dstLines []string, leftSpans, rightSpans map[int][]serialize.HighlightSpan) (map[int]string, map[int]string, map[int]bool, map[int]bool) {
-	srcMoveAnnotations := make(map[int]string)
-	dstMoveAnnotations := make(map[int]string)
-	srcInBlockMove := make(map[int]bool)
-	dstInBlockMove := make(map[int]bool)
 
 	if len(actions) == 0 {
-		return srcMoveAnnotations, dstMoveAnnotations, srcInBlockMove, dstInBlockMove
+		return meta
 	}
 
+	// 1. Pre-index destination mutating action byte offsets in O(A log A)
+	var dstMutOffsets []uint32
 	for _, a := range actions {
-		if a.Action == "move" && a.Node != nil {
-			var dStart, dEnd int
-			if a.DestStartByte != nil && a.DestEndByte != nil {
-				dStart, _ = serialize.ByteToLineCol(dstOffsets, *a.DestStartByte)
-				dEnd, _ = serialize.ByteToLineCol(dstOffsets, *a.DestEndByte)
+		if a.Action == "insert" || a.Action == "update" || a.Action == "move_update" {
+			if a.DestStartByte != nil {
+				dstMutOffsets = append(dstMutOffsets, *a.DestStartByte)
 			} else if a.DestNode != nil {
-				dStart, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.StartByte)
-				dEnd, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.EndByte)
-			} else {
-				continue
+				dstMutOffsets = append(dstMutOffsets, a.DestNode.StartByte)
 			}
+		}
+	}
+	slices.Sort(dstMutOffsets)
 
-			sStart, _ := serialize.ByteToLineCol(srcOffsets, a.Node.StartByte)
-			sEnd, _ := serialize.ByteToLineCol(srcOffsets, a.Node.EndByte)
+	// 2. Map lines to hunks in O(N)
+	srcLineToHunk := make(map[int]int)
+	dstLineToHunk := make(map[int]int)
+	for hIdx, h := range hunks {
+		for p := h.start; p <= h.end && p < len(pairs); p++ {
+			pair := pairs[p]
+			if pair.LeftLine >= 0 {
+				srcLineToHunk[pair.LeftLine] = hIdx
+			}
+			if pair.RightLine >= 0 {
+				dstLineToHunk[pair.RightLine] = hIdx
+			}
+		}
+	}
 
-			// Make sure the start of the block has enough moved tokens before tagging it.
-			var sCov float64
-			if sStart < len(srcLines) {
-				if len(leftSpans[sStart]) > 0 {
-					cols, _ := resolveColHighlights(srcLines[sStart], leftSpans[sStart], "left")
-					sCov = lineMoveCoverage(srcLines[sStart], cols)
-				} else {
-					trimmedLen := len(strings.TrimSpace(srcLines[sStart]))
-					if trimmedLen > 0 {
-						sCov = 1.0
-					}
+	// 3. Evaluate moves in O(M log A)
+	for _, a := range actions {
+		if a.Action != "move" || a.Node == nil {
+			continue
+		}
+		sStart, _ := serialize.ByteToLineCol(srcOffsets, a.Node.StartByte)
+		sEnd, _ := serialize.ByteToLineCol(srcOffsets, a.Node.EndByte)
+
+		var dStart, dEnd int
+		var dStartByte, dEndByte uint32
+		if a.DestStartByte != nil && a.DestEndByte != nil {
+			dStart, _ = serialize.ByteToLineCol(dstOffsets, *a.DestStartByte)
+			dEnd, _ = serialize.ByteToLineCol(dstOffsets, *a.DestEndByte)
+			dStartByte, dEndByte = *a.DestStartByte, *a.DestEndByte
+		} else if a.DestNode != nil {
+			dStart, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.StartByte)
+			dEnd, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.EndByte)
+			dStartByte, dEndByte = a.DestNode.StartByte, a.DestNode.EndByte
+		} else {
+			continue
+		}
+
+		hSrc, inSrcHunk := srcLineToHunk[sStart]
+		hDst, inDstHunk := dstLineToHunk[dStart]
+
+		// Tier 1: Intra-hunk moves (Hs == Hd) are 100% suppressed from line-level badges
+		if inSrcHunk && inDstHunk && hSrc == hDst {
+			continue
+		}
+
+		// Evaluate descendant mutations in O(log A) via binary search
+		idx := sort.Search(len(dstMutOffsets), func(i int) bool {
+			return dstMutOffsets[i] >= dStartByte
+		})
+		isModified := idx < len(dstMutOffsets) && dstMutOffsets[idx] < dEndByte
+
+		isDecl := r != nil && r.IsDeclaration(a.Node.Type)
+		if isDecl {
+			// Tier 2: Single declaration cross-hunk move promoted to hunk header
+			sig := extractDeclarationSignature(srcLines, sStart, sEnd, r)
+			if sig == "" {
+				sig = extractDeclarationSignature(dstLines, dStart, dEnd, r)
+			}
+			modStr := ""
+			if isModified {
+				modStr = ", modified"
+			}
+			if inSrcHunk && sig != "" {
+				if _, exists := meta.hunkHeaders[hSrc]; !exists {
+					meta.hunkHeaders[hSrc] = fmt.Sprintf(" %s (moved to L%d%s)", sig, dStart+1, modStr)
 				}
 			}
-
-			var dCov float64
-			if dStart < len(dstLines) {
-				if len(rightSpans[dStart]) > 0 {
-					cols, _ := resolveColHighlights(dstLines[dStart], rightSpans[dStart], "right")
-					dCov = lineMoveCoverage(dstLines[dStart], cols)
-				} else {
-					trimmedLen := len(strings.TrimSpace(dstLines[dStart]))
-					if trimmedLen > 0 {
-						dCov = 1.0
-					}
+			if inDstHunk && sig != "" {
+				if _, exists := meta.hunkHeaders[hDst]; !exists {
+					meta.hunkHeaders[hDst] = fmt.Sprintf(" %s (moved from L%d%s)", sig, sStart+1, modStr)
 				}
 			}
-
-			// Only tag the first line of the moved block so we don't spam every line.
-			if sCov >= 0.6 {
-				if _, exists := srcMoveAnnotations[sStart]; !exists {
-					srcMoveAnnotations[sStart] = fmt.Sprintf("  ← moved to line %d", dStart+1)
-				}
-				for sLine := sStart; sLine <= sEnd && sLine < len(srcLines); sLine++ {
-					srcInBlockMove[sLine] = true
+		} else {
+			// Tier 3: Sub-block moves and multi-move hunks attach micro-badges strictly on Line 1 (zero repetition)
+			if inSrcHunk {
+				if _, exists := meta.srcLine1Badges[sStart]; !exists {
+					meta.srcLine1Badges[sStart] = fmt.Sprintf(" ➔ L%d", dStart+1)
 				}
 			}
-
-			if dCov >= 0.6 {
-				if _, exists := dstMoveAnnotations[dStart]; !exists {
-					dstMoveAnnotations[dStart] = fmt.Sprintf("  ← moved from line %d", sStart+1)
-				}
-				for dLine := dStart; dLine <= dEnd && dLine < len(dstLines); dLine++ {
-					dstInBlockMove[dLine] = true
+			if inDstHunk {
+				if _, exists := meta.dstLine1Badges[dStart]; !exists {
+					meta.dstLine1Badges[dStart] = fmt.Sprintf(" ⤹ L%d", sStart+1)
 				}
 			}
 		}
 	}
-	return srcMoveAnnotations, dstMoveAnnotations, srcInBlockMove, dstInBlockMove
+
+	return meta
+}
+
+func extractDeclarationSignature(lines []string, startLine, endLine int, r *rules.Rules) string {
+	for i := startLine; i <= endLine && i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, "#[") || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			continue
+		}
+		sig := trimmed
+		sig = strings.TrimSuffix(sig, " {")
+		sig = strings.TrimSuffix(sig, "{")
+		sig = strings.TrimSuffix(sig, ";")
+		sig = strings.TrimSuffix(sig, ":")
+		sig = strings.TrimSpace(sig)
+		if len(sig) > 80 {
+			sig = sig[:77] + "..."
+		}
+		return sig
+	}
+	if startLine < len(lines) {
+		sig := strings.TrimSpace(lines[startLine])
+		if len(sig) > 80 {
+			sig = sig[:77] + "..."
+		}
+		return sig
+	}
+	return ""
 }
 
 func formatRange(start, count int) string {
@@ -677,183 +801,14 @@ func parseActionKind(act string) theme.ActionKind {
 	}
 }
 
-func getActionStyle(k theme.ActionKind, isDeleteLine bool, th *theme.Theme, renderer *lipgloss.Renderer) lipgloss.Style {
-	switch k {
-	case theme.ActionUpdate:
-		return renderer.NewStyle().Foreground(th.Actions.UpdateFg).Bold(true)
-	case theme.ActionMove:
-		return renderer.NewStyle().Foreground(th.Actions.MoveFg).Bold(true)
-	case theme.ActionMoveUpdate:
-		return renderer.NewStyle().Foreground(th.Actions.MoveUpdateFg).Bold(true).Underline(true)
-	case theme.ActionInsert:
-		return renderer.NewStyle().Foreground(th.Actions.InsertFg)
-	case theme.ActionDelete:
-		return renderer.NewStyle().Foreground(th.Actions.DeleteFg)
-	default:
-		if isDeleteLine {
-			return renderer.NewStyle().Foreground(th.Actions.DeleteFg)
-		}
-		return renderer.NewStyle().Foreground(th.Actions.InsertFg)
-	}
-}
-
-func buildTokenMoveAnnotation(lineText string, spans []serialize.HighlightSpan, pane string, srcOffsets, dstOffsets []int) string {
-	if len(lineText) == 0 || len(spans) == 0 {
-		return ""
-	}
-
-	colHighlight, colSpanID := resolveColHighlights(lineText, spans, pane)
-	if len(colHighlight) == 0 {
-		return ""
-	}
-
-	var targetOrder []int
-	tokensByTarget := make(map[int][]string)
-	seenTokenTarget := make(map[string]bool)
-
-	byteOffset := 0
-	segStart := 0
-	segKind := -1
-	segSpan := -1
-	first := true
-
-	for byteOffset < len(lineText) {
-		_, runeLen := utf8.DecodeRuneInString(lineText[byteOffset:])
-		hKind := -1
-		sID := -1
-		if byteOffset < len(colHighlight) {
-			hKind = colHighlight[byteOffset]
-			sID = colSpanID[byteOffset]
-		}
-
-		if first {
-			segKind = hKind
-			segSpan = sID
-			segStart = byteOffset
-			first = false
-		} else if hKind != segKind || sID != segSpan {
-			processTokenSeg(lineText[segStart:byteOffset], segKind, segStart, byteOffset, spans, pane, srcOffsets, dstOffsets, &targetOrder, tokensByTarget, seenTokenTarget)
-			segStart = byteOffset
-			segKind = hKind
-			segSpan = sID
-		}
-
-		byteOffset += runeLen
-	}
-
-	if !first && segStart < len(lineText) {
-		processTokenSeg(lineText[segStart:], segKind, segStart, len(lineText), spans, pane, srcOffsets, dstOffsets, &targetOrder, tokensByTarget, seenTokenTarget)
-	}
-
-	if len(targetOrder) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for _, tLine := range targetOrder {
-		tokens := tokensByTarget[tLine]
-		var quotedTokens []string
-		for _, tok := range tokens {
-			quotedTokens = append(quotedTokens, fmt.Sprintf("'%s'", tok))
-		}
-		toksStr := strings.Join(quotedTokens, ", ")
-
-		if pane == "left" {
-			parts = append(parts, fmt.Sprintf("%s ➔ L%d", toksStr, tLine))
-		} else {
-			parts = append(parts, fmt.Sprintf("%s ⤹ L%d", toksStr, tLine))
-		}
-	}
-
-	return "  ← " + strings.Join(parts, ", ")
-}
-
-func processTokenSeg(segText string, segKind, segStart, segEnd int, spans []serialize.HighlightSpan, pane string, srcOffsets, dstOffsets []int, targetOrder *[]int, tokensByTarget map[int][]string, seenTokenTarget map[string]bool) {
-	if segKind != int(theme.ActionMove) && segKind != int(theme.ActionMoveUpdate) {
-		return
-	}
-
-	var bestSpan *serialize.HighlightSpan
-	bestLen := 1<<31 - 1
-	for sIdx := range spans {
-		s := &spans[sIdx]
-		k := parseActionKind(s.Action)
-		if (k == theme.ActionMove || k == theme.ActionMoveUpdate) && s.ActionRef != nil {
-			if s.StartCol <= segStart && s.EndCol >= segEnd {
-				astLen := getSpanASTLength(*s, pane)
-				if astLen < bestLen {
-					bestLen = astLen
-					bestSpan = s
-				}
-			}
-		}
-	}
-
-	if bestSpan != nil && bestSpan.ActionRef != nil {
-		targetLine := 0
-		if pane == "left" {
-			if bestSpan.ActionRef.DestStartByte != nil {
-				dStart, _ := serialize.ByteToLineCol(dstOffsets, *bestSpan.ActionRef.DestStartByte)
-				targetLine = dStart + 1
-			} else if bestSpan.ActionRef.DestNode != nil {
-				dStart, _ := serialize.ByteToLineCol(dstOffsets, bestSpan.ActionRef.DestNode.StartByte)
-				targetLine = dStart + 1
-			}
-		} else {
-			if bestSpan.ActionRef.Node != nil {
-				sStart, _ := serialize.ByteToLineCol(srcOffsets, bestSpan.ActionRef.Node.StartByte)
-				targetLine = sStart + 1
-			}
-		}
-
-		tokClean := cleanTokenExpr(segText)
-		if tokClean != "" && targetLine > 0 {
-			key := fmt.Sprintf("%s:%d", tokClean, targetLine)
-			if !seenTokenTarget[key] {
-				seenTokenTarget[key] = true
-				if len(tokensByTarget[targetLine]) == 0 {
-					*targetOrder = append(*targetOrder, targetLine)
-				}
-				tokensByTarget[targetLine] = append(tokensByTarget[targetLine], tokClean)
-			}
-		}
-	}
-}
-
-func cleanTokenExpr(raw string) string {
-	s := strings.TrimSpace(raw)
-	s = strings.TrimRight(s, " \t;:,{}+-*/=&|")
-	s = strings.TrimLeft(s, " \t;:,{}+-*/=&|")
-
-	for len(s) > 0 && (strings.HasSuffix(s, "(") || strings.HasSuffix(s, "[")) {
-		s = s[:len(s)-1]
-		s = strings.TrimRight(s, " \t")
-	}
-
-	for len(s) > 0 && (strings.HasPrefix(s, ")") || strings.HasPrefix(s, "]")) {
-		s = s[1:]
-		s = strings.TrimLeft(s, " \t")
-	}
-
-	if len(strings.Trim(s, " \t.,;()[]{}!?:+-/*=&|<>\"'`")) == 0 {
-		return ""
-	}
-
-	runes := []rune(s)
-	if len(runes) > 35 {
-		s = string(runes[:32]) + "..."
-	}
-	return s
-}
-
-func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDeleteLine bool, pane string, color bool, th *theme.Theme, renderer *lipgloss.Renderer) string {
+func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDeleteLine bool, pane string, color bool, styles *renderStyles, scratch *inlineScratch) string {
 	if len(spans) == 0 {
-		if !color {
+		if !color || styles == nil {
 			return lineText
 		}
-		baseStyle := renderer.NewStyle().Foreground(th.Actions.InsertFg)
+		baseStyle := styles.insertStyle
 		if isDeleteLine {
-			baseStyle = renderer.NewStyle().Foreground(th.Actions.DeleteFg)
+			baseStyle = styles.deleteStyle
 		}
 		leadingLen := len(lineText) - len(strings.TrimLeft(lineText, " \t"))
 		if leadingLen > 0 {
@@ -866,7 +821,7 @@ func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDel
 		return ""
 	}
 
-	colHighlight, colSpanID := resolveColHighlights(lineText, spans, pane)
+	colHighlight, colSpanID := resolveColHighlights(lineText, spans, pane, scratch)
 
 	var b strings.Builder
 	byteOffset := 0
@@ -891,7 +846,7 @@ func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDel
 			first = false
 		} else if hKind != segKind || sID != segSpan {
 			segText := lineText[segStart:byteOffset]
-			writeStyledSegment(&b, segText, segKind, isDeleteLine, color, th, renderer)
+			writeStyledSegment(&b, segText, segKind, isDeleteLine, color, styles)
 			segStart = byteOffset
 			segKind = hKind
 			segSpan = sID
@@ -902,14 +857,17 @@ func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDel
 
 	if !first && segStart < len(lineText) {
 		segText := lineText[segStart:]
-		writeStyledSegment(&b, segText, segKind, isDeleteLine, color, th, renderer)
+		writeStyledSegment(&b, segText, segKind, isDeleteLine, color, styles)
 	}
 
 	return b.String()
 }
 
-func writeStyledSegment(b *strings.Builder, segText string, segKind int, isDeleteLine, color bool, th *theme.Theme, renderer *lipgloss.Renderer) {
-	if !color {
+func writeStyledSegment(b *strings.Builder, segText string, segKind int, isDeleteLine, color bool, styles *renderStyles) {
+	if len(segText) == 0 {
+		return
+	}
+	if !color || styles == nil {
 		b.WriteString(segText)
 		return
 	}
@@ -917,7 +875,23 @@ func writeStyledSegment(b *strings.Builder, segText string, segKind int, isDelet
 	content := segText[len(leadingWS):]
 	b.WriteString(leadingWS)
 	if content != "" {
-		style := getActionStyle(theme.ActionKind(segKind), isDeleteLine, th, renderer)
-		b.WriteString(style.Render(content))
+		switch theme.ActionKind(segKind) {
+		case theme.ActionUpdate:
+			b.WriteString(styles.updateStyle.Render(content))
+		case theme.ActionMove:
+			b.WriteString(styles.moveStyle.Render(content))
+		case theme.ActionMoveUpdate:
+			b.WriteString(styles.moveUpdStyle.Render(content))
+		case theme.ActionInsert:
+			b.WriteString(styles.insertStyle.Render(content))
+		case theme.ActionDelete:
+			b.WriteString(styles.deleteStyle.Render(content))
+		default:
+			if isDeleteLine {
+				b.WriteString(styles.deleteStyle.Render(content))
+			} else {
+				b.WriteString(styles.insertStyle.Render(content))
+			}
+		}
 	}
 }

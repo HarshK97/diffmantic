@@ -192,7 +192,7 @@ func TestRender_TokenLevelHighlighting(t *testing.T) {
 	}
 }
 
-func TestRender_TokenMoveAnnotation(t *testing.T) {
+func TestRender_IntraHunkMoveSuppression(t *testing.T) {
 	src := []byte("func handle404(w http.ResponseWriter, req *http.Request) {\n\tif engine.handlers404 == nil {\n\t\thttp.NotFound(c.Writer, c.Req)\n\t} else {\n\t\tc.Writer.WriteHeader(404)\n\t}\n}\n")
 	dst := []byte("func handle404(w http.ResponseWriter, req *http.Request) {\n\tc.Writer.setStatus(404)\n\tc.Next()\n\tif !c.Writer.Written() {\n\t\tc.String(404, \"404 page not found\")\n\t}\n}\n")
 
@@ -205,12 +205,13 @@ func TestRender_TokenMoveAnnotation(t *testing.T) {
 
 	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true}, nil)
 
-	if !strings.Contains(got, "'c.Writer' ➔ L4") && !strings.Contains(got, "'if' ➔ L4") && !strings.Contains(got, "'c.Writer' ⤹ L3") {
-		t.Errorf("expected token move annotation in output:\n%s", got)
+	// Tier 1: Intra-hunk moves must have zero right-margin quoted token dumps or arrows
+	if strings.Contains(got, "'c.Writer'") || strings.Contains(got, "←") {
+		t.Errorf("expected no quoted token move annotations in output:\n%s", got)
 	}
 }
 
-func TestRender_MoveAnnotation(t *testing.T) {
+func TestRender_CrossHunkMoveBadges(t *testing.T) {
 	src := []byte("line1\nline2\n")
 	dst := []byte("line2\nline1\n")
 
@@ -228,6 +229,7 @@ func TestRender_MoveAnnotation(t *testing.T) {
 				Action: "move",
 				Node: &serialize.NodeRef{
 					Tree:      "before",
+					Type:      "line",
 					StartByte: 0,
 					EndByte:   5,
 				},
@@ -237,13 +239,30 @@ func TestRender_MoveAnnotation(t *testing.T) {
 		},
 	}
 
-	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false}, nil)
+	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
 
-	if !strings.Contains(got, "  ← moved to line 2") {
-		t.Errorf("expected '  ← moved to line 2', got:\n%s", got)
+	if !strings.Contains(got, " ➔ L2") {
+		t.Errorf("expected ' ➔ L2' micro-badge on deletion line, got:\n%s", got)
 	}
-	if !strings.Contains(got, "  ← moved from line 1") {
-		t.Errorf("expected '  ← moved from line 1', got:\n%s", got)
+	if !strings.Contains(got, " ⤹ L1") {
+		t.Errorf("expected ' ⤹ L1' micro-badge on insertion line, got:\n%s", got)
+	}
+}
+
+func TestRender_DeclarationMoveHunkHeader(t *testing.T) {
+	src := []byte("func Alpha() {\n}\n\nfunc Target() {\n}\n")
+	dst := []byte("func Target() {\n}\n\nfunc Alpha() {\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
+	if !strings.Contains(got, "func Alpha() (moved to L") && !strings.Contains(got, "func Alpha() (moved from L") {
+		t.Errorf("expected declaration move signature in hunk header, got:\n%s", got)
 	}
 }
 
@@ -322,17 +341,61 @@ func TestRender_MultiByteRuneIntegrity(t *testing.T) {
 	}
 }
 
-func TestCleanTokenExpr_UTF8Truncation(t *testing.T) {
-	input := strings.Repeat("🚀", 40)
-	cleaned := cleanTokenExpr(input)
-	if !strings.HasSuffix(cleaned, "...") {
-		t.Errorf("expected ellipsis suffix for long token, got: %q", cleaned)
+func TestExtractDeclarationSignature_Truncation(t *testing.T) {
+	lines := []string{
+		"@[some_decorator]",
+		"// doc comment",
+		"func VeryLongFunctionNameWithLotsOfParametersAndGenericTypesThatExceedsTheEightyColumnLimit() {",
 	}
-	if !utf8.ValidString(cleaned) {
-		t.Errorf("expected valid UTF-8 string, got: %q", cleaned)
+	sig := extractDeclarationSignature(lines, 0, len(lines)-1, nil)
+	if !strings.HasSuffix(sig, "...") {
+		t.Errorf("expected ellipsis truncation for long signature, got: %q", sig)
 	}
-	runes := []rune(cleaned)
-	if len(runes) != 35 {
-		t.Errorf("expected 35 runes (32 + 3 dots), got %d", len(runes))
+	if strings.Contains(sig, "@") || strings.Contains(sig, "//") {
+		t.Errorf("expected decorator and comments to be bypassed, got: %q", sig)
+	}
+}
+
+func TestRender_StartOfFileInsertOnlyHunkHeader(t *testing.T) {
+	src := []byte("existing line\n")
+	dst := []byte("new top line\nexisting line\n")
+
+	dr, err := pipeline.Run(src, dst, "a.txt", "b.txt", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	got := Render("a.txt", "b.txt", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
+	if !strings.Contains(got, "@@ -1,0 +1 @@") {
+		t.Errorf("expected hunk header '@@ -1,0 +1 @@', got:\n%s", got)
+	}
+}
+
+func TestRender_GutterPolarityAlignment(t *testing.T) {
+	src := []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tprintln(\"world\")\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	// Colored mode: gutter conveys polarity via color; redundant '-' and '+' are omitted to keep code flush at column 0
+	gotColor := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true}, nil)
+	if strings.Contains(gotColor, "│ -\t") || strings.Contains(gotColor, "│ +\t") {
+		t.Errorf("expected flush code column without redundant +/- in colored gutter mode, got:\n%s", gotColor)
+	}
+
+	// Monochrome mode: '-' and '+' are strictly preserved
+	gotMono := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true}, nil)
+	if !strings.Contains(gotMono, "│ -\tprintln(\"hello\")") {
+		t.Errorf("expected '-' in monochrome gutter mode, got:\n%s", gotMono)
+	}
+	if !strings.Contains(gotMono, "│ +\tprintln(\"world\")") {
+		t.Errorf("expected '+' in monochrome gutter mode, got:\n%s", gotMono)
 	}
 }
