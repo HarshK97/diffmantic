@@ -57,6 +57,7 @@ func TestGetDeclarationScope(t *testing.T) {
 		paramList,
 		testutil.Leaf("field_identifier", "Foo"),
 	)
+	method.Language = "go"
 
 	t.Run("method with named pointer receiver", func(t *testing.T) {
 		if got := getDeclarationScope(method); got != "Type" {
@@ -73,6 +74,7 @@ func TestGetDeclarationScope(t *testing.T) {
 			testutil.Node("parameter_list", "", valReceiver),
 			testutil.Leaf("field_identifier", "Bar"),
 		)
+		valMethod.Language = "go"
 		if got := getDeclarationScope(valMethod); got != "MyStruct" {
 			t.Errorf("getDeclarationScope = %q, want %q", got, "MyStruct")
 		}
@@ -87,6 +89,7 @@ func TestGetDeclarationScope(t *testing.T) {
 			testutil.Leaf("identifier", "foo"),
 			testutil.Node("parameter_list", "", fnParam),
 		)
+		fn.Language = "go"
 		if got := getDeclarationScope(fn); got != "" {
 			t.Errorf("getDeclarationScope for function with parameters = %q, want empty", got)
 		}

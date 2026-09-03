@@ -449,16 +449,6 @@ func IsCall(nodeType string) bool {
 	return false
 }
 
-// IsScopedDeclaration reports whether nodeType is configured as a scoped declaration in any language rule set.
-func IsScopedDeclaration(nodeType string) bool {
-	for _, r := range registry {
-		if r.IsScopedDeclaration(nodeType) {
-			return true
-		}
-	}
-	return false
-}
-
 var registry = map[string]*Rules{
 	"c":          cRules,
 	"cpp":        cppRules,

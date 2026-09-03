@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // GitFile represents a modified or untracked file in the repository.
@@ -18,16 +19,58 @@ type GitFile struct {
 	Unstaged bool   // True if there are unstaged changes or untracked
 }
 
+var (
+	sandboxDetected bool
+	sandboxMu       sync.RWMutex
+)
+
+func isSandboxPermissionError(stderr string) bool {
+	return strings.Contains(stderr, "unable to access") ||
+		strings.Contains(stderr, "Operation not permitted") ||
+		strings.Contains(stderr, "Permission denied") ||
+		strings.Contains(stderr, ".gitconfig")
+}
+
 // RunGit runs a git command in the specified directory.
 func RunGit(cwd string, args ...string) ([]byte, error) {
+	sandboxMu.RLock()
+	isSandboxed := sandboxDetected
+	sandboxMu.RUnlock()
+
 	cmd := exec.Command("git", args...)
 	cmd.Dir = cwd
+	if isSandboxed {
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	} else {
+		cmd.Env = os.Environ()
+	}
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return nil, fmt.Errorf("git %s failed: %s (%w)", strings.Join(args, " "), stderr.String(), err)
+		errOutput := strings.TrimSpace(stderr.String())
+		// If we are not yet marked as sandboxed and the failure is due to gitconfig/sandbox permission restrictions, retry once and cache.
+		if !isSandboxed && isSandboxPermissionError(errOutput) {
+			retryCmd := exec.Command("git", args...)
+			retryCmd.Dir = cwd
+			retryCmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+			var retryStdout, retryStderr bytes.Buffer
+			retryCmd.Stdout = &retryStdout
+			retryCmd.Stderr = &retryStderr
+			if retryErr := retryCmd.Run(); retryErr == nil {
+				sandboxMu.Lock()
+				sandboxDetected = true
+				sandboxMu.Unlock()
+				return retryStdout.Bytes(), nil
+			}
+			retryErrOutput := strings.TrimSpace(retryStderr.String())
+			if retryErrOutput != "" {
+				errOutput = retryErrOutput
+			}
+		}
+		return nil, fmt.Errorf("git %s failed: %s (%w)", strings.Join(args, " "), errOutput, err)
 	}
 	return stdout.Bytes(), nil
 }
@@ -192,6 +235,15 @@ func Commit(cwd, msg string) error {
 	return err
 }
 
+// GetRepoPrefix returns the path prefix of cwd relative to the Git repository worktree root.
+func GetRepoPrefix(cwd string) (string, error) {
+	out, err := RunGit(cwd, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // GetContent reads a file at a given revision (e.g. "HEAD", a hash, or ":" for index).
 // If revision is empty, it reads the local file on disk.
 func GetContent(cwd, path, revision string) ([]byte, error) {
@@ -206,13 +258,31 @@ func GetContent(cwd, path, revision string) ([]byte, error) {
 		return data, nil
 	}
 
-	var cmdArg string
-	if revision == ":" {
-		cmdArg = ":" + path
-	} else {
-		cmdArg = revision + ":" + path
+	cleanPath := filepath.ToSlash(filepath.Clean(path))
+	if prefix, err := GetRepoPrefix(cwd); err == nil && prefix != "" {
+		if !filepath.IsAbs(path) && !strings.HasPrefix(cleanPath, prefix) {
+			cleanPath = filepath.ToSlash(filepath.Join(prefix, cleanPath))
+		}
 	}
 
-	out, _ := RunGit(cwd, "show", cmdArg)
+	var cmdArg string
+	if revision == ":" {
+		cmdArg = ":" + cleanPath
+	} else {
+		cmdArg = revision + ":" + cleanPath
+	}
+
+	out, err := RunGit(cwd, "show", cmdArg)
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "does not exist in") ||
+			strings.Contains(errStr, "exists on disk, but not in") ||
+			strings.Contains(errStr, "fatal: Path") ||
+			strings.Contains(errStr, "fatal: path") ||
+			strings.Contains(errStr, "fatal: invalid object name") {
+			return nil, nil
+		}
+		return nil, err
+	}
 	return out, nil
 }
