@@ -405,13 +405,9 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 
 		collapsed := Collapse(es, ms, mappedSrc, parent)
 
-		pSurvives := false
 		sSurvives := false
 		s2Survives := false
 		for _, a := range collapsed.Actions() {
-			if a.Node == parent && a.Type == actions.Insert {
-				pSurvives = true
-			}
 			if a.Node == s && a.Type == actions.Insert {
 				sSurvives = true
 			}
@@ -419,14 +415,11 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 				s2Survives = true
 			}
 		}
-		if !pSurvives {
-			t.Error("expected parent (call) Insert action to survive")
-		}
-		if sSurvives {
-			t.Error("expected S (argument_list) Insert action to be suppressed")
+		if !sSurvives {
+			t.Error("expected S (argument_list) wrapper Insert action to survive so its delimiters are preserved")
 		}
 		if s2Survives {
-			t.Error("expected S2 (argument_list) Insert action to be suppressed")
+			t.Error("expected empty S2 (argument_list) Insert action to be suppressed")
 		}
 	})
 

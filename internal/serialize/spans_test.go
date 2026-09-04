@@ -148,3 +148,32 @@ func TestBuildHighlightSpansRightSideMoveNodeLen(t *testing.T) {
 		t.Errorf("expected nodeLen=26 on right pane, got %d", nl)
 	}
 }
+
+func TestBuildHighlightSpansWithDelimiterSpan(t *testing.T) {
+	fileBytes := []byte("func foo() {\n    return 42\n}\n")
+	act := Action{
+		Action: "delete",
+		Node:   &NodeRef{Type: "function_declaration", StartByte: 0, EndByte: 12}, // "func foo() {\n"
+	}
+	// Add closing delimiter '}' on line 2 (bytes 27..28)
+	delims := []DelimiterSpan{
+		{
+			StartByte: 27,
+			EndByte:   28,
+			Action:    "delete",
+			ActionRef: &act,
+		},
+	}
+
+	leftSpans := BuildHighlightSpans(fileBytes, []Action{act}, "left", delims...)
+	if len(leftSpans) != 2 {
+		t.Fatalf("expected 2 delete spans (header and closing delimiter), got %d: %+v", len(leftSpans), leftSpans)
+	}
+
+	if leftSpans[0].Line != 0 || leftSpans[0].Action != "delete" {
+		t.Errorf("expected header span on line 0, got %+v", leftSpans[0])
+	}
+	if leftSpans[1].Line != 2 || leftSpans[1].StartCol != 0 || leftSpans[1].EndCol != 1 || leftSpans[1].Action != "delete" {
+		t.Errorf("expected delimiter span on line 2 cols 0..1 action='delete', got %+v", leftSpans[1])
+	}
+}

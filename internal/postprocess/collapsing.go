@@ -149,6 +149,16 @@ func suppressRedundantScaffolding(
 			continue
 		}
 		if pAct, ok := actionMap[node.Parent]; ok && !suppressed[pAct] {
+			// Keep blocks/wrappers so their outer braces stay highlighted, and preserve
+			// follow-on clauses (rescue, catch, else) since the parent only covers line 1.
+			if !pAct.Subtree {
+				if (node.IsBlock() || node.IsWrapper()) && len(node.Children) > 0 {
+					continue
+				}
+				if node.StartRow > node.Parent.StartRow {
+					continue
+				}
+			}
 			suppressed[sAct] = true
 		}
 	}
@@ -183,6 +193,10 @@ func suppressInlineParentRedundancy(
 			for parent := node.Parent; parent != nil; parent = parent.Parent {
 				if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
 					break
+				}
+				// Don't drop wrappers (like parens or brackets) that supply their own delimiters.
+				if parent.IsWrapper() && (parent.StartByte < node.StartByte || parent.EndByte > node.EndByte) {
+					continue
 				}
 				parentAct := actionMap[parent]
 				if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {

@@ -1,6 +1,7 @@
 package serialize
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -180,6 +181,12 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	}
 
 	var actionsList []Action
+	type pendingFooter struct {
+		span        DelimiterSpan
+		actionIndex int
+	}
+	var leftFooters []pendingFooter
+	var rightFooters []pendingFooter
 	if opts.IncludeActions || opts.IncludeHighlights {
 		actionsList = make([]Action, 0, es.Size())
 		for _, a := range es.Actions() {
@@ -196,7 +203,17 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					return nil, fmt.Errorf("failed to build node reference for insert: %w", err)
 				}
 				if !a.Subtree {
-					adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
+					hasFooter, fStart, fEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, dstBytes)
+					if hasFooter {
+						rightFooters = append(rightFooters, pendingFooter{
+							span: DelimiterSpan{
+								StartByte: fStart,
+								EndByte:   fEnd,
+								Action:    "insert",
+							},
+							actionIndex: len(actionsList),
+						})
+					}
 				}
 				ja.Node = nodeRef
 
@@ -222,7 +239,17 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					return nil, fmt.Errorf("failed to build node reference for delete: %w", err)
 				}
 				if !a.Subtree {
-					adjustRangeForHeader(a.Node, &nodeRef.StartByte, &nodeRef.EndByte)
+					hasFooter, fStart, fEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, srcBytes)
+					if hasFooter {
+						leftFooters = append(leftFooters, pendingFooter{
+							span: DelimiterSpan{
+								StartByte: fStart,
+								EndByte:   fEnd,
+								Action:    "delete",
+							},
+							actionIndex: len(actionsList),
+						})
+					}
 				}
 				ja.Node = nodeRef
 
@@ -273,6 +300,19 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				nodeRef, err := makeNodeRef(a.Node, "before")
 				if err != nil {
 					return nil, fmt.Errorf("failed to build node reference for move: %w", err)
+				}
+				if !a.Subtree {
+					hasLeftFooter, lfStart, lfEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, srcBytes)
+					if hasLeftFooter {
+						leftFooters = append(leftFooters, pendingFooter{
+							span: DelimiterSpan{
+								StartByte: lfStart,
+								EndByte:   lfEnd,
+								Action:    "move",
+							},
+							actionIndex: len(actionsList),
+						})
+					}
 				}
 				ja.Node = nodeRef
 
@@ -339,6 +379,19 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if a.DestNode != nil {
 					startByte := a.DestNode.StartByte
 					endByte := a.DestNode.EndByte
+					if !a.Subtree {
+						hasRightFooter, rfStart, rfEnd := adjustRangeForContainer(a.DestNode, &startByte, &endByte, dstBytes)
+						if hasRightFooter {
+							rightFooters = append(rightFooters, pendingFooter{
+								span: DelimiterSpan{
+									StartByte: rfStart,
+									EndByte:   rfEnd,
+									Action:    "move",
+								},
+								actionIndex: len(actionsList),
+							})
+						}
+					}
 					ja.DestStartByte = &startByte
 					ja.DestEndByte = &endByte
 					destRef, err := makeNodeRef(a.DestNode, "after")
@@ -351,7 +404,17 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 						startByte := destNodeDst.StartByte
 						endByte := destNodeDst.EndByte
 						if !a.Subtree {
-							adjustRangeForHeader(destNodeDst, &startByte, &endByte)
+							hasRightFooter, rfStart, rfEnd := adjustRangeForContainer(destNodeDst, &startByte, &endByte, dstBytes)
+							if hasRightFooter {
+								rightFooters = append(rightFooters, pendingFooter{
+									span: DelimiterSpan{
+										StartByte: rfStart,
+										EndByte:   rfEnd,
+										Action:    "move",
+									},
+									actionIndex: len(actionsList),
+								})
+							}
 						}
 						ja.DestStartByte = new(startByte)
 						ja.DestEndByte = new(endByte)
@@ -367,13 +430,34 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 		}
 	}
 
+	var leftDelims []DelimiterSpan
+	if len(leftFooters) > 0 {
+		leftDelims = make([]DelimiterSpan, len(leftFooters))
+		for i, f := range leftFooters {
+			leftDelims[i] = f.span
+			if f.actionIndex < len(actionsList) {
+				leftDelims[i].ActionRef = &actionsList[f.actionIndex]
+			}
+		}
+	}
+	var rightDelims []DelimiterSpan
+	if len(rightFooters) > 0 {
+		rightDelims = make([]DelimiterSpan, len(rightFooters))
+		for i, f := range rightFooters {
+			rightDelims[i] = f.span
+			if f.actionIndex < len(actionsList) {
+				rightDelims[i].ActionRef = &actionsList[f.actionIndex]
+			}
+		}
+	}
+
 	if opts.IncludeActions {
 		env.Actions = actionsList
 	}
 
 	if opts.IncludeHighlights {
-		env.LeftHighlights = BuildHighlightSpans(srcBytes, actionsList, "left")
-		env.RightHighlights = BuildHighlightSpans(dstBytes, actionsList, "right")
+		env.LeftHighlights = BuildHighlightSpans(srcBytes, actionsList, "left", leftDelims...)
+		env.RightHighlights = BuildHighlightSpans(dstBytes, actionsList, "right", rightDelims...)
 	}
 
 	return &env, nil
@@ -401,18 +485,75 @@ func makeNodeRef(n *treesitter.ASTNode, treeName string) (*NodeRef, error) {
 	}, nil
 }
 
-// adjustRangeForHeader limits the node's range to its header by cutting off at the first code block.
-func adjustRangeForHeader(n *treesitter.ASTNode, start, end *uint32) {
+// adjustRangeForContainer limits the node to its opening header and reports any closing delimiter span (e.g. closing brace).
+func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileBytes []byte) (hasFooter bool, footerStart, footerEnd uint32) {
 	if n == nil || start == nil || end == nil {
-		return
+		return false, 0, 0
 	}
 	r := rules.Get(n.GetLanguage())
 	for _, child := range n.Children {
 		if r != nil && r.IsBlock(child.Type) {
 			if child.StartByte > *start && child.StartByte < *end {
+				origEnd := *end
 				*end = child.StartByte
-				break
+				if child.EndByte < origEnd && !isIndentationConstruct(n, child) && isClosingDelimiter(fileBytes, child.EndByte, origEnd) {
+					return true, child.EndByte, origEnd
+				}
+				return false, 0, 0
 			}
 		}
 	}
+	if len(n.Children) > 0 && n.StartRow != n.EndRow {
+		var firstBodyChild *treesitter.ASTNode
+		for _, child := range n.Children {
+			if child.StartRow > n.StartRow && child.StartByte > *start && child.StartByte < *end {
+				firstBodyChild = child
+				break
+			}
+		}
+		if firstBodyChild != nil {
+			origEnd := *end
+			*end = firstBodyChild.StartByte
+			lastChild := n.Children[len(n.Children)-1]
+			if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {
+				if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
+					return true, lastChild.EndByte, origEnd
+				}
+			}
+		}
+	}
+	return false, 0, 0
+}
+
+func isIndentationConstruct(n, child *treesitter.ASTNode) bool {
+	if n == nil {
+		return false
+	}
+	lang := n.GetLanguage()
+	if lang != "python" && lang != "yaml" && lang != "toml" {
+		return false
+	}
+	r := rules.Get(lang)
+	if child != nil && r.IsBlock(child.Type) {
+		return true
+	}
+	return !r.IsWrapper(n.Type)
+}
+
+func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
+	if fileBytes == nil || start >= end || end > uint32(len(fileBytes)) {
+		return false
+	}
+	trimmed := bytes.TrimSpace(fileBytes[start:end])
+	if len(trimmed) == 0 {
+		return false
+	}
+	if bytes.Contains(trimmed, []byte("//")) || bytes.Contains(trimmed, []byte("/*")) ||
+		bytes.Contains(trimmed, []byte("#")) || bytes.Contains(trimmed, []byte("--")) ||
+		bytes.Contains(trimmed, []byte("<!--")) {
+		return false
+	}
+	tok := bytes.Trim(trimmed, ",; \t\r\n")
+	return bytes.Equal(tok, []byte("}")) || bytes.Equal(tok, []byte("]")) ||
+		bytes.Equal(tok, []byte(")")) || bytes.Equal(tok, []byte("end"))
 }

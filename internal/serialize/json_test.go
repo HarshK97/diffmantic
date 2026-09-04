@@ -279,3 +279,121 @@ func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
 		t.Error("expected right highlights for inserted line")
 	}
 }
+
+func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
+	// A block container with an inner statement and closing brace:
+	// line 0: {
+	// line 1:     x = 1
+	// line 2: }
+	srcBytes := []byte("{\n    x = 1\n}\n")
+	dstBytes := []byte("{\n    x = 1\n}\n")
+
+	root := &treesitter.ASTNode{Type: "source_file"}
+	setParentAndRange(root, nil, 0, uint32(len(dstBytes)))
+
+	blockNode := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
+	setParentAndRange(blockNode, root, 0, uint32(len(dstBytes)-1))
+
+	innerStmt := &treesitter.ASTNode{Type: "assignment", StartRow: 1, EndRow: 1}
+	setParentAndRange(innerStmt, blockNode, 2, 11) // "x = 1\n"
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:    actions.Insert,
+		Node:    blockNode,
+		Subtree: false, // non-subtree container insertion
+	})
+
+	opts := EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeHighlights: true,
+	}
+	env, err := BuildEnvelopeWithOptions(es, nil, nil, root, srcBytes, dstBytes, opts)
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// Verify we only get the original AST action, not a duplicate footer action.
+	if len(env.Actions) != 1 {
+		t.Fatalf("expected strictly 1 action in env.Actions, got %d: %+v", len(env.Actions), env.Actions)
+	}
+	if env.Actions[0].Action != "insert" || env.Actions[0].Node.Type != "block" {
+		t.Errorf("expected 1 insert action on block, got %+v", env.Actions[0])
+	}
+	if env.Actions[0].Node.StartByte != 0 || env.Actions[0].Node.EndByte != 2 {
+		t.Errorf("expected header range 0..2, got %d..%d", env.Actions[0].Node.StartByte, env.Actions[0].Node.EndByte)
+	}
+
+	// Check that the closing brace '}' still gets highlighted on line 2.
+	var foundClosingBrace bool
+	for _, hl := range env.RightHighlights {
+		if hl.Line == 2 && hl.Action == "insert" {
+			foundClosingBrace = true
+		}
+	}
+	if !foundClosingBrace {
+		t.Errorf("expected closing brace highlight span on line 2 in RightHighlights, got %+v", env.RightHighlights)
+	}
+}
+
+func TestIndentationAndCommentFooterExclusion(t *testing.T) {
+	// Python block has no closing delimiter (indentation based)
+	// def foo():
+	//     pass
+	// \n
+	pyCode := []byte("def foo():\n    pass\n\n")
+	root := &treesitter.ASTNode{Type: "module", Language: "python"}
+	setParentAndRange(root, nil, 0, uint32(len(pyCode)))
+
+	funcDef := &treesitter.ASTNode{Type: "function_definition", StartRow: 0, EndRow: 1}
+	setParentAndRange(funcDef, root, 0, uint32(len(pyCode)))
+
+	body := &treesitter.ASTNode{Type: "block", StartRow: 1, EndRow: 1}
+	setParentAndRange(body, funcDef, 11, 19)
+
+	start := funcDef.StartByte
+	end := funcDef.EndByte
+	hasFooter, _, _ := adjustRangeForContainer(funcDef, &start, &end, pyCode)
+	if hasFooter {
+		t.Errorf("expected hasFooter=false for Python function_definition indentation block")
+	}
+
+	// TOML table has no closing delimiter
+	// [files]
+	// yaml = ["*.yaml"]
+	// \n\n
+	tomlCode := []byte("[files]\nyaml = [\"*.yaml\"]\n\n")
+	tomlRoot := &treesitter.ASTNode{Type: "document", Language: "toml"}
+	setParentAndRange(tomlRoot, nil, 0, uint32(len(tomlCode)))
+
+	table := &treesitter.ASTNode{Type: "table", StartRow: 0, EndRow: 1}
+	setParentAndRange(table, tomlRoot, 0, uint32(len(tomlCode)))
+
+	pair := &treesitter.ASTNode{Type: "pair", StartRow: 1, EndRow: 1}
+	setParentAndRange(pair, table, 8, 25)
+
+	tStart := table.StartByte
+	tEnd := table.EndByte
+	hasTomlFooter, _, _ := adjustRangeForContainer(table, &tStart, &tEnd, tomlCode)
+	if hasTomlFooter {
+		t.Errorf("expected hasFooter=false for TOML table")
+	}
+
+	// Trailing comments should not be treated as closing delimiter
+	codeWithComment := []byte("{\n    x = 1\n    // trailing comment\n")
+	cRoot := &treesitter.ASTNode{Type: "source_file", Language: "go"}
+	setParentAndRange(cRoot, nil, 0, uint32(len(codeWithComment)))
+
+	bNode := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
+	setParentAndRange(bNode, cRoot, 0, uint32(len(codeWithComment)))
+
+	stmt := &treesitter.ASTNode{Type: "assignment", StartRow: 1, EndRow: 1}
+	setParentAndRange(stmt, bNode, 2, 11)
+
+	bStart := bNode.StartByte
+	bEnd := bNode.EndByte
+	hasCommentFooter, _, _ := adjustRangeForContainer(bNode, &bStart, &bEnd, codeWithComment)
+	if hasCommentFooter {
+		t.Errorf("expected hasFooter=false for sliced region containing comments")
+	}
+}

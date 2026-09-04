@@ -773,9 +773,9 @@ func actionPriority(k theme.ActionKind) int {
 		return 5
 	case theme.ActionUpdate:
 		return 4
-	case theme.ActionInsert:
-		return 3
 	case theme.ActionMove:
+		return 3
+	case theme.ActionInsert:
 		return 2
 	case theme.ActionDelete:
 		return 1
