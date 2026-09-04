@@ -150,8 +150,21 @@ var rustRules = &Rules{
 	Blocks: []string{
 		"block",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"generic_type",
+		"type_arguments",
+		"array_type",
+		"reference_type",
+		"tuple_expression",
+		"array_expression",
+		"index_expression",
+		"arguments",
+		"parameters",
+	},
 	Pairs: []string{
 		"field_initializer",
+		"field_pattern",
 	},
 	Unordered: []string{
 		"use_declaration",

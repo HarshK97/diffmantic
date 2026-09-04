@@ -83,6 +83,12 @@ func zsMatchCost(n1, n2 *treesitter.ASTNode) float64 {
 	if n1.Label == n2.Label || Unquote(n1.Label) == Unquote(n2.Label) {
 		return 0.0
 	}
+	if len(n1.Children) == 0 && len(n2.Children) == 0 {
+		if n1.Parent != nil && n2.Parent != nil && TypesMatch(n1.Parent.Type, n2.Parent.Type, r) {
+			return 1.0
+		}
+		return 2.0
+	}
 	return 1.0
 }
 

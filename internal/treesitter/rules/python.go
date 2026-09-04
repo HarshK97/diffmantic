@@ -155,6 +155,20 @@ var pythonRules = &Rules{
 	Blocks: []string{
 		"block",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"subscript",
+		"list",
+		"tuple",
+		"set",
+		"dictionary",
+		"generator_expression",
+		"list_comprehension",
+		"dictionary_comprehension",
+		"set_comprehension",
+		"argument_list",
+		"parameters",
+	},
 	Pairs: []string{
 		"pair",
 		"keyword_argument",

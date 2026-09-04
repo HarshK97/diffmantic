@@ -208,6 +208,16 @@ var cppRules = &Rules{
 	Blocks: []string{
 		"compound_statement",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"template_type",
+		"template_argument_list",
+		"subscript_expression",
+		"pointer_expression",
+		"cast_expression",
+		"argument_list",
+		"parameter_list",
+	},
 	Pairs: []string{
 		"field_designator",
 		"initializer_pair",

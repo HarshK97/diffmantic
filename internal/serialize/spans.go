@@ -38,11 +38,20 @@ type internalSpan struct {
 	actRef   *Action
 }
 
+// DelimiterSpan tracks a closing delimiter (like a brace or bracket) for UI highlights.
+type DelimiterSpan struct {
+	StartByte uint32
+	EndByte   uint32
+	Action    string // "insert", "delete", "move"
+	ActionRef *Action
+}
+
 // BuildHighlightSpans returns pre-merged highlight spans for one side of a diff.
 // It splits byte ranges across newlines and merges adjacent spans of the same
 // action when separated only by small punctuation or whitespace gaps.
-func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []HighlightSpan {
-	if len(actions) == 0 || len(fileBytes) == 0 {
+// Pass extraSpans to include closing delimiter highlights without adding extra actions.
+func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraSpans ...DelimiterSpan) []HighlightSpan {
+	if (len(actions) == 0 && len(extraSpans) == 0) || len(fileBytes) == 0 {
 		return nil
 	}
 
@@ -78,6 +87,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []High
 			if side == "right" && a.DestStartByte != nil && a.DestEndByte != nil {
 				addSpan(spansByLine, lineIndex, fileBytes, *a.DestStartByte, *a.DestEndByte, actType, a)
 			}
+		}
+	}
+
+	for _, extra := range extraSpans {
+		if (side == "left" && (extra.Action == "delete" || extra.Action == "move")) ||
+			(side == "right" && (extra.Action == "insert" || extra.Action == "move")) {
+			addSpan(spansByLine, lineIndex, fileBytes, extra.StartByte, extra.EndByte, extra.Action, extra.ActionRef)
 		}
 	}
 
@@ -206,12 +222,31 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string) []High
 
 func addSpan(spans map[int][]internalSpan, lineIndex []int, fileBytes []byte, startByte, endByte uint32, actStr string, action *Action) {
 	ForEachLineSpan(lineIndex, fileBytes, startByte, endByte, func(line, sc, ec int) {
-		spans[line] = append(spans[line], internalSpan{
-			startCol: sc,
-			endCol:   ec,
-			action:   actStr,
-			actRef:   action,
-		})
+		if line < len(lineIndex) {
+			lineStart := lineIndex[line]
+			sByte := lineStart + sc
+			eByte := lineStart + ec
+			if sByte < len(fileBytes) && eByte <= len(fileBytes) {
+				if sc > 0 {
+					for sByte < eByte && (fileBytes[sByte] == ' ' || fileBytes[sByte] == '\t') {
+						sByte++
+						sc++
+					}
+				}
+				for eByte > sByte && (fileBytes[eByte-1] == ' ' || fileBytes[eByte-1] == '\t' || fileBytes[eByte-1] == '\r' || fileBytes[eByte-1] == '\n') {
+					eByte--
+					ec--
+				}
+			}
+		}
+		if ec > sc {
+			spans[line] = append(spans[line], internalSpan{
+				startCol: sc,
+				endCol:   ec,
+				action:   actStr,
+				actRef:   action,
+			})
+		}
 	})
 }
 

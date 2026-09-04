@@ -65,6 +65,20 @@ var zigRules = &Rules{
 	},
 	Scaffolding: []string{
 		"source_file",
+		"block",
+		"statement",
+		"expression_statement",
+		"function_declaration",
+		"variable_declaration",
+		"parameter",
+		"parameters",
+		"arguments",
+		"struct_declaration",
+		"enum_declaration",
+		"union_declaration",
+		"initializer_list",
+		"struct_initializer",
+		"anonymous_struct_initializer",
 	},
 	Keywords: []string{
 		"fn",
@@ -116,6 +130,15 @@ var zigRules = &Rules{
 	},
 	Blocks: []string{
 		"block",
+	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"array_type",
+		"slice_type",
+		"pointer_type",
+		"initializer_list",
+		"arguments",
+		"parameters",
 	},
 	Pairs: []string{
 		"field_initializer",
