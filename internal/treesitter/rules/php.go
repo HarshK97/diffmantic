@@ -169,6 +169,13 @@ var phpRules = &Rules{
 	Blocks: []string{
 		"compound_statement",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"array_creation_expression",
+		"subscript_expression",
+		"arguments",
+		"formal_parameters",
+	},
 	Pairs: []string{
 		"pair",
 		"array_element_initializer",

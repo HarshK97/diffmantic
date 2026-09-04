@@ -156,6 +156,13 @@ var rubyRules = &Rules{
 	Blocks: []string{
 		"block",
 	},
+	Wrappers: []string{
+		"parenthesized_statements",
+		"array",
+		"element_reference",
+		"argument_list",
+		"method_parameters",
+	},
 	Pairs: []string{
 		"pair",
 	},

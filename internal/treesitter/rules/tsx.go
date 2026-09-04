@@ -185,6 +185,18 @@ var tsxRules = &Rules{
 	Blocks: []string{
 		"statement_block",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"parenthesized_type",
+		"type_arguments",
+		"type_parameters",
+		"array_type",
+		"generic_type",
+		"subscript_expression",
+		"array",
+		"arguments",
+		"formal_parameters",
+	},
 	Pairs: []string{
 		"pair",
 		"pair_pattern",

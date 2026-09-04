@@ -259,14 +259,28 @@ func IsWordChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
 
-// IsScaffolding checks language rules to see if this node type is a variable-arity container.
+// IsScaffolding reports whether the node is a variable-arity container.
 func (n *ASTNode) IsScaffolding() bool {
-	lang := n.GetLanguage()
-	r := rules.Get(lang)
-	if r == nil {
+	if n == nil {
 		return false
 	}
-	return r.IsScaffolding(n.Type)
+	return rules.Get(n.GetLanguage()).IsScaffolding(n.Type)
+}
+
+// IsWrapper reports whether the node is a syntactic wrapper (e.g. parens, argument list).
+func (n *ASTNode) IsWrapper() bool {
+	if n == nil {
+		return false
+	}
+	return rules.Get(n.GetLanguage()).IsWrapper(n.Type)
+}
+
+// IsBlock reports whether the node is a code block.
+func (n *ASTNode) IsBlock() bool {
+	if n == nil {
+		return false
+	}
+	return rules.Get(n.GetLanguage()).IsBlock(n.Type)
 }
 
 // Descendants returns all child nodes under n in pre-order.

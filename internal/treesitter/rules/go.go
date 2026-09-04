@@ -80,9 +80,9 @@ var golangRules = &Rules{
 		"type_case",
 	},
 	Keywords: []string{
-		"func",
 		"package",
 		"import",
+		"func",
 		"var",
 		"const",
 		"type",
@@ -124,6 +124,19 @@ var golangRules = &Rules{
 	},
 	Blocks: []string{
 		"block",
+	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"parenthesized_type",
+		"type_arguments",
+		"type_parameter_list",
+		"slice_type",
+		"array_type",
+		"index_expression",
+		"slice_expression",
+		"pointer_type",
+		"argument_list",
+		"parameter_list",
 	},
 	Pairs: []string{
 		"keyed_element",

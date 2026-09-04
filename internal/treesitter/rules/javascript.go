@@ -171,6 +171,15 @@ var javascriptRules = &Rules{
 	Blocks: []string{
 		"statement_block",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"subscript_expression",
+		"array",
+		"array_pattern",
+		"object_pattern",
+		"arguments",
+		"formal_parameters",
+	},
 	Pairs: []string{
 		"pair",
 		"pair_pattern",

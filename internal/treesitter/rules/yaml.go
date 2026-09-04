@@ -54,4 +54,8 @@ var yamlRules = &Rules{
 	Comments: []string{
 		"comment",
 	},
+	Wrappers: []string{
+		"block_node",
+		"flow_node",
+	},
 }

@@ -180,6 +180,16 @@ var javaRules = &Rules{
 		"block",
 		"constructor_body",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"type_arguments",
+		"type_parameters",
+		"array_type",
+		"generic_type",
+		"cast_expression",
+		"argument_list",
+		"formal_parameters",
+	},
 	Pairs: []string{
 		"element_value_pair",
 	},

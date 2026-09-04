@@ -16,6 +16,7 @@ type Rules struct {
 	Declarations       []string
 	Identifiers        []string
 	Blocks             []string
+	Wrappers           []string
 	Pairs              []string
 	Unordered          []string
 	EquivalentTypes    [][]string
@@ -31,6 +32,7 @@ type Rules struct {
 	identifiersSet        map[string]struct{}
 	scaffoldingSet        map[string]struct{}
 	blocksSet             map[string]struct{}
+	wrappersSet           map[string]struct{}
 	unorderedSet          map[string]struct{}
 	commentsSet           map[string]struct{}
 	callsSet              map[string]struct{}
@@ -86,6 +88,12 @@ func (r *Rules) CompileSets() {
 		r.blocksSet = make(map[string]struct{}, len(r.Blocks))
 		for _, s := range r.Blocks {
 			r.blocksSet[s] = struct{}{}
+		}
+	}
+	if len(r.Wrappers) > 0 {
+		r.wrappersSet = make(map[string]struct{}, len(r.Wrappers))
+		for _, s := range r.Wrappers {
+			r.wrappersSet[s] = struct{}{}
 		}
 	}
 	if len(r.Unordered) > 0 {
@@ -322,6 +330,21 @@ func (r *Rules) IsBlock(nodeType string) bool {
 	return slices.Contains(r.Blocks, nodeType)
 }
 
+// IsWrapper reports whether nodeType is a syntactic wrapper (e.g. parentheses, generics, subscripts).
+func (r *Rules) IsWrapper(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.wrappersSet) > 0 {
+		_, ok := r.wrappersSet[nodeType]
+		return ok
+	}
+	if len(r.Wrappers) > 0 {
+		return slices.Contains(r.Wrappers, nodeType)
+	}
+	return false
+}
+
 // Alias returns the replacement node type if one exists for the label or node type.
 func (r *Rules) Alias(nodeType, label string) (string, bool) {
 	if r == nil || len(r.Aliased) == 0 {
@@ -413,6 +436,16 @@ func IsScaffolding(nodeType string) bool {
 func IsBlock(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsBlock(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsWrapper reports whether nodeType is configured as a wrapper in any language rule set.
+func IsWrapper(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsWrapper(nodeType) {
 			return true
 		}
 	}

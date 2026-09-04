@@ -107,6 +107,15 @@ var luaRules = &Rules{
 	Blocks: []string{
 		"block",
 	},
+	Wrappers: []string{
+		"parenthesized_expression",
+		"table_constructor",
+		"bracket_index_expression",
+		"dot_index_expression",
+		"method_index_expression",
+		"arguments",
+		"parameters",
+	},
 	Pairs: []string{
 		"field",
 	},
