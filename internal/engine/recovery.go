@@ -1,6 +1,9 @@
 package engine
 
-import "github.com/HarshK97/diffmantic/internal/treesitter"
+import (
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
+)
 
 // Recover aligns unmatched nodes inside a matched container pair.
 // Uses Zhang-Shasha (1989) tree edit distance as a last-chance fallback on tiny
@@ -92,7 +95,58 @@ func uniqueTypePairs(
 		nodes1 := count1[typ]
 		nodes2 := count2[typ]
 		if len(nodes1) == 1 && len(nodes2) == 1 && CompatiblePairRoles(nodes1[0], nodes2[0]) {
-			pairs = append(pairs, [2]*treesitter.ASTNode{nodes1[0], nodes2[0]})
+			n1, n2 := nodes1[0], nodes2[0]
+			if len(n1.Children) > 0 && len(n2.Children) > 0 {
+				labels1 := n1.LeafLabels()
+				labels2 := n2.LeafLabels()
+				r := rulesFor(n1)
+				isWrapper := (r != nil && r.IsWrapper(n1.Type)) || (r == nil && rules.IsWrapper(n1.Type))
+				if !isWrapper {
+					overlap := 0
+					total1 := 0
+					for k, v1 := range labels1 {
+						total1 += v1
+						if v2, ok := labels2[k]; ok {
+							overlap += min(v1, v2)
+						}
+					}
+					total2 := 0
+					for _, v2 := range labels2 {
+						total2 += v2
+					}
+					isContainer := (r != nil && (r.IsBlock(n1.Type) || r.IsDeclaration(n1.Type))) || (r == nil && (rules.IsBlock(n1.Type) || rules.IsDeclaration(n1.Type)))
+					if !isContainer {
+						for _, child := range n1.Children {
+							if (r != nil && r.IsBlock(child.Type)) || (r == nil && rules.IsBlock(child.Type)) {
+								isContainer = true
+								break
+							}
+						}
+					}
+
+					minRatio := 0.25
+					var ratio float64
+					if isContainer {
+						denom := total1 + total2
+						if denom == 0 {
+							continue
+						}
+						minRatio = 0.50
+						ratio = float64(2*overlap) / float64(denom)
+					} else {
+						denom := min(total1, total2)
+						if denom == 0 {
+							continue
+						}
+						ratio = float64(overlap) / float64(denom)
+					}
+
+					if ratio < minRatio {
+						continue
+					}
+				}
+			}
+			pairs = append(pairs, [2]*treesitter.ASTNode{n1, n2})
 		}
 	}
 	return pairs

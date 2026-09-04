@@ -256,6 +256,9 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 		if bestParent != nil {
 			m.Add(t1, bestParent)
+			if hasUnmappedChild(t1, m.Has) && hasUnmappedChild(bestParent, m.HasDst) {
+				Recover(t1, bestParent, m)
+			}
 		}
 	}
 }
@@ -292,10 +295,30 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			if !TypesMatch(candidate.Type, t2.Type, rules) || m.Has(candidate) {
 				continue
 			}
-			if !candidate.Contains(currentT1) {
+
+			canReclaim := false
+			if candidate.Contains(currentT1) {
+				if m.DiceSrc(candidate, t2) > m.DiceSrc(currentT1, t2) {
+					canReclaim = true
+				}
+			} else {
+				if directKeyMatch(candidate, t2) && !directKeyMatch(currentT1, t2) {
+					canReclaim = true
+				}
+			}
+
+			if !canReclaim {
 				continue
 			}
 
+			// Clear any leaf mappings from currentT1 so candidate can claim them.
+			for _, t2Child := range t2.Children {
+				if len(t2Child.Children) == 0 {
+					if srcLeaf := dstMap[t2Child]; srcLeaf != nil && currentT1.Contains(srcLeaf) {
+						m.Remove(srcLeaf)
+					}
+				}
+			}
 			m.Remove(currentT1)
 			m.Add(candidate, t2)
 
@@ -305,4 +328,13 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			break
 		}
 	}
+}
+
+func directKeyMatch(n1, n2 *treesitter.ASTNode) bool {
+	if n1 == nil || n2 == nil || len(n1.Children) == 0 || len(n2.Children) == 0 {
+		return false
+	}
+	c1 := n1.Children[0]
+	c2 := n2.Children[0]
+	return c1.Type == c2.Type && c1.Label != "" && c1.Label == c2.Label
 }

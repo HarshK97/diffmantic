@@ -411,7 +411,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		return
 	}
 
-	rules := rulesFor(t1Root)
+	r := rulesFor(t1Root)
 
 	t1Map := make(map[decKey][]*treesitter.ASTNode, len(u1))
 	for _, d1 := range u1 {
@@ -450,7 +450,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 		var matchingD1s []*treesitter.ASTNode
 		for _, d1 := range d1List {
-			if TypesMatch(d1.Type, d2.Type, rules) {
+			if TypesMatch(d1.Type, d2.Type, r) {
 				matchingD1s = append(matchingD1s, d1)
 			}
 		}
@@ -470,24 +470,32 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				}
 			}
 			m.Add(bestD1, d2)
-			matchDeclarationBodies(bestD1, d2, m, rules)
+			matchDeclarationBodies(bestD1, d2, m, r)
+		}
+	}
+
+	for _, p := range slices.Clone(m.Pairs) {
+		d1, d2 := p.Src, p.Dst
+		isDec := (r != nil && r.IsDeclaration(d1.Type)) || (r == nil && rules.IsDeclaration(d1.Type))
+		if isDec {
+			matchDeclarationBodies(d1, d2, m, r)
 		}
 	}
 }
 
-func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *rules.Rules) {
+func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
 	if d1 == nil || d2 == nil || m == nil {
 		return
 	}
 	var b1, b2 *treesitter.ASTNode
 	for _, c1 := range d1.Children {
-		if isBlockNode(c1, rules) {
+		if isBlockNode(c1, r) {
 			b1 = c1
 			break
 		}
 	}
 	for _, c2 := range d2.Children {
-		if isBlockNode(c2, rules) {
+		if isBlockNode(c2, r) {
 			b2 = c2
 			break
 		}
@@ -500,7 +508,6 @@ func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *rules
 			m.Remove(b1)
 		}
 		m.Add(b1, b2)
-		Recover(b1, b2, m)
 	}
 }
 
@@ -562,6 +569,24 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 			return child.Label
 		}
 	}
+	// Declarations in languages like C often nest the identifier inside a declarator wrapper.
+	for _, child := range n.Children {
+		if (r != nil && (r.IsBlock(child.Type) || r.IsWrapper(child.Type))) || (r == nil && (rules.IsBlock(child.Type) || rules.IsWrapper(child.Type))) {
+			continue
+		}
+		for _, sub := range child.Children {
+			isSubID := (r != nil && r.IsIdentifier(sub.Type)) || (r == nil && rules.IsIdentifier(sub.Type))
+			if isSubID && sub.Label != "" {
+				return sub.Label
+			}
+			for _, subSub := range sub.Children {
+				isSubSubID := (r != nil && r.IsIdentifier(subSub.Type)) || (r == nil && rules.IsIdentifier(subSub.Type))
+				if isSubSubID && subSub.Label != "" {
+					return subSub.Label
+				}
+			}
+		}
+	}
 	return ""
 }
 
@@ -574,8 +599,15 @@ func getDeclarationScope(n *treesitter.ASTNode) string {
 		return ""
 	}
 	for _, child := range n.Children {
+		// Don't peek into blocks so local variables aren't mistaken for receiver types.
+		if r.IsBlock(child.Type) {
+			continue
+		}
 		if r.IsScaffolding(child.Type) {
 			for _, p := range child.Children {
+				if r.IsBlock(p.Type) {
+					continue
+				}
 				if r.IsDeclaration(p.Type) && len(p.Children) > 0 {
 					target := p.Children[len(p.Children)-1]
 					if r.IsIdentifier(target.Type) && target.Label != "" {
