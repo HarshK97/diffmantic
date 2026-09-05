@@ -7,16 +7,24 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+// GenerateEditScript produces the insert, delete, move, and update actions
+// needed to turn src into dst given their matched nodes.
 func GenerateEditScript(
 	src, dst *treesitter.ASTNode,
 	ms *engine.Mapping,
 ) *EditScript {
+	if src == nil && dst == nil {
+		return NewEditScript()
+	}
+	if ms == nil {
+		ms = engine.NewMapping()
+	}
 	s := &chawatheState{}
 	s.init(src, dst, ms)
 	return s.generate()
 }
 
-// Chawathe Node, contain only necesssary attributes of ASTNode
+// cnode is a mutable copy of an AST node for in-place tree edits.
 type cnode struct {
 	orig     *treesitter.ASTNode
 	nodeType string
@@ -33,7 +41,14 @@ func (c *cnode) ChildIndex() int {
 }
 
 func (c *cnode) PostOrder() []*cnode {
-	var nodes []*cnode
+	if c == nil {
+		return nil
+	}
+	capEstimate := 16
+	if c.orig != nil {
+		capEstimate = c.orig.Size()
+	}
+	nodes := make([]*cnode, 0, capEstimate)
 	var traverse func(n *cnode)
 	traverse = func(n *cnode) {
 		for _, ch := range n.children {
@@ -66,17 +81,28 @@ func (s *chawatheState) init(
 ) {
 	s.origDst = dst
 
-	size := src.Size()
+	var size int
+	if src != nil {
+		size = src.Size()
+	}
 	s.origToCopy = make(map[*treesitter.ASTNode]*cnode, size)
-	s.cpySrc = s.deepCopy(src, nil)
+	if src != nil {
+		s.cpySrc = s.deepCopy(src, nil)
+	}
 
-	s.cpySrcToDst = make(map[*cnode]*treesitter.ASTNode, len(ms.Pairs))
-	s.cpyDstToSrc = make(map[*treesitter.ASTNode]*cnode, len(ms.Pairs))
+	var pairCount int
+	if ms != nil {
+		pairCount = len(ms.Pairs)
+	}
+	s.cpySrcToDst = make(map[*cnode]*treesitter.ASTNode, pairCount)
+	s.cpyDstToSrc = make(map[*treesitter.ASTNode]*cnode, pairCount)
 
-	for _, p := range ms.Pairs {
-		if cpyNode, ok := s.origToCopy[p.Src]; ok {
-			s.cpySrcToDst[cpyNode] = p.Dst
-			s.cpyDstToSrc[p.Dst] = cpyNode
+	if ms != nil {
+		for _, p := range ms.Pairs {
+			if cpyNode, ok := s.origToCopy[p.Src]; ok {
+				s.cpySrcToDst[cpyNode] = p.Dst
+				s.cpyDstToSrc[p.Dst] = cpyNode
+			}
 		}
 	}
 }
@@ -104,13 +130,31 @@ func (s *chawatheState) deepCopy(n *treesitter.ASTNode, parent *cnode) *cnode {
 }
 
 func (s *chawatheState) generate() *EditScript {
-	srcFakeRoot := &cnode{nodeType: fakeTreeType, children: []*cnode{s.cpySrc}}
-	s.cpySrc.parent = srcFakeRoot
-	dstFakeRoot := &treesitter.ASTNode{Type: fakeTreeType, Children: []*treesitter.ASTNode{s.origDst}}
-
 	s.script = NewEditScript()
 	s.dstInOrder = make(map[*treesitter.ASTNode]bool)
 	s.srcInOrder = make(map[*cnode]bool)
+
+	if s.origDst == nil {
+		if s.cpySrc != nil {
+			for _, w := range s.cpySrc.PostOrder() {
+				s.script.Add(Action{
+					Type: Delete,
+					Node: w.orig,
+				})
+			}
+		}
+		return s.script
+	}
+
+	var srcFakeChildren []*cnode
+	if s.cpySrc != nil {
+		srcFakeChildren = []*cnode{s.cpySrc}
+	}
+	srcFakeRoot := &cnode{nodeType: fakeTreeType, children: srcFakeChildren}
+	if s.cpySrc != nil {
+		s.cpySrc.parent = srcFakeRoot
+	}
+	dstFakeRoot := &treesitter.ASTNode{Type: fakeTreeType, Children: []*treesitter.ASTNode{s.origDst}}
 
 	s.cpySrcToDst[srcFakeRoot] = dstFakeRoot
 	s.cpyDstToSrc[dstFakeRoot] = srcFakeRoot
@@ -118,16 +162,31 @@ func (s *chawatheState) generate() *EditScript {
 	for _, x := range s.origDst.LevelOrder() {
 		var w *cnode
 		y := x.Parent
-		z := s.cpyDstToSrc[y]
+		var z *cnode
+		if y != nil {
+			z = s.cpyDstToSrc[y]
+		}
+		if z == nil {
+			z = srcFakeRoot
+		}
 
 		if _, hasDst := s.cpyDstToSrc[x]; !hasDst {
-			k := s.findPos(x)
-			w = &cnode{nodeType: fakeTreeType, orig: x}
+			k := s.findPos(x, z)
+			w = &cnode{
+				nodeType: x.Type,
+				label:    x.Label,
+				orig:     x,
+			}
+
+			var parentOrig *treesitter.ASTNode
+			if z != nil && z.orig != nil {
+				parentOrig = z.orig
+			}
 
 			s.script.Add(Action{
 				Type:     Insert,
 				Node:     x,
-				Parent:   z.orig,
+				Parent:   parentOrig,
 				Position: k,
 			})
 
@@ -149,19 +208,19 @@ func (s *chawatheState) generate() *EditScript {
 				}
 
 				if z != v {
-					k := s.findPos(x)
+					k := s.findPos(x, z)
+					var parentOrig *treesitter.ASTNode
+					if z != nil && z.orig != nil {
+						parentOrig = z.orig
+					}
 					s.script.Add(Action{
 						Type:     Move,
 						Node:     w.orig,
-						Parent:   z.orig,
+						Parent:   parentOrig,
 						Position: k,
 						Subtree:  len(w.orig.Children) > 0,
 					})
 
-					oldk := w.ChildIndex()
-					if oldk >= 0 {
-						w.parent.children = slices.Delete(w.parent.children, oldk, oldk+1)
-					}
 					insertChild(z, w, k)
 				}
 			}
@@ -172,49 +231,58 @@ func (s *chawatheState) generate() *EditScript {
 		s.alignChildren(w, x)
 	}
 
-	for _, w := range s.cpySrc.PostOrder() {
-		if _, hasSrc := s.cpySrcToDst[w]; !hasSrc {
-			s.script.Add(Action{
-				Type: Delete,
-				Node: w.orig,
-			})
+	if s.cpySrc != nil {
+		for _, w := range s.cpySrc.PostOrder() {
+			if _, hasSrc := s.cpySrcToDst[w]; !hasSrc {
+				s.script.Add(Action{
+					Type: Delete,
+					Node: w.orig,
+				})
+			}
 		}
 	}
 
 	return s.script
 }
 
-func (s *chawatheState) findPos(x *treesitter.ASTNode) int {
+// findPos computes the insertion position k for node x in target parent container z
+// based on Chawathe et al. (1996, Section 4.1).
+// It searches for the rightmost sibling v to the left of x in the destination tree
+// whose partner u in the source working tree is already in-order and belongs to z.
+// If such a partner u is found, x should follow u (upos + 1). If no such sibling exists
+// (i.e. x is the leftmost child or preceding siblings are not yet aligned in z),
+// it defaults to 0 (baseline leftmost child position), preserving container isolation.
+func (s *chawatheState) findPos(x *treesitter.ASTNode, z *cnode) int {
+	if x == nil || x.Parent == nil || z == nil {
+		return 0
+	}
 	y := x.Parent
 	siblings := y.Children
 
-	for _, c := range siblings {
-		if s.dstInOrder[c] {
-			if c == x {
-				return 0
-			}
-			break
-		}
-	}
-
 	xpos := x.ChildIndex()
-	var v *treesitter.ASTNode
-	for i := range xpos {
-		c := siblings[i]
-		if s.dstInOrder[c] {
-			v = c
-		}
-	}
-
-	if v == nil {
+	if xpos <= 0 {
 		return 0
 	}
 
-	u := s.cpyDstToSrc[v]
-	upos := u.ChildIndex()
-	return upos + 1
+	for i := xpos - 1; i >= 0; i-- {
+		v := siblings[i]
+		if !s.dstInOrder[v] {
+			continue
+		}
+		u := s.cpyDstToSrc[v]
+		if u != nil && u.parent == z && s.srcInOrder[u] {
+			upos := u.ChildIndex()
+			if upos != -1 {
+				return upos + 1
+			}
+		}
+	}
+	return 0
 }
 
+// alignChildren computes the longest common subsequence (LCS) of matched children
+// between source container w and destination container x, and generates Move actions
+// for misaligned children per Chawathe et al. (1996, Section 4.1).
 func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
 	if w == nil || x == nil {
 		return
@@ -227,18 +295,18 @@ func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
 		delete(s.dstInOrder, c)
 	}
 
-	var s1 []*cnode
+	s1 := make([]*cnode, 0, len(w.children))
 	for _, c := range w.children {
-		if dst, ok := s.cpySrcToDst[c]; ok {
+		if dst, ok := s.cpySrcToDst[c]; ok && dst != nil {
 			if dst.Parent == x {
 				s1 = append(s1, c)
 			}
 		}
 	}
 
-	var s2 []*treesitter.ASTNode
+	s2 := make([]*treesitter.ASTNode, 0, len(x.Children))
 	for _, c := range x.Children {
-		if src, ok := s.cpyDstToSrc[c]; ok {
+		if src, ok := s.cpyDstToSrc[c]; ok && src != nil {
 			if src.parent == w {
 				s2 = append(s2, c)
 			}
@@ -257,7 +325,7 @@ func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
 
 	lcsPairs := s.lcs(s1, s2)
 
-	lcsSet := make(map[*cnode]bool)
+	lcsSet := make(map[*cnode]bool, len(lcsPairs))
 	for _, pair := range lcsPairs {
 		s.srcInOrder[pair.src] = true
 		s.dstInOrder[pair.dst] = true
@@ -265,27 +333,27 @@ func (s *chawatheState) alignChildren(w *cnode, x *treesitter.ASTNode) {
 	}
 
 	for _, b := range s2 {
-		for _, a := range s1 {
-			if src, ok := s.cpySrcToDst[a]; ok && src == b {
-				if !lcsSet[a] {
-					if idx := a.ChildIndex(); idx >= 0 {
-						a.parent.children = slices.Delete(a.parent.children, idx, idx+1)
-					}
+		if a, ok := s.cpyDstToSrc[b]; ok && a != nil && a.parent == w {
+			if !lcsSet[a] {
+				deleteChild(a.parent, a)
 
-					k := s.findPos(b)
-					s.script.Add(Action{
-						Type:     Move,
-						Node:     a.orig,
-						Parent:   w.orig,
-						Position: k,
-						Subtree:  len(a.orig.Children) > 0,
-					})
-
-					insertChild(w, a, k)
-
-					s.srcInOrder[a] = true
-					s.dstInOrder[b] = true
+				k := s.findPos(b, w)
+				var parentOrig *treesitter.ASTNode
+				if w != nil && w.orig != nil {
+					parentOrig = w.orig
 				}
+				s.script.Add(Action{
+					Type:     Move,
+					Node:     a.orig,
+					Parent:   parentOrig,
+					Position: k,
+					Subtree:  len(a.orig.Children) > 0,
+				})
+
+				insertChild(w, a, k)
+
+				s.srcInOrder[a] = true
+				s.dstInOrder[b] = true
 			}
 		}
 	}
@@ -313,19 +381,47 @@ func (s *chawatheState) lcs(
 		return nil
 	}
 
+	var idxXBuf [32]int
+	var idxYBuf [32]int
+	// Stack buffers cover standard containers (<=32 children); larger ones fall back to heap.
+	var idxX, idxY []int
+	if m <= len(idxXBuf) {
+		idxX = idxXBuf[:m]
+	} else {
+		idxX = make([]int, m)
+	}
+	for i, c := range x {
+		idxX[i] = c.ChildIndex()
+	}
+	if n <= len(idxYBuf) {
+		idxY = idxYBuf[:n]
+	} else {
+		idxY = make([]int, n)
+	}
+	for j, c := range y {
+		idxY[j] = c.ChildIndex()
+	}
+
 	stride := n + 1
-	opt := make([]float64, (m+1)*stride)
+	totalCells := (m + 1) * stride
+
+	var opt []int
+	var stackBuf [256]int
+	// Stack scratch covers (M+1)*(N+1) <= 256 cells; larger tables use heap.
+	if totalCells <= len(stackBuf) {
+		opt = stackBuf[:totalCells]
+		clear(opt)
+	} else {
+		opt = make([]int, totalCells)
+	}
 
 	for i := m - 1; i >= 0; i-- {
 		for j := n - 1; j >= 0; j-- {
 			if s.cpyDstToSrc[y[j]] == x[i] {
-				score := 1.0
-				if x[i].parent != nil && y[j].Parent != nil {
-					idxX := slices.Index(x[i].parent.children, x[i])
-					idxY := slices.Index(y[j].Parent.Children, y[j])
-					if idxX == idxY && idxX != -1 {
-						score += 0.01
-					}
+				// Integer scoring preserves the 1.0/1.01 ordering exactly; +1 favors stationary siblings.
+				score := 100
+				if idxX[i] != -1 && idxX[i] == idxY[j] {
+					score = 101
 				}
 				opt[i*stride+j] = opt[(i+1)*stride+(j+1)] + score
 			} else {
@@ -334,7 +430,7 @@ func (s *chawatheState) lcs(
 		}
 	}
 
-	var pairs []lcsPair
+	pairs := make([]lcsPair, 0, min(m, n))
 	i, j := 0, 0
 	for i < m && j < n {
 		if s.cpyDstToSrc[y[j]] == x[i] {
@@ -353,8 +449,34 @@ func (s *chawatheState) lcs(
 
 const fakeTreeType = "__fake_root__"
 
+// insertChild inserts child into parent's children at index k, maintaining tree invariants
+// and container isolation per Chawathe et al. (1996, Section 4.1).
+// If child already belongs to a parent (including parent itself during reordering),
+// it is detached first to prevent duplicate pointer references or corrupted sibling lists.
 func insertChild(parent, child *cnode, k int) {
+	if child == nil {
+		return
+	}
+	if child.parent != nil {
+		deleteChild(child.parent, child)
+	}
+	if parent == nil {
+		return
+	}
 	child.parent = parent
 	k = max(0, min(k, len(parent.children)))
 	parent.children = slices.Insert(parent.children, k, child)
+}
+
+// deleteChild safely detaches child from parent's children slice, clearing child.parent
+// and maintaining container isolation invariants per Chawathe et al. (1996, Section 4.1).
+func deleteChild(parent, child *cnode) {
+	if parent == nil || child == nil {
+		return
+	}
+	idx := slices.Index(parent.children, child)
+	if idx != -1 {
+		parent.children = slices.Delete(parent.children, idx, idx+1)
+		child.parent = nil
+	}
 }
