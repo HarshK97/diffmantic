@@ -572,3 +572,29 @@ func TestActionCountNonZero(t *testing.T) {
 		})
 	}
 }
+
+// TestZeroParseErrors makes sure every fixture across all languages parses without ERROR or MISSING nodes.
+func TestZeroParseErrors(t *testing.T) {
+	fixtures := allFixtures(t)
+	for _, name := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := loadFixture(t, name)
+
+			checkAST := func(side string, src []byte, path string) {
+				ast := mustParse(t, src, path)
+				for _, n := range ast.Descendants() {
+					if n.Type == "ERROR" {
+						t.Errorf("%s (%s): found ERROR node at row %d col %d", side, path, n.StartRow, n.StartCol)
+					}
+					if strings.HasPrefix(n.Type, "MISSING") {
+						t.Errorf("%s (%s): found MISSING node %s at row %d col %d", side, path, n.Type, n.StartRow, n.StartCol)
+					}
+				}
+			}
+
+			checkAST("old", f.OldSrc, f.OldPath)
+			checkAST("new", f.NewSrc, f.NewPath)
+		})
+	}
+}

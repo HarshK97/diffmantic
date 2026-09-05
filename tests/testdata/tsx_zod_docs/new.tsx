@@ -252,6 +252,12 @@ const poweredByZodProjects: ZodResource[] = [
     url: "https://github.com/endel/zodgres",
     description: "Postgres.js + Zod: Database collections with static type inference and automatic migrations",
     slug: "endel/zodgres",
+  },
+  {
+    name: "zod-prisma-types",
+    url: "https://github.com/chrishoermann/zod-prisma-types",
+    description: "Create Zod schemas from your Prisma schema.",
+    slug: "chrishoermann/zod-prisma-types",
   }
 ];
 

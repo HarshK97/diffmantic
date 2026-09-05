@@ -1,6 +1,0 @@
-{
-  "repo": "https://github.com/fmt",
-  "commit": "f841ae61e2928d4f2c9adc7afa9d9f2eb47edec7",
-  "message": "Fix #4303: avoid instantiating formatter<const T> (#4325)",
-  "action_count": 5
-}

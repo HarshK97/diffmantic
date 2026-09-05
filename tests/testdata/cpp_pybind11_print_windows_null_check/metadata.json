@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/pybind/pybind11",
+  "commit": "ffc1810cba2e9d8103da352ca7be84e7093f5011",
+  "message": "Fix crash when calling pybind11::print in a subsystem:windows build",
+  "action_count": 3
+}

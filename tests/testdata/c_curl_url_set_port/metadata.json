@@ -1,0 +1,11 @@
+{
+  "repo": "https://github.com/curl/curl",
+  "commit": "8f2a1b9e4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f",
+  "message": "urlapi: sanitize port numbers and prevent negative overflow",
+  "author": "Daniel Stenberg <daniel@haxx.se>",
+  "date": "2024-05-12T14:30:00+02:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 14,
+  "deletions": 6
+}

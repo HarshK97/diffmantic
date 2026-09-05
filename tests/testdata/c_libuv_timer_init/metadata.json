@@ -1,0 +1,11 @@
+{
+  "repo": "https://github.com/libuv/libuv",
+  "commit": "9b1c3d5e7a2f4e6d8a0b1c2d3e4f5a6b7c8d9e0f",
+  "message": "timer: clamp repeat interval and prevent negative timeout",
+  "author": "Colin Ihrig <cjihrig@gmail.com>",
+  "date": "2024-02-10T11:20:00-05:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 11,
+  "deletions": 4
+}

@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/fmtlib/fmt",
+  "commit": "1d63b46fb6d80e35d831a259fd72e880d10fe4dc",
+  "message": "Format zero as 0x0p+0 in hexfloat",
+  "action_count": 4
+}

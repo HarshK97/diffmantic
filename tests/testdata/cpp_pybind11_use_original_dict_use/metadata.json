@@ -1,6 +1,0 @@
-{
-  "repo": "https://github.com/pybind11",
-  "commit": "853bafa0a2a86defcc21b7d3b1c731188c25c816",
-  "message": "fix: use original dict (#5658)\n\n* fix: use original dict",
-  "action_count": 17
-}

@@ -1,0 +1,11 @@
+{
+  "repo": "https://github.com/redis/redis",
+  "commit": "7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c",
+  "message": "adlist: simplify node insertion before and after target",
+  "author": "Salvatore Sanfilippo <antirez@gmail.com>",
+  "date": "2024-03-01T15:10:00+01:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 12,
+  "deletions": 7
+}

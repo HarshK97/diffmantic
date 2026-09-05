@@ -1,0 +1,11 @@
+{
+  "repo": "https://github.com/git/git",
+  "commit": "3c7b8a1e2f4d5a6b7c8d9e0f1a2b3c4d5e6f7a8b",
+  "message": "strbuf: validate buffer bounds in strbuf_setlen",
+  "author": "Junio C Hamano <gitster@pobox.com>",
+  "date": "2024-04-18T10:15:00-07:00",
+  "language": "c",
+  "files_changed": 1,
+  "insertions": 10,
+  "deletions": 4
+}

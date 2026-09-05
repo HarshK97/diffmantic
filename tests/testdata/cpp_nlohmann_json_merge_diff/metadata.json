@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/nlohmann/json",
+  "commit": "8c10cd2df45834cf4f5a1be844f561f7c2f4c5e6",
+  "message": "support JSON Merge Patch (RFC 7396) diff creation",
+  "action_count": 8
+}
