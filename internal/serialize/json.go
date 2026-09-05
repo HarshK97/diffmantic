@@ -38,10 +38,9 @@ func (p *LineAlignmentPair) UnmarshalJSON(b []byte) error {
 
 // EnvelopeOptions selects which sections to include in the JSON envelope.
 type EnvelopeOptions struct {
-	IncludeActions      bool
-	IncludeAlignment    bool
-	IncludeHighlights   bool
-	CommentLineMappings map[int]int // Maps source to destination line numbers for matched comments.
+	IncludeActions    bool
+	IncludeAlignment  bool
+	IncludeHighlights bool
 }
 
 // Envelope wraps the serialized actions list with a schema version.
@@ -86,7 +85,7 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 		Version: SchemaVersion,
 	}
 
-	alignment := AlignLines(srcBytes, dstBytes, nil, nil, nil, nil, opts.CommentLineMappings)
+	alignment := AlignLines(srcBytes, dstBytes)
 	if opts.IncludeAlignment {
 		env.LineAlignment = alignment
 	}
@@ -177,7 +176,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	}
 
 	if opts.IncludeAlignment {
-		env.LineAlignment = AlignLines(srcBytes, dstBytes, es, ms, srcRoot, dstRoot, opts.CommentLineMappings)
+		env.LineAlignment = AlignLines(srcBytes, dstBytes)
 	}
 
 	var actionsList []Action

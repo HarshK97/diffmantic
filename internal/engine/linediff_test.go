@@ -42,6 +42,44 @@ func TestLineDiff(t *testing.T) {
 			linesB:   []string{"head", "mid_new_1", "tail"},
 			expected: map[int]int{0: 0, 3: 2},
 		},
+		{
+			name: "indent heuristic slides duplicate lines to blank line and block boundaries",
+			linesA: []string{
+				"        assert(yielded == 3);", // 0
+				"        raxStop(&ri);",         // 1
+				"    }",                         // 2
+				"",                              // 3
+				"    raxFree(r);",               // 4
+				"}",                             // 5
+				"",                              // 6
+				"TEST(\"delete\") {",            // 7
+			},
+			linesB: []string{
+				"        assert(yielded == 3);", // 0
+				"        raxStop(&ri);",         // 1
+				"    }",                         // 2
+				"",                              // 3
+				"    raxFree(r);",               // 4
+				"}",                             // 5
+				"",                              // 6
+				"TEST(\"insert\") {",            // 7
+				"    raxStop(&ri);",             // 8
+				"    raxFree(r);",               // 9
+				"}",                             // 10
+				"",                              // 11
+				"TEST(\"delete\") {",            // 12
+			},
+			expected: map[int]int{
+				0: 0,
+				1: 1,
+				2: 2,
+				3: 3,
+				4: 4, // Matches first copy (lines 4-5) instead of inserted second copy (lines 9-10)
+				5: 5,
+				6: 11, // Common blank line before TEST("delete")
+				7: 12, // TEST("delete")
+			},
+		},
 	}
 
 	for _, tt := range tests {
