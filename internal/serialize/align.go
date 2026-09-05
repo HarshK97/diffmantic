@@ -76,5 +76,3 @@ func AlignLines(srcBytes, dstBytes []byte) []LineAlignmentPair {
 
 	return grid
 }
-
-

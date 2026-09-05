@@ -131,5 +131,3 @@ func TestAlignLines(t *testing.T) {
 		})
 	}
 }
-
-
