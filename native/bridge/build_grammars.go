@@ -93,7 +93,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("discovering C++ compiler: %w", err)
 	}
-	ar, err := findTool("AR", "ar")
+	ar, err := findTool("AR", "ar", "llvm-ar")
 	if err != nil {
 		return fmt.Errorf("discovering archiver: %w", err)
 	}
@@ -101,6 +101,16 @@ func run() error {
 	var archFlags []string
 	if runtime.GOOS == "darwin" && isClang(cc) {
 		archFlags = []string{"-arch", "arm64", "-arch", "x86_64"}
+	}
+
+	// posixFlags returns position-independent and visibility flags only on
+	// non-Windows targets. MSVC rejects -fPIC and -fvisibility=hidden even
+	// when called through clang.exe on Windows.
+	posixFlags := func() []string {
+		if runtime.GOOS == "windows" {
+			return nil
+		}
+		return []string{"-fPIC", "-fvisibility=hidden"}
 	}
 
 	fmt.Println("==> Fetching and compiling Tree-sitter core C runtime + 18 native grammars...")
@@ -123,9 +133,7 @@ func run() error {
 	}
 
 	coreObj := filepath.Join(buildTmp, "tree_sitter.o")
-	coreArgs := append([]string{
-		"-O3", "-fPIC", "-fvisibility=hidden",
-	}, archFlags...)
+	coreArgs := append(append([]string{"-O3"}, posixFlags()...), archFlags...)
 	coreArgs = append(coreArgs,
 		"-I", filepath.Join(tsCoreDir, "lib", "include"),
 		"-I", filepath.Join(tsCoreDir, "lib", "src"),
@@ -183,9 +191,7 @@ func run() error {
 			incArgs = append(incArgs, "-I", filepath.Join(repoDir, g.ExtraInc))
 		}
 
-		baseFlags := append([]string{
-			"-O3", "-fPIC", "-fvisibility=hidden",
-		}, archFlags...)
+		baseFlags := append(append([]string{"-O3"}, posixFlags()...), archFlags...)
 		baseFlags = append(baseFlags, incArgs...)
 
 		parserC := filepath.Join(fullSrc, "parser.c")
@@ -227,9 +233,7 @@ func run() error {
 	}
 
 	registryObj := filepath.Join(buildTmp, "registry.o")
-	registryArgs := append([]string{
-		"-O3", "-fPIC", "-fvisibility=hidden",
-	}, archFlags...)
+	registryArgs := append(append([]string{"-O3"}, posixFlags()...), archFlags...)
 	registryArgs = append(registryArgs,
 		"-I", filepath.Join(bridgeDir, "include"),
 		"-c", filepath.Join(bridgeDir, "src", "registry.c"),
