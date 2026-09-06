@@ -1,0 +1,78 @@
+{
+  "tree-sitter": {
+    "repo": "tree-sitter/tree-sitter",
+    "version": "v0.25.3"
+  },
+  "c": {
+    "repo": "tree-sitter/tree-sitter-c",
+    "version": "v0.24.2"
+  },
+  "cpp": {
+    "repo": "tree-sitter/tree-sitter-cpp",
+    "version": "v0.23.4"
+  },
+  "go": {
+    "repo": "tree-sitter/tree-sitter-go",
+    "version": "v0.23.4"
+  },
+  "rust": {
+    "repo": "tree-sitter/tree-sitter-rust",
+    "version": "v0.24.2"
+  },
+  "python": {
+    "repo": "tree-sitter/tree-sitter-python",
+    "version": "v0.23.6"
+  },
+  "javascript": {
+    "repo": "tree-sitter/tree-sitter-javascript",
+    "version": "v0.23.1"
+  },
+  "typescript": {
+    "repo": "tree-sitter/tree-sitter-typescript",
+    "version": "v0.23.2"
+  },
+  "tsx": {
+    "repo": "tree-sitter/tree-sitter-typescript",
+    "version": "v0.23.2"
+  },
+  "java": {
+    "repo": "tree-sitter/tree-sitter-java",
+    "version": "v0.23.5"
+  },
+  "php": {
+    "repo": "tree-sitter/tree-sitter-php",
+    "version": "v0.24.2"
+  },
+  "ruby": {
+    "repo": "tree-sitter/tree-sitter-ruby",
+    "version": "v0.23.1"
+  },
+  "lua": {
+    "repo": "tree-sitter-grammars/tree-sitter-lua",
+    "version": "v0.5.0"
+  },
+  "zig": {
+    "repo": "tree-sitter-grammars/tree-sitter-zig",
+    "version": "v1.1.2"
+  },
+  "css": {
+    "repo": "tree-sitter/tree-sitter-css",
+    "version": "v0.25.0"
+  },
+  "html": {
+    "repo": "tree-sitter/tree-sitter-html",
+    "version": "v0.23.2"
+  },
+  "json": {
+    "repo": "tree-sitter/tree-sitter-json",
+    "version": "v0.24.8"
+  },
+  "toml": {
+    "repo": "tree-sitter-grammars/tree-sitter-toml",
+    "version": "v0.7.0"
+  },
+  "yaml": {
+    "repo": "tree-sitter-grammars/tree-sitter-yaml",
+    "version": "v0.7.2"
+  }
+}
