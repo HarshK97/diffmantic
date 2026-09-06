@@ -15,9 +15,15 @@ linters:
     - nilerr
     - unconvert
     - copyloopvar
+  exclusions:
+    paths:
+      - native/bridge/grammars
 
 formatters:
   enable:
     - gofumpt
     - goimports
     - gci
+  exclusions:
+    paths:
+      - native/bridge/grammars

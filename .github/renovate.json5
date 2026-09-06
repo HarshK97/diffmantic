@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "deps",
+  "schedule": ["before 9am on monday"],
+  "timezone": "UTC",
+  "packageRules": [
+    {
+      "description": "Group Tree-sitter core and grammar updates together",
+      "matchDatasources": ["github-releases"],
+      "groupName": "tree-sitter grammars",
+      "commitMessageTopic": "tree-sitter grammars"
+    },
+    {
+      "description": "Group Charmbracelet TUI updates together",
+      "matchPackagePrefixes": ["github.com/charmbracelet/"],
+      "groupName": "charmbracelet"
+    },
+    {
+      "description": "Group golang.org/x updates together",
+      "matchPackagePrefixes": ["golang.org/x/"],
+      "groupName": "golang-x"
+    },
+    {
+      "description": "Group GitHub Actions updates together",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "commitMessagePrefix": "ci"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^native/bridge/grammars\\.json$"],
+      "matchStrings": [
+        "\"(?<depName>[a-zA-Z0-9_-]+)\":\\s*\\{\\s*\"repo\":\\s*\"(?<packageName>[^\"]+)\",\\s*\"version\":\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases"
+    }
+  ]
+}
