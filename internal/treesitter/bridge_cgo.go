@@ -5,22 +5,8 @@ package treesitter
 #cgo LDFLAGS: -L${SRCDIR}/../../native/bridge/lib -ldiffmantic_grammars -lstdc++
 #include "bridge.h"
 #include "../../native/bridge/src/bridge.c"
-#include <dlfcn.h>
 
 extern const TSLanguage* diffmantic_get_native_language(const char* name);
-
-typedef void* (*tree_sitter_lang_fn)(void);
-
-static void* get_ts_lang(const char* lib_path, const char* symbol_name) {
-    void* handle = dlopen(lib_path, RTLD_NOW);
-    if (!handle) return NULL;
-    tree_sitter_lang_fn fn = (tree_sitter_lang_fn)dlsym(handle, symbol_name);
-    if (!fn) {
-        dlclose(handle);
-        return NULL;
-    }
-    return fn();
-}
 
 static uint32_t get_ts_lang_symbol_count(const void* ts_lang_ptr) {
     return ts_language_symbol_count((const TSLanguage*)ts_lang_ptr);
@@ -150,20 +136,6 @@ func GetNativeLanguage(langName string) (unsafe.Pointer, error) {
 	ptr := unsafe.Pointer(C.diffmantic_get_native_language(cName))
 	if ptr == nil {
 		return nil, fmt.Errorf("unsupported or unregistered native language: %s", langName)
-	}
-	return ptr, nil
-}
-
-// LoadNativeLanguage dynamically loads a Tree-sitter grammar function pointer from a shared library.
-func LoadNativeLanguage(libPath, symbolName string) (unsafe.Pointer, error) {
-	cPath := C.CString(libPath)
-	defer C.free(unsafe.Pointer(cPath))
-	cSym := C.CString(symbolName)
-	defer C.free(unsafe.Pointer(cSym))
-
-	ptr := C.get_ts_lang(cPath, cSym)
-	if ptr == nil {
-		return nil, fmt.Errorf("failed to load symbol %s from %s", symbolName, libPath)
 	}
 	return ptr, nil
 }
