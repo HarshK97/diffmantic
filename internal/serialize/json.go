@@ -46,6 +46,7 @@ type EnvelopeOptions struct {
 // Envelope wraps the serialized actions list with a schema version.
 type Envelope struct {
 	Version         string              `json:"version"`
+	IsBinary        bool                `json:"is_binary,omitempty"`
 	Actions         []Action            `json:"actions,omitempty"`
 	LineAlignment   []LineAlignmentPair `json:"line_alignment,omitempty"`
 	LeftHighlights  []HighlightSpan     `json:"left_highlights,omitempty"`

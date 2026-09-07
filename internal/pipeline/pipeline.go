@@ -12,18 +12,22 @@ import (
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
-	"github.com/odvcencio/gotreesitter"
 )
 
 // MaxASTFileSize caps the file size for AST parsing before falling back to line diffing.
-const MaxASTFileSize = 400 * 1024
+const MaxASTFileSize = 1024 * 1024
+
+// MaxASTFileLines caps the line count for AST parsing before falling back to line diffing.
+const MaxASTFileLines = 10000
 
 // DiffOptions configures parsing limits, comment handling, and output options.
 type DiffOptions struct {
 	ParseErrorLimit      int
 	DisableErrorFallback bool
 	DisableSizeLimit     bool
+	MaxASTFileSize       int
+	DisableLineLimit     bool
+	MaxASTFileLines      int
 	IsConflict           bool
 	IgnoreComments       bool
 	EnvelopeOpts         serialize.EnvelopeOptions
@@ -35,11 +39,21 @@ type DiffResult struct {
 	DstBytes    []byte
 	SrcFile     string
 	DstFile     string
+	IsBinary    bool
 	SrcAST      *treesitter.ASTNode
 	DstAST      *treesitter.ASTNode
 	MatchResult *engine.MatchResult
 	EditScript  *actions.EditScript
 	Envelope    *serialize.Envelope
+}
+
+// IsBinary detects whether a byte buffer contains binary data (null bytes in the first 8000 bytes).
+func IsBinary(data []byte) bool {
+	sample := data
+	if len(sample) > 8000 {
+		sample = sample[:8000]
+	}
+	return bytes.IndexByte(sample, 0) != -1
 }
 
 // HasConflictMarkers checks if the buffer contains Git merge conflict markers.
@@ -61,8 +75,37 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		}
 	}
 
+	if IsBinary(srcBytes) || IsBinary(dstBytes) {
+		return &DiffResult{
+			SrcBytes: srcBytes,
+			DstBytes: dstBytes,
+			SrcFile:  srcFile,
+			DstFile:  dstFile,
+			IsBinary: true,
+			Envelope: &serialize.Envelope{
+				Version:  serialize.SchemaVersion,
+				IsBinary: true,
+			},
+		}, nil
+	}
+
+	maxSize := MaxASTFileSize
+	if opts.MaxASTFileSize > 0 {
+		maxSize = opts.MaxASTFileSize
+	}
+
+	maxLines := MaxASTFileLines
+	if opts.MaxASTFileLines > 0 {
+		maxLines = opts.MaxASTFileLines
+	}
+
+	exceedsLines := !opts.DisableLineLimit && maxLines > 0 &&
+		(bytes.Count(srcBytes, []byte{'\n'}) > maxLines || bytes.Count(dstBytes, []byte{'\n'}) > maxLines)
+
+	exceedsSize := !opts.DisableSizeLimit && (len(srcBytes) > maxSize || len(dstBytes) > maxSize)
+
 	if opts.IsConflict || (HasConflictMarkers(srcBytes) || HasConflictMarkers(dstBytes)) ||
-		(!opts.DisableSizeLimit && (len(srcBytes) > MaxASTFileSize || len(dstBytes) > MaxASTFileSize)) {
+		exceedsSize || exceedsLines {
 		return &DiffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,
@@ -93,14 +136,9 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		langB = langA
 	}
 
-	rulesA := rules.Get(langA.Name)
-	rulesB := rules.Get(langB.Name)
-
 	var (
 		srcAST      *treesitter.ASTNode
 		dstAST      *treesitter.ASTNode
-		srcTree     *gotreesitter.Tree
-		dstTree     *gotreesitter.Tree
 		srcComments []comments.CommentBlock
 		dstComments []comments.CommentBlock
 		wg          sync.WaitGroup
@@ -109,16 +147,30 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		srcAST, srcTree, _ = treesitter.ParseWithLanguageAndTree(srcBytes, langA)
-		if srcTree != nil && !opts.IgnoreComments {
-			srcComments = comments.ExtractComments(srcTree.RootNode(), srcBytes, langA, rulesA)
+		var (
+			srcFlatNodes []treesitter.FlatNode
+			srcSymbols   []string
+		)
+		srcAST, srcFlatNodes, srcSymbols, _ = treesitter.ParseForPipeline(srcBytes, langA.Name)
+		if !opts.IgnoreComments && len(srcFlatNodes) > 0 {
+			srcComments = comments.ExtractComments(srcFlatNodes, srcSymbols, srcBytes, langA.Name)
+			if srcAST != nil {
+				comments.BindASTNodes(srcComments, srcAST)
+			}
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		dstAST, dstTree, _ = treesitter.ParseWithLanguageAndTree(dstBytes, langB)
-		if dstTree != nil && !opts.IgnoreComments {
-			dstComments = comments.ExtractComments(dstTree.RootNode(), dstBytes, langB, rulesB)
+		var (
+			dstFlatNodes []treesitter.FlatNode
+			dstSymbols   []string
+		)
+		dstAST, dstFlatNodes, dstSymbols, _ = treesitter.ParseForPipeline(dstBytes, langB.Name)
+		if !opts.IgnoreComments && len(dstFlatNodes) > 0 {
+			dstComments = comments.ExtractComments(dstFlatNodes, dstSymbols, dstBytes, langB.Name)
+			if dstAST != nil {
+				comments.BindASTNodes(dstComments, dstAST)
+			}
 		}
 	}()
 
@@ -135,29 +187,29 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		}, nil
 	}
 
+	matchResult := engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+
 	var (
-		matchResult *engine.MatchResult
-		commentRes  *comments.DiffResult
-		matchWg     sync.WaitGroup
+		commentRes *comments.DiffResult
+		es         *actions.EditScript
+		wgPost     sync.WaitGroup
 	)
 
-	matchWg.Add(1)
+	wgPost.Add(1)
 	go func() {
-		defer matchWg.Done()
-		matchResult = engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		defer wgPost.Done()
+		es = actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	}()
 
 	if !opts.IgnoreComments && (len(srcComments) > 0 || len(dstComments) > 0) {
-		matchWg.Add(1)
+		wgPost.Add(1)
 		go func() {
-			defer matchWg.Done()
-			commentRes = comments.DiffComments(srcComments, dstComments)
+			defer wgPost.Done()
+			commentRes = comments.DiffComments(srcComments, dstComments, matchResult.Mappings)
 		}()
 	}
 
-	matchWg.Wait()
-
-	es := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	wgPost.Wait()
 
 	if commentRes != nil && len(commentRes.Actions) > 0 {
 		for _, act := range commentRes.Actions {

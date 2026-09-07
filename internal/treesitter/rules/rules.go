@@ -5,39 +5,63 @@ import (
 	"strings"
 )
 
+// LanguageKind classifies grammars into high-level parsing and diffing categories.
+type LanguageKind uint8
+
+const (
+	// KindCode is for general programming languages (Go, Rust, Python, C++, etc.).
+	KindCode LanguageKind = iota
+	// KindData is for structured key-value formats (JSON, YAML, TOML).
+	KindData
+	// KindMarkup is for markup and styling languages (HTML, CSS).
+	KindMarkup
+)
+
 // Rules configures language-specific AST transformations and node matching.
 type Rules struct {
-	Flattened          []string
-	Ignored            []string
-	Aliased            map[string]string
-	LabelIgnored       []string
-	Scaffolding        []string
-	Keywords           []string
-	Declarations       []string
-	Identifiers        []string
-	Blocks             []string
-	Wrappers           []string
-	Pairs              []string
-	Unordered          []string
-	EquivalentTypes    [][]string
-	Comments           []string
-	Calls              []string
-	ScopedDeclarations []string
+	Kind                  LanguageKind
+	Flattened             []string
+	Ignored               []string
+	Aliased               map[string]string
+	LabelIgnored          []string
+	Scaffolding           []string
+	Keywords              []string
+	Declarations          []string
+	Identifiers           []string
+	Blocks                []string
+	Wrappers              []string
+	Pairs                 []string
+	Unordered             []string
+	EquivalentTypes       [][]string
+	Comments              []string
+	Calls                 []string
+	ScopedDeclarations    []string
+	Indexed               []string // Subscript nodes with prefix receivers (e.g. arr[i]).
+	LocalVarDeclarations  []string
+	ContainerDeclarations []string // Major declaration scope boundaries (functions, classes, structs, etc.).
+	Closures              []string // Anonymous functions, lambdas, and callbacks.
+	Types                 []string // Type annotations and type expressions.
 
-	flattenedSet          map[string]struct{}
-	ignoredSet            map[string]struct{}
-	labelIgnoredSet       map[string]struct{}
-	keywordsSet           map[string]struct{}
-	declarationsSet       map[string]struct{}
-	identifiersSet        map[string]struct{}
-	scaffoldingSet        map[string]struct{}
-	blocksSet             map[string]struct{}
-	wrappersSet           map[string]struct{}
-	unorderedSet          map[string]struct{}
-	commentsSet           map[string]struct{}
-	callsSet              map[string]struct{}
-	scopedDeclarationsSet map[string]struct{}
-	equivGroups           map[string][]int
+	flattenedSet             map[string]struct{}
+	ignoredSet               map[string]struct{}
+	labelIgnoredSet          map[string]struct{}
+	keywordsSet              map[string]struct{}
+	declarationsSet          map[string]struct{}
+	identifiersSet           map[string]struct{}
+	scaffoldingSet           map[string]struct{}
+	blocksSet                map[string]struct{}
+	wrappersSet              map[string]struct{}
+	pairsSet                 map[string]struct{}
+	unorderedSet             map[string]struct{}
+	commentsSet              map[string]struct{}
+	callsSet                 map[string]struct{}
+	scopedDeclarationsSet    map[string]struct{}
+	indexedSet               map[string]struct{}
+	localVarDeclarationsSet  map[string]struct{}
+	containerDeclarationsSet map[string]struct{}
+	closuresSet              map[string]struct{}
+	typesSet                 map[string]struct{}
+	equivGroups              map[string][]int
 }
 
 // CompileSets builds the internal lookup sets for fast querying.
@@ -96,6 +120,12 @@ func (r *Rules) CompileSets() {
 			r.wrappersSet[s] = struct{}{}
 		}
 	}
+	if len(r.Pairs) > 0 {
+		r.pairsSet = make(map[string]struct{}, len(r.Pairs))
+		for _, s := range r.Pairs {
+			r.pairsSet[s] = struct{}{}
+		}
+	}
 	if len(r.Unordered) > 0 {
 		r.unorderedSet = make(map[string]struct{}, len(r.Unordered))
 		for _, s := range r.Unordered {
@@ -120,6 +150,36 @@ func (r *Rules) CompileSets() {
 			r.scopedDeclarationsSet[s] = struct{}{}
 		}
 	}
+	if len(r.Indexed) > 0 {
+		r.indexedSet = make(map[string]struct{}, len(r.Indexed))
+		for _, s := range r.Indexed {
+			r.indexedSet[s] = struct{}{}
+		}
+	}
+	if len(r.LocalVarDeclarations) > 0 {
+		r.localVarDeclarationsSet = make(map[string]struct{}, len(r.LocalVarDeclarations))
+		for _, s := range r.LocalVarDeclarations {
+			r.localVarDeclarationsSet[s] = struct{}{}
+		}
+	}
+	if len(r.ContainerDeclarations) > 0 {
+		r.containerDeclarationsSet = make(map[string]struct{}, len(r.ContainerDeclarations))
+		for _, s := range r.ContainerDeclarations {
+			r.containerDeclarationsSet[s] = struct{}{}
+		}
+	}
+	if len(r.Closures) > 0 {
+		r.closuresSet = make(map[string]struct{}, len(r.Closures))
+		for _, s := range r.Closures {
+			r.closuresSet[s] = struct{}{}
+		}
+	}
+	if len(r.Types) > 0 {
+		r.typesSet = make(map[string]struct{}, len(r.Types))
+		for _, s := range r.Types {
+			r.typesSet[s] = struct{}{}
+		}
+	}
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -128,6 +188,14 @@ func (r *Rules) CompileSets() {
 			}
 		}
 	}
+}
+
+// GetKind returns the language category (KindCode, KindData, or KindMarkup).
+func (r *Rules) GetKind() LanguageKind {
+	if r == nil {
+		return KindCode
+	}
+	return r.Kind
 }
 
 // IsCall reports whether nodeType is a function, method, or macro invocation.
@@ -140,6 +208,18 @@ func (r *Rules) IsCall(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Calls, nodeType)
+}
+
+// IsIndexed reports whether nodeType is a subscript container with a prefix receiver.
+func (r *Rules) IsIndexed(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.indexedSet) > 0 {
+		_, ok := r.indexedSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Indexed, nodeType)
 }
 
 // IsComment reports whether nodeType is a comment in the language grammar.
@@ -176,6 +256,55 @@ func (r *Rules) IsScopedDeclaration(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.ScopedDeclarations, nodeType)
+}
+
+// IsLocalVarDeclaration reports whether nodeType is a local variable declaration.
+func (r *Rules) IsLocalVarDeclaration(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.localVarDeclarationsSet) > 0 {
+		_, ok := r.localVarDeclarationsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.LocalVarDeclarations, nodeType)
+}
+
+// IsContainerDeclaration reports whether nodeType is a major container declaration
+// (such as a function, method, class, struct, interface, trait, or enum).
+func (r *Rules) IsContainerDeclaration(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.containerDeclarationsSet) > 0 {
+		_, ok := r.containerDeclarationsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.ContainerDeclarations, nodeType)
+}
+
+// IsClosure reports whether nodeType is an anonymous function, closure, or lambda callback.
+func (r *Rules) IsClosure(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.closuresSet) > 0 {
+		_, ok := r.closuresSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Closures, nodeType)
+}
+
+// IsType reports whether nodeType is a type annotation or type expression in the language.
+func (r *Rules) IsType(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.typesSet) > 0 {
+		_, ok := r.typesSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Types, nodeType)
 }
 
 // IsIdentifier reports whether nodeType is an identifier token.
@@ -279,6 +408,18 @@ func (r *Rules) IsLabelIgnored(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.LabelIgnored, nodeType)
+}
+
+// IsPair checks if nodeType represents a key-value property pair.
+func (r *Rules) IsPair(nodeType string) bool {
+	if r == nil {
+		return false
+	}
+	if len(r.pairsSet) > 0 {
+		_, ok := r.pairsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Pairs, nodeType)
 }
 
 // IsUnordered checks if child order doesn't matter for this container.
@@ -412,6 +553,16 @@ func IsDeclaration(nodeType string) bool {
 	return false
 }
 
+// IsLocalVarDeclaration reports whether nodeType is configured as a local variable declaration in any language rule set.
+func IsLocalVarDeclaration(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsLocalVarDeclaration(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsIdentifier reports whether nodeType is configured as an identifier in any language rule set.
 func IsIdentifier(nodeType string) bool {
 	for _, r := range registry {
@@ -467,6 +618,32 @@ func IsKeyword(nodeType, label string) bool {
 	return false
 }
 
+// IsPunctuation reports whether a string is a structural punctuation token (braces, brackets, parentheses, delimiters).
+func (r *Rules) IsPunctuation(token string) bool {
+	switch token {
+	case "}", "};", "],", "]", ")", ");", "},", "{", "begin", "end", ";", ",", "(", "[", ":", "->", "=>", "\"", "'", "`":
+		return true
+	}
+	if r == nil || token == "" {
+		return false
+	}
+	return r.IsIgnored(token, token) || r.IsDelimiter(token, token)
+}
+
+// IsPunctuation reports whether a string is a structural punctuation token in any language rule set.
+func IsPunctuation(token string) bool {
+	switch token {
+	case "}", "};", "],", "]", ")", ");", "},", "{", "begin", "end", ";", ",", "(", "[", ":", "->", "=>", "\"", "'", "`":
+		return true
+	}
+	for _, r := range registry {
+		if r.IsPunctuation(token) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsDelimiter reports whether nodeType or label is a delimiter token (semicolon or comma).
 func IsDelimiter(nodeType, label string) bool {
 	return label == ";" || label == "," || nodeType == "semicolon" || nodeType == "comma" || nodeType == "_automatic_semicolon"
@@ -476,6 +653,55 @@ func IsDelimiter(nodeType, label string) bool {
 func IsCall(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsCall(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsIndexed reports whether nodeType is configured as an indexed container in any language rule set.
+func IsIndexed(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsIndexed(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsContainerDeclaration reports whether nodeType is configured as a container declaration in any language rule set.
+func IsContainerDeclaration(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsContainerDeclaration(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsClosure reports whether nodeType is configured as a closure in any language rule set.
+func IsClosure(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsClosure(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsType reports whether nodeType is a type annotation or type expression in any language rule set.
+func IsType(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsType(nodeType) {
 			return true
 		}
 	}

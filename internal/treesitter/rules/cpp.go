@@ -1,6 +1,7 @@
 package rules
 
 var cppRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"char_literal",
@@ -105,6 +106,7 @@ var cppRules = &Rules{
 		"declaration",
 		"init_declarator",
 		"field_declaration",
+		"friend_declaration",
 		"parameter_declaration",
 		"alias_declaration",
 		"using_declaration",
@@ -199,6 +201,7 @@ var cppRules = &Rules{
 		"concept_definition",
 		"parameter_declaration",
 		"field_declaration",
+		"friend_declaration",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -210,20 +213,22 @@ var cppRules = &Rules{
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
+		"argument_list",
+		"parameter_list",
 		"template_type",
 		"template_argument_list",
 		"subscript_expression",
 		"pointer_expression",
 		"cast_expression",
-		"argument_list",
-		"parameter_list",
+		"friend_declaration",
+		"template_declaration",
 	},
 	Pairs: []string{
 		"field_designator",
 		"initializer_pair",
 	},
 	EquivalentTypes: [][]string{
-		{"function_definition", "template_declaration"},
+		{"function_definition", "declaration"},
 		{"class_specifier", "struct_specifier", "union_specifier", "enum_specifier"},
 		{"for_statement", "for_range_loop", "while_statement", "do_statement"},
 	},
@@ -232,5 +237,28 @@ var cppRules = &Rules{
 	},
 	Calls: []string{
 		"call_expression",
+	},
+	Indexed: []string{
+		"subscript_expression",
+	},
+	ContainerDeclarations: []string{
+		"function_definition",
+		"type_definition",
+		"class_specifier",
+		"struct_specifier",
+		"union_specifier",
+		"enum_specifier",
+		"namespace_definition",
+		"template_declaration",
+	},
+	Closures: []string{
+		"lambda_expression",
+	},
+	Types: []string{
+		"dependent_type",
+		"primitive_type",
+		"template_type",
+		"trailing_return_type",
+		"type_identifier",
 	},
 }

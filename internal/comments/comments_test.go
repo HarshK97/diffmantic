@@ -2,13 +2,11 @@ package comments
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
+	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
-	"github.com/odvcencio/gotreesitter"
 )
 
 func TestDiffCommentsIdentical(t *testing.T) {
@@ -19,7 +17,7 @@ func TestDiffCommentsIdentical(t *testing.T) {
 		{Type: "comment", Text: "// Hello World", StartRow: 8, StartByte: 15, EndByte: 29},
 	}
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 	if len(res.Actions) != 0 {
 		t.Errorf("expected 0 actions for identical comment, got %d actions", len(res.Actions))
 	}
@@ -33,7 +31,7 @@ func TestDiffCommentsSingleLineUpdate(t *testing.T) {
 		{Type: "comment", Text: "// New Comment", StartRow: 5, StartByte: 10, EndByte: 24},
 	}
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 	if len(res.Actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(res.Actions))
 	}
@@ -57,7 +55,7 @@ func TestDiffCommentsMultiLineLineDiff(t *testing.T) {
 		{Type: "block_comment", Text: newJavadoc, StartRow: 10, StartByte: 0, EndByte: uint32(len(newJavadoc))},
 	}
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 
 	if len(res.Actions) != 1 {
 		t.Fatalf("expected 1 line-level update action in multiline comment, got %d", len(res.Actions))
@@ -75,28 +73,28 @@ func TestDiffCommentsMultiLineLineDiff(t *testing.T) {
 }
 
 func TestExtractCommentsWithTreeSitter(t *testing.T) {
-	lang, err := treesitter.DetectLanguage("test.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rules := rules.Get("go")
 	src := []byte("package main\n\n// Line comment 1\nfunc main() {\n\t// Line comment 2\n}\n")
 
-	parser := gotreesitter.NewParser(lang)
-	tree, err := parser.Parse(src)
+	_, flatNodes, symbols, err := treesitter.ParseForPipeline(src, "go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	comments := ExtractComments(tree.RootNode(), src, lang, rules)
+	comments := ExtractComments(flatNodes, symbols, src, "go")
 	if len(comments) != 2 {
 		t.Fatalf("expected 2 comments extracted, got %d", len(comments))
 	}
 	if comments[0].Text != "// Line comment 1" {
 		t.Errorf("expected '// Line comment 1', got %q", comments[0].Text)
 	}
+	if comments[0].Language != "go" {
+		t.Errorf("expected comments[0].Language == 'go', got %q", comments[0].Language)
+	}
 	if comments[1].Text != "// Line comment 2" {
 		t.Errorf("expected '// Line comment 2', got %q", comments[1].Text)
+	}
+	if comments[1].Language != "go" {
+		t.Errorf("expected comments[1].Language == 'go', got %q", comments[1].Language)
 	}
 }
 
@@ -110,7 +108,7 @@ func TestDiffCommentsScopeLocking(t *testing.T) {
 		{Type: "comment", Text: "// Method B comment", ScopeKey: "method:funcB", StartRow: 20},
 	}
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 	if len(res.Actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(res.Actions))
 	}
@@ -127,7 +125,7 @@ func TestDiffCommentsControlBranchScopeLocking(t *testing.T) {
 		{Type: "comment", Text: "-- Track leading whitespace for level", ScopeKey: "function:foo/if_statement", StartRow: 45},
 	}
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 	// Moving between branches should delete and insert instead of update in place.
 	if len(res.Actions) != 2 {
 		t.Fatalf("expected 2 actions (1 delete, 1 insert), got %d", len(res.Actions))
@@ -149,27 +147,38 @@ func TestDiffCommentsControlBranchScopeLocking(t *testing.T) {
 
 func TestDiffCommentsMovedScope(t *testing.T) {
 	srcComments := []CommentBlock{
-		{Type: "comment", Text: "// Optional params comment", ScopeKey: "method_declaration:getParamsToSign", StartRow: 162, EndRow: 162},
+		{Type: "comment", Text: "// Optional params comment", ScopeKey: "method_declaration:getParamsToSign", StartRow: 162, EndRow: 162, Language: "go"},
 	}
 	dstComments := []CommentBlock{
-		{Type: "comment", Text: "// Optional params comment", ScopeKey: "method_declaration:getOauthParams", StartRow: 159, EndRow: 159},
+		{Type: "comment", Text: "// Optional params comment", ScopeKey: "method_declaration:getOauthParams", StartRow: 159, EndRow: 159, Language: "go"},
 	}
 
-	res := DiffComments(srcComments, dstComments)
-	if len(res.Actions) != 1 {
-		t.Fatalf("expected 1 Move action for comment moved across scopes, got %d actions", len(res.Actions))
+	res := DiffComments(srcComments, dstComments, nil)
+	if len(res.Actions) != 2 {
+		t.Fatalf("expected 2 actions (1 Delete, 1 Insert) for comment moved across scopes, got %d actions", len(res.Actions))
 	}
-	if res.Actions[0].Type != actions.Move {
-		t.Errorf("expected Move action, got %v", res.Actions[0].Type)
+	hasDelete := false
+	hasInsert := false
+	for _, act := range res.Actions {
+		if act.Type == actions.Move {
+			t.Errorf("expected no Move action for comment trivia, got actions.Move")
+		}
+		if act.Type == actions.Delete {
+			hasDelete = true
+		}
+		if act.Type == actions.Insert {
+			hasInsert = true
+		}
+	}
+	if !hasDelete || !hasInsert {
+		t.Errorf("expected 1 Delete and 1 Insert action, got: %+v", res.Actions)
+	}
+	if _, ok := res.LineMappings[162]; ok {
+		t.Errorf("expected cross-scope comment NOT to populate LineMappings, got %v", res.LineMappings)
 	}
 }
 
 func TestDiffCommentsGuzzlePhp(t *testing.T) {
-	lang, err := treesitter.DetectLanguage("test.php")
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := rules.Get("php")
 	src, err := os.ReadFile("../../tests/testdata/php_guzzle_handler_curl_multi/old.php")
 	if err != nil {
 		t.Fatal(err)
@@ -179,28 +188,115 @@ func TestDiffCommentsGuzzlePhp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parser := gotreesitter.NewParser(lang)
-	treeA, err := parser.Parse(src)
+	_, flatNodesA, symbolsA, err := treesitter.ParseForPipeline(src, "php")
 	if err != nil {
 		t.Fatal(err)
 	}
-	treeB, err := parser.Parse(dst)
+	_, flatNodesB, symbolsB, err := treesitter.ParseForPipeline(dst, "php")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	srcComments := ExtractComments(treeA.RootNode(), src, lang, r)
-	dstComments := ExtractComments(treeB.RootNode(), dst, lang, r)
+	srcComments := ExtractComments(flatNodesA, symbolsA, src, "php")
+	dstComments := ExtractComments(flatNodesB, symbolsB, dst, "php")
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 	moveCount := 0
 	for _, a := range res.Actions {
-		if a.Type == actions.Move && strings.Contains(a.Node.Label, "Optional parameters") {
+		if a.Type == actions.Move {
 			moveCount++
 		}
 	}
-	if moveCount != 1 {
-		t.Errorf("expected 1 Move action for Optional parameters comment, got %d", moveCount)
+	if moveCount != 0 {
+		t.Errorf("expected 0 Move actions for comment trivia in Guzzle PHP diff, got %d", moveCount)
+	}
+}
+
+func TestSyntheticCommentNodeInvariants(t *testing.T) {
+	cb := CommentBlock{
+		Type:         "comment",
+		Text:         "// Hello World",
+		StartByte:    10,
+		EndByte:      24,
+		StartRow:     2,
+		StartCol:     0,
+		EndRow:       2,
+		EndCol:       14,
+		ParentType:   "function_declaration",
+		ParentStart:  0,
+		ParentEnd:    100,
+		ParentRow:    1,
+		ParentEndRow: 10,
+		Language:     "go",
+	}
+
+	node := createCommentNode(&cb, cb.Language)
+	if node == nil {
+		t.Fatal("expected non-nil ASTNode")
+	}
+	if node.Parent == nil {
+		t.Fatal("expected non-nil Parent")
+	}
+	if len(node.Parent.Children) != 1 || node.Parent.Children[0] != node {
+		t.Fatalf("expected Parent.Children to contain node, got %v", node.Parent.Children)
+	}
+	if idx := node.ChildIndex(); idx != 0 {
+		t.Errorf("expected ChildIndex() == 0, got %d", idx)
+	}
+	if lang := node.GetLanguage(); lang != "go" {
+		t.Errorf("expected GetLanguage() == %q, got %q", "go", lang)
+	}
+
+	// Without parent
+	cbNoParent := CommentBlock{
+		Type:      "comment",
+		Text:      "// Top-level comment",
+		StartByte: 0,
+		EndByte:   20,
+		Language:  "go",
+	}
+	nodeNoParent := createCommentNode(&cbNoParent, cbNoParent.Language)
+	if nodeNoParent.Parent != nil {
+		t.Errorf("expected nil parent for top-level comment")
+	}
+	if idx := nodeNoParent.ChildIndex(); idx != -1 {
+		t.Errorf("expected ChildIndex() == -1 for parentless node, got %d", idx)
+	}
+}
+
+func TestSyntheticCommentLineNodeInvariants(t *testing.T) {
+	cb := CommentBlock{
+		Type:         "block_comment",
+		Text:         "/* line 1\n * line 2 */",
+		StartByte:    10,
+		EndByte:      40,
+		StartRow:     2,
+		StartCol:     0,
+		EndRow:       3,
+		EndCol:       11,
+		ParentType:   "class_declaration",
+		ParentStart:  0,
+		ParentEnd:    200,
+		ParentRow:    1,
+		ParentEndRow: 20,
+		Language:     "python",
+	}
+
+	node := createCommentLineNode(&cb, " * line 2 */", 20, 32, 3, cb.Language)
+	if node == nil {
+		t.Fatal("expected non-nil ASTNode")
+	}
+	if node.Parent == nil {
+		t.Fatal("expected non-nil Parent")
+	}
+	if len(node.Parent.Children) != 1 || node.Parent.Children[0] != node {
+		t.Fatalf("expected Parent.Children to contain line node, got %v", node.Parent.Children)
+	}
+	if idx := node.ChildIndex(); idx != 0 {
+		t.Errorf("expected ChildIndex() == 0, got %d", idx)
+	}
+	if lang := node.GetLanguage(); lang != "python" {
+		t.Errorf("expected GetLanguage() == %q, got %q", "python", lang)
 	}
 }
 
@@ -217,11 +313,213 @@ func TestDiffCommentsScopedLCSNoCrossover(t *testing.T) {
 		{Type: "comment", Text: "// step", ScopeKey: "func:doWork", StartRow: 32, EndRow: 32},
 	}
 
-	res := DiffComments(srcComments, dstComments)
+	res := DiffComments(srcComments, dstComments, nil)
 	if len(res.Actions) != 0 {
 		t.Fatalf("expected 0 actions for matched identical comments, got %d", len(res.Actions))
 	}
 	if res.LineMappings[10] != 12 || res.LineMappings[20] != 22 || res.LineMappings[30] != 32 {
 		t.Errorf("expected mappings 10->12, 20->22, 30->32; got %v", res.LineMappings)
+	}
+}
+
+func TestDiffCommentsRenamedFunction(t *testing.T) {
+	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration", StartByte: 0, EndByte: 200}
+	dstDecl := &treesitter.ASTNode{ID: 25, Type: "function_declaration", StartByte: 0, EndByte: 200}
+
+	mappings := engine.NewMapping()
+	mappings.Add(srcDecl, dstDecl)
+
+	srcComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// step 1: initialize",
+			StartRow:      5,
+			EndRow:        5,
+			EnclosingDecl: srcDecl,
+			RelativePath:  "body",
+		},
+		{
+			Type:          "comment",
+			Text:          "// step 2: execute",
+			StartRow:      10,
+			EndRow:        10,
+			EnclosingDecl: srcDecl,
+			RelativePath:  "body",
+		},
+	}
+
+	dstComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// step 1: initialize",
+			StartRow:      7,
+			EndRow:        7,
+			EnclosingDecl: dstDecl,
+			RelativePath:  "body",
+		},
+		{
+			Type:          "comment",
+			Text:          "// step 2: execute",
+			StartRow:      12,
+			EndRow:        12,
+			EnclosingDecl: dstDecl,
+			RelativePath:  "body",
+		},
+	}
+
+	res := DiffComments(srcComments, dstComments, mappings)
+	if len(res.Actions) != 0 {
+		t.Fatalf("expected 0 actions for comments inside renamed function, got %d actions: %+v", len(res.Actions), res.Actions)
+	}
+	if res.LineMappings[5] != 7 || res.LineMappings[10] != 12 {
+		t.Errorf("expected line mappings 5->7, 10->12; got %v", res.LineMappings)
+	}
+}
+
+func TestDiffCommentsLeadingDocstringRenamed(t *testing.T) {
+	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
+	dstDecl := &treesitter.ASTNode{ID: 25, Type: "function_declaration"}
+
+	mappings := engine.NewMapping()
+	mappings.Add(srcDecl, dstDecl)
+
+	srcComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// CalculateTotal computes total price",
+			StartRow:      4,
+			EndRow:        4,
+			EnclosingDecl: srcDecl,
+			RelativePath:  "doc",
+		},
+	}
+	dstComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// CalculateTotal computes total price",
+			StartRow:      8,
+			EndRow:        8,
+			EnclosingDecl: dstDecl,
+			RelativePath:  "doc",
+		},
+	}
+
+	res := DiffComments(srcComments, dstComments, mappings)
+	if len(res.Actions) != 0 {
+		t.Fatalf("expected 0 actions for docstring attached to renamed function, got %d actions", len(res.Actions))
+	}
+	if res.LineMappings[4] != 8 {
+		t.Errorf("expected line mapping 4->8, got %v", res.LineMappings)
+	}
+}
+
+func TestDiffCommentsBranchIsolation(t *testing.T) {
+	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
+	dstDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
+
+	mappings := engine.NewMapping()
+	mappings.Add(srcDecl, dstDecl)
+
+	srcComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// handle error",
+			StartRow:      10,
+			EndRow:        10,
+			EnclosingDecl: srcDecl,
+			RelativePath:  "body/if_statement/consequence",
+		},
+	}
+	dstComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// handle error",
+			StartRow:      20,
+			EndRow:        20,
+			EnclosingDecl: dstDecl,
+			RelativePath:  "body/if_statement/alternative",
+		},
+	}
+
+	res := DiffComments(srcComments, dstComments, mappings)
+	// Because relative paths differ ("consequence" vs "alternative"), it should not match in Pass 1 LCS
+	// Pass 2 handles cross-scope as Delete + Insert (since dist is 10 <= 25)
+	if len(res.Actions) != 2 {
+		t.Fatalf("expected 2 actions (1 Delete, 1 Insert) across different branches, got %d", len(res.Actions))
+	}
+}
+
+func TestDiffCommentsUnmappedStrictIsolation(t *testing.T) {
+	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
+	dstDecl := &treesitter.ASTNode{ID: 99, Type: "function_declaration"}
+
+	// Unmapped declarations (mappings does NOT map srcDecl to dstDecl)
+	mappings := engine.NewMapping()
+
+	srcComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// validate inputs",
+			StartRow:      10,
+			EndRow:        10,
+			EnclosingDecl: srcDecl,
+			RelativePath:  "body",
+		},
+	}
+	dstComments := []CommentBlock{
+		{
+			Type:          "comment",
+			Text:          "// validate inputs",
+			StartRow:      100, // distant row > 25
+			EndRow:        100,
+			EnclosingDecl: dstDecl,
+			RelativePath:  "body",
+		},
+	}
+
+	res := DiffComments(srcComments, dstComments, mappings)
+	if len(res.Actions) != 2 {
+		t.Fatalf("expected 2 actions (1 Delete, 1 Insert) for unmapped distant declarations, got %d", len(res.Actions))
+	}
+	hasDelete := false
+	hasInsert := false
+	for _, act := range res.Actions {
+		if act.Type == actions.Delete {
+			hasDelete = true
+		}
+		if act.Type == actions.Insert {
+			hasInsert = true
+		}
+	}
+	if !hasDelete || !hasInsert {
+		t.Errorf("expected 1 Delete and 1 Insert action, got: %+v", res.Actions)
+	}
+}
+
+func TestExtractCommentsInsideFunctionNotDocComment(t *testing.T) {
+	src := []byte(`
+public class TestClass {
+    public void releaseByteBuffer(int ix, byte[] buffer) {
+        // 13-Jan-2024, tatu: [core#1186] Replace only if beneficial:
+        byte[] oldBuffer = _byteBuffers.get(ix);
+    }
+}
+`)
+
+	_, flatNodes, symbols, err := treesitter.ParseForPipeline(src, "java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	comments := ExtractComments(flatNodes, symbols, src, "java")
+	if len(comments) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(comments))
+	}
+	c := comments[0]
+	if c.DeclType != "method_declaration" {
+		t.Errorf("expected DeclType to be 'method_declaration', got %q", c.DeclType)
+	}
+	if c.RelativePath == "doc" {
+		t.Errorf("expected RelativePath NOT to be 'doc' for comment inside method body, got %q", c.RelativePath)
 	}
 }

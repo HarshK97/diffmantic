@@ -1,6 +1,7 @@
 package rules
 
 var tomlRules = &Rules{
+	Kind: KindData,
 	Flattened: []string{
 		"string",
 		"offset_date_time",
@@ -46,6 +47,10 @@ var tomlRules = &Rules{
 	},
 	EquivalentTypes: [][]string{
 		{"table", "inline_table"},
+	},
+	Wrappers: []string{
+		"array",
+		"inline_table",
 	},
 	Comments: []string{
 		"comment",

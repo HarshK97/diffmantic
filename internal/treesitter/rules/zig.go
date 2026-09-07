@@ -1,6 +1,7 @@
 package rules
 
 var zigRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"multiline_string",
@@ -154,5 +155,30 @@ var zigRules = &Rules{
 	},
 	Calls: []string{
 		"call_expression",
+	},
+	Indexed: []string{
+		"index_expression",
+	},
+	LocalVarDeclarations: []string{
+		"variable_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_declaration",
+		"struct_declaration",
+		"enum_declaration",
+		"union_declaration",
+		"opaque_declaration",
+		"error_set_declaration",
+		"test_declaration",
+	},
+	Types: []string{
+		"anyframe_type",
+		"array_type",
+		"builtin_type",
+		"error_type",
+		"error_union_type",
+		"nullable_type",
+		"pointer_type",
+		"slice_type",
 	},
 }

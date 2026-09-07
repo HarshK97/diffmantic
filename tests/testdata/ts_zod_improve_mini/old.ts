@@ -5,9 +5,9 @@ import * as parse from "./parse.js";
 type SomeType = core.SomeType;
 
 export interface ZodMiniType<
-  out Output = unknown,
-  out Input = unknown,
-  out Internals extends core.$ZodTypeInternals<Output, Input> = core.$ZodTypeInternals<Output, Input>,
+  Output = unknown,
+  Input = unknown,
+  Internals extends core.$ZodTypeInternals<Output, Input> = core.$ZodTypeInternals<Output, Input>,
 > extends core.$ZodType<Output, Input, Internals> {
   type: Internals["def"]["type"];
   check(...checks: (core.CheckFn<core.output<this>> | core.$ZodCheck<core.output<this>>)[]): this;
@@ -37,7 +37,7 @@ export interface ZodMiniType<
   apply<T>(fn: (schema: this) => T): T;
 }
 
-interface _ZodMiniType<out Internals extends core.$ZodTypeInternals = core.$ZodTypeInternals>
+interface _ZodMiniType<Internals extends core.$ZodTypeInternals = core.$ZodTypeInternals>
   extends ZodMiniType<any, any, Internals> {}
 
 export const ZodMiniType: core.$constructor<ZodMiniType> = /*@__PURE__*/ core.$constructor(
@@ -815,8 +815,8 @@ export function keyof<T extends ZodMiniObject>(schema: T): ZodMiniEnum<util.Keys
 // ZodMiniObject
 export interface ZodMiniObject<
   /** @ts-ignore Cast variance */
-  out Shape extends core.$ZodShape = core.$ZodShape,
-  out Config extends core.$ZodObjectConfig = core.$strip,
+  Shape extends core.$ZodShape = core.$ZodShape,
+  Config extends core.$ZodObjectConfig = core.$strip,
 > extends ZodMiniType<any, any, core.$ZodObjectInternals<Shape, Config>>,
     core.$ZodObject<Shape, Config> {
   shape: Shape;

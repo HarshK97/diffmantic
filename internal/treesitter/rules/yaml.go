@@ -1,6 +1,7 @@
 package rules
 
 var yamlRules = &Rules{
+	Kind: KindData,
 	Flattened: []string{
 		"string_scalar",
 		"double_quote_scalar",
@@ -57,5 +58,7 @@ var yamlRules = &Rules{
 	Wrappers: []string{
 		"block_node",
 		"flow_node",
+		"flow_sequence",
+		"flow_mapping",
 	},
 }

@@ -252,6 +252,8 @@ func TestRulesHelperMethods(t *testing.T) {
 			Unordered:    []string{"object", "hash"},
 			Flattened:    []string{"string_literal"},
 			Blocks:       []string{"block", "compound_statement"},
+			Calls:        []string{"call_expression"},
+			Indexed:      []string{"subscript_expression", "index_expression"},
 			EquivalentTypes: [][]string{
 				{"function_declaration", "function_definition", "variable_declaration"},
 				{"assignment_statement", "variable_declaration"},
@@ -311,6 +313,20 @@ func TestRulesHelperMethods(t *testing.T) {
 			t.Errorf("IsBlock(other) = true, want false")
 		}
 
+		if !r.IsCall("call_expression") {
+			t.Errorf("IsCall(call_expression) = false, want true")
+		}
+		if r.IsCall("other") {
+			t.Errorf("IsCall(other) = true, want false")
+		}
+
+		if !r.IsIndexed("subscript_expression") || !r.IsIndexed("index_expression") {
+			t.Errorf("IsIndexed(subscript_expression/index_expression) = false, want true")
+		}
+		if r.IsIndexed("other") {
+			t.Errorf("IsIndexed(other) = true, want false")
+		}
+
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent(function_declaration, variable_declaration) = false, want true")
 		}
@@ -353,6 +369,12 @@ func TestRulesHelperMethods(t *testing.T) {
 		if !r.IsBlock("compound_statement") || r.IsBlock("other") {
 			t.Errorf("IsBlock uncompiled fallback failed")
 		}
+		if !r.IsCall("call_expression") || r.IsCall("other") {
+			t.Errorf("IsCall uncompiled fallback failed")
+		}
+		if !r.IsIndexed("subscript_expression") || r.IsIndexed("other") {
+			t.Errorf("IsIndexed uncompiled fallback failed")
+		}
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent uncompiled fallback failed")
 		}
@@ -381,6 +403,12 @@ func TestRulesHelperMethods(t *testing.T) {
 		if r.IsBlock("a") {
 			t.Errorf("nil.IsBlock returned true")
 		}
+		if r.IsCall("a") {
+			t.Errorf("nil.IsCall returned true")
+		}
+		if r.IsIndexed("a") {
+			t.Errorf("nil.IsIndexed returned true")
+		}
 		if !r.AreTypesEquivalent("a", "a") {
 			t.Errorf("nil.AreTypesEquivalent(a, a) returned false, want true")
 		}
@@ -405,7 +433,7 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 	})
 
-	t.Run("package-level IsFlattened", func(t *testing.T) {
+	t.Run("package-level helpers", func(t *testing.T) {
 		if !IsFlattened("raw_string_literal") {
 			t.Errorf("IsFlattened(raw_string_literal) = false, want true")
 		}
@@ -414,6 +442,18 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if IsFlattened("") {
 			t.Errorf("IsFlattened(\"\") = true, want false")
+		}
+		if !IsCall("call_expression") {
+			t.Errorf("IsCall(call_expression) = false, want true")
+		}
+		if IsCall("nonexistent_call_xyz") {
+			t.Errorf("IsCall(nonexistent_call_xyz) = true, want false")
+		}
+		if !IsIndexed("subscript_expression") || !IsIndexed("index_expression") {
+			t.Errorf("IsIndexed(subscript_expression) = false, want true")
+		}
+		if IsIndexed("nonexistent_indexed_xyz") {
+			t.Errorf("IsIndexed(nonexistent_indexed_xyz) = true, want false")
 		}
 	})
 }
@@ -467,5 +507,47 @@ func TestRulesIsOperatorLiteral(t *testing.T) {
 		if IsOperatorLiteral(n) {
 			t.Errorf("IsOperatorLiteral(%q) = true, want false", n)
 		}
+	}
+}
+
+func TestLanguageKind(t *testing.T) {
+	expectedKinds := map[string]LanguageKind{
+		"c":          KindCode,
+		"cpp":        KindCode,
+		"go":         KindCode,
+		"rust":       KindCode,
+		"python":     KindCode,
+		"javascript": KindCode,
+		"typescript": KindCode,
+		"tsx":        KindCode,
+		"java":       KindCode,
+		"php":        KindCode,
+		"ruby":       KindCode,
+		"lua":        KindCode,
+		"zig":        KindCode,
+		"json":       KindData,
+		"yaml":       KindData,
+		"toml":       KindData,
+		"html":       KindMarkup,
+		"css":        KindMarkup,
+	}
+
+	for lang, expected := range expectedKinds {
+		r := Get(lang)
+		if r == nil {
+			t.Errorf("Get(%q) returned nil", lang)
+			continue
+		}
+		if r.GetKind() != expected {
+			t.Errorf("Get(%q).GetKind() = %v, want %v", lang, r.GetKind(), expected)
+		}
+		if r.Kind != expected {
+			t.Errorf("Get(%q).Kind = %v, want %v", lang, r.Kind, expected)
+		}
+	}
+
+	var nilRules *Rules
+	if nilRules.GetKind() != KindCode {
+		t.Errorf("nil.GetKind() = %v, want KindCode", nilRules.GetKind())
 	}
 }

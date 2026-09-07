@@ -1,6 +1,7 @@
 package rules
 
 var typescriptRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"template_string",
@@ -178,13 +179,14 @@ var typescriptRules = &Rules{
 		"statement_block",
 	},
 	Wrappers: []string{
+		"export_statement",
 		"parenthesized_expression",
 		"parenthesized_type",
 		"type_arguments",
 		"type_parameters",
 		"array_type",
 		"generic_type",
-		"subscript_expression",
+		"object",
 		"array",
 		"arguments",
 		"formal_parameters",
@@ -198,6 +200,8 @@ var typescriptRules = &Rules{
 		"object",
 		"object_type",
 		"object_pattern",
+		"named_imports",
+		"export_clause",
 	},
 	EquivalentTypes: [][]string{
 		{"function_declaration", "function_expression", "arrow_function", "generator_function_declaration", "generator_function"},
@@ -212,5 +216,55 @@ var typescriptRules = &Rules{
 	},
 	Calls: []string{
 		"call_expression",
+	},
+	Indexed: []string{
+		"subscript_expression",
+	},
+	LocalVarDeclarations: []string{
+		"variable_declaration",
+		"lexical_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_declaration",
+		"generator_function_declaration",
+		"method_definition",
+		"class_declaration",
+		"interface_declaration",
+		"type_alias_declaration",
+		"enum_declaration",
+		"module",
+	},
+	Closures: []string{
+		"arrow_function",
+		"function_expression",
+		"function",
+	},
+	Types: []string{
+		"array_type",
+		"conditional_type",
+		"constructor_type",
+		"default_type",
+		"existential_type",
+		"flow_maybe_type",
+		"function_type",
+		"generic_type",
+		"infer_type",
+		"intersection_type",
+		"literal_type",
+		"lookup_type",
+		"nested_type_identifier",
+		"object_type",
+		"optional_type",
+		"parenthesized_type",
+		"predefined_type",
+		"primary_type",
+		"readonly_type",
+		"rest_type",
+		"template_literal_type",
+		"template_type",
+		"this_type",
+		"tuple_type",
+		"type_identifier",
+		"union_type",
 	},
 }

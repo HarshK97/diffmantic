@@ -1,6 +1,7 @@
 package rules
 
 var phpRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"encapsed_string",
@@ -199,5 +200,33 @@ var phpRules = &Rules{
 		"member_call_expression",
 		"scoped_call_expression",
 		"nullsafe_member_call_expression",
+	},
+	Indexed: []string{
+		"subscript_expression",
+	},
+	LocalVarDeclarations: []string{
+		"const_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_definition",
+		"method_declaration",
+		"class_declaration",
+		"interface_declaration",
+		"trait_declaration",
+		"enum_declaration",
+	},
+	Closures: []string{
+		"anonymous_function",
+		"arrow_function",
+	},
+	Types: []string{
+		"bottom_type",
+		"cast_type",
+		"disjunctive_normal_form_type",
+		"intersection_type",
+		"named_type",
+		"optional_type",
+		"primitive_type",
+		"union_type",
 	},
 }
