@@ -1,10 +1,14 @@
+.DEFAULT_GOAL := build
+
 .PHONY: build test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short grammars-native clean
 
-native/bridge/lib/libdiffmantic_grammars.a:
-	@$(MAKE) grammars-native
+GRAMMAR_SRCS := native/bridge/grammars.json native/bridge/build_grammars.go $(wildcard native/bridge/src/*.c) $(wildcard native/bridge/include/*.h)
 
 build: native/bridge/lib/libdiffmantic_grammars.a ## Build binary with native Tree-sitter flat-buffer bridge
 	go build -ldflags="-s -w" -trimpath -o diffm ./cmd/diffm
+
+native/bridge/lib/libdiffmantic_grammars.a: $(GRAMMAR_SRCS)
+	@$(MAKE) grammars-native
 
 grammars-native: ## Fetch and compile 18 native Tree-sitter grammars
 	go run ./native/bridge/build_grammars.go
