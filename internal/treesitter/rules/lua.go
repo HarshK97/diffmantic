@@ -1,6 +1,7 @@
 package rules
 
 var luaRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 	},
@@ -110,7 +111,6 @@ var luaRules = &Rules{
 	Wrappers: []string{
 		"parenthesized_expression",
 		"table_constructor",
-		"bracket_index_expression",
 		"dot_index_expression",
 		"method_index_expression",
 		"arguments",
@@ -130,5 +130,17 @@ var luaRules = &Rules{
 	},
 	Calls: []string{
 		"function_call",
+	},
+	Indexed: []string{
+		"bracket_index_expression",
+	},
+	LocalVarDeclarations: []string{
+		"variable_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_declaration",
+	},
+	Closures: []string{
+		"function_definition",
 	},
 }

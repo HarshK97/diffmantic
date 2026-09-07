@@ -1,6 +1,7 @@
 package rules
 
 var cRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"char_literal",
@@ -155,17 +156,18 @@ var cRules = &Rules{
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
+		"argument_list",
+		"parameter_list",
 		"cast_expression",
 		"pointer_expression",
 		"subscript_expression",
-		"argument_list",
-		"parameter_list",
 	},
 	Pairs: []string{
 		"field_designator",
 		"initializer_pair",
 	},
 	EquivalentTypes: [][]string{
+		{"function_definition", "declaration"},
 		{"struct_specifier", "union_specifier", "enum_specifier"},
 		{"for_statement", "while_statement", "do_statement"},
 	},
@@ -174,5 +176,19 @@ var cRules = &Rules{
 	},
 	Calls: []string{
 		"call_expression",
+	},
+	Indexed: []string{
+		"subscript_expression",
+	},
+	ContainerDeclarations: []string{
+		"function_definition",
+		"type_definition",
+		"struct_specifier",
+		"union_specifier",
+		"enum_specifier",
+	},
+	Types: []string{
+		"primitive_type",
+		"type_identifier",
 	},
 }

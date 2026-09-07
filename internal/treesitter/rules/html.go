@@ -1,6 +1,7 @@
 package rules
 
 var htmlRules = &Rules{
+	Kind: KindMarkup,
 	Flattened: []string{
 		"text",
 		"raw_text",

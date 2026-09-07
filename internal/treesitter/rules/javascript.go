@@ -1,6 +1,7 @@
 package rules
 
 var javascriptRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"template_string",
@@ -80,7 +81,6 @@ var javascriptRules = &Rules{
 		"expression_statement",
 		"variable_declaration",
 		"lexical_declaration",
-		"using_declaration",
 		"variable_declarator",
 		"function_declaration",
 		"function_expression",
@@ -172,8 +172,9 @@ var javascriptRules = &Rules{
 		"statement_block",
 	},
 	Wrappers: []string{
+		"export_statement",
 		"parenthesized_expression",
-		"subscript_expression",
+		"object",
 		"array",
 		"array_pattern",
 		"object_pattern",
@@ -187,6 +188,8 @@ var javascriptRules = &Rules{
 	Unordered: []string{
 		"object",
 		"object_pattern",
+		"named_imports",
+		"export_clause",
 	},
 	EquivalentTypes: [][]string{
 		{"function_declaration", "function_expression", "arrow_function", "generator_function_declaration", "generator_function"},
@@ -199,5 +202,23 @@ var javascriptRules = &Rules{
 	},
 	Calls: []string{
 		"call_expression",
+	},
+	Indexed: []string{
+		"subscript_expression",
+	},
+	LocalVarDeclarations: []string{
+		"variable_declaration",
+		"lexical_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_declaration",
+		"generator_function_declaration",
+		"method_definition",
+		"class_declaration",
+	},
+	Closures: []string{
+		"arrow_function",
+		"function_expression",
+		"function",
 	},
 }

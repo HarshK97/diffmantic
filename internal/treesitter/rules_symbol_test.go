@@ -14,20 +14,22 @@ var allLanguageExtensions = []string{
 }
 
 func getNamedGrammarSymbols(ext string) (string, map[string]bool, *rules.Rules) {
-	entry := DetectGrammarEntry(ext)
-	if entry == nil {
+	lang, err := DetectLanguage(ext)
+	if err != nil || lang == nil {
 		return "", nil, nil
 	}
-	lang := entry.Language()
-	namedSymbols := make(map[string]bool)
-	for i := range min(int(lang.SymbolCount), len(lang.SymbolNames)) {
-		name := lang.SymbolNames[i]
-		isNamed := i < len(lang.SymbolMetadata) && lang.SymbolMetadata[i].Named
-		if name != "" && isNamed {
-			namedSymbols[name] = true
+	ptr, err := GetNativeLanguage(lang.Name)
+	if err != nil || ptr == nil {
+		return "", nil, nil
+	}
+	symbols := NativeLanguageSymbols(ptr)
+	namedSymbols := make(map[string]bool, len(symbols))
+	for _, s := range symbols {
+		if s != "" {
+			namedSymbols[s] = true
 		}
 	}
-	return entry.Name, namedSymbols, rules.Get(entry.Name)
+	return lang.Name, namedSymbols, rules.Get(lang.Name)
 }
 
 func TestEveryLanguageEquivalentTypesAreValidSymbols(t *testing.T) {

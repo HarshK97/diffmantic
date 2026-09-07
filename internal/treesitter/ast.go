@@ -2,10 +2,8 @@ package treesitter
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
-	"github.com/odvcencio/gotreesitter"
 )
 
 type ASTNode struct {
@@ -66,109 +64,6 @@ func (n *ASTNode) ComputeHashes() {
 
 	n.Hash = h
 	n.StructureHash = sh
-}
-
-func BuildAST(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode) *ASTNode {
-	if n == nil {
-		return nil
-	}
-	r := rules.Get(lang.Name)
-	node := buildASTWithRules(n, src, lang, parent, r)
-	if node != nil && parent == nil {
-		errCount := countErrorNodes(n, lang)
-		node.Language = lang.Name
-		node.ParseErrorCount = errCount
-		node.HasError = errCount > 0
-		node.ComputeHashes()
-		EnsureIndex(node)
-	}
-	return node
-}
-
-func countErrorNodes(n *gotreesitter.Node, lang *gotreesitter.Language) int {
-	if n == nil || !n.HasError() {
-		return 0
-	}
-	count := 0
-	if n.Type(lang) == "ERROR" || n.IsError() || n.IsMissing() {
-		count = 1
-	}
-	for i := range n.ChildCount() {
-		count += countErrorNodes(n.Child(i), lang)
-	}
-	return count
-}
-
-func buildASTWithRules(n *gotreesitter.Node, src []byte, lang *gotreesitter.Language, parent *ASTNode, r *rules.Rules) *ASTNode {
-	nodeType := n.Type(lang)
-	if n.IsMissing() {
-		nodeType = "MISSING " + nodeType
-	}
-
-	isLeaf := n.ChildCount() == 0 || (r != nil && r.IsFlattened(nodeType))
-	var label string
-	if isLeaf {
-		srcLen := uint32(len(src))
-		start, end := min(n.StartByte(), srcLen), min(n.EndByte(), srcLen)
-		if start > end {
-			start = end
-		}
-		label = strings.TrimSpace(string(src[start:end]))
-	}
-
-	if r != nil && r.IsIgnored(nodeType, label) {
-		return nil
-	}
-
-	node := &ASTNode{
-		Type:      nodeType,
-		Parent:    parent,
-		StartByte: n.StartByte(),
-		EndByte:   n.EndByte(),
-		StartRow:  n.StartPoint().Row,
-		StartCol:  n.StartPoint().Column,
-		EndRow:    n.EndPoint().Row,
-		EndCol:    n.EndPoint().Column,
-	}
-
-	// Only set label for leaf nodes or string literals.
-	if isLeaf {
-		node.Label = label
-	}
-
-	if r != nil {
-		if alias, ok := r.Alias(nodeType, label); ok {
-			node.Type = alias
-		}
-		if r.IsLabelIgnored(node.Type) {
-			node.Label = ""
-		}
-		if isLeaf && r.IsKeyword(nodeType, label) {
-			node.IsKeyword = true
-		}
-		if r.IsUnordered(node.Type) {
-			node.IsUnordered = true
-		}
-	}
-
-	for i := range n.ChildCount() {
-		if child := buildASTWithRules(n.Child(i), src, lang, node, r); child != nil {
-			node.Children = append(node.Children, child)
-		}
-	}
-
-	if r != nil && r.IsFlattened(nodeType) {
-		var flattenedChildren []*ASTNode
-		for _, child := range node.Children {
-			flattenedChildren = append(flattenedChildren, child.Children...)
-			for _, grandchild := range child.Children {
-				grandchild.Parent = node
-			}
-		}
-		node.Children = flattenedChildren
-	}
-
-	return node
 }
 
 // Size returns the total number of nodes in the subtree rooted at n.

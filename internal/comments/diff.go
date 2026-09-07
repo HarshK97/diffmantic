@@ -1,6 +1,7 @@
 package comments
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -14,8 +15,8 @@ type DiffResult struct {
 	LineMappings map[int]int
 }
 
-// DiffComments matches and diffs comments between source and destination files.
-func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
+// DiffComments matches and diffs comments between source and destination files with AST mapping awareness.
+func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapping) *DiffResult {
 	res := &DiffResult{
 		LineMappings: make(map[int]int),
 	}
@@ -26,16 +27,19 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 	srcMatched := make([]bool, len(srcComments))
 	dstMatched := make([]bool, len(dstComments))
 
-	// Match identical comments within each scope using LCS so repeated comments don't cross over.
+	// Match identical comments within each canonical mapped scope using LCS so repeated comments don't cross over.
 	scopeSrcMap := make(map[string][]int)
 	scopeDstMap := make(map[string][]int)
 	for i := range srcComments {
-		scopeSrcMap[srcComments[i].ScopeKey] = append(scopeSrcMap[srcComments[i].ScopeKey], i)
+		key := canonicalScopeKey(&srcComments[i], mappings, true)
+		scopeSrcMap[key] = append(scopeSrcMap[key], i)
 	}
 	for j := range dstComments {
-		scopeDstMap[dstComments[j].ScopeKey] = append(scopeDstMap[dstComments[j].ScopeKey], j)
+		key := canonicalScopeKey(&dstComments[j], mappings, false)
+		scopeDstMap[key] = append(scopeDstMap[key], j)
 	}
 
+	// PASS 1: Intra-Scope Monotonic LCS Dynamic Programming
 	for scopeKey, srcIdxs := range scopeSrcMap {
 		dstIdxs := scopeDstMap[scopeKey]
 		if len(dstIdxs) == 0 {
@@ -71,7 +75,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 				dstMatched[dj] = true
 				sc := &srcComments[si]
 				dc := &dstComments[dj]
-				nLines := min(sc.EndRow-sc.StartRow+1, dc.EndRow-dc.StartRow+1)
+				nLines := min(commentLineCount(sc), commentLineCount(dc))
 				for k := 0; k < nLines; k++ {
 					res.LineMappings[sc.StartRow+k] = dc.StartRow + k
 				}
@@ -85,7 +89,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 		}
 	}
 
-	// Exact text matches across different scopes (treated as moved comments).
+	// PASS 2: Exact text matches across different scopes (treated as moved comments).
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
@@ -112,30 +116,36 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 			srcMatched[i] = true
 			dstMatched[bestJ] = true
 			dc := &dstComments[bestJ]
-			nLines := min(sc.EndRow-sc.StartRow+1, dc.EndRow-dc.StartRow+1)
-			for k := 0; k < nLines; k++ {
-				res.LineMappings[sc.StartRow+k] = dc.StartRow + k
-			}
 
-			if sc.ScopeKey != dc.ScopeKey {
-				srcNode := createCommentNode(sc)
-				dstNode := createCommentNode(dc)
-				res.Actions = append(res.Actions, actions.Action{
-					Type:     actions.Move,
-					Node:     srcNode,
-					DestNode: dstNode,
-					Parent:   dstNode.Parent,
-				})
+			scKey := canonicalScopeKey(sc, mappings, true)
+			dcKey := canonicalScopeKey(dc, mappings, false)
+			if scKey == dcKey {
+				nLines := min(commentLineCount(sc), commentLineCount(dc))
+				for k := 0; k < nLines; k++ {
+					res.LineMappings[sc.StartRow+k] = dc.StartRow + k
+				}
+			} else {
+				res.Actions = append(res.Actions,
+					actions.Action{
+						Type: actions.Delete,
+						Node: createCommentNode(sc, sc.Language),
+					},
+					actions.Action{
+						Type: actions.Insert,
+						Node: createCommentNode(dc, dc.Language),
+					},
+				)
 			}
 		}
 	}
 
-	// Fuzzy match edited comments in the same scope.
+	// PASS 3: Fuzzy match edited comments in the same scope.
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
 		}
 		sc := &srcComments[i]
+		scKey := canonicalScopeKey(sc, mappings, true)
 		bestJ := -1
 		bestScore := 0.0
 
@@ -144,13 +154,14 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 				continue
 			}
 			dc := &dstComments[j]
+			dcKey := canonicalScopeKey(dc, mappings, false)
 
-			if sc.ScopeKey != dc.ScopeKey {
+			if scKey != dcKey {
 				continue
 			}
 
-			srcIsMulti := strings.Contains(sc.Text, "\n")
-			dstIsMulti := strings.Contains(dc.Text, "\n")
+			srcIsMulti := strings.Contains(strings.TrimRight(sc.Text, "\r\n"), "\n")
+			dstIsMulti := strings.Contains(strings.TrimRight(dc.Text, "\r\n"), "\n")
 
 			sim := stringSimilarity(sc.Text, dc.Text)
 			minThreshold := 0.40
@@ -180,7 +191,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 	for i := range srcComments {
 		if !srcMatched[i] {
 			sc := &srcComments[i]
-			node := createCommentNode(sc)
+			node := createCommentNode(sc, sc.Language)
 			res.Actions = append(res.Actions, actions.Action{
 				Type: actions.Delete,
 				Node: node,
@@ -191,7 +202,7 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 	for j := range dstComments {
 		if !dstMatched[j] {
 			dc := &dstComments[j]
-			node := createCommentNode(dc)
+			node := createCommentNode(dc, dc.Language)
 			res.Actions = append(res.Actions, actions.Action{
 				Type: actions.Insert,
 				Node: node,
@@ -203,13 +214,16 @@ func DiffComments(srcComments, dstComments []CommentBlock) *DiffResult {
 }
 
 func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
-	srcIsMulti := strings.Contains(sc.Text, "\n")
-	dstIsMulti := strings.Contains(dc.Text, "\n")
+	srcTrimmed := strings.TrimRight(sc.Text, "\r\n")
+	dstTrimmed := strings.TrimRight(dc.Text, "\r\n")
+
+	srcIsMulti := strings.Contains(srcTrimmed, "\n")
+	dstIsMulti := strings.Contains(dstTrimmed, "\n")
 
 	if !srcIsMulti && !dstIsMulti {
 		res.LineMappings[sc.StartRow] = dc.StartRow
-		srcNode := createCommentNode(sc)
-		dstNode := createCommentNode(dc)
+		srcNode := createCommentNode(sc, sc.Language)
+		dstNode := createCommentNode(dc, dc.Language)
 		res.Actions = append(res.Actions, actions.Action{
 			Type:     actions.Update,
 			Node:     srcNode,
@@ -220,8 +234,8 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 	}
 
 	// Line-by-line diff for multiline comments.
-	srcLines := strings.Split(sc.Text, "\n")
-	dstLines := strings.Split(dc.Text, "\n")
+	srcLines := strings.Split(srcTrimmed, "\n")
+	dstLines := strings.Split(dstTrimmed, "\n")
 
 	matchedA := engine.LineDiff(srcLines, dstLines)
 	matchedB := make(map[int]int)
@@ -269,8 +283,8 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 				row := uint32(sc.StartRow + i)
 				dstRow := uint32(dc.StartRow + j)
 
-				srcNode := createCommentLineNode(sc, srcLines[i], startByte, endByte, row)
-				dstNode := createCommentLineNode(dc, dstLines[j], dstStartByte, dstEndByte, dstRow)
+				srcNode := createCommentLineNode(sc, srcLines[i], startByte, endByte, row, sc.Language)
+				dstNode := createCommentLineNode(dc, dstLines[j], dstStartByte, dstEndByte, dstRow, dc.Language)
 				res.Actions = append(res.Actions, actions.Action{
 					Type:     actions.Update,
 					Node:     srcNode,
@@ -285,7 +299,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 		if _, ok := matchedA[i]; !ok {
 			startByte, endByte := srcOffsets[i][0], srcOffsets[i][1]
 			row := uint32(sc.StartRow + i)
-			lineNode := createCommentLineNode(sc, srcLines[i], startByte, endByte, row)
+			lineNode := createCommentLineNode(sc, srcLines[i], startByte, endByte, row, sc.Language)
 			res.Actions = append(res.Actions, actions.Action{
 				Type: actions.Delete,
 				Node: lineNode,
@@ -297,7 +311,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 		if _, ok := matchedB[j]; !ok {
 			startByte, endByte := dstOffsets[j][0], dstOffsets[j][1]
 			row := uint32(dc.StartRow + j)
-			lineNode := createCommentLineNode(dc, dstLines[j], startByte, endByte, row)
+			lineNode := createCommentLineNode(dc, dstLines[j], startByte, endByte, row, dc.Language)
 			res.Actions = append(res.Actions, actions.Action{
 				Type: actions.Insert,
 				Node: lineNode,
@@ -348,23 +362,27 @@ func computeLineOffsets(baseOffset uint32, lines []string) [][2]uint32 {
 	return offsets
 }
 
-func createCommentNode(c *CommentBlock) *treesitter.ASTNode {
-	node := createSyntheticNode(c.Type, c.Text, c.StartByte, c.EndByte, uint32(c.StartRow), uint32(c.StartCol), uint32(c.EndRow), uint32(c.EndCol))
+func createCommentNode(c *CommentBlock, lang string) *treesitter.ASTNode {
+	node := createSyntheticNode(c.Type, c.Text, c.StartByte, c.EndByte, uint32(c.StartRow), uint32(c.StartCol), uint32(c.EndRow), uint32(c.EndCol), lang)
 	if c.ParentType != "" {
-		node.Parent = createSyntheticNode(c.ParentType, "", c.ParentStart, c.ParentEnd, uint32(c.ParentRow), 0, uint32(c.ParentEndRow), 0)
+		parent := createSyntheticNode(c.ParentType, "", c.ParentStart, c.ParentEnd, uint32(c.ParentRow), 0, uint32(c.ParentEndRow), 0, lang)
+		node.Parent = parent
+		parent.Children = []*treesitter.ASTNode{node}
 	}
 	return node
 }
 
-func createCommentLineNode(c *CommentBlock, label string, startByte, endByte, row uint32) *treesitter.ASTNode {
-	node := createSyntheticNode(c.Type, label, startByte, endByte, row, 0, row, uint32(len(label)))
+func createCommentLineNode(c *CommentBlock, label string, startByte, endByte, row uint32, lang string) *treesitter.ASTNode {
+	node := createSyntheticNode(c.Type, label, startByte, endByte, row, 0, row, uint32(len(label)), lang)
 	if c.ParentType != "" {
-		node.Parent = createSyntheticNode(c.ParentType, "", c.ParentStart, c.ParentEnd, uint32(c.ParentRow), 0, uint32(c.ParentEndRow), 0)
+		parent := createSyntheticNode(c.ParentType, "", c.ParentStart, c.ParentEnd, uint32(c.ParentRow), 0, uint32(c.ParentEndRow), 0, lang)
+		node.Parent = parent
+		parent.Children = []*treesitter.ASTNode{node}
 	}
 	return node
 }
 
-func createSyntheticNode(nodeType, label string, startByte, endByte, startRow, startCol, endRow, endCol uint32) *treesitter.ASTNode {
+func createSyntheticNode(nodeType, label string, startByte, endByte, startRow, startCol, endRow, endCol uint32, lang string) *treesitter.ASTNode {
 	return &treesitter.ASTNode{
 		Type:      nodeType,
 		Label:     label,
@@ -374,5 +392,43 @@ func createSyntheticNode(nodeType, label string, startByte, endByte, startRow, s
 		StartCol:  startCol,
 		EndRow:    endRow,
 		EndCol:    endCol,
+		Language:  lang,
+		Children:  make([]*treesitter.ASTNode, 0),
 	}
+}
+
+func canonicalScopeKey(c *CommentBlock, mappings *engine.Mapping, isSource bool) string {
+	if c == nil {
+		return "root"
+	}
+	if c.EnclosingDecl == nil {
+		if c.RelativePath != "" {
+			return "root:" + c.RelativePath
+		}
+		if c.ScopeKey != "" {
+			return c.ScopeKey
+		}
+		return "root"
+	}
+
+	if isSource {
+		if mappings != nil && mappings.Src() != nil {
+			if dstDecl, ok := mappings.Src()[c.EnclosingDecl]; ok && dstDecl != nil {
+				return fmt.Sprintf("decl_%d:%s", dstDecl.ID, c.RelativePath)
+			}
+		}
+		// Strict isolation for unmapped source declarations
+		return fmt.Sprintf("unmapped_src_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
+	}
+
+	// Destination declaration scope key
+	return fmt.Sprintf("decl_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
+}
+
+func commentLineCount(c *CommentBlock) int {
+	t := strings.TrimRight(c.Text, "\r\n")
+	if t == "" {
+		return 1
+	}
+	return strings.Count(t, "\n") + 1
 }

@@ -1,6 +1,7 @@
 package rules
 
 var golangRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"interpreted_string_literal",
 		"raw_string_literal",
@@ -65,7 +66,6 @@ var golangRules = &Rules{
 		"parenthesized_expression",
 		"expression_list",
 		"literal_value",
-		"statement_list",
 		"import_spec_list",
 		"function_declaration",
 		"method_declaration",
@@ -128,6 +128,7 @@ var golangRules = &Rules{
 	Wrappers: []string{
 		"parenthesized_expression",
 		"parenthesized_type",
+		"argument_list",
 		"type_arguments",
 		"type_parameter_list",
 		"slice_type",
@@ -135,8 +136,8 @@ var golangRules = &Rules{
 		"index_expression",
 		"slice_expression",
 		"pointer_type",
-		"argument_list",
-		"parameter_list",
+		"expression_list",
+		"var_declaration",
 	},
 	Pairs: []string{
 		"keyed_element",
@@ -146,7 +147,7 @@ var golangRules = &Rules{
 	},
 	EquivalentTypes: [][]string{
 		{"function_declaration", "method_declaration"},
-		{"var_declaration", "short_var_declaration"},
+		{"short_var_declaration", "assignment_statement", "var_spec"},
 	},
 	Comments: []string{
 		"comment",
@@ -156,5 +157,39 @@ var golangRules = &Rules{
 	},
 	ScopedDeclarations: []string{
 		"method_declaration",
+	},
+	Indexed: []string{
+		"index_expression",
+		"slice_expression",
+	},
+	LocalVarDeclarations: []string{
+		"var_declaration",
+		"const_declaration",
+		"short_var_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_declaration",
+		"method_declaration",
+		"type_declaration",
+		"type_spec",
+	},
+	Closures: []string{
+		"func_literal",
+	},
+	Types: []string{
+		"array_type",
+		"channel_type",
+		"function_type",
+		"generic_type",
+		"implicit_length_array_type",
+		"interface_type",
+		"map_type",
+		"negated_type",
+		"parenthesized_type",
+		"pointer_type",
+		"qualified_type",
+		"slice_type",
+		"struct_type",
+		"type_identifier",
 	},
 }

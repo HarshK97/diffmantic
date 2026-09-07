@@ -1,6 +1,7 @@
 package rules
 
 var rustRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"raw_string_literal",
@@ -181,5 +182,43 @@ var rustRules = &Rules{
 	Calls: []string{
 		"call_expression",
 		"macro_invocation",
+	},
+	Indexed: []string{
+		"index_expression",
+	},
+	LocalVarDeclarations: []string{
+		"let_declaration",
+	},
+	ContainerDeclarations: []string{
+		"function_item",
+		"struct_item",
+		"enum_item",
+		"union_item",
+		"trait_item",
+		"impl_item",
+		"mod_item",
+		"type_item",
+	},
+	Closures: []string{
+		"closure_expression",
+	},
+	Types: []string{
+		"abstract_type",
+		"array_type",
+		"associated_type",
+		"bounded_type",
+		"bracketed_type",
+		"dynamic_type",
+		"function_type",
+		"generic_type",
+		"never_type",
+		"pointer_type",
+		"primitive_type",
+		"qualified_type",
+		"reference_type",
+		"scoped_type_identifier",
+		"tuple_type",
+		"type_identifier",
+		"unit_type",
 	},
 }

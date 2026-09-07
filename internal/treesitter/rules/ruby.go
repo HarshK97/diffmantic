@@ -1,6 +1,7 @@
 package rules
 
 var rubyRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"string_content",
@@ -154,14 +155,18 @@ var rubyRules = &Rules{
 		"constant",
 	},
 	Blocks: []string{
+		"body_statement",
+		"do_block",
 		"block",
 	},
 	Wrappers: []string{
 		"parenthesized_statements",
+		"argument_list",
 		"array",
 		"element_reference",
-		"argument_list",
-		"method_parameters",
+		"do_block",
+		"hash",
+		"hash_pattern",
 	},
 	Pairs: []string{
 		"pair",
@@ -173,7 +178,7 @@ var rubyRules = &Rules{
 	EquivalentTypes: [][]string{
 		{"method", "singleton_method"},
 		{"class", "module", "singleton_class"},
-		{"if", "unless"},
+		{"if", "unless", "if_modifier", "unless_modifier"},
 		{"while", "until", "for"},
 	},
 	Comments: []string{
@@ -181,5 +186,19 @@ var rubyRules = &Rules{
 	},
 	Calls: []string{
 		"call",
+	},
+	Indexed: []string{
+		"element_reference",
+	},
+	ContainerDeclarations: []string{
+		"method",
+		"singleton_method",
+		"class",
+		"module",
+	},
+	Closures: []string{
+		"do_block",
+		"block",
+		"lambda",
 	},
 }

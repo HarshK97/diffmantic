@@ -222,10 +222,10 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 	// Resolve language rules for declaration classification
 	var r *rules.Rules
-	if entry := treesitter.DetectGrammarEntry(srcFile); entry != nil {
-		r = rules.Get(entry.Name)
-	} else if entry := treesitter.DetectGrammarEntry(dstFile); entry != nil {
-		r = rules.Get(entry.Name)
+	if lang, _ := treesitter.DetectLanguage(srcFile); lang != nil {
+		r = rules.Get(lang.Name)
+	} else if lang, _ := treesitter.DetectLanguage(dstFile); lang != nil {
+		r = rules.Get(lang.Name)
 	}
 
 	meta := buildHunkMoveMetadata(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r)

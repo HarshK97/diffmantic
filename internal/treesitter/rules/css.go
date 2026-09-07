@@ -1,6 +1,7 @@
 package rules
 
 var cssRules = &Rules{
+	Kind: KindMarkup,
 	Flattened: []string{
 		"plain_value",
 		"color_value",

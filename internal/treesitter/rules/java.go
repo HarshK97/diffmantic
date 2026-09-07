@@ -1,6 +1,7 @@
 package rules
 
 var javaRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"character_literal",
@@ -182,13 +183,13 @@ var javaRules = &Rules{
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
+		"argument_list",
+		"formal_parameters",
 		"type_arguments",
 		"type_parameters",
 		"array_type",
 		"generic_type",
 		"cast_expression",
-		"argument_list",
-		"formal_parameters",
 	},
 	Pairs: []string{
 		"element_value_pair",
@@ -208,5 +209,34 @@ var javaRules = &Rules{
 	Calls: []string{
 		"method_invocation",
 		"explicit_constructor_invocation",
+	},
+	Indexed: []string{
+		"array_access",
+	},
+	LocalVarDeclarations: []string{
+		"local_variable_declaration",
+	},
+	ContainerDeclarations: []string{
+		"class_declaration",
+		"interface_declaration",
+		"enum_declaration",
+		"record_declaration",
+		"method_declaration",
+		"constructor_declaration",
+	},
+	Closures: []string{
+		"lambda_expression",
+	},
+	Types: []string{
+		"annotated_type",
+		"array_type",
+		"boolean_type",
+		"catch_type",
+		"floating_point_type",
+		"generic_type",
+		"integral_type",
+		"scoped_type_identifier",
+		"type_identifier",
+		"void_type",
 	},
 }

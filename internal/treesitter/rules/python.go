@@ -1,6 +1,7 @@
 package rules
 
 var pythonRules = &Rules{
+	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"concatenated_string",
@@ -80,7 +81,6 @@ var pythonRules = &Rules{
 		"expression_statement",
 		"expression_list",
 		"pattern_list",
-		"tuple_expression",
 		"list",
 		"dictionary",
 		"set",
@@ -157,7 +157,8 @@ var pythonRules = &Rules{
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
-		"subscript",
+		"argument_list",
+		"parameters",
 		"list",
 		"tuple",
 		"set",
@@ -166,8 +167,6 @@ var pythonRules = &Rules{
 		"list_comprehension",
 		"dictionary_comprehension",
 		"set_comprehension",
-		"argument_list",
-		"parameters",
 	},
 	Pairs: []string{
 		"pair",
@@ -186,5 +185,22 @@ var pythonRules = &Rules{
 	},
 	Calls: []string{
 		"call",
+	},
+	Indexed: []string{
+		"subscript",
+	},
+	ContainerDeclarations: []string{
+		"function_definition",
+		"class_definition",
+	},
+	Closures: []string{
+		"lambda",
+	},
+	Types: []string{
+		"constrained_type",
+		"generic_type",
+		"member_type",
+		"splat_type",
+		"union_type",
 	},
 }

@@ -1,6 +1,7 @@
 package rules
 
 var jsonRules = &Rules{
+	Kind: KindData,
 	Flattened: []string{
 		"string",
 	},
@@ -25,6 +26,10 @@ var jsonRules = &Rules{
 	},
 	Pairs: []string{
 		"pair",
+	},
+	Wrappers: []string{
+		"array",
+		"object",
 	},
 	Unordered: []string{
 		"object",
