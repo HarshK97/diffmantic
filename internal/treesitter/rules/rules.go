@@ -64,122 +64,38 @@ type Rules struct {
 	equivGroups              map[string][]int
 }
 
+func sliceToSet[T comparable](items []T) map[T]struct{} {
+	if len(items) == 0 {
+		return nil
+	}
+	set := make(map[T]struct{}, len(items))
+	for _, item := range items {
+		set[item] = struct{}{}
+	}
+	return set
+}
+
 // CompileSets builds the internal lookup sets for fast querying.
 func (r *Rules) CompileSets() {
-	if len(r.Flattened) > 0 {
-		r.flattenedSet = make(map[string]struct{}, len(r.Flattened))
-		for _, s := range r.Flattened {
-			r.flattenedSet[s] = struct{}{}
-		}
-	}
-	if len(r.Ignored) > 0 {
-		r.ignoredSet = make(map[string]struct{}, len(r.Ignored))
-		for _, s := range r.Ignored {
-			r.ignoredSet[s] = struct{}{}
-		}
-	}
-	if len(r.LabelIgnored) > 0 {
-		r.labelIgnoredSet = make(map[string]struct{}, len(r.LabelIgnored))
-		for _, s := range r.LabelIgnored {
-			r.labelIgnoredSet[s] = struct{}{}
-		}
-	}
-	if len(r.Keywords) > 0 {
-		r.keywordsSet = make(map[string]struct{}, len(r.Keywords))
-		for _, s := range r.Keywords {
-			r.keywordsSet[s] = struct{}{}
-		}
-	}
-	if len(r.Declarations) > 0 {
-		r.declarationsSet = make(map[string]struct{}, len(r.Declarations))
-		for _, s := range r.Declarations {
-			r.declarationsSet[s] = struct{}{}
-		}
-	}
-	if len(r.Identifiers) > 0 {
-		r.identifiersSet = make(map[string]struct{}, len(r.Identifiers))
-		for _, s := range r.Identifiers {
-			r.identifiersSet[s] = struct{}{}
-		}
-	}
-	if len(r.Scaffolding) > 0 {
-		r.scaffoldingSet = make(map[string]struct{}, len(r.Scaffolding))
-		for _, s := range r.Scaffolding {
-			r.scaffoldingSet[s] = struct{}{}
-		}
-	}
-	if len(r.Blocks) > 0 {
-		r.blocksSet = make(map[string]struct{}, len(r.Blocks))
-		for _, s := range r.Blocks {
-			r.blocksSet[s] = struct{}{}
-		}
-	}
-	if len(r.Wrappers) > 0 {
-		r.wrappersSet = make(map[string]struct{}, len(r.Wrappers))
-		for _, s := range r.Wrappers {
-			r.wrappersSet[s] = struct{}{}
-		}
-	}
-	if len(r.Pairs) > 0 {
-		r.pairsSet = make(map[string]struct{}, len(r.Pairs))
-		for _, s := range r.Pairs {
-			r.pairsSet[s] = struct{}{}
-		}
-	}
-	if len(r.Unordered) > 0 {
-		r.unorderedSet = make(map[string]struct{}, len(r.Unordered))
-		for _, s := range r.Unordered {
-			r.unorderedSet[s] = struct{}{}
-		}
-	}
-	if len(r.Comments) > 0 {
-		r.commentsSet = make(map[string]struct{}, len(r.Comments))
-		for _, s := range r.Comments {
-			r.commentsSet[s] = struct{}{}
-		}
-	}
-	if len(r.Calls) > 0 {
-		r.callsSet = make(map[string]struct{}, len(r.Calls))
-		for _, s := range r.Calls {
-			r.callsSet[s] = struct{}{}
-		}
-	}
-	if len(r.ScopedDeclarations) > 0 {
-		r.scopedDeclarationsSet = make(map[string]struct{}, len(r.ScopedDeclarations))
-		for _, s := range r.ScopedDeclarations {
-			r.scopedDeclarationsSet[s] = struct{}{}
-		}
-	}
-	if len(r.Indexed) > 0 {
-		r.indexedSet = make(map[string]struct{}, len(r.Indexed))
-		for _, s := range r.Indexed {
-			r.indexedSet[s] = struct{}{}
-		}
-	}
-	if len(r.LocalVarDeclarations) > 0 {
-		r.localVarDeclarationsSet = make(map[string]struct{}, len(r.LocalVarDeclarations))
-		for _, s := range r.LocalVarDeclarations {
-			r.localVarDeclarationsSet[s] = struct{}{}
-		}
-	}
-	if len(r.ContainerDeclarations) > 0 {
-		r.containerDeclarationsSet = make(map[string]struct{}, len(r.ContainerDeclarations))
-		for _, s := range r.ContainerDeclarations {
-			r.containerDeclarationsSet[s] = struct{}{}
-		}
-	}
-	if len(r.Closures) > 0 {
-		r.closuresSet = make(map[string]struct{}, len(r.Closures))
-		for _, s := range r.Closures {
-			r.closuresSet[s] = struct{}{}
-		}
-	}
-	if len(r.Types) > 0 {
-		r.typesSet = make(map[string]struct{}, len(r.Types))
-		for _, s := range r.Types {
-			r.typesSet[s] = struct{}{}
-		}
-	}
+	r.flattenedSet = sliceToSet(r.Flattened)
+	r.ignoredSet = sliceToSet(r.Ignored)
+	r.labelIgnoredSet = sliceToSet(r.LabelIgnored)
+	r.keywordsSet = sliceToSet(r.Keywords)
+	r.declarationsSet = sliceToSet(r.Declarations)
+	r.identifiersSet = sliceToSet(r.Identifiers)
+	r.scaffoldingSet = sliceToSet(r.Scaffolding)
+	r.blocksSet = sliceToSet(r.Blocks)
+	r.wrappersSet = sliceToSet(r.Wrappers)
+	r.pairsSet = sliceToSet(r.Pairs)
+	r.unorderedSet = sliceToSet(r.Unordered)
+	r.commentsSet = sliceToSet(r.Comments)
+	r.callsSet = sliceToSet(r.Calls)
+	r.scopedDeclarationsSet = sliceToSet(r.ScopedDeclarations)
+	r.indexedSet = sliceToSet(r.Indexed)
+	r.localVarDeclarationsSet = sliceToSet(r.LocalVarDeclarations)
+	r.containerDeclarationsSet = sliceToSet(r.ContainerDeclarations)
+	r.closuresSet = sliceToSet(r.Closures)
+	r.typesSet = sliceToSet(r.Types)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
