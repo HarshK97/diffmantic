@@ -262,9 +262,7 @@ func run() error {
 	)
 
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := range jobCh {
 				if ctx.Err() != nil {
 					return
@@ -277,7 +275,7 @@ func run() error {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

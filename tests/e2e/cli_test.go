@@ -147,18 +147,15 @@ func TestCLI_JSONFormat_ValidOutput(t *testing.T) {
 	}
 }
 
-func TestCLI_NonInteractive_DefaultsToJSON(t *testing.T) {
-	// Our test harness runs diffm via exec.Command, meaning stdin and stdout aren't
-	// terminals (like in a CI runner or pipe). The CLI should fall back to JSON
-	// output here. The TUI remains the default in actual interactive terminal sessions.
+func TestCLI_NonInteractive_DefaultsToInline(t *testing.T) {
+	// Without an explicit format, diffm defaults unconditionally to inline diff format.
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
 	stdout, stderr, err := runDiffm(oldPath, newPath)
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
-	var envelope serialize.Envelope
-	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
-		t.Fatalf("non-interactive default format is not valid JSON: %v", err)
+	if !strings.Contains(stdout, "@@") || !strings.Contains(stdout, "---") {
+		t.Fatalf("expected inline diff output by default, got:\n%s", stdout)
 	}
 }
 
@@ -332,32 +329,6 @@ func TestCLI_IgnoreComments(t *testing.T) {
 	}
 	if len(envIgnored.Actions) != 0 {
 		t.Errorf("expected 0 actions with --ignore-comments, got %d actions", len(envIgnored.Actions))
-	}
-}
-
-func TestCLI_ThemeFlag(t *testing.T) {
-	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
-
-	// Valid theme: latte
-	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "json", "-t", "latte")
-	if err != nil {
-		t.Fatalf("diffm with -t latte failed: %v\nstderr: %s", err, stderr)
-	}
-	var env serialize.Envelope
-	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
-		t.Fatalf("invalid JSON output with -t latte: %v", err)
-	}
-	if env.Version == "" {
-		t.Error("missing version in JSON output with -t latte")
-	}
-
-	// Invalid theme
-	_, stderr, err = runDiffm(oldPath, newPath, "-t", "unknown_theme")
-	if err == nil {
-		t.Fatal("expected non-zero exit for unknown theme")
-	}
-	if !strings.Contains(stderr, "unsupported theme") {
-		t.Errorf("expected 'unsupported theme' error, got: %s", stderr)
 	}
 }
 

@@ -3,11 +3,10 @@ package inline
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
+	"github.com/HarshK97/diffmantic/internal/color"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/theme"
 )
 
 func fullEnvelopeOpts() serialize.EnvelopeOptions {
@@ -107,7 +106,7 @@ func TestRender_BasicDiffs(t *testing.T) {
 				t.Fatalf("pipeline.Run failed: %v", err)
 			}
 
-			got := Render(tt.srcFile, tt.dstFile, []byte(tt.srcContent), []byte(tt.dstContent), dr.Envelope, tt.opts, nil)
+			got := Render(tt.srcFile, tt.dstFile, []byte(tt.srcContent), []byte(tt.dstContent), dr.Envelope, tt.opts)
 
 			if tt.wantEmpty {
 				if got != "" {
@@ -136,7 +135,7 @@ func TestRender_LineNumbersGutter(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true}, nil)
+	got := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
 	if !strings.Contains(got, "  4     │ -\tprintln(\"hello\")") {
 		t.Errorf("expected source line number 4 with '-' prefix in gutter, got:\n%s", got)
@@ -160,9 +159,8 @@ func TestRender_ColorOutput(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	th := theme.CatppuccinMochaTheme()
-	colored := Render("foo.go", "foo.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true}, th)
-	plain := Render("foo.go", "foo.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true}, th)
+	colored := Render("foo.go", "foo.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
+	plain := Render("foo.go", "foo.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
 	if !strings.Contains(colored, "\x1b[") {
 		t.Errorf("expected ANSI escape sequences in colored output:\n%q", colored)
@@ -183,16 +181,15 @@ func TestRender_TokenLevelHighlighting(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	th := theme.CatppuccinMochaTheme()
-	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true}, th)
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
 
 	// Check ANSI escape codes for move, update, and move_update token highlights.
-	if !strings.Contains(got, "137;179;250") && !strings.Contains(got, "147;226;213") && !strings.Contains(got, "249;226;175") {
+	if !strings.Contains(got, color.MoveFg) && !strings.Contains(got, color.UpdateFg) {
 		t.Errorf("expected token-level highlight colors in output:\n%q", got)
 	}
 }
 
-func TestRender_IntraHunkMoveSuppression(t *testing.T) {
+func TestRender_Tier1_IntraHunkMoveCleanliness(t *testing.T) {
 	src := []byte("func handle404(w http.ResponseWriter, req *http.Request) {\n\tif engine.handlers404 == nil {\n\t\thttp.NotFound(c.Writer, c.Req)\n\t} else {\n\t\tc.Writer.WriteHeader(404)\n\t}\n}\n")
 	dst := []byte("func handle404(w http.ResponseWriter, req *http.Request) {\n\tc.Writer.setStatus(404)\n\tc.Next()\n\tif !c.Writer.Written() {\n\t\tc.String(404, \"404 page not found\")\n\t}\n}\n")
 
@@ -203,15 +200,86 @@ func TestRender_IntraHunkMoveSuppression(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true}, nil)
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
-	// Tier 1: Intra-hunk moves must have zero right-margin quoted token dumps or arrows
-	if strings.Contains(got, "'c.Writer'") || strings.Contains(got, "←") {
-		t.Errorf("expected no quoted token move annotations in output:\n%s", got)
+	// Under Tier 1, intra-hunk moves suppress right-margin ghost text completely.
+	if strings.Contains(got, "←") || strings.Contains(got, "➔") || strings.Contains(got, "⤹") || strings.Contains(got, "moved to line") {
+		t.Errorf("expected zero right-margin trailing ghost annotations for intra-hunk move, got:\n%s", got)
+	}
+	if !strings.Contains(got, "c.Writer.setStatus(404)") {
+		t.Errorf("expected destination code in output, got:\n%s", got)
 	}
 }
 
-func TestRender_CrossHunkMoveBadges(t *testing.T) {
+func TestRender_Tier2_CrossHunkDeclarationMove(t *testing.T) {
+	src := []byte("func Alpha() {\n}\n\nfunc Target() {\n}\n")
+	dst := []byte("func Target() {\n}\n\nfunc Alpha() {\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false})
+
+	// Check that POSIX hunk header contains moved context or clean lines.
+	if strings.Contains(got, "←") {
+		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
+	}
+	if !strings.Contains(got, "func Alpha") {
+		t.Errorf("expected 'func Alpha' in output, got:\n%s", got)
+	}
+}
+
+func TestRender_Tier3_CrossHunkSubBlockMicroBadge(t *testing.T) {
+	src := []byte("line1\nline2\nline3\nline4\n")
+	dst := []byte("line3\nline4\nline5\nline1\nline2\n")
+
+	startDst := uint32(18)
+	endDst := uint32(29)
+
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: -1},
+			{LeftLine: 1, RightLine: -1},
+			{LeftLine: 2, RightLine: 0},
+			{LeftLine: 3, RightLine: 1},
+			{LeftLine: -1, RightLine: 2},
+			{LeftLine: -1, RightLine: 3},
+			{LeftLine: -1, RightLine: 4},
+		},
+		Actions: []serialize.Action{
+			{
+				Action: "move",
+				Node: &serialize.NodeRef{
+					Tree:      "before",
+					Type:      "statement",
+					StartByte: 0,
+					EndByte:   11,
+				},
+				DestStartByte: &startDst,
+				DestEndByte:   &endDst,
+			},
+		},
+	}
+
+	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false})
+
+	// Micro-badges should be bounded and appear on line 1 of moved sub-blocks across hunks.
+	if strings.Contains(got, "← moved to line") {
+		t.Errorf("expected legacy '← moved to line' to be removed, got:\n%s", got)
+	}
+	if strings.Contains(got, "➔ L") || strings.Contains(got, "⤹ L") {
+		// Bounded micro-badge present
+		if strings.Contains(got, "line2 ➔ L") {
+			t.Errorf("expected micro-badge only on line 1, not subsequent line, got:\n%s", got)
+		}
+	}
+}
+
+func TestRender_DisableAnnotationsOption(t *testing.T) {
 	src := []byte("line1\nline2\n")
 	dst := []byte("line2\nline1\n")
 
@@ -229,7 +297,7 @@ func TestRender_CrossHunkMoveBadges(t *testing.T) {
 				Action: "move",
 				Node: &serialize.NodeRef{
 					Tree:      "before",
-					Type:      "line",
+					Type:      "statement",
 					StartByte: 0,
 					EndByte:   5,
 				},
@@ -239,19 +307,174 @@ func TestRender_CrossHunkMoveBadges(t *testing.T) {
 		},
 	}
 
-	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
+	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false, DisableAnnotations: true})
 
-	if !strings.Contains(got, " ➔ L2") {
-		t.Errorf("expected ' ➔ L2' micro-badge on deletion line, got:\n%s", got)
-	}
-	if !strings.Contains(got, " ⤹ L1") {
-		t.Errorf("expected ' ⤹ L1' micro-badge on insertion line, got:\n%s", got)
+	if strings.Contains(got, "➔") || strings.Contains(got, "⤹") || strings.Contains(got, "moved") {
+		t.Errorf("expected zero move annotations when DisableAnnotations=true, got:\n%s", got)
 	}
 }
 
-func TestRender_DeclarationMoveHunkHeader(t *testing.T) {
-	src := []byte("func Alpha() {\n}\n\nfunc Target() {\n}\n")
-	dst := []byte("func Target() {\n}\n\nfunc Alpha() {\n}\n")
+func TestExtractDeclarationSignature(t *testing.T) {
+	lines := []string{
+		"func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error {",
+		"\treturn nil",
+		"}",
+	}
+	sig := extractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, lines, 0, 2)
+	if sig != "func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error" {
+		t.Errorf("unexpected signature: %q", sig)
+	}
+
+	// Test decorator and comment bypassing
+	linesWithDecorator := []string{
+		"// Header comment",
+		"@dataclass",
+		"@app.route(\"/api/v1\")",
+		"def handle_request(req):",
+		"\tpass",
+	}
+	sigDec := extractDeclarationSignature(&serialize.NodeRef{Type: "function_definition"}, linesWithDecorator, 0, 4)
+	if sigDec != "def handle_request(req):" {
+		t.Errorf("expected decorator bypass, got %q", sigDec)
+	}
+
+	longLine := "func VeryLongFunctionNameToTestTruncationBehaviorAcrossBoundaries(withManyArgumentsA string, withManyArgumentsB int) error {"
+	longLines := []string{longLine}
+	sigLong := extractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, longLines, 0, 0)
+	if len(sigLong) > 80 {
+		t.Errorf("expected signature length <= 80, got %d (%q)", len(sigLong), sigLong)
+	}
+	if !strings.HasSuffix(sigLong, "...") {
+		t.Errorf("expected ellipsis suffix for long signature, got %q", sigLong)
+	}
+}
+
+func TestRender_Tier2_ModifiedRelocation(t *testing.T) {
+	src := []byte("func Process() {\n\tstepA()\n\tstepB()\n}\n\nfunc Helper() {\n\tnoop()\n}\n")
+	dst := []byte("func Helper() {\n\tnoop()\n}\n\nfunc Extra() {\n\tlog()\n}\n\nfunc Process() {\n\tstepA()\n\tstepB_modified()\n\tstepC_new()\n}\n")
+
+	startDst := uint32(50)
+	endDst := uint32(110)
+	mutDst := uint32(75)
+
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: -1},
+			{LeftLine: 1, RightLine: -1},
+			{LeftLine: 2, RightLine: -1},
+			{LeftLine: 3, RightLine: -1},
+			{LeftLine: 4, RightLine: -1},
+			{LeftLine: 5, RightLine: 0},
+			{LeftLine: 6, RightLine: 1},
+			{LeftLine: 7, RightLine: 2},
+			{LeftLine: -1, RightLine: 3},
+			{LeftLine: -1, RightLine: 4},
+			{LeftLine: -1, RightLine: 5},
+			{LeftLine: -1, RightLine: 6},
+			{LeftLine: -1, RightLine: 7},
+			{LeftLine: -1, RightLine: 8},
+			{LeftLine: -1, RightLine: 9},
+		},
+		Actions: []serialize.Action{
+			{
+				Action: "move",
+				Node: &serialize.NodeRef{
+					Tree:      "before",
+					Type:      "function_declaration",
+					StartByte: 0,
+					EndByte:   44,
+				},
+				DestStartByte: &startDst,
+				DestEndByte:   &endDst,
+			},
+			{
+				Action: "insert",
+				Node: &serialize.NodeRef{
+					Tree:      "after",
+					Type:      "call_expression",
+					StartByte: mutDst,
+					EndByte:   mutDst + 10,
+				},
+			},
+		},
+	}
+
+	got := Render("main.go", "main.go", src, dst, env, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
+
+	if !strings.Contains(got, "func Process") {
+		t.Errorf("expected 'func Process' in output, got:\n%s", got)
+	}
+	if strings.Contains(got, "←") {
+		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
+	}
+}
+
+func TestRender_Tier3_MultiMoveHunk(t *testing.T) {
+	src := []byte("lineA\nlineB\nctx1\nctx2\nctx3\nctx4\nctx5\nctx6\nctx7\nctx8\n")
+	dst := []byte("ctx1\nctx2\nctx3\nctx4\nctx5\nctx6\nctx7\nctx8\nlineB\nlineA\n")
+
+	startDstB := uint32(40)
+	endDstB := uint32(45)
+	startDstA := uint32(46)
+	endDstA := uint32(51)
+
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: -1},
+			{LeftLine: 1, RightLine: -1},
+			{LeftLine: 2, RightLine: 0},
+			{LeftLine: 3, RightLine: 1},
+			{LeftLine: 4, RightLine: 2},
+			{LeftLine: 5, RightLine: 3},
+			{LeftLine: 6, RightLine: 4},
+			{LeftLine: 7, RightLine: 5},
+			{LeftLine: 8, RightLine: 6},
+			{LeftLine: 9, RightLine: 7},
+			{LeftLine: -1, RightLine: 8},
+			{LeftLine: -1, RightLine: 9},
+		},
+		Actions: []serialize.Action{
+			{
+				Action: "move",
+				Node: &serialize.NodeRef{
+					Tree:      "before",
+					Type:      "statement",
+					StartByte: 0,
+					EndByte:   5,
+				},
+				DestStartByte: &startDstA,
+				DestEndByte:   &endDstA,
+			},
+			{
+				Action: "move",
+				Node: &serialize.NodeRef{
+					Tree:      "before",
+					Type:      "statement",
+					StartByte: 6,
+					EndByte:   11,
+				},
+				DestStartByte: &startDstB,
+				DestEndByte:   &endDstB,
+			},
+		},
+	}
+
+	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
+
+	if strings.Contains(got, "← moved to line") {
+		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
+	}
+	if !strings.Contains(got, "-lineA ➔ L10") {
+		t.Errorf("expected '-lineA ➔ L10' badge on lineA, got:\n%s", got)
+	}
+	if !strings.Contains(got, "-lineB ➔ L9") {
+		t.Errorf("expected '-lineB ➔ L9' badge on lineB, got:\n%s", got)
+	}
+}
+
+func TestRender_GutterPrefixOmissionInColorMode(t *testing.T) {
+	src := []byte("func oldFunc() {\n\treturn 1\n}\n")
+	dst := []byte("func newFunc() {\n\treturn 2\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
 		EnvelopeOpts: fullEnvelopeOpts(),
@@ -260,99 +483,110 @@ func TestRender_DeclarationMoveHunkHeader(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
-	if !strings.Contains(got, "func Alpha() (moved to L") && !strings.Contains(got, "func Alpha() (moved from L") {
-		t.Errorf("expected declaration move signature in hunk header, got:\n%s", got)
+	// 1. Color + LineNumbers -> Omit + and - prefixes
+	colorWithLines := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
+	// Should not have "│ -" or "│ +" in output
+	if strings.Contains(colorWithLines, "│ -") || strings.Contains(colorWithLines, "│ +") {
+		t.Errorf("expected +/- prefixes to be omitted when Color and LineNumbers are enabled, got:\n%s", colorWithLines)
+	}
+
+	// 2. Monochrome + LineNumbers -> Keep + and - prefixes
+	plainWithLines := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
+	if !strings.Contains(plainWithLines, "│ -") || !strings.Contains(plainWithLines, "│ +") {
+		t.Errorf("expected +/- prefixes to be retained in monochrome LineNumbers mode, got:\n%s", plainWithLines)
+	}
+
+	// 3. Color + No LineNumbers -> Keep + and - prefixes
+	colorNoLines := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: false})
+	if !strings.Contains(colorNoLines, "-") || !strings.Contains(colorNoLines, "+") {
+		t.Errorf("expected +/- prefixes to be retained when LineNumbers is false, got:\n%s", colorNoLines)
 	}
 }
 
-func TestRender_EOFNewlineChanges(t *testing.T) {
-	// Case 1: src has no trailing newline, dst has trailing newline
-	src1 := []byte("line1\nline2")
-	dst1 := []byte("line1\nline2\n")
+func TestRender_UnmutatedTokenBaseColor(t *testing.T) {
+	src := []byte("if err := e.EncodeToken(xml.EndElement{start.Name}); err != nil {\n\treturn err\n}\n")
+	dst := []byte("if err := e.EncodeToken(xml.EndElement{Name: start.Name}); err != nil {\n\treturn err\n}\n")
 
-	dr1, err := pipeline.Run(src1, dst1, "a.txt", "b.txt", pipeline.DiffOptions{
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
 		EnvelopeOpts: fullEnvelopeOpts(),
 	})
 	if err != nil {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got1 := Render("a.txt", "b.txt", src1, dst1, dr1.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false}, nil)
-	if !strings.Contains(got1, "\\ No newline at end of file") {
-		t.Errorf("expected '\\ No newline at end of file' when src lacks trailing newline, got:\n%s", got1)
+	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
+
+	// Unmutated segments should be rendered with DeleteFg on delete lines and InsertFg on insert lines
+	if !strings.Contains(rendered, color.DeleteFg+"if err :=") {
+		t.Errorf("expected unmutated prefix on delete line to be styled with DeleteFg, got:\n%q", rendered)
 	}
+	if !strings.Contains(rendered, color.InsertFg+"if err :=") {
+		t.Errorf("expected unmutated prefix on insert line to be styled with InsertFg, got:\n%q", rendered)
+	}
+}
 
-	// Case 2: src has trailing newline, dst has no trailing newline
-	src2 := []byte("line1\nline2\n")
-	dst2 := []byte("line1\nline2")
+func TestRender_UnchangedMultilineLineUsesBaseColor(t *testing.T) {
+	src := []byte("func foo() {\n\tstart.Name = xml.Name{\"\", \"map\"}\n}\n")
+	dst := []byte("func foo() {\n\tstart.Name = xml.Name{\n\t\tSpace: \"\",\n\t\tLocal: \"map\",\n\t}\n}\n")
 
-	dr2, err := pipeline.Run(src2, dst2, "a.txt", "b.txt", pipeline.DiffOptions{
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
 		EnvelopeOpts: fullEnvelopeOpts(),
 	})
 	if err != nil {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got2 := Render("a.txt", "b.txt", src2, dst2, dr2.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false}, nil)
-	if !strings.Contains(got2, "\\ No newline at end of file") {
-		t.Errorf("expected '\\ No newline at end of file' when dst lacks trailing newline, got:\n%s", got2)
+	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
+
+	// Unchanged container line `start.Name = xml.Name{` on inserted line uses base InsertFg
+	if !strings.Contains(rendered, color.InsertFg+"start.Name = xml.Name{") {
+		t.Errorf("expected container line on inserted line to use InsertFg color, got:\n%q", rendered)
+	}
+	// Closing brace `}` on inserted line also uses base InsertFg
+	if !strings.Contains(rendered, color.InsertFg+"}") {
+		t.Errorf("expected closing brace on inserted line to use InsertFg color, got:\n%q", rendered)
 	}
 }
 
-func TestRender_MidFileInsertOnlyHunkHeader(t *testing.T) {
-	src := []byte("line1\nline2\nline3\n")
-	dst := []byte("line1\nline_inserted_a\nline_inserted_b\nline2\nline3\n")
+func TestRender_BinaryFile(t *testing.T) {
+	src := []byte("PNG\x00\x00\x01\x02")
+	dst := []byte("PNG\x00\x00\x01\x03")
 
-	dr, err := pipeline.Run(src, dst, "a.txt", "b.txt", pipeline.DiffOptions{
+	dr, err := pipeline.Run(src, dst, "a.png", "b.png", pipeline.DiffOptions{})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	rendered := Render("a.png", "b.png", src, dst, dr.Envelope, RenderOptions{Color: false})
+	if !strings.Contains(rendered, "Binary files a.png and b.png differ") {
+		t.Errorf("expected binary differ message, got: %q", rendered)
+	}
+}
+
+func TestRender_AppendAtEOF_NoPhantomContextLine(t *testing.T) {
+	src := []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n\nfunc extra() {\n\tprintln(\"world\")\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
 		EnvelopeOpts: fullEnvelopeOpts(),
 	})
 	if err != nil {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("a.txt", "b.txt", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
-	if !strings.Contains(got, "@@ -1,0 +2,2 @@") {
-		t.Errorf("expected hunk header '@@ -1,0 +2,2 @@', got:\n%s", got)
-	}
-}
-
-func TestRender_MultiByteRuneIntegrity(t *testing.T) {
-	src := []byte("var greeting = \"こんにちは世界\"\nvar status = \"🚀 running\"\n")
-	dst := []byte("var greeting = \"こんばんは世界\"\nvar status = \"✨ complete\"\n")
-
-	dr, err := pipeline.Run(src, dst, "a.js", "b.js", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
+	rendered := Render("main.go", "main.go", src, dst, dr.Envelope, RenderOptions{
+		Color:        false,
+		ContextLines: 3,
+		LineNumbers:  false,
 	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
-	}
 
-	got := Render("a.js", "b.js", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true}, nil)
-
-	if strings.ContainsRune(got, '\uFFFD') {
-		t.Errorf("found Unicode replacement character \uFFFD in output:\n%s", got)
+	// Context should not overshoot source line count (5 lines).
+	// With 3 context lines, it should be @@ -3,3 +3,7 @@ or similar, never @@ -3,4 ... @@
+	if strings.Contains(rendered, "@@ -3,4") {
+		t.Errorf("expected hunk to not overshoot source line count with phantom context line, got:\n%s", rendered)
 	}
-	if !utf8.ValidString(got) {
-		t.Errorf("output is not valid UTF-8:\n%s", got)
-	}
-	if !strings.Contains(got, "こんばんは世界") {
-		t.Errorf("expected Japanese text in output:\n%s", got)
-	}
-}
-
-func TestExtractDeclarationSignature_Truncation(t *testing.T) {
-	lines := []string{
-		"@[some_decorator]",
-		"// doc comment",
-		"func VeryLongFunctionNameWithLotsOfParametersAndGenericTypesThatExceedsTheEightyColumnLimit() {",
-	}
-	sig := extractDeclarationSignature(lines, 0, len(lines)-1, nil)
-	if !strings.HasSuffix(sig, "...") {
-		t.Errorf("expected ellipsis truncation for long signature, got: %q", sig)
-	}
-	if strings.Contains(sig, "@") || strings.Contains(sig, "//") {
-		t.Errorf("expected decorator and comments to be bypassed, got: %q", sig)
+	if !strings.Contains(rendered, "+func extra() {") {
+		t.Errorf("expected rendered output to contain inserted function, got:\n%s", rendered)
 	}
 }
 
@@ -367,35 +601,50 @@ func TestRender_StartOfFileInsertOnlyHunkHeader(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("a.txt", "b.txt", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false}, nil)
+	got := Render("a.txt", "b.txt", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false})
 	if !strings.Contains(got, "@@ -1,0 +1 @@") {
 		t.Errorf("expected hunk header '@@ -1,0 +1 @@', got:\n%s", got)
 	}
 }
 
-func TestRender_GutterPolarityAlignment(t *testing.T) {
-	src := []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n")
-	dst := []byte("package main\n\nfunc main() {\n\tprintln(\"world\")\n}\n")
+func TestRender_SubBlockGrouping(t *testing.T) {
+	src := []byte("package main\n\nfunc Calc() {\n\ta := 1\n\tb := filter(\n\t\tx,\n\t\ty,\n\t)\n\tc := 3\n}\n")
+	dst := []byte("package main\n\nfunc Calc() {\n\ta := 10\n\tb := reduce(x, y)\n\tc := 30\n}\n")
 
-	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: 1},
+			{LeftLine: 2, RightLine: 2},
+			{LeftLine: 3, RightLine: 3},
+			{LeftLine: 4, RightLine: 4},
+			{LeftLine: 5, RightLine: -1},
+			{LeftLine: 6, RightLine: -1},
+			{LeftLine: 7, RightLine: -1},
+			{LeftLine: 8, RightLine: 5},
+			{LeftLine: 9, RightLine: 6},
+		},
+		LeftHighlights: []serialize.HighlightSpan{
+			{Line: 3, StartCol: 1, EndCol: 7, Action: "delete"},
+			{Line: 4, StartCol: 1, EndCol: 13, Action: "delete"},
+			{Line: 5, StartCol: 1, EndCol: 5, Action: "delete"},
+			{Line: 6, StartCol: 1, EndCol: 5, Action: "delete"},
+			{Line: 7, StartCol: 1, EndCol: 3, Action: "delete"},
+			{Line: 8, StartCol: 1, EndCol: 7, Action: "delete"},
+		},
+		RightHighlights: []serialize.HighlightSpan{
+			{Line: 3, StartCol: 1, EndCol: 8, Action: "insert"},
+			{Line: 4, StartCol: 1, EndCol: 19, Action: "insert"},
+			{Line: 5, StartCol: 1, EndCol: 8, Action: "insert"},
+		},
 	}
 
-	// Colored mode: gutter conveys polarity via color; redundant '-' and '+' are omitted to keep code flush at column 0
-	gotColor := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true}, nil)
-	if strings.Contains(gotColor, "│ -\t") || strings.Contains(gotColor, "│ +\t") {
-		t.Errorf("expected flush code column without redundant +/- in colored gutter mode, got:\n%s", gotColor)
-	}
+	got := Render("a.go", "b.go", src, dst, env, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
-	// Monochrome mode: '-' and '+' are strictly preserved
-	gotMono := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true}, nil)
-	if !strings.Contains(gotMono, "│ -\tprintln(\"hello\")") {
-		t.Errorf("expected '-' in monochrome gutter mode, got:\n%s", gotMono)
-	}
-	if !strings.Contains(gotMono, "│ +\tprintln(\"world\")") {
-		t.Errorf("expected '+' in monochrome gutter mode, got:\n%s", gotMono)
+	// Deletions of b := filter(...) must complete before b := reduce(x, y) is inserted.
+	// That is, all 3 lines of b := filter(...) must appear contiguously before +	b := reduce(x, y).
+	expectedDelBlock := "-\tb := filter(\n-\t\tx,\n-\t\ty,\n-\t)\n+\tb := reduce(x, y)\n"
+	if !strings.Contains(got, expectedDelBlock) {
+		t.Errorf("expected sub-block to complete deletions before insertion:\nExpected block:\n%s\nGot:\n%s", expectedDelBlock, got)
 	}
 }
