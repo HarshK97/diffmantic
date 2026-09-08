@@ -137,13 +137,13 @@ func TestRender_LineNumbersGutter(t *testing.T) {
 
 	got := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
-	if !strings.Contains(got, "  4     │ -\tprintln(\"hello\")") {
+	if !strings.Contains(got, "  4      -\tprintln(\"hello\")") {
 		t.Errorf("expected source line number 4 with '-' prefix in gutter, got:\n%s", got)
 	}
-	if !strings.Contains(got, "      4 │ +\tprintln(\"world\")") {
+	if !strings.Contains(got, "      4  +\tprintln(\"world\")") {
 		t.Errorf("expected destination line number 4 with '+' prefix in gutter, got:\n%s", got)
 	}
-	if !strings.Contains(got, "  1   1 │  package main") {
+	if !strings.Contains(got, "  1   1   package main") {
 		t.Errorf("expected context line numbers 1 1 with space prefix in gutter, got:\n%s", got)
 	}
 }
@@ -485,14 +485,14 @@ func TestRender_GutterPrefixOmissionInColorMode(t *testing.T) {
 
 	// 1. Color + LineNumbers -> Omit + and - prefixes
 	colorWithLines := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
-	// Should not have "│ -" or "│ +" in output
-	if strings.Contains(colorWithLines, "│ -") || strings.Contains(colorWithLines, "│ +") {
+	// Should not have -func or +func in color mode
+	if strings.Contains(colorWithLines, "-func") || strings.Contains(colorWithLines, "+func") {
 		t.Errorf("expected +/- prefixes to be omitted when Color and LineNumbers are enabled, got:\n%s", colorWithLines)
 	}
 
 	// 2. Monochrome + LineNumbers -> Keep + and - prefixes
 	plainWithLines := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
-	if !strings.Contains(plainWithLines, "│ -") || !strings.Contains(plainWithLines, "│ +") {
+	if !strings.Contains(plainWithLines, "-func") || !strings.Contains(plainWithLines, "+func") {
 		t.Errorf("expected +/- prefixes to be retained in monochrome LineNumbers mode, got:\n%s", plainWithLines)
 	}
 
@@ -516,12 +516,15 @@ func TestRender_UnmutatedTokenBaseColor(t *testing.T) {
 
 	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
 
-	// Unmutated segments should be rendered with DeleteFg on delete lines and InsertFg on insert lines
-	if !strings.Contains(rendered, color.DeleteFg+"if err :=") {
-		t.Errorf("expected unmutated prefix on delete line to be styled with DeleteFg, got:\n%q", rendered)
+	// Unmutated segments on fine-grained lines stay neutral (TextFg); only highlighted tokens get action colors
+	if !strings.Contains(rendered, color.TextFg+"if err :=") {
+		t.Errorf("expected unmutated prefix on delete line to be styled with TextFg, got:\n%q", rendered)
 	}
-	if !strings.Contains(rendered, color.InsertFg+"if err :=") {
-		t.Errorf("expected unmutated prefix on insert line to be styled with InsertFg, got:\n%q", rendered)
+	if strings.Contains(rendered, color.DeleteFg+"if err :=") {
+		t.Errorf("expected unmutated prefix on delete line NOT to be styled with DeleteFg, got:\n%q", rendered)
+	}
+	if !strings.Contains(rendered, color.TextFg+"if err :=") {
+		t.Errorf("expected unmutated prefix on insert line to be styled with TextFg, got:\n%q", rendered)
 	}
 }
 
@@ -538,9 +541,15 @@ func TestRender_UnchangedMultilineLineUsesBaseColor(t *testing.T) {
 
 	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
 
-	// Unchanged container line `start.Name = xml.Name{` on inserted line uses base InsertFg
-	if !strings.Contains(rendered, color.InsertFg+"start.Name = xml.Name{") {
-		t.Errorf("expected container line on inserted line to use InsertFg color, got:\n%q", rendered)
+	// The container header is paired with the old single line, and the old
+	// side carries the highlights (moved args). So the header renders plain.
+	// It didn't change. The closing brace is a pure insert, so it keeps
+	// InsertFg.
+	if !strings.Contains(rendered, color.TextFg+"start.Name = xml.Name{") {
+		t.Errorf("expected container header on paired inserted line to use TextFg color, got:\n%q", rendered)
+	}
+	if strings.Contains(rendered, color.InsertFg+"start.Name = xml.Name{") {
+		t.Errorf("expected container header on paired inserted line NOT to use InsertFg color, got:\n%q", rendered)
 	}
 	// Closing brace `}` on inserted line also uses base InsertFg
 	if !strings.Contains(rendered, color.InsertFg+"}") {
@@ -646,5 +655,117 @@ func TestRender_SubBlockGrouping(t *testing.T) {
 	expectedDelBlock := "-\tb := filter(\n-\t\tx,\n-\t\ty,\n-\t)\n+\tb := reduce(x, y)\n"
 	if !strings.Contains(got, expectedDelBlock) {
 		t.Errorf("expected sub-block to complete deletions before insertion:\nExpected block:\n%s\nGot:\n%s", expectedDelBlock, got)
+	}
+}
+
+func TestRender_LineWrapping_ContinuationGutter(t *testing.T) {
+	src := []byte("package main\n\nfunc main() {\n\tif format != \"\" && !slices.Contains([]string{\"json\", \"actions\", \"inline\"}, format) {\n\t\tprintln(format)\n\t}\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tif format != \"\" && !slices.Contains([]string{\"json\", \"actions\", \"tui\", \"inline\"}, format) {\n\t\tprintln(format)\n\t}\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
+		ParseErrorLimit: 0,
+		EnvelopeOpts:    fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:         false,
+		ContextLines:  1,
+		LineNumbers:   true,
+		Wrap:          true,
+		TerminalWidth: 60,
+		TabWidth:      4,
+	}
+
+	got := Render("old.go", "new.go", src, dst, dr.Envelope, opts)
+
+	// Wrapped lines should have an empty gutter on continuation rows.
+	lines := strings.Split(got, "\n")
+	hasContinuationLine := false
+	for _, l := range lines {
+		if strings.HasPrefix(l, "          ") && len(strings.TrimSpace(l)) > 0 && !strings.Contains(l, "func") && !strings.Contains(l, "package") {
+			hasContinuationLine = true
+		}
+	}
+
+	if !hasContinuationLine {
+		t.Fatalf("expected at least one continuation line in wrapped output:\n%s", got)
+	}
+}
+
+func TestRender_LineWrapping_ColorMode(t *testing.T) {
+	src := []byte("package main\n\nfunc main() {\n\tlongVar := \"This is a very long string that will definitely exceed the terminal width and wrap over multiple rows\"\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tlongVar := \"This is an updated very long string that will definitely exceed the terminal width and wrap over multiple rows\"\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
+		ParseErrorLimit: 0,
+		EnvelopeOpts:    fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:         true,
+		ContextLines:  1,
+		LineNumbers:   true,
+		Wrap:          true,
+		TerminalWidth: 50,
+		TabWidth:      4,
+	}
+
+	got := Render("old.go", "new.go", src, dst, dr.Envelope, opts)
+
+	lines := strings.Split(got, "\n")
+	// Continuation rows shouldn't have color codes in the gutter — it should be plain spaces.
+	// With ~5 lines, numWidth is 3, so the gutter is 9 chars wide in color mode.
+	const contGutterWidth = 9
+	for _, l := range lines {
+		if len(strings.TrimSpace(l)) == 0 {
+			continue
+		}
+		// If the gutter's empty (no digits), it's a continuation row.
+		if len(l) >= contGutterWidth && strings.HasPrefix(l, "   ") && !strings.Contains(l[:contGutterWidth], "1") && !strings.Contains(l[:contGutterWidth], "2") && !strings.Contains(l[:contGutterWidth], "3") {
+			gutterRaw := l[:contGutterWidth]
+			if strings.Contains(gutterRaw, "\x1b[") {
+				t.Errorf("continuation gutter leaked ANSI escape into line-number area: %q", l)
+			}
+		}
+	}
+	// Wrapping should give us more physical lines than not wrapping.
+	unwrapped := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 1, LineNumbers: true, Wrap: false, TerminalWidth: 50, TabWidth: 4})
+	if strings.Count(got, "\n") <= strings.Count(unwrapped, "\n") {
+		t.Errorf("expected wrapped output to have more physical lines than unwrapped")
+	}
+}
+
+func TestRender_LineWrapping_DisabledWhenWrapFalse(t *testing.T) {
+	src := []byte("package main\n\nfunc main() {\n\tlongVar := \"This is a very long string that will definitely exceed the terminal width and wrap over multiple rows\"\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tlongVar := \"This is an updated very long string that will definitely exceed the terminal width and wrap over multiple rows\"\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
+		ParseErrorLimit: 0,
+		EnvelopeOpts:    fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:         false,
+		ContextLines:  1,
+		LineNumbers:   true,
+		Wrap:          false,
+		TerminalWidth: 50,
+		TabWidth:      4,
+	}
+
+	got := Render("old.go", "new.go", src, dst, dr.Envelope, opts)
+
+	// Without wrapping, the whole string stays on one line.
+	if !strings.Contains(got, "This is an updated very long string that will definitely exceed the terminal width and wrap over multiple rows") {
+		t.Errorf("expected unwrapped line to contain full string, got:\n%s", got)
 	}
 }

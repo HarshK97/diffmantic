@@ -28,6 +28,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -39,6 +40,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var rootCmd = &cobra.Command{
@@ -443,11 +445,54 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 		useColor = isTerminal(os.Stdout)
 	}
 
+	wrapChanged := cmd.Flags().Changed("wrap")
+	wrapFlag, _ := cmd.Flags().GetBool("wrap")
+	wrapWidth, _ := cmd.Flags().GetInt("wrap-width")
+
+	if patchMode {
+		wrapFlag = false
+	} else if !wrapChanged && wrapWidth > 0 && cmd.Flags().Changed("wrap-width") {
+		wrapFlag = true
+	}
+	if !wrapChanged && !cmd.Flags().Changed("wrap-width") && !isTerminal(os.Stdout) {
+		wrapFlag = false
+	}
+
+	termWidth := wrapWidth
+	if wrapFlag && termWidth <= 0 {
+		if wFd, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && wFd > 0 {
+			termWidth = wFd
+		} else if colStr := os.Getenv("COLUMNS"); colStr != "" {
+			if cols, err := strconv.Atoi(colStr); err == nil && cols > 0 {
+				termWidth = cols
+			}
+		}
+		if termWidth <= 0 && isTerminal(os.Stdout) {
+			termWidth = 80
+		}
+	}
+
+	if termWidth <= 0 {
+		wrapFlag = false
+	}
+
+	cfg, _ := config.Load()
+	tabWidth, _ := cmd.Flags().GetInt("tab-width")
+	if !cmd.Flags().Changed("tab-width") && cfg != nil && cfg.TabWidth > 0 {
+		tabWidth = cfg.TabWidth
+	}
+	if tabWidth <= 0 {
+		tabWidth = 4
+	}
+
 	return inline.RenderOptions{
 		Color:              useColor,
 		ContextLines:       contextLines,
 		LineNumbers:        lineNumbers,
 		DisableAnnotations: !annotations,
+		Wrap:               wrapFlag,
+		TerminalWidth:      termWidth,
+		TabWidth:           tabWidth,
 	}
 }
 
@@ -547,4 +592,7 @@ func init() {
 	rootCmd.Flags().Bool("annotations", true, "Include AST move annotations in inline diff")
 	rootCmd.Flags().BoolP("patch", "p", false, "Generate a standard patch suitable for git apply / patch tools")
 	rootCmd.Flags().Bool("no-pager", false, "Do not pipe output into a pager")
+	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in inline diff")
+	rootCmd.Flags().Int("wrap-width", 0, "Explicit column width for line wrapping (0 to auto-detect terminal width)")
+	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in inline diff")
 }

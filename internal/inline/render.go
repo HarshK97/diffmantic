@@ -153,6 +153,15 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		rightSpansByLine[sp.Line] = append(rightSpansByLine[sp.Line], sp)
 	}
 
+	rightToLeft := make(map[int]int, len(filteredPairs))
+	leftToRight := make(map[int]int, len(filteredPairs))
+	for _, pair := range filteredPairs {
+		if pair.LeftLine >= 0 && pair.RightLine >= 0 {
+			rightToLeft[pair.RightLine] = pair.LeftLine
+			leftToRight[pair.LeftLine] = pair.RightLine
+		}
+	}
+
 	// If there are no actions or highlights anywhere in the envelope, and EOF newline status is identical, there are no diffs
 	if len(env.Actions) == 0 && len(leftSpansByLine) == 0 && len(rightSpansByLine) == 0 && srcEndsWithNL == dstEndsWithNL && bytes.Equal(srcBytes, dstBytes) {
 		return ""
@@ -210,6 +219,26 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 	maxLine := max(len(srcLines), len(dstLines))
 	numWidth := max(3, len(strconv.Itoa(maxLine)))
+
+	wrapActive := opts.Wrap && opts.TerminalWidth > 0
+	targetWidth := 0
+	if wrapActive {
+		gutterWidth := 1
+		if opts.LineNumbers {
+			gutterWidth = 2*numWidth + 3
+			if !opts.Color {
+				gutterWidth++
+			}
+		}
+		targetWidth = opts.TerminalWidth - gutterWidth
+		if targetWidth < 20 {
+			targetWidth = 20
+		}
+	}
+	tabWidth := opts.TabWidth
+	if tabWidth <= 0 {
+		tabWidth = 4
+	}
 
 	var out strings.Builder
 	out.Grow(len(srcBytes) + len(dstBytes))
@@ -345,6 +374,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 		for _, l := range lines {
 			var gutter string
+			var contGutter string
 			if opts.LineNumbers {
 				sNum := 0
 				if l.srcLineIdx >= 0 {
@@ -355,18 +385,43 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 					dNum = l.dstLineIdx + 1
 				}
 				gutter = formatLineGutter(sNum, dNum, numWidth, opts.Color, l.kind)
+				contGutter = formatContinuationGutter(numWidth)
+				if !opts.Color {
+					contGutter += " "
+				}
+			} else {
+				contGutter = " "
 			}
 
 			switch l.kind {
 			case kindContext:
-				if opts.LineNumbers {
-					if opts.Color {
-						out.WriteString(gutter + l.text + "\n")
-					} else {
-						out.WriteString(gutter + " " + l.text + "\n")
+				if wrapActive {
+					chunks := sliceInlineLine(l.text, "", nil, targetWidth, tabWidth, "left", kindContext, opts.Color, scratch, false)
+					for i, chunk := range chunks {
+						if i == 0 {
+							if opts.LineNumbers {
+								if opts.Color {
+									out.WriteString(gutter + string(chunk) + "\n")
+								} else {
+									out.WriteString(gutter + " " + string(chunk) + "\n")
+								}
+							} else {
+								out.WriteString(" " + string(chunk) + "\n")
+							}
+						} else {
+							out.WriteString(contGutter + string(chunk) + "\n")
+						}
 					}
 				} else {
-					out.WriteString(" " + l.text + "\n")
+					if opts.LineNumbers {
+						if opts.Color {
+							out.WriteString(gutter + l.text + "\n")
+						} else {
+							out.WriteString(gutter + " " + l.text + "\n")
+						}
+					} else {
+						out.WriteString(" " + l.text + "\n")
+					}
 				}
 				if !srcEndsWithNL && !dstEndsWithNL && l.srcLineIdx == lastSrcLineIdx && l.dstLineIdx == lastDstLineIdx {
 					out.WriteString("\\ No newline at end of file\n")
@@ -377,22 +432,46 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				if !opts.DisableAnnotations {
 					badge = meta.srcLine1Badges[l.srcLineIdx]
 				}
-				lineRendered := renderLineWithSpans(l.text, leftSpansByLine[l.srcLineIdx], true, "left", opts.Color, scratch)
-				if opts.Color {
-					if badge != "" {
-						badge = color.Italic + color.OverlayFg + badge + color.Reset
-					}
-					if opts.LineNumbers {
-						out.WriteString(gutter + lineRendered + badge + "\n")
-					} else {
-						prefix := color.DeleteFg + "-" + color.Reset
-						out.WriteString(prefix + lineRendered + badge + "\n")
+				if wrapActive {
+					chunks := sliceInlineLine(l.text, badge, leftSpansByLine[l.srcLineIdx], targetWidth, tabWidth, "left", kindDelete, opts.Color, scratch, peerDepictsEdit(leftToRight, rightSpansByLine, l.srcLineIdx))
+					for i, chunk := range chunks {
+						if i == 0 {
+							if opts.LineNumbers {
+								if opts.Color {
+									out.WriteString(gutter + string(chunk) + "\n")
+								} else {
+									out.WriteString(gutter + "-" + string(chunk) + "\n")
+								}
+							} else {
+								if opts.Color {
+									prefix := color.DeleteFg + "-" + color.Reset
+									out.WriteString(prefix + string(chunk) + "\n")
+								} else {
+									out.WriteString("-" + string(chunk) + "\n")
+								}
+							}
+						} else {
+							out.WriteString(contGutter + string(chunk) + "\n")
+						}
 					}
 				} else {
-					if opts.LineNumbers {
-						out.WriteString(gutter + "-" + lineRendered + badge + "\n")
+					lineRendered := renderLineWithSpans(l.text, leftSpansByLine[l.srcLineIdx], true, "left", opts.Color, scratch, peerDepictsEdit(leftToRight, rightSpansByLine, l.srcLineIdx))
+					if opts.Color {
+						if badge != "" {
+							badge = color.Italic + color.OverlayFg + badge + color.Reset
+						}
+						if opts.LineNumbers {
+							out.WriteString(gutter + lineRendered + badge + "\n")
+						} else {
+							prefix := color.DeleteFg + "-" + color.Reset
+							out.WriteString(prefix + lineRendered + badge + "\n")
+						}
 					} else {
-						out.WriteString("-" + lineRendered + badge + "\n")
+						if opts.LineNumbers {
+							out.WriteString(gutter + "-" + lineRendered + badge + "\n")
+						} else {
+							out.WriteString("-" + lineRendered + badge + "\n")
+						}
 					}
 				}
 				if !srcEndsWithNL && l.srcLineIdx == lastSrcLineIdx {
@@ -404,22 +483,46 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				if !opts.DisableAnnotations {
 					badge = meta.dstLine1Badges[l.dstLineIdx]
 				}
-				lineRendered := renderLineWithSpans(l.text, rightSpansByLine[l.dstLineIdx], false, "right", opts.Color, scratch)
-				if opts.Color {
-					if badge != "" {
-						badge = color.Italic + color.OverlayFg + badge + color.Reset
-					}
-					if opts.LineNumbers {
-						out.WriteString(gutter + lineRendered + badge + "\n")
-					} else {
-						prefix := color.InsertFg + "+" + color.Reset
-						out.WriteString(prefix + lineRendered + badge + "\n")
+				if wrapActive {
+					chunks := sliceInlineLine(l.text, badge, rightSpansByLine[l.dstLineIdx], targetWidth, tabWidth, "right", kindInsert, opts.Color, scratch, peerDepictsEdit(rightToLeft, leftSpansByLine, l.dstLineIdx))
+					for i, chunk := range chunks {
+						if i == 0 {
+							if opts.LineNumbers {
+								if opts.Color {
+									out.WriteString(gutter + string(chunk) + "\n")
+								} else {
+									out.WriteString(gutter + "+" + string(chunk) + "\n")
+								}
+							} else {
+								if opts.Color {
+									prefix := color.InsertFg + "+" + color.Reset
+									out.WriteString(prefix + string(chunk) + "\n")
+								} else {
+									out.WriteString("+" + string(chunk) + "\n")
+								}
+							}
+						} else {
+							out.WriteString(contGutter + string(chunk) + "\n")
+						}
 					}
 				} else {
-					if opts.LineNumbers {
-						out.WriteString(gutter + "+" + lineRendered + badge + "\n")
+					lineRendered := renderLineWithSpans(l.text, rightSpansByLine[l.dstLineIdx], false, "right", opts.Color, scratch, peerDepictsEdit(rightToLeft, leftSpansByLine, l.dstLineIdx))
+					if opts.Color {
+						if badge != "" {
+							badge = color.Italic + color.OverlayFg + badge + color.Reset
+						}
+						if opts.LineNumbers {
+							out.WriteString(gutter + lineRendered + badge + "\n")
+						} else {
+							prefix := color.InsertFg + "+" + color.Reset
+							out.WriteString(prefix + lineRendered + badge + "\n")
+						}
 					} else {
-						out.WriteString("+" + lineRendered + badge + "\n")
+						if opts.LineNumbers {
+							out.WriteString(gutter + "+" + lineRendered + badge + "\n")
+						} else {
+							out.WriteString("+" + lineRendered + badge + "\n")
+						}
 					}
 				}
 				if !dstEndsWithNL && l.dstLineIdx == lastDstLineIdx {
@@ -448,14 +551,14 @@ func formatLineGutter(srcLine, dstLine int, numWidth int, colorMode bool, kind l
 	if colorMode {
 		switch kind {
 		case kindDelete:
-			return color.DeleteFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + " " + color.SurfaceFg + "│" + color.Reset + " "
+			return color.DeleteFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + "  "
 		case kindInsert:
-			return color.OverlayFg + srcPad + color.Reset + " " + color.InsertFg + dstPad + color.Reset + " " + color.SurfaceFg + "│" + color.Reset + " "
+			return color.OverlayFg + srcPad + color.Reset + " " + color.InsertFg + dstPad + color.Reset + "  "
 		default:
-			return color.OverlayFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + " " + color.SurfaceFg + "│" + color.Reset + " "
+			return color.OverlayFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + "  "
 		}
 	}
-	return srcPad + " " + dstPad + " │ "
+	return srcPad + " " + dstPad + "  "
 }
 
 func buildChangeIntervals(isPairChanged []bool) []interval {
@@ -784,7 +887,17 @@ func parseActionKind(act string) color.ActionKind {
 	}
 }
 
-func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDeleteLine bool, pane string, colorMode bool, scratch *inlineScratch) string {
+// peerDepictsEdit says whether the aligned counterpart carries the
+// highlights for this change. counterpart maps a line index on this side
+// to the other side's; peerSpans holds that side's spans by line. No
+// counterpart, or nothing highlighted there: the line is new on its own
+// and keeps the whole-line color.
+func peerDepictsEdit(counterpart map[int]int, peerSpans map[int][]serialize.HighlightSpan, lineIdx int) bool {
+	peer, ok := counterpart[lineIdx]
+	return ok && len(peerSpans[peer]) > 0
+}
+
+func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDeleteLine bool, pane string, colorMode bool, scratch *inlineScratch, peerDepicts bool) string {
 	if len(lineText) == 0 {
 		return ""
 	}
@@ -793,6 +906,14 @@ func renderLineWithSpans(lineText string, spans []serialize.HighlightSpan, isDel
 	if len(spans) == 0 {
 		if !colorMode {
 			return lineText
+		}
+		if peerDepicts {
+			// The other side shows the edit, so there's nothing to paint here.
+			leadingLen := len(lineText) - len(strings.TrimLeft(lineText, " \t"))
+			if leadingLen > 0 {
+				return lineText[:leadingLen] + color.TextFg + lineText[leadingLen:] + color.Reset
+			}
+			return color.TextFg + lineText + color.Reset
 		}
 		baseFg := color.InsertFg
 		if isDeleteLine {
@@ -863,11 +984,7 @@ func writeStyledSegment(b *strings.Builder, segText string, segKind int, isDelet
 	}
 
 	if segKind == -1 {
-		fg := color.InsertFg
-		if isDeleteLine {
-			fg = color.DeleteFg
-		}
-		b.WriteString(fg)
+		b.WriteString(color.TextFg)
 		b.WriteString(content)
 		b.WriteString(color.Reset)
 		return

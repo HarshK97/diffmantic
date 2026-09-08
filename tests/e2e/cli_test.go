@@ -427,9 +427,6 @@ func TestCLI_InlineFormat(t *testing.T) {
 	if !strings.Contains(stdout, "println(\"new code\")") {
 		t.Errorf("missing inserted line in inline diff:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "│") {
-		t.Errorf("expected line number separator in default inline diff:\n%s", stdout)
-	}
 
 	// 2. Color = always
 	stdoutColor, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--color", "always")
@@ -508,6 +505,18 @@ func TestCLI_InlineFormat(t *testing.T) {
 	}
 	if !strings.Contains(stdoutPatch, "-	w.ResponseWriter.(http.Flusher).Flush()") {
 		t.Errorf("expected clean minus line in patch, got:\n%s", stdoutPatch)
+	}
+
+	// 9. Soft line wrapping: --wrap-width
+	_, stderrWrap, err := runDiffm(moveOld, moveNew, "--wrap-width=50", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm --wrap-width failed: %v\nstderr: %s", err, stderrWrap)
+	}
+
+	// 10. Tab width option: --tab-width
+	_, stderrTab, err := runDiffm(moveOld, moveNew, "--tab-width=8", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm --tab-width failed: %v\nstderr: %s", err, stderrTab)
 	}
 }
 
