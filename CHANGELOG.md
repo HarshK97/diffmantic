@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `--wrap` and `--wrap-width` flags for inline diffs. Long lines wrap to your terminal width with the text staying aligned behind the gutter. Wrapping stays off in `-p/--patch` mode so patches still apply cleanly.
+- Added `--tab-width` flag (and `tab_width` config option) so tab indentation renders at the width you expect.
+
+### Changed
+- Inline diff is now the default output everywhere. Running `diffm` with no `-f` flag used to open the interactive viewer or print JSON, now it prints an inline diff through the pager.
+- Switched parsing from gotreesitter to native Tree-sitter for high-speed parsing.
+- Raised the large-file fallback from 400 KB to 1 MB, and added a 10,000-line cap. Bigger files fall back to fast line diffing instead of slow structural diffing.
+- Change hunks now settle on blank lines and closing brackets where possible, so diffs read more naturally.
+
+### Fixed
+- Fixed closing brackets (`)`, `]`, `}`) showing up unhighlighted when their block was added or removed. They now light up with the rest of the change.
+- Cleaned up noisy move highlights when code gets wrapped in a new container. Surviving inner code no longer gets painted as moved.
+
+### Removed
+- Removed the interactive fullscreen viewer (`-f tui`). Use `-f inline` with the pager instead.
+- Removed `-t`/`--theme`, custom YAML themes, and the `themes/` config folder. Output now uses a fixed 16-color palette that works in any terminal.
+
 ## [0.7.0] - 2026-09-03
 
 ### Added

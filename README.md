@@ -14,7 +14,7 @@
 ---
 
 <p align="center">
-  <img src="assets/demo.png" alt="diffmantic TUI demo" width="800">
+  <img src="assets/demo.png" alt="diffmantic inline diff demo" width="800">
 </p>
 
 ---
@@ -36,8 +36,8 @@ It works as a standalone CLI, a drop-in for `git diff`, or a backend for editor 
 
 - **Move Detection.** When you move a function or a block, diffmantic tracks it as a Move. Not a delete + re-add. Moved functions, blocks, and statements are all first-class.
 - **Update & Rename Detection.** Shows exactly what changed inside a syntax node. A variable rename, a string literal swap, a type change, you see the precise edit, not a wall of red and green.
-- **Git Integration.** Run `diffm` in any Git repo and it launches an interactive TUI. Browse modified files, stage/unstage changes, commit, all without leaving the terminal.
-- **Interactive TUI.** Side-by-side diff view with syntax highlighting, code folding, search, hover info popover (`K` / mouse hover), change indicators, and jump-to-change keys (`n`, `N`, `[`, `]`). Built with [Bubbletea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
+- **Git Integration.** Run `diffm` in any Git repo to stream a pager-backed diff of unstaged changes, staged changes with `--cached`, or any two revisions.
+- **Inline Diff.** Static inline view with syntax highlighting and a 16-color ANSI palette, no special terminal setup needed. Long lines wrap to terminal width with `--wrap`, and `-p` prints a `git apply` compatible patch.
 - **JSON Output.** Stable schema with AST actions, line alignment, and character-level highlight spans. Includes selective `--ui` and `--full` modes for editor plugins and frontends.
 - **16 Core Languages.** Go, Java, JavaScript, TypeScript, Python, Rust, Zig, C, C++, PHP, Ruby, JSON, YAML, TOML, HTML, CSS, Lua. Full AST normalization and matching rules powered by Tree-sitter.
 - **Line Diff Fallback.** For unsupported file types or plain text files, Diffmantic automatically falls back to line-based diffing so you can diff any file.
@@ -103,46 +103,25 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64 + arm64) are on the [Rele
 
 ### Build from Source
 
-Requires Go 1.26+. No C compiler or CGo required (`CGO_ENABLED=0`).
+Requires Go 1.26+ and a C compiler for the native Tree-sitter bridge.
 
 ```bash
 git clone https://github.com/HarshK97/diffmantic.git
 cd diffmantic
 
-# Default build: 16 core languages (13 MB binary)
+# Default build: 16 core languages
 make build
 
 # Or install directly with Go:
 go install github.com/HarshK97/diffmantic/cmd/diffm@latest
 ```
 
-#### Custom Grammar Build Targets
-
-Diffmantic supports embedding different sets of Tree-sitter grammars via `Makefile` targets:
-
-| Makefile Command | Description | Binary Size |
-| :--- | :--- | :--- |
-| `make build` | **Default**: Embeds [16 fully supported core languages](#supported-languages) | **~13.06 MB** |
-| `make build-core` | Embeds **~100 core languages** from gotreesitter | **~22.37 MB** |
-| `make build-all` | Embeds **all ~206 languages** available in gotreesitter | **~29.12 MB** |
-
-#### Building a Custom Language Subset
-
-If you only need a specific set of languages (for example, Go, Python, and Rust), you can compile a minimal binary using `gotreesitter` build tags:
-
-```bash
-# Pass 'grammar_subset' plus 'grammar_subset_<lang>' tags
-go build -tags 'grammar_subset grammar_subset_go grammar_subset_python grammar_subset_rust' -ldflags="-s -w" -trimpath -o diffm ./cmd/diffm
-```
-
-> Built with `gotreesitter` for pure Go Tree-sitter AST parsing with zero C compiler or CGo runtime dependencies.
-
 ## Usage
 
 ### Git Status Mode (default in a repo)
 
 ```bash
-# Launch the interactive TUI in any Git repository
+# Show unstaged changes in any Git repository
 diffm
 
 # Show only staged changes
@@ -163,8 +142,14 @@ diffm main...feature-branch
 ### File-to-File Diff
 
 ```bash
-# Interactive TUI (default when a terminal is attached)
+# Inline diff with pager (default when a terminal is attached)
 diffm before.go after.go
+
+# Wrap long lines to terminal width
+diffm before.go after.go --wrap
+
+# Standard patch suitable for git apply
+diffm before.go after.go -p
 
 # JSON output for editor plugins and automation
 diffm before.go after.go -f json
@@ -184,31 +169,13 @@ diffm before.go after.go -f actions
 `diffmantic` loads configuration from `~/.config/diffmantic/config.yml` (or `$XDG_CONFIG_HOME/diffmantic/config.yml`).
 
 ```yaml
-# Theme & style preferences
-theme: mocha              # "mocha", "latte", or custom theme name
-theme_style: dark         # "dark" | "light" (fallback if theme is not set)
-
 # Flag defaults
-format: tui               # "tui" | "json" | "actions"
+format: inline            # "inline" | "json" | "actions"
+tab_width: 4              # spaces per tab stop
 ignore_comments: false    # ignore comments during AST diffing
 parse_error_limit: 0      # max parse errors before fallback to line diff
-
-# TUI display preferences
-tui:
-  tab_width: 4
-  mouse: true
-  icons: unicode          # "unicode" | "ascii" | "nerd-font"
-
-# Embedded custom themes (or place in ~/.config/diffmantic/themes/<name>.yml)
-themes:
-  my-theme:
-    dark: true
-    ui:
-      base: "#1e1e2e"
-      text: "#cdd6f4"
-    actions:
-      insert_fg: "#a6e3a1"
-      delete_fg: "#f38ba8"
+size_limit: 1024          # max file size before fallback to line diff
+line_limit: 10000         # max file lines before fallback to line diff
 ```
 
 ## How It Works

@@ -16,7 +16,6 @@ func TestRootCmdFlags(t *testing.T) {
 		defValue  string
 	}{
 		{name: "format", shorthand: "f", defValue: ""},
-		{name: "theme", shorthand: "t", defValue: ""},
 		{name: "ignore-comments", shorthand: "C", defValue: "false"},
 		{name: "parse-error-limit", shorthand: "e", defValue: "0"},
 		{name: "ui", shorthand: "", defValue: "false"},

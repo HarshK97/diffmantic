@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/HarshK97/diffmantic/internal/git"
-	"github.com/mattn/go-isatty"
 )
 
 // Pager manages an active terminal pager subprocess.
@@ -35,7 +34,9 @@ func IsBrokenPipe(err error) bool {
 // when stdout is a terminal and disabled is false.
 // Returns a Pager handle (or nil if no pager was started) and the io.Writer to write to.
 func Start(disabled bool) (*Pager, io.Writer) {
-	if disabled || !isatty.IsTerminal(os.Stdout.Fd()) || os.Getenv("TERM") == "dumb" || os.Getenv("DIFFM_NO_PAGER") != "" {
+	fi, err := os.Stdout.Stat()
+	isTerm := err == nil && (fi.Mode()&os.ModeCharDevice) != 0
+	if disabled || !isTerm || os.Getenv("TERM") == "dumb" || os.Getenv("DIFFM_NO_PAGER") != "" {
 		return nil, os.Stdout
 	}
 
