@@ -20,4 +20,6 @@ const (
 	FlatNodeNamed   = 1 << 0
 	FlatNodeError   = 1 << 1
 	FlatNodeMissing = 1 << 2
+
+	FlatNodeNone = ^uint32(0)
 )
