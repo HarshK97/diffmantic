@@ -59,6 +59,10 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	lineIndex := BuildLineIndex(fileBytes)
 	spansByLine := make(map[int][]internalSpan)
 
+	// Only the outermost move of a relocated block gets spans. The nested
+	// ones would paint the same teal twice.
+	skipNestedMove := nestedMoveActions(actions, side)
+
 	for i := range actions {
 		a := &actions[i]
 		switch a.Action {
@@ -84,6 +88,9 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 
 		case "move":
 			actType := "move"
+			if skipNestedMove[i] {
+				continue
+			}
 			if side == "left" && a.Node != nil {
 				parent := a.OldParent
 				if parent == nil {
@@ -268,6 +275,62 @@ func isOnlyNonCharacters(b []byte) bool {
 		}
 	}
 	return true
+}
+
+// nestedMoveActions finds moves buried inside a bigger move on the same side.
+// Skipping them keeps a relocated block to one span instead of one per token.
+func nestedMoveActions(actions []Action, side string) map[int]bool {
+	type byteRange struct {
+		idx int
+		s   uint32
+		e   uint32
+	}
+	var ranges []byteRange
+	for i := range actions {
+		a := &actions[i]
+		if a.Action != "move" {
+			continue
+		}
+		var s, e uint32
+		var ok bool
+		if side == "left" && a.Node != nil {
+			s, e, ok = a.Node.StartByte, a.Node.EndByte, true
+		} else if side == "right" {
+			if a.DestStartByte != nil && a.DestEndByte != nil {
+				s, e, ok = *a.DestStartByte, *a.DestEndByte, true
+			} else if a.DestNode != nil {
+				s, e, ok = a.DestNode.StartByte, a.DestNode.EndByte, true
+			}
+		}
+		if !ok || e <= s {
+			continue
+		}
+		ranges = append(ranges, byteRange{idx: i, s: s, e: e})
+	}
+	// Plain O(n^2) scan, there are never enough moves per file for this to matter.
+	slices.SortFunc(ranges, func(a, b byteRange) int {
+		return cmp.Or(
+			cmp.Compare(b.e-b.s, a.e-a.s),
+			cmp.Compare(a.s, b.s),
+		)
+	})
+	skip := make(map[int]bool)
+	var kept []byteRange
+	for _, r := range ranges {
+		contained := false
+		for _, k := range kept {
+			if k.s <= r.s && k.e >= r.e {
+				contained = true
+				break
+			}
+		}
+		if contained {
+			skip[r.idx] = true
+			continue
+		}
+		kept = append(kept, r)
+	}
+	return skip
 }
 
 func nodeRefsEqual(n1, n2 *NodeRef) bool {

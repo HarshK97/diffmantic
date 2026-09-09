@@ -63,7 +63,7 @@ func (s *RenderScratch) SliceLineToChunks(
 		// Put the move badge on the first chunk only.
 		if isFirstChunk && badgeText != "" {
 			if colorMode {
-				curChunk = append(curChunk, color.Italic+color.OverlayFg+badgeText+color.Reset...)
+				curChunk = append(curChunk, color.MoveFg+badgeText+color.Reset...)
 			} else {
 				curChunk = append(curChunk, badgeText...)
 			}

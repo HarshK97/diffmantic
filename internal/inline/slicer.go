@@ -306,14 +306,14 @@ func sliceInlineLine(
 		if len(chunks) > 0 {
 			last := len(chunks) - 1
 			if colorMode {
-				chunks[last] = append(chunks[last], color.Italic+color.OverlayFg+badgeText+color.Reset...)
+				chunks[last] = append(chunks[last], color.MoveFg+badgeText+color.Reset...)
 			} else {
 				chunks[last] = append(chunks[last], badgeText...)
 			}
 		} else {
 			var b []byte
 			if colorMode {
-				b = append(b, color.Italic+color.OverlayFg+badgeText+color.Reset...)
+				b = append(b, color.MoveFg+badgeText+color.Reset...)
 			} else {
 				b = append(b, badgeText...)
 			}

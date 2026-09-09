@@ -429,3 +429,21 @@ func TestBuildHighlightSpansWithDelimiterSpan(t *testing.T) {
 		t.Errorf("expected delimiter span on line 2 cols 0..1 action='delete', got %+v", leftSpans[1])
 	}
 }
+
+func TestNestedMoveActionsKeepsOutermost(t *testing.T) {
+	src := []byte("0123456789abcdef\n")
+	actions := []Action{
+		{Action: "move", Node: &NodeRef{Tree: "before", Type: "block", StartByte: 0, EndByte: 16}},
+		{Action: "move", Node: &NodeRef{Tree: "before", Type: "identifier", StartByte: 2, EndByte: 5}},
+		{Action: "move", Node: &NodeRef{Tree: "before", Type: "identifier", StartByte: 10, EndByte: 12}},
+	}
+	spans := BuildHighlightSpans(src, actions, "left")
+	for _, s := range spans {
+		if s.Action == "move" && s.ActionRef != nil && s.ActionRef.Node.StartByte != 0 {
+			t.Fatalf("expected only outermost move spans, got nested %+v", s)
+		}
+	}
+	if len(spans) == 0 {
+		t.Fatal("expected outermost move span, got none")
+	}
+}

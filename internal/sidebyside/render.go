@@ -1,12 +1,9 @@
 package sidebyside
 
 import (
-	"cmp"
 	"fmt"
 	"io"
 	"os"
-	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -738,27 +735,6 @@ func buildMoveBadges(
 		r = rules.Get(lang.Name)
 	}
 
-	type mutatingSpan struct {
-		startByte uint32
-		endByte   uint32
-	}
-	var dstMutations []mutatingSpan
-	for _, a := range actions {
-		if a.Action == "insert" || a.Action == "delete" || a.Action == "update" || a.Action == "move_update" {
-			if a.Node != nil && a.Node.Tree == "after" {
-				dstMutations = append(dstMutations, mutatingSpan{startByte: a.Node.StartByte, endByte: a.Node.EndByte})
-			} else if a.DestStartByte != nil && a.DestEndByte != nil {
-				dstMutations = append(dstMutations, mutatingSpan{startByte: *a.DestStartByte, endByte: *a.DestEndByte})
-			}
-		}
-	}
-	slices.SortFunc(dstMutations, func(a, b mutatingSpan) int {
-		return cmp.Or(
-			cmp.Compare(a.startByte, b.startByte),
-			cmp.Compare(a.endByte, b.endByte),
-		)
-	})
-
 	type crossHunkMove struct {
 		sStartLine int
 		sEndLine   int
@@ -767,7 +743,6 @@ func buildMoveBadges(
 		sHunk      int
 		dHunk      int
 		isDecl     bool
-		nMut       int
 	}
 
 	var crossMoves []crossHunkMove
@@ -802,34 +777,17 @@ func buildMoveBadges(
 			dHunk = -1
 		}
 
-		// Skip badges if the move stays within the same hunk and is close by.
-		lineDist := sStartLine - dStartLine
-		if lineDist < 0 {
-			lineDist = -lineDist
-		}
-		if sHunk != -1 && dHunk != -1 && sHunk == dHunk && lineDist < 10 {
-			continue
-		}
-
-		// Count edits inside the moved node so we know if it was modified.
-		nMut := 0
-		if dEndByte > dStartByte && len(dstMutations) > 0 {
-			idx := sort.Search(len(dstMutations), func(i int) bool {
-				return dstMutations[i].startByte >= dStartByte
-			})
-			for idx < len(dstMutations) && dstMutations[idx].startByte < dEndByte {
-				if dstMutations[idx].endByte <= dEndByte {
-					nMut++
-				}
-				idx++
-			}
-		}
+		// Teal alone doesn't say where it went, so badge every structural move.
 
 		isDecl := r != nil && r.IsDeclaration(a.Node.Type)
 		isBlock := r != nil && r.IsBlock(a.Node.Type)
 		isMultiLine := sEndLine > sStartLine || dEndLine > dStartLine
 		isStatement := a.Node.Type == "statement" || strings.HasSuffix(a.Node.Type, "_statement") || (r != nil && r.IsCall(a.Node.Type))
 		if !isDecl && !isBlock && !isMultiLine && !isStatement {
+			continue
+		}
+		// Same-hunk one-liners can see their destination on screen, so skip the badge.
+		if !isDecl && !isBlock && !isMultiLine && sHunk != -1 && dHunk != -1 && sHunk == dHunk {
 			continue
 		}
 
@@ -841,7 +799,6 @@ func buildMoveBadges(
 			sHunk:      sHunk,
 			dHunk:      dHunk,
 			isDecl:     isDecl,
-			nMut:       nMut,
 		}
 		crossMoves = append(crossMoves, m)
 	}
@@ -856,11 +813,7 @@ func buildMoveBadges(
 
 		if m.dStartLine >= 0 && m.dStartLine < len(dstLines) {
 			if _, exists := dstLineBadges[m.dStartLine]; !exists {
-				modStr := ""
-				if m.nMut > 0 {
-					modStr = ", modified"
-				}
-				dstLineBadges[m.dStartLine] = fmt.Sprintf(" ⤹ L%d%s", m.sStartLine+1, modStr)
+				dstLineBadges[m.dStartLine] = fmt.Sprintf(" ⤹ L%d", m.sStartLine+1)
 			}
 		}
 	}
