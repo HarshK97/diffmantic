@@ -101,7 +101,7 @@ func buildFromIndex(idx uint32, nodes []FlatNode, symbols []string, src []byte, 
 	}
 
 	childIdx := fn.FirstChildIdx
-	for childIdx != 0xFFFFFFFF && int(childIdx) < len(nodes) {
+	for childIdx != FlatNodeNone && int(childIdx) < len(nodes) {
 		if child := buildFromIndex(childIdx, nodes, symbols, src, node, r, srcLen); child != nil {
 			node.Children = append(node.Children, child)
 		}

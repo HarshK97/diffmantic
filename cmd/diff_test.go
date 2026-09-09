@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/pipeline"
@@ -21,6 +24,8 @@ func TestRootCmdFlags(t *testing.T) {
 		{name: "ui", shorthand: "", defValue: "false"},
 		{name: "full", shorthand: "", defValue: "false"},
 		{name: "cached", shorthand: "", defValue: "false"},
+		{name: "parse-tree", shorthand: "", defValue: "false"},
+		{name: "cst", shorthand: "", defValue: "false"},
 	}
 
 	for _, tt := range flags {
@@ -124,5 +129,107 @@ func TestIsFileOrDevNull(t *testing.T) {
 	}
 	if isFileOrDevNull("/path/does/not/exist/surely.go") {
 		t.Errorf("isFileOrDevNull(nonexistent) = true, want false")
+	}
+}
+
+func TestDumpFiles(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.go")
+	fileB := filepath.Join(dir, "b.go")
+
+	if err := os.WriteFile(fileA, []byte("package main\n\nfunc A() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fileB, []byte("package main\n\nfunc B() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Single file AST dump
+	var bufA bytes.Buffer
+	if err := dumpFiles(&bufA, []string{fileA}, false); err != nil {
+		t.Fatalf("dumpFiles single AST failed: %v", err)
+	}
+	outA := bufA.String()
+	if !strings.Contains(outA, "source_file") || !strings.Contains(outA, "identifier: \"A\"") {
+		t.Errorf("unexpected single AST output:\n%s", outA)
+	}
+
+	// 2. Single file CST dump
+	var bufCST bytes.Buffer
+	if err := dumpFiles(&bufCST, []string{fileA}, true); err != nil {
+		t.Fatalf("dumpFiles single CST failed: %v", err)
+	}
+	outCST := bufCST.String()
+	if !strings.Contains(outCST, "source_file") || !strings.Contains(outCST, "package") {
+		t.Errorf("unexpected single CST output:\n%s", outCST)
+	}
+
+	// 3. Multiple files dump with headers
+	var bufMulti bytes.Buffer
+	if err := dumpFiles(&bufMulti, []string{fileA, fileB}, false); err != nil {
+		t.Fatalf("dumpFiles multi AST failed: %v", err)
+	}
+	outMulti := bufMulti.String()
+	if !strings.Contains(outMulti, "=== "+fileA+" ===") || !strings.Contains(outMulti, "=== "+fileB+" ===") {
+		t.Errorf("expected file headers in multi dump output, got:\n%s", outMulti)
+	}
+	if !strings.Contains(outMulti, "identifier: \"A\"") || !strings.Contains(outMulti, "identifier: \"B\"") {
+		t.Errorf("expected both file ASTs in multi dump output, got:\n%s", outMulti)
+	}
+}
+
+func TestCSTZeroArgsError(t *testing.T) {
+	if os.Getenv("DIFFM_TEST_CST_ZERO_ARGS") == "1" {
+		rootCmd.SetArgs([]string{"--cst"})
+		_ = rootCmd.Execute()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestCSTZeroArgsError$")
+	cmd.Env = append(os.Environ(), "DIFFM_TEST_CST_ZERO_ARGS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected command to exit with error, but succeeded. Output: %s", string(out))
+	}
+	want := "Error: --cst requires at least one file argument"
+	if !strings.Contains(string(out), want) {
+		t.Errorf("output = %q, want substring %q", string(out), want)
+	}
+}
+
+func TestParseTreeZeroArgsError(t *testing.T) {
+	if os.Getenv("DIFFM_TEST_PARSE_TREE_ZERO_ARGS") == "1" {
+		rootCmd.SetArgs([]string{"--parse-tree"})
+		_ = rootCmd.Execute()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestParseTreeZeroArgsError$")
+	cmd.Env = append(os.Environ(), "DIFFM_TEST_PARSE_TREE_ZERO_ARGS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected command to exit with error, but succeeded. Output: %s", string(out))
+	}
+	want := "Error: --parse-tree requires at least one file argument"
+	if !strings.Contains(string(out), want) {
+		t.Errorf("output = %q, want substring %q", string(out), want)
+	}
+}
+
+func TestDumpFilesLanguageDetectionError(t *testing.T) {
+	dir := t.TempDir()
+	unknownFile := filepath.Join(dir, "file.unsupported_ext")
+	if err := os.WriteFile(unknownFile, []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	err := dumpFiles(&buf, []string{unknownFile}, false)
+	if err == nil {
+		t.Fatal("expected error for unsupported language, got nil")
+	}
+	expectedPrefix := "detecting language for " + unknownFile
+	if !strings.Contains(err.Error(), expectedPrefix) {
+		t.Errorf("expected error containing %q, got: %v", expectedPrefix, err)
 	}
 }

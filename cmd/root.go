@@ -22,6 +22,7 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -39,6 +40,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -101,6 +103,13 @@ Examples:
 		parseErrorLimit, _ := cmd.Flags().GetInt("parse-error-limit")
 		if !cmd.Flags().Changed("parse-error-limit") {
 			parseErrorLimit = cfg.ParseErrorLimit
+		}
+
+		parseTree, _ := cmd.Flags().GetBool("parse-tree")
+		isCST, _ := cmd.Flags().GetBool("cst")
+		if parseTree || isCST {
+			runParseTree(cmd, args, noPager, isCST)
+			return
 		}
 
 		// Two args: diff two files directly, or compare revisions/paths if in a git repo.
@@ -571,6 +580,90 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 	}
 }
 
+func runParseTree(cmd *cobra.Command, args []string, noPager bool, isCST bool) {
+	if len(args) == 0 {
+		flagName := "--parse-tree"
+		if isCST {
+			flagName = "--cst"
+		}
+		fmt.Fprintf(os.Stderr, "Error: %s requires at least one file argument\n", flagName)
+		os.Exit(1)
+	}
+
+	p, writer := pager.Start(noPager)
+	if p != nil {
+		defer p.Close()
+	}
+
+	bw := bufio.NewWriter(writer)
+	defer func() {
+		_ = bw.Flush()
+	}()
+
+	if err := dumpFiles(bw, args, isCST); err != nil {
+		_ = bw.Flush()
+		if p != nil {
+			p.Close()
+		}
+		if !pager.IsBrokenPipe(err) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+}
+
+func dumpFiles(w io.Writer, paths []string, isCST bool) error {
+	multiple := len(paths) > 1
+
+	for i, path := range paths {
+		srcBytes, err := os.ReadFile(path)
+		if err != nil {
+			if git.IsGitRepository(".") && git.IsTrackedFile(".", path) {
+				srcBytes, err = git.GetContent(".", path, "")
+			}
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", path, err)
+			}
+		}
+
+		if multiple {
+			if i > 0 {
+				if _, err := fmt.Fprintln(w); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintf(w, "=== %s ===\n", path); err != nil {
+				return err
+			}
+		}
+
+		lang, err := treesitter.DetectLanguage(path)
+		if err != nil {
+			return fmt.Errorf("detecting language for %s: %w", path, err)
+		}
+
+		if isCST {
+			_, flatNodes, symbols, err := treesitter.ParseForPipeline(srcBytes, lang.Name)
+			if err != nil {
+				return fmt.Errorf("parsing CST for %s: %w", path, err)
+			}
+			if err := treesitter.DumpCST(w, flatNodes, symbols, srcBytes); err != nil {
+				return err
+			}
+		} else {
+			ast, err := treesitter.ParseWithLanguage(srcBytes, lang.Name)
+			if err != nil {
+				return fmt.Errorf("parsing AST for %s: %w", path, err)
+			}
+			if err := treesitter.DumpAST(w, ast); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // Execute runs the CLI and exits on error.
 func Execute() {
 	err := rootCmd.Execute()
@@ -595,4 +688,6 @@ func init() {
 	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in inline diff")
 	rootCmd.Flags().Int("wrap-width", 0, "Explicit column width for line wrapping (0 to auto-detect terminal width)")
 	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in inline diff")
+	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
+	rootCmd.Flags().Bool("cst", false, "Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic AST")
 }
