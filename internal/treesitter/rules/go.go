@@ -111,7 +111,6 @@ var golangRules = &Rules{
 		"type_declaration",
 		"type_spec",
 		"type_alias",
-		"parameter_declaration",
 		"field_declaration",
 		"const_declaration",
 		"var_declaration",

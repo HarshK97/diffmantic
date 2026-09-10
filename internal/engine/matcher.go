@@ -377,8 +377,7 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 }
 
 type decKey struct {
-	name  string
-	scope string
+	name string
 }
 
 func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
@@ -415,14 +414,14 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 	t1Map := make(map[decKey][]*treesitter.ASTNode, len(u1))
 	for _, d1 := range u1 {
-		key := decKey{name: getDeclarationName(d1), scope: getDeclarationScope(d1)}
+		key := decKey{name: getDeclarationName(d1)}
 		if key.name != "" {
 			t1Map[key] = append(t1Map[key], d1)
 		}
 	}
 	t2Map := make(map[decKey][]*treesitter.ASTNode, len(u2))
 	for _, d2 := range u2 {
-		key := decKey{name: getDeclarationName(d2), scope: getDeclarationScope(d2)}
+		key := decKey{name: getDeclarationName(d2)}
 		if key.name != "" {
 			t2Map[key] = append(t2Map[key], d2)
 		}
@@ -433,7 +432,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		if m.HasDst(d2) {
 			continue
 		}
-		key := decKey{name: getDeclarationName(d2), scope: getDeclarationScope(d2)}
+		key := decKey{name: getDeclarationName(d2)}
 		if key.name == "" || visited[key] {
 			continue
 		}
@@ -583,41 +582,6 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 				isSubSubID := (r != nil && r.IsIdentifier(subSub.Type)) || (r == nil && rules.IsIdentifier(subSub.Type))
 				if isSubSubID && subSub.Label != "" {
 					return subSub.Label
-				}
-			}
-		}
-	}
-	return ""
-}
-
-func getDeclarationScope(n *treesitter.ASTNode) string {
-	if n == nil {
-		return ""
-	}
-	r := rulesFor(n)
-	if r == nil || !r.IsScopedDeclaration(n.Type) {
-		return ""
-	}
-	for _, child := range n.Children {
-		// Don't peek into blocks so local variables aren't mistaken for receiver types.
-		if r.IsBlock(child.Type) {
-			continue
-		}
-		if r.IsScaffolding(child.Type) {
-			for _, p := range child.Children {
-				if r.IsBlock(p.Type) {
-					continue
-				}
-				if r.IsDeclaration(p.Type) && len(p.Children) > 0 {
-					target := p.Children[len(p.Children)-1]
-					if r.IsIdentifier(target.Type) && target.Label != "" {
-						return target.Label
-					}
-					for _, pt := range target.Children {
-						if r.IsIdentifier(pt.Type) && pt.Label != "" {
-							return pt.Label
-						}
-					}
 				}
 			}
 		}

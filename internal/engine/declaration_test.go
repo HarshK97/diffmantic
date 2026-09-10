@@ -42,75 +42,6 @@ func TestGetDeclarationName(t *testing.T) {
 	})
 }
 
-func TestGetDeclarationScope(t *testing.T) {
-	ptrReceiver := testutil.Node("pointer_type", "",
-		testutil.Leaf("type_identifier", "Type"),
-	)
-	receiver := testutil.Node("parameter_declaration", "",
-		testutil.Leaf("identifier", "s"),
-		ptrReceiver,
-	)
-	paramList := testutil.Node("parameter_list", "",
-		receiver,
-	)
-	method := testutil.Node("method_declaration", "",
-		paramList,
-		testutil.Leaf("field_identifier", "Foo"),
-	)
-	method.Language = "go"
-
-	t.Run("method with named pointer receiver", func(t *testing.T) {
-		if got := getDeclarationScope(method); got != "Type" {
-			t.Errorf("getDeclarationScope = %q, want %q", got, "Type")
-		}
-	})
-
-	t.Run("method with named value receiver", func(t *testing.T) {
-		valReceiver := testutil.Node("parameter_declaration", "",
-			testutil.Leaf("identifier", "s"),
-			testutil.Leaf("type_identifier", "MyStruct"),
-		)
-		valMethod := testutil.Node("method_declaration", "",
-			testutil.Node("parameter_list", "", valReceiver),
-			testutil.Leaf("field_identifier", "Bar"),
-		)
-		valMethod.Language = "go"
-		if got := getDeclarationScope(valMethod); got != "MyStruct" {
-			t.Errorf("getDeclarationScope = %q, want %q", got, "MyStruct")
-		}
-	})
-
-	t.Run("function with parameters returns empty", func(t *testing.T) {
-		fnParam := testutil.Node("parameter_declaration", "",
-			testutil.Leaf("identifier", "a"),
-			testutil.Leaf("type_identifier", "int"),
-		)
-		fn := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Node("parameter_list", "", fnParam),
-		)
-		fn.Language = "go"
-		if got := getDeclarationScope(fn); got != "" {
-			t.Errorf("getDeclarationScope for function with parameters = %q, want empty", got)
-		}
-	})
-
-	t.Run("non-method returns empty", func(t *testing.T) {
-		fn := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-		)
-		if got := getDeclarationScope(fn); got != "" {
-			t.Errorf("getDeclarationScope for function = %q, want empty", got)
-		}
-	})
-
-	t.Run("nil node", func(t *testing.T) {
-		if got := getDeclarationScope(nil); got != "" {
-			t.Errorf("getDeclarationScope(nil) = %q, want empty", got)
-		}
-	})
-}
-
 func TestMatchDeclarations(t *testing.T) {
 	t.Run("matches functions with same name", func(t *testing.T) {
 		src := testutil.Node("program", "",
@@ -255,42 +186,6 @@ func TestMatchDeclarations(t *testing.T) {
 		srcMeth := src.Children[0]
 		if !m.Has(srcMeth) {
 			t.Error("methods with same name and receiver should be matched")
-		}
-	})
-
-	t.Run("does not match methods with different receiver", func(t *testing.T) {
-		srcParam := testutil.Node("parameter_list", "",
-			testutil.Node("parameter_declaration", "",
-				testutil.Leaf("type_identifier", "TypeA"),
-			),
-		)
-		dstParam := testutil.Node("parameter_list", "",
-			testutil.Node("parameter_declaration", "",
-				testutil.Leaf("type_identifier", "TypeB"),
-			),
-		)
-
-		src := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				srcParam,
-			),
-		)
-		src.Language = "go"
-		dst := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				dstParam,
-			),
-		)
-		dst.Language = "go"
-
-		m := NewMapping()
-		matchDeclarations(src, dst, m)
-
-		srcMeth := src.Children[0]
-		if m.Has(srcMeth) {
-			t.Error("methods with different receivers should not be matched")
 		}
 	})
 
@@ -484,6 +379,128 @@ func TestMatchDeclarationsEquivalentTypes(t *testing.T) {
 		}
 		if m.Src()[srcFull] != dstFull {
 			t.Errorf("expected srcFull to map to dstFull")
+		}
+	})
+}
+
+func TestMethodReceiverDisambiguation(t *testing.T) {
+	t.Run("same name different receivers only changes one", func(t *testing.T) {
+		src := testutil.Node("program", "",
+			testutil.Node("method_declaration", "",
+				testutil.Leaf("field_identifier", "Foo"),
+				testutil.Node("parameter_list", "",
+					testutil.Node("parameter_declaration", "",
+						testutil.Node("pointer_type", "",
+							testutil.Leaf("type_identifier", "TypeA"),
+						),
+					),
+				),
+				testutil.Node("block", "",
+					testutil.Leaf("assignment", "x = 1"),
+				),
+			),
+			testutil.Node("method_declaration", "",
+				testutil.Leaf("field_identifier", "Foo"),
+				testutil.Node("parameter_list", "",
+					testutil.Node("parameter_declaration", "",
+						testutil.Node("pointer_type", "",
+							testutil.Leaf("type_identifier", "TypeB"),
+						),
+					),
+				),
+				testutil.Node("block", "",
+					testutil.Leaf("assignment", "y = 2"),
+				),
+			),
+		)
+		src.Language = "go"
+
+		dst := testutil.Node("program", "",
+			testutil.Node("method_declaration", "",
+				testutil.Leaf("field_identifier", "Foo"),
+				testutil.Node("parameter_list", "",
+					testutil.Node("parameter_declaration", "",
+						testutil.Node("pointer_type", "",
+							testutil.Leaf("type_identifier", "TypeA"),
+						),
+					),
+				),
+				testutil.Node("block", "",
+					testutil.Leaf("assignment", "x = 999"),
+				),
+			),
+			testutil.Node("method_declaration", "",
+				testutil.Leaf("field_identifier", "Foo"),
+				testutil.Node("parameter_list", "",
+					testutil.Node("parameter_declaration", "",
+						testutil.Node("pointer_type", "",
+							testutil.Leaf("type_identifier", "TypeB"),
+						),
+					),
+				),
+				testutil.Node("block", "",
+					testutil.Leaf("assignment", "y = 2"),
+				),
+			),
+		)
+		dst.Language = "go"
+
+		r := Match(src, dst, nil, nil, nil)
+
+		srcA := src.Children[0]
+		srcB := src.Children[1]
+		dstA := dst.Children[0]
+		dstB := dst.Children[1]
+
+		if r.Mappings.Src()[srcA] != dstA {
+			t.Error("TypeA.Foo should map to TypeA.Foo")
+		}
+		if r.Mappings.Src()[srcB] != dstB {
+			t.Error("TypeB.Foo should map to TypeB.Foo")
+		}
+	})
+
+	t.Run("same name same receiver matches", func(t *testing.T) {
+		src := testutil.Node("program", "",
+			testutil.Node("method_declaration", "",
+				testutil.Leaf("field_identifier", "Foo"),
+				testutil.Node("parameter_list", "",
+					testutil.Node("parameter_declaration", "",
+						testutil.Node("pointer_type", "",
+							testutil.Leaf("type_identifier", "Type"),
+						),
+					),
+				),
+				testutil.Node("block", "",
+					testutil.Leaf("assignment", "x = 1"),
+				),
+			),
+		)
+		src.Language = "go"
+
+		dst := testutil.Node("program", "",
+			testutil.Node("method_declaration", "",
+				testutil.Leaf("field_identifier", "Foo"),
+				testutil.Node("parameter_list", "",
+					testutil.Node("parameter_declaration", "",
+						testutil.Node("pointer_type", "",
+							testutil.Leaf("type_identifier", "Type"),
+						),
+					),
+				),
+				testutil.Node("block", "",
+					testutil.Leaf("assignment", "x = 999"),
+				),
+			),
+		)
+		dst.Language = "go"
+
+		r := Match(src, dst, nil, nil, nil)
+
+		srcMeth := src.Children[0]
+		dstMeth := dst.Children[0]
+		if r.Mappings.Src()[srcMeth] != dstMeth {
+			t.Error("same name same receiver should match")
 		}
 	})
 }
