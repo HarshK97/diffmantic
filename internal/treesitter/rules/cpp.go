@@ -199,7 +199,6 @@ var cppRules = &Rules{
 		"namespace_definition",
 		"template_declaration",
 		"concept_definition",
-		"parameter_declaration",
 		"field_declaration",
 		"friend_declaration",
 	},

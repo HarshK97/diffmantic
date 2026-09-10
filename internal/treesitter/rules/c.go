@@ -145,7 +145,6 @@ var cRules = &Rules{
 		"union_specifier",
 		"enum_specifier",
 		"type_definition",
-		"parameter_declaration",
 		"field_declaration",
 	},
 	Identifiers: []string{
