@@ -213,6 +213,8 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 			lineMerged = append(lineMerged, curr)
 		}
 
+		lineMerged = partitionLineSpans(lineMerged, side)
+
 		slices.SortFunc(lineMerged, func(a, b internalSpan) int {
 			return cmp.Or(
 				cmp.Compare(a.startCol, b.startCol),
@@ -375,6 +377,125 @@ func nodeLen(a *Action, side string) int {
 		}
 	}
 	return 0
+}
+
+// spanASTLength returns the AST byte range for a span on the given side.
+// Falls back to column width when no AST node is attached so spans can still be compared.
+func spanASTLength(sp internalSpan, side string) int {
+	if n := nodeLen(sp.actRef, side); n > 0 {
+		return n
+	}
+	return sp.endCol - sp.startCol
+}
+
+// parseSpanActionPriority assigns tiebreaker priorities when two spans have identical AST lengths.
+// Higher values win: move_update (5) > update (4) > move (3) > insert (2) > delete (1).
+func parseSpanActionPriority(act string) int {
+	switch act {
+	case "move_update":
+		return 5
+	case "update":
+		return 4
+	case "move":
+		return 3
+	case "insert":
+		return 2
+	case "delete":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// partitionLineSpans resolves cross-action overlaps for a single line's spans.
+func partitionLineSpans(spans []internalSpan, side string) []internalSpan {
+	if len(spans) <= 1 {
+		return spans
+	}
+
+	var hasOverlap bool
+checkOverlap:
+	for i := range len(spans) {
+		for j := i + 1; j < len(spans); j++ {
+			if spans[i].startCol < spans[j].endCol && spans[j].startCol < spans[i].endCol {
+				hasOverlap = true
+				break checkOverlap
+			}
+		}
+	}
+	if !hasOverlap {
+		return spans
+	}
+
+	boundaries := make(map[int]struct{})
+	for _, sp := range spans {
+		boundaries[sp.startCol] = struct{}{}
+		boundaries[sp.endCol] = struct{}{}
+	}
+	sortedBounds := slices.Sorted(maps.Keys(boundaries))
+
+	var segments []internalSpan
+	for i := range len(sortedBounds) - 1 {
+		segStart := sortedBounds[i]
+		segEnd := sortedBounds[i+1]
+		if segStart >= segEnd {
+			continue
+		}
+
+		var (
+			winner  *internalSpan
+			hasMove bool
+		)
+		for j := range spans {
+			sp := &spans[j]
+			if sp.startCol <= segStart && sp.endCol >= segEnd {
+				if sp.action == "move" {
+					hasMove = true
+				}
+				if winner == nil {
+					winner = sp
+					continue
+				}
+				wAstLen := spanASTLength(*winner, side)
+				sAstLen := spanASTLength(*sp, side)
+				candWidth := sp.endCol - sp.startCol
+				wCandWidth := winner.endCol - winner.startCol
+				if sAstLen < wAstLen ||
+					(sAstLen == wAstLen && candWidth < wCandWidth) ||
+					(sAstLen == wAstLen && candWidth == wCandWidth && parseSpanActionPriority(sp.action) > parseSpanActionPriority(winner.action)) {
+					winner = sp
+				}
+			}
+		}
+		if winner != nil {
+			action := winner.action
+			if action == "update" && hasMove {
+				action = "move_update"
+			}
+			segments = append(segments, internalSpan{
+				startCol: segStart,
+				endCol:   segEnd,
+				action:   action,
+				actRef:   winner.actRef,
+			})
+		}
+	}
+
+	if len(segments) == 0 {
+		return spans
+	}
+	var coalesced []internalSpan
+	cur := segments[0]
+	for i := 1; i < len(segments); i++ {
+		if segments[i].action == cur.action && segments[i].startCol == cur.endCol {
+			cur.endCol = segments[i].endCol
+		} else {
+			coalesced = append(coalesced, cur)
+			cur = segments[i]
+		}
+	}
+	coalesced = append(coalesced, cur)
+	return coalesced
 }
 
 // absorbSyntacticDelimiters expands a span to cover adjacent member connectors

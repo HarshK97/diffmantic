@@ -334,6 +334,51 @@ func TestPipeline(t *testing.T) {
 	}
 }
 
+// TestNoOverlappingSpans verifies that highlight spans produced by BuildHighlightSpans
+// are pairwise disjoint on every line: no two spans on the same line share any byte column.
+func TestNoOverlappingSpans(t *testing.T) {
+	fixtures := allFixtures(t)
+	if len(fixtures) == 0 {
+		t.Fatal("no fixtures found in testdata/")
+	}
+
+	for _, name := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := loadFixture(t, name)
+			result := runPipeline(t, f)
+
+			var uiEnv serialize.Envelope
+			if err := json.Unmarshal(result.UIJSON, &uiEnv); err != nil {
+				t.Fatalf("UI output is not valid JSON: %v", err)
+			}
+
+			checkDisjoint := func(t *testing.T, spans []serialize.HighlightSpan, side string) {
+				t.Helper()
+				byLine := make(map[int][]serialize.HighlightSpan)
+				for _, s := range spans {
+					byLine[s.Line] = append(byLine[s.Line], s)
+				}
+				for line, ls := range byLine {
+					for i := 0; i < len(ls); i++ {
+						for j := i + 1; j < len(ls); j++ {
+							a, b := ls[i], ls[j]
+							if a.StartCol < b.EndCol && b.StartCol < a.EndCol {
+								t.Errorf("%s line %d: overlapping spans [%d,%d) %s and [%d,%d) %s",
+									side, line, a.StartCol, a.EndCol, a.Action,
+									b.StartCol, b.EndCol, b.Action)
+							}
+						}
+					}
+				}
+			}
+
+			checkDisjoint(t, uiEnv.LeftHighlights, "left")
+			checkDisjoint(t, uiEnv.RightHighlights, "right")
+		})
+	}
+}
+
 // TestPipelineIdenticalFiles checks that diffing a file against itself returns zero actions.
 func TestPipelineIdenticalFiles(t *testing.T) {
 	fixtures := allFixtures(t)
