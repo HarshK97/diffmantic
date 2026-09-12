@@ -32,8 +32,16 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 
 	// Match AST nodes top-down, by declaration, and bottom-up using line partitioning.
 	TopDown(t1, t2, minHeight, mappings, part)
-	matchDeclarations(t1, t2, mappings)
+
+	r := rulesFor(t1)
+	switch r.GetKind() {
+	case rules.KindData, rules.KindMarkup:
+		MatchDataContainers(t1, t2, mappings, r)
+	default: // KindCode
+		matchDeclarations(t1, t2, mappings)
+	}
 	matchPairValues(t1, t2, mappings)
+
 	BottomUp(t1, t2, mappings, minDice)
 	ContestContainers(t1, t2, mappings)
 
@@ -598,24 +606,45 @@ func getParentPairKey(n *treesitter.ASTNode) string {
 	return ""
 }
 
+type pairIndexKey struct {
+	anc  *treesitter.ASTNode
+	pKey string
+	key  string
+}
+
 func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
-	if t1 == nil || t1.Language == "" {
+	if m == nil || t1 == nil || t2 == nil {
 		return
 	}
-	r := rules.Get(t1.Language)
+	r := rulesFor(t1)
 	if r == nil || len(r.Pairs) == 0 {
 		return
 	}
 
+	t2PairsIndex := make(map[pairIndexKey][]*treesitter.ASTNode)
+	for _, cand := range t2.PostOrder() {
+		if !r.IsPair(cand.Type) || m.HasDst(cand) {
+			continue
+		}
+		k := getKeyLabel(cand)
+		if k == "" {
+			continue
+		}
+		anc := NearestMatchedAncestor(cand, m, true)
+		pKey := getParentPairKey(cand)
+		key := pairIndexKey{anc: anc, pKey: pKey, key: k}
+		t2PairsIndex[key] = append(t2PairsIndex[key], cand)
+	}
+
 	for _, n1 := range t1.PostOrder() {
-		if !slices.Contains(r.Pairs, n1.Type) {
+		if !r.IsPair(n1.Type) {
 			continue
 		}
 
 		var n2 *treesitter.ASTNode
 		if m.Has(n1) {
 			n2 = m.Src()[n1]
-			if n2 == nil || !slices.Contains(r.Pairs, n2.Type) {
+			if n2 == nil || !r.IsPair(n2.Type) {
 				continue
 			}
 		} else {
@@ -624,28 +653,23 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 			anc1 := NearestMatchedAncestor(n1, m, false)
+			var mappedAnc2 *treesitter.ASTNode
+			if anc1 != nil {
+				mappedAnc2 = m.Src()[anc1]
+			}
 			pKey1 := getParentPairKey(n1)
 
-			for _, cand := range t2.PostOrder() {
-				if !slices.Contains(r.Pairs, cand.Type) || m.HasDst(cand) {
+			lookupKey := pairIndexKey{anc: mappedAnc2, pKey: pKey1, key: key1}
+			candidates := t2PairsIndex[lookupKey]
+			for _, cand := range candidates {
+				if m.HasDst(cand) {
 					continue
 				}
-				if getKeyLabel(cand) != key1 {
-					continue
-				}
-				anc2 := NearestMatchedAncestor(cand, m, true)
-				if !areAncestorsMatched(anc1, anc2, m) {
-					continue
-				}
-
-				pKey2 := getParentPairKey(cand)
-				if pKey1 != pKey2 {
-					continue
-				}
-
 				n2 = cand
 				m.Add(n1, n2)
-				m.Add(n1.Children[0], n2.Children[0])
+				if len(n1.Children) > 0 && len(n2.Children) > 0 {
+					m.Add(n1.Children[0], n2.Children[0])
+				}
 				break
 			}
 		}

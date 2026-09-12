@@ -67,7 +67,11 @@ func (m *Mapping) DiceSrc(t1, t2 *treesitter.ASTNode) float64 {
 }
 
 // addIsomorphicPairs adds all pairs of isomorphic descendants of t1/t2 to m recursively.
+// Guards against child-count mismatches if a hash collision pairs different subtrees.
 func addIsomorphicPairs(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	if len(t1.Children) != len(t2.Children) {
+		return
+	}
 	m.Add(t1, t2)
 	for i, c1 := range t1.Children {
 		addIsomorphicPairs(c1, t2.Children[i], m)
