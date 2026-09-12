@@ -9,8 +9,7 @@ type RenderOptions struct {
 	Color              bool // Enable TrueColor ANSI escapes
 	DisableAnnotations bool // Suppress AST move annotations and badges
 	TabWidth           int  // Spaces per tab stop (default 4)
-	ForceSideBySide    bool // Prevent falling back to inline diff on narrow screens
-	AdaptiveThreshold  int  // Min consecutive single-sided lines to trigger full-width inline hunk (default 6, 0 to disable)
+	ForceSideBySide    bool // Disable hybrid single-column layout and force 50/50 dual-column view
 }
 
 // DefaultOptions returns standard settings for interactive terminals.
@@ -23,6 +22,5 @@ func DefaultOptions() RenderOptions {
 		DisableAnnotations: false,
 		TabWidth:           4,
 		ForceSideBySide:    false,
-		AdaptiveThreshold:  6,
 	}
 }

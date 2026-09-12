@@ -72,8 +72,14 @@ func Render(
 
 	srcEndsWithNL := len(srcBytes) > 0 && srcBytes[len(srcBytes)-1] == '\n'
 	dstEndsWithNL := len(dstBytes) > 0 && dstBytes[len(dstBytes)-1] == '\n'
-	lastSrcLineIdx := len(srcLines) - 1
-	lastDstLineIdx := len(dstLines) - 1
+	lastSrcLineIdx := -1
+	if len(srcBytes) > 0 {
+		lastSrcLineIdx = len(srcLines) - 1
+	}
+	lastDstLineIdx := -1
+	if len(dstBytes) > 0 {
+		lastDstLineIdx = len(dstLines) - 1
+	}
 
 	filteredPairs := env.LineAlignment
 	maxLineNum := max(len(srcLines), len(dstLines))
@@ -154,6 +160,7 @@ func Render(
 	}
 
 	var srcLineBadges, dstLineBadges map[int]string
+	var hunkHeaders map[int]string
 	if !opts.DisableAnnotations {
 		badges := renderutil.BuildMoveBadges(
 			env.Actions,
@@ -164,43 +171,45 @@ func Render(
 			srcLines,
 			dstLines,
 			r,
-			false, // promoteDeclarations = false for SBS
+			true,
 		)
 		srcLineBadges = badges.SrcLineBadges
 		dstLineBadges = badges.DstLineBadges
+		hunkHeaders = badges.HunkHeaders
 	}
 
 	scratch := &RenderScratch{TabWidth: opts.TabWidth}
 	sep := "  "
 
-	prevLayout := HunkLayoutSideBySide
-	isFirstSegment := true
-	for _, h := range hunks {
+	hasSrc := len(srcBytes) > 0 && srcFile != os.DevNull && srcFile != "/dev/null"
+	hasDst := len(dstBytes) > 0 && dstFile != os.DevNull && dstFile != "/dev/null"
+
+	if len(srcBytes) == 0 && !opts.ForceSideBySide {
+		return renderWholeFileSingleColumn(dstLines, rightSpansByLine, dstLineBadges, numWidth, termWidth, opts, scratch, color.ActionInsert, w, dstEndsWithNL)
+	}
+	if len(dstBytes) == 0 && !opts.ForceSideBySide {
+		return renderWholeFileSingleColumn(srcLines, leftSpansByLine, srcLineBadges, numWidth, termWidth, opts, scratch, color.ActionDelete, w, srcEndsWithNL)
+	}
+
+	for i, h := range hunks {
 		if ew.err != nil {
 			return ew.err
 		}
-		segments := partitionHunkIntoSegments(h, filteredPairs, isPairChanged, srcLines, dstLines, leftSpansByLine, rightSpansByLine, codeWidth, opts.AdaptiveThreshold, opts.ForceSideBySide)
+		layout := ClassifyHunk(h, filteredPairs, isPairChanged, srcLines, dstLines, leftSpansByLine, rightSpansByLine, opts.ForceSideBySide)
 
-		for _, seg := range segments {
-			if ew.err != nil {
-				return ew.err
-			}
-			if !isFirstSegment {
-				if prevLayout == HunkLayoutFullWidthInline || seg.layout == HunkLayoutFullWidthInline {
-					renderFullWidthHunkSeparator(w, termWidth, opts.Color)
-				} else {
-					renderHunkSeparator(w, numWidth, codeWidth, opts.LineNumbers, opts.Color)
-				}
-			}
-			isFirstSegment = false
-			prevLayout = seg.layout
+		srcStart, srcCount, dstStart, dstCount := renderutil.ComputeHunkRange(h, filteredPairs, hasSrc, hasDst)
+		hunkHdrExtra := hunkHeaders[i]
+		hunkHeader := renderutil.FormatHunkHeader(srcStart, srcCount, dstStart, dstCount, hunkHdrExtra)
+		if opts.Color {
+			_, _ = fmt.Fprintf(w, "%s%s%s\n", color.HeaderFg, hunkHeader, color.Reset)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s\n", hunkHeader)
+		}
 
-			segInterval := renderutil.Interval{Start: seg.start, End: seg.end}
-			if seg.layout == HunkLayoutFullWidthInline {
-				renderFullWidthHunk(w, segInterval, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
-			} else {
-				renderSideBySideHunk(w, segInterval, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
-			}
+		if layout == HunkLayoutDualColumn {
+			renderSideBySideHunk(w, h, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
+		} else {
+			renderSingleColumnHunk(w, h, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx, layout)
 		}
 	}
 
@@ -289,7 +298,7 @@ func renderSideBySideHunk(
 	}
 }
 
-func renderFullWidthHunk(
+func renderSingleColumnHunk(
 	w io.Writer,
 	h renderutil.Interval,
 	filteredPairs []serialize.LineAlignmentPair,
@@ -302,232 +311,317 @@ func renderFullWidthHunk(
 	scratch *RenderScratch,
 	srcEndsWithNL, dstEndsWithNL bool,
 	lastSrcLineIdx, lastDstLineIdx int,
+	layout HunkLayoutKind,
 ) {
 	gutterWidth := 2 // "+ " or "- "
 	if opts.LineNumbers {
-		gutterWidth = (numWidth * 2) + 3 // "%*s %*s  "
+		gutterWidth = (numWidth + 1) * 2 // "%*s %*s "
 	}
 	fullCodeWidth := max(10, termWidth-gutterWidth)
 
-	type fullWidthRow struct {
-		chunks  [][]byte
-		symbol  string
-		srcLine int
-		dstLine int
-		action  color.ActionKind
-	}
-
-	p := h.Start
-	for p <= h.End {
+	for p := h.Start; p <= h.End; p++ {
 		if p < 0 || p >= len(filteredPairs) {
-			p++
 			continue
 		}
 		pair := filteredPairs[p]
 
-		var rows []fullWidthRow
-		bEnd := p + 1
+		var text string
+		var badge string
+		var spans []serialize.HighlightSpan
+		var lineCtx renderutil.LineContext
+		var leftLineNum, rightLineNum int
+		var action color.ActionKind
 
 		if p < len(isPairChanged) && !isPairChanged[p] {
-			text := ""
-			if pair.RightLine < len(dstLines) {
+			leftLineNum = pair.LeftLine
+			rightLineNum = pair.RightLine
+			if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 				text = dstLines[pair.RightLine]
-			} else if pair.LeftLine < len(srcLines) {
+			} else if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
 				text = srcLines[pair.LeftLine]
 			}
-			chunks := scratch.SliceLineToChunks(text, "", nil, fullCodeWidth, renderutil.LineContextAligned, false, opts.Color)
-			rows = append(rows, fullWidthRow{
-				chunks:  chunks,
-				symbol:  " ",
-				srcLine: pair.LeftLine,
-				dstLine: pair.RightLine,
-				action:  color.ActionKind(-1),
-			})
+			lineCtx = renderutil.LineContextAligned
+			action = color.ActionKind(-1)
+		} else if pair.LeftLine == -1 && pair.RightLine >= 0 {
+			leftLineNum = -1
+			rightLineNum = pair.RightLine
+			if pair.RightLine < len(dstLines) {
+				text = dstLines[pair.RightLine]
+			}
+			badge = dstLineBadges[pair.RightLine]
+			spans = rightSpansByLine[pair.RightLine]
+			lineCtx = renderutil.LineContextStandaloneInsert
+			action = color.ActionInsert
+		} else if pair.LeftLine >= 0 && pair.RightLine == -1 {
+			leftLineNum = pair.LeftLine
+			rightLineNum = -1
+			if pair.LeftLine < len(srcLines) {
+				text = srcLines[pair.LeftLine]
+			}
+			badge = srcLineBadges[pair.LeftLine]
+			spans = leftSpansByLine[pair.LeftLine]
+			lineCtx = renderutil.LineContextStandaloneDelete
+			action = color.ActionDelete
 		} else {
-			// Group consecutive changes into deletions followed by insertions (2-block diff).
-			for bEnd <= h.End && bEnd < len(isPairChanged) && isPairChanged[bEnd] {
-				bEnd++
-			}
-
-			// 1. All deletions in this sub-block
-			for k := p; k < bEnd; k++ {
-				kp := filteredPairs[k]
-				if kp.LeftLine >= 0 && kp.LeftLine < len(srcLines) {
-					badge := srcLineBadges[kp.LeftLine]
-					lineCtx := renderutil.LineContextAligned
-					if kp.RightLine == -1 {
-						lineCtx = renderutil.LineContextStandaloneDelete
-					}
-					chunks := scratch.SliceLineToChunks(srcLines[kp.LeftLine], badge, leftSpansByLine[kp.LeftLine], fullCodeWidth, lineCtx, false, opts.Color)
-					rows = append(rows, fullWidthRow{
-						chunks:  chunks,
-						symbol:  "-",
-						srcLine: kp.LeftLine,
-						dstLine: -1,
-						action:  color.ActionDelete,
-					})
+			if layout == HunkLayoutSingleColumnRight {
+				leftLineNum = -1
+				rightLineNum = pair.RightLine
+				if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+					text = dstLines[pair.RightLine]
+					spans = rightSpansByLine[pair.RightLine]
+					badge = dstLineBadges[pair.RightLine]
 				}
-			}
-
-			// 2. All insertions in this sub-block
-			for k := p; k < bEnd; k++ {
-				kp := filteredPairs[k]
-				if kp.RightLine >= 0 && kp.RightLine < len(dstLines) {
-					badge := dstLineBadges[kp.RightLine]
-					lineCtx := renderutil.LineContextAligned
-					if kp.LeftLine == -1 {
-						lineCtx = renderutil.LineContextStandaloneInsert
-					}
-					chunks := scratch.SliceLineToChunks(dstLines[kp.RightLine], badge, rightSpansByLine[kp.RightLine], fullCodeWidth, lineCtx, false, opts.Color)
-					rows = append(rows, fullWidthRow{
-						chunks:  chunks,
-						symbol:  "+",
-						srcLine: -1,
-						dstLine: kp.RightLine,
-						action:  color.ActionInsert,
-					})
+				lineCtx = renderutil.LineContextStandaloneInsert
+				action = color.ActionInsert
+			} else {
+				leftLineNum = pair.LeftLine
+				rightLineNum = -1
+				if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+					text = srcLines[pair.LeftLine]
+					spans = leftSpansByLine[pair.LeftLine]
+					badge = srcLineBadges[pair.LeftLine]
 				}
+				lineCtx = renderutil.LineContextStandaloneDelete
+				action = color.ActionDelete
 			}
 		}
 
-		for _, row := range rows {
-			chunks := row.chunks
-			if len(chunks) == 0 {
-				chunks = [][]byte{nil}
-			}
+		chunks := scratch.SliceLineToChunks(text, badge, spans, fullCodeWidth, lineCtx, false, opts.Color)
+		if len(chunks) == 0 {
+			chunks = [][]byte{nil}
+		}
 
-			for subRow, chunk := range chunks {
-				if opts.LineNumbers {
-					if subRow == 0 {
-						renderFullWidthDoubleGutter(w, row.srcLine, row.dstLine, numWidth, opts.Color, row.action)
-					} else {
-						renderFullWidthContinuationGutter(w, numWidth, opts.Color, row.action)
-					}
+		for subRow, chunk := range chunks {
+			if opts.LineNumbers {
+				if subRow == 0 {
+					renderSingleColumnDoubleGutter(w, leftLineNum, rightLineNum, numWidth, lastSrcLineIdx, lastDstLineIdx, opts.Color, action)
 				} else {
-					if subRow == 0 {
-						if opts.Color {
-							var symFg string
-							switch row.action {
-							case color.ActionInsert:
-								symFg = color.InsertFg
-							case color.ActionDelete:
-								symFg = color.DeleteFg
-							default:
-								symFg = color.OverlayFg
-							}
-							_, _ = fmt.Fprintf(w, "%s%s%s%s ", color.Bold, symFg, row.symbol, color.Reset)
-						} else {
-							_, _ = fmt.Fprintf(w, "%s ", row.symbol)
+					renderSingleColumnContinuationGutter(w, leftLineNum >= 0, rightLineNum >= 0, numWidth, opts.Color)
+				}
+			} else {
+				if subRow == 0 {
+					if opts.Color {
+						switch action {
+						case color.ActionInsert:
+							_, _ = fmt.Fprintf(w, "%s%s+%s ", color.Bold, color.InsertFg, color.Reset)
+						case color.ActionDelete:
+							_, _ = fmt.Fprintf(w, "%s%s-%s ", color.Bold, color.DeleteFg, color.Reset)
+						default:
+							_, _ = io.WriteString(w, "  ")
 						}
 					} else {
-						_, _ = io.WriteString(w, "  ")
+						switch action {
+						case color.ActionInsert:
+							_, _ = io.WriteString(w, "+ ")
+						case color.ActionDelete:
+							_, _ = io.WriteString(w, "- ")
+						default:
+							_, _ = io.WriteString(w, "  ")
+						}
+					}
+				} else {
+					_, _ = io.WriteString(w, "  ")
+				}
+			}
+
+			if len(chunk) > 0 {
+				_, _ = w.Write(chunk)
+			}
+			_, _ = io.WriteString(w, "\n")
+		}
+
+		if (!srcEndsWithNL && pair.LeftLine == lastSrcLineIdx) || (!dstEndsWithNL && pair.RightLine == lastDstLineIdx) {
+			warnText := `\ No newline at end of file`
+			pad := "  "
+			if opts.LineNumbers {
+				pad = strings.Repeat(" ", (numWidth+1)*2)
+			}
+			if opts.Color {
+				_, _ = fmt.Fprintf(w, "%s%s%s%s%s\n", pad, color.Italic, color.OverlayFg, warnText, color.Reset)
+			} else {
+				_, _ = fmt.Fprintf(w, "%s%s\n", pad, warnText)
+			}
+		}
+	}
+}
+
+func renderSingleColumnDoubleGutter(
+	w io.Writer,
+	leftLine, rightLine, numWidth int,
+	lastSrcLineIdx, lastDstLineIdx int,
+	colorMode bool,
+	action color.ActionKind,
+) {
+	var leftStr string
+	if leftLine >= 0 {
+		leftStr = strconv.Itoa(leftLine + 1)
+	} else if lastSrcLineIdx >= 0 {
+		leftStr = ".."
+	}
+	leftPad := fmt.Sprintf("%*s ", numWidth, leftStr)
+
+	var rightStr string
+	if rightLine >= 0 {
+		rightStr = strconv.Itoa(rightLine + 1)
+	} else if lastDstLineIdx >= 0 {
+		rightStr = ".."
+	}
+	rightPad := fmt.Sprintf("%*s ", numWidth, rightStr)
+
+	if !colorMode {
+		_, _ = io.WriteString(w, leftPad)
+		_, _ = io.WriteString(w, rightPad)
+		return
+	}
+
+	switch action {
+	case color.ActionDelete:
+		_, _ = fmt.Fprintf(w, "%s%s%s%s", color.Bold, color.DeleteFg, leftPad, color.Reset)
+		_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, rightPad, color.Reset)
+	case color.ActionInsert:
+		_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, leftPad, color.Reset)
+		_, _ = fmt.Fprintf(w, "%s%s%s%s", color.Bold, color.InsertFg, rightPad, color.Reset)
+	default:
+		_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, leftPad, color.Reset)
+		_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, rightPad, color.Reset)
+	}
+}
+
+func renderSingleColumnContinuationGutter(
+	w io.Writer,
+	hasLeft, hasRight bool,
+	numWidth int,
+	colorMode bool,
+) {
+	var leftStr, rightStr string
+	if hasLeft {
+		leftStr = ".."
+	}
+	if hasRight {
+		rightStr = ".."
+	}
+	leftPad := fmt.Sprintf("%*s ", numWidth, leftStr)
+	rightPad := fmt.Sprintf("%*s ", numWidth, rightStr)
+
+	if !colorMode {
+		_, _ = io.WriteString(w, leftPad)
+		_, _ = io.WriteString(w, rightPad)
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%s%s%s%s%s%s", color.OverlayFg, leftPad, color.Reset, color.OverlayFg, rightPad, color.Reset)
+}
+
+func renderWholeFileSingleColumn(
+	lines []string,
+	spansByLine map[int][]serialize.HighlightSpan,
+	badges map[int]string,
+	numWidth, termWidth int,
+	opts RenderOptions,
+	scratch *RenderScratch,
+	action color.ActionKind,
+	w io.Writer,
+	endsWithNL bool,
+) error {
+	var hunkHeader string
+	if action == color.ActionInsert {
+		hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, len(lines), "")
+	} else {
+		hunkHeader = renderutil.FormatHunkHeader(1, len(lines), 0, 0, "")
+	}
+	if opts.Color {
+		_, _ = fmt.Fprintf(w, "%s%s%s\n", color.HeaderFg, hunkHeader, color.Reset)
+	} else {
+		_, _ = fmt.Fprintf(w, "%s\n", hunkHeader)
+	}
+
+	gutterWidth := 2
+	if opts.LineNumbers {
+		gutterWidth = numWidth + 1
+	}
+	fullCodeWidth := max(10, termWidth-gutterWidth)
+
+	var lineCtx renderutil.LineContext
+	var colFg string
+	var sym string
+	if action == color.ActionInsert {
+		lineCtx = renderutil.LineContextStandaloneInsert
+		colFg = color.InsertFg
+		sym = "+"
+	} else {
+		lineCtx = renderutil.LineContextStandaloneDelete
+		colFg = color.DeleteFg
+		sym = "-"
+	}
+
+	lastLineIdx := len(lines) - 1
+
+	for i, line := range lines {
+		badge := badges[i]
+		spans := spansByLine[i]
+		chunks := scratch.SliceLineToChunks(line, badge, spans, fullCodeWidth, lineCtx, false, opts.Color)
+		if len(chunks) == 0 {
+			chunks = [][]byte{nil}
+		}
+
+		for subRow, chunk := range chunks {
+			if opts.LineNumbers {
+				if subRow == 0 {
+					str := strconv.Itoa(i + 1)
+					pad := fmt.Sprintf("%*s ", numWidth, str)
+					if opts.Color {
+						_, _ = fmt.Fprintf(w, "%s%s%s%s", color.Bold, colFg, pad, color.Reset)
+					} else {
+						_, _ = io.WriteString(w, pad)
+					}
+				} else {
+					pad := fmt.Sprintf("%*s ", numWidth, "..")
+					if opts.Color {
+						_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, pad, color.Reset)
+					} else {
+						_, _ = io.WriteString(w, pad)
 					}
 				}
-
-				if len(chunk) > 0 {
-					_, _ = w.Write(chunk)
+			} else {
+				if subRow == 0 {
+					if opts.Color {
+						_, _ = fmt.Fprintf(w, "%s%s%s%s ", color.Bold, colFg, sym, color.Reset)
+					} else {
+						_, _ = fmt.Fprintf(w, "%s ", sym)
+					}
+				} else {
+					_, _ = io.WriteString(w, "  ")
 				}
-				_, _ = io.WriteString(w, "\n")
 			}
+
+			if len(chunk) > 0 {
+				_, _ = w.Write(chunk)
+			}
+			_, _ = io.WriteString(w, "\n")
 		}
 
-		for k := p; k < bEnd; k++ {
-			kp := filteredPairs[k]
-			if (!srcEndsWithNL && kp.LeftLine == lastSrcLineIdx) || (!dstEndsWithNL && kp.RightLine == lastDstLineIdx) {
-				renderFullWidthEOFWarning(w, numWidth, opts.LineNumbers, opts.Color)
-				break
+		if !endsWithNL && i == lastLineIdx {
+			warnText := `\ No newline at end of file`
+			pad := "  "
+			if opts.LineNumbers {
+				pad = strings.Repeat(" ", numWidth+1)
+			}
+			if opts.Color {
+				_, _ = fmt.Fprintf(w, "%s%s%s%s%s\n", pad, color.Italic, color.OverlayFg, warnText, color.Reset)
+			} else {
+				_, _ = fmt.Fprintf(w, "%s%s\n", pad, warnText)
 			}
 		}
-
-		p = bEnd
-	}
-}
-
-func renderFullWidthDoubleGutter(w io.Writer, srcLine, dstLine, numWidth int, colorMode bool, action color.ActionKind) {
-	srcStr := ""
-	if srcLine >= 0 {
-		srcStr = strconv.Itoa(srcLine + 1)
-	}
-	dstStr := ""
-	if dstLine >= 0 {
-		dstStr = strconv.Itoa(dstLine + 1)
 	}
 
-	srcPad := fmt.Sprintf("%*s", numWidth, srcStr)
-	dstPad := fmt.Sprintf("%*s", numWidth, dstStr)
-
-	if !colorMode {
-		_, _ = fmt.Fprintf(w, "%s %s  ", srcPad, dstPad)
-		return
-	}
-
-	sep := "  "
-	switch action {
-	case color.ActionDelete:
-		_, _ = fmt.Fprintf(w, "%s%s%s %s%s%s%s", color.DeleteFg, srcPad, color.Reset, color.OverlayFg, dstPad, color.Reset, sep)
-	case color.ActionInsert:
-		_, _ = fmt.Fprintf(w, "%s%s%s %s%s%s%s", color.OverlayFg, srcPad, color.Reset, color.InsertFg, dstPad, color.Reset, sep)
-	default:
-		_, _ = fmt.Fprintf(w, "%s%s%s %s%s%s%s", color.OverlayFg, srcPad, color.Reset, color.OverlayFg, dstPad, color.Reset, sep)
-	}
-}
-
-func renderFullWidthContinuationGutter(w io.Writer, numWidth int, colorMode bool, action color.ActionKind) {
-	var srcDots, dstDots string
-	switch action {
-	case color.ActionDelete:
-		srcDots = fmt.Sprintf("%*s", numWidth, "..")
-		dstDots = strings.Repeat(" ", numWidth)
-	case color.ActionInsert:
-		srcDots = strings.Repeat(" ", numWidth)
-		dstDots = fmt.Sprintf("%*s", numWidth, "..")
-	default:
-		srcDots = fmt.Sprintf("%*s", numWidth, "..")
-		dstDots = fmt.Sprintf("%*s", numWidth, "..")
-	}
-
-	if !colorMode {
-		_, _ = fmt.Fprintf(w, "%s %s  ", srcDots, dstDots)
-		return
-	}
-
-	sep := "  "
-	_, _ = fmt.Fprintf(w, "%s%s%s %s%s%s%s", color.OverlayFg, srcDots, color.Reset, color.OverlayFg, dstDots, color.Reset, sep)
-}
-
-func renderFullWidthEOFWarning(w io.Writer, numWidth int, lineNumbers, colorMode bool) {
-	warnText := `\ No newline at end of file`
-	if lineNumbers {
-		pad := strings.Repeat(" ", (numWidth*2)+3)
-		_, _ = io.WriteString(w, pad)
-	} else {
-		_, _ = io.WriteString(w, "  ")
-	}
-	if colorMode {
-		_, _ = fmt.Fprintf(w, "%s%s%s%s\n", color.Italic, color.OverlayFg, warnText, color.Reset)
-	} else {
-		_, _ = fmt.Fprintf(w, "%s\n", warnText)
-	}
-}
-
-func renderFullWidthHunkSeparator(w io.Writer, termWidth int, colorMode bool) {
-	dotStr := "···"
-	if !colorMode {
-		_, _ = io.WriteString(w, "─── "+dotStr+" ───\n")
-		return
-	}
-	_, _ = fmt.Fprintf(w, "%s─── %s ───%s\n", color.SurfaceFg, dotStr, color.Reset)
+	return nil
 }
 
 func padEmptyColumn(w io.Writer, width int) {
 	if width <= 0 {
 		return
 	}
-	buf := make([]byte, width)
-	for i := range buf {
-		buf[i] = ' '
-	}
-	_, _ = w.Write(buf)
+	_, _ = io.WriteString(w, strings.Repeat(" ", width))
 }
 
 func renderGutter(w io.Writer, lineNum, numWidth int, colorMode, isDelete, isInsert bool) {
@@ -546,15 +640,18 @@ func renderGutter(w io.Writer, lineNum, numWidth int, colorMode, isDelete, isIns
 	}
 
 	var fg string
+	var bold string
 	if isDelete {
 		fg = color.DeleteFg
+		bold = color.Bold
 	} else if isInsert {
 		fg = color.InsertFg
+		bold = color.Bold
 	} else {
 		fg = color.OverlayFg
 	}
 
-	_, _ = fmt.Fprintf(w, "%s%s%s", fg, pad, color.Reset)
+	_, _ = fmt.Fprintf(w, "%s%s%s%s", bold, fg, pad, color.Reset)
 }
 
 func renderContinuationGutter(w io.Writer, numWidth int, colorMode bool) {
@@ -564,49 +661,6 @@ func renderContinuationGutter(w io.Writer, numWidth int, colorMode bool) {
 		return
 	}
 	_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, dots, color.Reset)
-}
-
-func renderHunkSeparator(w io.Writer, numWidth, codeWidth int, lineNumbers, colorMode bool) {
-	sep := "  "
-	var dotStr string
-	if colorMode {
-		dotStr = color.OverlayFg + "···" + color.Reset
-
-		if lineNumbers {
-			pad := strings.Repeat(" ", numWidth+1)
-			_, _ = io.WriteString(w, pad)
-			_, _ = io.WriteString(w, dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, sep)
-			_, _ = io.WriteString(w, pad)
-			_, _ = io.WriteString(w, dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, "\n")
-		} else {
-			_, _ = io.WriteString(w, dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, sep)
-			_, _ = io.WriteString(w, dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, "\n")
-		}
-	} else {
-		dotStr = "···"
-		if lineNumbers {
-			pad := strings.Repeat(" ", numWidth+1)
-			_, _ = io.WriteString(w, pad+dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, sep+pad+dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, "\n")
-		} else {
-			_, _ = io.WriteString(w, dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, sep+dotStr)
-			padEmptyColumn(w, max(0, codeWidth-3))
-			_, _ = io.WriteString(w, "\n")
-		}
-	}
 }
 
 func renderEOFNewlineWarning(w io.Writer, leftWarn, rightWarn bool, numWidth, codeWidth int, lineNumbers, colorMode bool, sep string) {
