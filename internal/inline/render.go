@@ -325,7 +325,6 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				TabWidth:         tabWidth,
 				ColorMode:        opts.Color,
 				PadToTargetWidth: false,
-				BadgeAnchor:      renderutil.BadgeAnchorLastRow,
 				BadgeColor:       badgeColor,
 				Context:          lineCtx,
 			}

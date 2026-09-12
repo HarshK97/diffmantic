@@ -33,7 +33,6 @@ func (s *RenderScratch) SliceLineToChunks(
 		TabWidth:         s.TabWidth,
 		ColorMode:        colorMode,
 		PadToTargetWidth: padToTargetWidth,
-		BadgeAnchor:      renderutil.BadgeAnchorRow0,
 		BadgeColor:       bColor,
 		Context:          lineCtx,
 	}
