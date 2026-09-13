@@ -46,7 +46,7 @@ func TestMappingPairsOrder(t *testing.T) {
 }
 
 func TestMappingDuplicateAdd(t *testing.T) {
-	// Re-adding the same source doesn't duplicate the pair.
+	// Re-adding the same source doesn't duplicate the pair and updates m.Pairs and m.dst.
 	m := NewMapping()
 	a := testutil.Leaf("id", "x")
 	b1 := testutil.Leaf("id", "y")
@@ -59,7 +59,43 @@ func TestMappingDuplicateAdd(t *testing.T) {
 		t.Errorf("duplicate Add should not create new pair, got %d pairs", len(m.Pairs))
 	}
 	if m.Src()[a] != b2 {
-		t.Error("second Add should overwrite the mapping value")
+		t.Error("second Add should overwrite the mapping value in src")
+	}
+	if m.Pairs[0].Dst != b2 {
+		t.Errorf("second Add should update Dst in m.Pairs, got %v", m.Pairs[0].Dst)
+	}
+	if m.HasDst(b1) {
+		t.Error("b1 should no longer be in m.dst after remapping a to b2")
+	}
+	if m.Dst()[b2] != a {
+		t.Error("b2 should map to a in m.dst")
+	}
+}
+
+func TestMappingRemapDestination(t *testing.T) {
+	// Adding a pair where destination was previously mapped to a different source.
+	m := NewMapping()
+	a1 := testutil.Leaf("id", "x1")
+	a2 := testutil.Leaf("id", "x2")
+	b := testutil.Leaf("id", "y")
+
+	m.Add(a1, b)
+	m.Add(a2, b)
+
+	if len(m.Pairs) != 1 {
+		t.Fatalf("expected 1 pair after remapping destination, got %d", len(m.Pairs))
+	}
+	if m.Pairs[0].Src != a2 || m.Pairs[0].Dst != b {
+		t.Errorf("expected pair (a2, b), got (%v, %v)", m.Pairs[0].Src, m.Pairs[0].Dst)
+	}
+	if m.Has(a1) {
+		t.Error("a1 should no longer be in m.src after b remapped to a2")
+	}
+	if m.Src()[a2] != b {
+		t.Error("a2 should map to b in m.src")
+	}
+	if m.Dst()[b] != a2 {
+		t.Error("b should map to a2 in m.dst")
 	}
 }
 
