@@ -97,125 +97,124 @@ func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
 	})
 }
 
-// candidate finds the best unmatched node in T2 to pair with t1.
-// Prefers same child position, higher Chawathe similarity, then Dice score.
+// AffinityWeights holds the scoring weights used to rank bottom-up candidates.
+type AffinityWeights struct {
+	Sim        float64 // Chawathe leaf similarity weight
+	Dice       float64 // Subtree descendant Dice weight
+	Scope      float64 // Scope proximity weight
+	Pos        float64 // Sibling index alignment weight
+	Label      float64 // Leaf label similarity weight
+	KeyBonus   float64 // Exact key match bonus for pair nodes
+	DepthCoeff float64 // Quadratic penalty for relative depth divergence
+}
+
+// DefaultAffinityWeights is the default set of scoring weights used by candidate selection.
+// Exported so callers can use it as a baseline for language-specific tuning.
+var DefaultAffinityWeights = AffinityWeights{
+	Sim:        0.30,
+	Dice:       0.25,
+	Scope:      0.25,
+	Pos:        0.10,
+	Label:      0.10,
+	KeyBonus:   0.35,
+	DepthCoeff: 0.20,
+}
+
+// computeAffinity scores how well t1 matches candidate c. Returns -1.0 if hard constraints fail.
+func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights) float64 {
+	if m.HasDst(c) {
+		return -1.0
+	}
+	if !hasCommonDescendant(t1, c, m) {
+		return -1.0
+	}
+	if !CompatiblePairRoles(t1, c) {
+		return -1.0
+	}
+
+	r := rulesFor(t1)
+	if !TypesMatch(t1.Type, c.Type, r) {
+		return -1.0
+	}
+
+	anc1 := NearestMatchedAncestor(t1, m, false)
+	anc2 := NearestMatchedAncestor(c, m, true)
+	cMatches := areAncestorsMatched(anc1, anc2, m)
+
+	// Keep small subtrees and syntactic wrappers inside their mapped scope.
+	if !cMatches && (Height(t1) <= 2 || t1.IsWrapper() || (r != nil && r.IsWrapper(t1.Type))) {
+		return -1.0
+	}
+
+	// Don't let an inner block claim an outer container when an outer ancestor matches the construct.
+	if hasEnclosingConstructAncestor(t1, c, r) {
+		return -1.0
+	}
+
+	sim := ChawatheSimilarity(t1, c, m.Src())
+	dice := Dice(t1, c, m.Src())
+
+	scopeScore := 0.5
+	if anc1 == nil && anc2 == nil {
+		scopeScore = 1.0
+	} else if anc1 != nil && anc2 != nil {
+		if m.Src()[anc1] == anc2 {
+			scopeScore = 1.0
+		} else {
+			scopeScore = 0.0
+		}
+	}
+
+	posScore := 1.0
+	isUnordered := (t1.Parent != nil && t1.Parent.IsUnordered) || (c.Parent != nil && c.Parent.IsUnordered)
+	if !isUnordered && t1.Parent != nil && c.Parent != nil {
+		idx1 := t1.ChildIndex()
+		idx2 := c.ChildIndex()
+		maxLen := max(len(t1.Parent.Children), len(c.Parent.Children))
+		if maxLen > 0 && idx1 >= 0 && idx2 >= 0 {
+			absDiff := idx1 - idx2
+			if absDiff < 0 {
+				absDiff = -absDiff
+			}
+			posScore = 1.0 - float64(absDiff)/float64(maxLen)
+		}
+	}
+
+	lblScore := LeafSimilarity(t1, c)
+
+	keyBonus := 0.0
+	if t1Key, cKey := getKeyLabel(t1), getKeyLabel(c); t1Key != "" && t1Key == cKey {
+		keyBonus = w.KeyBonus
+	}
+
+	depthPenalty := 0.0
+	if (anc1 == nil) == (anc2 == nil) {
+		d1 := t1.DepthTo(anc1)
+		d2 := c.DepthTo(anc2)
+		diff := float64(d1 - d2)
+		depthPenalty = w.DepthCoeff * (diff * diff)
+	}
+
+	return (w.Sim * sim) + (w.Dice * dice) + (w.Scope * scopeScore) + (w.Pos * posScore) + (w.Label * lblScore) + keyBonus - depthPenalty
+}
+
+// candidate finds the best unmatched node in T2 to pair with t1 using unified affinity scoring.
 func candidate(
 	t1 *treesitter.ASTNode,
 	candidates []*treesitter.ASTNode,
 	m *Mapping,
 ) *treesitter.ASTNode {
 	var best *treesitter.ASTNode
-	bestSim := -1.0
-	bestDice := -1.0
-	bestLabelScore := -1
-	var bestSamePositional bool
-	var bestKeyMatched bool
-
-	t1Labels := t1.LeafLabels()
-	t1Key := getKeyLabel(t1)
-
-	r := rulesFor(t1)
+	bestScore := -1.0
 
 	for _, c := range candidates {
-		if m.HasDst(c) {
-			continue
-		}
-
-		if !hasCommonDescendant(t1, c, m) {
-			continue
-		}
-		if !CompatiblePairRoles(t1, c) {
-			continue
-		}
-
-		// If t1's parent construct does not match c's parent construct, but an enclosing ancestor of t1
-		// matches c's parent construct, preserve c for the true outer ancestor.
-		hasBetterAncestor := false
-		if t1.Parent != nil && c.Parent != nil && !TypesMatch(t1.Parent.Type, c.Parent.Type, r) {
-			for anc := t1.Parent; anc != nil; anc = anc.Parent {
-				if TypesMatch(anc.Type, c.Type, r) && anc.Parent != nil && TypesMatch(anc.Parent.Type, c.Parent.Type, r) {
-					hasBetterAncestor = true
-					break
-				}
-			}
-		}
-		if hasBetterAncestor {
-			continue
-		}
-
-		sim := ChawatheSimilarity(t1, c, m.Src())
-		d := Dice(t1, c, m.Src())
-
-		samePositional := false
-		if t1.Parent != nil && c.Parent != nil {
-			t1Idx := t1.ChildIndex()
-			cIdx := c.ChildIndex()
-			samePositional = t1Idx == cIdx
-		}
-
-		anc1 := NearestMatchedAncestor(t1, m, false)
-		anc2 := NearestMatchedAncestor(c, m, true)
-		cMatches := areAncestorsMatched(anc1, anc2, m)
-
-		var ancBest2 *treesitter.ASTNode
-		if best != nil {
-			ancBest2 = NearestMatchedAncestor(best, m, true)
-		}
-		bestCMatches := best == nil || areAncestorsMatched(anc1, ancBest2, m)
-
-		diff := sim - bestSim
-		isBetter := false
-		ls := labelOverlap(t1Labels, c)
-		cKey := getKeyLabel(c)
-		keyMatched := t1Key != "" && cKey != "" && t1Key == cKey
-
-		if t1Key != "" && keyMatched != bestKeyMatched && t1.IsUnordered {
-			if keyMatched {
-				isBetter = true
-			}
-		} else if math.Abs(diff) > 0.05 {
-			if sim > bestSim {
-				isBetter = true
-			}
-		} else {
-			if samePositional && !bestSamePositional {
-				isBetter = true
-			} else if sim > bestSim {
-				isBetter = true
-			} else if sim == bestSim {
-				if d > bestDice {
-					isBetter = true
-				} else if d == bestDice {
-					if cMatches && !bestCMatches {
-						isBetter = true
-					} else if cMatches == bestCMatches {
-						if ls > bestLabelScore {
-							isBetter = true
-						}
-					}
-				}
-			}
-		}
-
-		if isBetter {
-			bestSim = sim
-			bestDice = d
+		score := computeAffinity(t1, c, m, DefaultAffinityWeights)
+		if score > bestScore {
+			bestScore = score
 			best = c
-			bestLabelScore = ls
-			bestSamePositional = samePositional
-			bestKeyMatched = keyMatched
 		}
 	}
 	return best
-}
-
-// labelOverlap returns the number of shared leaf labels in t2's subtree.
-func labelOverlap(t1Labels map[string]int, t2 *treesitter.ASTNode) int {
-	count := 0
-	for label := range t1Labels {
-		count += t2.FrequencyInSubtree(label)
-	}
-	return count
 }
 
 func hasCommonDescendant(
@@ -337,4 +336,25 @@ func directKeyMatch(n1, n2 *treesitter.ASTNode) bool {
 	c1 := n1.Children[0]
 	c2 := n2.Children[0]
 	return c1.Type == c2.Type && c1.Label != "" && c1.Label == c2.Label
+}
+
+// hasEnclosingConstructAncestor checks if an outer ancestor matches the peer's parent construct,
+// preventing inner blocks from stealing outer containers during post-order traversal.
+func hasEnclosingConstructAncestor(t1, c *treesitter.ASTNode, r *rules.Rules) bool {
+	if r == nil || (!r.IsBlock(t1.Type) && !r.IsDeclaration(t1.Type)) {
+		return false
+	}
+	if t1.Parent != nil && c.Parent != nil && !TypesMatch(t1.Parent.Type, c.Parent.Type, r) {
+		for anc := t1.Parent; anc != nil; anc = anc.Parent {
+			if TypesMatch(anc.Type, c.Type, r) && anc.Parent != nil && TypesMatch(anc.Parent.Type, c.Parent.Type, r) {
+				return true
+			}
+		}
+		for anc := c.Parent; anc != nil; anc = anc.Parent {
+			if TypesMatch(t1.Type, anc.Type, r) && anc.Parent != nil && TypesMatch(t1.Parent.Type, anc.Parent.Type, r) {
+				return true
+			}
+		}
+	}
+	return false
 }

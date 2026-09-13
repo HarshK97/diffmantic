@@ -70,8 +70,17 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 		}
 	}
 
+	type leafCandidate struct {
+		t1       *treesitter.ASTNode
+		t2       *treesitter.ASTNode
+		posScore int
+		dice     float64
+	}
+
 	type parentPair struct{ p1, p2 *treesitter.ASTNode }
 	diceCache := make(map[parentPair]float64)
+	var candidatesList []leafCandidate
+
 	for _, t1 := range t1Root.PostOrder() {
 		if m.Has(t1) || len(t1.Children) > 0 || t1.Label == "" || t1.IsKeyword {
 			continue
@@ -86,10 +95,6 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 		if len(candidates) == 0 {
 			continue
 		}
-
-		var bestT2 *treesitter.ASTNode
-		bestDice := 0.0
-		bestPosScore := -1
 
 		t1Idx := t1.ChildIndex()
 
@@ -152,35 +157,50 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 			posScore += siblingScore
 
-			if posScore >= bestPosScore {
-				d := 0.0
-				if t1.Parent != nil && t2.Parent != nil {
-					pair := parentPair{p1: t1.Parent, p2: t2.Parent}
-					if cached, ok := diceCache[pair]; ok {
-						d = cached
-					} else {
-						d = Dice(t1.Parent, t2.Parent, m.Src())
-						diceCache[pair] = d
-					}
-				}
-
-				depth1 := t1.DepthTo(anc1)
-				depth2 := t2.DepthTo(anc2)
-				if !parentMatched && siblingScore == 0 && d < 0.25 && (depth1 > 2 || depth2 > 2) {
-					continue
-				}
-
-				if posScore > bestPosScore || d > bestDice {
-					bestDice = d
-					bestT2 = t2
-					bestPosScore = posScore
+			d := 0.0
+			if t1.Parent != nil && t2.Parent != nil {
+				pair := parentPair{p1: t1.Parent, p2: t2.Parent}
+				if cached, ok := diceCache[pair]; ok {
+					d = cached
+				} else {
+					d = Dice(t1.Parent, t2.Parent, m.Src())
+					diceCache[pair] = d
 				}
 			}
-		}
 
-		if bestT2 != nil {
-			m.Add(t1, bestT2)
+			depth1 := t1.DepthTo(anc1)
+			depth2 := t2.DepthTo(anc2)
+			if !parentMatched && siblingScore == 0 && d < 0.25 && (depth1 > 2 || depth2 > 2) {
+				continue
+			}
+
+			candidatesList = append(candidatesList, leafCandidate{
+				t1:       t1,
+				t2:       t2,
+				posScore: posScore,
+				dice:     d,
+			})
 		}
+	}
+
+	slices.SortStableFunc(candidatesList, func(a, b leafCandidate) int {
+		if c := cmp.Compare(b.posScore, a.posScore); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.dice, a.dice); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.t1.StartByte, b.t1.StartByte); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.t2.StartByte, b.t2.StartByte)
+	})
+
+	for _, cand := range candidatesList {
+		if m.Has(cand.t1) || m.HasDst(cand.t2) {
+			continue
+		}
+		m.Add(cand.t1, cand.t2)
 	}
 }
 
