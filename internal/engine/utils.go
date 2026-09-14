@@ -120,9 +120,11 @@ func getKeyLabel(n *treesitter.ASTNode) string {
 		return ""
 	}
 	r := rulesFor(n)
-	if r != nil && r.IsCall(n.Type) {
+	isCall := (r != nil && r.IsCall(n.Type)) || (r == nil && rules.IsCall(n.Type))
+	if isCall {
 		for _, ch := range n.Children {
-			if ch.Type == "identifier" || ch.Type == "field_identifier" || ch.Type == "property_identifier" {
+			isID := (r != nil && r.IsIdentifier(ch.Type)) || (r == nil && rules.IsIdentifier(ch.Type))
+			if isID {
 				return ch.Label
 			}
 		}

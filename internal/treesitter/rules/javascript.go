@@ -166,6 +166,8 @@ var javascriptRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"property_identifier",
+		"shorthand_property_identifier",
 		"private_property_identifier",
 	},
 	Blocks: []string{

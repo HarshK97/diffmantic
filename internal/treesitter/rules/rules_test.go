@@ -551,3 +551,45 @@ func TestLanguageKind(t *testing.T) {
 		t.Errorf("nil.GetKind() = %v, want KindCode", nilRules.GetKind())
 	}
 }
+
+func TestIsIdentifier(t *testing.T) {
+	tests := []struct {
+		lang     string
+		nodeType string
+		want     bool
+	}{
+		{"javascript", "identifier", true},
+		{"javascript", "property_identifier", true},
+		{"javascript", "shorthand_property_identifier", true},
+		{"javascript", "private_property_identifier", true},
+		{"typescript", "property_identifier", true},
+		{"tsx", "property_identifier", true},
+		{"c", "identifier", true},
+		{"c", "field_identifier", true},
+		{"cpp", "destructor_name", true},
+		{"rust", "field_identifier", true},
+		{"rust", "shorthand_field_identifier", true},
+		{"go", "field_identifier", true},
+		{"go", "package_identifier", true},
+		{"c", "comment", false},
+		{"javascript", "string", false},
+	}
+
+	for _, tt := range tests {
+		r := Get(tt.lang)
+		if r == nil {
+			t.Fatalf("Get(%q) returned nil", tt.lang)
+		}
+		if got := r.IsIdentifier(tt.nodeType); got != tt.want {
+			t.Errorf("Get(%q).IsIdentifier(%q) = %v, want %v", tt.lang, tt.nodeType, got, tt.want)
+		}
+		if tt.want && !IsIdentifier(tt.nodeType) {
+			t.Errorf("IsIdentifier(%q) = false, want true", tt.nodeType)
+		}
+	}
+
+	var nilRules *Rules
+	if nilRules.IsIdentifier("identifier") {
+		t.Error("nilRules.IsIdentifier should return false")
+	}
+}

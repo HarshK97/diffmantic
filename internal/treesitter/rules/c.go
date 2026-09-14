@@ -149,6 +149,7 @@ var cRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"field_identifier",
 	},
 	Blocks: []string{
 		"compound_statement",
