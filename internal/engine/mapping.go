@@ -71,6 +71,14 @@ func (m *Mapping) Has(t1 *treesitter.ASTNode) bool {
 	return ok
 }
 
+// Get returns the mapped destination node for t1, or nil if none exists.
+func (m *Mapping) Get(t1 *treesitter.ASTNode) *treesitter.ASTNode {
+	if m == nil || t1 == nil {
+		return nil
+	}
+	return m.src[t1]
+}
+
 // HasDst reports whether t2 has been claimed as a destination node.
 func (m *Mapping) HasDst(t2 *treesitter.ASTNode) bool {
 	_, ok := m.dst[t2]

@@ -480,3 +480,49 @@ func TestCnodePostOrderDefensive(t *testing.T) {
 		}
 	})
 }
+
+func TestLCSStationarySiblingOrder(t *testing.T) {
+	src := []byte(`while url:
+    prepared_request = req.copy()
+    hist.append(resp)
+    resp.history = hist[1:]
+    try:
+        pass
+`)
+	dst := []byte(`while url:
+    prepared_request = req.copy()
+    resp.history = hist[:]
+    hist.append(resp)
+    try:
+        pass
+`)
+
+	srcAST, err := treesitter.Parse(src, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+
+	var moveCount int
+	var movedNode *treesitter.ASTNode
+	for _, a := range script.Actions() {
+		if a.Type == Move {
+			moveCount++
+			movedNode = a.Node
+		}
+	}
+
+	if moveCount != 1 {
+		t.Fatalf("expected 1 Move action, got %d", moveCount)
+	}
+	if movedNode == nil || (movedNode.Type != "assignment" && movedNode.Type != "expression_statement") {
+		t.Errorf("expected Move action on assignment or expression_statement (resp.history), got %v", movedNode)
+	}
+}

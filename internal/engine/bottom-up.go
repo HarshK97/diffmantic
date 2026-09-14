@@ -3,6 +3,7 @@ package engine
 import (
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
@@ -121,8 +122,8 @@ var DefaultAffinityWeights = AffinityWeights{
 }
 
 // computeAffinity scores how well t1 matches candidate c. Returns -1.0 if hard constraints fail.
-func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights) float64 {
-	if m.HasDst(c) {
+func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, allowMappedDst bool) float64 {
+	if !allowMappedDst && m.HasDst(c) {
 		return -1.0
 	}
 	if !hasCommonDescendant(t1, c, m) {
@@ -148,6 +149,12 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights) f
 
 	// Don't let an inner block claim an outer container when an outer ancestor matches the construct.
 	if hasEnclosingConstructAncestor(t1, c, r) {
+		return -1.0
+	}
+
+	// Call containers must share callee tokens or non-block arguments; do not pair calls purely based on trailing blocks or callbacks.
+	isCall := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))
+	if isCall && !hasCallCalleeOrArgMatch(t1, c, m, r) {
 		return -1.0
 	}
 
@@ -188,7 +195,7 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights) f
 	}
 
 	depthPenalty := 0.0
-	if (anc1 == nil) == (anc2 == nil) {
+	if anc1 != nil && anc2 != nil {
 		d1 := t1.DepthTo(anc1)
 		d2 := c.DepthTo(anc2)
 		diff := float64(d1 - d2)
@@ -208,7 +215,7 @@ func candidate(
 	bestScore := -1.0
 
 	for _, c := range candidates {
-		score := computeAffinity(t1, c, m, DefaultAffinityWeights)
+		score := computeAffinity(t1, c, m, DefaultAffinityWeights, false)
 		if score > bestScore {
 			bestScore = score
 			best = c
@@ -233,7 +240,7 @@ func hasCommonDescendant(
 // RollupMatchedContainers pairs unmatched container nodes in post-order when their
 // mapped children predominantly belong to the same unmatched parent container in T2.
 func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
-	rules := rulesFor(t1Root)
+	r := rulesFor(t1Root)
 	for _, t1 := range t1Root.PostOrder() {
 		if m.Has(t1) || len(t1.Children) == 0 {
 			continue
@@ -243,7 +250,7 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		var bestParent *treesitter.ASTNode
 		bestCount := 0
 		for _, c := range t1.Children {
-			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && TypesMatch(t1.Type, c2.Parent.Type, rules) {
+			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && TypesMatch(t1.Type, c2.Parent.Type, r) {
 				cnt := parentCounts[c2.Parent] + 1
 				parentCounts[c2.Parent] = cnt
 				if cnt > bestCount {
@@ -254,12 +261,50 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 
 		if bestParent != nil {
+			lineDist := int(t1.StartRow) - int(bestParent.StartRow)
+			if lineDist < 0 {
+				lineDist = -lineDist
+			}
+
+			isDecl := (r != nil && r.IsDeclaration(t1.Type)) || (r == nil && rules.IsDeclaration(t1.Type))
+			srcBody := findBodyBlock(t1, r)
+			dstBody := findBodyBlock(bestParent, r)
+			if srcBody != nil && dstBody != nil {
+				if m.Src()[srcBody] != dstBody && m.DiceSrc(srcBody, dstBody) == 0 {
+					if isDecl || lineDist >= 10 {
+						continue
+					}
+				}
+			}
+
+			if isDecl && m.DiceSrc(t1, bestParent) < 0.30 {
+				continue
+			}
+
+			isCall := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))
+			if isCall && !hasCallCalleeOrArgMatch(t1, bestParent, m, r) {
+				continue
+			}
+
 			m.Add(t1, bestParent)
 			if hasUnmappedChild(t1, m.Has) && hasUnmappedChild(bestParent, m.HasDst) {
 				Recover(t1, bestParent, m)
 			}
 		}
 	}
+}
+
+func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for _, c := range n.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		if isBlock {
+			return c
+		}
+	}
+	return nil
 }
 
 // ContestContainers reassigns T2 containers that got greedily claimed by an inner T1 node
@@ -270,7 +315,7 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 // real function body unmapped and generates a mess of spurious Move actions.
 func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	dstMap := m.Dst()
-	rules := rulesFor(t1Root)
+	r := rulesFor(t1Root)
 
 	for _, t2 := range t2Root.PostOrder() {
 		if !m.HasDst(t2) || len(t2.Children) == 0 || t2.Parent == nil {
@@ -284,20 +329,83 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			continue
 		}
 
-		// Already at the expected depth under the mapped parent — nothing to fix.
 		if currentT1.Parent == t1MappedParent {
+			// Sibling Contest: T1 and unmapped candidates are siblings under t1MappedParent.
+			// A sibling candidate can reclaim t2 if it is a significantly better match
+			// than currentT1 (e.g. higher common descendants, higher Dice/affinity score,
+			// or better positional alignment).
+			var bestCandidate *treesitter.ASTNode
+			bestScore := 0.0
+
+			currCommon, _, _ := commonMappedDescendants(currentT1, t2, m.Src())
+			currDice := m.DiceSrc(currentT1, t2)
+			currAffinity := computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true)
+			if currAffinity < 0 {
+				currAffinity = 0
+			}
+
+			for _, candidate := range t1MappedParent.Children {
+				if candidate == currentT1 || !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) {
+					continue
+				}
+
+				candCommon, _, _ := commonMappedDescendants(candidate, t2, m.Src())
+				if candCommon < 2 {
+					continue
+				}
+
+				candDice := m.DiceSrc(candidate, t2)
+				candAffinity := computeAffinity(candidate, t2, m, DefaultAffinityWeights, true)
+				if candAffinity < 0 {
+					continue
+				}
+
+				isSuperior := false
+				if candCommon > currCommon && (candDice >= currDice || candAffinity >= currAffinity) {
+					isSuperior = true
+				} else if candDice > currDice && candAffinity > currAffinity {
+					isSuperior = true
+				} else if directKeyMatch(candidate, t2) && !directKeyMatch(currentT1, t2) {
+					isSuperior = true
+				}
+
+				if isSuperior && candAffinity > bestScore {
+					bestScore = candAffinity
+					bestCandidate = candidate
+				}
+			}
+
+			if bestCandidate == nil {
+				continue
+			}
+
+			// Free any mapped descendants of t2 that originated from currentT1.
+			for _, t2Desc := range t2.Descendants() {
+				if srcLeaf := dstMap[t2Desc]; srcLeaf != nil && currentT1.Contains(srcLeaf) {
+					m.Remove(srcLeaf)
+				}
+			}
+			m.Remove(currentT1)
+			m.Add(bestCandidate, t2)
+
+			if hasUnmappedChild(bestCandidate, m.Has) && hasUnmappedChild(t2, m.HasDst) {
+				Recover(bestCandidate, t2, m)
+			}
 			continue
 		}
 
-		// T1 sits deeper than expected. Look for an unmapped sibling at the expected depth.
+		// Vertical Contest: T1 sits deeper than expected. Look for an unmapped sibling at the expected depth.
 		for _, candidate := range t1MappedParent.Children {
-			if !TypesMatch(candidate.Type, t2.Type, rules) || m.Has(candidate) {
+			if !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) {
 				continue
 			}
 
 			canReclaim := false
 			if candidate.Contains(currentT1) {
 				if m.DiceSrc(candidate, t2) > m.DiceSrc(currentT1, t2) {
+					canReclaim = true
+				} else if isBlockNode(candidate, r) {
+					// Outer block (e.g. function body) reclaiming peer block from deleted inner construct
 					canReclaim = true
 				}
 			} else {
@@ -310,12 +418,10 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 
-			// Clear any leaf mappings from currentT1 so candidate can claim them.
-			for _, t2Child := range t2.Children {
-				if len(t2Child.Children) == 0 {
-					if srcLeaf := dstMap[t2Child]; srcLeaf != nil && currentT1.Contains(srcLeaf) {
-						m.Remove(srcLeaf)
-					}
+			// Free any mapped descendants of t2 that came from currentT1.
+			for _, t2Desc := range t2.Descendants() {
+				if srcLeaf := dstMap[t2Desc]; srcLeaf != nil && currentT1.Contains(srcLeaf) {
+					m.Remove(srcLeaf)
 				}
 			}
 			m.Remove(currentT1)
@@ -357,4 +463,62 @@ func hasEnclosingConstructAncestor(t1, c *treesitter.ASTNode, r *rules.Rules) bo
 		}
 	}
 	return false
+}
+
+// hasCallCalleeOrArgMatch reports whether two call nodes share any matched tokens
+// outside of trailing block/closure children, or share callee label similarity.
+func hasCallCalleeOrArgMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	hasNonBlockMatch := false
+	for _, d := range t1.Descendants() {
+		if partner, ok := m.Src()[d]; ok && c.Contains(partner) {
+			inBlock := false
+			for anc := d; anc != nil && anc != t1; anc = anc.Parent {
+				if (r != nil && r.IsBlock(anc.Type)) || (r == nil && rules.IsBlock(anc.Type)) {
+					inBlock = true
+					break
+				}
+			}
+			if !inBlock {
+				hasNonBlockMatch = true
+				break
+			}
+		}
+	}
+	if hasNonBlockMatch {
+		return true
+	}
+
+	callee1 := extractCalleeLabel(t1, r)
+	callee2 := extractCalleeLabel(c, r)
+	if callee1 != "" && callee2 != "" {
+		if callee1 == callee2 {
+			return true
+		}
+		if len(callee1) >= 4 && len(callee2) >= 4 && (strings.Contains(callee1, callee2) || strings.Contains(callee2, callee1)) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractCalleeLabel(n *treesitter.ASTNode, r *rules.Rules) string {
+	if n == nil {
+		return ""
+	}
+	for _, c := range n.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		isWrapper := (r != nil && r.IsWrapper(c.Type)) || (r == nil && rules.IsWrapper(c.Type))
+		if isBlock || isWrapper {
+			continue
+		}
+		if c.Label != "" {
+			return c.Label
+		}
+		for _, gc := range c.Children {
+			if gc.Label != "" {
+				return gc.Label
+			}
+		}
+	}
+	return ""
 }

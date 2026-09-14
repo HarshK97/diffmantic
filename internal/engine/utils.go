@@ -24,19 +24,6 @@ func Height(n *treesitter.ASTNode) int {
 	return maxH + 1
 }
 
-// IsTrivialLeaf reports whether a leaf node contains only punctuation (no alphanumeric chars or underscores).
-func IsTrivialLeaf(n *treesitter.ASTNode) bool {
-	if n == nil || len(n.Children) > 0 || n.Label == "" {
-		return false
-	}
-	for _, c := range n.Label {
-		if treesitter.IsWordChar(byte(c)) {
-			return false
-		}
-	}
-	return true
-}
-
 // TypesMatch checks if t1 and t2 are the same type, falling back to the
 // language's equivalent_types rules when they're not.
 func TypesMatch(t1, t2 string, r *rules.Rules) bool {
@@ -131,6 +118,14 @@ func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
 func getKeyLabel(n *treesitter.ASTNode) string {
 	if n == nil || len(n.Children) == 0 {
 		return ""
+	}
+	r := rulesFor(n)
+	if r != nil && r.IsCall(n.Type) {
+		for _, ch := range n.Children {
+			if ch.Type == "identifier" || ch.Type == "field_identifier" || ch.Type == "property_identifier" {
+				return ch.Label
+			}
+		}
 	}
 	k := n.Children[0]
 	if k.Label != "" {
@@ -447,4 +442,39 @@ func HasLongLeafToken(n *treesitter.ASTNode) bool {
 		}
 	}
 	return false
+}
+
+// FindEnclosingScope climbs the parent hierarchy to find the nearest enclosing block, declaration, or wrapper.
+func FindEnclosingScope(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	if r == nil {
+		r = rules.Get(n.GetLanguage())
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isScope := (r != nil && (r.IsBlock(curr.Type) || r.IsDeclaration(curr.Type) || r.IsWrapper(curr.Type))) ||
+			(r == nil && (rules.IsBlock(curr.Type) || rules.IsDeclaration(curr.Type) || rules.IsWrapper(curr.Type))) ||
+			curr.Parent == nil
+		if isScope {
+			return curr
+		}
+	}
+	return nil
+}
+
+// IsScopePreserved reports whether n1 and n2 reside within corresponding (mapped) enclosing scopes.
+func IsScopePreserved(ms *Mapping, n1, n2 *treesitter.ASTNode, r1, r2 *rules.Rules) bool {
+	if ms == nil || n1 == nil || n2 == nil {
+		return false
+	}
+	s1 := FindEnclosingScope(n1, r1)
+	s2 := FindEnclosingScope(n2, r2)
+	if s1 == nil && s2 == nil {
+		return true
+	}
+	if s1 == nil || s2 == nil {
+		return false
+	}
+	return ms.Get(s1) == s2
 }

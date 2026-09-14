@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
@@ -438,7 +439,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		return
 	}
 
-	r := rulesFor(t1Root)
+	rules := rulesFor(t1Root)
 
 	t1Map := make(map[decKey][]*treesitter.ASTNode, len(u1))
 	for _, d1 := range u1 {
@@ -477,7 +478,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 		var matchingD1s []*treesitter.ASTNode
 		for _, d1 := range d1List {
-			if TypesMatch(d1.Type, d2.Type, r) {
+			if TypesMatch(d1.Type, d2.Type, rules) {
 				matchingD1s = append(matchingD1s, d1)
 			}
 		}
@@ -497,32 +498,31 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				}
 			}
 			m.Add(bestD1, d2)
-			matchDeclarationBodies(bestD1, d2, m, r)
+			matchDeclarationBodies(bestD1, d2, m, rules)
 		}
 	}
 
 	for _, p := range slices.Clone(m.Pairs) {
 		d1, d2 := p.Src, p.Dst
-		isDec := (r != nil && r.IsDeclaration(d1.Type)) || (r == nil && rules.IsDeclaration(d1.Type))
-		if isDec {
-			matchDeclarationBodies(d1, d2, m, r)
+		if rules != nil && rules.IsDeclaration(d1.Type) {
+			matchDeclarationBodies(d1, d2, m, rules)
 		}
 	}
 }
 
-func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *rules.Rules) {
 	if d1 == nil || d2 == nil || m == nil {
 		return
 	}
 	var b1, b2 *treesitter.ASTNode
 	for _, c1 := range d1.Children {
-		if isBlockNode(c1, r) {
+		if isBlockNode(c1, rules) {
 			b1 = c1
 			break
 		}
 	}
 	for _, c2 := range d2.Children {
-		if isBlockNode(c2, r) {
+		if isBlockNode(c2, rules) {
 			b2 = c2
 			break
 		}
@@ -581,6 +581,21 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	return decs
 }
 
+// identifierText returns the node's label or joins its leaf tokens for compound identifiers.
+func identifierText(node *treesitter.ASTNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.Label != "" {
+		return node.Label
+	}
+	var sb strings.Builder
+	for _, leaf := range node.Leaves() {
+		sb.WriteString(leaf.Label)
+	}
+	return sb.String()
+}
+
 func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
@@ -590,26 +605,33 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	if !isDec {
 		return ""
 	}
+	// First check direct children for an identifier.
 	for _, child := range n.Children {
 		isID := (r != nil && r.IsIdentifier(child.Type)) || (r == nil && rules.IsIdentifier(child.Type))
-		if isID && child.Label != "" {
-			return child.Label
+		if isID {
+			if txt := identifierText(child); txt != "" {
+				return txt
+			}
 		}
 	}
-	// Declarations in languages like C often nest the identifier inside a declarator wrapper.
+	// If not found directly on n, look in declarator children (skipping blocks, wrappers, etc.).
 	for _, child := range n.Children {
 		if (r != nil && (r.IsBlock(child.Type) || r.IsWrapper(child.Type))) || (r == nil && (rules.IsBlock(child.Type) || rules.IsWrapper(child.Type))) {
 			continue
 		}
 		for _, sub := range child.Children {
 			isSubID := (r != nil && r.IsIdentifier(sub.Type)) || (r == nil && rules.IsIdentifier(sub.Type))
-			if isSubID && sub.Label != "" {
-				return sub.Label
+			if isSubID {
+				if txt := identifierText(sub); txt != "" {
+					return txt
+				}
 			}
 			for _, subSub := range sub.Children {
 				isSubSubID := (r != nil && r.IsIdentifier(subSub.Type)) || (r == nil && rules.IsIdentifier(subSub.Type))
-				if isSubSubID && subSub.Label != "" {
-					return subSub.Label
+				if isSubSubID {
+					if txt := identifierText(subSub); txt != "" {
+						return txt
+					}
 				}
 			}
 		}
@@ -681,16 +703,38 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 
 			lookupKey := pairIndexKey{anc: mappedAnc2, pKey: pKey1, key: key1}
 			candidates := t2PairsIndex[lookupKey]
+			var bestCand *treesitter.ASTNode
+			var val1 *treesitter.ASTNode
+			if len(n1.Children) >= 2 {
+				val1 = n1.Children[len(n1.Children)-1]
+			}
+
 			for _, cand := range candidates {
 				if m.HasDst(cand) {
 					continue
 				}
-				n2 = cand
+				if bestCand == nil {
+					bestCand = cand
+				}
+				if val1 != nil && len(cand.Children) >= 2 {
+					candVal := cand.Children[len(cand.Children)-1]
+					if val1.Label != "" && val1.Label == candVal.Label {
+						bestCand = cand
+						break
+					}
+					if Isomorphic(val1, candVal) {
+						bestCand = cand
+						break
+					}
+				}
+			}
+
+			if bestCand != nil {
+				n2 = bestCand
 				m.Add(n1, n2)
 				if len(n1.Children) > 0 && len(n2.Children) > 0 {
 					m.Add(n1.Children[0], n2.Children[0])
 				}
-				break
 			}
 		}
 

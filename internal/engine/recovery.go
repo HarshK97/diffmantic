@@ -9,7 +9,7 @@ import (
 // Uses Zhang-Shasha (1989) tree edit distance as a last-chance fallback on tiny
 // subtrees (< 20 nodes), and uses SimpleRecovery (Sibling LCS) on larger subtrees.
 func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
-	if t1.Size() < 20 || t2.Size() < 20 {
+	if t1.Size() < 20 && t2.Size() < 20 {
 		RunZSRecovery(t1, t2, m)
 	} else {
 		SimpleRecovery(t1, t2, m)
@@ -21,7 +21,7 @@ func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
 func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	// If an unmatched node is sandwiched between already-matched neighbors at the exact same index, pair it up.
 	for idx, c1 := range t1.Children {
-		if m.Has(c1) || IsTrivialLeaf(c1) {
+		if m.Has(c1) {
 			continue
 		}
 		if idx > 0 && idx+1 < len(t1.Children) && idx+1 < len(t2.Children) {
@@ -63,9 +63,6 @@ func unmatchedChildren(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bo
 	var out []*treesitter.ASTNode
 	for _, c := range t.Children {
 		if !hasFn(c) {
-			if IsTrivialLeaf(c) {
-				continue
-			}
 			out = append(out, c)
 		}
 	}
@@ -100,21 +97,30 @@ func uniqueTypePairs(
 				labels1 := n1.LeafLabels()
 				labels2 := n2.LeafLabels()
 				r := rulesFor(n1)
-				isWrapper := (r != nil && r.IsWrapper(n1.Type)) || (r == nil && rules.IsWrapper(n1.Type))
+				isDeclaration := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
+				isWrapper := ((r != nil && r.IsWrapper(n1.Type)) || (r == nil && rules.IsWrapper(n1.Type))) && !isDeclaration
 				if !isWrapper {
 					overlap := 0
+					semanticOverlap := 0
 					total1 := 0
 					for k, v1 := range labels1 {
 						total1 += v1
 						if v2, ok := labels2[k]; ok {
-							overlap += min(v1, v2)
+							matched := min(v1, v2)
+							overlap += matched
+							isKw := (r != nil && r.IsKeyword(k, k)) || (r == nil && rules.IsKeyword(k, k))
+							isPunct := (r != nil && (r.IsPunctuation(k) || r.IsOperatorLiteral(k))) ||
+								(r == nil && (rules.IsPunctuation(k) || rules.IsOperatorLiteral(k)))
+							if !isKw && !isPunct && k != "=" && k != ":=" && k != "*" && k != "&" {
+								semanticOverlap += matched
+							}
 						}
 					}
 					total2 := 0
 					for _, v2 := range labels2 {
 						total2 += v2
 					}
-					isContainer := (r != nil && (r.IsBlock(n1.Type) || r.IsDeclaration(n1.Type))) || (r == nil && (rules.IsBlock(n1.Type) || rules.IsDeclaration(n1.Type)))
+					isContainer := isDeclaration || (r != nil && r.IsBlock(n1.Type)) || (r == nil && rules.IsBlock(n1.Type))
 					if !isContainer {
 						for _, child := range n1.Children {
 							if (r != nil && r.IsBlock(child.Type)) || (r == nil && rules.IsBlock(child.Type)) {
@@ -140,8 +146,10 @@ func uniqueTypePairs(
 						}
 						ratio = float64(overlap) / float64(denom)
 					}
-
 					if ratio < minRatio {
+						continue
+					}
+					if isDeclaration && semanticOverlap == 0 {
 						continue
 					}
 				}

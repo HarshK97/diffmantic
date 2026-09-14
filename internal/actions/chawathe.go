@@ -418,10 +418,25 @@ func (s *chawatheState) lcs(
 	for i := m - 1; i >= 0; i-- {
 		for j := n - 1; j >= 0; j-- {
 			if s.cpyDstToSrc[y[j]] == x[i] {
-				// Integer scoring preserves the 1.0/1.01 ordering exactly; +1 favors stationary siblings.
+				// Base match score is 100. Stationary siblings get +20, with extra bonuses for aligned row/column positions.
 				score := 100
 				if idxX[i] != -1 && idxX[i] == idxY[j] {
-					score = 101
+					score += 20
+				}
+				if x[i].orig != nil && y[j] != nil {
+					hasPos := (x[i].orig.EndByte > 0 || x[i].orig.StartRow > 0 || x[i].orig.EndRow > 0) &&
+						(y[j].EndByte > 0 || y[j].StartRow > 0 || y[j].EndRow > 0)
+					if hasPos {
+						if x[i].orig.StartRow == y[j].StartRow && x[i].orig.StartCol == y[j].StartCol {
+							score += 10
+						} else if x[i].orig.StartRow == y[j].StartRow {
+							score += 5
+						} else if x[i].orig.Parent != nil && y[j].Parent != nil &&
+							(int(x[i].orig.StartRow)-int(x[i].orig.Parent.StartRow) == int(y[j].StartRow)-int(y[j].Parent.StartRow)) &&
+							x[i].orig.StartCol == y[j].StartCol {
+							score += 3
+						}
+					}
 				}
 				opt[i*stride+j] = opt[(i+1)*stride+(j+1)] + score
 			} else {
@@ -437,7 +452,7 @@ func (s *chawatheState) lcs(
 			pairs = append(pairs, lcsPair{x[i], y[j]})
 			i++
 			j++
-		} else if opt[(i+1)*stride+j] >= opt[i*stride+(j+1)] {
+		} else if opt[(i+1)*stride+j] > opt[i*stride+(j+1)] {
 			i++
 		} else {
 			j++
