@@ -47,8 +47,8 @@ func TestGroupMoves(t *testing.T) {
 	if acts[1].GroupID != "group-1" {
 		t.Errorf("expected c2 to have GroupID group-1, got %q", acts[1].GroupID)
 	}
-	if acts[2].GroupID != "" {
-		t.Errorf("expected bare literal c3 to have empty GroupID, got %q", acts[2].GroupID)
+	if acts[2].GroupID != "group-1" {
+		t.Errorf("expected c3 to have GroupID group-1, got %q", acts[2].GroupID)
 	}
 }
 

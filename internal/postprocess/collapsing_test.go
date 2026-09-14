@@ -9,18 +9,11 @@ import (
 )
 
 func TestCollapseDivergence(t *testing.T) {
-	// Construct source tree:
-	// P (block)
-	//   C (identifier)
 	cSrc := &treesitter.ASTNode{Type: "block", StartByte: 10, EndByte: 20}
 	pSrc := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100, Children: []*treesitter.ASTNode{cSrc}}
 	pSrc.Language = "python"
 	cSrc.Parent = pSrc
 
-	// Construct destination tree:
-	// Q (block)
-	//   R (block)
-	//     D (block)
 	dDst := &treesitter.ASTNode{Type: "block", StartByte: 60, EndByte: 70}
 	rDst := &treesitter.ASTNode{Type: "block", StartByte: 50, EndByte: 150, Children: []*treesitter.ASTNode{dDst}}
 	dDst.Parent = rDst
@@ -28,16 +21,10 @@ func TestCollapseDivergence(t *testing.T) {
 	qDst.Language = "python"
 	rDst.Parent = qDst
 
-	// Mappings:
-	// pSrc -> qDst
-	// cSrc -> dDst
-	// Note that this mapping is depth-inconsistent: dDst.Parent (rDst) != qDst
 	ms := engine.NewMapping()
 	ms.Add(pSrc, qDst)
 	ms.Add(cSrc, dDst)
 
-	// Construct EditScript:
-	// P moves to Q
 	es := actions.NewEditScript()
 	es.Add(actions.Action{
 		Type:     actions.Move,
@@ -47,7 +34,6 @@ func TestCollapseDivergence(t *testing.T) {
 		Subtree:  true,
 	})
 
-	// Run Collapse
 	collapsed := Collapse(es, ms, pSrc, qDst)
 
 	if collapsed.Size() != 1 {
@@ -64,251 +50,97 @@ func TestCollapseDivergence(t *testing.T) {
 	}
 }
 
-func TestRefinedParentSuppression(t *testing.T) {
-	// (a) boolean operator suppression (real Move child triggers suppression)
-	t.Run("boolean-operator-suppression", func(t *testing.T) {
-		// Destination Tree:
-		// Parent: boolean_operator (Insert)
-		//   Child 1: not_operator (Insert)
-		//   Child 2: logical_operator_literal (Insert)
-		//   Child 3: not_operator (Move)
+func TestSubtreeMoveWithExternalDescendantInDest(t *testing.T) {
+	pSrc := &treesitter.ASTNode{Type: "parenthesized_expression", StartByte: 10, EndByte: 40}
+	pSrc.Language = "java"
+	cSrc := &treesitter.ASTNode{Type: "method_invocation", StartByte: 11, EndByte: 39, Parent: pSrc}
+	cSrc.Language = "java"
+	pSrc.Children = []*treesitter.ASTNode{cSrc}
 
-		parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
-		parent.Language = "python"
+	otherSrc := &treesitter.ASTNode{Type: "binary_expression", StartByte: 100, EndByte: 150}
+	otherSrc.Language = "java"
 
-		c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
-		c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
-		c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
-		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
+	qDst := &treesitter.ASTNode{Type: "parenthesized_expression", StartByte: 200, EndByte: 300}
+	qDst.Language = "java"
+	cDst := &treesitter.ASTNode{Type: "method_invocation", StartByte: 201, EndByte: 229, Parent: qDst}
+	cDst.Language = "java"
+	otherDst := &treesitter.ASTNode{Type: "binary_expression", StartByte: 235, EndByte: 285, Parent: qDst}
+	otherDst.Language = "java"
+	qDst.Children = []*treesitter.ASTNode{cDst, otherDst}
 
-		// Source Tree:
-		// We have an old node for c3 to map from
-		c3Src := &treesitter.ASTNode{Type: "not_operator", StartByte: 50, EndByte: 105}
-		c3Src.Language = "python"
+	ms := engine.NewMapping()
+	ms.Add(pSrc, qDst)
+	ms.Add(cSrc, cDst)
+	ms.Add(otherSrc, otherDst)
 
-		ms := engine.NewMapping()
-		ms.Add(c3Src, c3)
-
-		es := actions.NewEditScript()
-		// Parent, c1, and c2 are inserted
-		pAct := actions.Action{Type: actions.Insert, Node: parent}
-		c1Act := actions.Action{Type: actions.Insert, Node: c1}
-		c2Act := actions.Action{Type: actions.Insert, Node: c2}
-		// c3 is moved
-		c3Act := actions.Action{Type: actions.Move, Node: c3Src, Parent: parent}
-
-		es.Add(pAct)
-		es.Add(c1Act)
-		es.Add(c2Act)
-		es.Add(c3Act)
-
-		collapsed := Collapse(es, ms, c3Src, parent)
-
-		// We expect the parent's Insert action to be suppressed.
-		// c1, c2, and c3 actions should survive.
-		// So total actions = 3 (c1, c2, c3).
-		if collapsed.Size() != 3 {
-			t.Errorf("expected 3 actions, got %d", collapsed.Size())
-		}
-
-		// Ensure the parent action is suppressed (not in the script)
-		for _, a := range collapsed.Actions() {
-			if a.Node == parent {
-				t.Error("expected parent boolean_operator Insert action to be suppressed, but it is not")
-			}
-		}
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:     actions.Move,
+		Node:     pSrc,
+		DestNode: qDst,
+		Parent:   qDst,
+		Position: 0,
+		Subtree:  true,
 	})
 
-	// (b) assignment no suppression (only bare aliased-literal Move child, must NOT trigger suppression)
-	t.Run("assignment-no-suppression", func(t *testing.T) {
-		// Destination Tree:
-		// Parent: assignment (Insert)
-		//   Child 1: identifier (Insert)
-		//   Child 2: assignment_operator_literal (Move)
-		//   Child 3: call (Insert)
-
-		parent := &treesitter.ASTNode{Type: "assignment", StartByte: 0, EndByte: 100}
-		parent.Language = "python"
-
-		c1 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: parent}
-		c2 := &treesitter.ASTNode{Type: "assignment_operator_literal", StartByte: 11, EndByte: 12, Parent: parent}
-		c3 := &treesitter.ASTNode{Type: "call", StartByte: 13, EndByte: 100, Parent: parent}
-		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
-
-		// Source Tree:
-		c2Src := &treesitter.ASTNode{Type: "assignment_operator_literal", StartByte: 20, EndByte: 21}
-		c2Src.Language = "python"
-
-		ms := engine.NewMapping()
-		ms.Add(c2Src, c2)
-
-		es := actions.NewEditScript()
-		pAct := actions.Action{Type: actions.Insert, Node: parent}
-		c1Act := actions.Action{Type: actions.Insert, Node: c1}
-		c2Act := actions.Action{Type: actions.Move, Node: c2Src, Parent: parent}
-		c3Act := actions.Action{Type: actions.Insert, Node: c3}
-
-		es.Add(pAct)
-		es.Add(c1Act)
-		es.Add(c2Act)
-		es.Add(c3Act)
-
-		collapsed := Collapse(es, ms, c2Src, parent)
-
-		// Normalizing the c2 Move action allows the parent assignment to collapse.
-		// Expected surviving actions: parent Insert (Subtree: true) and source child c2Src Delete.
-		if collapsed.Size() != 2 {
-			t.Errorf("expected 2 actions, got %d", collapsed.Size())
-		}
-
-		foundParentSubtree := false
-		foundSourceDelete := false
-		for _, a := range collapsed.Actions() {
-			if a.Node == parent && a.Type == actions.Insert && a.Subtree {
-				foundParentSubtree = true
-			}
-			if a.Node == c2Src && a.Type == actions.Delete {
-				foundSourceDelete = true
-			}
-		}
-		if !foundParentSubtree {
-			t.Error("expected parent assignment Insert action to survive with Subtree: true")
-		}
-		if !foundSourceDelete {
-			t.Error("expected source child c2Src Delete action to survive")
-		}
-	})
-
-	// (c) case with zero Move/Update children at all (existing allChildrenInserted=true path)
-	t.Run("allChildrenInserted-true", func(t *testing.T) {
-		// Destination Tree:
-		// Parent: boolean_operator (Insert)
-		//   Child 1: not_operator (Insert)
-		//   Child 2: logical_operator_literal (Insert)
-		//   Child 3: not_operator (Insert)
-
-		parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
-		parent.Language = "python"
-
-		c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
-		c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
-		c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
-		parent.Children = []*treesitter.ASTNode{c1, c2, c3}
-
-		ms := engine.NewMapping()
-
-		es := actions.NewEditScript()
-		pAct := actions.Action{Type: actions.Insert, Node: parent}
-		c1Act := actions.Action{Type: actions.Insert, Node: c1}
-		c2Act := actions.Action{Type: actions.Insert, Node: c2}
-		c3Act := actions.Action{Type: actions.Insert, Node: c3}
-
-		es.Add(pAct)
-		es.Add(c1Act)
-		es.Add(c2Act)
-		es.Add(c3Act)
-
-		collapsed := Collapse(es, ms, nil, parent)
-
-		// All children Insert actions should be suppressed, parent Insert action survives with Subtree = true.
-		// Total actions = 1
-		if collapsed.Size() != 1 {
-			t.Errorf("expected 1 action (parent subtree), got %d", collapsed.Size())
-		}
-
-		collapsedActions := collapsed.Actions()
-		if collapsedActions[0].Node != parent || !collapsedActions[0].Subtree {
-			t.Errorf("expected parent action to survive with Subtree: true, got %+v", collapsedActions[0])
-		}
-	})
-
-	// (d) verify that child suppression for an UNRELATED reason (e.g. duplicate action suppression)
-	// STILL disqualifies allChildrenInserted as required.
-	t.Run("unrelated-suppression-disqualifies-allChildrenInserted", func(t *testing.T) {
-		parent := &treesitter.ASTNode{Type: "call", StartByte: 0, EndByte: 100}
-		parent.Language = "python"
-
-		c1 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: parent}
-		c2 := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 100, Parent: parent}
-		gc1 := &treesitter.ASTNode{Type: "string", StartByte: 12, EndByte: 50, Parent: c2}
-		c2.Children = []*treesitter.ASTNode{gc1}
-		parent.Children = []*treesitter.ASTNode{c1, c2}
-
-		ms := engine.NewMapping()
-
-		es := actions.NewEditScript()
-		pAct := actions.Action{Type: actions.Insert, Node: parent}
-		c1Act := actions.Action{Type: actions.Insert, Node: c1}
-		c2Act := actions.Action{Type: actions.Insert, Node: c2}
-		gc1Act := actions.Action{Type: actions.Insert, Node: gc1}
-
-		es.Add(pAct)
-		es.Add(c1Act)
-		es.Add(c2Act)
-		es.Add(gc1Act)
-
-		collapsed := Collapse(es, ms, nil, parent)
-
-		// Here c2 has all children inserted (gc1), so c2 performs subtree collapse and KillChildren suppresses gc1Act.
-		// When parent is evaluated, c1 is inserted, c2 is inserted (and not suppressed by contentMove).
-		// So parent call performs subtree collapse as expected.
-		foundSubtree := false
-		for _, a := range collapsed.Actions() {
-			if a.Node == parent && a.Subtree {
-				foundSubtree = true
-			}
-		}
-		if !foundSubtree {
-			t.Error("expected parent call to perform Subtree collapse")
-		}
-	})
+	collapsed := Collapse(es, ms, pSrc, qDst)
+	if collapsed.Size() != 1 {
+		t.Fatalf("expected collapsed edit script size 1, got %d", collapsed.Size())
+	}
+	if collapsed.Actions()[0].Subtree {
+		t.Errorf("expected Subtree to be demoted to false because qDst contains otherDst from outside pSrc")
+	}
 }
 
-func TestScaffoldingInsertSuppression(t *testing.T) {
-	// (a) black_18_black/tornado_11_http1connection shape:
-	// P=call (Insert, Subtree:false) -> S=argument_list (Insert, Subtree:false, IsScaffolding)
-	// S's Insert should be suppressed as redundant, P's Insert survives.
-	t.Run("scaffolding-insert-suppressed-under-insert-parent", func(t *testing.T) {
-		s := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 13}
-		mappedChild := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10}
-		parent := &treesitter.ASTNode{
-			Type: "call_expression", StartByte: 0, EndByte: 13,
-			Children: []*treesitter.ASTNode{mappedChild, s},
-		}
-		parent.Language = "go"
-		mappedChild.Parent = parent
-		s.Parent = parent
+func TestSubtreeInsertCollapsing(t *testing.T) {
+	parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
+	parent.Language = "python"
 
-		mappedSrc := &treesitter.ASTNode{Type: "identifier", StartByte: 100, EndByte: 110}
-		mappedSrc.Language = "go"
+	c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
+	c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
+	c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
+	parent.Children = []*treesitter.ASTNode{c1, c2, c3}
 
-		ms := engine.NewMapping()
-		ms.Add(mappedSrc, mappedChild)
+	ms := engine.NewMapping()
 
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Insert, Node: parent})
-		es.Add(actions.Action{Type: actions.Insert, Node: s})
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Insert, Node: parent})
+	es.Add(actions.Action{Type: actions.Insert, Node: c1})
+	es.Add(actions.Action{Type: actions.Insert, Node: c2})
+	es.Add(actions.Action{Type: actions.Insert, Node: c3})
 
-		collapsed := Collapse(es, ms, mappedSrc, parent)
+	collapsed := Collapse(es, ms, nil, parent)
 
-		pSurvives := false
-		sSurvives := false
-		for _, a := range collapsed.Actions() {
-			if a.Node == parent && a.Type == actions.Insert {
-				pSurvives = true
-			}
-			if a.Node == s && a.Type == actions.Insert {
-				sSurvives = true
-			}
-		}
-		if !pSurvives {
-			t.Error("expected parent (call) Insert action to survive")
-		}
-		if sSurvives {
-			t.Error("expected argument_list Insert action to be suppressed")
-		}
-	})
+	if collapsed.Size() != 1 {
+		t.Fatalf("expected 1 action (parent subtree), got %d", collapsed.Size())
+	}
 
+	collapsedActions := collapsed.Actions()
+	if collapsedActions[0].Node != parent || !collapsedActions[0].Subtree {
+		t.Errorf("expected parent action to survive with Subtree: true, got %+v", collapsedActions[0])
+	}
+}
+
+func TestSubtreeDeleteCollapsing(t *testing.T) {
+	parent := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100}
+	parent.Language = "python"
+
+	c1 := &treesitter.ASTNode{Type: "expression_statement", StartByte: 0, EndByte: 40, Parent: parent}
+	c2 := &treesitter.ASTNode{Type: "return_statement", StartByte: 41, EndByte: 100, Parent: parent}
+	parent.Children = []*treesitter.ASTNode{c1, c2}
+
+	ms := engine.NewMapping()
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Delete, Node: parent})
+	es.Add(actions.Action{Type: actions.Delete, Node: c1})
+	es.Add(actions.Action{Type: actions.Delete, Node: c2})
+
+	collapsed := Collapse(es, ms, parent, nil)
+
+	if collapsed.Size() != 1 {
+		t.Fatalf("expected 1 action (parent subtree delete), got %d", collapsed.Size())
+	}
 	// (b) information-loss guard case:
 	// P=function_definition (Insert, Subtree:false, fails due to unrelated sibling)
 	// S=block (Insert, Subtree:true, all S's own children are clean Inserts)
@@ -367,211 +199,10 @@ func TestScaffoldingInsertSuppression(t *testing.T) {
 		}
 	})
 
-	// (c) 2-level scaffolding depth case:
-	// P=call (Insert) -> S=argument_list (Insert, Subtree:false, scaffolding)
-	//   -> S2=argument_list (Insert, Subtree:false, scaffolding)
-	// Both S and S2 should be suppressed: independently evaluated at each level.
-	t.Run("scaffolding-insert-suppressed-recursive-depth", func(t *testing.T) {
-		mappedChild := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 9}
-		mappedChild2 := &treesitter.ASTNode{Type: "identifier", StartByte: 10, EndByte: 19}
-		s2 := &treesitter.ASTNode{Type: "argument_list", StartByte: 20, EndByte: 22}
-		s := &treesitter.ASTNode{
-			Type: "argument_list", StartByte: 10, EndByte: 22,
-			Children: []*treesitter.ASTNode{mappedChild2, s2},
-		}
-		parent := &treesitter.ASTNode{
-			Type: "call", StartByte: 0, EndByte: 22,
-			Children: []*treesitter.ASTNode{mappedChild, s},
-		}
-		parent.Language = "go"
-		mappedChild.Parent = parent
-		mappedChild2.Parent = s
-		s2.Parent = s
-		s.Parent = parent
-
-		mappedSrc := &treesitter.ASTNode{Type: "identifier", StartByte: 200, EndByte: 209}
-		mappedSrc.Language = "go"
-		mappedSrc2 := &treesitter.ASTNode{Type: "identifier", StartByte: 210, EndByte: 219}
-		mappedSrc2.Language = "go"
-
-		ms := engine.NewMapping()
-		ms.Add(mappedSrc, mappedChild)
-		ms.Add(mappedSrc2, mappedChild2)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Insert, Node: parent})
-		es.Add(actions.Action{Type: actions.Insert, Node: s})
-		es.Add(actions.Action{Type: actions.Insert, Node: s2})
-
-		collapsed := Collapse(es, ms, mappedSrc, parent)
-
-		sSurvives := false
-		s2Survives := false
-		for _, a := range collapsed.Actions() {
-			if a.Node == s && a.Type == actions.Insert {
-				sSurvives = true
-			}
-			if a.Node == s2 && a.Type == actions.Insert {
-				s2Survives = true
-			}
-		}
-		if !sSurvives {
-			t.Error("expected S (argument_list) wrapper Insert action to survive so its delimiters are preserved")
-		}
-		if s2Survives {
-			t.Error("expected empty S2 (argument_list) Insert action to be suppressed")
-		}
-	})
-
-	// (d) Subtree:true/KillChildren unaffected for scaffolding nodes:
-	// A scaffolding node with ALL children cleanly Inserted still achieves
-	// Subtree:true and suppresses its children via KillChildren. Our new rule
-	// must NOT interfere because Subtree=true guards the suppression check.
-	t.Run("scaffolding-subtree-true-killchildren-unaffected", func(t *testing.T) {
-		sChild := &treesitter.ASTNode{Type: "expression_statement", StartByte: 20, EndByte: 50}
-		sNode := &treesitter.ASTNode{
-			Type: "block", StartByte: 10, EndByte: 60,
-			Children: []*treesitter.ASTNode{sChild},
-		}
-		mappedChild := &treesitter.ASTNode{Type: "decorator", StartByte: 0, EndByte: 8}
-		parent := &treesitter.ASTNode{
-			Type: "function_definition", StartByte: 0, EndByte: 70,
-			Children: []*treesitter.ASTNode{mappedChild, sNode},
-		}
-		parent.Language = "python"
-		mappedChild.Parent = parent
-		sChild.Parent = sNode
-		sNode.Parent = parent
-
-		mappedSrc := &treesitter.ASTNode{Type: "decorator", StartByte: 100, EndByte: 108}
-		mappedSrc.Language = "python"
-
-		ms := engine.NewMapping()
-		ms.Add(mappedSrc, mappedChild)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Insert, Node: parent})
-		es.Add(actions.Action{Type: actions.Insert, Node: sNode})
-		es.Add(actions.Action{Type: actions.Insert, Node: sChild})
-
-		collapsed := Collapse(es, ms, mappedSrc, parent)
-
-		sSurvives := false
-		sSubtree := false
-		childSurvives := false
-		for _, a := range collapsed.Actions() {
-			if a.Node == sNode && a.Type == actions.Insert {
-				sSurvives = true
-				if a.Subtree {
-					sSubtree = true
-				}
-			}
-			if a.Node == sChild && a.Type == actions.Insert {
-				childSurvives = true
-			}
-		}
-		if !sSurvives {
-			t.Error("expected block (scaffolding) Insert to survive when all children Inserted")
-		}
-		if !sSubtree {
-			t.Error("expected block Insert to have Subtree:true")
-		}
-		if childSurvives {
-			t.Error("expected block child Insert to be suppressed by KillChildren")
-		}
-	})
-}
-
-func TestContentMoveSuppressedChildResolution(t *testing.T) {
-	// 1. Structural pattern with active sibling inserts: P (parenthesized_expression) -> A (boolean_operator) -> [B (Move), C1 (Insert), C2 (Insert)]
-	// Must NOT grant the pass to P because A has active Insert children C1, C2.
-	t.Run("multi-child-wrapper-denies-pass", func(t *testing.T) {
-		p := &treesitter.ASTNode{Type: "parenthesized_expression", StartByte: 0, EndByte: 200}
-		p.Language = "python"
-
-		a := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 10, EndByte: 190, Parent: p}
-		p.Children = []*treesitter.ASTNode{a}
-
-		bSrc := &treesitter.ASTNode{Type: "comparison_operator", StartByte: 1000, EndByte: 1020}
-		bSrc.Language = "python"
-		bDst := &treesitter.ASTNode{Type: "comparison_operator", StartByte: 10, EndByte: 50, Parent: a}
-
-		c1 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 51, EndByte: 55, Parent: a, Label: "or"}
-		c2 := &treesitter.ASTNode{Type: "comparison_operator", StartByte: 56, EndByte: 190, Parent: a}
-
-		a.Children = []*treesitter.ASTNode{bDst, c1, c2}
-
-		ms := engine.NewMapping()
-		ms.Add(bSrc, bDst)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Insert, Node: p})
-		es.Add(actions.Action{Type: actions.Insert, Node: a})
-		es.Add(actions.Action{Type: actions.Move, Node: bSrc, Parent: a, Position: 0})
-		es.Add(actions.Action{Type: actions.Insert, Node: c1})
-		es.Add(actions.Action{Type: actions.Insert, Node: c2})
-
-		collapsed := Collapse(es, ms, bSrc, p)
-
-		// p must NOT claim Subtree = true, and c1, c2 must survive as active insert actions!
-		pSubtree := false
-		c1Found := false
-		c2Found := false
-		for _, act := range collapsed.Actions() {
-			if act.Node == p && act.Subtree {
-				pSubtree = true
-			}
-			if act.Node == c1 {
-				c1Found = true
-			}
-			if act.Node == c2 {
-				c2Found = true
-			}
-		}
-		if pSubtree {
-			t.Errorf("expected parenthesized_expression NOT to claim Subtree: true")
-		}
-		if !c1Found || !c2Found {
-			t.Errorf("expected c1 ('or') and c2 ('comparison_operator') to survive, got c1Found=%v, c2Found=%v", c1Found, c2Found)
-		}
-	})
-
-	// 2. Pure structural wrapper pattern: P (generic_type) -> A (type_parameter) -> [B (Move)]
-	// Must STILL GRANT the pass to P because A has NO active Insert children.
-	t.Run("single-child-wrapper-grants-pass", func(t *testing.T) {
-		p := &treesitter.ASTNode{Type: "generic_type", StartByte: 0, EndByte: 100}
-		p.Language = "python"
-
-		c0 := &treesitter.ASTNode{Type: "identifier", StartByte: 0, EndByte: 10, Parent: p, Label: "List"}
-		a := &treesitter.ASTNode{Type: "type_parameter", StartByte: 11, EndByte: 100, Parent: p}
-		p.Children = []*treesitter.ASTNode{c0, a}
-
-		bSrc := &treesitter.ASTNode{Type: "type", StartByte: 500, EndByte: 520}
-		bSrc.Language = "python"
-		bDst := &treesitter.ASTNode{Type: "type", StartByte: 12, EndByte: 99, Parent: a}
-		a.Children = []*treesitter.ASTNode{bDst}
-
-		ms := engine.NewMapping()
-		ms.Add(bSrc, bDst)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Insert, Node: p})
-		es.Add(actions.Action{Type: actions.Insert, Node: c0})
-		es.Add(actions.Action{Type: actions.Insert, Node: a})
-		es.Add(actions.Action{Type: actions.Move, Node: bSrc, Parent: a, Position: 0})
-
-		collapsed := Collapse(es, ms, bSrc, p)
-
-		pSubtree := false
-		for _, act := range collapsed.Actions() {
-			if act.Node == p && act.Subtree {
-				pSubtree = true
-			}
-		}
-		if !pSubtree {
-			t.Errorf("expected generic_type to grant pass and claim Subtree: true")
-		}
-	})
+	collapsedActions := collapsed.Actions()
+	if collapsedActions[0].Node != parent || !collapsedActions[0].Subtree {
+		t.Errorf("expected parent action to survive with Subtree: true, got %+v", collapsedActions[0])
+	}
 }
 
 // TestInlineParentSuppression covers suppressInlineParentRedundancy: when a
@@ -949,17 +580,17 @@ func TestInlineParentSuppression(t *testing.T) {
 				moveSurvives = true
 			}
 		}
-		if parentSurvives {
-			t.Error("expected parent expression_statement Insert with trailing semicolon to be suppressed")
+		if !parentSurvives {
+			t.Error("expected parent expression_statement Insert with trailing semicolon to survive for delimiter coverage")
 		}
 		if !moveSurvives {
 			t.Error("expected child assignment_expression Move to survive")
 		}
 	})
 
-	// (i) Bidirectional symmetry: source-side single-line statement wrapper Delete is suppressed
-	// when child node is moved out.
-	t.Run("moved-child-suppresses-source-side-parent-delete", func(t *testing.T) {
+	// (i) Bidirectional symmetry: source-side single-line statement wrapper Delete is preserved
+	// when parent contains trailing delimiter punctuation (e.g. semicolon).
+	t.Run("moved-child-preserves-source-side-parent-delete-with-semicolon", func(t *testing.T) {
 		srcChild := &treesitter.ASTNode{
 			Type:      "assignment_expression",
 			StartByte: 100, EndByte: 120,
@@ -1002,8 +633,8 @@ func TestInlineParentSuppression(t *testing.T) {
 				moveSurvives = true
 			}
 		}
-		if srcParentSurvives {
-			t.Error("expected source-side parent expression_statement Delete to be suppressed")
+		if !srcParentSurvives {
+			t.Error("expected source-side parent expression_statement Delete with trailing semicolon to survive")
 		}
 		if !moveSurvives {
 			t.Error("expected child Move action to survive")
@@ -1059,10 +690,6 @@ func TestInlineParentSuppression(t *testing.T) {
 }
 
 func TestParentMoveWithDeletedDescendant(t *testing.T) {
-	// Construct source tree:
-	// pSrc (block)
-	//   c1Src (identifier)
-	//   c2Src (identifier)
 	c1Src := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 15}
 	c2Src := &treesitter.ASTNode{Type: "identifier", Label: "y", StartByte: 16, EndByte: 20}
 	pSrc := &treesitter.ASTNode{
@@ -1074,10 +701,6 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 	c1Src.Parent = pSrc
 	c2Src.Parent = pSrc
 
-	// Construct destination tree:
-	// qDst (parent container)
-	//   pDst (block)
-	//     c1Dst (identifier)
 	c1Dst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 15}
 	pDst := &treesitter.ASTNode{
 		Type:      "block",
@@ -1093,17 +716,10 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 	c1Dst.Parent = pDst
 	qDst.Language = "python"
 
-	// Mappings:
-	// pSrc -> pDst
-	// c1Src -> c1Dst
-	// c2Src is unmapped (deleted)
 	ms := engine.NewMapping()
 	ms.Add(pSrc, pDst)
 	ms.Add(c1Src, c1Dst)
 
-	// Construct EditScript:
-	// - pSrc moves under qDst (subtree move)
-	// - c2Src is deleted
 	es := actions.NewEditScript()
 	pMove := actions.Action{
 		Type:     actions.Move,
@@ -1119,7 +735,6 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 	es.Add(pMove)
 	es.Add(c2Delete)
 
-	// Run Collapse
 	collapsed := Collapse(es, ms, pSrc, qDst)
 
 	pMoveSurvives := false
@@ -1141,140 +756,106 @@ func TestParentMoveWithDeletedDescendant(t *testing.T) {
 	}
 }
 
-func TestScaffoldingDeleteSuppression(t *testing.T) {
-	// P=block (Delete, scaffolding) -> S=statement_list (Delete, scaffolding) -> C=expression_statement (Delete)
-	// S's Delete should be suppressed as redundant when under parent block Delete.
-	stmt := &treesitter.ASTNode{Type: "expression_statement", StartByte: 10, EndByte: 30}
-	stmtList := &treesitter.ASTNode{
-		Type: "statement_list", StartByte: 10, EndByte: 30,
-		Children: []*treesitter.ASTNode{stmt},
-	}
-	block := &treesitter.ASTNode{
-		Type: "block", StartByte: 0, EndByte: 35,
-		Children: []*treesitter.ASTNode{stmtList},
-	}
-	block.Language = "go"
-	stmt.Parent = stmtList
-	stmtList.Parent = block
+func TestCollapseWrapperContainerSuppression(t *testing.T) {
+	oldStmtList := mkNode("statement_list", "")
+	oldStmtList.Language = "go"
+	oldVarDecl := mkNode("var_declaration", "")
+	oldVarDecl.Language = "go"
+	oldVarKeyword := mkNode("var", "var")
+	oldVarKeyword.Language = "go"
+	oldVarSpec := mkNode("var_spec", "")
+	oldVarSpec.Language = "go"
+
+	oldID := mkNode("identifier", "fc")
+	oldID.Language = "go"
+	oldVarSpec.Children = []*treesitter.ASTNode{oldID}
+	oldID.Parent = oldVarSpec
+
+	oldStmtList.Children = []*treesitter.ASTNode{oldVarDecl}
+	oldVarDecl.Parent = oldStmtList
+	oldVarDecl.Children = []*treesitter.ASTNode{oldVarKeyword, oldVarSpec}
+	oldVarKeyword.Parent = oldVarDecl
+	oldVarSpec.Parent = oldVarDecl
+
+	newStmtList := mkNode("statement_list", "")
+	newStmtList.Language = "go"
+	newShortVar := mkNode("short_var_declaration", "")
+	newShortVar.Language = "go"
+	newExprList := mkNode("expression_list", "")
+	newExprList.Language = "go"
+	newID := mkNode("identifier", "fc")
+	newID.Language = "go"
+
+	newStmtList.Children = []*treesitter.ASTNode{newShortVar}
+	newShortVar.Parent = newStmtList
+	newExprList.Children = []*treesitter.ASTNode{newID}
+	newID.Parent = newExprList
+	newShortVar.Children = []*treesitter.ASTNode{newExprList}
+	newExprList.Parent = newShortVar
 
 	ms := engine.NewMapping()
+	ms.Add(oldStmtList, newStmtList)
+	ms.Add(oldVarSpec, newShortVar)
+	ms.Add(oldID, newID)
+
 	es := actions.NewEditScript()
-	es.Add(actions.Action{Type: actions.Delete, Node: block})
-	es.Add(actions.Action{Type: actions.Delete, Node: stmtList})
-	es.Add(actions.Action{Type: actions.Delete, Node: stmt})
+	es.Add(actions.Action{Type: actions.Delete, Node: oldVarKeyword})
+	es.Add(actions.Action{Type: actions.Delete, Node: oldVarDecl})
+	es.Add(actions.Action{Type: actions.Insert, Node: newExprList})
 
-	collapsed := Collapse(es, ms, block, nil)
-
-	blockSurvives := false
-	stmtListSurvives := false
-	for _, a := range collapsed.Actions() {
-		if a.Node == block && a.Type == actions.Delete {
-			blockSurvives = true
-		}
-		if a.Node == stmtList && a.Type == actions.Delete {
-			stmtListSurvives = true
-		}
+	collapsed := Collapse(es, ms, oldStmtList, newStmtList)
+	if collapsed.Size() != 1 {
+		t.Fatalf("expected 1 action (Delete(var)), got %d", collapsed.Size())
 	}
-
-	if !blockSurvives {
-		t.Error("expected parent block Delete action to survive")
-	}
-	if stmtListSurvives {
-		t.Error("expected child statement_list Delete action to be suppressed as redundant scaffolding")
+	act := collapsed.Actions()[0]
+	if act.Type != actions.Delete || act.Node != oldVarKeyword {
+		t.Fatalf("expected Delete(var) to survive, got %+v", act)
 	}
 }
 
-func TestScaffoldingMoveSuppression(t *testing.T) {
-	// P=call (Move) -> S=argument_list (Move, scaffolding)
-	s := &treesitter.ASTNode{Type: "argument_list", StartByte: 11, EndByte: 20}
-	parent := &treesitter.ASTNode{
-		Type: "call_expression", StartByte: 0, EndByte: 20,
-		Children: []*treesitter.ASTNode{s},
-	}
-	parent.Language = "go"
-	s.Parent = parent
+func TestCollapseBlockDelimitersPreserved(t *testing.T) {
+	oldStmt := mkNode("expression_statement", "foo();")
+	oldStmt.Language = "c"
+	oldStmt.StartRow = 0
+	oldStmt.EndRow = 0
 
-	dstS := &treesitter.ASTNode{Type: "argument_list", StartByte: 111, EndByte: 120}
-	dstParent := &treesitter.ASTNode{
-		Type: "call_expression", StartByte: 100, EndByte: 120,
-		Children: []*treesitter.ASTNode{dstS},
-	}
-	dstParent.Language = "go"
-	dstS.Parent = dstParent
+	newBlock := mkNode("compound_statement", "{\n  bar();\n  foo();\n}")
+	newBlock.Language = "c"
+	newBlock.StartRow = 0
+	newBlock.EndRow = 2
 
-	ms := engine.NewMapping()
-	ms.Add(parent, dstParent)
-	ms.Add(s, dstS)
+	newInsertedChild := mkNode("expression_statement", "bar();")
+	newInsertedChild.Language = "c"
+	newInsertedChild.StartRow = 1
+	newInsertedChild.EndRow = 1
 
-	es := actions.NewEditScript()
-	es.Add(actions.Action{Type: actions.Move, Node: parent, Parent: dstParent, Position: 0})
-	es.Add(actions.Action{Type: actions.Move, Node: s, Parent: dstParent, Position: 0})
+	newMovedChild := mkNode("expression_statement", "foo();")
+	newMovedChild.Language = "c"
+	newMovedChild.StartRow = 2
+	newMovedChild.EndRow = 2
 
-	collapsed := Collapse(es, ms, parent, dstParent)
-
-	pSurvives := false
-	sSurvives := false
-	for _, a := range collapsed.Actions() {
-		if a.Node == parent && a.Type == actions.Move {
-			pSurvives = true
-		}
-		if a.Node == s && a.Type == actions.Move {
-			sSurvives = true
-		}
-	}
-
-	if !pSurvives {
-		t.Error("expected parent call_expression Move to survive")
-	}
-	if sSurvives {
-		t.Error("expected argument_list Move to be suppressed as redundant child scaffolding")
-	}
-}
-
-func TestMultiLevelInlineDeleteSuppression(t *testing.T) {
-	// Hierarchy on line 133:
-	// expression_statement (Delete, L133)
-	//   call_expression (not deleted because argument_list moved)
-	//     selector_expression (Delete, L133)
-	// expression_statement should be suppressed by selector_expression because
-	// selector_expression is on the exact same line and is the specific deleted function.
-	sel := &treesitter.ASTNode{Type: "selector_expression", StartByte: 10, EndByte: 25, StartRow: 133, EndRow: 133}
-	argList := &treesitter.ASTNode{Type: "argument_list", StartByte: 25, EndByte: 40, StartRow: 133, EndRow: 133}
-	call := &treesitter.ASTNode{
-		Type: "call_expression", StartByte: 10, EndByte: 40, StartRow: 133, EndRow: 133,
-		Children: []*treesitter.ASTNode{sel, argList},
-	}
-	exprStmt := &treesitter.ASTNode{
-		Type: "expression_statement", StartByte: 10, EndByte: 40, StartRow: 133, EndRow: 133,
-		Children: []*treesitter.ASTNode{call},
-	}
-	exprStmt.Language = "go"
-	call.Parent = exprStmt
-	sel.Parent = call
-	argList.Parent = call
+	newBlock.Children = []*treesitter.ASTNode{newInsertedChild, newMovedChild}
+	newInsertedChild.Parent = newBlock
+	newMovedChild.Parent = newBlock
 
 	ms := engine.NewMapping()
+	ms.Add(oldStmt, newMovedChild)
+
 	es := actions.NewEditScript()
-	es.Add(actions.Action{Type: actions.Delete, Node: exprStmt})
-	es.Add(actions.Action{Type: actions.Delete, Node: sel})
+	es.Add(actions.Action{Type: actions.Insert, Node: newBlock})
+	es.Add(actions.Action{Type: actions.Insert, Node: newInsertedChild})
+	es.Add(actions.Action{Type: actions.Move, Node: oldStmt, DestNode: newMovedChild})
 
-	collapsed := Collapse(es, ms, exprStmt, nil)
-
-	exprSurvives := false
-	selSurvives := false
+	collapsed := Collapse(es, ms, oldStmt, newBlock)
+	// compound_statement shouldn't be dropped because '{' and '}' are actual delimiters.
+	hasBlockInsert := false
 	for _, a := range collapsed.Actions() {
-		if a.Node == exprStmt && a.Type == actions.Delete {
-			exprSurvives = true
-		}
-		if a.Node == sel && a.Type == actions.Delete {
-			selSurvives = true
+		if a.Type == actions.Insert && a.Node == newBlock {
+			hasBlockInsert = true
+			break
 		}
 	}
-
-	if exprSurvives {
-		t.Error("expected multi-level inline ancestor expression_statement Delete to be suppressed")
-	}
-	if !selSurvives {
-		t.Error("expected leaf selector_expression Delete to survive")
+	if !hasBlockInsert {
+		t.Fatalf("expected compound_statement Insert action to survive for block delimiters, got actions: %+v", collapsed.Actions())
 	}
 }

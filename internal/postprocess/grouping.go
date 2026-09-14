@@ -79,18 +79,10 @@ func GroupMoves(es *actions.EditScript) *actions.EditScript {
 
 	for _, k := range keyOrder {
 		indices := groups[k]
-		var nonLiteralIndices []int
-		for _, idx := range indices {
-			act := actionsSlice[idx]
-			if !isBareAliasedLiteral(act.Node) {
-				nonLiteralIndices = append(nonLiteralIndices, idx)
-			}
-		}
-
-		if len(nonLiteralIndices) >= 2 {
+		if len(indices) >= 2 {
 			gid := fmt.Sprintf("group-%d", groupCounter)
 			groupCounter++
-			for _, idx := range nonLiteralIndices {
+			for _, idx := range indices {
 				groupIDMap[idx] = gid
 			}
 		}
