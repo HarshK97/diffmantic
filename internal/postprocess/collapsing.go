@@ -15,8 +15,16 @@ func Collapse(
 	ms *engine.Mapping,
 	srcRoot, dstRoot *treesitter.ASTNode,
 ) *actions.EditScript {
-	es = normalizeBareLiteralMoves(es, ms, srcRoot, dstRoot)
-	es = normalizeCommentMoves(es, ms, srcRoot, dstRoot)
+	if es == nil || es.Size() == 0 || ms == nil {
+		return es
+	}
+	es = normalizeCrossScopeNonStructuralMoves(es, ms)
+	es = normalizeControlFlowMoves(es, ms)
+	es = normalizeOrphanedCallArgumentMoves(es, ms)
+	es = normalizeOrphanedDeclarationParameterMoves(es, ms)
+	es = normalizeOrphanedOperatorMoves(es, ms)
+	es = normalizeStationaryWrapperMoves(es, ms)
+	es = normalizeWrapperDelimiterChanges(es, ms)
 
 	actionsSlice := es.Actions()
 	actionPtrs := make([]*actions.Action, len(actionsSlice))
@@ -101,12 +109,40 @@ func Collapse(
 		}
 	}
 
-	// Scaffolding nodes (like statement_list or block) shouldn't emit separate
-	// actions if their parent already handles them. We run this after subtree
-	// collapsing so child suppressions don't prevent parents from becoming subtrees.
-	suppressRedundantScaffolding(dstRoot, inserted, suppressed)
-	suppressRedundantScaffolding(srcRoot, deleted, suppressed)
-	suppressRedundantScaffolding(srcRoot, moved, suppressed)
+	// A Move action on a parent can only be a subtree move if all its descendants moved with it.
+	for parent, act := range moved {
+		if act.Subtree && len(parent.Children) > 0 {
+			dstNode := act.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[parent]
+			}
+			if dstNode == nil {
+				act.Subtree = false
+				continue
+			}
+			for _, d := range parent.Descendants() {
+				if dst, ok := ms.Src()[d]; ok {
+					if !dstNode.Contains(dst) && dst != dstNode {
+						act.Subtree = false
+						break
+					}
+				}
+			}
+			if act.Subtree {
+				for _, d := range dstNode.Descendants() {
+					if src, ok := ms.Dst()[d]; ok {
+						if !parent.Contains(src) && src != parent {
+							act.Subtree = false
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	suppressSurvivingContainers(deleted, ms.Src(), suppressed)
+	suppressSurvivingContainers(inserted, ms.Dst(), suppressed)
 
 	suppressInlineParentRedundancy(actionPtrs, ms, inserted, deleted, suppressed)
 
@@ -131,35 +167,6 @@ func KillChildren(
 		}
 		if child.IsScaffolding() {
 			KillChildren(child, actionMap, suppressed)
-		}
-	}
-}
-
-func suppressRedundantScaffolding(
-	root *treesitter.ASTNode,
-	actionMap map[*treesitter.ASTNode]*actions.Action,
-	suppressed map[*actions.Action]bool,
-) {
-	for _, node := range root.PostOrder() {
-		if !node.IsScaffolding() || node.Parent == nil {
-			continue
-		}
-		sAct, ok := actionMap[node]
-		if !ok || suppressed[sAct] || sAct.Subtree {
-			continue
-		}
-		if pAct, ok := actionMap[node.Parent]; ok && !suppressed[pAct] {
-			// Keep blocks/wrappers so their outer braces stay highlighted, and preserve
-			// follow-on clauses (rescue, catch, else) since the parent only covers line 1.
-			if !pAct.Subtree {
-				if (node.IsBlock() || node.IsWrapper()) && len(node.Children) > 0 {
-					continue
-				}
-				if node.StartRow > node.Parent.StartRow {
-					continue
-				}
-			}
-			suppressed[sAct] = true
 		}
 	}
 }
@@ -194,8 +201,9 @@ func suppressInlineParentRedundancy(
 				if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
 					break
 				}
-				// Don't drop wrappers (like parens or brackets) that supply their own delimiters.
-				if parent.IsWrapper() && (parent.StartByte < node.StartByte || parent.EndByte > node.EndByte) {
+				// If parent is a pair or adds outer syntax (e.g. parentheses, brackets, keywords, or trailing delimiters) outside its children, do not suppress it.
+				r := rules.Get(parent.GetLanguage())
+				if (r != nil && r.IsPair(parent.Type)) || (len(parent.Children) > 0 && (parent.StartByte < parent.Children[0].StartByte || parent.EndByte > parent.Children[len(parent.Children)-1].EndByte)) {
 					continue
 				}
 				parentAct := actionMap[parent]
@@ -224,7 +232,7 @@ func suppressInlineParentRedundancy(
 }
 
 // suppressCoextensiveWrappers climbs single-line parents and suppresses wrapper actions
-// that introduce no opening delimiters and contain at most trailing punctuation (e.g. semicolons).
+// that are truly coextensive with the child (exact same byte range).
 func suppressCoextensiveWrappers(
 	node *treesitter.ASTNode,
 	actionMap map[*treesitter.ASTNode]*actions.Action,
@@ -234,10 +242,14 @@ func suppressCoextensiveWrappers(
 		if parent.StartRow != parent.EndRow || parent.StartRow != node.StartRow {
 			break
 		}
+		r := rules.Get(parent.GetLanguage())
+		if r != nil && r.IsPair(parent.Type) {
+			continue
+		}
 		// Strict opening invariant: parent must not start before child (protects {hash}, [array], (expr))
 		if parent.StartByte == node.StartByte {
-			// Single child or scaffolding wrapper with at most trailing terminator punctuation
-			if parent.EndByte == node.EndByte || len(parent.Children) <= 1 || parent.IsScaffolding() {
+			// Only suppress if parent is truly coextensive (exact same EndByte) and is a single-child or scaffolding wrapper
+			if parent.EndByte == node.EndByte && (len(parent.Children) <= 1 || parent.IsScaffolding()) {
 				parentAct := actionMap[parent]
 				if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
 					suppressed[parentAct] = true
@@ -247,13 +259,99 @@ func suppressCoextensiveWrappers(
 	}
 }
 
-func isBareAliasedLiteral(node *treesitter.ASTNode) bool {
-	if node == nil {
+// isDelimitedContainer reports whether n is enclosed by syntax delimiters like braces or parens, or is a key-value pair.
+func isDelimitedContainer(n *treesitter.ASTNode) bool {
+	if n == nil {
 		return false
 	}
-	r := rules.Get(node.GetLanguage())
-	if r != nil {
-		return r.IsOperatorLiteral(node.Type)
+	r := rules.Get(n.GetLanguage())
+	if r == nil {
+		return false
 	}
-	return rules.IsOperatorLiteral(node.Type)
+	if r.IsBlock(n.Type) || r.IsUnordered(n.Type) || r.IsIndexed(n.Type) || r.IsPair(n.Type) {
+		return true
+	}
+	// Only treat a wrapper as delimited if it has brackets or parens on both ends.
+	// Single-ended wrappers (like prefix casts or unary &x) should stay collapsible.
+	if r.IsWrapper(n.Type) && len(n.Children) > 0 {
+		first := n.Children[0]
+		last := n.Children[len(n.Children)-1]
+		if n.StartByte < first.StartByte && n.EndByte > last.EndByte {
+			return true
+		}
+	}
+	return false
+}
+
+// isReceiverMapped checks if the innermost receiver in a method chain is mapped.
+func isReceiverMapped(n *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+	curr := n
+	for curr != nil && len(curr.Children) > 0 {
+		curr = curr.Children[0]
+		if _, ok := m[curr]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// suppressSurvivingContainers drops container delete/insert actions when direct children survived
+// and modified tokens already have their own actions, or if it's a 1:1 wrapper. Delimited containers
+// and declarations are kept so delimiters and keywords stay highlighted.
+func suppressSurvivingContainers(
+	actionMap map[*treesitter.ASTNode]*actions.Action,
+	targetMap map[*treesitter.ASTNode]*treesitter.ASTNode,
+	suppressed map[*actions.Action]bool,
+) {
+	for parent, act := range actionMap {
+		r := rules.Get(parent.GetLanguage())
+		if len(parent.Children) == 0 || isDelimitedContainer(parent) || (r != nil && r.IsDeclaration(parent.Type) && !r.IsWrapper(parent.Type)) {
+			continue
+		}
+		// If parent has leading or trailing syntax (e.g. keywords, semicolons, delimiters) outside its children, preserve it.
+		hasOuterSyntax := len(parent.Children) > 0 && (parent.StartByte < parent.Children[0].StartByte || parent.EndByte > parent.Children[len(parent.Children)-1].EndByte)
+		if hasOuterSyntax {
+			continue
+		}
+		hasMapped := false
+		for _, child := range parent.Children {
+			if _, ok := targetMap[child]; ok {
+				hasMapped = true
+				break
+			}
+			if r != nil && r.IsCall(parent.Type) {
+				for _, arg := range child.Children {
+					if _, ok := targetMap[arg]; ok {
+						hasMapped = true
+						break
+					}
+				}
+			}
+		}
+		if !hasMapped && isReceiverMapped(parent, targetMap) {
+			hasMapped = true
+		}
+		hasDescAction := false
+		for _, d := range parent.Descendants() {
+			if childAct, ok := actionMap[d]; ok && !suppressed[childAct] {
+				hasDescAction = true
+				break
+			}
+		}
+		allChildrenMapped := true
+		for _, child := range parent.Children {
+			if _, ok := targetMap[child]; !ok {
+				allChildrenMapped = false
+				break
+			}
+		}
+		transparentWrapper := allChildrenMapped && (parent.IsScaffolding() || (len(parent.Children) == 1 &&
+			parent.StartByte == parent.Children[0].StartByte &&
+			parent.EndByte == parent.Children[0].EndByte &&
+			parent.IsWrapper()))
+
+		if (hasMapped && hasDescAction) || transparentWrapper {
+			suppressed[act] = true
+		}
+	}
 }

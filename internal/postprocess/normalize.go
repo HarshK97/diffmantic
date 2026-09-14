@@ -1,359 +1,556 @@
 package postprocess
 
 import (
+	"strings"
+
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-const commentSimilarityThreshold = 0.7
+// normalizeStationaryWrapperMoves drops false-positive Move actions when a wrapper
+// (like friend_declaration or template_declaration) is added or removed around code that stayed in place.
+func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
 
-// isSpuriousMoveCandidate checks if a bare literal or isolated keyword moved
-// across unrelated parent contexts without its enclosing container.
-func isSpuriousMoveCandidate(node *treesitter.ASTNode) bool {
-	if node == nil {
-		return false
-	}
-	if node.IsKeyword || isPureKeywordTree(node) {
-		return true
-	}
-	if isBareAliasedLiteral(node) {
-		return true
-	}
-	lang := node.GetLanguage()
-	if lang != "" {
-		r := rules.Get(lang)
-		if r != nil {
-			return r.IsIdentifier(node.Type) || (len(node.Children) == 0 && r.IsKeyword(node.Type, node.Label))
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			dstNode := a.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil && a.Node.Parent != nil && dstNode.Parent != nil {
+				hasPos := (a.Node.EndByte > 0 || a.Node.StartRow > 0 || a.Node.EndRow > 0) &&
+					(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
+				if hasPos && a.Node.StartRow == dstNode.StartRow && a.Node.EndRow == dstNode.EndRow && a.Node.StartCol == dstNode.StartCol && a.Node.EndCol == dstNode.EndCol {
+					continue
+				}
+				srcParent := a.Node.Parent
+				dstParent := dstNode.Parent
+
+				// If direct parents match, the node moved within the same container (like swapped arguments).
+				if ms.Src()[srcParent] == dstParent {
+					result.Add(a)
+					continue
+				}
+
+				sameLine := a.Node.StartRow == dstNode.StartRow
+
+				// Walk up past transparent wrappers to find the enclosing container.
+				srcBase := srcParent
+				srcChild := a.Node
+				dstBase := dstParent
+				dstChild := dstNode
+
+				canUnwrap := func(base, child *treesitter.ASTNode, isDst bool) bool {
+					if base == nil || base.Parent == nil {
+						return false
+					}
+					r := rules.Get(base.GetLanguage())
+					isCall := (r != nil && r.IsCall(base.Type)) || (r == nil && rules.IsCall(base.Type))
+					if isCall && child.ChildIndex() != 0 && !sameLine {
+						return false
+					}
+					if base.Parent != nil {
+						parentIsCall := (r != nil && r.IsCall(base.Parent.Type)) || (r == nil && rules.IsCall(base.Parent.Type))
+						if parentIsCall && base.ChildIndex() != 0 && !sameLine {
+							return false
+						}
+					}
+
+					if base.IsWrapper() {
+						return true
+					}
+					hasMapping := ms.Has(base)
+					if isDst {
+						hasMapping = ms.HasDst(base)
+					}
+					if !hasMapping && canUnwrapSubExpression(base) {
+						if isDst {
+							return base.ChildIndex() == 0 || ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
+						}
+						return base.ChildIndex() == 0 || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
+					}
+					return false
+				}
+
+				for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil {
+					srcChild = srcBase
+					srcBase = srcBase.Parent
+				}
+
+				for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil {
+					dstChild = dstBase
+					dstBase = dstBase.Parent
+				}
+
+				if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase && srcChild.ChildIndex() == dstChild.ChildIndex() {
+					continue
+				}
+			}
 		}
+		result.Add(a)
 	}
-	return rules.IsIdentifier(node.Type) || (len(node.Children) == 0 && rules.IsKeyword(node.Type, node.Label))
+	return result
 }
 
-func isPureKeywordTree(node *treesitter.ASTNode) bool {
-	if node == nil || len(node.Children) == 0 {
+// canUnwrapSubExpression checks if n is a lightweight wrapper or sub-expression
+// that code can stay stationary across, rather than a distinct semantic container.
+func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
+	if n == nil || n.Parent == nil {
 		return false
 	}
-	leaves := node.Leaves()
-	if len(leaves) == 0 {
-		return false
-	}
-	for _, l := range leaves {
-		if !l.IsKeyword {
+	r := rules.Get(n.GetLanguage())
+	if r != nil {
+		if r.IsPair(n.Type) || r.IsUnordered(n.Type) || r.IsBlock(n.Type) {
+			return false
+		}
+		if r.IsDeclaration(n.Type) && !r.IsWrapper(n.Type) {
 			return false
 		}
 	}
 	return true
 }
 
-func removeSubtreeMappings(node *treesitter.ASTNode, ms *engine.Mapping) {
-	for _, n := range node.PreOrder() {
-		ms.Remove(n)
-	}
-}
-
-func splitMoveToDeleteInsert(result *actions.EditScript, srcNode, dstNode *treesitter.ASTNode) {
-	result.Add(actions.Action{
-		Type: actions.Delete,
-		Node: srcNode,
-	})
-	if dstNode != nil {
-		result.Add(actions.Action{
-			Type:     actions.Insert,
-			Node:     dstNode,
-			Parent:   dstNode.Parent,
-			Position: dstNode.ChildIndex(),
-		})
-	}
-}
-
-func isCommentASTNode(node *treesitter.ASTNode, rulesSrc, rulesDst *rules.Rules) bool {
-	if node == nil {
-		return false
-	}
-	if node.Type == "comment" {
-		return true
-	}
-	if rulesSrc != nil && rulesSrc.IsComment(node.Type) {
-		return true
-	}
-	if rulesDst != nil && rulesDst.IsComment(node.Type) {
-		return true
-	}
-	if r := rules.Get(node.GetLanguage()); r != nil && r.IsComment(node.Type) {
-		return true
-	}
-	return rules.IsComment(node.Type)
-}
-
-func normalizeBareLiteralMoves(es *actions.EditScript, ms *engine.Mapping, roots ...*treesitter.ASTNode) *actions.EditScript {
-	if ms == nil {
+// normalizeCrossScopeNonStructuralMoves demotes moves of non-structural, single-line nodes
+// across different semantic scopes into separate Delete and Insert actions.
+func normalizeCrossScopeNonStructuralMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
 		return es
-	}
-
-	var rulesSrc, rulesDst *rules.Rules
-	if len(roots) > 0 && roots[0] != nil {
-		rulesSrc = rules.Get(roots[0].GetLanguage())
-	}
-	if len(roots) > 1 && roots[1] != nil {
-		rulesDst = rules.Get(roots[1].GetLanguage())
-	}
-
-	convertedSrc := make(map[*treesitter.ASTNode]bool)
-	convertedDst := make(map[*treesitter.ASTNode]bool)
-
-	type moveDecision struct {
-		shouldNormalize bool
-		dstNode         *treesitter.ASTNode
-	}
-	decisions := make(map[*treesitter.ASTNode]moveDecision)
-
-	// Pre-map destination nodes that have move actions
-	movedDstNodes := make(map[*treesitter.ASTNode]*actions.Action)
-	actionsSlice := es.Actions()
-	for i := range actionsSlice {
-		a := &actionsSlice[i]
-		if a.Type == actions.Move && a.Node != nil {
-			if dstNode := ms.Src()[a.Node]; dstNode != nil {
-				movedDstNodes[dstNode] = a
-			}
-		}
-	}
-
-	for _, a := range es.Actions() {
-		if a.Type != actions.Move || a.Node == nil || !isSpuriousMoveCandidate(a.Node) {
-			continue
-		}
-		dstNode := ms.Src()[a.Node]
-		if dstNode == nil {
-			continue
-		}
-		srcParent := a.Node.Parent
-		var dstParentMapped *treesitter.ASTNode
-		if srcParent != nil {
-			dstParentMapped = ms.Src()[srcParent]
-		}
-		sameParent := dstParentMapped != nil && a.Parent == dstParentMapped
-		if isOrphanedSplitKeyword(a.Node, a.Parent, ms) || (!sameParent && !hasMovedSiblingFromSameParent(a.Node, a.Parent, srcParent, movedDstNodes)) {
-			decisions[a.Node] = moveDecision{
-				shouldNormalize: true,
-				dstNode:         dstNode,
-			}
-			convertedSrc[a.Node] = true
-			convertedDst[dstNode] = true
-		}
 	}
 
 	result := actions.NewEditScript()
 	for _, a := range es.Actions() {
-		if a.Node != nil && a.Type == actions.Update && (convertedSrc[a.Node] || convertedDst[a.Node]) {
-			continue
-		}
-
-		if a.Type == actions.Move {
-			if a.Node == nil {
-				continue
-			}
-			isComment := isCommentASTNode(a.Node, rulesSrc, rulesDst)
-			if !isComment && a.DestNode == nil && (ms == nil || ms.Src()[a.Node] == nil) {
-				// The node is unmapped (e.g. because its ancestor was normalized and broke the mapping),
-				// so any Move action on it is invalid/redundant and should be dropped.
-				continue
-			}
-
-			// Normalize candidate spurious moves (operators, literals, types, identifiers)
-			// when matched across unrelated parent contexts.
-			if dec, ok := decisions[a.Node]; ok && dec.shouldNormalize {
-				// Break mappings for this subtree so they don't generate spurious move actions.
-				removeSubtreeMappings(a.Node, ms)
-				splitMoveToDeleteInsert(result, a.Node, dec.dstNode)
-				continue
-			}
-		}
-		result.Add(a)
-	}
-	return result
-}
-
-// commentTextSimilarity returns a 0..1 Levenshtein ratio for two strings.
-func commentTextSimilarity(s1, s2 string) float64 {
-	if s1 == s2 {
-		return 1.0
-	}
-	if s1 == "" || s2 == "" {
-		return 0.0
-	}
-
-	r1 := []rune(s1)
-	r2 := []rune(s2)
-
-	if len(r1) > len(r2) {
-		r1, r2 = r2, r1
-	}
-
-	m := len(r1)
-	n := len(r2)
-
-	prev := make([]int, m+1)
-	for j := 0; j <= m; j++ {
-		prev[j] = j
-	}
-
-	for i := 1; i <= n; i++ {
-		curr := make([]int, m+1)
-		curr[0] = i
-		for j := 1; j <= m; j++ {
-			cost := 1
-			if r1[j-1] == r2[i-1] {
-				cost = 0
-			}
-			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
-		}
-		prev = curr
-	}
-
-	distance := prev[m]
-	maxLen := n
-	return 1.0 - float64(distance)/float64(maxLen)
-}
-
-// normalizeCommentMoves turns comment Moves into Delete+Insert, but only when
-// the text differs enough (below commentSimilarityThreshold). Similar comments
-// keep their Move and any paired Update.
-func normalizeCommentMoves(es *actions.EditScript, ms *engine.Mapping, roots ...*treesitter.ASTNode) *actions.EditScript {
-	if es == nil {
-		return es
-	}
-
-	var rulesSrc, rulesDst *rules.Rules
-	if len(roots) > 0 && roots[0] != nil {
-		rulesSrc = rules.Get(roots[0].GetLanguage())
-	}
-	if len(roots) > 1 && roots[1] != nil {
-		rulesDst = rules.Get(roots[1].GetLanguage())
-	}
-
-	isComment := func(node *treesitter.ASTNode) bool {
-		return isCommentASTNode(node, rulesSrc, rulesDst)
-	}
-
-	commentMovedFuzzy := make(map[*treesitter.ASTNode]bool)
-	commentMovedConverted := make(map[*treesitter.ASTNode]bool)
-	commentMovedConvertedDst := make(map[*treesitter.ASTNode]bool)
-
-	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil && isComment(a.Node) {
+		if a.Type == actions.Move && a.Node != nil {
 			dstNode := a.DestNode
-			if dstNode == nil && ms != nil {
+			if dstNode == nil {
 				dstNode = ms.Src()[a.Node]
 			}
 			if dstNode != nil {
-				sim := commentTextSimilarity(a.Node.Label, dstNode.Label)
-				if sim >= commentSimilarityThreshold {
-					commentMovedFuzzy[a.Node] = true
-				} else {
-					commentMovedConverted[a.Node] = true
-					commentMovedConvertedDst[dstNode] = true
+				r := rules.Get(a.Node.GetLanguage())
+				lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
+				if lineDist < 0 {
+					lineDist = -lineDist
 				}
-			} else {
-				commentMovedConverted[a.Node] = true
-			}
-		}
-	}
 
-	result := actions.NewEditScript()
-	for _, a := range es.Actions() {
-		if a.Node == nil {
-			result.Add(a)
-			continue
-		}
-
-		if a.Type == actions.Update && isComment(a.Node) {
-			if commentMovedConverted[a.Node] || commentMovedConvertedDst[a.Node] {
-				continue
-			}
-		}
-
-		if a.Type == actions.Move && isComment(a.Node) {
-			if commentMovedFuzzy[a.Node] {
-				result.Add(a)
-				continue
-			}
-
-			if commentMovedConverted[a.Node] {
-				dstNode := a.DestNode
-				if dstNode == nil && ms != nil {
-					dstNode = ms.Src()[a.Node]
+				isType := (r != nil && r.IsType(a.Node.Type)) || (r == nil && rules.IsType(a.Node.Type))
+				if isType && !engine.IsScopePreserved(ms, a.Node, dstNode, r, r) && lineDist >= 10 {
+					demoteMoveToDelIns(result, ms, a.Node, dstNode)
+					continue
 				}
-				if ms != nil {
-					removeSubtreeMappings(a.Node, ms)
-				}
-				splitMoveToDeleteInsert(result, a.Node, dstNode)
-				continue
 			}
 		}
-
 		result.Add(a)
 	}
 	return result
 }
 
-func hasMovedSiblingFromSameParent(
-	node *treesitter.ASTNode,
-	parent *treesitter.ASTNode,
-	srcParent *treesitter.ASTNode,
-	movedDstNodes map[*treesitter.ASTNode]*actions.Action,
-) bool {
-	if node == nil || srcParent == nil || parent == nil {
+// normalizeOrphanedOperatorMoves demotes Move actions on operator literals when
+// their enclosing parent containers did not move together.
+func normalizeOrphanedOperatorMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
+
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			dstNode := a.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil {
+				r := rules.Get(a.Node.GetLanguage())
+				isOperator := (r != nil && (r.IsOperatorLiteral(a.Node.Type) || r.IsPunctuation(a.Node.Type))) ||
+					(r == nil && (rules.IsOperatorLiteral(a.Node.Type) || rules.IsPunctuation(a.Node.Type)))
+				if isOperator {
+					parentMatched := a.Node.Parent != nil && dstNode.Parent != nil && ms.Src()[a.Node.Parent] == dstNode.Parent
+					if !parentMatched {
+						demoteMoveToDelIns(result, ms, a.Node, dstNode)
+						continue
+					}
+				}
+			}
+		}
+		result.Add(a)
+	}
+	return result
+}
+
+// findBodyBlock returns the primary consequence/body block of a control-flow statement.
+func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for _, c := range n.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		if isBlock {
+			return c
+		}
+	}
+	return nil
+}
+
+// normalizeControlFlowMoves demotes Move actions on control-flow statements when their
+// consequence bodies share zero matched statements across hunks (>= 10 lines).
+func normalizeControlFlowMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
+
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			dstNode := a.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil {
+				r := rules.Get(a.Node.GetLanguage())
+				isDecl := (r != nil && r.IsDeclaration(a.Node.Type)) || (r == nil && rules.IsDeclaration(a.Node.Type))
+				// When a compound statement or declaration body block has no matching statements across distant hunks, demote the move.
+				srcBody := findBodyBlock(a.Node, r)
+				dstBody := findBodyBlock(dstNode, r)
+				if srcBody != nil && dstBody != nil {
+					lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
+					if lineDist < 0 {
+						lineDist = -lineDist
+					}
+					if lineDist >= 10 {
+						bodyMatched := ms.Src()[srcBody] == dstBody || ms.DiceSrc(srcBody, dstBody) > 0
+						if isDecl && ms.DiceSrc(srcBody, dstBody) == 0 {
+							bodyMatched = false
+						}
+						srcCond := findCondition(a.Node, r)
+						dstCond := findCondition(dstNode, r)
+						if isTrivialJumpBody(srcBody, r) && srcCond != nil && dstCond != nil && !hasMatchedCondition(a.Node, dstNode, ms, r) {
+							bodyMatched = false
+						}
+						if !bodyMatched {
+							demoteMoveToDelIns(result, ms, a.Node, dstNode)
+							continue
+						}
+					}
+				}
+
+				// Demote when an outer control-flow clause or header moved independently of its enclosing statement.
+				srcCF, srcBody := findEnclosingControlFlow(a.Node, r)
+				dstCF, _ := findEnclosingControlFlow(dstNode, r)
+				if srcCF != nil && dstCF != nil {
+					isHeader := !srcBody.Contains(a.Node) && a.Node != srcBody
+					if isHeader {
+						lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
+						if lineDist < 0 {
+							lineDist = -lineDist
+						}
+						cfMatched := ms.Src()[srcCF] == dstCF ||
+							(ms.Src()[srcCF] != nil && ms.Src()[srcCF].Contains(dstCF)) ||
+							(ms.Dst()[dstCF] != nil && ms.Dst()[dstCF].Contains(srcCF))
+						if lineDist >= 10 && !cfMatched {
+							demoteMoveToDelIns(result, ms, a.Node, dstNode)
+							continue
+						}
+					}
+				}
+			}
+		}
+		result.Add(a)
+	}
+	return result
+}
+
+// findEnclosingControlFlow returns the nearest ancestor statement that has a body block,
+// stopping if a declaration or block boundary is reached.
+func findEnclosingControlFlow(n *treesitter.ASTNode, r *rules.Rules) (*treesitter.ASTNode, *treesitter.ASTNode) {
+	if n == nil {
+		return nil, nil
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		body := findBodyBlock(curr, r)
+		if body != nil {
+			return curr, body
+		}
+		isBoundary := (r != nil && (r.IsDeclaration(curr.Type) || r.IsBlock(curr.Type))) ||
+			(r == nil && (rules.IsDeclaration(curr.Type) || rules.IsBlock(curr.Type)))
+		if isBoundary {
+			break
+		}
+	}
+	return nil, nil
+}
+
+// findCondition returns the primary conditional expression node of a control-flow statement.
+func findCondition(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for _, c := range n.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		if isBlock {
+			break
+		}
+		isKeyword := (r != nil && r.IsKeyword(c.Type, c.Label)) || (r == nil && rules.IsKeyword(c.Type, c.Label))
+		if !isKeyword && c.Type != "(" && c.Type != ")" {
+			return c
+		}
+	}
+	return nil
+}
+
+// hasMatchedCondition returns true if any expression or identifier inside srcIf's condition
+// is mapped to a descendant of dstIf's condition.
+func hasMatchedCondition(srcIf, dstIf *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	srcCond := findCondition(srcIf, r)
+	dstCond := findCondition(dstIf, r)
+	if srcCond == nil || dstCond == nil {
 		return false
 	}
-	for _, child := range parent.Children {
-		if act, ok := movedDstNodes[child]; ok && act != nil && act.Node != nil && act.Node != node {
-			if act.Node.Parent == srcParent {
-				return true
+	if ms.Src()[srcCond] == dstCond {
+		return true
+	}
+	for _, d := range srcCond.Descendants() {
+		if dst, ok := ms.Src()[d]; ok && (dst == dstCond || dstCond.Contains(dst)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTrivialJumpStatement(s *treesitter.ASTNode) bool {
+	if s == nil {
+		return false
+	}
+	t := s.Type
+	return strings.HasPrefix(t, "return") || strings.HasPrefix(t, "break") ||
+		strings.HasPrefix(t, "continue") || strings.HasPrefix(t, "goto")
+}
+
+// isTrivialJumpBody returns true if body consists entirely of trivial control jump statements
+// (return, break, continue, goto).
+func isTrivialJumpBody(body *treesitter.ASTNode, r *rules.Rules) bool {
+	if body == nil {
+		return true
+	}
+	stmtCount := 0
+	nonJumpCount := 0
+	for _, c := range body.Children {
+		if c.Type == "statement_list" {
+			for _, s := range c.Children {
+				stmtCount++
+				if !isTrivialJumpStatement(s) {
+					nonJumpCount++
+				}
+			}
+		} else {
+			isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
+			if !isPunct && c.Type != "{" && c.Type != "}" {
+				stmtCount++
+				if !isTrivialJumpStatement(c) {
+					nonJumpCount++
+				}
 			}
 		}
 	}
-	return false
+	return stmtCount > 0 && nonJumpCount == 0
 }
 
-func isOrphanedSplitKeyword(node *treesitter.ASTNode, dstParent *treesitter.ASTNode, ms *engine.Mapping) bool {
-	if node == nil || ms == nil || (!node.IsKeyword && !isPureKeywordTree(node)) {
-		return false
-	}
-	srcParent := node.Parent
-	if srcParent == nil || dstParent == nil {
-		return true
-	}
-	hasSemanticSiblingInDst := false
-	for _, child := range srcParent.Children {
-		if child == node || child.IsKeyword || child.IsBracketOrParen() {
-			continue
-		}
-		dstChild := ms.Src()[child]
-		if dstChild == nil {
-			continue
-		}
-		if dstChild.Parent != dstParent {
-			return true
-		}
-		hasSemanticSiblingInDst = true
-	}
-	if !hasSemanticSiblingInDst && hasNonKeywordChildren(srcParent) {
-		return true
-	}
-	return false
-}
-
-func hasNonKeywordChildren(n *treesitter.ASTNode) bool {
+// findEnclosingDeclaration returns the nearest ancestor declaration node of n,
+// stopping if a block boundary is reached.
+func findEnclosingDeclaration(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
-		return false
+		return nil
 	}
-	for _, c := range n.Children {
-		if !c.IsKeyword && !c.IsBracketOrParen() {
-			return true
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isDecl := (r != nil && r.IsDeclaration(curr.Type)) || (r == nil && rules.IsDeclaration(curr.Type))
+		if isDecl {
+			return curr
+		}
+		isBlock := (r != nil && r.IsBlock(curr.Type)) || (r == nil && rules.IsBlock(curr.Type))
+		if isBlock {
+			break
 		}
 	}
-	return false
+	return nil
+}
+
+// normalizeOrphanedDeclarationParameterMoves demotes Move actions on function/method declaration
+// parameters when their enclosing declarations were not matched or moved together across hunks (>= 10 lines).
+func normalizeOrphanedDeclarationParameterMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
+
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			dstNode := a.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil {
+				r := rules.Get(a.Node.GetLanguage())
+				srcDecl := findEnclosingDeclaration(a.Node, r)
+				dstDecl := findEnclosingDeclaration(dstNode, r)
+				if srcDecl != nil || dstDecl != nil {
+					lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
+					if lineDist < 0 {
+						lineDist = -lineDist
+					}
+					if lineDist >= 10 {
+						declMatched := srcDecl != nil && dstDecl != nil && ms.Src()[srcDecl] == dstDecl
+						if !declMatched {
+							demoteMoveToDelIns(result, ms, a.Node, dstNode)
+							continue
+						}
+					}
+				}
+			}
+		}
+		result.Add(a)
+	}
+	return result
+}
+
+// findEnclosingCall returns the nearest ancestor call of n,
+// stopping if a declaration or block boundary is reached.
+func findEnclosingCall(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isCall := (r != nil && r.IsCall(curr.Type)) || (r == nil && rules.IsCall(curr.Type))
+		if isCall {
+			return curr
+		}
+		isBoundary := (r != nil && (r.IsDeclaration(curr.Type) || r.IsBlock(curr.Type))) ||
+			(r == nil && (rules.IsDeclaration(curr.Type) || rules.IsBlock(curr.Type)))
+		if isBoundary {
+			break
+		}
+	}
+	return nil
+}
+
+// normalizeOrphanedCallArgumentMoves demotes Move actions on function call arguments
+// when their enclosing function calls were not matched or moved together across hunks (>= 10 lines).
+func normalizeOrphanedCallArgumentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
+
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			dstNode := a.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode != nil {
+				r := rules.Get(a.Node.GetLanguage())
+				srcCall := findEnclosingCall(a.Node, r)
+				dstCall := findEnclosingCall(dstNode, r)
+				if srcCall != nil || dstCall != nil {
+					lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
+					if lineDist < 0 {
+						lineDist = -lineDist
+					}
+					callMatched := (srcCall != nil && dstCall != nil && ms.Src()[srcCall] == dstCall) ||
+						(srcCall != nil && ms.Src()[srcCall] != nil && ms.Src()[srcCall].Contains(dstNode)) ||
+						(dstCall != nil && ms.Dst()[dstCall] != nil && ms.Dst()[dstCall].Contains(a.Node))
+					if (srcCall != nil && dstCall != nil && !callMatched) || (lineDist >= 10 && !callMatched) {
+						demoteMoveToDelIns(result, ms, a.Node, dstNode)
+						continue
+					}
+				}
+			}
+		}
+		result.Add(a)
+	}
+	return result
+}
+
+// normalizeWrapperDelimiterChanges emits non-subtree Insert or Delete actions when a mapped
+// wrapper container (such as argument_list) gains or loses outer delimiter punctuation
+// (such as optional parentheses in Ruby) around surviving mapped children.
+func normalizeWrapperDelimiterChanges(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
+
+	hasAction := make(map[*treesitter.ASTNode]bool)
+	for _, a := range es.Actions() {
+		if a.Node != nil {
+			hasAction[a.Node] = true
+		}
+	}
+
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		result.Add(a)
+	}
+
+	for _, p := range ms.Pairs {
+		srcNode, dstNode := p.Src, p.Dst
+		if srcNode == nil || dstNode == nil {
+			continue
+		}
+		if hasAction[srcNode] || hasAction[dstNode] {
+			continue
+		}
+		r := rules.Get(srcNode.GetLanguage())
+		if r == nil || !r.IsWrapper(srcNode.Type) || !r.IsWrapper(dstNode.Type) {
+			continue
+		}
+		if len(srcNode.Children) == 0 || len(dstNode.Children) == 0 {
+			continue
+		}
+
+		srcHasDelims := srcNode.StartByte < srcNode.Children[0].StartByte || srcNode.EndByte > srcNode.Children[len(srcNode.Children)-1].EndByte
+		dstHasDelims := dstNode.StartByte < dstNode.Children[0].StartByte || dstNode.EndByte > dstNode.Children[len(dstNode.Children)-1].EndByte
+
+		if !srcHasDelims && dstHasDelims {
+			result.Add(actions.Action{
+				Type:     actions.Insert,
+				Node:     dstNode,
+				Parent:   dstNode.Parent,
+				Position: dstNode.ChildIndex(),
+				Subtree:  false,
+			})
+		} else if srcHasDelims && !dstHasDelims {
+			result.Add(actions.Action{
+				Type:    actions.Delete,
+				Node:    srcNode,
+				Parent:  srcNode.Parent,
+				Subtree: false,
+			})
+		}
+	}
+
+	return result
+}
+
+// demoteMoveToDelIns demotes a Move action into separate Delete and Insert actions
+// and clears descendant mappings from the mapping store.
+func demoteMoveToDelIns(result *actions.EditScript, ms *engine.Mapping, srcNode, dstNode *treesitter.ASTNode) {
+	result.Add(actions.Action{
+		Type:    actions.Delete,
+		Node:    srcNode,
+		Parent:  srcNode.Parent,
+		Subtree: len(srcNode.Children) > 0,
+	})
+	result.Add(actions.Action{
+		Type:     actions.Insert,
+		Node:     dstNode,
+		Parent:   dstNode.Parent,
+		Position: dstNode.ChildIndex(),
+		Subtree:  len(dstNode.Children) > 0,
+	})
+	for _, d := range srcNode.Descendants() {
+		ms.Remove(d)
+	}
+	ms.Remove(srcNode)
 }
