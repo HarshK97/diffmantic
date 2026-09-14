@@ -63,12 +63,14 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		switch a.Action {
 		case "delete":
 			if side == "left" && a.Node != nil {
-				addSpan(spansByLine, lineIndex, fileBytes, a.Node.StartByte, a.Node.EndByte, "delete", a)
+				sb, eb := absorbConnectorDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
+				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, "delete", a)
 			}
 
 		case "insert":
 			if side == "right" && a.Node != nil {
-				addSpan(spansByLine, lineIndex, fileBytes, a.Node.StartByte, a.Node.EndByte, "insert", a)
+				sb, eb := absorbConnectorDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
+				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, "insert", a)
 			}
 
 		case "update":
@@ -126,11 +128,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 			})
 
 			curr := gSpans[0]
+
 			for i := 1; i < len(gSpans); i++ {
 				next := gSpans[i]
 
 				if next.startCol >= curr.startCol && next.endCol <= curr.endCol {
 					if next.actRef != curr.actRef {
+						closeTrailingDelimiter(&next, line, lineIndex, fileBytes)
 						lineMerged = append(lineMerged, next)
 					}
 					continue
@@ -169,18 +173,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 
 				if canMerge {
 					if next.endCol > curr.endCol {
-						// When curr is an inner sub-span coaligned at the start with
-						// a wider container next (e.g. curr: 0..3, next: 0..18),
-						// preserve curr before expanding to the outer container.
+						// Preserve curr if next is a wider container starting at the same column.
 						if curr.startCol == next.startCol && next.actRef != nil && curr.actRef != nil && next.actRef != curr.actRef {
+							closeTrailingDelimiter(&curr, line, lineIndex, fileBytes)
 							lineMerged = append(lineMerged, curr)
 						}
 
-						// Adopt the wider actRef so the merged span's
-						// AST length reflects the true outer container,
-						// preventing a small inner node from falsely winning
-						// layering priority over overlapping spans of
-						// other action types.
+						// Use the wider action reference so larger containers don't lose layering priority.
 						if next.actRef != nil && curr.actRef != nil {
 							currNodeLen := nodeLen(curr.actRef, side)
 							nextNodeLen := nodeLen(next.actRef, side)
@@ -191,10 +190,12 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 						curr.endCol = next.endCol
 					}
 				} else {
+					closeTrailingDelimiter(&curr, line, lineIndex, fileBytes)
 					lineMerged = append(lineMerged, curr)
 					curr = next
 				}
 			}
+			closeTrailingDelimiter(&curr, line, lineIndex, fileBytes)
 			lineMerged = append(lineMerged, curr)
 		}
 
@@ -304,4 +305,78 @@ func nodeLen(a *Action, side string) int {
 		}
 	}
 	return 0
+}
+
+// absorbConnectorDelimiters pulls adjacent punctuation (like '.', '->', '::') into an insert
+// or delete span so we don't leave floating punctuation between modified tokens.
+func absorbConnectorDelimiters(fileBytes []byte, startByte, endByte uint32, parent *NodeRef) (uint32, uint32) {
+	if parent == nil || len(fileBytes) == 0 {
+		return startByte, endByte
+	}
+	if startByte < parent.StartByte || endByte > parent.EndByte {
+		return startByte, endByte
+	}
+	fileLen := uint32(len(fileBytes))
+
+	// Trailing connector (e.g. "gin" before "." in "gin.HandlerFunc"):
+	if endByte < parent.EndByte && endByte < fileLen {
+		if endByte+2 <= parent.EndByte && endByte+2 <= fileLen && fileBytes[endByte] == ':' && fileBytes[endByte+1] == ':' {
+			endByte += 2
+		} else if endByte+2 <= parent.EndByte && endByte+2 <= fileLen && fileBytes[endByte] == '-' && fileBytes[endByte+1] == '>' {
+			endByte += 2
+		} else if fileBytes[endByte] == '.' {
+			notNextDot := (endByte+1 >= fileLen || fileBytes[endByte+1] != '.')
+			notPrevDot := (endByte == 0 || fileBytes[endByte-1] != '.')
+			if notNextDot && notPrevDot {
+				endByte++
+			}
+		}
+	}
+
+	// Leading connector (e.g. ".field" when adding a field to an existing receiver):
+	if startByte > parent.StartByte && startByte <= fileLen {
+		if startByte >= parent.StartByte+2 && fileBytes[startByte-2] == ':' && fileBytes[startByte-1] == ':' {
+			startByte -= 2
+		} else if startByte >= parent.StartByte+2 && fileBytes[startByte-2] == '-' && fileBytes[startByte-1] == '>' {
+			startByte -= 2
+		} else if fileBytes[startByte-1] == '.' {
+			notPrevDot := (startByte < 2 || fileBytes[startByte-2] != '.')
+			notNextDot := (startByte >= fileLen || fileBytes[startByte] != '.')
+			if notPrevDot && notNextDot {
+				startByte--
+			}
+		}
+	}
+
+	return startByte, endByte
+}
+
+// closeTrailingDelimiter expands s to include matching closing brackets or parentheses
+// when s contains unclosed opening delimiters.
+func closeTrailingDelimiter(s *internalSpan, line int, lineIndex []int, fileBytes []byte) {
+	if line >= len(lineIndex) {
+		return
+	}
+	lineStart := lineIndex[line]
+	sByte := lineStart + s.startCol
+	eByte := lineStart + s.endCol
+	if sByte >= eByte || sByte < 0 || eByte >= len(fileBytes) {
+		return
+	}
+	for sByte < len(fileBytes) && eByte < len(fileBytes) {
+		sub := fileBytes[sByte:eByte]
+		nextChar := fileBytes[eByte]
+		if nextChar == ')' && bytes.Count(sub, []byte("(")) > bytes.Count(sub, []byte(")")) {
+			s.endCol++
+			eByte++
+		} else if nextChar == ']' && bytes.Count(sub, []byte("[")) > bytes.Count(sub, []byte("]")) {
+			s.endCol++
+			eByte++
+		} else if nextChar == '}' && bytes.Count(sub, []byte("{")) > bytes.Count(sub, []byte("}")) {
+			s.endCol++
+			eByte++
+		} else {
+			break
+		}
+	}
 }

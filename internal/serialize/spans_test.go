@@ -149,6 +149,88 @@ func TestBuildHighlightSpansRightSideMoveNodeLen(t *testing.T) {
 	}
 }
 
+func TestAbsorbConnectorDelimiters(t *testing.T) {
+	t.Run("absorbs trailing dot in qualified type", func(t *testing.T) {
+		src := []byte("func f(x gin.HandlerFunc) {}\n")
+		// "gin" is 9..12 inside parent "gin.HandlerFunc" (9..24)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "package_identifier", StartByte: 9, EndByte: 12},
+				Parent: &NodeRef{Type: "qualified_type", StartByte: 9, EndByte: 24},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// Span should cover "gin." (cols 9..13)
+		if spans[0].StartCol != 9 || spans[0].EndCol != 13 {
+			t.Errorf("expected span cols 9..13 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs leading dot in member access", func(t *testing.T) {
+		src := []byte("x := obj.field\n")
+		// "field" is 9..14 inside parent "obj.field" (5..14)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "field_identifier", StartByte: 9, EndByte: 14},
+				Parent: &NodeRef{Type: "selector_expression", StartByte: 5, EndByte: 14},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// Span should cover ".field" (cols 8..14)
+		if spans[0].StartCol != 8 || spans[0].EndCol != 14 {
+			t.Errorf("expected span cols 8..14 covering '.field', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs trailing scope resolution ::", func(t *testing.T) {
+		src := []byte("std::vector<int> v;\n")
+		// "std" is 0..3 inside parent "std::vector" (0..11)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "namespace_identifier", StartByte: 0, EndByte: 3},
+				Parent: &NodeRef{Type: "qualified_identifier", StartByte: 0, EndByte: 11},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// Span should cover "std::" (cols 0..5)
+		if spans[0].StartCol != 0 || spans[0].EndCol != 5 {
+			t.Errorf("expected span cols 0..5 covering 'std::', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("does not absorb variadic ellipsis ...", func(t *testing.T) {
+		src := []byte("func f(args ...gin.HandlerFunc) {}\n")
+		// "gin" is 15..18 preceded by "..."
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "package_identifier", StartByte: 15, EndByte: 18},
+				Parent: &NodeRef{Type: "qualified_type", StartByte: 15, EndByte: 30},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// Don't absorb leading "...", but still absorb trailing "." -> "gin." (cols 15..19)
+		if spans[0].StartCol != 15 || spans[0].EndCol != 19 {
+			t.Errorf("expected span cols 15..19 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+}
+
 func TestBuildHighlightSpansWithDelimiterSpan(t *testing.T) {
 	fileBytes := []byte("func foo() {\n    return 42\n}\n")
 	act := Action{
