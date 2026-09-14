@@ -179,6 +179,8 @@ var tsxRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"property_identifier",
+		"shorthand_property_identifier",
 		"nested_identifier",
 		"nested_type_identifier",
 		"private_property_identifier",

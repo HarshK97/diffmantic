@@ -406,3 +406,77 @@ func TestCompatiblePairRoles(t *testing.T) {
 		})
 	}
 }
+
+func TestGetKeyLabel(t *testing.T) {
+	t.Run("nil and empty", func(t *testing.T) {
+		if got := getKeyLabel(nil); got != "" {
+			t.Errorf("getKeyLabel(nil) = %q, want empty", got)
+		}
+		empty := testutil.Node("call_expression", "")
+		if got := getKeyLabel(empty); got != "" {
+			t.Errorf("getKeyLabel(empty) = %q, want empty", got)
+		}
+	})
+
+	t.Run("call with identifier in go", func(t *testing.T) {
+		call := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "println"),
+			testutil.Node("argument_list", "", testutil.Leaf("string_literal", `"hello"`)),
+		)
+		call.Language = "go"
+		if got := getKeyLabel(call); got != "println" {
+			t.Errorf("getKeyLabel(call) = %q, want %q", got, "println")
+		}
+	})
+
+	t.Run("call with field_identifier in c", func(t *testing.T) {
+		call := testutil.Node("call_expression", "",
+			testutil.Leaf("field_identifier", "doWork"),
+			testutil.Node("argument_list", ""),
+		)
+		call.Language = "c"
+		if got := getKeyLabel(call); got != "doWork" {
+			t.Errorf("getKeyLabel(call) = %q, want %q", got, "doWork")
+		}
+	})
+
+	t.Run("call with property_identifier in javascript", func(t *testing.T) {
+		call := testutil.Node("call_expression", "",
+			testutil.Leaf("property_identifier", "fetchData"),
+			testutil.Node("arguments", ""),
+		)
+		call.Language = "javascript"
+		if got := getKeyLabel(call); got != "fetchData" {
+			t.Errorf("getKeyLabel(call) = %q, want %q", got, "fetchData")
+		}
+	})
+
+	t.Run("call with synthetic unbound node", func(t *testing.T) {
+		// Node has no Language set, relies on global rules fallback
+		call := testutil.Node("call_expression", "",
+			testutil.Leaf("property_identifier", "unboundProp"),
+			testutil.Node("arguments", ""),
+		)
+		if got := getKeyLabel(call); got != "unboundProp" {
+			t.Errorf("getKeyLabel(call) = %q, want %q", got, "unboundProp")
+		}
+	})
+
+	t.Run("pair with direct key label", func(t *testing.T) {
+		pair := testutil.Node("pair", "",
+			testutil.Leaf("string", `"endpoint"`),
+			testutil.Leaf("string", `"https://api.example.com"`),
+		)
+		if got := getKeyLabel(pair); got != `"endpoint"` {
+			t.Errorf("getKeyLabel(pair) = %q, want %q", got, `"endpoint"`)
+		}
+	})
+
+	t.Run("pair with nested key label", func(t *testing.T) {
+		keyWrap := testutil.Node("key_wrapper", "", testutil.Leaf("identifier", "serviceName"))
+		pair := testutil.Node("pair", "", keyWrap, testutil.Leaf("string", "auth"))
+		if got := getKeyLabel(pair); got != "serviceName" {
+			t.Errorf("getKeyLabel(pair) = %q, want %q", got, "serviceName")
+		}
+	})
+}

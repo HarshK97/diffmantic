@@ -147,6 +147,8 @@ var rustRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"field_identifier",
+		"shorthand_field_identifier",
 	},
 	Blocks: []string{
 		"block",
