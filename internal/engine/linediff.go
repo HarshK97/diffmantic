@@ -2,6 +2,8 @@ package engine
 
 import (
 	"strings"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // LineDiff matches corresponding line indices between linesA and linesB using trimmed LCS,
@@ -42,9 +44,10 @@ func LineDiff(linesA, linesB []string) map[int]int {
 	stride := lenB + 1
 	dp := make([]int, (lenA+1)*stride)
 	for i := 1; i <= lenA; i++ {
+		w := lineWeight(subA[i-1])
 		for j := 1; j <= lenB; j++ {
 			if subA[i-1] == subB[j-1] {
-				dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + 1
+				dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + w
 			} else {
 				dp[i*stride+j] = max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
 			}
@@ -54,15 +57,16 @@ func LineDiff(linesA, linesB []string) map[int]int {
 	// Backtrack to find matching lines
 	i, j := lenA, lenB
 	for i > 0 && j > 0 {
-		if subA[i-1] == subB[j-1] {
+		w := lineWeight(subA[i-1])
+		if subA[i-1] == subB[j-1] && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+w {
 			bestJ := j
-			if i-j > 20 || j-i > 20 {
-				for k := j - 1; k >= 1; k-- {
-					if subA[i-1] == subB[k-1] && dp[(i-1)*stride+(k-1)]+1 == dp[i*stride+j] {
-						if i-k <= 20 && k-i <= 20 {
-							bestJ = k
-							break
-						}
+			bestDist := max(i-j, j-i)
+			for k := j - 1; k >= 1; k-- {
+				if subA[i-1] == subB[k-1] && dp[(i-1)*stride+(k-1)]+w == dp[i*stride+j] {
+					dist := max(i-k, k-i)
+					if dist < bestDist {
+						bestDist = dist
+						bestJ = k
 					}
 				}
 			}
@@ -77,6 +81,20 @@ func LineDiff(linesA, linesB []string) map[int]int {
 	}
 
 	return compactLineDiff(linesA, linesB, matchedA)
+}
+
+// lineWeight returns a matching weight for a line. Substantive code lines
+// are given higher weight than trivial punctuation or blank lines so that
+// meaningful statements act as anchors when statement order shifts.
+func lineWeight(s string) int {
+	trimmed := strings.TrimSpace(s)
+	if len(trimmed) == 0 {
+		return 1
+	}
+	if len(trimmed) <= 5 && rules.IsPunctuation(trimmed) {
+		return 1
+	}
+	return 10
 }
 
 type linePair struct {
@@ -170,9 +188,10 @@ func lineDiffPatience(subA, subB []string, startA, startB int, matchedA map[int]
 		stride := wM + 1
 		dp := make([]int, (wN+1)*stride)
 		for i := 1; i <= wN; i++ {
+			w := lineWeight(winA[i-1])
 			for j := 1; j <= wM; j++ {
 				if winA[i-1] == winB[j-1] {
-					dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + 1
+					dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + w
 				} else {
 					dp[i*stride+j] = max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
 				}
@@ -180,10 +199,22 @@ func lineDiffPatience(subA, subB []string, startA, startB int, matchedA map[int]
 		}
 		i, j := wN, wM
 		for i > 0 && j > 0 {
-			if winA[i-1] == winB[j-1] {
-				matchedA[wStartA+i-1] = wStartB + j - 1
+			w := lineWeight(winA[i-1])
+			if winA[i-1] == winB[j-1] && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+w {
+				bestJ := j
+				bestDist := max(i-j, j-i)
+				for k := j - 1; k >= 1; k-- {
+					if winA[i-1] == winB[k-1] && dp[(i-1)*stride+(k-1)]+w == dp[i*stride+j] {
+						dist := max(i-k, k-i)
+						if dist < bestDist {
+							bestDist = dist
+							bestJ = k
+						}
+					}
+				}
+				matchedA[wStartA+i-1] = wStartB + bestJ - 1
 				i--
-				j--
+				j = bestJ - 1
 			} else if dp[(i-1)*stride+j] >= dp[i*stride+(j-1)] {
 				i--
 			} else {

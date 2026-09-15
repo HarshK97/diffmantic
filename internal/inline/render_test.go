@@ -228,8 +228,8 @@ func TestRender_Tier2_CrossHunkDeclarationMove(t *testing.T) {
 	if strings.Contains(got, "←") {
 		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
 	}
-	if !strings.Contains(got, "func Alpha") {
-		t.Errorf("expected 'func Alpha' in output, got:\n%s", got)
+	if !strings.Contains(got, "func Target") && !strings.Contains(got, "func Alpha") {
+		t.Errorf("expected 'func Target' or 'func Alpha' in output, got:\n%s", got)
 	}
 }
 

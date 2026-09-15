@@ -67,7 +67,11 @@ func TopDown(
 						continue
 					}
 					if Isomorphic(t1, t2) {
-						if Height(t1) <= 2 {
+						effectiveHeight := Height(t1)
+						if r := rulesFor(t1); r != nil && r.IsWrapper(t1.Type) && len(t1.Children) == 1 {
+							effectiveHeight = Height(t1.Children[0])
+						}
+						if effectiveHeight <= 2 {
 							s1 := getScopeName(t1)
 							s2 := getScopeName(t2)
 							if s1 != "" && s2 != "" && s1 != s2 {
@@ -287,6 +291,9 @@ func getScopeName(n *treesitter.ASTNode) string {
 func isCallNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
 	}
 	if r != nil {
 		return r.IsCall(n.Type)
