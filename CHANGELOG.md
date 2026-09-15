@@ -7,23 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-15
+
 ### Added
-- Added `--wrap` and `--wrap-width` flags for inline diffs. Long lines wrap to your terminal width with the text staying aligned behind the gutter. Wrapping stays off in `-p/--patch` mode so patches still apply cleanly.
-- Added `--tab-width` flag (and `tab_width` config option) so tab indentation renders at the width you expect.
+- Added `--wrap` and `--wrap-width` flags for inline diffs. Long lines wrap to your terminal width with text staying aligned behind the gutter. Wrapping stays off in `-p/--patch` mode so patches still apply cleanly.
+- Added `--tab-width` flag (and `tab_width` in config) so tabs render at the width you want.
+- Added `--parse-tree` and `--cst` flags to inspect the AST or concrete syntax tree for any file, making it easy to see how Diffmantic parses your code.
+- Added dedicated container matching for data and markup formats (JSON, YAML, TOML, HTML, CSS). Keys match in O(N) time, and renamed keys are distinguished from changed values.
 
 ### Changed
-- Inline diff is now the default output everywhere. Running `diffm` with no `-f` flag used to open the interactive viewer or print JSON, now it prints an inline diff through the pager.
-- Switched parsing from gotreesitter to native Tree-sitter for high-speed parsing.
-- Raised the large-file fallback from 400 KB to 1 MB, and added a 10,000-line cap. Bigger files fall back to fast line diffing instead of slow structural diffing.
-- Change hunks now settle on blank lines and closing brackets where possible, so diffs read more naturally.
+- Inline diff is now the default output everywhere. Running `diffm` without `-f` prints an inline diff through your pager (`$PAGER`, `less`, or `more`).
+- Switched to the native Tree-sitter C runtime with all 18 grammars statically linked into the binary. You don't need any external tools or package managers installed, and parsing runs up to 8.5x faster.
+- Raised the large-file threshold from 400 KB to 1 MB (with a 10,000-line cap) before falling back to line diffing.
+- Weighted line diffing to prioritize real code over blank lines and lone brackets when finding hunk matches.
+- Change hunks now settle on blank lines and closing brackets where possible, so diffs break naturally like paragraphs.
 
 ### Fixed
-- Fixed closing brackets (`)`, `]`, `}`) showing up unhighlighted when their block was added or removed. They now light up with the rest of the change.
-- Cleaned up noisy move highlights when code gets wrapped in a new container. Surviving inner code no longer gets painted as moved.
+- Fixed uncolored member connectors (`.`, `->`, `::`) and sequence commas when calling methods or changing fields (like `obj.field` or `std::vector`). The connector punctuation now highlights with the rest of the change.
+- Fixed unhighlighted closing brackets (`)`, `]`, `}`) when their enclosing block was added or removed.
+- Fixed trailing closing parentheses being left behind when an opening paren was part of a change (like `.map(&:strip)`).
+- Stopped small expressions and tokens from falsely matching across different functions or scopes. Cross-scope shifts now cleanly show as a delete and an insert.
+- Prevented stationary sibling blocks from accidentally stealing outer container wrappers from neighboring code.
+- Cleaned up noisy move highlights when wrapping existing code in a new block or container. Surviving inner code no longer shows as moved.
+- Gated function call matching on shared names or arguments so unrelated calls aren't paired together.
 
 ### Removed
 - Removed the interactive fullscreen viewer (`-f tui`). Use `-f inline` with the pager instead.
-- Removed `-t`/`--theme`, custom YAML themes, and the `themes/` config folder. Output now uses a fixed 16-color palette that works in any terminal.
+- Removed `-t`/`--theme`, custom YAML themes, and the `themes/` config folder. Output now uses a clean 16-color palette that works out of the box in any light or dark terminal.
 
 ## [0.7.0] - 2026-09-03
 
@@ -205,7 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/HarshK97/diffmantic/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/HarshK97/diffmantic/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HarshK97/diffmantic/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HarshK97/diffmantic/compare/v0.4.0...v0.5.0
