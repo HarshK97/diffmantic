@@ -5,3 +5,4 @@ coverage.html
 dist/
 native/bridge/grammars/
 native/bridge/lib/
+.zig-cache/

@@ -2,7 +2,14 @@ package treesitter
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../native/bridge/include -O3
-#cgo LDFLAGS: -L${SRCDIR}/../../native/bridge/lib -ldiffmantic_grammars -lstdc++
+#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/../../native/bridge/lib/linux_amd64
+#cgo linux,arm64 LDFLAGS: -L${SRCDIR}/../../native/bridge/lib/linux_arm64
+#cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/../../native/bridge/lib/darwin_amd64
+#cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/../../native/bridge/lib/darwin_arm64
+#cgo windows,amd64 LDFLAGS: -L${SRCDIR}/../../native/bridge/lib/windows_amd64
+#cgo darwin LDFLAGS: -lc++
+#cgo !darwin LDFLAGS: -lstdc++
+#cgo LDFLAGS: -L${SRCDIR}/../../native/bridge/lib -ldiffmantic_grammars
 #include "bridge.h"
 #include "../../native/bridge/src/bridge.c"
 

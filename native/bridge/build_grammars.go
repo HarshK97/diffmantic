@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,20 @@ type GrammarSpec struct {
 	Name     string
 	SubDir   string
 	ExtraInc string
+}
+
+type TargetSpec struct {
+	Name      string // "linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64", "windows_amd64"
+	ZigTarget string // "x86_64-linux-musl", "aarch64-linux-musl", "x86_64-macos", "aarch64-macos", "x86_64-windows-gnu"
+	OS        string // "linux", "darwin", "windows"
+}
+
+var releaseTargets = []TargetSpec{
+	{Name: "linux_amd64", ZigTarget: "x86_64-linux-musl", OS: "linux"},
+	{Name: "linux_arm64", ZigTarget: "aarch64-linux-musl", OS: "linux"},
+	{Name: "darwin_amd64", ZigTarget: "x86_64-macos", OS: "darwin"},
+	{Name: "darwin_arm64", ZigTarget: "aarch64-macos", OS: "darwin"},
+	{Name: "windows_amd64", ZigTarget: "x86_64-windows-gnu", OS: "windows"},
 }
 
 var grammars = []GrammarSpec{
@@ -46,6 +61,13 @@ var grammars = []GrammarSpec{
 	{Name: "yaml", SubDir: "src"},
 }
 
+type compileJob struct {
+	desc     string
+	compiler string
+	args     []string
+	output   string
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -54,15 +76,18 @@ func main() {
 }
 
 func run() error {
+	var (
+		crossAllFlag bool
+		targetFlag   string
+	)
+	flag.BoolVar(&crossAllFlag, "cross-all", false, "Compile static libraries for all release targets using Zig")
+	flag.StringVar(&targetFlag, "target", "", "Compile static library for a specific target (e.g. linux_amd64)")
+	flag.Parse()
+
 	_, currentFile, _, _ := runtime.Caller(0)
 	bridgeDir := filepath.Dir(currentFile)
 	grammarsDir := filepath.Join(bridgeDir, "grammars")
 	libDir := filepath.Join(bridgeDir, "lib")
-	buildTmp, err := os.MkdirTemp("", "diffmantic_grammars_build_*")
-	if err != nil {
-		return fmt.Errorf("creating temp dir: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(buildTmp) }()
 
 	if err := os.MkdirAll(grammarsDir, 0o755); err != nil {
 		return fmt.Errorf("creating grammars dir: %w", err)
@@ -85,37 +110,42 @@ func run() error {
 		return fmt.Errorf("parsing grammars.json: %w", err)
 	}
 
-	cc, err := findTool("CC", "clang", "gcc", "cc")
-	if err != nil {
-		return fmt.Errorf("discovering C compiler: %w", err)
-	}
-	cxx, err := findTool("CXX", "clang++", "g++", "c++")
-	if err != nil {
-		return fmt.Errorf("discovering C++ compiler: %w", err)
-	}
-	ar, err := findTool("AR", "ar", "llvm-ar")
-	if err != nil {
-		return fmt.Errorf("discovering archiver: %w", err)
+	if err := ensureAllRepos(bridgeDir, grammarsDir, manifest); err != nil {
+		return err
 	}
 
-	var archFlags []string
-	if runtime.GOOS == "darwin" && isClang(cc) {
-		archFlags = []string{"-arch", "arm64", "-arch", "x86_64"}
-	}
-
-	// posixFlags returns position-independent and visibility flags only on
-	// non-Windows targets. MSVC rejects -fPIC and -fvisibility=hidden even
-	// when called through clang.exe on Windows.
-	posixFlags := func() []string {
-		if runtime.GOOS == "windows" {
-			return nil
+	if crossAllFlag {
+		fmt.Println("==> Compiling native grammars for all release targets via Zig...")
+		for _, target := range releaseTargets {
+			fmt.Printf("\n===> Building target %s (%s)...\n", target.Name, target.ZigTarget)
+			if err := compileTarget(&target, bridgeDir, grammarsDir, libDir); err != nil {
+				return fmt.Errorf("compiling target %s: %w", target.Name, err)
+			}
 		}
-		return []string{"-fPIC", "-fvisibility=hidden"}
+		// Also ensure host library exists
+		fmt.Println("\n===> Building host library for local execution...")
+		if err := compileTarget(nil, bridgeDir, grammarsDir, libDir); err != nil {
+			return fmt.Errorf("compiling host target: %w", err)
+		}
+		return nil
 	}
 
-	fmt.Println("==> Fetching and compiling Tree-sitter core C runtime + 18 native grammars...")
+	if targetFlag != "" {
+		for _, target := range releaseTargets {
+			if target.Name == targetFlag {
+				fmt.Printf("==> Compiling native grammars for target %s (%s) via Zig...\n", target.Name, target.ZigTarget)
+				return compileTarget(&target, bridgeDir, grammarsDir, libDir)
+			}
+		}
+		return fmt.Errorf("unknown target %q (available: linux_amd64, linux_arm64, darwin_amd64, darwin_arm64, windows_amd64)", targetFlag)
+	}
 
-	fmt.Println("==> Building Tree-sitter core runtime...")
+	// Default: Host build
+	return compileTarget(nil, bridgeDir, grammarsDir, libDir)
+}
+
+func ensureAllRepos(bridgeDir, grammarsDir string, manifest map[string]RepoInfo) error {
+	fmt.Println("==> Fetching and syncing Tree-sitter core + 18 native grammars...")
 	tsInfo, ok := manifest["tree-sitter"]
 	if !ok {
 		return fmt.Errorf("missing 'tree-sitter' in grammars.json")
@@ -132,20 +162,6 @@ func run() error {
 		return fmt.Errorf("syncing api.h: %w", err)
 	}
 
-	coreObj := filepath.Join(buildTmp, "tree_sitter.o")
-	coreArgs := append(append([]string{"-O3"}, posixFlags()...), archFlags...)
-	coreArgs = append(coreArgs,
-		"-I", filepath.Join(tsCoreDir, "lib", "include"),
-		"-I", filepath.Join(tsCoreDir, "lib", "src"),
-		"-c", filepath.Join(tsCoreDir, "lib", "src", "lib.c"),
-		"-o", coreObj,
-	)
-	fmt.Println("  --> Compiling tree_sitter core lib.c...")
-	if err := runCmd(cc, coreArgs...); err != nil {
-		return fmt.Errorf("compiling tree-sitter core: %w", err)
-	}
-
-	fmt.Println("==> Fetching grammar repositories...")
 	repoCache := make(map[string]string)
 	for _, g := range grammars {
 		repoDirName := g.Name + "_repo"
@@ -165,13 +181,92 @@ func run() error {
 			repoCache[repoDir] = info.Version
 		}
 	}
+	return nil
+}
 
-	fmt.Println("==> Compiling native grammars in parallel...")
-	type compileJob struct {
-		compiler string
-		args     []string
-		output   string
-		desc     string
+func compileTarget(target *TargetSpec, bridgeDir, grammarsDir, libDir string) error {
+	buildTmp, err := os.MkdirTemp("", "diffmantic_grammars_build_*")
+	if err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(buildTmp) }()
+
+	var (
+		ccCompiler  string
+		ccPrefix    []string
+		cxxCompiler string
+		cxxPrefix   []string
+		arTool      string
+		arPrefix    []string
+		archFlags   []string
+		posixFlags  []string
+		targetLib   string
+	)
+
+	if target == nil {
+		// Host build
+		cc, err := findTool("CC", "clang", "gcc", "cc")
+		if err != nil {
+			return fmt.Errorf("discovering C compiler: %w", err)
+		}
+		cxx, err := findTool("CXX", "clang++", "g++", "c++")
+		if err != nil {
+			return fmt.Errorf("discovering C++ compiler: %w", err)
+		}
+		ar, err := findTool("AR", "ar", "llvm-ar")
+		if err != nil {
+			return fmt.Errorf("discovering archiver: %w", err)
+		}
+		ccCompiler = cc
+		cxxCompiler = cxx
+		arTool = ar
+
+		if runtime.GOOS == "darwin" && isClang(cc) {
+			archFlags = []string{"-arch", "arm64", "-arch", "x86_64"}
+		}
+		if runtime.GOOS != "windows" {
+			posixFlags = []string{"-fPIC", "-fvisibility=hidden"}
+		}
+		targetLib = filepath.Join(libDir, "libdiffmantic_grammars.a")
+	} else {
+		// Cross-compilation with Zig
+		zigPath, err := exec.LookPath("zig")
+		if err != nil {
+			return fmt.Errorf("zig compiler not found in PATH: %w", err)
+		}
+		ccCompiler = zigPath
+		ccPrefix = []string{"cc", "-target", target.ZigTarget}
+		cxxCompiler = zigPath
+		cxxPrefix = []string{"c++", "-target", target.ZigTarget}
+		arTool = zigPath
+		arPrefix = []string{"ar"}
+
+		if target.OS != "windows" {
+			posixFlags = []string{"-fPIC", "-fvisibility=hidden"}
+		}
+		targetDir := filepath.Join(libDir, target.Name)
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			return fmt.Errorf("creating target dir %s: %w", targetDir, err)
+		}
+		targetLib = filepath.Join(targetDir, "libdiffmantic_grammars.a")
+	}
+
+	tsCoreDir := filepath.Join(grammarsDir, "tree_sitter_repo")
+	coreObj := filepath.Join(buildTmp, "tree_sitter.o")
+	coreArgs := append([]string{}, ccPrefix...)
+	coreArgs = append(coreArgs, "-O3")
+	coreArgs = append(coreArgs, posixFlags...)
+	coreArgs = append(coreArgs, archFlags...)
+	coreArgs = append(coreArgs,
+		"-I", filepath.Join(tsCoreDir, "lib", "include"),
+		"-I", filepath.Join(tsCoreDir, "lib", "src"),
+		"-c", filepath.Join(tsCoreDir, "lib", "src", "lib.c"),
+		"-o", coreObj,
+	)
+
+	fmt.Println("  --> Compiling tree_sitter core lib.c...")
+	if err := runCmd(ccCompiler, coreArgs...); err != nil {
+		return fmt.Errorf("compiling tree-sitter core: %w", err)
 	}
 
 	var jobs []compileJob
@@ -191,7 +286,10 @@ func run() error {
 			incArgs = append(incArgs, "-I", filepath.Join(repoDir, g.ExtraInc))
 		}
 
-		baseFlags := append(append([]string{"-O3"}, posixFlags()...), archFlags...)
+		baseFlags := append([]string{}, ccPrefix...)
+		baseFlags = append(baseFlags, "-O3")
+		baseFlags = append(baseFlags, posixFlags...)
+		baseFlags = append(baseFlags, archFlags...)
 		baseFlags = append(baseFlags, incArgs...)
 
 		parserC := filepath.Join(fullSrc, "parser.c")
@@ -200,7 +298,7 @@ func run() error {
 			args := slices.Clone(baseFlags)
 			args = append(args, "-c", parserC, "-o", outObj)
 			jobs = append(jobs, compileJob{
-				compiler: cc,
+				compiler: ccCompiler,
 				args:     args,
 				output:   outObj,
 				desc:     fmt.Sprintf("%s parser.c", g.Name),
@@ -214,17 +312,21 @@ func run() error {
 			args := slices.Clone(baseFlags)
 			args = append(args, "-c", scannerC, "-o", outObj)
 			jobs = append(jobs, compileJob{
-				compiler: cc,
+				compiler: ccCompiler,
 				args:     args,
 				output:   outObj,
 				desc:     fmt.Sprintf("%s scanner.c", g.Name),
 			})
 		} else if fileExists(scannerCC) {
 			outObj := filepath.Join(buildTmp, fmt.Sprintf("%s_scanner.o", g.Name))
-			args := slices.Clone(baseFlags)
+			args := append([]string{}, cxxPrefix...)
+			args = append(args, "-O3")
+			args = append(args, posixFlags...)
+			args = append(args, archFlags...)
+			args = append(args, incArgs...)
 			args = append(args, "-c", scannerCC, "-o", outObj)
 			jobs = append(jobs, compileJob{
-				compiler: cxx,
+				compiler: cxxCompiler,
 				args:     args,
 				output:   outObj,
 				desc:     fmt.Sprintf("%s scanner.cc", g.Name),
@@ -233,14 +335,17 @@ func run() error {
 	}
 
 	registryObj := filepath.Join(buildTmp, "registry.o")
-	registryArgs := append(append([]string{"-O3"}, posixFlags()...), archFlags...)
+	registryArgs := append([]string{}, ccPrefix...)
+	registryArgs = append(registryArgs, "-O3")
+	registryArgs = append(registryArgs, posixFlags...)
+	registryArgs = append(registryArgs, archFlags...)
 	registryArgs = append(registryArgs,
 		"-I", filepath.Join(bridgeDir, "include"),
 		"-c", filepath.Join(bridgeDir, "src", "registry.c"),
 		"-o", registryObj,
 	)
 	jobs = append(jobs, compileJob{
-		compiler: cc,
+		compiler: ccCompiler,
 		args:     registryArgs,
 		output:   registryObj,
 		desc:     "grammar registry.c",
@@ -283,21 +388,20 @@ func run() error {
 		return err
 	}
 
-	targetLib := filepath.Join(libDir, "libdiffmantic_grammars.a")
-	fmt.Printf("==> Creating static archive %s with embedded Tree-sitter core...\n", targetLib)
+	fmt.Printf("==> Creating static archive %s...\n", targetLib)
 	_ = os.Remove(targetLib)
 
-	var arArgs []string
+	arArgs := append([]string{}, arPrefix...)
 	arArgs = append(arArgs, "rcs", targetLib, coreObj)
 	for _, j := range jobs {
 		arArgs = append(arArgs, j.output)
 	}
 
-	if err := runCmd(ar, arArgs...); err != nil {
-		return fmt.Errorf("creating static archive with %s: %w", ar, err)
+	if err := runCmd(arTool, arArgs...); err != nil {
+		return fmt.Errorf("creating static archive with %s: %w", arTool, err)
 	}
 
-	fmt.Printf("==> Successfully built %s with Tree-sitter core + all 18 grammars!\n", targetLib)
+	fmt.Printf("==> Successfully built %s!\n", targetLib)
 	return nil
 }
 

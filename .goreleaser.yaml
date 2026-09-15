@@ -13,35 +13,30 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-    tags:
-      - grammar_subset
-      - grammar_subset_c
-      - grammar_subset_cpp
-      - grammar_subset_css
-      - grammar_subset_go
-      - grammar_subset_html
-      - grammar_subset_java
-      - grammar_subset_javascript
-      - grammar_subset_json
-      - grammar_subset_lua
-      - grammar_subset_php
-      - grammar_subset_python
-      - grammar_subset_ruby
-      - grammar_subset_rust
-      - grammar_subset_toml
-      - grammar_subset_tsx
-      - grammar_subset_typescript
-      - grammar_subset_yaml
-      - grammar_subset_zig
     env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    goarch:
-      - amd64
-      - arm64
+      - CGO_ENABLED=1
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - darwin_amd64
+      - darwin_arm64
+      - windows_amd64
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=zig cc -target x86_64-linux-musl
+          - CXX=zig c++ -target x86_64-linux-musl
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=zig cc -target aarch64-linux-musl
+          - CXX=zig c++ -target aarch64-linux-musl
+      - goos: windows
+        goarch: amd64
+        env:
+          - CC=zig cc -target x86_64-windows-gnu
+          - CXX=zig c++ -target x86_64-windows-gnu
 
 archives:
   - id: diffmantic-archive
