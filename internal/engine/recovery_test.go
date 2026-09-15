@@ -130,3 +130,57 @@ func TestSimpleRecoveryStationaryNeighbors(t *testing.T) {
 		t.Errorf("got %v, want %v", m.Src()[midSrc], midDst)
 	}
 }
+
+func TestUniqueTypePairsDeclarationNoSemanticOverlap(t *testing.T) {
+	// Two var_declarations that share only the keyword "var" must NOT pair.
+	v1 := testutil.Node("var_declaration", "",
+		testutil.Leaf("var", "var"),
+		testutil.Leaf("identifier", "headerStyle"),
+		testutil.Leaf("type_identifier", "Style"),
+	)
+	root1 := testutil.Node("source_file", "", v1)
+	root1.Language = "go"
+
+	v2 := testutil.Node("var_declaration", "",
+		testutil.Leaf("var", "var"),
+		testutil.Leaf("identifier", "rulesObj"),
+		testutil.Leaf("type_identifier", "Rules"),
+	)
+	root2 := testutil.Node("source_file", "", v2)
+	root2.Language = "go"
+
+	pairs := uniqueTypePairs(
+		[]*treesitter.ASTNode{v1},
+		[]*treesitter.ASTNode{v2},
+	)
+	if len(pairs) != 0 {
+		t.Fatalf("declarations sharing only keywords should not pair, got %d pairs", len(pairs))
+	}
+}
+
+func TestUniqueTypePairsDeclarationWithSemanticOverlap(t *testing.T) {
+	// Two var_declarations that share a semantic identifier ("count") should pair.
+	v1 := testutil.Node("var_declaration", "",
+		testutil.Leaf("var", "var"),
+		testutil.Leaf("identifier", "count"),
+		testutil.Leaf("type_identifier", "int"),
+	)
+	root1 := testutil.Node("source_file", "", v1)
+	root1.Language = "go"
+
+	v2 := testutil.Node("var_declaration", "",
+		testutil.Leaf("var", "var"),
+		testutil.Leaf("identifier", "count"),
+		testutil.Leaf("type_identifier", "int64"),
+	)
+	root2 := testutil.Node("source_file", "", v2)
+	root2.Language = "go"
+
+	pairs := uniqueTypePairs(
+		[]*treesitter.ASTNode{v1},
+		[]*treesitter.ASTNode{v2},
+	)
+	if len(pairs) != 1 {
+		t.Fatalf("declarations sharing semantic identifier should pair, got %d pairs", len(pairs))
+	}
+}

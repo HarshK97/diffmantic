@@ -84,6 +84,23 @@ func (p *LinePartition) isGroup1(matched map[int]int, n *treesitter.ASTNode) (bo
 			return false, -1
 		}
 	}
+	// An isolated single line with no matching contiguous neighbors is an accidental
+	// textual collision in an edited region, not an untouched code block (Group 1).
+	if startRow == endRow && len(matched) > 1 {
+		hasPrev := false
+		if startRow > 0 {
+			if prev, ok := matched[startRow-1]; ok && prev == startOther-1 {
+				hasPrev = true
+			}
+		}
+		hasNext := false
+		if next, ok := matched[startRow+1]; ok && next == startOther+1 {
+			hasNext = true
+		}
+		if !hasPrev && !hasNext {
+			return false, -1
+		}
+	}
 	return true, startOther
 }
 

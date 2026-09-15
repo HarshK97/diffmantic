@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/HarshK97/diffmantic/internal/treesitter"
+import (
+	"slices"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+)
 
 // RunZSRecovery runs Zhang-Shasha (1989) tree edit distance on small subtrees
 // t1 and t2 and adds optimal node mappings to m.
@@ -135,7 +139,6 @@ func zsBacktrack(
 ) [][2]int {
 	var editMapping [][2]int
 	treePairs := [][2]int{{size1, size2}}
-	rootPair := true
 
 	for len(treePairs) > 0 {
 		pair := treePairs[0]
@@ -143,10 +146,7 @@ func zsBacktrack(
 		lastRow := pair[0]
 		lastCol := pair[1]
 
-		if !rootPair {
-			zsForestDist(lastRow, lastCol, lld1, lld2, nodes1, nodes2, treedist, forestdist)
-		}
-		rootPair = false
+		zsForestDist(lastRow, lastCol, lld1, lld2, nodes1, nodes2, treedist, forestdist)
 
 		firstRow := lld1[lastRow-1]
 		firstCol := lld2[lastCol-1]
@@ -154,26 +154,39 @@ func zsBacktrack(
 		col := lastCol
 
 		for row > firstRow || col > firstCol {
+			matched := false
+			if row > firstRow && col > firstCol {
+				if lld1[row-1] == lld1[lastRow-1] && lld2[col-1] == lld2[lastCol-1] {
+					if forestdist[row-1][col-1]+zsMatchCost(nodes1[row-1], nodes2[col-1]) == forestdist[row][col] {
+						editMapping = append(editMapping, [2]int{row, col})
+						row--
+						col--
+						matched = true
+					}
+				} else {
+					if forestdist[lld1[row-1]][lld2[col-1]]+treedist[row][col] == forestdist[row][col] {
+						treePairs = append([][2]int{{row, col}}, treePairs...)
+						row = lld1[row-1]
+						col = lld2[col-1]
+						matched = true
+					}
+				}
+			}
+			if matched {
+				continue
+			}
+
 			if row > firstRow && forestdist[row-1][col]+1.0 == forestdist[row][col] {
-				editMapping = append([][2]int{{row, 0}}, editMapping...)
+				editMapping = append(editMapping, [2]int{row, 0})
 				row--
 			} else if col > firstCol && forestdist[row][col-1]+1.0 == forestdist[row][col] {
-				editMapping = append([][2]int{{0, col}}, editMapping...)
+				editMapping = append(editMapping, [2]int{0, col})
 				col--
-			} else if row > firstRow && col > firstCol {
-				if lld1[row-1] == lld1[lastRow-1] && lld2[col-1] == lld2[lastCol-1] {
-					editMapping = append([][2]int{{row, col}}, editMapping...)
-					row--
-					col--
-				} else {
-					treePairs = append([][2]int{{row, col}}, treePairs...)
-					row = lld1[row-1]
-					col = lld2[col-1]
-				}
 			} else {
 				break
 			}
 		}
 	}
+	slices.Reverse(editMapping)
 	return editMapping
 }

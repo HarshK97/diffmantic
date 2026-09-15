@@ -80,6 +80,34 @@ func TestLineDiff(t *testing.T) {
 				7: 12, // TEST("delete")
 			},
 		},
+		{
+			name: "prioritizes substantive code line over isolated closing brace when order inverts",
+			linesA: []string{
+				"c := engine.createContext(w, req, nil, handlers)", // 0
+				"if engine.handlers404 == nil {",                   // 1
+				"    http.NotFound(c.Writer, c.Req)",               // 2
+				"} else {",                                         // 3
+				"    c.Writer.WriteHeader(404)",                    // 4
+				"}",                                                // 5
+				"",                                                 // 6
+				"c.Next()",                                         // 7
+				"engine.reuseContext(c)",                           // 8
+			},
+			linesB: []string{
+				"c := engine.createContext(w, req, nil, handlers)", // 0
+				"c.Writer.setStatus(404)",                          // 1
+				"c.Next()",                                         // 2
+				"if !c.Writer.Written() {",                         // 3
+				"    c.String(404, \"404 page not found\")",        // 4
+				"}",                      // 5
+				"engine.reuseContext(c)", // 6
+			},
+			expected: map[int]int{
+				0: 0,
+				7: 2, // c.Next() matched despite order inversion with '}'
+				8: 6, // engine.reuseContext(c)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -163,5 +191,33 @@ func TestLineDiffLargeMatrixFallback(t *testing.T) {
 	got := LineDiff(linesA, linesB)
 	if len(got) != n {
 		t.Errorf("expected all %d lines to be matched, got %d", n, len(got))
+	}
+}
+
+func TestLineDiff_DiagonalTieBreaking(t *testing.T) {
+	// File A has a block "target" at line 1.
+	// File B has two identical "target" blocks: at line 1 (in-place) and at line 15 (inserted).
+	linesA := []string{
+		"header",
+		"target_line_1",
+		"target_line_2",
+		"footer",
+	}
+	linesB := []string{
+		"header",
+		"target_line_1",
+		"target_line_2",
+		"other_1",
+		"other_2",
+		"target_line_1",
+		"target_line_2",
+		"footer",
+	}
+
+	got := LineDiff(linesA, linesB)
+
+	// target lines (1, 2) in linesA should match lines (1, 2) in linesB, not (5, 6)
+	if got[1] != 1 || got[2] != 2 {
+		t.Errorf("expected diagonal tie-breaking to match (1->1, 2->2), got (1->%d, 2->%d)", got[1], got[2])
 	}
 }
