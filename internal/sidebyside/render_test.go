@@ -836,20 +836,19 @@ func TestSliceLineToChunks_AlignedPairRetainsGranularHighlights(t *testing.T) {
 	}
 }
 
-func TestSliceLineToChunks_StandaloneInsertFallback(t *testing.T) {
+func TestSliceLineToChunks_StandaloneInsertNeutralContext(t *testing.T) {
 	scratch := &RenderScratch{}
 	line := "    newStandaloneMethod()"
 
-	// 0 spans on standalone insert should color unspanned tokens as InsertFg
 	chunks := scratch.SliceLineToChunks(line, "", nil, 100, renderutil.LineContextStandaloneInsert, false, true)
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 
 	got := string(chunks[0])
-	insToken := color.InsertFg + "newStandaloneMethod()"
-	if !strings.Contains(got, insToken) {
-		t.Errorf("standalone insert line should fallback to InsertFg on unspanned tokens, got:\n%q", got)
+	neutralToken := color.TextFg + "newStandaloneMethod()"
+	if !strings.Contains(got, neutralToken) {
+		t.Errorf("standalone insert line without spans should retain neutral TextFg on unspanned tokens, got:\n%q", got)
 	}
 }
 

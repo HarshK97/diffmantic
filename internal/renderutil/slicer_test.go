@@ -270,7 +270,7 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 		t.Errorf("aligned line with 0 spans must contain neutral TextFg: %q", alignedStr)
 	}
 
-	// 2. Standalone deletion with 0 spans: must use DeleteFg after indentation
+	// 2. Standalone deletion with 0 spans: unspanned tokens stay plain TextFg
 	delCfg := SliceConfig{
 		TargetWidth:      50,
 		TabWidth:         4,
@@ -283,11 +283,11 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 	if strings.Contains(delStr[:4], "\x1b[") {
 		t.Errorf("standalone delete: leading indentation should not contain ANSI codes: %q", delStr)
 	}
-	if !strings.Contains(delStr, color.DeleteFg) {
-		t.Errorf("standalone delete with 0 spans must contain DeleteFg: %q", delStr)
+	if !strings.Contains(delStr, color.TextFg) {
+		t.Errorf("standalone delete with 0 spans must contain neutral TextFg: %q", delStr)
 	}
 
-	// 3. Standalone insertion with 0 spans: must use InsertFg after indentation
+	// 3. Standalone insertion with 0 spans: unspanned tokens stay plain TextFg
 	insCfg := SliceConfig{
 		TargetWidth:      50,
 		TabWidth:         4,
@@ -300,8 +300,8 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 	if strings.Contains(insStr[:4], "\x1b[") {
 		t.Errorf("standalone insert: leading indentation should not contain ANSI codes: %q", insStr)
 	}
-	if !strings.Contains(insStr, color.InsertFg) {
-		t.Errorf("standalone insert with 0 spans must contain InsertFg: %q", insStr)
+	if !strings.Contains(insStr, color.TextFg) {
+		t.Errorf("standalone insert with 0 spans must contain neutral TextFg: %q", insStr)
 	}
 }
 
