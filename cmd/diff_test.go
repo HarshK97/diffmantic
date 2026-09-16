@@ -26,6 +26,7 @@ func TestRootCmdFlags(t *testing.T) {
 		{name: "cached", shorthand: "", defValue: "false"},
 		{name: "parse-tree", shorthand: "", defValue: "false"},
 		{name: "cst", shorthand: "", defValue: "false"},
+		{name: "tab-width", shorthand: "", defValue: "4"},
 	}
 
 	for _, tt := range flags {

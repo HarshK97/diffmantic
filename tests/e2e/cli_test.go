@@ -147,15 +147,18 @@ func TestCLI_JSONFormat_ValidOutput(t *testing.T) {
 	}
 }
 
-func TestCLI_NonInteractive_DefaultsToInline(t *testing.T) {
-	// Without an explicit format, diffm defaults unconditionally to inline diff format.
+func TestCLI_NonInteractive_DefaultsToSideBySide(t *testing.T) {
+	// Without an explicit format flag, diffm defaults to side-by-side format.
 	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
-	stdout, stderr, err := runDiffm(oldPath, newPath)
+	stdout, stderr, err := runDiffm(oldPath, newPath, "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
-	if !strings.Contains(stdout, "@@") || !strings.Contains(stdout, "---") {
-		t.Fatalf("expected inline diff output by default, got:\n%s", stdout)
+	if strings.Contains(stdout, "@@") || strings.Contains(stdout, "--- a/") {
+		t.Fatalf("expected side-by-side output by default, got inline headers:\n%s", stdout)
+	}
+	if len(stdout) == 0 {
+		t.Fatal("expected non-empty side-by-side output")
 	}
 }
 
@@ -254,13 +257,13 @@ func TestCLI_JSONFormat_UIFlags(t *testing.T) {
 	}
 }
 
-func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
+func TestCLI_LargeFileFallback_Exceeds1MB(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "large_old.ts")
 	newPath := filepath.Join(dir, "large_new.ts")
 
 	var oldBuilder, newBuilder strings.Builder
-	for i := 0; i < 15000; i++ {
+	for i := 0; i < 35000; i++ {
 		fmt.Fprintf(&oldBuilder, "const variable_%d: number = %d;\n", i, i)
 		fmt.Fprintf(&newBuilder, "const variable_%d: number = %d;\n", i, i+1)
 	}
@@ -274,12 +277,12 @@ func TestCLI_LargeFileFallback_Exceeds400KB(t *testing.T) {
 
 	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "json", "--ui")
 	if err != nil {
-		t.Fatalf("diffm failed on >400KB file: %v\nstderr: %s", err, stderr)
+		t.Fatalf("diffm failed on >1MB file: %v\nstderr: %s", err, stderr)
 	}
 
 	var envelope serialize.Envelope
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
-		t.Fatalf("invalid JSON output on >400KB file fallback: %v", err)
+		t.Fatalf("invalid JSON output on >1MB file fallback: %v", err)
 	}
 
 	if envelope.Version == "" {
@@ -531,5 +534,79 @@ func TestCLI_GitInlineFormat(t *testing.T) {
 		if !strings.Contains(stdout, "--- a/") || !strings.Contains(stdout, "+++ b/") {
 			t.Errorf("expected git inline diff output with standard headers, got:\n%s", stdout)
 		}
+	}
+}
+
+func TestCLI_SideBySideFormat(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.go")
+	newPath := filepath.Join(dir, "new.go")
+
+	oldContent := "package main\n\nfunc main() {\n\tprintln(\"old code\")\n}\n"
+	newContent := "package main\n\nfunc main() {\n\tprintln(\"new code\")\n}\n"
+
+	if err := os.WriteFile(oldPath, []byte(oldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath, []byte(newContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. -f side-by-side
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "side-by-side", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm -f side-by-side failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "println(\"old code\")") || !strings.Contains(stdout, "println(\"new code\")") {
+		t.Errorf("expected both old and new code in side-by-side output:\n%s", stdout)
+	}
+
+	// 2. -f sbs alias
+	stdoutSbs, stderrSbs, err := runDiffm(oldPath, newPath, "-f", "sbs", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm -f sbs failed: %v\nstderr: %s", err, stderrSbs)
+	}
+	if !strings.Contains(stdoutSbs, "println(\"old code\")") || !strings.Contains(stdoutSbs, "println(\"new code\")") {
+		t.Errorf("expected both old and new code in -f sbs output:\n%s", stdoutSbs)
+	}
+}
+
+func TestCLI_BinaryDiff(t *testing.T) {
+	dir := t.TempDir()
+	oldBin := filepath.Join(dir, "old.png")
+	newBin := filepath.Join(dir, "new.png")
+
+	_ = os.WriteFile(oldBin, []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"), 0o644)
+	_ = os.WriteFile(newBin, []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02"), 0o644)
+
+	// 1. Side-by-side on binary files
+	stdoutSBS, _, err := runDiffm(oldBin, newBin, "-f", "side-by-side", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm binary failed: %v", err)
+	}
+	if !strings.Contains(stdoutSBS, "Binary files") || !strings.Contains(stdoutSBS, "differ") {
+		t.Errorf("expected binary differ message in sbs, got:\n%s", stdoutSBS)
+	}
+
+	// 2. Inline on binary files
+	stdoutInline, _, err := runDiffm(oldBin, newBin, "-f", "inline", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm binary inline failed: %v", err)
+	}
+	if !strings.Contains(stdoutInline, "Binary files") || !strings.Contains(stdoutInline, "differ") {
+		t.Errorf("expected binary differ message in inline, got:\n%s", stdoutInline)
+	}
+
+	// 3. JSON on binary files
+	stdoutJSON, _, err := runDiffm(oldBin, newBin, "-f", "json")
+	if err != nil {
+		t.Fatalf("diffm binary json failed: %v", err)
+	}
+	var env serialize.Envelope
+	if err := json.Unmarshal([]byte(stdoutJSON), &env); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if !env.IsBinary {
+		t.Error("expected is_binary: true in JSON output")
 	}
 }
