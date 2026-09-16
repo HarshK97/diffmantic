@@ -38,9 +38,10 @@ func (p *LineAlignmentPair) UnmarshalJSON(b []byte) error {
 
 // EnvelopeOptions selects which sections to include in the JSON envelope.
 type EnvelopeOptions struct {
-	IncludeActions    bool
-	IncludeAlignment  bool
-	IncludeHighlights bool
+	IncludeActions      bool
+	IncludeAlignment    bool
+	IncludeHighlights   bool
+	CommentLineMappings map[int]int
 }
 
 // Envelope wraps the serialized actions list with a schema version.
@@ -86,7 +87,7 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 		Version: SchemaVersion,
 	}
 
-	alignment := AlignLines(srcBytes, dstBytes)
+	alignment := AlignLines(srcBytes, dstBytes, nil, nil)
 	if opts.IncludeAlignment {
 		env.LineAlignment = alignment
 	}
@@ -177,7 +178,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	}
 
 	if opts.IncludeAlignment {
-		env.LineAlignment = AlignLines(srcBytes, dstBytes)
+		env.LineAlignment = AlignLines(srcBytes, dstBytes, ms, es, opts.CommentLineMappings)
 	}
 
 	var actionsList []Action
@@ -503,22 +504,57 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			}
 		}
 	}
-	if len(n.Children) > 0 && n.StartRow != n.EndRow {
-		var firstBodyChild *treesitter.ASTNode
-		for _, child := range n.Children {
-			if child.StartRow > n.StartRow && child.StartByte > *start && child.StartByte < *end {
-				firstBodyChild = child
-				break
+	if len(n.Children) > 0 {
+		if r != nil && r.IsIndexed(n.Type) && len(n.Children) >= 2 {
+			receiver := n.Children[0]
+			firstIndex := n.Children[1]
+			lastIndex := n.Children[len(n.Children)-1]
+			if firstIndex.StartByte > receiver.EndByte && firstIndex.StartByte <= *end {
+				origEnd := *end
+				*start = receiver.EndByte
+				*end = firstIndex.StartByte
+				if lastIndex.EndByte > firstIndex.StartByte && lastIndex.EndByte < origEnd {
+					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastIndex.EndByte, origEnd) {
+						return true, lastIndex.EndByte, origEnd
+					}
+				}
+				return false, 0, 0
 			}
 		}
-		if firstBodyChild != nil {
-			origEnd := *end
-			*end = firstBodyChild.StartByte
-			lastChild := n.Children[len(n.Children)-1]
-			if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {
-				if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
-					return true, lastChild.EndByte, origEnd
+
+		if r != nil && r.IsWrapper(n.Type) {
+			firstChild := n.Children[0]
+			if firstChild.StartByte > *start && firstChild.StartByte < *end {
+				origEnd := *end
+				*end = firstChild.StartByte
+				lastChild := n.Children[len(n.Children)-1]
+				if lastChild.EndByte > firstChild.StartByte && lastChild.EndByte < origEnd {
+					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
+						return true, lastChild.EndByte, origEnd
+					}
 				}
+				return false, 0, 0
+			}
+		}
+		if n.StartRow != n.EndRow {
+			var firstBodyChild *treesitter.ASTNode
+			for _, child := range n.Children {
+				isBody := child.StartRow > n.StartRow || (r != nil && (r.IsDeclaration(child.Type) || r.IsBlock(child.Type)))
+				if isBody && child.StartByte > *start && child.StartByte < *end {
+					firstBodyChild = child
+					break
+				}
+			}
+			if firstBodyChild != nil {
+				origEnd := *end
+				*end = firstBodyChild.StartByte
+				lastChild := n.Children[len(n.Children)-1]
+				if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {
+					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
+						return true, lastChild.EndByte, origEnd
+					}
+				}
+				return false, 0, 0
 			}
 		}
 	}
@@ -537,7 +573,7 @@ func isIndentationConstruct(n, child *treesitter.ASTNode) bool {
 	if child != nil && r.IsBlock(child.Type) {
 		return true
 	}
-	return !r.IsWrapper(n.Type)
+	return !r.IsWrapper(n.Type) && !r.IsIndexed(n.Type)
 }
 
 func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
