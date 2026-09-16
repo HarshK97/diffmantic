@@ -280,6 +280,56 @@ func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
 	}
 }
 
+func TestAdjustRangeForContainerDeclarationChild(t *testing.T) {
+	kw := &treesitter.ASTNode{Type: "friend", StartByte: 10, EndByte: 16, StartRow: 1, EndRow: 1}
+	fn := &treesitter.ASTNode{Type: "function_definition", StartByte: 17, EndByte: 80, StartRow: 1, EndRow: 4}
+	container := &treesitter.ASTNode{
+		Type: "friend_declaration", StartByte: 10, EndByte: 80, StartRow: 1, EndRow: 4,
+		Children: []*treesitter.ASTNode{kw, fn},
+	}
+	container.Language = "cpp"
+	kw.Parent = container
+	fn.Parent = container
+
+	start := container.StartByte
+	end := container.EndByte
+
+	adjustRangeForContainer(container, &start, &end, nil)
+
+	if start != 10 || end != 17 {
+		t.Errorf("expected container range sliced to [10, 17], got [%d, %d]", start, end)
+	}
+}
+
+func TestAdjustRangeForContainerParenWrapper(t *testing.T) {
+	inner := &treesitter.ASTNode{Type: "identifier", StartByte: 1, EndByte: 9, StartRow: 1, EndRow: 1}
+	paren := &treesitter.ASTNode{
+		Type:      "parenthesized_expression",
+		StartByte: 0,
+		EndByte:   10,
+		StartRow:  1,
+		EndRow:    1,
+		Children:  []*treesitter.ASTNode{inner},
+	}
+	paren.Language = "cpp"
+	inner.Parent = paren
+
+	start := paren.StartByte
+	end := paren.EndByte
+
+	code := []byte("(12345678)")
+	hasFooter, fStart, fEnd := adjustRangeForContainer(paren, &start, &end, code)
+	if !hasFooter {
+		t.Fatal("expected paren wrapper to report footer")
+	}
+	if start != 0 || end != 1 {
+		t.Errorf("expected header range [0, 1], got [%d, %d]", start, end)
+	}
+	if fStart != 9 || fEnd != 10 {
+		t.Errorf("expected footer range [9, 10], got [%d, %d]", fStart, fEnd)
+	}
+}
+
 func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	// A block container with an inner statement and closing brace:
 	// line 0: {
