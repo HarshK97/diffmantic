@@ -170,7 +170,7 @@ diffm before.go after.go -f actions
 
 ```yaml
 # Flag defaults
-format: inline            # "inline" | "json" | "actions"
+format: side-by-side      # "side-by-side" | "inline" | "json" | "actions"
 tab_width: 4              # spaces per tab stop
 ignore_comments: false    # ignore comments during AST diffing
 parse_error_limit: 0      # max parse errors before fallback to line diff

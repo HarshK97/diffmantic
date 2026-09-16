@@ -40,10 +40,16 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/sidebyside"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
+
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
+}
 
 var rootCmd = &cobra.Command{
 	Use:     "diffm [refA] [refB]",
@@ -59,14 +65,14 @@ Works as a standalone file diff tool, a git difftool, or a backend engine for
 editor plugins (Neovim, VS Code) via JSON output.
 
 Examples:
-  diffm before.go after.go                 Inline diff with pager (default in TTY)
-  diffm before.go after.go -f inline       Print AST-aware inline diff with pager
-  diffm before.go after.go -f json         JSON output for editor plugins
-  diffm before.go after.go -f actions      Print structural actions list
-  diffm                                    Git mode on unstaged changes
-  diffm -f inline                          Git mode inline diff with pager
-  diffm --cached -f inline                 Git staged changes inline diff
-  diffm HEAD~1 HEAD -f inline              Git revision comparison in inline diff`,
+  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
+  diffm before.go after.go -f inline           Print AST-aware inline diff with pager
+  diffm before.go after.go -f json             JSON output for editor plugins
+  diffm before.go after.go -f actions          Print structural actions list
+  diffm                                        Git mode on unstaged changes
+  diffm -f inline                              Git mode inline diff with pager
+  diffm --cached                               Git staged changes diff
+  diffm HEAD~1 HEAD                            Git revision comparison`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Load()
@@ -89,9 +95,13 @@ Examples:
 			format = "inline"
 		} else if !cmd.Flags().Changed("format") && cfg.Format != "" {
 			format = cfg.Format
+		} else if format == "" {
+			format = "side-by-side"
 		}
-		if format != "" && !slices.Contains([]string{"json", "actions", "inline"}, format) {
-			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: json, actions, inline\n", format)
+
+		normFormat := normalizeFormat(format)
+		if format != "" && !slices.Contains([]string{"json", "actions", "inline", "side-by-side"}, normFormat) {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: side-by-side, inline, json, actions\n", format)
 			os.Exit(1)
 		}
 
@@ -103,6 +113,11 @@ Examples:
 		parseErrorLimit, _ := cmd.Flags().GetInt("parse-error-limit")
 		if !cmd.Flags().Changed("parse-error-limit") {
 			parseErrorLimit = cfg.ParseErrorLimit
+		}
+
+		sizeLimitKB, _ := cmd.Flags().GetInt("size-limit")
+		if !cmd.Flags().Changed("size-limit") && cfg.SizeLimit != nil {
+			sizeLimitKB = *cfg.SizeLimit
 		}
 
 		parseTree, _ := cmd.Flags().GetBool("parse-tree")
@@ -125,7 +140,7 @@ Examples:
 
 			// Case 1: Both exist on disk as files or /dev/null
 			if isFileOrDevNull(argA) && isFileOrDevNull(argB) {
-				runFileDiff(cmd, argA, argB, format, ignoreComments, parseErrorLimit, noPager)
+				runFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
 				return
 			}
 
@@ -138,17 +153,17 @@ Examples:
 
 				// Case 2: Two Git revisions (e.g. diffm main feature-branch)
 				if isRevA && isRevB {
-					runGitMode(cmd, []string{argA, argB}, format, ignoreComments, parseErrorLimit, noPager)
+					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
 					return
 				}
 
 				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/config.go)
 				if isRevA && isTrackedOrFileB {
-					runGitMode(cmd, []string{argA, argB}, format, ignoreComments, parseErrorLimit, noPager)
+					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
 					return
 				}
 				if isRevB && isTrackedOrFileA {
-					runGitMode(cmd, []string{argB, argA}, format, ignoreComments, parseErrorLimit, noPager)
+					runGitMode(cmd, []string{argB, argA}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
 					return
 				}
 
@@ -185,9 +200,9 @@ Examples:
 			}
 		}
 
-		// In a git repo, launch interactive mode (optionally filtered by ref or path)
+		// In a git repo, launch git mode (optionally filtered by ref or path)
 		if git.IsGitRepository(".") {
-			runGitMode(cmd, args, format, ignoreComments, parseErrorLimit, noPager)
+			runGitMode(cmd, args, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
 			return
 		}
 
@@ -200,7 +215,93 @@ Examples:
 	},
 }
 
-func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, noPager bool) {
+func normalizeFormat(f string) string {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "sbs", "sidebyside", "side-by-side", "tui":
+		return "side-by-side"
+	case "inline":
+		return "inline"
+	case "json":
+		return "json"
+	case "actions":
+		return "actions"
+	default:
+		return f
+	}
+}
+
+func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, int, int) {
+	if env == nil || len(env.LineAlignment) == 0 {
+		return 0, 0, 0
+	}
+
+	srcLines := strings.Split(string(srcBytes), "\n")
+	dstLines := strings.Split(string(dstBytes), "\n")
+
+	srcEndsWithNL := len(srcBytes) > 0 && srcBytes[len(srcBytes)-1] == '\n'
+	dstEndsWithNL := len(dstBytes) > 0 && dstBytes[len(dstBytes)-1] == '\n'
+
+	lastSrcLineIdx := len(srcLines) - 1
+	if srcEndsWithNL && lastSrcLineIdx >= 0 && srcLines[lastSrcLineIdx] == "" {
+		lastSrcLineIdx--
+	}
+	lastDstLineIdx := len(dstLines) - 1
+	if dstEndsWithNL && lastDstLineIdx >= 0 && dstLines[lastDstLineIdx] == "" {
+		lastDstLineIdx--
+	}
+
+	srcEOFLine := -1
+	if srcEndsWithNL && len(srcLines) > 0 && srcLines[len(srcLines)-1] == "" {
+		srcEOFLine = len(srcLines) - 1
+	}
+	dstEOFLine := -1
+	if dstEndsWithNL && len(dstLines) > 0 && dstLines[len(dstLines)-1] == "" {
+		dstEOFLine = len(dstLines) - 1
+	}
+
+	ins, del, upd := 0, 0, 0
+
+	for _, pair := range env.LineAlignment {
+		left := pair.LeftLine
+		right := pair.RightLine
+
+		if srcEOFLine != -1 && left == srcEOFLine {
+			if right == dstEOFLine || right == -1 {
+				continue
+			}
+			left = -1
+		}
+		if dstEOFLine != -1 && right == dstEOFLine {
+			if left == srcEOFLine || left == -1 {
+				continue
+			}
+			right = -1
+		}
+
+		if left == -1 && right >= 0 {
+			ins++
+		} else if left >= 0 && right == -1 {
+			del++
+		} else if left >= 0 && right >= 0 {
+			sText := ""
+			if left < len(srcLines) {
+				sText = srcLines[left]
+			}
+			dText := ""
+			if right < len(dstLines) {
+				dText = dstLines[right]
+			}
+			isEOFLine := (left == lastSrcLineIdx && right == lastDstLineIdx)
+			if sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL) {
+				upd++
+			}
+		}
+	}
+
+	return ins, del, upd
+}
+
+func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, noPager bool) {
 	stagedOnly, _ := cmd.Flags().GetBool("cached")
 
 	var refs, paths []string
@@ -224,10 +325,9 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	}
 
 	if format == "" {
-		format = "inline"
+		format = "side-by-side"
 	}
 
-	// Git modes: inline, json, actions
 	files, err := git.GetChangedFiles(".", refA, refB, pathFilter)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: retrieving git status: %v\n", err)
@@ -237,14 +337,15 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
-	includeUI := format == "inline" || uiMode || fullMode
+	includeUI := format == "inline" || format == "side-by-side" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format == "inline" || !uiMode || fullMode,
+		IncludeActions:    format == "inline" || format == "side-by-side" || (!uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
 
-	renderOpts := resolveRenderOptions(cmd)
+	inlineOpts := resolveRenderOptions(cmd)
+	sbsOpts := resolveSideBySideOptions(cmd)
 
 	type diffTarget struct {
 		srcFile  string
@@ -354,24 +455,35 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	var p *pager.Pager
 	var writer io.Writer = os.Stdout
 
-	if format == "inline" || format == "actions" {
+	if format == "inline" || format == "side-by-side" || format == "actions" {
 		p, writer = pager.Start(noPager)
 		defer p.Close()
 	}
 
 	for _, t := range targets {
 		dr, err := pipeline.Run(t.srcBytes, t.dstBytes, t.srcFile, t.dstFile, pipeline.DiffOptions{
-			ParseErrorLimit: parseErrorLimit,
-			IgnoreComments:  ignoreComments,
-			EnvelopeOpts:    opts,
+			ParseErrorLimit:  parseErrorLimit,
+			IgnoreComments:   ignoreComments,
+			DisableSizeLimit: sizeLimitKB <= 0,
+			MaxASTFileSize:   sizeLimitKB * 1024,
+			EnvelopeOpts:     opts,
 		})
 		if err != nil {
 			continue
 		}
 
 		switch format {
+		case "side-by-side":
+			if len(targets) > 1 {
+				numIns, numDel, numUpd := countLineStats(t.srcBytes, t.dstBytes, dr.Envelope)
+				_ = sidebyside.RenderFileBanner(t.dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer)
+			}
+			err := sidebyside.Render(t.srcFile, t.dstFile, t.srcBytes, t.dstBytes, dr.Envelope, sbsOpts, writer)
+			if err != nil && pager.IsBrokenPipe(err) {
+				return
+			}
 		case "inline":
-			output := inline.Render(t.srcFile, t.dstFile, t.srcBytes, t.dstBytes, dr.Envelope, renderOpts)
+			output := inline.Render(t.srcFile, t.dstFile, t.srcBytes, t.dstBytes, dr.Envelope, inlineOpts)
 			if output != "" {
 				if _, err := io.WriteString(writer, output); err != nil {
 					if pager.IsBrokenPipe(err) {
@@ -414,11 +526,6 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			_ = actions.FprintActions(writer, dr.EditScript)
 		}
 	}
-}
-
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }
 
 func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
@@ -505,6 +612,66 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 	}
 }
 
+func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
+	patchMode, _ := cmd.Flags().GetBool("patch")
+
+	colorFlag, _ := cmd.Flags().GetString("color")
+	if patchMode && !cmd.Flags().Changed("color") {
+		colorFlag = "never"
+	}
+
+	contextLines, _ := cmd.Flags().GetInt("context")
+	if contextLines < 0 {
+		contextLines = 3
+	}
+
+	lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
+	if patchMode && !cmd.Flags().Changed("line-numbers") {
+		lineNumbers = false
+	}
+
+	annotations, _ := cmd.Flags().GetBool("annotations")
+	if patchMode && !cmd.Flags().Changed("annotations") {
+		annotations = false
+	}
+
+	var useColor bool
+	switch colorFlag {
+	case "always":
+		useColor = true
+	case "never":
+		useColor = false
+	default:
+		useColor = isTerminal(os.Stdout)
+	}
+
+	forceSBSFlag, _ := cmd.Flags().GetBool("force-sbs")
+
+	adaptiveThreshold := 6
+	if forceSBSFlag {
+		adaptiveThreshold = 0
+	}
+
+	cfg, _ := config.Load()
+	tabWidth, _ := cmd.Flags().GetInt("tab-width")
+	if !cmd.Flags().Changed("tab-width") && cfg != nil && cfg.TabWidth > 0 {
+		tabWidth = cfg.TabWidth
+	}
+	if tabWidth <= 0 {
+		tabWidth = 4
+	}
+
+	return sidebyside.RenderOptions{
+		Color:              useColor,
+		ContextLines:       contextLines,
+		LineNumbers:        lineNumbers,
+		DisableAnnotations: !annotations,
+		TabWidth:           tabWidth,
+		ForceSideBySide:    forceSBSFlag,
+		AdaptiveThreshold:  adaptiveThreshold,
+	}
+}
+
 func isFileOrDevNull(path string) bool {
 	if path == os.DevNull {
 		return true
@@ -513,25 +680,27 @@ func isFileOrDevNull(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreComments bool, parseErrorLimit int, noPager bool) {
+func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, noPager bool) {
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
 	if format == "" {
-		format = "inline"
+		format = "side-by-side"
 	}
 
-	includeUI := format == "inline" || uiMode || fullMode
+	includeUI := format == "side-by-side" || format == "inline" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format == "inline" || !uiMode || fullMode,
+		IncludeActions:    format == "inline" || format == "side-by-side" || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
 
 	dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
-		ParseErrorLimit: parseErrorLimit,
-		IgnoreComments:  ignoreComments,
-		EnvelopeOpts:    opts,
+		ParseErrorLimit:  parseErrorLimit,
+		IgnoreComments:   ignoreComments,
+		DisableSizeLimit: sizeLimitKB <= 0,
+		MaxASTFileSize:   sizeLimitKB * 1024,
+		EnvelopeOpts:     opts,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -539,6 +708,15 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 	}
 
 	switch format {
+	case "side-by-side":
+		p, writer := pager.Start(noPager)
+		defer p.Close()
+
+		renderOpts := resolveSideBySideOptions(cmd)
+		err := sidebyside.Render(fileA, fileB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts, writer)
+		if err != nil && pager.IsBrokenPipe(err) {
+			return
+		}
 	case "inline":
 		p, writer := pager.Start(noPager)
 		defer p.Close()
@@ -574,6 +752,10 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 	case "actions":
 		p, writer := pager.Start(noPager)
 		defer p.Close()
+		if dr.IsBinary {
+			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", fileA, fileB)
+			return
+		}
 		_, _ = fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", fileA, fileB)
 		_ = engine.FprintMappings(writer, dr.MatchResult)
 		_ = actions.FprintActions(writer, dr.EditScript)
@@ -673,21 +855,23 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().StringP("format", "f", "", "Output format: json, actions, inline (default: inline)")
+	rootCmd.Flags().StringP("format", "f", "", "Output format: side-by-side, inline, json, actions (default: side-by-side)")
 	rootCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
 	rootCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
+	rootCmd.Flags().Int("size-limit", 1024, "Maximum file size in KB for AST parsing before falling back to line diff (0 to disable limit)")
 	rootCmd.Flags().Bool("ui", false, "Include line alignment and highlight spans in JSON output")
 	rootCmd.Flags().Bool("full", false, "Include actions, line alignment, and highlight spans in JSON output")
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
 	rootCmd.Flags().String("color", "auto", "Color output: always, never, auto")
-	rootCmd.Flags().IntP("context", "U", 3, "Lines of context to show for inline diff")
-	rootCmd.Flags().BoolP("line-numbers", "n", true, "Show line numbers in inline diff output")
-	rootCmd.Flags().Bool("annotations", true, "Include AST move annotations in inline diff")
+	rootCmd.Flags().IntP("context", "U", 3, "Lines of context to show for diff")
+	rootCmd.Flags().BoolP("line-numbers", "n", true, "Show line numbers in diff output")
+	rootCmd.Flags().Bool("annotations", true, "Include AST move annotations in diff")
 	rootCmd.Flags().BoolP("patch", "p", false, "Generate a standard patch suitable for git apply / patch tools")
+	rootCmd.Flags().Bool("force-sbs", false, "Force strict 50/50 side-by-side rendering without adaptive hybrid inline switching")
 	rootCmd.Flags().Bool("no-pager", false, "Do not pipe output into a pager")
 	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in inline diff")
 	rootCmd.Flags().Int("wrap-width", 0, "Explicit column width for line wrapping (0 to auto-detect terminal width)")
-	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in inline diff")
+	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in diff output")
 	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
 	rootCmd.Flags().Bool("cst", false, "Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic AST")
 }

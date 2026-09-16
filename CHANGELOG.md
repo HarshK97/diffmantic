@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Side-by-side (`sbs`) is now the default diff format everywhere. Running `diffm` without `-f` prints a side-by-side diff through your pager (`$PAGER`, `less`, or `more`).
+
 ## [0.8.0] - 2026-09-15
 
 ### Added
