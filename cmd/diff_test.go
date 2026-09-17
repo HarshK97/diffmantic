@@ -10,6 +10,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/spf13/cobra"
 )
 
 func TestRootCmdFlags(t *testing.T) {
@@ -232,5 +233,97 @@ func TestDumpFilesLanguageDetectionError(t *testing.T) {
 	expectedPrefix := "detecting language for " + unknownFile
 	if !strings.Contains(err.Error(), expectedPrefix) {
 		t.Errorf("expected error containing %q, got: %v", expectedPrefix, err)
+	}
+}
+
+func TestRootCmdAutocompletion(t *testing.T) {
+	if rootCmd.ValidArgsFunction == nil {
+		t.Fatal("expected rootCmd.ValidArgsFunction to be defined")
+	}
+
+	candidates, directive := rootCmd.ValidArgsFunction(rootCmd, nil, "")
+	if directive != cobra.ShellCompDirectiveDefault {
+		t.Errorf("expected directive ShellCompDirectiveDefault, got: %d", directive)
+	}
+	if len(candidates) == 0 {
+		t.Error("expected non-empty git ref completion candidates")
+	}
+
+	candidates1, directive1 := rootCmd.ValidArgsFunction(rootCmd, []string{"main"}, "")
+	if directive1 != cobra.ShellCompDirectiveDefault {
+		t.Errorf("expected directive ShellCompDirectiveDefault, got: %d", directive1)
+	}
+	if len(candidates1) == 0 {
+		t.Error("expected non-empty git ref completion candidates for second arg")
+	}
+
+	candidates2, directive2 := rootCmd.ValidArgsFunction(rootCmd, []string{"main", "HEAD"}, "")
+	if len(candidates2) != 0 {
+		t.Errorf("expected no candidates when 2 args provided, got: %v", candidates2)
+	}
+	if directive2 != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("expected ShellCompDirectiveNoFileComp, got: %d", directive2)
+	}
+}
+
+func TestFlagAutocompletion(t *testing.T) {
+	formatFn, ok := rootCmd.GetFlagCompletionFunc("format")
+	if !ok || formatFn == nil {
+		t.Fatal("expected flag completion function for --format")
+	}
+	formats, dir := formatFn(rootCmd, nil, "")
+	if len(formats) != 4 || dir != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("unexpected --format completions: %v, directive: %d", formats, dir)
+	}
+
+	colorFn, ok := rootCmd.GetFlagCompletionFunc("color")
+	if !ok || colorFn == nil {
+		t.Fatal("expected flag completion function for --color")
+	}
+	colors, dir := colorFn(rootCmd, nil, "")
+	if len(colors) != 3 || dir != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("unexpected --color completions: %v, directive: %d", colors, dir)
+	}
+}
+
+func TestGitExternal7ArgsProtocol(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "old.go")
+	fileB := filepath.Join(dir, "new.go")
+
+	_ = os.WriteFile(fileA, []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"), 0o644)
+	_ = os.WriteFile(fileB, []byte("package main\n\nfunc main() {\n\tprintln(\"world\")\n}\n"), 0o644)
+
+	// Git passes: path old-file old-hex old-mode new-file new-hex new-mode
+	displayPath := "sample.go"
+	oldHex := "1234567890123456789012345678901234567890"
+	newHex := "0987654321098765432109876543210987654321"
+	oldMode := "100644"
+	newMode := "100644"
+
+	cmd := rootCmd
+	defer cmd.SetArgs(nil)
+	cmd.SetArgs([]string{"-f", "json", displayPath, fileA, oldHex, oldMode, fileB, newHex, newMode})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("7-arg diff.external execution failed: %v", err)
+	}
+}
+
+func TestGitExternal7ArgsFailFast(t *testing.T) {
+	if os.Getenv("DIFFM_TEST_7ARG_FAILFAST") == "1" {
+		rootCmd.SetArgs([]string{"sample.go", "nonexistent_file_a", "oldhex", "100644", "nonexistent_file_b", "newhex", "100644"})
+		_ = rootCmd.Execute()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestGitExternal7ArgsFailFast$")
+	cmd.Env = append(os.Environ(), "DIFFM_TEST_7ARG_FAILFAST=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected command to exit with error, but succeeded. Output: %s", string(out))
+	}
+	want := "Error: invalid old-file for external diff driver: nonexistent_file_a"
+	if !strings.Contains(string(out), want) {
+		t.Errorf("output = %q, want substring %q", string(out), want)
 	}
 }

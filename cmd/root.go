@@ -22,7 +22,6 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -74,6 +73,19 @@ Examples:
   diffm --cached                               Git staged changes diff
   diffm HEAD~1 HEAD                            Git revision comparison`,
 	Args: cobra.ArbitraryArgs,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) >= 2 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		if !git.IsGitRepository(".") {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		refs, err := git.ListRefs(".", toComplete)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		return refs, cobra.ShellCompDirectiveDefault
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Load()
 		if err != nil {
@@ -120,10 +132,39 @@ Examples:
 			sizeLimitKB = *cfg.SizeLimit
 		}
 
+		lineLimitLines, _ := cmd.Flags().GetInt("line-limit")
+		if !cmd.Flags().Changed("line-limit") && cfg.LineLimit != nil {
+			lineLimitLines = *cfg.LineLimit
+		}
+
 		parseTree, _ := cmd.Flags().GetBool("parse-tree")
 		isCST, _ := cmd.Flags().GetBool("cst")
 		if parseTree || isCST {
 			runParseTree(cmd, args, noPager, isCST)
+			return
+		}
+
+		// Seven args: Git diff.external driver protocol signature
+		// Usage: diffm <path> <old-file> <old-hex> <old-mode> <new-file> <new-hex> <new-mode>
+		if len(args) == 7 {
+			path := args[0]
+			oldFile := args[1]
+			newFile := args[4]
+			if !isFileOrDevNull(oldFile) {
+				fmt.Fprintf(os.Stderr, "Error: invalid old-file for external diff driver: %s\n", oldFile)
+				os.Exit(1)
+			}
+			if !isFileOrDevNull(newFile) {
+				fmt.Fprintf(os.Stderr, "Error: invalid new-file for external diff driver: %s\n", newFile)
+				os.Exit(1)
+			}
+			if !cmd.Flags().Changed("no-pager") {
+				noPager = true
+			}
+			if normFormat == "" {
+				normFormat = "side-by-side"
+			}
+			runFileDiff(cmd, oldFile, newFile, path, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 			return
 		}
 
@@ -140,7 +181,7 @@ Examples:
 
 			// Case 1: Both exist on disk as files or /dev/null
 			if isFileOrDevNull(argA) && isFileOrDevNull(argB) {
-				runFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
+				runFileDiff(cmd, argA, argB, "", normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 				return
 			}
 
@@ -153,17 +194,17 @@ Examples:
 
 				// Case 2: Two Git revisions (e.g. diffm main feature-branch)
 				if isRevA && isRevB {
-					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
+					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 					return
 				}
 
 				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/config.go)
 				if isRevA && isTrackedOrFileB {
-					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
+					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 					return
 				}
 				if isRevB && isTrackedOrFileA {
-					runGitMode(cmd, []string{argB, argA}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
+					runGitMode(cmd, []string{argB, argA}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 					return
 				}
 
@@ -202,7 +243,7 @@ Examples:
 
 		// In a git repo, launch git mode (optionally filtered by ref or path)
 		if git.IsGitRepository(".") {
-			runGitMode(cmd, args, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)
+			runGitMode(cmd, args, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 			return
 		}
 
@@ -301,7 +342,7 @@ func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	return ins, del, upd
 }
 
-func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, noPager bool) {
+func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
 	stagedOnly, _ := cmd.Flags().GetBool("cached")
 
 	var refs, paths []string
@@ -347,17 +388,131 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	inlineOpts := resolveRenderOptions(cmd)
 	sbsOpts := resolveSideBySideOptions(cmd)
 
-	type diffTarget struct {
-		srcFile  string
-		dstFile  string
-		srcBytes []byte
-		dstBytes []byte
+	var p *pager.Pager
+	var writer io.Writer = os.Stdout
+
+	if format == "inline" || format == "side-by-side" || format == "actions" {
+		p, writer = pager.Start(noPager)
+		defer p.Close()
 	}
 
-	var targets []diffTarget
+	showBanner := len(files) > 1
+	var filesRendered int
+
+	processFile := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
+		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
+			return nil
+		}
+
+		dr, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
+			ParseErrorLimit:  parseErrorLimit,
+			IgnoreComments:   ignoreComments,
+			DisableSizeLimit: sizeLimitKB <= 0,
+			MaxASTFileSize:   sizeLimitKB * 1024,
+			DisableLineLimit: lineLimitLines <= 0,
+			MaxASTFileLines:  lineLimitLines,
+			EnvelopeOpts:     opts,
+		})
+		if err != nil {
+			return fmt.Errorf("diffing %s: %w", dstFile, err)
+		}
+
+		filesRendered++
+
+		switch format {
+		case "side-by-side":
+			if showBanner {
+				numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
+				if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
+					return err
+				}
+			}
+			err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, sbsOpts, writer)
+			if err != nil {
+				return err
+			}
+		case "inline":
+			output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, inlineOpts)
+			if output != "" {
+				if _, err := io.WriteString(writer, output); err != nil {
+					return err
+				}
+				if !strings.HasSuffix(output, "\n") {
+					if _, err := io.WriteString(writer, "\n"); err != nil {
+						return err
+					}
+				}
+			}
+		case "json":
+			var jsonData []byte
+			var err error
+			if showBanner {
+				jsonData, err = json.Marshal(dr.Envelope)
+			} else {
+				jsonData, err = json.MarshalIndent(dr.Envelope, "", "  ")
+			}
+			if err == nil {
+				if _, err := writer.Write(jsonData); err != nil {
+					return err
+				}
+				if _, err := writer.Write([]byte("\n")); err != nil {
+					return err
+				}
+			}
+		case "actions":
+			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
+				return err
+			}
+			if err := engine.FprintMappings(writer, dr.MatchResult); err != nil {
+				return err
+			}
+			if err := actions.FprintActions(writer, dr.EditScript); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	textconv, _ := cmd.Flags().GetBool("textconv")
+
+	renderBinaryDiff := func(srcFile, dstFile string) {
+		filesRendered++
+		switch format {
+		case "side-by-side":
+			if showBanner {
+				_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, sbsOpts.Color, writer)
+			}
+			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+		case "inline":
+			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+		case "json":
+			env := &serialize.Envelope{
+				Version:  serialize.SchemaVersion,
+				IsBinary: true,
+			}
+			var jsonData []byte
+			var err error
+			if showBanner {
+				jsonData, err = json.Marshal(env)
+			} else {
+				jsonData, err = json.MarshalIndent(env, "", "  ")
+			}
+			if err == nil {
+				_, _ = writer.Write(jsonData)
+				_, _ = writer.Write([]byte("\n"))
+			}
+		case "actions":
+			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+		}
+	}
 
 	if refA == "" {
 		for _, f := range files {
+			if p != nil && !p.IsActive() {
+				return
+			}
+
 			if stagedOnly && !f.Staged {
 				continue
 			}
@@ -368,16 +523,31 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 			dstFile := f.Path
 
+			if f.IsBinary && !textconv {
+				renderBinaryDiff(srcFile, dstFile)
+				continue
+			}
+
 			if f.Staged {
-				srcBytes, _ := git.GetContent(".", srcFile, "HEAD")
-				dstBytes, _ := git.GetContent(".", dstFile, ":")
-				if !bytes.Equal(srcBytes, dstBytes) {
-					targets = append(targets, diffTarget{
-						srcFile:  srcFile,
-						dstFile:  dstFile,
-						srcBytes: srcBytes,
-						dstBytes: dstBytes,
-					})
+				srcBytes, err := git.GetContent(".", srcFile, "HEAD", textconv)
+				if err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
+					}
+					return
+				}
+				dstBytes, err := git.GetContent(".", dstFile, ":", textconv)
+				if err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
+					}
+					return
+				}
+				if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					}
+					return
 				}
 			}
 
@@ -386,144 +556,121 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				if !f.Staged {
 					revA = "HEAD"
 				}
-				srcBytes, _ := git.GetContent(".", srcFile, revA)
-				dstBytes, _ := git.GetContent(".", dstFile, "")
-				if !bytes.Equal(srcBytes, dstBytes) {
-					targets = append(targets, diffTarget{
-						srcFile:  srcFile,
-						dstFile:  dstFile,
-						srcBytes: srcBytes,
-						dstBytes: dstBytes,
-					})
+				srcBytes, err := git.GetContent(".", srcFile, revA, textconv)
+				if err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
+					}
+					return
+				}
+				dstBytes, err := git.GetContent(".", dstFile, "", textconv)
+				if err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
+					}
+					return
+				}
+				if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					}
+					return
 				}
 			}
 		}
 	} else {
 		for _, f := range files {
+			if p != nil && !p.IsActive() {
+				return
+			}
+
 			srcFile := f.Path
 			if f.OldPath != "" {
 				srcFile = f.OldPath
 			}
 			dstFile := f.Path
 
-			srcBytes, _ := git.GetContent(".", srcFile, refA)
-			dstBytes, _ := git.GetContent(".", dstFile, refB)
-
-			if !bytes.Equal(srcBytes, dstBytes) {
-				targets = append(targets, diffTarget{
-					srcFile:  srcFile,
-					dstFile:  dstFile,
-					srcBytes: srcBytes,
-					dstBytes: dstBytes,
-				})
+			if f.IsBinary && !textconv {
+				renderBinaryDiff(srcFile, dstFile)
+				continue
 			}
-		}
-	}
 
-	if len(targets) == 0 && pathFilter != "" && (isFileOrDevNull(pathFilter) || git.IsTrackedFile(".", pathFilter)) {
-		var srcBytes, dstBytes []byte
-		if refA == "" {
-			if stagedOnly {
-				srcBytes, _ = git.GetContent(".", pathFilter, "HEAD")
-				dstBytes, _ = git.GetContent(".", pathFilter, ":")
-			} else {
-				srcBytes, _ = git.GetContent(".", pathFilter, ":")
-				if len(srcBytes) == 0 {
-					srcBytes, _ = git.GetContent(".", pathFilter, "HEAD")
+			srcBytes, err := git.GetContent(".", srcFile, refA, textconv)
+			if err != nil {
+				if !pager.IsBrokenPipe(err) {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
 				}
-				dstBytes, _ = git.GetContent(".", pathFilter, "")
-			}
-		} else {
-			srcBytes, _ = git.GetContent(".", pathFilter, refA)
-			dstBytes, _ = git.GetContent(".", pathFilter, refB)
-		}
-
-		if format == "json" || !bytes.Equal(srcBytes, dstBytes) {
-			targets = append(targets, diffTarget{
-				srcFile:  pathFilter,
-				dstFile:  pathFilter,
-				srcBytes: srcBytes,
-				dstBytes: dstBytes,
-			})
-		}
-	}
-
-	if len(targets) == 0 {
-		return
-	}
-
-	var p *pager.Pager
-	var writer io.Writer = os.Stdout
-
-	if format == "inline" || format == "side-by-side" || format == "actions" {
-		p, writer = pager.Start(noPager)
-		defer p.Close()
-	}
-
-	for _, t := range targets {
-		dr, err := pipeline.Run(t.srcBytes, t.dstBytes, t.srcFile, t.dstFile, pipeline.DiffOptions{
-			ParseErrorLimit:  parseErrorLimit,
-			IgnoreComments:   ignoreComments,
-			DisableSizeLimit: sizeLimitKB <= 0,
-			MaxASTFileSize:   sizeLimitKB * 1024,
-			EnvelopeOpts:     opts,
-		})
-		if err != nil {
-			continue
-		}
-
-		switch format {
-		case "side-by-side":
-			if len(targets) > 1 {
-				numIns, numDel, numUpd := countLineStats(t.srcBytes, t.dstBytes, dr.Envelope)
-				_ = sidebyside.RenderFileBanner(t.dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer)
-			}
-			err := sidebyside.Render(t.srcFile, t.dstFile, t.srcBytes, t.dstBytes, dr.Envelope, sbsOpts, writer)
-			if err != nil && pager.IsBrokenPipe(err) {
 				return
 			}
-		case "inline":
-			output := inline.Render(t.srcFile, t.dstFile, t.srcBytes, t.dstBytes, dr.Envelope, inlineOpts)
-			if output != "" {
-				if _, err := io.WriteString(writer, output); err != nil {
-					if pager.IsBrokenPipe(err) {
-						return
-					}
-					fmt.Fprintf(os.Stderr, "Error: writing diff output: %v\n", err)
+			dstBytes, err := git.GetContent(".", dstFile, refB, textconv)
+			if err != nil {
+				if !pager.IsBrokenPipe(err) {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
+				}
+				return
+			}
+
+			if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+				if !pager.IsBrokenPipe(err) {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				}
+				return
+			}
+		}
+	}
+
+	if filesRendered == 0 && pathFilter != "" && (isFileOrDevNull(pathFilter) || git.IsTrackedFile(".", pathFilter)) {
+		var srcBytes, dstBytes []byte
+		var err error
+		if refA == "" {
+			if stagedOnly {
+				srcBytes, err = git.GetContent(".", pathFilter, "HEAD", textconv)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
 					return
 				}
-				if !strings.HasSuffix(output, "\n") {
-					if _, err := io.WriteString(writer, "\n"); err != nil {
-						if pager.IsBrokenPipe(err) {
-							return
-						}
-						fmt.Fprintf(os.Stderr, "Error: writing newline: %v\n", err)
+				dstBytes, err = git.GetContent(".", pathFilter, ":", textconv)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
+					return
+				}
+			} else {
+				srcBytes, err = git.GetContent(".", pathFilter, ":", textconv)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
+					return
+				}
+				if len(srcBytes) == 0 {
+					srcBytes, err = git.GetContent(".", pathFilter, "HEAD", textconv)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
 						return
 					}
 				}
-			}
-		case "json":
-			jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
-			if err == nil {
-				if _, err := writer.Write(jsonData); err != nil {
-					if pager.IsBrokenPipe(err) {
-						return
-					}
-				}
-				if _, err := writer.Write([]byte("\n")); err != nil {
-					if pager.IsBrokenPipe(err) {
-						return
-					}
-				}
-			}
-		case "actions":
-			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", t.srcFile, t.dstFile); err != nil {
-				if pager.IsBrokenPipe(err) {
+				dstBytes, err = git.GetContent(".", pathFilter, "", textconv)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
 					return
 				}
 			}
-			_ = engine.FprintMappings(writer, dr.MatchResult)
-			_ = actions.FprintActions(writer, dr.EditScript)
+		} else {
+			srcBytes, err = git.GetContent(".", pathFilter, refA, textconv)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
+				return
+			}
+			dstBytes, err = git.GetContent(".", pathFilter, refB, textconv)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
+				return
+			}
+		}
+
+		if err := processFile(pathFilter, pathFilter, srcBytes, dstBytes); err != nil {
+			if !pager.IsBrokenPipe(err) {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			}
+			return
 		}
 	}
 }
@@ -673,16 +820,21 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 }
 
 func isFileOrDevNull(path string) bool {
-	if path == os.DevNull {
+	if path == os.DevNull || path == "/dev/null" {
 		return true
 	}
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
 
-func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, noPager bool) {
+func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
+
+	displayA, displayB := fileA, fileB
+	if displayPath != "" {
+		displayA, displayB = displayPath, displayPath
+	}
 
 	if format == "" {
 		format = "side-by-side"
@@ -695,11 +847,36 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 		IncludeHighlights: includeUI,
 	}
 
-	dr, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{
+	var srcBytes, dstBytes []byte
+	var err error
+
+	if fileA == os.DevNull || fileA == "/dev/null" {
+		srcBytes = []byte{}
+	} else {
+		srcBytes, err = os.ReadFile(fileA)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", fileA, err)
+			os.Exit(1)
+		}
+	}
+
+	if fileB == os.DevNull || fileB == "/dev/null" {
+		dstBytes = []byte{}
+	} else {
+		dstBytes, err = os.ReadFile(fileB)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", fileB, err)
+			os.Exit(1)
+		}
+	}
+
+	dr, err := pipeline.Run(srcBytes, dstBytes, displayA, displayB, pipeline.DiffOptions{
 		ParseErrorLimit:  parseErrorLimit,
 		IgnoreComments:   ignoreComments,
 		DisableSizeLimit: sizeLimitKB <= 0,
 		MaxASTFileSize:   sizeLimitKB * 1024,
+		DisableLineLimit: lineLimitLines <= 0,
+		MaxASTFileLines:  lineLimitLines,
 		EnvelopeOpts:     opts,
 	})
 	if err != nil {
@@ -713,7 +890,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 		defer p.Close()
 
 		renderOpts := resolveSideBySideOptions(cmd)
-		err := sidebyside.Render(fileA, fileB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts, writer)
+		err := sidebyside.Render(displayA, displayB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts, writer)
 		if err != nil && pager.IsBrokenPipe(err) {
 			return
 		}
@@ -722,7 +899,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 		defer p.Close()
 
 		renderOpts := resolveRenderOptions(cmd)
-		output := inline.Render(fileA, fileB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts)
+		output := inline.Render(displayA, displayB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts)
 		if output != "" {
 			if _, err := io.WriteString(writer, output); err != nil {
 				if pager.IsBrokenPipe(err) {
@@ -753,10 +930,10 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB string, format string, ignoreC
 		p, writer := pager.Start(noPager)
 		defer p.Close()
 		if dr.IsBinary {
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", fileA, fileB)
+			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", displayA, displayB)
 			return
 		}
-		_, _ = fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", fileA, fileB)
+		_, _ = fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", displayA, displayB)
 		_ = engine.FprintMappings(writer, dr.MatchResult)
 		_ = actions.FprintActions(writer, dr.EditScript)
 	}
@@ -777,16 +954,7 @@ func runParseTree(cmd *cobra.Command, args []string, noPager bool, isCST bool) {
 		defer p.Close()
 	}
 
-	bw := bufio.NewWriter(writer)
-	defer func() {
-		_ = bw.Flush()
-	}()
-
-	if err := dumpFiles(bw, args, isCST); err != nil {
-		_ = bw.Flush()
-		if p != nil {
-			p.Close()
-		}
+	if err := dumpFiles(writer, args, isCST); err != nil {
 		if !pager.IsBrokenPipe(err) {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -801,7 +969,7 @@ func dumpFiles(w io.Writer, paths []string, isCST bool) error {
 		srcBytes, err := os.ReadFile(path)
 		if err != nil {
 			if git.IsGitRepository(".") && git.IsTrackedFile(".", path) {
-				srcBytes, err = git.GetContent(".", path, "")
+				srcBytes, err = git.GetContent(".", path, "", false)
 			}
 			if err != nil {
 				return fmt.Errorf("reading %s: %w", path, err)
@@ -859,6 +1027,7 @@ func init() {
 	rootCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
 	rootCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
 	rootCmd.Flags().Int("size-limit", 1024, "Maximum file size in KB for AST parsing before falling back to line diff (0 to disable limit)")
+	rootCmd.Flags().Int("line-limit", 10000, "Maximum line count for AST parsing before falling back to line diff (0 to disable limit)")
 	rootCmd.Flags().Bool("ui", false, "Include line alignment and highlight spans in JSON output")
 	rootCmd.Flags().Bool("full", false, "Include actions, line alignment, and highlight spans in JSON output")
 	rootCmd.Flags().Bool("cached", false, "Show only staged changes in Git mode")
@@ -874,4 +1043,12 @@ func init() {
 	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in diff output")
 	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
 	rootCmd.Flags().Bool("cst", false, "Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic AST")
+	rootCmd.Flags().Bool("textconv", false, "Allow external text conversion filters to be run when comparing binary files")
+
+	_ = rootCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"side-by-side", "inline", "json", "actions"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = rootCmd.RegisterFlagCompletionFunc("color", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"always", "never", "auto"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
