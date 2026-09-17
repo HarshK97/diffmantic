@@ -103,6 +103,8 @@ var cppRules = &Rules{
 		"catch_clause",
 		"lambda_expression",
 		"expression_statement",
+		"labeled_statement",
+		"attributed_statement",
 		"declaration",
 		"init_declarator",
 		"field_declaration",
@@ -206,6 +208,11 @@ var cppRules = &Rules{
 		"identifier",
 		"destructor_name",
 		"operator_name",
+		"field_identifier",
+		"statement_identifier",
+		"type_identifier",
+		"namespace_identifier",
+		"qualified_identifier",
 	},
 	Blocks: []string{
 		"compound_statement",
@@ -240,6 +247,11 @@ var cppRules = &Rules{
 	Indexed: []string{
 		"subscript_expression",
 	},
+	LocalVarDeclarations: []string{
+		"declaration",
+		"alias_declaration",
+		"using_declaration",
+	},
 	ContainerDeclarations: []string{
 		"function_definition",
 		"type_definition",
@@ -259,5 +271,25 @@ var cppRules = &Rules{
 		"template_type",
 		"trailing_return_type",
 		"type_identifier",
+		"sized_type_specifier",
+		"type_descriptor",
+		"placeholder_type_specifier",
+		"decltype",
+	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+		"continue_statement",
+		"goto_statement",
+		"seh_leave_statement",
+		"throw_statement",
+		"co_return_statement",
+		"co_yield_statement",
+	},
+	TerminalCalls: []string{
+		"exit",
+		"_exit",
+		"_Exit",
+		"abort",
 	},
 }

@@ -18,11 +18,7 @@ func Collapse(
 	if es == nil || es.Size() == 0 || ms == nil {
 		return es
 	}
-	es = normalizeCrossScopeNonStructuralMoves(es, ms)
-	es = normalizeControlFlowMoves(es, ms)
-	es = normalizeOrphanedCallArgumentMoves(es, ms)
-	es = normalizeOrphanedDeclarationParameterMoves(es, ms)
-	es = normalizeOrphanedOperatorMoves(es, ms)
+	es = normalizeMovesByStructure(es, ms)
 	es = normalizeStationaryWrapperMoves(es, ms)
 	es = normalizeWrapperDelimiterChanges(es, ms)
 

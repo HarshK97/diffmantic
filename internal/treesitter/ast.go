@@ -2,6 +2,7 @@ package treesitter
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -308,4 +309,51 @@ func (n *ASTNode) DepthTo(ancestor *ASTNode) int {
 		curr = curr.Parent
 	}
 	return depth
+}
+
+// CalleePath extracts the canonical dotted identifier path from a call node's function receiver.
+// For selector expressions (os.Exit), it walks leaf tokens and joins with dots.
+// For scoped identifiers (std::process::exit), it normalizes :: to dots.
+// For bare identifiers (exit, panic), it returns the identifier directly.
+func CalleePath(callNode *ASTNode) string {
+	if callNode == nil || len(callNode.Children) == 0 {
+		return ""
+	}
+	callee := callNode.Children[0]
+	if len(callee.Children) == 0 {
+		return callee.Label
+	}
+	// Fast path for the common 2-leaf case (e.g. os.Exit, fmt.Println).
+	if len(callee.Children) == 2 && len(callee.Children[0].Children) == 0 && len(callee.Children[1].Children) == 0 {
+		l0, l1 := callee.Children[0].Label, callee.Children[1].Label
+		if l0 != "" && l1 != "" && l0 != "." && l0 != "::" && l0 != "->" && l1 != "." && l1 != "::" && l1 != "->" {
+			return l0 + "." + l1
+		}
+	}
+	var parts []string
+	for _, d := range callee.Descendants() {
+		if len(d.Children) == 0 && d.Label != "" && d.Label != "." && d.Label != "::" && d.Label != "->" {
+			parts = append(parts, d.Label)
+		}
+	}
+	return strings.Join(parts, ".")
+}
+
+// EnclosingContainerDeclaration walks up from n to find the nearest container declaration
+// (such as a function, method, class, or struct).
+func (n *ASTNode) EnclosingContainerDeclaration(r *rules.Rules) *ASTNode {
+	if n == nil {
+		return nil
+	}
+	if r == nil {
+		r = rules.Get(n.GetLanguage())
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isDecl := (r != nil && r.IsContainerDeclaration(curr.Type)) ||
+			(r == nil && rules.IsContainerDeclaration(curr.Type))
+		if isDecl {
+			return curr
+		}
+	}
+	return nil
 }

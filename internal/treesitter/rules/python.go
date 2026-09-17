@@ -108,6 +108,16 @@ var pythonRules = &Rules{
 		"decorated_definition",
 		"import_statement",
 		"import_from_statement",
+		"assert_statement",
+		"global_statement",
+		"nonlocal_statement",
+		"type_alias_statement",
+		"except_group_clause",
+		"return_statement",
+		"raise_statement",
+		"pass_statement",
+		"break_statement",
+		"continue_statement",
 	},
 	Keywords: []string{
 		"def",
@@ -147,6 +157,7 @@ var pythonRules = &Rules{
 	Declarations: []string{
 		"function_definition",
 		"class_definition",
+		"type_alias_statement",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -189,6 +200,10 @@ var pythonRules = &Rules{
 	Indexed: []string{
 		"subscript",
 	},
+	LocalVarDeclarations: []string{
+		"global_statement",
+		"nonlocal_statement",
+	},
 	ContainerDeclarations: []string{
 		"function_definition",
 		"class_definition",
@@ -202,5 +217,18 @@ var pythonRules = &Rules{
 		"member_type",
 		"splat_type",
 		"union_type",
+	},
+	JumpStatements: []string{
+		"return_statement",
+		"raise_statement",
+		"break_statement",
+		"continue_statement",
+		"pass_statement",
+	},
+	TerminalCalls: []string{
+		"sys.exit",
+		"os._exit",
+		"exit",
+		"quit",
 	},
 }

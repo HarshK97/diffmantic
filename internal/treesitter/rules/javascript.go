@@ -115,6 +115,11 @@ var javascriptRules = &Rules{
 		"jsx_self_closing_element",
 		"jsx_attribute",
 		"jsx_expression",
+		"class_static_block",
+		"debugger_statement",
+		"empty_statement",
+		"labeled_statement",
+		"with_statement",
 	},
 	Keywords: []string{
 		"function",
@@ -169,6 +174,10 @@ var javascriptRules = &Rules{
 		"property_identifier",
 		"shorthand_property_identifier",
 		"private_property_identifier",
+		"property_identifier",
+		"shorthand_property_identifier",
+		"shorthand_property_identifier_pattern",
+		"statement_identifier",
 	},
 	Blocks: []string{
 		"statement_block",
@@ -222,5 +231,15 @@ var javascriptRules = &Rules{
 		"arrow_function",
 		"function_expression",
 		"function",
+	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+		"continue_statement",
+		"throw_statement",
+		"yield_expression",
+	},
+	TerminalCalls: []string{
+		"process.exit",
 	},
 }

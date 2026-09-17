@@ -41,6 +41,8 @@ type Rules struct {
 	ContainerDeclarations []string // Major declaration scope boundaries (functions, classes, structs, etc.).
 	Closures              []string // Anonymous functions, lambdas, and callbacks.
 	Types                 []string // Type annotations and type expressions.
+	JumpStatements        []string // Control-flow exit statements (return, break, continue, goto, throw, raise).
+	TerminalCalls         []string // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -61,6 +63,8 @@ type Rules struct {
 	containerDeclarationsSet map[string]struct{}
 	closuresSet              map[string]struct{}
 	typesSet                 map[string]struct{}
+	jumpStatementsSet        map[string]struct{}
+	terminalCallsSet         map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -96,6 +100,8 @@ func (r *Rules) CompileSets() {
 	r.containerDeclarationsSet = sliceToSet(r.ContainerDeclarations)
 	r.closuresSet = sliceToSet(r.Closures)
 	r.typesSet = sliceToSet(r.Types)
+	r.jumpStatementsSet = sliceToSet(r.JumpStatements)
+	r.terminalCallsSet = sliceToSet(r.TerminalCalls)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -233,6 +239,32 @@ func (r *Rules) IsIdentifier(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Identifiers, nodeType)
+}
+
+// IsJumpStatement reports whether nodeType is an early-exit jump statement
+// (such as return, break, continue, goto, throw, raise, yield).
+func (r *Rules) IsJumpStatement(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.jumpStatementsSet) > 0 {
+		_, ok := r.jumpStatementsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.JumpStatements, nodeType)
+}
+
+// IsTerminalCallPath reports whether calleePath matches an execution-terminating call.
+// The path is a dot-joined identifier (e.g. "os.Exit", "sys.exit", "panic").
+func (r *Rules) IsTerminalCallPath(calleePath string) bool {
+	if r == nil || calleePath == "" {
+		return false
+	}
+	if len(r.terminalCallsSet) > 0 {
+		_, ok := r.terminalCallsSet[calleePath]
+		return ok
+	}
+	return slices.Contains(r.TerminalCalls, calleePath)
 }
 
 // IsScaffolding reports whether nodeType is scaffolding.
@@ -622,6 +654,19 @@ func IsType(nodeType string) bool {
 		}
 	}
 	return false
+}
+
+// IsJumpStatement reports whether nodeType is configured as a jump statement in any language rule set.
+func IsJumpStatement(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsJumpStatement(nodeType) {
+			return true
+		}
+	}
+	return defaultRules.IsJumpStatement(nodeType)
 }
 
 var registry = map[string]*Rules{

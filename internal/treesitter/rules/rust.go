@@ -97,6 +97,14 @@ var rustRules = &Rules{
 		"let_declaration",
 		"use_declaration",
 		"expression_statement",
+		"unsafe_block",
+		"async_block",
+		"const_block",
+		"match_expression",
+		"return_expression",
+		"break_expression",
+		"continue_expression",
+		"empty_statement",
 	},
 	Keywords: []string{
 		"fn",
@@ -147,8 +155,10 @@ var rustRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"type_identifier",
 		"field_identifier",
 		"shorthand_field_identifier",
+		"scoped_identifier",
 	},
 	Blocks: []string{
 		"block",
@@ -222,5 +232,16 @@ var rustRules = &Rules{
 		"tuple_type",
 		"type_identifier",
 		"unit_type",
+	},
+	JumpStatements: []string{
+		"return_expression",
+		"break_expression",
+		"continue_expression",
+		"yield_expression",
+	},
+	TerminalCalls: []string{
+		"std.process.exit",
+		"process.exit",
+		"panic",
 	},
 }

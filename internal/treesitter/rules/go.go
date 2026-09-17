@@ -117,6 +117,7 @@ var golangRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"blank_identifier",
 		"field_identifier",
 		"type_identifier",
 		"package_identifier",
@@ -190,5 +191,19 @@ var golangRules = &Rules{
 		"slice_type",
 		"struct_type",
 		"type_identifier",
+	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+		"continue_statement",
+		"goto_statement",
+		"fallthrough_statement",
+	},
+	TerminalCalls: []string{
+		"os.Exit",
+		"log.Fatal",
+		"log.Fatalf",
+		"log.Fatalln",
+		"panic",
 	},
 }

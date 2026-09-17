@@ -118,3 +118,76 @@ func addIsomorphicPairs(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		addIsomorphicPairs(c1, t2.Children[i], m)
 	}
 }
+
+// isDescendantOf reports whether child is a descendant of parent.
+func isDescendantOf(child, parent *treesitter.ASTNode) bool {
+	if child == nil || parent == nil {
+		return false
+	}
+	for curr := child.Parent; curr != nil; curr = curr.Parent {
+		if curr == parent {
+			return true
+		}
+	}
+	return false
+}
+
+// AdjustedLineDistance computes the relative distance in lines between src and dst,
+// compensating for baseline line drift caused by preceding additions, deletions,
+// and container shifts within their common enclosing scope.
+func (m *Mapping) AdjustedLineDistance(src, dst *treesitter.ASTNode) int {
+	if src == nil || dst == nil {
+		return 0
+	}
+
+	rawDist := int(src.StartRow) - int(dst.StartRow)
+	if rawDist < 0 {
+		rawDist = -rawDist
+	}
+	if m == nil {
+		return rawDist
+	}
+
+	bestDist := rawDist
+
+	// Deepest common mapped ancestor relative offset.
+	for curr := src.Parent; curr != nil; curr = curr.Parent {
+		mappedDst, ok := m.src[curr]
+		if !ok || mappedDst == nil || !isDescendantOf(dst, mappedDst) {
+			continue
+		}
+
+		srcOffset := int(src.StartRow) - int(curr.StartRow)
+		dstOffset := int(dst.StartRow) - int(mappedDst.StartRow)
+		ancDist := srcOffset - dstOffset
+		if ancDist < 0 {
+			ancDist = -ancDist
+		}
+		bestDist = min(bestDist, ancDist)
+
+		// Check for preceding mapped children within this common ancestor to compensate
+		// for insertions/deletions inside the scope before src/dst.
+		for _, child := range curr.Children {
+			if child == nil || child.StartRow >= src.StartRow {
+				break
+			}
+			mappedChild, ok := m.src[child]
+			if !ok || mappedChild == nil || mappedChild.StartRow >= dst.StartRow || !isDescendantOf(mappedChild, mappedDst) {
+				continue
+			}
+			childSrcOffset := int(child.StartRow) - int(curr.StartRow)
+			childDstOffset := int(mappedChild.StartRow) - int(mappedDst.StartRow)
+			innerDrift := childDstOffset - childSrcOffset
+
+			expectedDstOffset := srcOffset + innerDrift
+			diff := dstOffset - expectedDstOffset
+			if diff < 0 {
+				diff = -diff
+			}
+			bestDist = min(bestDist, diff)
+		}
+		break
+	}
+
+	return bestDist
+}

@@ -91,6 +91,8 @@ var cRules = &Rules{
 		"switch_statement",
 		"case_statement",
 		"expression_statement",
+		"labeled_statement",
+		"attributed_statement",
 		"declaration",
 		"init_declarator",
 		"field_declaration",
@@ -150,6 +152,8 @@ var cRules = &Rules{
 	Identifiers: []string{
 		"identifier",
 		"field_identifier",
+		"statement_identifier",
+		"type_identifier",
 	},
 	Blocks: []string{
 		"compound_statement",
@@ -180,6 +184,9 @@ var cRules = &Rules{
 	Indexed: []string{
 		"subscript_expression",
 	},
+	LocalVarDeclarations: []string{
+		"declaration",
+	},
 	ContainerDeclarations: []string{
 		"function_definition",
 		"type_definition",
@@ -190,5 +197,20 @@ var cRules = &Rules{
 	Types: []string{
 		"primitive_type",
 		"type_identifier",
+		"sized_type_specifier",
+		"type_descriptor",
+		"macro_type_specifier",
+	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+		"continue_statement",
+		"goto_statement",
+		"seh_leave_statement",
+	},
+	TerminalCalls: []string{
+		"exit",
+		"_exit",
+		"abort",
 	},
 }

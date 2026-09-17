@@ -143,4 +143,12 @@ var luaRules = &Rules{
 	Closures: []string{
 		"function_definition",
 	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+	},
+	TerminalCalls: []string{
+		"os.exit",
+		"error",
+	},
 }

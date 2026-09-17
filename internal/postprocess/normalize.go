@@ -1,8 +1,6 @@
 package postprocess
 
 import (
-	"strings"
-
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -116,71 +114,6 @@ func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 	return true
 }
 
-// normalizeCrossScopeNonStructuralMoves demotes moves of non-structural, single-line nodes
-// across different semantic scopes into separate Delete and Insert actions.
-func normalizeCrossScopeNonStructuralMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
-	if es == nil || ms == nil {
-		return es
-	}
-
-	result := actions.NewEditScript()
-	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil {
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
-			if dstNode != nil {
-				r := rules.Get(a.Node.GetLanguage())
-				lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
-				if lineDist < 0 {
-					lineDist = -lineDist
-				}
-
-				isType := (r != nil && r.IsType(a.Node.Type)) || (r == nil && rules.IsType(a.Node.Type))
-				if isType && !engine.IsScopePreserved(ms, a.Node, dstNode, r, r) && lineDist >= 10 {
-					demoteMoveToDelIns(result, ms, a.Node, dstNode)
-					continue
-				}
-			}
-		}
-		result.Add(a)
-	}
-	return result
-}
-
-// normalizeOrphanedOperatorMoves demotes Move actions on operator literals when
-// their enclosing parent containers did not move together.
-func normalizeOrphanedOperatorMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
-	if es == nil || ms == nil {
-		return es
-	}
-
-	result := actions.NewEditScript()
-	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil {
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
-			if dstNode != nil {
-				r := rules.Get(a.Node.GetLanguage())
-				isOperator := (r != nil && (r.IsOperatorLiteral(a.Node.Type) || r.IsPunctuation(a.Node.Type))) ||
-					(r == nil && (rules.IsOperatorLiteral(a.Node.Type) || rules.IsPunctuation(a.Node.Type)))
-				if isOperator {
-					parentMatched := a.Node.Parent != nil && dstNode.Parent != nil && ms.Src()[a.Node.Parent] == dstNode.Parent
-					if !parentMatched {
-						demoteMoveToDelIns(result, ms, a.Node, dstNode)
-						continue
-					}
-				}
-			}
-		}
-		result.Add(a)
-	}
-	return result
-}
-
 // findBodyBlock returns the primary consequence/body block of a control-flow statement.
 func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
@@ -195,282 +128,86 @@ func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	return nil
 }
 
-// normalizeControlFlowMoves demotes Move actions on control-flow statements when their
-// consequence bodies share zero matched statements across hunks (>= 10 lines).
-func normalizeControlFlowMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
-	if es == nil || ms == nil {
-		return es
-	}
-
-	result := actions.NewEditScript()
-	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil {
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
-			if dstNode != nil {
-				r := rules.Get(a.Node.GetLanguage())
-				isDecl := (r != nil && r.IsDeclaration(a.Node.Type)) || (r == nil && rules.IsDeclaration(a.Node.Type))
-				// When a compound statement or declaration body block has no matching statements across distant hunks, demote the move.
-				srcBody := findBodyBlock(a.Node, r)
-				dstBody := findBodyBlock(dstNode, r)
-				if srcBody != nil && dstBody != nil {
-					lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
-					if lineDist < 0 {
-						lineDist = -lineDist
-					}
-					if lineDist >= 10 {
-						bodyMatched := ms.Src()[srcBody] == dstBody || ms.DiceSrc(srcBody, dstBody) > 0
-						if isDecl && ms.DiceSrc(srcBody, dstBody) == 0 {
-							bodyMatched = false
-						}
-						srcCond := findCondition(a.Node, r)
-						dstCond := findCondition(dstNode, r)
-						if isTrivialJumpBody(srcBody, r) && srcCond != nil && dstCond != nil && !hasMatchedCondition(a.Node, dstNode, ms, r) {
-							bodyMatched = false
-						}
-						if !bodyMatched {
-							demoteMoveToDelIns(result, ms, a.Node, dstNode)
-							continue
-						}
-					}
-				}
-
-				// Demote when an outer control-flow clause or header moved independently of its enclosing statement.
-				srcCF, srcBody := findEnclosingControlFlow(a.Node, r)
-				dstCF, _ := findEnclosingControlFlow(dstNode, r)
-				if srcCF != nil && dstCF != nil {
-					isHeader := !srcBody.Contains(a.Node) && a.Node != srcBody
-					if isHeader {
-						lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
-						if lineDist < 0 {
-							lineDist = -lineDist
-						}
-						cfMatched := ms.Src()[srcCF] == dstCF ||
-							(ms.Src()[srcCF] != nil && ms.Src()[srcCF].Contains(dstCF)) ||
-							(ms.Dst()[dstCF] != nil && ms.Dst()[dstCF].Contains(srcCF))
-						if lineDist >= 10 && !cfMatched {
-							demoteMoveToDelIns(result, ms, a.Node, dstNode)
-							continue
-						}
-					}
-				}
-			}
-		}
-		result.Add(a)
-	}
-	return result
-}
-
-// findEnclosingControlFlow returns the nearest ancestor statement that has a body block,
-// stopping if a declaration or block boundary is reached.
-func findEnclosingControlFlow(n *treesitter.ASTNode, r *rules.Rules) (*treesitter.ASTNode, *treesitter.ASTNode) {
-	if n == nil {
-		return nil, nil
-	}
-	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		body := findBodyBlock(curr, r)
-		if body != nil {
-			return curr, body
-		}
-		isBoundary := (r != nil && (r.IsDeclaration(curr.Type) || r.IsBlock(curr.Type))) ||
-			(r == nil && (rules.IsDeclaration(curr.Type) || rules.IsBlock(curr.Type)))
-		if isBoundary {
-			break
-		}
-	}
-	return nil, nil
-}
-
-// findCondition returns the primary conditional expression node of a control-flow statement.
-func findCondition(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+// findCall returns the first call expression found within a statement subtree, or nil.
+func findCall(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
 		return nil
 	}
+	if r != nil && r.IsCall(n.Type) {
+		return n
+	}
 	for _, c := range n.Children {
-		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
-		if isBlock {
-			break
-		}
-		isKeyword := (r != nil && r.IsKeyword(c.Type, c.Label)) || (r == nil && rules.IsKeyword(c.Type, c.Label))
-		if !isKeyword && c.Type != "(" && c.Type != ")" {
-			return c
+		if found := findCall(c, r); found != nil {
+			return found
 		}
 	}
 	return nil
 }
 
-// hasMatchedCondition returns true if any expression or identifier inside srcIf's condition
-// is mapped to a descendant of dstIf's condition.
-func hasMatchedCondition(srcIf, dstIf *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
-	srcCond := findCondition(srcIf, r)
-	dstCond := findCondition(dstIf, r)
-	if srcCond == nil || dstCond == nil {
+// isTerminatingStatement reports whether stmt is a control-flow jump (return, break, etc.)
+// or an execution-terminating call (os.Exit, panic, sys.exit, etc.).
+func isTerminatingStatement(stmt *treesitter.ASTNode, r *rules.Rules) bool {
+	if stmt == nil || r == nil {
 		return false
 	}
-	if ms.Src()[srcCond] == dstCond {
+	if r.IsJumpStatement(stmt.Type) {
 		return true
 	}
-	for _, d := range srcCond.Descendants() {
-		if dst, ok := ms.Src()[d]; ok && (dst == dstCond || dstCond.Contains(dst)) {
-			return true
-		}
-	}
-	return false
-}
-
-func isTrivialJumpStatement(s *treesitter.ASTNode) bool {
-	if s == nil {
+	call := findCall(stmt, r)
+	if call == nil {
 		return false
 	}
-	t := s.Type
-	return strings.HasPrefix(t, "return") || strings.HasPrefix(t, "break") ||
-		strings.HasPrefix(t, "continue") || strings.HasPrefix(t, "goto")
+	path := treesitter.CalleePath(call)
+	return r.IsTerminalCallPath(path)
 }
 
-// isTrivialJumpBody returns true if body consists entirely of trivial control jump statements
-// (return, break, continue, goto).
+// isFillerCallStatement reports whether stmt is a standalone call without its
+// own control flow. These can sit next to an exit call (like a log before os.Exit)
+// without turning the block into real business logic.
+func isFillerCallStatement(stmt *treesitter.ASTNode, r *rules.Rules) bool {
+	if stmt == nil || r == nil {
+		return false
+	}
+	if r.IsCall(stmt.Type) {
+		return true
+	}
+	if len(stmt.Children) != 1 {
+		return false
+	}
+	return r.IsCall(stmt.Children[0].Type)
+}
+
+// isTrivialJumpBody reports whether a block is just early-exit boilerplate
+// (returns, breaks, or os.Exit/panic, plus any preceding print or log calls).
 func isTrivialJumpBody(body *treesitter.ASTNode, r *rules.Rules) bool {
 	if body == nil {
 		return true
 	}
 	stmtCount := 0
-	nonJumpCount := 0
+	nonFillerCount := 0
+	hasTerminator := false
+	check := func(s *treesitter.ASTNode) {
+		stmtCount++
+		switch {
+		case isTerminatingStatement(s, r):
+			hasTerminator = true
+		case !isFillerCallStatement(s, r):
+			nonFillerCount++
+		}
+	}
 	for _, c := range body.Children {
 		if c.Type == "statement_list" {
 			for _, s := range c.Children {
-				stmtCount++
-				if !isTrivialJumpStatement(s) {
-					nonJumpCount++
-				}
+				check(s)
 			}
 		} else {
 			isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
 			if !isPunct && c.Type != "{" && c.Type != "}" {
-				stmtCount++
-				if !isTrivialJumpStatement(c) {
-					nonJumpCount++
-				}
+				check(c)
 			}
 		}
 	}
-	return stmtCount > 0 && nonJumpCount == 0
-}
-
-// findEnclosingDeclaration returns the nearest ancestor declaration node of n,
-// stopping if a block boundary is reached.
-func findEnclosingDeclaration(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		isDecl := (r != nil && r.IsDeclaration(curr.Type)) || (r == nil && rules.IsDeclaration(curr.Type))
-		if isDecl {
-			return curr
-		}
-		isBlock := (r != nil && r.IsBlock(curr.Type)) || (r == nil && rules.IsBlock(curr.Type))
-		if isBlock {
-			break
-		}
-	}
-	return nil
-}
-
-// normalizeOrphanedDeclarationParameterMoves demotes Move actions on function/method declaration
-// parameters when their enclosing declarations were not matched or moved together across hunks (>= 10 lines).
-func normalizeOrphanedDeclarationParameterMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
-	if es == nil || ms == nil {
-		return es
-	}
-
-	result := actions.NewEditScript()
-	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil {
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
-			if dstNode != nil {
-				r := rules.Get(a.Node.GetLanguage())
-				srcDecl := findEnclosingDeclaration(a.Node, r)
-				dstDecl := findEnclosingDeclaration(dstNode, r)
-				if srcDecl != nil || dstDecl != nil {
-					lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
-					if lineDist < 0 {
-						lineDist = -lineDist
-					}
-					if lineDist >= 10 {
-						declMatched := srcDecl != nil && dstDecl != nil && ms.Src()[srcDecl] == dstDecl
-						if !declMatched {
-							demoteMoveToDelIns(result, ms, a.Node, dstNode)
-							continue
-						}
-					}
-				}
-			}
-		}
-		result.Add(a)
-	}
-	return result
-}
-
-// findEnclosingCall returns the nearest ancestor call of n,
-// stopping if a declaration or block boundary is reached.
-func findEnclosingCall(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		isCall := (r != nil && r.IsCall(curr.Type)) || (r == nil && rules.IsCall(curr.Type))
-		if isCall {
-			return curr
-		}
-		isBoundary := (r != nil && (r.IsDeclaration(curr.Type) || r.IsBlock(curr.Type))) ||
-			(r == nil && (rules.IsDeclaration(curr.Type) || rules.IsBlock(curr.Type)))
-		if isBoundary {
-			break
-		}
-	}
-	return nil
-}
-
-// normalizeOrphanedCallArgumentMoves demotes Move actions on function call arguments
-// when their enclosing function calls were not matched or moved together across hunks (>= 10 lines).
-func normalizeOrphanedCallArgumentMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
-	if es == nil || ms == nil {
-		return es
-	}
-
-	result := actions.NewEditScript()
-	for _, a := range es.Actions() {
-		if a.Type == actions.Move && a.Node != nil {
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
-			if dstNode != nil {
-				r := rules.Get(a.Node.GetLanguage())
-				srcCall := findEnclosingCall(a.Node, r)
-				dstCall := findEnclosingCall(dstNode, r)
-				if srcCall != nil || dstCall != nil {
-					lineDist := int(a.Node.StartRow) - int(dstNode.StartRow)
-					if lineDist < 0 {
-						lineDist = -lineDist
-					}
-					callMatched := (srcCall != nil && dstCall != nil && ms.Src()[srcCall] == dstCall) ||
-						(srcCall != nil && ms.Src()[srcCall] != nil && ms.Src()[srcCall].Contains(dstNode)) ||
-						(dstCall != nil && ms.Dst()[dstCall] != nil && ms.Dst()[dstCall].Contains(a.Node))
-					if (srcCall != nil && dstCall != nil && !callMatched) || (lineDist >= 10 && !callMatched) {
-						demoteMoveToDelIns(result, ms, a.Node, dstNode)
-						continue
-					}
-				}
-			}
-		}
-		result.Add(a)
-	}
-	return result
+	return stmtCount > 0 && nonFillerCount == 0 && hasTerminator
 }
 
 // normalizeWrapperDelimiterChanges emits non-subtree Insert or Delete actions when a mapped
@@ -531,6 +268,251 @@ func normalizeWrapperDelimiterChanges(es *actions.EditScript, ms *engine.Mapping
 	}
 
 	return result
+}
+
+// sameScopeDeclaration reports whether src and dst reside within corresponding
+// (mapped) enclosing container declarations (functions, methods, classes, structs).
+func sameScopeDeclaration(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || ms == nil || r == nil {
+		return false
+	}
+	srcDecl := src.EnclosingContainerDeclaration(r)
+	dstDecl := dst.EnclosingContainerDeclaration(r)
+	if srcDecl == nil && dstDecl == nil {
+		return true
+	}
+	if srcDecl == nil || dstDecl == nil {
+		return false
+	}
+	return ms.Src()[srcDecl] == dstDecl
+}
+
+// subtreeHeight returns the maximum depth of a subtree.
+func subtreeHeight(n *treesitter.ASTNode) int {
+	if n == nil || len(n.Children) == 0 {
+		return 0
+	}
+	maxChild := 0
+	for _, c := range n.Children {
+		maxChild = max(maxChild, subtreeHeight(c))
+	}
+	return maxChild + 1
+}
+
+// subtreeLines returns the line span (EndRow - StartRow) of a node.
+func subtreeLines(n *treesitter.ASTNode) uint32 {
+	if n == nil {
+		return 0
+	}
+	if n.EndRow >= n.StartRow {
+		return n.EndRow - n.StartRow
+	}
+	return 0
+}
+
+// isTokenNode reports whether n is a bare token (operator, punctuation, type, or identifier).
+func isTokenNode(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || r == nil {
+		return false
+	}
+	return r.IsOperatorLiteral(n.Type) || r.IsPunctuation(n.Type) ||
+		r.IsType(n.Type) || r.IsIdentifier(n.Type)
+}
+
+// moveStructuralScore scores how structurally significant a node is.
+//
+//	S = BaseSize + 2*Height + 3*LineSpan + RoleBonus - BoilerplatePenalty
+//
+// Bare tokens are clamped to S=1. Declarations receive +40. Boilerplate bodies receive -20.
+func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules) int {
+	if node == nil || r == nil {
+		return 0
+	}
+
+	// Token clamp: bare tokens, operators, punctuation, types, identifiers.
+	if isTokenNode(node, r) {
+		return 1
+	}
+
+	size := node.Size()
+	height := subtreeHeight(node)
+	lines := subtreeLines(node)
+
+	score := size + 2*height + 3*int(lines)
+
+	// Role bonus.
+	if r.IsDeclaration(node.Type) {
+		score += 40
+	} else if r.IsBlock(node.Type) {
+		score += 10
+	}
+
+	// Boilerplate penalty: bodies consisting entirely of terminating statements.
+	if body := findBodyBlock(node, r); body != nil && isTrivialJumpBody(body, r) {
+		score -= 20
+	}
+
+	score = max(score, 1)
+	return score
+}
+
+// requiredMoveThreshold computes the dynamic threshold T for a Move action
+// based on construct mobility, scope preservation, and line distance.
+func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) int {
+	if src == nil || dst == nil || ms == nil || r == nil {
+		return 50
+	}
+
+	// Intra-container reorder: src.Parent mapped to dst.Parent.
+	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent {
+		return 1
+	}
+
+	// Cross-key guard: a value sitting under one key in a key-value pair
+	// (keyed_element, pair) and a value under a *different*, unmapped key
+	// should never be treated as a trivial same-line shift, even if they
+	// happen to land on the same row. Otherwise a clamped bare token (S=1)
+	// can "move" from one struct field to an unrelated one.
+	crossKey := src.Parent != nil && dst.Parent != nil && r.IsPair(src.Parent.Type) && r.IsPair(dst.Parent.Type)
+
+	lineDist := ms.AdjustedLineDistance(src, dst)
+
+	// Same-line inline shifts.
+	if lineDist == 0 {
+		if crossKey {
+			return 5
+		}
+		return 1
+	}
+
+	// Top-level declarations: zero distance penalty.
+	if r.IsDeclaration(src.Type) {
+		return 20
+	}
+
+	// Intra-scope statements: mild distance scaling. Floor of 4 so small
+	// expressions like bare condition calls (S=4) can still clear the threshold.
+	if sameScopeDeclaration(src, dst, ms, r) {
+		return 4 + lineDist/5
+	}
+
+	// Nearby cross-scope moves (drift < 10) get mild scaling, but only when the
+	// source function survived deletion. If it was deleted, AdjustedLineDistance
+	// shrinks the gap and lets weak moves slip through.
+	if lineDist < 10 {
+		srcDecl := src.EnclosingContainerDeclaration(r)
+		if srcDecl != nil && ms.Src()[srcDecl] != nil {
+			return 4 + lineDist/5
+		}
+	}
+
+	// Cross-scope statements: severe distance penalty.
+	return 50 + lineDist/10
+}
+
+// normalizeMovesByStructure demotes Move actions whose structural score is below
+// their distance-based threshold into separate Delete + Insert actions, and drops
+// the demoted nodes from the mapping to stop spurious updates downstream.
+func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
+	if es == nil || ms == nil {
+		return es
+	}
+
+	// Pass 1: Find moves to demote and collect nodes to evict from the mapping.
+	// We have to do this first because Chawathe emits Update actions before Move,
+	// and we need to drop those orphaned updates in Pass 2.
+	evicted := make(map[*treesitter.ASTNode]struct{})
+	for _, a := range es.Actions() {
+		if a.Type != actions.Move || a.Node == nil {
+			continue
+		}
+		dstNode := a.DestNode
+		if dstNode == nil {
+			dstNode = ms.Src()[a.Node]
+		}
+		if dstNode == nil {
+			continue
+		}
+		r := rules.Get(a.Node.GetLanguage())
+		if r == nil {
+			continue
+		}
+		if !shouldDemoteMove(a.Node, dstNode, ms, r) {
+			continue
+		}
+		for _, d := range a.Node.Descendants() {
+			evicted[d] = struct{}{}
+		}
+		evicted[a.Node] = struct{}{}
+	}
+
+	// Pass 2: Rebuild the edit script, demoting flagged moves and dropping
+	// orphaned updates on evicted nodes.
+	result := actions.NewEditScript()
+	for _, a := range es.Actions() {
+		// Suppress orphaned Update actions on nodes whose paired Move was demoted.
+		if a.Type == actions.Update && a.Node != nil {
+			if _, ok := evicted[a.Node]; ok {
+				continue
+			}
+		}
+
+		if a.Type != actions.Move || a.Node == nil {
+			result.Add(a)
+			continue
+		}
+
+		dstNode := a.DestNode
+		if dstNode == nil {
+			dstNode = ms.Src()[a.Node]
+		}
+		if dstNode == nil {
+			result.Add(a)
+			continue
+		}
+
+		r := rules.Get(a.Node.GetLanguage())
+		if r == nil {
+			result.Add(a)
+			continue
+		}
+
+		if !shouldDemoteMove(a.Node, dstNode, ms, r) {
+			result.Add(a)
+			continue
+		}
+
+		demoteMoveToDelIns(result, ms, a.Node, dstNode)
+	}
+	return result
+}
+
+// shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert
+// based on structural significance scoring and scope-aware threshold comparison.
+func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if ms == nil {
+		return false
+	}
+	// Sibling relocation: src.Parent mapped to dst.Parent means the parent
+	// container is intact and the child was simply reordered within it.
+	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent {
+		return false
+	}
+
+	// One-hop container-preserving reparent: the value got wrapped in a brand-new
+	// node (e.g. a bare element promoted into a freshly-keyed field) but its
+	// structurally-matched container never actually changed.
+	if src.Parent != nil && dst.Parent != nil {
+		mappedSrcParent := ms.Src()[src.Parent]
+		if mappedSrcParent != nil && dst.Parent.Parent == mappedSrcParent &&
+			(r.IsPair(dst.Parent.Type) || r.IsWrapper(dst.Parent.Type)) {
+			return false
+		}
+	}
+
+	score := moveStructuralScore(src, r)
+	threshold := requiredMoveThreshold(src, dst, ms, r)
+	return score < threshold
 }
 
 // demoteMoveToDelIns demotes a Move action into separate Delete and Insert actions
