@@ -74,3 +74,24 @@ func TestIsBrokenPipe(t *testing.T) {
 		t.Error("expected other error to not be broken pipe")
 	}
 }
+
+func TestPager_IsActive(t *testing.T) {
+	var nilPager *Pager
+	if nilPager.IsActive() {
+		t.Error("expected nil pager to not be active")
+	}
+
+	emptyPager := &Pager{}
+	if emptyPager.IsActive() {
+		t.Error("expected pager with nil process to not be active")
+	}
+
+	activePager := &Pager{doneChan: make(chan struct{})}
+	if !activePager.IsActive() {
+		t.Error("expected pager with open doneChan to be active")
+	}
+	close(activePager.doneChan)
+	if activePager.IsActive() {
+		t.Error("expected pager with closed doneChan to not be active")
+	}
+}

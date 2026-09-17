@@ -14,8 +14,10 @@ import (
 
 // Pager manages an active terminal pager subprocess.
 type Pager struct {
-	cmd    *exec.Cmd
-	writer io.WriteCloser
+	cmd      *exec.Cmd
+	writer   io.WriteCloser
+	doneChan chan struct{}
+	waitErr  error
 }
 
 // IsBrokenPipe reports whether an error indicates a broken pipe or closed pipe.
@@ -60,7 +62,18 @@ func Start(disabled bool) (*Pager, io.Writer) {
 		return nil, os.Stdout
 	}
 
-	return &Pager{cmd: cmd, writer: stdin}, stdin
+	p := &Pager{
+		cmd:      cmd,
+		writer:   stdin,
+		doneChan: make(chan struct{}),
+	}
+
+	go func() {
+		p.waitErr = cmd.Wait()
+		close(p.doneChan)
+	}()
+
+	return p, stdin
 }
 
 // Close closes the pager input stream and waits for the subprocess to finish.
@@ -71,8 +84,21 @@ func (p *Pager) Close() {
 	if p.writer != nil {
 		_ = p.writer.Close()
 	}
-	if p.cmd != nil {
-		_ = p.cmd.Wait()
+	if p.doneChan != nil {
+		<-p.doneChan
+	}
+}
+
+// IsActive reports whether the pager subprocess is still alive.
+func (p *Pager) IsActive() bool {
+	if p == nil || p.doneChan == nil {
+		return false
+	}
+	select {
+	case <-p.doneChan:
+		return false
+	default:
+		return true
 	}
 }
 
