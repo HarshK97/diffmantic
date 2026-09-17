@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -279,12 +280,13 @@ func GetRepoPrefix(cwd string) (string, error) {
 
 var (
 	textconvCacheMu sync.RWMutex
-	textconvCache   = make(map[string]string) // driver -> cmdStr
+	textconvCache   = make(map[string]string) // cacheKey (cleanCwd + "\x00" + driver) -> cmdStr
 )
 
 func getDriverTextconv(cwd, driver string) string {
+	cacheKey := filepath.Clean(cwd) + "\x00" + driver
 	textconvCacheMu.RLock()
-	cmdStr, found := textconvCache[driver]
+	cmdStr, found := textconvCache[cacheKey]
 	textconvCacheMu.RUnlock()
 	if found {
 		return cmdStr
@@ -292,17 +294,17 @@ func getDriverTextconv(cwd, driver string) string {
 
 	textconvCacheMu.Lock()
 	defer textconvCacheMu.Unlock()
-	if cmdStr, found := textconvCache[driver]; found {
+	if cmdStr, found := textconvCache[cacheKey]; found {
 		return cmdStr
 	}
 
 	configOut, err := RunGit(cwd, "config", fmt.Sprintf("diff.%s.textconv", driver))
 	if err != nil {
-		textconvCache[driver] = ""
+		textconvCache[cacheKey] = ""
 		return ""
 	}
 	cmdStr = strings.TrimSpace(string(configOut))
-	textconvCache[driver] = cmdStr
+	textconvCache[cacheKey] = cmdStr
 	return cmdStr
 }
 
@@ -321,7 +323,7 @@ func splitCommandWords(s string) []string {
 			continue
 		}
 
-		if r == '\\' && !inSingle {
+		if r == '\\' && runtime.GOOS != "windows" && !inSingle {
 			escaped = true
 			continue
 		}

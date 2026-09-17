@@ -2,9 +2,10 @@ package git
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -107,45 +108,114 @@ func TestIsTrackedFile(t *testing.T) {
 }
 
 func TestGetContent_Textconv(t *testing.T) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get cwd: %v", err)
+	tempDir := t.TempDir()
+
+	if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init"); err != nil {
+		t.Fatalf("initial commit failed: %v", err)
 	}
 
-	rootOut, err := RunGit(cwd, "rev-parse", "--show-toplevel")
-	if err != nil {
-		t.Fatalf("failed to get repo root: %v", err)
+	// Build a lightweight standalone textconv converter binary.
+	// It reads the file passed in os.Args[1] and outputs "CONVERTED: " + content.
+	helperSrc := filepath.Join(tempDir, "conv_main.go")
+	helperExe := filepath.Join(tempDir, "conv")
+	if runtime.GOOS == "windows" {
+		helperExe += ".exe"
 	}
-	repoRoot := strings.TrimSpace(string(rootOut))
 
-	// expected_ui.json.gz has textconv configured via diff.gzip.textconv
-	path := "tests/testdata/c_git_strbuf_setlen/expected_ui.json.gz"
+	const helperCode = `package main
 
-	// 1. Test revision HEAD with textconv enabled
-	dataHead, err := GetContent(repoRoot, path, "HEAD", true)
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		return
+	}
+	data, err := os.ReadFile(os.Args[1])
+	if err != nil {
+		os.Exit(1)
+	}
+	fmt.Print("CONVERTED: " + string(data))
+}
+`
+	if err := os.WriteFile(helperSrc, []byte(helperCode), 0o644); err != nil {
+		t.Fatalf("write helper src failed: %v", err)
+	}
+
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		goBin = "go"
+	}
+
+	buildCmd := exec.Command(goBin, "build", "-o", helperExe, helperSrc)
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile textconv helper: %v, output: %s", err, string(out))
+	}
+
+	// Configure .gitattributes and diff.customconv.textconv in the test repository
+	gitattrPath := filepath.Join(tempDir, ".gitattributes")
+	if err := os.WriteFile(gitattrPath, []byte("*.custom diff=customconv\n"), 0o644); err != nil {
+		t.Fatalf("write .gitattributes failed: %v", err)
+	}
+
+	convCmd := filepath.ToSlash(helperExe)
+	if _, err := RunGit(tempDir, "config", "diff.customconv.textconv", convCmd); err != nil {
+		t.Fatalf("git config diff.customconv.textconv failed: %v", err)
+	}
+
+	// Create and commit test file
+	filePath := "sample.custom"
+	rawContent := "raw file content"
+	fullPath := filepath.Join(tempDir, filePath)
+	if err := os.WriteFile(fullPath, []byte(rawContent), 0o644); err != nil {
+		t.Fatalf("write sample file failed: %v", err)
+	}
+
+	if _, err := RunGit(tempDir, "add", ".gitattributes", filePath); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "add custom file"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+
+	// 1. Test revision HEAD with textconv enabled: should invoke Git's textconv filter
+	dataHead, err := GetContent(tempDir, filePath, "HEAD", true)
 	if err != nil {
 		t.Fatalf("GetContent(HEAD, true) failed: %v", err)
 	}
-	if len(dataHead) == 0 || dataHead[0] != '{' {
-		t.Errorf("expected textconv decompressed JSON starting with '{', got: %q", string(dataHead[:min(len(dataHead), 50)]))
+	expectedConverted := "CONVERTED: " + rawContent
+	if string(dataHead) != expectedConverted {
+		t.Errorf("GetContent(HEAD, true) = %q, want %q", string(dataHead), expectedConverted)
 	}
 
-	// 2. Test working tree on disk with textconv enabled
-	dataWork, err := GetContent(repoRoot, path, "", true)
+	// Modify working tree on disk to verify working tree reads current disk state
+	modifiedContent := "modified on disk"
+	if err := os.WriteFile(fullPath, []byte(modifiedContent), 0o644); err != nil {
+		t.Fatalf("write modified file failed: %v", err)
+	}
+
+	// 2. Test working tree on disk with textconv enabled: should invoke working tree textconv filter
+	dataWork, err := GetContent(tempDir, filePath, "", true)
 	if err != nil {
 		t.Fatalf("GetContent(worktree, true) failed: %v", err)
 	}
-	if len(dataWork) == 0 || dataWork[0] != '{' {
-		t.Errorf("expected textconv decompressed working tree JSON starting with '{', got: %q", string(dataWork[:min(len(dataWork), 50)]))
+	expectedWorkConverted := "CONVERTED: " + modifiedContent
+	if string(dataWork) != expectedWorkConverted {
+		t.Errorf("GetContent(worktree, true) = %q, want %q", string(dataWork), expectedWorkConverted)
 	}
 
-	// 3. Test without textconv: should return raw binary gzip data (magic bytes 0x1f 0x8b)
-	dataRaw, err := GetContent(repoRoot, path, "", false)
+	// 3. Test without textconv: should return raw unconverted content from disk
+	dataRaw, err := GetContent(tempDir, filePath, "", false)
 	if err != nil {
 		t.Fatalf("GetContent(worktree, false) failed: %v", err)
 	}
-	if len(dataRaw) < 2 || dataRaw[0] != 0x1f || dataRaw[1] != 0x8b {
-		t.Errorf("expected raw gzip magic bytes 0x1f 0x8b, got: %x", dataRaw[:min(len(dataRaw), 4)])
+	if string(dataRaw) != modifiedContent {
+		t.Errorf("GetContent(worktree, false) = %q, want %q", string(dataRaw), modifiedContent)
 	}
 }
 
