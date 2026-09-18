@@ -322,13 +322,8 @@ func renderFullWidthHunk(
 				action:  color.ActionKind(-1),
 			})
 		} else {
-			// Sub-block replacement grouping:
-			// If p is an aligned pair (both Left >= 0 and Right >= 0), absorb any trailing gap lines.
-			// If p is a gap line (Left == -1 or Right == -1), absorb any consecutive gap lines.
+			// Group consecutive changes into deletions followed by insertions (2-block diff).
 			for bEnd <= h.end && bEnd < len(isPairChanged) && isPairChanged[bEnd] {
-				if filteredPairs[bEnd].LeftLine >= 0 && filteredPairs[bEnd].RightLine >= 0 {
-					break
-				}
 				bEnd++
 			}
 

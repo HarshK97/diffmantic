@@ -590,11 +590,10 @@ func TestRender_SubBlockGrouping(t *testing.T) {
 
 	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
-	// Deletions of b := filter(...) must complete before b := reduce(x, y) is inserted.
-	// That is, all 3 lines of b := filter(...) must appear contiguously before +	b := reduce(x, y).
-	expectedDelBlock := "-\tb := filter(\n-\t\tx,\n-\t\ty,\n-\t)\n+\tb := reduce(x, y)\n"
-	if !strings.Contains(got, expectedDelBlock) {
-		t.Errorf("expected sub-block to complete deletions before insertion:\nExpected block:\n%s\nGot:\n%s", expectedDelBlock, got)
+	// In a 2-block diff, all deletions must come before insertions.
+	expectedBlock := "-\ta := 1\n-\tb := filter(\n-\t\tx,\n-\t\ty,\n-\t)\n-\tc := 3\n+\ta := 10\n+\tb := reduce(x, y)\n+\tc := 30\n"
+	if !strings.Contains(got, expectedBlock) {
+		t.Errorf("expected contiguous 2-block deletions before insertions:\nExpected block:\n%s\nGot:\n%s", expectedBlock, got)
 	}
 }
 

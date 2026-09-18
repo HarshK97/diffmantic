@@ -444,6 +444,33 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 	bEnd := bNode.EndByte
 	hasCommentFooter, _, _ := adjustRangeForContainer(bNode, &bStart, &bEnd, codeWithComment)
 	if hasCommentFooter {
-		t.Errorf("expected hasFooter=false for sliced region containing comments")
+		t.Errorf("expected hasCommentFooter=false for sliced region containing comments")
+	}
+
+	// Python subscripts use bracket delimiters ([ ]), so they need closing footers.
+	pySubscriptCode := []byte("cookie_dict[cookie.name]")
+	pySubRoot := &treesitter.ASTNode{Type: "module", Language: "python"}
+	setParentAndRange(pySubRoot, nil, 0, uint32(len(pySubscriptCode)))
+
+	subscript := &treesitter.ASTNode{Type: "subscript", StartRow: 0, EndRow: 0}
+	setParentAndRange(subscript, pySubRoot, 0, uint32(len(pySubscriptCode)))
+
+	receiver := &treesitter.ASTNode{Type: "identifier", StartRow: 0, EndRow: 0}
+	setParentAndRange(receiver, subscript, 0, 11)
+
+	index := &treesitter.ASTNode{Type: "attribute", StartRow: 0, EndRow: 0}
+	setParentAndRange(index, subscript, 12, 23)
+
+	subStart := subscript.StartByte
+	subEnd := subscript.EndByte
+	hasSubFooter, fStart, fEnd := adjustRangeForContainer(subscript, &subStart, &subEnd, pySubscriptCode)
+	if !hasSubFooter {
+		t.Errorf("expected hasSubFooter=true for Python subscript with closing bracket")
+	}
+	if fStart != 23 || fEnd != 24 || string(pySubscriptCode[fStart:fEnd]) != "]" {
+		t.Errorf("expected subscript closing delimiter footer at [23:24] (']'), got [%d:%d] ('%s')", fStart, fEnd, string(pySubscriptCode[fStart:fEnd]))
+	}
+	if subStart != 11 || subEnd != 12 || string(pySubscriptCode[subStart:subEnd]) != "[" {
+		t.Errorf("expected subscript opening delimiter at [11:12] ('['), got [%d:%d] ('%s')", subStart, subEnd, string(pySubscriptCode[subStart:subEnd]))
 	}
 }
