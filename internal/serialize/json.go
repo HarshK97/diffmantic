@@ -573,7 +573,10 @@ func isIndentationConstruct(n, child *treesitter.ASTNode) bool {
 	if child != nil && r.IsBlock(child.Type) {
 		return true
 	}
-	return !r.IsWrapper(n.Type) && !r.IsIndexed(n.Type)
+	if r.IsWrapper(n.Type) || r.IsIndexed(n.Type) {
+		return false
+	}
+	return true
 }
 
 func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
