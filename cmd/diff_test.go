@@ -327,3 +327,55 @@ func TestGitExternal7ArgsFailFast(t *testing.T) {
 		t.Errorf("output = %q, want substring %q", string(out), want)
 	}
 }
+
+func TestValidateNoMisplacedFlags(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name: "valid positional args",
+			args: []string{"main", "cmd/diff_test.go"},
+		},
+		{
+			name: "stdin symbol",
+			args: []string{"-"},
+		},
+		{
+			name:    "flag with value after separator",
+			args:    []string{"main", "cmd/diff_test.go", "--color=always"},
+			wantErr: `flag "--color=always" cannot be placed after '--'`,
+		},
+		{
+			name:    "short flag after separator",
+			args:    []string{"main", "cmd/diff_test.go", "-f", "sbs"},
+			wantErr: `flag "-f" cannot be placed after '--'`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNoMisplacedFlags(tt.args)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("validateNoMisplacedFlags(%v) error = %v, want nil", tt.args, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("validateNoMisplacedFlags(%v) error = %v, want substring %q", tt.args, err, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("existing file starting with dash", func(t *testing.T) {
+		dashFile := filepath.Join(t.TempDir(), "-testfile.go")
+		if err := os.WriteFile(dashFile, []byte("package main\n"), 0o644); err != nil {
+			t.Fatalf("failed to write temp file: %v", err)
+		}
+		if err := validateNoMisplacedFlags([]string{dashFile}); err != nil {
+			t.Errorf("validateNoMisplacedFlags(%v) error = %v, want nil", dashFile, err)
+		}
+	})
+}
