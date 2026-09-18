@@ -524,6 +524,84 @@ func TestAlignLines_PunctuationLineGuard(t *testing.T) {
 	}
 }
 
+func TestAlignLines_InPlaceClosureMove(t *testing.T) {
+	src := `fn test() {
+    let a = 1;
+    let b = 2;
+}
+`
+	dst := `fn test() {
+    model(|| {
+        let a = 1;
+        let b = 2;
+    });
+}
+`
+	oldTree, err := treesitter.Parse([]byte(src), "old.rs")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	newTree, err := treesitter.Parse([]byte(dst), "new.rs")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	var oldFn, newFn, oldA, oldB, newA, newB *treesitter.ASTNode
+	for _, d := range oldTree.Descendants() {
+		switch d.Type {
+		case "function_item":
+			oldFn = d
+		case "let_declaration":
+			if oldA == nil {
+				oldA = d
+			} else if oldB == nil {
+				oldB = d
+			}
+		}
+	}
+	for _, d := range newTree.Descendants() {
+		switch d.Type {
+		case "function_item":
+			newFn = d
+		case "let_declaration":
+			if newA == nil {
+				newA = d
+			} else if newB == nil {
+				newB = d
+			}
+		}
+	}
+
+	if oldFn == nil || newFn == nil || oldA == nil || oldB == nil || newA == nil || newB == nil {
+		t.Fatalf("failed to find AST nodes in parsed trees")
+	}
+
+	ms := engine.NewMapping()
+	ms.Add(oldFn, newFn)
+	ms.Add(oldA, newA)
+	ms.Add(oldB, newB)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: oldA, DestNode: newA})
+	es.Add(actions.Action{Type: actions.Move, Node: oldB, DestNode: newB})
+
+	alignment := AlignLines([]byte(src), []byte(dst), ms, es)
+
+	alignedMap := make(map[int]int)
+	for _, p := range alignment {
+		if p.LeftLine != -1 {
+			alignedMap[p.LeftLine] = p.RightLine
+		}
+	}
+
+	if alignedMap[1] != 2 {
+		t.Errorf("expected left line 1 (let a = 1) to align with right line 2, got %d (grid: %+v)", alignedMap[1], alignment)
+	}
+	if alignedMap[2] != 3 {
+		t.Errorf("expected left line 2 (let b = 2) to align with right line 3, got %d (grid: %+v)", alignedMap[2], alignment)
+	}
+}
+
 func BenchmarkAlignLines(b *testing.B) {
 	b.Run("SmallGap", func(b *testing.B) {
 		src := []byte("func foo() {\n  a := 1\n  b := 2\n  return a + b\n}")

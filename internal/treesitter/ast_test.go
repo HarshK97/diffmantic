@@ -216,3 +216,68 @@ def foo():
 		}
 	}
 }
+
+func TestCalleePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		build    func() *ASTNode
+		expected string
+	}{
+		{
+			name: "bare identifier (exit)",
+			build: func() *ASTNode {
+				fn := &ASTNode{Type: "identifier", Label: "exit"}
+				return &ASTNode{Type: "call_expression", Children: []*ASTNode{fn}}
+			},
+			expected: "exit",
+		},
+		{
+			name: "selector expression (os.Exit)",
+			build: func() *ASTNode {
+				operand := &ASTNode{Type: "identifier", Label: "os"}
+				field := &ASTNode{Type: "field_identifier", Label: "Exit"}
+				selector := &ASTNode{Type: "selector_expression", Children: []*ASTNode{operand, field}}
+				operand.Parent = selector
+				field.Parent = selector
+				return &ASTNode{Type: "call_expression", Children: []*ASTNode{selector}}
+			},
+			expected: "os.Exit",
+		},
+		{
+			name: "member expression (process.exit)",
+			build: func() *ASTNode {
+				obj := &ASTNode{Type: "identifier", Label: "process"}
+				prop := &ASTNode{Type: "property_identifier", Label: "exit"}
+				member := &ASTNode{Type: "member_expression", Children: []*ASTNode{obj, prop}}
+				obj.Parent = member
+				prop.Parent = member
+				return &ASTNode{Type: "call_expression", Children: []*ASTNode{member}}
+			},
+			expected: "process.exit",
+		},
+		{
+			name: "empty call node",
+			build: func() *ASTNode {
+				return &ASTNode{Type: "call_expression"}
+			},
+			expected: "",
+		},
+		{
+			name: "nil call node",
+			build: func() *ASTNode {
+				return nil
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := tt.build()
+			got := CalleePath(node)
+			if got != tt.expected {
+				t.Errorf("CalleePath() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

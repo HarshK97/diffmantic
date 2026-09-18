@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"cmp"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -67,27 +68,68 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 		return res
 	}
 
-	movedNodes, moves := collectMoveRanges(es, ms)
+	matched := engine.LineDiff(srcLines, dstLines)
 
-	// Pre-index mapped statements for scoring bonus
-	mappedStatements := collectMappedStatements(srcLines, dstLines, ms, movedNodes)
+	// Mark all moved nodes from EditScript.
+	movedNodes := collectMovedNodes(es, ms)
 
-	// Declarations and comments form invariant boundary anchors
+	// Pre-index mapped statements for stationary statements (Priority 1 anchor validation).
+	stationaryStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
+		return !movedNodes[n1] && !movedNodes[n2]
+	})
+
+	moves, inPlaceNodes := collectMoveRanges(es, ms, srcLines, matched, stationaryStatements)
+
+	// Declarations and comments form invariant boundary anchors.
 	primary := collectDeclarationAndCommentAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings)
 
-	// Unmoved non-punctuation text matches form pivot anchors
-	text := collectTextAnchors(srcLines, dstLines, moves, mappedStatements)
+	// Unmoved non-punctuation text matches form pivot anchors.
+	text := collectTextAnchors(srcLines, dstLines, moves, stationaryStatements, matched)
 	anchors := mergeAnchors(primary, text)
+
+	// In-place monotonic statements receive mapping prior bonus in Gotoh.
+	inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
+		return inPlaceNodes[n1] && inPlaceNodes[n2]
+	})
+
+	gotohMappedStatements := make(map[int]int, len(stationaryStatements)+len(inPlaceStatements))
+	maps.Copy(gotohMappedStatements, stationaryStatements)
+	for k, v := range inPlaceStatements {
+		if _, exists := gotohMappedStatements[k]; !exists {
+			gotohMappedStatements[k] = v
+		}
+	}
 
 	scratch := alignScratchPool.Get().(*alignScratch)
 	defer alignScratchPool.Put(scratch)
-	return emitGrid(srcLines, dstLines, anchors, moves, mappedStatements, scratch)
+	return emitGrid(srcLines, dstLines, anchors, moves, gotohMappedStatements, scratch)
 }
 
-func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping) (map[*treesitter.ASTNode]bool, []moveRange) {
+func collectMovedNodes(es *actions.EditScript, ms *engine.Mapping) map[*treesitter.ASTNode]bool {
 	movedNodes := make(map[*treesitter.ASTNode]bool)
 	if es == nil {
-		return movedNodes, nil
+		return movedNodes
+	}
+	for _, a := range es.Actions() {
+		if a.Type != actions.Move || a.Node == nil {
+			continue
+		}
+		markMoved(a.Node, movedNodes, a.Subtree)
+		if a.DestNode != nil {
+			markMoved(a.DestNode, movedNodes, a.Subtree)
+		} else if ms != nil {
+			if dst := ms.Get(a.Node); dst != nil {
+				markMoved(dst, movedNodes, a.Subtree)
+			}
+		}
+	}
+	return movedNodes
+}
+
+func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping, srcLines []string, matched map[int]int, stationaryStatements map[int]int) ([]moveRange, map[*treesitter.ASTNode]bool) {
+	inPlaceNodes := make(map[*treesitter.ASTNode]bool)
+	if es == nil {
+		return nil, inPlaceNodes
 	}
 
 	var moves []moveRange
@@ -95,17 +137,12 @@ func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping) (map[*treesit
 		if a.Type != actions.Move || a.Node == nil {
 			continue
 		}
-		markMoved(a.Node, movedNodes, a.Subtree)
 
 		var dstNode *treesitter.ASTNode
 		if a.DestNode != nil {
 			dstNode = a.DestNode
-			markMoved(a.DestNode, movedNodes, a.Subtree)
 		} else if ms != nil {
 			dstNode = ms.Get(a.Node)
-			if dstNode != nil {
-				markMoved(dstNode, movedNodes, a.Subtree)
-			}
 		}
 
 		sStart := int(a.Node.StartRow)
@@ -118,9 +155,52 @@ func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping) (map[*treesit
 			dEnd = int(dstNode.EndRow)
 			hasDst = true
 		}
-		if !hasDst || sStart != dStart || sEnd-sStart != dEnd-dStart {
-			r := rules.Get(a.Node.GetLanguage())
-			isCrossScope := dstNode != nil && !isScopePreserved(ms, a.Node, dstNode, r, r)
+
+		r := rules.Get(a.Node.GetLanguage())
+		drift := sStart - dStart
+		if drift < 0 {
+			drift = -drift
+		}
+		if ms != nil && dstNode != nil {
+			drift = ms.AdjustedLineDistance(a.Node, dstNode)
+		}
+		isCrossScope := dstNode != nil && !isScopePreserved(ms, a.Node, dstNode, r, r)
+
+		inverts := false
+		if hasDst {
+			for sLine, dLine := range matched {
+				if sLine >= 0 && sLine < len(srcLines) {
+					sTrim := strings.TrimSpace(srcLines[sLine])
+					if sTrim == "" || rules.IsPunctuation(sTrim) {
+						continue
+					}
+				}
+				if (sStart < sLine && dStart > dLine) || (sStart > sLine && dStart < dLine) ||
+					(sEnd < sLine && dEnd > dLine) || (sEnd > sLine && dEnd < dLine) {
+					inverts = true
+					break
+				}
+			}
+			if !inverts {
+				for sLine, dLine := range stationaryStatements {
+					if (sStart < sLine && dStart > dLine) || (sStart > sLine && dStart < dLine) ||
+						(sEnd < sLine && dEnd > dLine) || (sEnd > sLine && dEnd < dLine) {
+						inverts = true
+						break
+					}
+				}
+			}
+		}
+
+		isInPlaceMonotonic := hasDst && !isCrossScope && drift <= 5 && !inverts
+		if isInPlaceMonotonic {
+			markMoved(a.Node, inPlaceNodes, a.Subtree)
+			if dstNode != nil {
+				markMoved(dstNode, inPlaceNodes, a.Subtree)
+			}
+		}
+
+		if !isInPlaceMonotonic && (!hasDst || sStart != dStart || sEnd-sStart != dEnd-dStart) {
 			isStructural := (r != nil && (r.IsDeclaration(a.Node.Type) || r.IsBlock(a.Node.Type))) || (a.Node.EndRow-a.Node.StartRow >= 2)
 			if isCrossScope || isStructural {
 				moves = append(moves, moveRange{
@@ -133,7 +213,7 @@ func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping) (map[*treesit
 			}
 		}
 	}
-	return movedNodes, moves
+	return moves, inPlaceNodes
 }
 
 func collectDeclarationAndCommentAnchors(srcLines, dstLines []string, ms *engine.Mapping, movedNodes map[*treesitter.ASTNode]bool, moves []moveRange, commentLineMappings []map[int]int) []anchor {
@@ -233,7 +313,7 @@ func collectDeclarationAndCommentAnchors(srcLines, dstLines []string, ms *engine
 	return filterMonotonic(cands)
 }
 
-func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, movedNodes map[*treesitter.ASTNode]bool) map[int]int {
+func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, allowNode func(n1, n2 *treesitter.ASTNode) bool) map[int]int {
 	if ms == nil {
 		return nil
 	}
@@ -247,7 +327,7 @@ func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, mo
 		if n1 == nil || n2 == nil {
 			continue
 		}
-		if movedNodes[n1] || movedNodes[n2] {
+		if allowNode != nil && !allowNode(n1, n2) {
 			continue
 		}
 		var r *rules.Rules
@@ -314,8 +394,10 @@ func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, mo
 	return mapped
 }
 
-func collectTextAnchors(srcLines, dstLines []string, moves []moveRange, mappedStatements map[int]int) []anchor {
-	matched := engine.LineDiff(srcLines, dstLines)
+func collectTextAnchors(srcLines, dstLines []string, moves []moveRange, mappedStatements map[int]int, matched map[int]int) []anchor {
+	if matched == nil {
+		matched = engine.LineDiff(srcLines, dstLines)
+	}
 	if len(matched) == 0 {
 		return nil
 	}
@@ -1043,10 +1125,32 @@ func isScopePreserved(ms *engine.Mapping, n1, n2 *treesitter.ASTNode, r1, r2 *ru
 	if s1 == nil && s2 == nil {
 		return true
 	}
-	if s1 == nil || s2 == nil {
+	if s1 != nil && s2 != nil && ms.Get(s1) == s2 {
+		return true
+	}
+	lineDist := int(n1.StartRow) - int(n2.StartRow)
+	if lineDist < 0 {
+		lineDist = -lineDist
+	}
+	if lineDist <= 5 && isSameEnclosingDeclaration(ms, n1, n2, r1) {
+		return true
+	}
+	return false
+}
+
+func isSameEnclosingDeclaration(ms *engine.Mapping, n1, n2 *treesitter.ASTNode, r *rules.Rules) bool {
+	if ms == nil || n1 == nil || n2 == nil {
 		return false
 	}
-	return ms.Get(s1) == s2
+	d1 := n1.EnclosingContainerDeclaration(r)
+	d2 := n2.EnclosingContainerDeclaration(r)
+	if d1 == nil && d2 == nil {
+		return true
+	}
+	if d1 != nil && d2 != nil {
+		return ms.Get(d1) == d2
+	}
+	return false
 }
 
 func findEnclosingScope(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {

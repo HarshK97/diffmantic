@@ -229,4 +229,16 @@ var phpRules = &Rules{
 		"primitive_type",
 		"union_type",
 	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+		"continue_statement",
+		"goto_statement",
+		"throw_expression",
+		"yield_expression",
+	},
+	TerminalCalls: []string{
+		"exit",
+		"die",
+	},
 }

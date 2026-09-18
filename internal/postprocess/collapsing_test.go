@@ -610,7 +610,7 @@ func TestInlineParentSuppression(t *testing.T) {
 		dstChild := &treesitter.ASTNode{
 			Type:      "assignment_expression",
 			StartByte: 200, EndByte: 220,
-			StartRow: 20, EndRow: 20,
+			StartRow: 10, EndRow: 10,
 		}
 		dstChild.Language = "javascript"
 
@@ -647,13 +647,13 @@ func TestInlineParentSuppression(t *testing.T) {
 		srcLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 10, EndByte: 20, StartRow: 5, EndRow: 5}
 		srcLeft.Language = "javascript"
 
-		dstLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 50, EndByte: 60, StartRow: 15, EndRow: 15}
-		dstOp := &treesitter.ASTNode{Type: "+", StartByte: 61, EndByte: 62, StartRow: 15, EndRow: 15}
-		dstRight := &treesitter.ASTNode{Type: "call_expression", StartByte: 63, EndByte: 73, StartRow: 15, EndRow: 15}
+		dstLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 50, EndByte: 60, StartRow: 5, EndRow: 5}
+		dstOp := &treesitter.ASTNode{Type: "+", StartByte: 61, EndByte: 62, StartRow: 5, EndRow: 5}
+		dstRight := &treesitter.ASTNode{Type: "call_expression", StartByte: 63, EndByte: 73, StartRow: 5, EndRow: 5}
 		dstBin := &treesitter.ASTNode{
 			Type:      "binary_expression",
 			StartByte: 50, EndByte: 73,
-			StartRow: 15, EndRow: 15,
+			StartRow: 5, EndRow: 5,
 			Children: []*treesitter.ASTNode{dstLeft, dstOp, dstRight},
 		}
 		dstBin.Language = "javascript"

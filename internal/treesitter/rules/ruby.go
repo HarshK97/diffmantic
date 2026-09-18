@@ -153,6 +153,10 @@ var rubyRules = &Rules{
 	Identifiers: []string{
 		"identifier",
 		"constant",
+		"instance_variable",
+		"class_variable",
+		"global_variable",
+		"exception_variable",
 	},
 	Blocks: []string{
 		"body_statement",
@@ -200,5 +204,17 @@ var rubyRules = &Rules{
 		"do_block",
 		"block",
 		"lambda",
+	},
+	JumpStatements: []string{
+		"return",
+		"break",
+		"next",
+		"redo",
+		"retry",
+	},
+	TerminalCalls: []string{
+		"abort",
+		"exit",
+		"exit!",
 	},
 }

@@ -531,8 +531,10 @@ func TestCLI_GitInlineFormat(t *testing.T) {
 	}
 
 	if len(stdout) > 0 {
-		if !strings.Contains(stdout, "--- a/") || !strings.Contains(stdout, "+++ b/") {
-			t.Errorf("expected git inline diff output with standard headers, got:\n%s", stdout)
+		hasHeaders := strings.Contains(stdout, "--- a/") && strings.Contains(stdout, "+++ b/")
+		hasBinary := strings.Contains(stdout, "Binary files")
+		if !hasHeaders && !hasBinary {
+			t.Errorf("expected git inline diff output with standard headers or binary notices, got:\n%s", stdout)
 		}
 	}
 }

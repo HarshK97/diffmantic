@@ -212,8 +212,8 @@ func TestRender_Tier1_IntraHunkMoveCleanliness(t *testing.T) {
 }
 
 func TestRender_Tier2_CrossHunkDeclarationMove(t *testing.T) {
-	src := []byte("func Alpha() {\n}\n\nfunc Target() {\n}\n")
-	dst := []byte("func Target() {\n}\n\nfunc Alpha() {\n}\n")
+	src := []byte("package main\n\nfunc Alpha() string {\n\treturn \"alpha\"\n}\n\nfunc Beta() string {\n\treturn \"beta\"\n}\n")
+	dst := []byte("package main\n\nfunc Beta() string {\n\treturn \"beta\"\n}\n\nfunc Gamma() string {\n\treturn \"gamma\"\n}\n\nfunc Alpha() string {\n\treturn \"alpha\"\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
 		EnvelopeOpts: fullEnvelopeOpts(),
@@ -222,14 +222,14 @@ func TestRender_Tier2_CrossHunkDeclarationMove(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 0, LineNumbers: false})
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
 	// Check that POSIX hunk header contains moved context or clean lines.
 	if strings.Contains(got, "←") {
 		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
 	}
-	if !strings.Contains(got, "func Target") && !strings.Contains(got, "func Alpha") {
-		t.Errorf("expected 'func Target' or 'func Alpha' in output, got:\n%s", got)
+	if !strings.Contains(got, "func Alpha") {
+		t.Errorf("expected 'func Alpha' in output, got:\n%s", got)
 	}
 }
 
@@ -350,56 +350,17 @@ func TestExtractDeclarationSignature(t *testing.T) {
 }
 
 func TestRender_Tier2_ModifiedRelocation(t *testing.T) {
-	src := []byte("func Process() {\n\tstepA()\n\tstepB()\n}\n\nfunc Helper() {\n\tnoop()\n}\n")
-	dst := []byte("func Helper() {\n\tnoop()\n}\n\nfunc Extra() {\n\tlog()\n}\n\nfunc Process() {\n\tstepA()\n\tstepB_modified()\n\tstepC_new()\n}\n")
+	src := []byte("package main\n\nfunc Process() {\n\tstepA()\n\tstepB()\n}\n\nfunc Helper() {\n\tnoop()\n}\n")
+	dst := []byte("package main\n\nfunc Helper() {\n\tnoop()\n}\n\nfunc Extra() {\n\tlog()\n}\n\nfunc Process() {\n\tstepA()\n\tstepB_modified()\n\tstepC_new()\n}\n")
 
-	startDst := uint32(50)
-	endDst := uint32(110)
-	mutDst := uint32(75)
-
-	env := &serialize.Envelope{
-		LineAlignment: []serialize.LineAlignmentPair{
-			{LeftLine: 0, RightLine: -1},
-			{LeftLine: 1, RightLine: -1},
-			{LeftLine: 2, RightLine: -1},
-			{LeftLine: 3, RightLine: -1},
-			{LeftLine: 4, RightLine: -1},
-			{LeftLine: 5, RightLine: 0},
-			{LeftLine: 6, RightLine: 1},
-			{LeftLine: 7, RightLine: 2},
-			{LeftLine: -1, RightLine: 3},
-			{LeftLine: -1, RightLine: 4},
-			{LeftLine: -1, RightLine: 5},
-			{LeftLine: -1, RightLine: 6},
-			{LeftLine: -1, RightLine: 7},
-			{LeftLine: -1, RightLine: 8},
-			{LeftLine: -1, RightLine: 9},
-		},
-		Actions: []serialize.Action{
-			{
-				Action: "move",
-				Node: &serialize.NodeRef{
-					Tree:      "before",
-					Type:      "function_declaration",
-					StartByte: 0,
-					EndByte:   44,
-				},
-				DestStartByte: &startDst,
-				DestEndByte:   &endDst,
-			},
-			{
-				Action: "insert",
-				Node: &serialize.NodeRef{
-					Tree:      "after",
-					Type:      "call_expression",
-					StartByte: mutDst,
-					EndByte:   mutDst + 10,
-				},
-			},
-		},
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("main.go", "main.go", src, dst, env, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
+	got := Render("main.go", "main.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
 	if !strings.Contains(got, "func Process") {
 		t.Errorf("expected 'func Process' in output, got:\n%s", got)
@@ -620,35 +581,14 @@ func TestRender_SubBlockGrouping(t *testing.T) {
 	src := []byte("package main\n\nfunc Calc() {\n\ta := 1\n\tb := filter(\n\t\tx,\n\t\ty,\n\t)\n\tc := 3\n}\n")
 	dst := []byte("package main\n\nfunc Calc() {\n\ta := 10\n\tb := reduce(x, y)\n\tc := 30\n}\n")
 
-	env := &serialize.Envelope{
-		LineAlignment: []serialize.LineAlignmentPair{
-			{LeftLine: 0, RightLine: 0},
-			{LeftLine: 1, RightLine: 1},
-			{LeftLine: 2, RightLine: 2},
-			{LeftLine: 3, RightLine: 3},
-			{LeftLine: 4, RightLine: 4},
-			{LeftLine: 5, RightLine: -1},
-			{LeftLine: 6, RightLine: -1},
-			{LeftLine: 7, RightLine: -1},
-			{LeftLine: 8, RightLine: 5},
-			{LeftLine: 9, RightLine: 6},
-		},
-		LeftHighlights: []serialize.HighlightSpan{
-			{Line: 3, StartCol: 1, EndCol: 7, Action: "delete"},
-			{Line: 4, StartCol: 1, EndCol: 13, Action: "delete"},
-			{Line: 5, StartCol: 1, EndCol: 5, Action: "delete"},
-			{Line: 6, StartCol: 1, EndCol: 5, Action: "delete"},
-			{Line: 7, StartCol: 1, EndCol: 3, Action: "delete"},
-			{Line: 8, StartCol: 1, EndCol: 7, Action: "delete"},
-		},
-		RightHighlights: []serialize.HighlightSpan{
-			{Line: 3, StartCol: 1, EndCol: 8, Action: "insert"},
-			{Line: 4, StartCol: 1, EndCol: 19, Action: "insert"},
-			{Line: 5, StartCol: 1, EndCol: 8, Action: "insert"},
-		},
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	got := Render("a.go", "b.go", src, dst, env, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
 	// Deletions of b := filter(...) must complete before b := reduce(x, y) is inserted.
 	// That is, all 3 lines of b := filter(...) must appear contiguously before +	b := reduce(x, y).

@@ -105,6 +105,10 @@ var javaRules = &Rules{
 		"resource_specification",
 		"catch_clause",
 		"finally_clause",
+		"assert_statement",
+		"synchronized_statement",
+		"labeled_statement",
+		"compact_constructor_declaration",
 		"local_variable_declaration",
 		"expression_statement",
 		"lambda_expression",
@@ -168,6 +172,7 @@ var javaRules = &Rules{
 		"record_declaration",
 		"method_declaration",
 		"constructor_declaration",
+		"compact_constructor_declaration",
 		"annotation_type_declaration",
 		"module_declaration",
 		"package_declaration",
@@ -176,6 +181,8 @@ var javaRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"type_identifier",
+		"scoped_identifier",
 	},
 	Blocks: []string{
 		"block",
@@ -223,6 +230,8 @@ var javaRules = &Rules{
 		"record_declaration",
 		"method_declaration",
 		"constructor_declaration",
+		"compact_constructor_declaration",
+		"annotation_type_declaration",
 	},
 	Closures: []string{
 		"lambda_expression",
@@ -238,5 +247,15 @@ var javaRules = &Rules{
 		"scoped_type_identifier",
 		"type_identifier",
 		"void_type",
+	},
+	JumpStatements: []string{
+		"return_statement",
+		"break_statement",
+		"continue_statement",
+		"throw_statement",
+		"yield_statement",
+	},
+	TerminalCalls: []string{
+		"System.exit",
 	},
 }

@@ -128,6 +128,7 @@ var zigRules = &Rules{
 	},
 	Identifiers: []string{
 		"identifier",
+		"builtin_identifier",
 	},
 	Blocks: []string{
 		"block",
@@ -180,5 +181,14 @@ var zigRules = &Rules{
 		"nullable_type",
 		"pointer_type",
 		"slice_type",
+	},
+	JumpStatements: []string{
+		"return_expression",
+		"break_expression",
+		"continue_expression",
+	},
+	TerminalCalls: []string{
+		"std.process.exit",
+		"@panic",
 	},
 }

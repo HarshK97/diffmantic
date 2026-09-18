@@ -6,6 +6,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // mkNode builds a node with children and sets Parent pointers.
@@ -562,578 +563,680 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 }
 
-func TestNormalizeCrossScopeNonStructuralMoves(t *testing.T) {
-	t.Run("demotes cross-scope distant type move to delete and insert", func(t *testing.T) {
-		oldFn := mkNode("function_declaration", "resolveColHighlights")
-		oldFn.Language = "go"
-		oldSlice := mkNode("slice_type", "")
-		oldSlice.Language = "go"
-		oldSlice.StartRow = 506
-		oldSlice.EndRow = 506
-		oldFn.Children = append(oldFn.Children, oldSlice)
-		oldSlice.Parent = oldFn
+func TestIsTerminatingStatement(t *testing.T) {
+	r := rules.Get("go")
 
-		newStruct := mkNode("type_declaration", "inlineScratch")
-		newStruct.Language = "go"
-		newField := mkNode("field_declaration", "colHighlight")
-		newField.Language = "go"
-		newSlice := mkNode("slice_type", "")
-		newSlice.Language = "go"
-		newSlice.StartRow = 45
-		newSlice.EndRow = 45
-		newField.Children = append(newField.Children, newSlice)
-		newSlice.Parent = newField
-		newStruct.Children = append(newStruct.Children, newField)
-		newField.Parent = newStruct
-
-		ms := engine.NewMapping()
-		ms.Add(oldSlice, newSlice)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldSlice, DestNode: newSlice})
-
-		result := normalizeCrossScopeNonStructuralMoves(es, ms)
-
-		hasDelete := false
-		hasInsert := false
-		hasMove := false
-		for _, a := range result.Actions() {
-			if a.Type == actions.Delete && a.Node == oldSlice {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newSlice {
-				hasInsert = true
-			}
-			if a.Type == actions.Move {
-				hasMove = true
-			}
-		}
-		if hasMove {
-			t.Error("expected cross-scope distant type move to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v hasInsert=%v", hasDelete, hasInsert)
-		}
-		if ms.Has(oldSlice) || ms.HasDst(newSlice) {
-			t.Error("expected oldSlice and newSlice to be unmapped from ms")
+	t.Run("return statement is terminating", func(t *testing.T) {
+		stmt := mkNode("return_statement", "")
+		stmt.Language = "go"
+		if !isTerminatingStatement(stmt, r) {
+			t.Error("expected return_statement to be terminating")
 		}
 	})
 
-	t.Run("preserves local type move within same scope", func(t *testing.T) {
-		fn := mkNode("function_declaration", "foo")
-		fn.Language = "go"
-		oldSlice := mkNode("slice_type", "")
-		oldSlice.Language = "go"
-		oldSlice.StartRow = 10
-		oldSlice.EndRow = 10
-		fn.Children = append(fn.Children, oldSlice)
-		oldSlice.Parent = fn
+	t.Run("os.Exit call is terminating", func(t *testing.T) {
+		operand := mkNode("identifier", "os")
+		operand.Language = "go"
+		field := mkNode("field_identifier", "Exit")
+		field.Language = "go"
+		selector := mkNode("selector_expression", "")
+		selector.Language = "go"
+		selector.Children = []*treesitter.ASTNode{operand, field}
+		operand.Parent = selector
+		field.Parent = selector
 
-		newFn := mkNode("function_declaration", "foo")
-		newFn.Language = "go"
-		newSlice := mkNode("slice_type", "")
-		newSlice.Language = "go"
-		newSlice.StartRow = 12
-		newSlice.EndRow = 12
-		newFn.Children = append(newFn.Children, newSlice)
-		newSlice.Parent = newFn
+		arg := mkNode("interpreted_string_literal", "1")
+		arg.Language = "go"
+		args := mkNode("argument_list", "")
+		args.Language = "go"
+		args.Children = []*treesitter.ASTNode{arg}
+		arg.Parent = args
 
-		ms := engine.NewMapping()
-		ms.Add(fn, newFn)
-		ms.Add(oldSlice, newSlice)
+		call := mkNode("call_expression", "")
+		call.Language = "go"
+		call.Children = []*treesitter.ASTNode{selector, args}
+		selector.Parent = call
+		args.Parent = call
 
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldSlice, DestNode: newSlice})
+		exprStmt := mkNode("expression_statement", "")
+		exprStmt.Language = "go"
+		exprStmt.Children = []*treesitter.ASTNode{call}
+		call.Parent = exprStmt
 
-		result := normalizeCrossScopeNonStructuralMoves(es, ms)
-		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
-			t.Errorf("expected local intra-scope type move to be preserved, got %d actions", result.Size())
+		if !isTerminatingStatement(exprStmt, r) {
+			t.Error("expected os.Exit call to be terminating")
+		}
+	})
+
+	t.Run("regular expression is not terminating", func(t *testing.T) {
+		stmt := mkNode("expression_statement", "")
+		stmt.Language = "go"
+		call := mkNode("call_expression", "")
+		call.Language = "go"
+		operand := mkNode("identifier", "fmt")
+		operand.Language = "go"
+		field := mkNode("field_identifier", "Println")
+		field.Language = "go"
+		selector := mkNode("selector_expression", "")
+		selector.Language = "go"
+		selector.Children = []*treesitter.ASTNode{operand, field}
+		operand.Parent = selector
+		field.Parent = selector
+		call.Children = []*treesitter.ASTNode{selector}
+		selector.Parent = call
+		stmt.Children = []*treesitter.ASTNode{call}
+		call.Parent = stmt
+
+		if isTerminatingStatement(stmt, r) {
+			t.Error("expected fmt.Println call to NOT be terminating")
 		}
 	})
 }
 
-func TestNormalizeOrphanedOperatorMoves(t *testing.T) {
-	t.Run("demotes operator move when parents are unmapped or different", func(t *testing.T) {
-		oldStmt := mkNode("short_var_declaration", "")
-		oldStmt.Language = "go"
-		oldOp := mkNode("assignment_operator_literal", ":=")
-		oldOp.Language = "go"
-		oldStmt.Children = append(oldStmt.Children, oldOp)
-		oldOp.Parent = oldStmt
+func TestIsTrivialJumpBody(t *testing.T) {
+	r := rules.Get("go")
 
-		newStmt := mkNode("assignment_statement", "")
-		newStmt.Language = "go"
-		newOp := mkNode("assignment_operator_literal", "=")
-		newOp.Language = "go"
-		newStmt.Children = append(newStmt.Children, newOp)
-		newOp.Parent = newStmt
+	t.Run("body of only jump statements is trivial", func(t *testing.T) {
+		retStmt := mkNode("return_statement", "")
+		retStmt.Language = "go"
+		stmtList := mkNode("statement_list", "", retStmt)
+		stmtList.Language = "go"
+		body := mkNode("block", "", stmtList)
+		body.Language = "go"
 
-		ms := engine.NewMapping()
-		ms.Add(oldOp, newOp)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldOp, DestNode: newOp})
-
-		result := normalizeOrphanedOperatorMoves(es, ms)
-		hasMove := false
-		hasDelete := false
-		hasInsert := false
-		for _, a := range result.Actions() {
-			if a.Type == actions.Move {
-				hasMove = true
-			}
-			if a.Type == actions.Delete && a.Node == oldOp {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newOp {
-				hasInsert = true
-			}
-		}
-
-		if hasMove {
-			t.Error("expected orphaned operator move to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v, hasInsert=%v", hasDelete, hasInsert)
+		if !isTrivialJumpBody(body, r) {
+			t.Error("expected body of only a return statement to be trivial")
 		}
 	})
 
-	t.Run("preserves operator move when parent container is matched", func(t *testing.T) {
-		oldParent := mkNode("binary_expression", "")
-		oldParent.Language = "go"
-		oldOp := mkNode("comparison_operator_literal", "==")
-		oldOp.Language = "go"
-		oldParent.Children = append(oldParent.Children, oldOp)
-		oldOp.Parent = oldParent
+	// An error print followed by an exit is still boilerplate — the print
+	// shouldn't keep it from being scored as a trivial exit block.
+	t.Run("body pairing an error print with a terminating call is trivial", func(t *testing.T) {
+		fprintfSel := mkNode("selector_expression", "",
+			mkNode("identifier", "fmt"),
+			mkNode("field_identifier", "Fprintf"),
+		)
+		printCall := mkNode("call_expression", "", fprintfSel, mkNode("argument_list", ""))
+		printStmt := mkNode("expression_statement", "", printCall)
 
-		newParent := mkNode("binary_expression", "")
-		newParent.Language = "go"
-		newOp := mkNode("comparison_operator_literal", "==")
-		newOp.Language = "go"
-		newParent.Children = append(newParent.Children, newOp)
-		newOp.Parent = newParent
+		exitSel := mkNode("selector_expression", "",
+			mkNode("identifier", "os"),
+			mkNode("field_identifier", "Exit"),
+		)
+		exitCall := mkNode("call_expression", "", exitSel, mkNode("argument_list", ""))
+		exitStmt := mkNode("expression_statement", "", exitCall)
 
-		ms := engine.NewMapping()
-		ms.Add(oldParent, newParent)
-		ms.Add(oldOp, newOp)
+		stmtList := mkNode("statement_list", "", printStmt, exitStmt)
+		body := mkNode("block", "", stmtList)
+		setLanguageRecursive(body, "go")
 
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldOp, DestNode: newOp})
-
-		result := normalizeOrphanedOperatorMoves(es, ms)
-		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
-			t.Errorf("expected operator move within matched parent to be preserved, got %d actions", result.Size())
+		if !isTrivialJumpBody(body, r) {
+			t.Error("expected print+os.Exit body to be trivial boilerplate")
 		}
 	})
 }
 
-func TestNormalizeControlFlowMoves(t *testing.T) {
-	t.Run("demotes cross-hunk if move when bodies share zero statements", func(t *testing.T) {
-		oldIf := mkNode("if_statement", "")
-		oldIf.StartRow = 10
-		oldIf.Language = "go"
-		oldCond := mkNode("selector_expression", "opts.Color")
-		oldCond.Language = "go"
-		oldBody := mkNode("block", "")
-		oldBody.Language = "go"
-		oldStmt := mkNode("assignment_statement", "headerStyle = ...")
-		oldStmt.Language = "go"
-		oldBody.Children = append(oldBody.Children, oldStmt)
-		oldStmt.Parent = oldBody
-		oldIf.Children = append(oldIf.Children, oldCond, oldBody)
-		oldCond.Parent = oldIf
-		oldBody.Parent = oldIf
+func setLanguageRecursive(n *treesitter.ASTNode, lang string) {
+	if n == nil {
+		return
+	}
+	n.Language = lang
+	for _, c := range n.Children {
+		setLanguageRecursive(c, lang)
+	}
+}
 
-		newIf := mkNode("if_statement", "")
-		newIf.StartRow = 200
-		newIf.Language = "go"
-		newCond := mkNode("selector_expression", "opts.Color")
-		newCond.Language = "go"
-		newBody := mkNode("block", "")
-		newBody.Language = "go"
-		newStmt := mkNode("expression_statement", "out.WriteString(...)")
-		newStmt.Language = "go"
-		newBody.Children = append(newBody.Children, newStmt)
-		newStmt.Parent = newBody
-		newIf.Children = append(newIf.Children, newCond, newBody)
-		newCond.Parent = newIf
-		newBody.Parent = newIf
+func TestMoveStructuralScore(t *testing.T) {
+	r := rules.Get("go")
 
-		ms := engine.NewMapping()
-		ms.Add(oldIf, newIf)
-		ms.Add(oldCond, newCond)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldIf, DestNode: newIf})
-
-		result := normalizeControlFlowMoves(es, ms)
-
-		var hasMove, hasDelete, hasInsert bool
-		for _, a := range result.Actions() {
-			if a.Type == actions.Move && a.Node == oldIf {
-				hasMove = true
-			}
-			if a.Type == actions.Delete && a.Node == oldIf {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newIf {
-				hasInsert = true
-			}
-		}
-
-		if hasMove {
-			t.Error("expected cross-hunk if move with unmatched bodies to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v, hasInsert=%v", hasDelete, hasInsert)
+	t.Run("bare token clamped to 1", func(t *testing.T) {
+		op := mkNode("arithmetic_operator_literal", "+")
+		op.Language = "go"
+		score := moveStructuralScore(op, r)
+		if score != 1 {
+			t.Errorf("expected token score 1, got %d", score)
 		}
 	})
 
-	t.Run("preserves if move when body is matched", func(t *testing.T) {
-		oldIf := mkNode("if_statement", "")
-		oldIf.StartRow = 10
-		oldIf.Language = "go"
-		oldBody := mkNode("block", "")
-		oldBody.Language = "go"
-		oldStmt := mkNode("return_statement", "return true")
-		oldStmt.Language = "go"
-		oldBody.Children = append(oldBody.Children, oldStmt)
-		oldStmt.Parent = oldBody
-		oldIf.Children = append(oldIf.Children, oldBody)
-		oldBody.Parent = oldIf
+	t.Run("small if block with trivial body", func(t *testing.T) {
+		retStmt := mkNode("return_statement", "")
+		retStmt.Language = "go"
+		body := mkNode("block", "", retStmt)
+		body.Language = "go"
+		retStmt.Parent = body
+		ifStmt := mkNode("if_statement", "")
+		ifStmt.Language = "go"
+		cond := mkNode("identifier", "err")
+		cond.Language = "go"
+		ifStmt.Children = []*treesitter.ASTNode{cond, body}
+		cond.Parent = ifStmt
+		body.Parent = ifStmt
 
-		newIf := mkNode("if_statement", "")
-		newIf.StartRow = 50
-		newIf.Language = "go"
-		newBody := mkNode("block", "")
-		newBody.Language = "go"
-		newStmt := mkNode("return_statement", "return true")
-		newStmt.Language = "go"
-		newBody.Children = append(newBody.Children, newStmt)
-		newStmt.Parent = newBody
-		newIf.Children = append(newIf.Children, newBody)
-		newBody.Parent = newIf
-
-		ms := engine.NewMapping()
-		ms.Add(oldIf, newIf)
-		ms.Add(oldBody, newBody)
-		ms.Add(oldStmt, newStmt)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldIf, DestNode: newIf})
-
-		result := normalizeControlFlowMoves(es, ms)
-		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
-			t.Errorf("expected if move with matched body to be preserved, got %d actions", result.Size())
+		score := moveStructuralScore(ifStmt, r)
+		// Size ~4, height ~2, lines 0, boilerplate -20 → clamp to 1
+		if score < 1 {
+			t.Errorf("expected score >= 1, got %d", score)
 		}
 	})
 
-	t.Run("demotes function_declaration move when consequence body is completely unmatched across hunks", func(t *testing.T) {
-		oldFunc := mkNode("function_declaration", "")
-		oldFunc.StartRow = 10
-		oldFunc.Language = "go"
-		oldName := mkNode("identifier", "Foo")
-		oldName.Language = "go"
-		oldParams := mkNode("parameter_list", "(t *testing.T)")
-		oldParams.Language = "go"
-		oldBody := mkNode("block", "{ stmt1 }")
-		oldBody.Language = "go"
-		oldFunc.Children = append(oldFunc.Children, oldName, oldParams, oldBody)
-		oldName.Parent = oldFunc
-		oldParams.Parent = oldFunc
-		oldBody.Parent = oldFunc
+	t.Run("declaration gets +40 bonus", func(t *testing.T) {
+		decl := mkNode("function_declaration", "foo")
+		decl.Language = "go"
+		decl.Children = []*treesitter.ASTNode{mkNode("block", "")}
+		decl.Children[0].Parent = decl
 
-		newFunc := mkNode("function_declaration", "")
-		newFunc.StartRow = 50
-		newFunc.Language = "go"
-		newName := mkNode("identifier", "Bar")
-		newName.Language = "go"
-		newParams := mkNode("parameter_list", "(t *testing.T)")
-		newParams.Language = "go"
-		newBody := mkNode("block", "{ stmt2 }")
-		newBody.Language = "go"
-		newFunc.Children = append(newFunc.Children, newName, newParams, newBody)
-		newName.Parent = newFunc
-		newParams.Parent = newFunc
-		newBody.Parent = newFunc
-
-		ms := engine.NewMapping()
-		ms.Add(oldFunc, newFunc)
-		ms.Add(oldParams, newParams)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldFunc, DestNode: newFunc})
-
-		result := normalizeControlFlowMoves(es, ms)
-
-		var hasMove, hasDelete, hasInsert bool
-		for _, a := range result.Actions() {
-			if a.Type == actions.Move && a.Node == oldFunc {
-				hasMove = true
-			}
-			if a.Type == actions.Delete && a.Node == oldFunc {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newFunc {
-				hasInsert = true
-			}
-		}
-
-		if hasMove {
-			t.Error("expected function_declaration move with unmatched body to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v, hasInsert=%v", hasDelete, hasInsert)
-		}
-	})
-
-	t.Run("demotes for_clause move when parent for_statement did not move", func(t *testing.T) {
-		oldFor := mkNode("for_statement", "")
-		oldFor.StartRow = 10
-		oldFor.Language = "go"
-		oldClause := mkNode("for_clause", "i := 0; i < n; i++")
-		oldClause.StartRow = 10
-		oldClause.Language = "go"
-		oldBody := mkNode("block", "")
-		oldBody.Language = "go"
-		oldFor.Children = append(oldFor.Children, oldClause, oldBody)
-		oldClause.Parent = oldFor
-		oldBody.Parent = oldFor
-
-		newFor := mkNode("for_statement", "")
-		newFor.StartRow = 50
-		newFor.Language = "go"
-		newClause := mkNode("for_clause", "i := 0; i < n; i++")
-		newClause.StartRow = 50
-		newClause.Language = "go"
-		newBody := mkNode("block", "")
-		newBody.Language = "go"
-		newFor.Children = append(newFor.Children, newClause, newBody)
-		newClause.Parent = newFor
-		newBody.Parent = newFor
-
-		ms := engine.NewMapping()
-		ms.Add(oldClause, newClause)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldClause, DestNode: newClause})
-
-		result := normalizeControlFlowMoves(es, ms)
-
-		var hasMove, hasDelete, hasInsert bool
-		for _, a := range result.Actions() {
-			if a.Type == actions.Move && a.Node == oldClause {
-				hasMove = true
-			}
-			if a.Type == actions.Delete && a.Node == oldClause {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newClause {
-				hasInsert = true
-			}
-		}
-
-		if hasMove {
-			t.Error("expected for_clause move with unmatched parent to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v, hasInsert=%v", hasDelete, hasInsert)
+		score := moveStructuralScore(decl, r)
+		if score < 40 {
+			t.Errorf("expected declaration score >= 40, got %d", score)
 		}
 	})
 }
 
-func TestNormalizeOrphanedCallArgumentMoves(t *testing.T) {
-	t.Run("demotes argument move across distant hunks when calls do not match", func(t *testing.T) {
-		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "go"
-		oldCall.StartRow = 20
-		oldArgs := mkNode("argument_list", "")
-		oldArgs.Language = "go"
-		oldArg := mkNode("selector_expression", "l.text")
-		oldArg.Language = "go"
-		oldArg.StartRow = 21
-		oldArgs.Children = append(oldArgs.Children, oldArg)
-		oldArg.Parent = oldArgs
-		oldCall.Children = append(oldCall.Children, oldArgs)
-		oldArgs.Parent = oldCall
+func TestRequiredMoveThreshold(t *testing.T) {
+	r := rules.Get("go")
+	ms := engine.NewMapping()
 
-		newCall := mkNode("call_expression", "")
-		newCall.Language = "go"
-		newCall.StartRow = 100
-		newArgs := mkNode("argument_list", "")
-		newArgs.Language = "go"
-		newArg := mkNode("selector_expression", "l.text")
-		newArg.Language = "go"
-		newArg.StartRow = 101
-		newArgs.Children = append(newArgs.Children, newArg)
-		newArg.Parent = newArgs
-		newCall.Children = append(newCall.Children, newArgs)
-		newArgs.Parent = newCall
+	t.Run("intra-container reorder returns 1", func(t *testing.T) {
+		parent := mkNode("argument_list", "")
+		parent.Language = "go"
+		src := mkNode("identifier", "a")
+		src.Language = "go"
+		src.Parent = parent
+		dst := mkNode("identifier", "b")
+		dst.Language = "go"
+		dst.Parent = parent
+		parent.Children = []*treesitter.ASTNode{src, dst}
 
-		ms := engine.NewMapping()
-		ms.Add(oldArg, newArg)
+		ms.Add(parent, parent)
 
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldArg, DestNode: newArg})
-
-		result := normalizeOrphanedCallArgumentMoves(es, ms)
-
-		var hasMove, hasDelete, hasInsert bool
-		for _, a := range result.Actions() {
-			if a.Type == actions.Move && a.Node == oldArg {
-				hasMove = true
-			}
-			if a.Type == actions.Delete && a.Node == oldArg {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newArg {
-				hasInsert = true
-			}
-		}
-
-		if hasMove {
-			t.Error("expected orphaned call argument move across distant hunks to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v, hasInsert=%v", hasDelete, hasInsert)
+		threshold := requiredMoveThreshold(src, dst, ms, r)
+		if threshold != 1 {
+			t.Errorf("expected threshold 1 for intra-container reorder, got %d", threshold)
 		}
 	})
 
-	t.Run("preserves swapped arguments within the same matched call", func(t *testing.T) {
-		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "go"
-		oldCall.StartRow = 20
-		oldArgs := mkNode("argument_list", "")
-		oldArgs.Language = "go"
-		oldArg := mkNode("identifier", "a")
-		oldArg.Language = "go"
-		oldArg.StartRow = 20
-		oldArgs.Children = append(oldArgs.Children, oldArg)
-		oldArg.Parent = oldArgs
-		oldCall.Children = append(oldCall.Children, oldArgs)
-		oldArgs.Parent = oldCall
+	t.Run("top-level declaration returns 20", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcFunc.StartRow = 10
+		dstFunc := mkNode("function_declaration", "bar")
+		dstFunc.Language = "go"
+		dstFunc.StartRow = 500
 
-		newCall := mkNode("call_expression", "")
-		newCall.Language = "go"
-		newCall.StartRow = 20
-		newArgs := mkNode("argument_list", "")
-		newArgs.Language = "go"
-		newArg := mkNode("identifier", "a")
-		newArg.Language = "go"
-		newArg.StartRow = 20
-		newArgs.Children = append(newArgs.Children, newArg)
-		newArg.Parent = newArgs
-		newCall.Children = append(newCall.Children, newArgs)
-		newArgs.Parent = newCall
+		threshold := requiredMoveThreshold(srcFunc, dstFunc, ms, r)
+		if threshold != 20 {
+			t.Errorf("expected threshold 20 for top-level declaration, got %d", threshold)
+		}
+	})
 
-		ms := engine.NewMapping()
-		ms.Add(oldCall, newCall)
-		ms.Add(oldArg, newArg)
+	// Don't let a bare literal move between different struct fields just
+	// because they sit on the same line (e.g. `defValue: ""` vs `shorthand: ""`).
+	t.Run("cross-key bare literal at same line requires threshold >= 5", func(t *testing.T) {
+		srcVal := mkNode("string_literal", "\"\"")
+		srcVal.Language = "go"
+		srcPair := mkNode("keyed_element", "", mkNode("field_identifier", "defValue"), srcVal)
+		srcPair.Language = "go"
+		srcVal.Parent = srcPair
 
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldArg, DestNode: newArg})
+		dstVal := mkNode("string_literal", "\"\"")
+		dstVal.Language = "go"
+		dstPair := mkNode("keyed_element", "", mkNode("field_identifier", "shorthand"), dstVal)
+		dstPair.Language = "go"
+		dstVal.Parent = dstPair
 
-		result := normalizeOrphanedCallArgumentMoves(es, ms)
-		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
-			t.Errorf("expected argument move within matched call to be preserved, got %d actions", result.Size())
+		// Same line (ΔL = 0); srcPair is intentionally left unmapped to dstPair.
+		srcVal.StartRow, srcVal.EndRow = 5, 5
+		dstVal.StartRow, dstVal.EndRow = 5, 5
+
+		threshold := requiredMoveThreshold(srcVal, dstVal, ms, r)
+		if threshold < 5 {
+			t.Errorf("expected threshold >= 5 for cross-key bare literal, got %d (a clamped S=1 token would survive as a Move)", threshold)
 		}
 	})
 }
 
-func TestNormalizeOrphanedDeclarationParameterMoves(t *testing.T) {
-	t.Run("demotes parameter move across distant hunks when declarations do not match", func(t *testing.T) {
-		oldDecl := mkNode("function_declaration", "")
-		oldDecl.Language = "go"
-		oldDecl.StartRow = 20
-		oldParams := mkNode("parameter_list", "")
-		oldParams.Language = "go"
-		oldParam := mkNode("parameter_declaration", "color bool")
-		oldParam.Language = "go"
-		oldParam.StartRow = 21
-		oldParams.Children = append(oldParams.Children, oldParam)
-		oldParam.Parent = oldParams
-		oldDecl.Children = append(oldDecl.Children, oldParams)
-		oldParams.Parent = oldDecl
+func TestNormalizeMovesByStructure(t *testing.T) {
+	ms := engine.NewMapping()
 
-		newDecl := mkNode("function_declaration", "")
-		newDecl.Language = "go"
-		newDecl.StartRow = 100
-		newParams := mkNode("parameter_list", "")
-		newParams.Language = "go"
-		newParam := mkNode("parameter_declaration", "color bool")
-		newParam.Language = "go"
-		newParam.StartRow = 101
-		newParams.Children = append(newParams.Children, newParam)
-		newParam.Parent = newParams
-		newDecl.Children = append(newDecl.Children, newParams)
-		newParams.Parent = newDecl
+	t.Run("demotes boilerplate if block across distant scope", func(t *testing.T) {
+		retStmt := mkNode("return_statement", "")
+		retStmt.Language = "go"
+		srcBody := mkNode("block", "", retStmt)
+		srcBody.Language = "go"
+		retStmt.Parent = srcBody
+		srcIf := mkNode("if_statement", "")
+		srcIf.Language = "go"
+		srcCond := mkNode("identifier", "err")
+		srcCond.Language = "go"
+		srcIf.Children = []*treesitter.ASTNode{srcCond, srcBody}
+		srcCond.Parent = srcIf
+		srcBody.Parent = srcIf
+		srcIf.StartRow = 10
 
-		ms := engine.NewMapping()
-		ms.Add(oldParam, newParam)
+		retStmt2 := mkNode("return_statement", "")
+		retStmt2.Language = "go"
+		dstBody := mkNode("block", "", retStmt2)
+		dstBody.Language = "go"
+		retStmt2.Parent = dstBody
+		dstIf := mkNode("if_statement", "")
+		dstIf.Language = "go"
+		dstCond := mkNode("identifier", "err")
+		dstCond.Language = "go"
+		dstIf.Children = []*treesitter.ASTNode{dstCond, dstBody}
+		dstCond.Parent = dstIf
+		dstBody.Parent = dstIf
+		dstIf.StartRow = 500
 
 		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldParam, DestNode: newParam})
+		es.Add(actions.Action{Type: actions.Move, Node: srcIf, DestNode: dstIf})
 
-		result := normalizeOrphanedDeclarationParameterMoves(es, ms)
-
-		var hasMove, hasDelete, hasInsert bool
-		for _, a := range result.Actions() {
-			if a.Type == actions.Move && a.Node == oldParam {
-				hasMove = true
-			}
-			if a.Type == actions.Delete && a.Node == oldParam {
-				hasDelete = true
-			}
-			if a.Type == actions.Insert && a.Node == newParam {
-				hasInsert = true
-			}
+		result := normalizeMovesByStructure(es, ms)
+		// Boilerplate if-block across 490 lines should be demoted to delete+insert
+		if result.Size() != 2 {
+			t.Fatalf("expected 2 actions (delete+insert) for demoted boilerplate, got %d", result.Size())
 		}
-
-		if hasMove {
-			t.Error("expected orphaned declaration parameter move to be demoted, but Move survived")
-		}
-		if !hasDelete || !hasInsert {
-			t.Errorf("expected separate Delete and Insert actions, got hasDelete=%v, hasInsert=%v", hasDelete, hasInsert)
+		if result.Actions()[0].Type != actions.Delete || result.Actions()[1].Type != actions.Insert {
+			t.Errorf("expected delete then insert, got %v and %v", result.Actions()[0].Type, result.Actions()[1].Type)
 		}
 	})
 
-	t.Run("preserves parameter move when enclosing declaration matches", func(t *testing.T) {
-		oldDecl := mkNode("function_declaration", "")
-		oldDecl.Language = "go"
-		oldDecl.StartRow = 20
-		oldParams := mkNode("parameter_list", "")
-		oldParams.Language = "go"
-		oldParam := mkNode("parameter_declaration", "color bool")
-		oldParam.Language = "go"
-		oldParam.StartRow = 20
-		oldParams.Children = append(oldParams.Children, oldParam)
-		oldParam.Parent = oldParams
-		oldDecl.Children = append(oldDecl.Children, oldParams)
-		oldParams.Parent = oldDecl
+	t.Run("preserves declaration move", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcFunc.StartRow = 10
+		srcFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
+		srcFunc.Children[0].Parent = srcFunc
 
-		newDecl := mkNode("function_declaration", "")
-		newDecl.Language = "go"
-		newDecl.StartRow = 20
-		newParams := mkNode("parameter_list", "")
-		newParams.Language = "go"
-		newParam := mkNode("parameter_declaration", "color bool")
-		newParam.Language = "go"
-		newParam.StartRow = 20
-		newParams.Children = append(newParams.Children, newParam)
-		newParam.Parent = newParams
-		newDecl.Children = append(newDecl.Children, newParams)
-		newParams.Parent = newDecl
-
-		ms := engine.NewMapping()
-		ms.Add(oldDecl, newDecl)
-		ms.Add(oldParam, newParam)
+		dstFunc := mkNode("function_declaration", "bar")
+		dstFunc.Language = "go"
+		dstFunc.StartRow = 500
+		dstFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
+		dstFunc.Children[0].Parent = dstFunc
 
 		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldParam, DestNode: newParam})
+		es.Add(actions.Action{Type: actions.Move, Node: srcFunc, DestNode: dstFunc})
 
-		result := normalizeOrphanedDeclarationParameterMoves(es, ms)
+		result := normalizeMovesByStructure(es, ms)
 		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
-			t.Errorf("expected parameter move within matched declaration to be preserved, got %d actions", result.Size())
+			t.Errorf("expected declaration move to be preserved, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("suppresses orphaned update when paired move is demoted", func(t *testing.T) {
+		// Chawathe emits Update + Move on the same node when labels differ.
+		// When the Move is demoted, the Update must also be suppressed.
+		srcVal := mkNode("string", "main")
+		srcVal.Language = "toml"
+		srcVal.StartRow = 5
+
+		dstVal := mkNode("string", "2.0.0")
+		dstVal.Language = "toml"
+		dstVal.StartRow = 500
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Update, Node: srcVal, DestNode: dstVal})
+		es.Add(actions.Action{Type: actions.Move, Node: srcVal, DestNode: dstVal})
+
+		result := normalizeMovesByStructure(es, ms)
+		for _, a := range result.Actions() {
+			if a.Type == actions.Update {
+				t.Error("expected orphaned Update to be suppressed when paired Move is demoted")
+			}
+		}
+		// Should have Delete + Insert from the demoted Move, no Update.
+		if result.Size() != 2 {
+			t.Errorf("expected 2 actions (delete+insert), got %d", result.Size())
+		}
+	})
+
+	t.Run("preserves sibling relocation within same parent", func(t *testing.T) {
+		parent := mkNode("argument_list", "")
+		parent.Language = "go"
+		srcArg := mkNode("identifier", "a")
+		srcArg.Language = "go"
+		srcArg.Parent = parent
+		dstArg := mkNode("identifier", "b")
+		dstArg.Language = "go"
+		dstArg.Parent = parent
+		parent.Children = []*treesitter.ASTNode{srcArg, dstArg}
+
+		ms2 := engine.NewMapping()
+		ms2.Add(parent, parent)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcArg, DestNode: dstArg})
+
+		result := normalizeMovesByStructure(es, ms2)
+		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
+			t.Errorf("expected sibling relocation to be preserved, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("preserves one-hop container-preserving reparent", func(t *testing.T) {
+		// Value wrapped in a brand-new pair node, but the matched container is intact.
+		srcContainer := mkNode("table", "")
+		srcContainer.Language = "toml"
+		srcVal := mkNode("string", "hello")
+		srcVal.Language = "toml"
+		srcVal.Parent = srcContainer
+		srcContainer.Children = []*treesitter.ASTNode{srcVal}
+
+		dstContainer := mkNode("table", "")
+		dstContainer.Language = "toml"
+		dstPair := mkNode("pair", "")
+		dstPair.Language = "toml"
+		dstPair.Parent = dstContainer
+		dstVal := mkNode("string", "hello")
+		dstVal.Language = "toml"
+		dstVal.Parent = dstPair
+		dstPair.Children = []*treesitter.ASTNode{dstVal}
+		dstContainer.Children = []*treesitter.ASTNode{dstPair}
+
+		ms2 := engine.NewMapping()
+		ms2.Add(srcContainer, dstContainer)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcVal, DestNode: dstVal})
+
+		result := normalizeMovesByStructure(es, ms2)
+		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
+			t.Errorf("expected one-hop reparent to be preserved, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("preserves intra-scope move with moderate drift", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcStmt := mkNode("expression_statement", "")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcFunc
+		srcStmt.StartRow = 10
+		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
+
+		dstFunc := mkNode("function_declaration", "foo")
+		dstFunc.Language = "go"
+		dstStmt := mkNode("expression_statement", "")
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstFunc
+		dstStmt.StartRow = 30
+		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+
+		ms2 := engine.NewMapping()
+		ms2.Add(srcFunc, dstFunc)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcStmt, DestNode: dstStmt})
+
+		result := normalizeMovesByStructure(es, ms2)
+		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
+			t.Errorf("expected intra-scope move with drift=20 to be preserved, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("demotes cross-scope move with large drift and no mapped src decl", func(t *testing.T) {
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcStmt := mkNode("expression_statement", "")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcBlock
+		srcStmt.StartRow = 10
+		srcBlock.Children = []*treesitter.ASTNode{srcStmt}
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstStmt := mkNode("expression_statement", "")
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstBlock
+		dstStmt.StartRow = 200
+		dstBlock.Children = []*treesitter.ASTNode{dstStmt}
+
+		// No parent mapping — cross-scope with no mapped enclosing decl.
+		ms2 := engine.NewMapping()
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcStmt, DestNode: dstStmt})
+
+		result := normalizeMovesByStructure(es, ms2)
+		if result.Size() == 1 && result.Actions()[0].Type == actions.Move {
+			t.Error("expected cross-scope move with large drift and no mapped decl to be demoted")
+		}
+	})
+
+	t.Run("non-move actions pass through unchanged", func(t *testing.T) {
+		node := mkNode("identifier", "x")
+		node.Language = "go"
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: node})
+		es.Add(actions.Action{Type: actions.Delete, Node: node})
+
+		result := normalizeMovesByStructure(es, ms)
+		if result.Size() != 2 {
+			t.Errorf("expected non-move actions to pass through, got %d", result.Size())
+		}
+	})
+}
+
+func TestSameScopeDeclaration(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("both nil nodes returns false", func(t *testing.T) {
+		ms := engine.NewMapping()
+		if sameScopeDeclaration(nil, nil, ms, r) {
+			t.Error("expected false for nil nodes")
+		}
+	})
+
+	t.Run("nil mapping returns false", func(t *testing.T) {
+		src := mkNode("identifier", "x")
+		src.Language = "go"
+		dst := mkNode("identifier", "y")
+		dst.Language = "go"
+		if sameScopeDeclaration(src, dst, nil, r) {
+			t.Error("expected false for nil mapping")
+		}
+	})
+
+	t.Run("both outside any container returns true", func(t *testing.T) {
+		ms := engine.NewMapping()
+		src := mkNode("identifier", "x")
+		src.Language = "go"
+		dst := mkNode("identifier", "y")
+		dst.Language = "go"
+		if !sameScopeDeclaration(src, dst, ms, r) {
+			t.Error("expected true when both nodes are outside any container")
+		}
+	})
+
+	t.Run("matched enclosing containers returns true", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcStmt := mkNode("expression_statement", "")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
+
+		dstFunc := mkNode("function_declaration", "bar")
+		dstFunc.Language = "go"
+		dstStmt := mkNode("expression_statement", "")
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+
+		ms := engine.NewMapping()
+		ms.Add(srcFunc, dstFunc)
+
+		if !sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
+			t.Error("expected true when enclosing containers are mapped")
+		}
+	})
+
+	t.Run("unmatched enclosing containers returns false", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcStmt := mkNode("expression_statement", "")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
+
+		dstFunc := mkNode("function_declaration", "bar")
+		dstFunc.Language = "go"
+		dstStmt := mkNode("expression_statement", "")
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+
+		ms := engine.NewMapping()
+		// srcFunc and dstFunc are NOT mapped to each other.
+
+		if sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
+			t.Error("expected false when enclosing containers are not mapped")
+		}
+	})
+
+	t.Run("one inside container one outside returns false", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcStmt := mkNode("expression_statement", "")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
+
+		dst := mkNode("expression_statement", "")
+		dst.Language = "go"
+
+		ms := engine.NewMapping()
+		if sameScopeDeclaration(srcStmt, dst, ms, r) {
+			t.Error("expected false when only one node is inside a container")
+		}
+	})
+}
+
+func TestIsFillerCallStatement(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("bare call is filler", func(t *testing.T) {
+		sel := mkNode("selector_expression", "")
+		sel.Language = "go"
+		sel.Children = []*treesitter.ASTNode{mkNode("identifier", "fmt"), mkNode("field_identifier", "Println")}
+		sel.Children[0].Parent = sel
+		sel.Children[1].Parent = sel
+		call := mkNode("call_expression", "", sel)
+		call.Language = "go"
+		sel.Parent = call
+		if !isFillerCallStatement(call, r) {
+			t.Error("expected bare call to be filler")
+		}
+	})
+
+	t.Run("single-child wrapper around call is filler", func(t *testing.T) {
+		sel := mkNode("selector_expression", "")
+		sel.Language = "go"
+		sel.Children = []*treesitter.ASTNode{mkNode("identifier", "fmt"), mkNode("field_identifier", "Println")}
+		sel.Children[0].Parent = sel
+		sel.Children[1].Parent = sel
+		call := mkNode("call_expression", "", sel)
+		call.Language = "go"
+		sel.Parent = call
+		exprStmt := mkNode("expression_statement", "", call)
+		exprStmt.Language = "go"
+		call.Parent = exprStmt
+		if !isFillerCallStatement(exprStmt, r) {
+			t.Error("expected single-child wrapper around call to be filler")
+		}
+	})
+
+	t.Run("multi-child statement is not filler", func(t *testing.T) {
+		ifStmt := mkNode("if_statement", "")
+		ifStmt.Language = "go"
+		ifStmt.Children = []*treesitter.ASTNode{mkNode("identifier", "err"), mkNode("block", "")}
+		ifStmt.Children[0].Parent = ifStmt
+		ifStmt.Children[1].Parent = ifStmt
+		if isFillerCallStatement(ifStmt, r) {
+			t.Error("expected multi-child statement to not be filler")
+		}
+	})
+
+	t.Run("nil node is not filler", func(t *testing.T) {
+		if isFillerCallStatement(nil, r) {
+			t.Error("expected nil to not be filler")
+		}
+	})
+}
+
+func TestShouldDemoteMove(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("returns false for sibling relocation", func(t *testing.T) {
+		parent := mkNode("argument_list", "")
+		parent.Language = "go"
+		src := mkNode("identifier", "a")
+		src.Language = "go"
+		src.Parent = parent
+		dst := mkNode("identifier", "b")
+		dst.Language = "go"
+		dst.Parent = parent
+		parent.Children = []*treesitter.ASTNode{src, dst}
+
+		ms := engine.NewMapping()
+		ms.Add(parent, parent)
+
+		if shouldDemoteMove(src, dst, ms, r) {
+			t.Error("expected sibling relocation to not be demoted")
+		}
+	})
+
+	t.Run("returns false for declaration move", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
+		srcFunc.Children[0].Parent = srcFunc
+
+		dstFunc := mkNode("function_declaration", "bar")
+		dstFunc.Language = "go"
+		dstFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
+		dstFunc.Children[0].Parent = dstFunc
+
+		ms := engine.NewMapping()
+
+		if shouldDemoteMove(srcFunc, dstFunc, ms, r) {
+			t.Error("expected declaration move to not be demoted")
+		}
+	})
+
+	t.Run("returns true for boilerplate if block across distant scope", func(t *testing.T) {
+		retStmt := mkNode("return_statement", "")
+		retStmt.Language = "go"
+		srcBody := mkNode("block", "", retStmt)
+		srcBody.Language = "go"
+		retStmt.Parent = srcBody
+		srcIf := mkNode("if_statement", "")
+		srcIf.Language = "go"
+		srcCond := mkNode("identifier", "err")
+		srcCond.Language = "go"
+		srcIf.Children = []*treesitter.ASTNode{srcCond, srcBody}
+		srcCond.Parent = srcIf
+		srcBody.Parent = srcIf
+		srcIf.StartRow = 10
+
+		retStmt2 := mkNode("return_statement", "")
+		retStmt2.Language = "go"
+		dstBody := mkNode("block", "", retStmt2)
+		dstBody.Language = "go"
+		retStmt2.Parent = dstBody
+		dstIf := mkNode("if_statement", "")
+		dstIf.Language = "go"
+		dstCond := mkNode("identifier", "err")
+		dstCond.Language = "go"
+		dstIf.Children = []*treesitter.ASTNode{dstCond, dstBody}
+		dstCond.Parent = dstIf
+		dstBody.Parent = dstIf
+		dstIf.StartRow = 500
+
+		ms := engine.NewMapping()
+
+		if !shouldDemoteMove(srcIf, dstIf, ms, r) {
+			t.Error("expected boilerplate if block across distant scope to be demoted")
 		}
 	})
 }
