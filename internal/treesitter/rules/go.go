@@ -206,4 +206,13 @@ var golangRules = &Rules{
 		"log.Fatalln",
 		"panic",
 	},
+	DelimitedContainers: []string{
+		"argument_list",
+		"composite_literal",
+		"expression_list",
+		"literal_value",
+		"parameter_declaration",
+		"parameter_list",
+		"type_parameter_list",
+	},
 }

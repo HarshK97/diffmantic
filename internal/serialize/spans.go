@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // HighlightSpan is a visual column range to color on a specific line.
@@ -63,13 +64,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		switch a.Action {
 		case "delete":
 			if side == "left" && a.Node != nil {
-				sb, eb := absorbConnectorDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
 				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, "delete", a)
 			}
 
 		case "insert":
 			if side == "right" && a.Node != nil {
-				sb, eb := absorbConnectorDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
 				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, "insert", a)
 			}
 
@@ -84,10 +85,16 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		case "move":
 			actType := "move"
 			if side == "left" && a.Node != nil {
-				addSpan(spansByLine, lineIndex, fileBytes, a.Node.StartByte, a.Node.EndByte, actType, a)
+				parent := a.OldParent
+				if parent == nil {
+					parent = a.Parent
+				}
+				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, parent)
+				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, actType, a)
 			}
 			if side == "right" && a.DestStartByte != nil && a.DestEndByte != nil {
-				addSpan(spansByLine, lineIndex, fileBytes, *a.DestStartByte, *a.DestEndByte, actType, a)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, *a.DestStartByte, *a.DestEndByte, a.Parent)
+				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, actType, a)
 			}
 		}
 	}
@@ -307,9 +314,9 @@ func nodeLen(a *Action, side string) int {
 	return 0
 }
 
-// absorbConnectorDelimiters pulls adjacent punctuation (like '.', '->', '::') into an insert
-// or delete span so we don't leave floating punctuation between modified tokens.
-func absorbConnectorDelimiters(fileBytes []byte, startByte, endByte uint32, parent *NodeRef) (uint32, uint32) {
+// absorbSyntacticDelimiters expands a span to cover adjacent member connectors
+// (., ->, ::) or sequence commas so punctuation doesn't get left unhighlighted.
+func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, parent *NodeRef) (uint32, uint32) {
 	if parent == nil || len(fileBytes) == 0 {
 		return startByte, endByte
 	}
@@ -317,12 +324,19 @@ func absorbConnectorDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 		return startByte, endByte
 	}
 	fileLen := uint32(len(fileBytes))
+	if startByte > fileLen || endByte > fileLen {
+		return startByte, endByte
+	}
+	parentEnd := parent.EndByte
+	if parentEnd > fileLen {
+		parentEnd = fileLen
+	}
 
-	// Trailing connector (e.g. "gin" before "." in "gin.HandlerFunc"):
-	if endByte < parent.EndByte && endByte < fileLen {
-		if endByte+2 <= parent.EndByte && endByte+2 <= fileLen && fileBytes[endByte] == ':' && fileBytes[endByte+1] == ':' {
+	// Member connectors (e.g. "gin.", "ptr->", "std::"):
+	if endByte < parentEnd {
+		if endByte+2 <= parentEnd && fileBytes[endByte] == ':' && fileBytes[endByte+1] == ':' {
 			endByte += 2
-		} else if endByte+2 <= parent.EndByte && endByte+2 <= fileLen && fileBytes[endByte] == '-' && fileBytes[endByte+1] == '>' {
+		} else if endByte+2 <= parentEnd && fileBytes[endByte] == '-' && fileBytes[endByte+1] == '>' {
 			endByte += 2
 		} else if fileBytes[endByte] == '.' {
 			notNextDot := (endByte+1 >= fileLen || fileBytes[endByte+1] != '.')
@@ -333,8 +347,7 @@ func absorbConnectorDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 		}
 	}
 
-	// Leading connector (e.g. ".field" when adding a field to an existing receiver):
-	if startByte > parent.StartByte && startByte <= fileLen {
+	if startByte > parent.StartByte {
 		if startByte >= parent.StartByte+2 && fileBytes[startByte-2] == ':' && fileBytes[startByte-1] == ':' {
 			startByte -= 2
 		} else if startByte >= parent.StartByte+2 && fileBytes[startByte-2] == '-' && fileBytes[startByte-1] == '>' {
@@ -344,6 +357,39 @@ func absorbConnectorDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 			notNextDot := (startByte >= fileLen || fileBytes[startByte] != '.')
 			if notPrevDot && notNextDot {
 				startByte--
+			}
+		}
+	}
+
+	// Commas inside delimited containers (argument lists, arrays, parameters):
+	if rules.IsDelimitedContainer(parent.Type) {
+		absorbedTrailing := false
+
+		// Trailing comma (e.g. "a," in "foo(a, b)" or multiline entries):
+		if endByte < parentEnd {
+			idx := endByte
+			for idx < parentEnd && (fileBytes[idx] == ' ' || fileBytes[idx] == '\t') {
+				idx++
+			}
+			if idx < parentEnd && fileBytes[idx] == ',' {
+				idx++
+				for idx < parentEnd && (fileBytes[idx] == ' ' || fileBytes[idx] == '\t') {
+					idx++
+				}
+				endByte = idx
+				absorbedTrailing = true
+			}
+		}
+
+		// Leading comma (e.g. ", c" in "foo(a, b, c)"):
+		if !absorbedTrailing && startByte > parent.StartByte {
+			idx := startByte
+			for idx > parent.StartByte && (fileBytes[idx-1] == ' ' || fileBytes[idx-1] == '\t') {
+				idx--
+			}
+			if idx > parent.StartByte && fileBytes[idx-1] == ',' {
+				idx--
+				startByte = idx
 			}
 		}
 	}

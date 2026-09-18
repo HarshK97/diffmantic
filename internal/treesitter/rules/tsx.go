@@ -307,4 +307,12 @@ var tsxRules = &Rules{
 	TerminalCalls: []string{
 		"process.exit",
 	},
+	DelimitedContainers: []string{
+		"arguments",
+		"array",
+		"formal_parameters",
+		"object",
+		"object_pattern",
+		"object_type",
+	},
 }

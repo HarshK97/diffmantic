@@ -151,4 +151,9 @@ var luaRules = &Rules{
 		"os.exit",
 		"error",
 	},
+	DelimitedContainers: []string{
+		"arguments",
+		"parameters",
+		"table_constructor",
+	},
 }

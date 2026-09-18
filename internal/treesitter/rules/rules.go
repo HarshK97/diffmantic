@@ -43,6 +43,7 @@ type Rules struct {
 	Types                 []string // Type annotations and type expressions.
 	JumpStatements        []string // Control-flow exit statements (return, break, continue, goto, throw, raise).
 	TerminalCalls         []string // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
+	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -65,6 +66,7 @@ type Rules struct {
 	typesSet                 map[string]struct{}
 	jumpStatementsSet        map[string]struct{}
 	terminalCallsSet         map[string]struct{}
+	delimitedContainersSet   map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -102,6 +104,7 @@ func (r *Rules) CompileSets() {
 	r.typesSet = sliceToSet(r.Types)
 	r.jumpStatementsSet = sliceToSet(r.JumpStatements)
 	r.terminalCallsSet = sliceToSet(r.TerminalCalls)
+	r.delimitedContainersSet = sliceToSet(r.DelimitedContainers)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -142,6 +145,18 @@ func (r *Rules) IsIndexed(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Indexed, nodeType)
+}
+
+// IsDelimitedContainer reports whether nodeType is a comma-delimited container (like an argument list or array).
+func (r *Rules) IsDelimitedContainer(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.delimitedContainersSet) > 0 {
+		_, ok := r.delimitedContainersSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.DelimitedContainers, nodeType)
 }
 
 // IsComment reports whether nodeType is a comment in the language grammar.
@@ -611,6 +626,19 @@ func IsCall(nodeType string) bool {
 func IsIndexed(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsIndexed(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDelimitedContainer reports whether nodeType is a delimited container in any registered language.
+func IsDelimitedContainer(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsDelimitedContainer(nodeType) {
 			return true
 		}
 	}

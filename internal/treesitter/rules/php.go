@@ -241,4 +241,9 @@ var phpRules = &Rules{
 		"exit",
 		"die",
 	},
+	DelimitedContainers: []string{
+		"arguments",
+		"array_creation_expression",
+		"formal_parameters",
+	},
 }

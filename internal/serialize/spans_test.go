@@ -164,7 +164,6 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// Span should cover "gin." (cols 9..13)
 		if spans[0].StartCol != 9 || spans[0].EndCol != 13 {
 			t.Errorf("expected span cols 9..13 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
 		}
@@ -184,7 +183,6 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// Span should cover ".field" (cols 8..14)
 		if spans[0].StartCol != 8 || spans[0].EndCol != 14 {
 			t.Errorf("expected span cols 8..14 covering '.field', got %d..%d", spans[0].StartCol, spans[0].EndCol)
 		}
@@ -204,7 +202,6 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// Span should cover "std::" (cols 0..5)
 		if spans[0].StartCol != 0 || spans[0].EndCol != 5 {
 			t.Errorf("expected span cols 0..5 covering 'std::', got %d..%d", spans[0].StartCol, spans[0].EndCol)
 		}
@@ -227,6 +224,179 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		// Don't absorb leading "...", but still absorb trailing "." -> "gin." (cols 15..19)
 		if spans[0].StartCol != 15 || spans[0].EndCol != 19 {
 			t.Errorf("expected span cols 15..19 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs leading comma for appended argument", func(t *testing.T) {
+		src := []byte("foo(a, b, c)\n")
+		// "c" is 10..11 inside parent "foo(a, b, c)" argument_list (3..12)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "identifier", StartByte: 10, EndByte: 11},
+				Parent: &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 12},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].StartCol != 8 || spans[0].EndCol != 11 {
+			t.Errorf("expected span cols 8..11 covering ', c', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs trailing comma for prepended argument", func(t *testing.T) {
+		src := []byte("foo(a, b)\n")
+		// "a" is 4..5 inside parent "foo(a, b)" argument_list (3..9)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
+				Parent: &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
+			t.Errorf("expected span cols 4..6 covering 'a,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs leading comma for deleted intermediate argument", func(t *testing.T) {
+		src := []byte("foo(a, b, c)\n")
+		// "b" is 7..8 inside parent argument_list (3..12)
+		// "b" is followed by ", " at 8..10
+		actions := []Action{
+			{
+				Action: "delete",
+				Node:   &NodeRef{Type: "identifier", StartByte: 7, EndByte: 8},
+				Parent: &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 12},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "left")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].StartCol != 7 || spans[0].EndCol != 9 {
+			t.Errorf("expected span cols 7..9 covering 'b,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs multiline trailing comma", func(t *testing.T) {
+		src := []byte("foo(\n    a,\n    b,\n)\n")
+		// Line 0: "foo(\n" (0..5)
+		// Line 1: "    a,\n" (5..12)
+		// Line 2: "    b,\n" (12..19), "b" is 16..17, "," is 17..18
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "identifier", StartByte: 16, EndByte: 17},
+				Parent: &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 20},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].Line != 2 || spans[0].StartCol != 4 || spans[0].EndCol != 6 {
+			t.Errorf("expected span line 2 cols 4..6 covering 'b,', got line %d cols %d..%d",
+				spans[0].Line, spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs leading comma in array literal", func(t *testing.T) {
+		src := []byte("x = [1, 2, 3]\n")
+		// "3" is 11..12 inside array (4..13)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "integer", StartByte: 11, EndByte: 12},
+				Parent: &NodeRef{Type: "array", StartByte: 4, EndByte: 13},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].StartCol != 9 || spans[0].EndCol != 12 {
+			t.Errorf("expected span cols 9..12 covering ', 3', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("absorbs trailing comma for moved elements on left and right", func(t *testing.T) {
+		leftSrc := []byte("vals := []T{\n    {name: \"a\"},\n    {name: \"b\"},\n}\n")
+		rightSrc := []byte("vals := []T{\n    {name: \"b\"},\n    {name: \"a\"},\n}\n")
+		// Left: {name: "a"}, at line 1, bytes 17..28, comma at 28..29
+		// Right: {name: "a"}, at line 2, bytes 34..45, comma at 45..46
+		destStart := uint32(34)
+		destEnd := uint32(45)
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{Type: "literal_element", StartByte: 17, EndByte: 28},
+				OldParent:     &NodeRef{Type: "literal_value", StartByte: 12, EndByte: 49},
+				DestStartByte: &destStart,
+				DestEndByte:   &destEnd,
+				Parent:        &NodeRef{Type: "literal_value", StartByte: 12, EndByte: 49},
+			},
+		}
+
+		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
+		if len(leftSpans) != 1 {
+			t.Fatalf("expected 1 left span, got %d", len(leftSpans))
+		}
+		if leftSpans[0].Line != 1 || leftSpans[0].StartCol != 4 || leftSpans[0].EndCol != 16 {
+			t.Errorf("expected left span line 1 cols 4..16 covering '{name: \"a\"},', got line %d cols %d..%d",
+				leftSpans[0].Line, leftSpans[0].StartCol, leftSpans[0].EndCol)
+		}
+
+		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
+		if len(rightSpans) != 1 {
+			t.Fatalf("expected 1 right span, got %d", len(rightSpans))
+		}
+		if rightSpans[0].Line != 2 || rightSpans[0].StartCol != 4 || rightSpans[0].EndCol != 16 {
+			t.Errorf("expected right span line 2 cols 4..16 covering '{name: \"a\"},', got line %d cols %d..%d",
+				rightSpans[0].Line, rightSpans[0].StartCol, rightSpans[0].EndCol)
+		}
+	})
+
+	t.Run("does not absorb commas for non-delimited containers", func(t *testing.T) {
+		src := []byte("block {\n    foo,\n}\n")
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "identifier", StartByte: 12, EndByte: 15},
+				Parent: &NodeRef{Type: "block", StartByte: 6, EndByte: 20},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].StartCol != 4 || spans[0].EndCol != 7 {
+			t.Errorf("expected span cols 4..7 covering 'foo', got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("bounds safety when parent extends beyond file length", func(t *testing.T) {
+		src := []byte("foo(a, b)")
+		// Synthetic node where Parent.EndByte (100) extends past file length (9)
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
+				Parent: &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 100},
+			},
+		}
+		spans := BuildHighlightSpans(src, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
+			t.Errorf("expected span cols 4..6 covering 'a,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
 		}
 	})
 }

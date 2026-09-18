@@ -258,4 +258,9 @@ var javaRules = &Rules{
 	TerminalCalls: []string{
 		"System.exit",
 	},
+	DelimitedContainers: []string{
+		"argument_list",
+		"array_initializer",
+		"formal_parameters",
+	},
 }

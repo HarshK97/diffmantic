@@ -191,4 +191,9 @@ var zigRules = &Rules{
 		"std.process.exit",
 		"@panic",
 	},
+	DelimitedContainers: []string{
+		"call_expression",
+		"initializer_list",
+		"parameters",
+	},
 }

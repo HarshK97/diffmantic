@@ -61,4 +61,8 @@ var yamlRules = &Rules{
 		"flow_sequence",
 		"flow_mapping",
 	},
+	DelimitedContainers: []string{
+		"flow_sequence",
+		"flow_mapping",
+	},
 }
