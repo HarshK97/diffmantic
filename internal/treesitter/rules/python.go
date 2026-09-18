@@ -231,4 +231,12 @@ var pythonRules = &Rules{
 		"exit",
 		"quit",
 	},
+	DelimitedContainers: []string{
+		"argument_list",
+		"dictionary",
+		"list",
+		"parameters",
+		"tuple",
+		"set",
+	},
 }

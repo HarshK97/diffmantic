@@ -34,4 +34,8 @@ var jsonRules = &Rules{
 	Unordered: []string{
 		"object",
 	},
+	DelimitedContainers: []string{
+		"array",
+		"object",
+	},
 }

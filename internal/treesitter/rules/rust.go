@@ -244,4 +244,12 @@ var rustRules = &Rules{
 		"process.exit",
 		"panic",
 	},
+	DelimitedContainers: []string{
+		"arguments",
+		"array_expression",
+		"field_initializer_list",
+		"parameters",
+		"token_tree",
+		"tuple_expression",
+	},
 }

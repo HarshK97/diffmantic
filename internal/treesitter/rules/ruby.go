@@ -217,4 +217,10 @@ var rubyRules = &Rules{
 		"exit",
 		"exit!",
 	},
+	DelimitedContainers: []string{
+		"argument_list",
+		"array",
+		"hash",
+		"method_parameters",
+	},
 }

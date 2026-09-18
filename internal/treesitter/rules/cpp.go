@@ -292,4 +292,11 @@ var cppRules = &Rules{
 		"_Exit",
 		"abort",
 	},
+	DelimitedContainers: []string{
+		"argument_list",
+		"initializer_list",
+		"parameter_list",
+		"template_argument_list",
+		"template_parameter_list",
+	},
 }

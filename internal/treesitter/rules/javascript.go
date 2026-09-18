@@ -242,4 +242,10 @@ var javascriptRules = &Rules{
 	TerminalCalls: []string{
 		"process.exit",
 	},
+	DelimitedContainers: []string{
+		"arguments",
+		"array",
+		"formal_parameters",
+		"object",
+	},
 }

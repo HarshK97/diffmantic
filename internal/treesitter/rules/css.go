@@ -43,4 +43,8 @@ var cssRules = &Rules{
 	Calls: []string{
 		"call_expression",
 	},
+	DelimitedContainers: []string{
+		"arguments",
+		"selectors",
+	},
 }

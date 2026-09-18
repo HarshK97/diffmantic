@@ -55,4 +55,8 @@ var tomlRules = &Rules{
 	Comments: []string{
 		"comment",
 	},
+	DelimitedContainers: []string{
+		"array",
+		"inline_table",
+	},
 }
