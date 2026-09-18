@@ -196,15 +196,9 @@ func isTrivialJumpBody(body *treesitter.ASTNode, r *rules.Rules) bool {
 		}
 	}
 	for _, c := range body.Children {
-		if c.Type == "statement_list" {
-			for _, s := range c.Children {
-				check(s)
-			}
-		} else {
-			isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
-			if !isPunct && c.Type != "{" && c.Type != "}" {
-				check(c)
-			}
+		isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
+		if !isPunct {
+			check(c)
 		}
 	}
 	return stmtCount > 0 && nonFillerCount == 0 && hasTerminator
