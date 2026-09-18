@@ -28,6 +28,25 @@ func NewMapping() *Mapping {
 	}
 }
 
+// Clone returns an independent copy of the mapping.
+func (m *Mapping) Clone() *Mapping {
+	if m == nil {
+		return nil
+	}
+	cp := &Mapping{
+		src:   make(map[*treesitter.ASTNode]*treesitter.ASTNode, len(m.src)),
+		dst:   make(map[*treesitter.ASTNode]*treesitter.ASTNode, len(m.dst)),
+		Pairs: slices.Clone(m.Pairs),
+	}
+	for k, v := range m.src {
+		cp.src[k] = v
+	}
+	for k, v := range m.dst {
+		cp.dst[k] = v
+	}
+	return cp
+}
+
 // Add registers the t1→t2 pair, enforcing strict 1:1 bijection. If t2 was already
 // claimed by a different t1, that old mapping is evicted. If t1 was already mapped to a
 // different t2, that old destination is replaced in-place to preserve insertion order.
@@ -87,6 +106,9 @@ func (m *Mapping) HasDst(t2 *treesitter.ASTNode) bool {
 
 // Remove clears the mapping for t1 and any destination node it was paired with.
 func (m *Mapping) Remove(t1 *treesitter.ASTNode) {
+	if t1 == nil || m == nil {
+		return
+	}
 	if t2, ok := m.src[t1]; ok {
 		delete(m.dst, t2)
 	}
@@ -119,19 +141,6 @@ func addIsomorphicPairs(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	}
 }
 
-// isDescendantOf reports whether child is a descendant of parent.
-func isDescendantOf(child, parent *treesitter.ASTNode) bool {
-	if child == nil || parent == nil {
-		return false
-	}
-	for curr := child.Parent; curr != nil; curr = curr.Parent {
-		if curr == parent {
-			return true
-		}
-	}
-	return false
-}
-
 // AdjustedLineDistance computes the relative distance in lines between src and dst,
 // compensating for baseline line drift caused by preceding additions, deletions,
 // and container shifts within their common enclosing scope.
@@ -153,7 +162,7 @@ func (m *Mapping) AdjustedLineDistance(src, dst *treesitter.ASTNode) int {
 	// Deepest common mapped ancestor relative offset.
 	for curr := src.Parent; curr != nil; curr = curr.Parent {
 		mappedDst, ok := m.src[curr]
-		if !ok || mappedDst == nil || !isDescendantOf(dst, mappedDst) {
+		if !ok || mappedDst == nil || !mappedDst.Contains(dst) {
 			continue
 		}
 
@@ -172,7 +181,7 @@ func (m *Mapping) AdjustedLineDistance(src, dst *treesitter.ASTNode) int {
 				break
 			}
 			mappedChild, ok := m.src[child]
-			if !ok || mappedChild == nil || mappedChild.StartRow >= dst.StartRow || !isDescendantOf(mappedChild, mappedDst) {
+			if !ok || mappedChild == nil || mappedChild.StartRow >= dst.StartRow || !mappedDst.Contains(mappedChild) {
 				continue
 			}
 			childSrcOffset := int(child.StartRow) - int(curr.StartRow)

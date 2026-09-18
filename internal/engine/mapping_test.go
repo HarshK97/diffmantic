@@ -121,6 +121,54 @@ func TestMappingRemoveNonexistent(_ *testing.T) {
 	m.Remove(testutil.Leaf("id", "x"))
 }
 
+func TestMappingClone(t *testing.T) {
+	var nilMapping *Mapping
+	if nilMapping.Clone() != nil {
+		t.Error("nil Mapping.Clone() should be nil")
+	}
+
+	m := NewMapping()
+	cpEmpty := m.Clone()
+	if cpEmpty == nil || len(cpEmpty.Pairs) != 0 || len(cpEmpty.src) != 0 || len(cpEmpty.dst) != 0 {
+		t.Error("cloning empty mapping should yield valid empty mapping")
+	}
+
+	a1 := testutil.Leaf("id", "a1")
+	b1 := testutil.Leaf("id", "b1")
+	a2 := testutil.Leaf("id", "a2")
+	b2 := testutil.Leaf("id", "b2")
+
+	m.Add(a1, b1)
+	m.Add(a2, b2)
+
+	cp := m.Clone()
+	if cp == m {
+		t.Fatal("clone returned same pointer")
+	}
+	if len(cp.Pairs) != 2 {
+		t.Fatalf("expected 2 pairs in clone, got %d", len(cp.Pairs))
+	}
+	if !cp.Has(a1) || !cp.HasDst(b1) || cp.Src()[a1] != b1 || cp.Dst()[b1] != a1 {
+		t.Error("clone missing pair 1 mappings")
+	}
+	if !cp.Has(a2) || !cp.HasDst(b2) || cp.Src()[a2] != b2 || cp.Dst()[b2] != a2 {
+		t.Error("clone missing pair 2 mappings")
+	}
+
+	// Mutating the clone should not mutate the original.
+	a3 := testutil.Leaf("id", "a3")
+	b3 := testutil.Leaf("id", "b3")
+	cp.Add(a3, b3)
+	cp.Remove(a1)
+
+	if len(m.Pairs) != 2 || !m.Has(a1) || m.Has(a3) {
+		t.Error("mutating clone modified original mapping")
+	}
+	if len(cp.Pairs) != 2 || cp.Has(a1) || !cp.Has(a3) {
+		t.Error("clone state unexpected after mutation")
+	}
+}
+
 func TestMappingDiceSrc(t *testing.T) {
 	a1 := testutil.Leaf("id", "x")
 	rootA := testutil.Node("call", "", a1)
