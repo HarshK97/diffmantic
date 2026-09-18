@@ -637,12 +637,11 @@ func TestIsTrivialJumpBody(t *testing.T) {
 	r := rules.Get("go")
 
 	t.Run("body of only jump statements is trivial", func(t *testing.T) {
+		openBrace := mkNode("{", "{")
 		retStmt := mkNode("return_statement", "")
-		retStmt.Language = "go"
-		stmtList := mkNode("statement_list", "", retStmt)
-		stmtList.Language = "go"
-		body := mkNode("block", "", stmtList)
-		body.Language = "go"
+		closeBrace := mkNode("}", "}")
+		body := mkNode("block", "", openBrace, retStmt, closeBrace)
+		setLanguageRecursive(body, "go")
 
 		if !isTrivialJumpBody(body, r) {
 			t.Error("expected body of only a return statement to be trivial")
@@ -652,6 +651,7 @@ func TestIsTrivialJumpBody(t *testing.T) {
 	// An error print followed by an exit is still boilerplate — the print
 	// shouldn't keep it from being scored as a trivial exit block.
 	t.Run("body pairing an error print with a terminating call is trivial", func(t *testing.T) {
+		openBrace := mkNode("{", "{")
 		fprintfSel := mkNode("selector_expression", "",
 			mkNode("identifier", "fmt"),
 			mkNode("field_identifier", "Fprintf"),
@@ -665,9 +665,9 @@ func TestIsTrivialJumpBody(t *testing.T) {
 		)
 		exitCall := mkNode("call_expression", "", exitSel, mkNode("argument_list", ""))
 		exitStmt := mkNode("expression_statement", "", exitCall)
+		closeBrace := mkNode("}", "}")
 
-		stmtList := mkNode("statement_list", "", printStmt, exitStmt)
-		body := mkNode("block", "", stmtList)
+		body := mkNode("block", "", openBrace, printStmt, exitStmt, closeBrace)
 		setLanguageRecursive(body, "go")
 
 		if !isTrivialJumpBody(body, r) {
