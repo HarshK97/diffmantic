@@ -179,37 +179,40 @@ And add this line to your repository's \fB.gitattributes\fR:
 *.go diff=diffmantic
 *.rs diff=diffmantic
 .fi
-.SH CONFIGURATION
-Diffmantic reads its user configuration from
-\fB~/.config/diffmantic/config.yaml\fR (or \fBconfig.yml\fR) on Unix,
-or \fB%APPDATA%\ediffmantic\econfig.yaml\fR on Windows.
-.PP
-Available settings include:
+.SH ENVIRONMENT
+Diffmantic supports configuration via the following environment variables.
+Command-line flags always take precedence over environment variables.
 .TP
-.B format
+.B DIFFM_FORMAT
 .br
 Default diff output format (\fIside-by-side\fR, \fIinline\fR, \fIjson\fR,
 \fIactions\fR).
 .TP
-.B tab_width
+.B DIFFM_TAB_WIDTH
 .br
 Number of spaces per tab stop (default: 4).
 .TP
-.B ignore_comments
+.B DIFFM_IGNORE_COMMENTS
 .br
-Boolean (\fItrue\fR or \fIfalse\fR) to ignore comments during AST diffing.
+Boolean (\fI1\fR, \fItrue\fR, \fIyes\fR) to ignore comments during AST
+diffing (default: 0).
 .TP
-.B parse_error_limit
+.B DIFFM_PARSE_ERROR_LIMIT
 .br
-Maximum parse errors permitted before falling back to line diffing.
+Maximum parse errors permitted before falling back to line diffing
+(default: 0).
 .TP
-.B size_limit
+.B DIFFM_SIZE_LIMIT
 .br
-Maximum file size in KB for AST parsing.
+Maximum file size in KB for AST parsing before fallback (default: 1024).
 .TP
-.B line_limit
+.B DIFFM_LINE_LIMIT
 .br
-Maximum line count for AST parsing.
+Maximum line count for AST parsing before fallback (default: 10000).
+.TP
+.B DIFFM_NO_PAGER
+.br
+If set to any non-empty value, disables the interactive terminal pager.
 .SH SUPPORTED LANGUAGES
 Diffmantic includes native Tree-sitter parsers for 10 programming languages:
 .IP \(bu 2
@@ -300,15 +303,6 @@ Dump the simplified AST for debugging parser output:
 .RS
 diffm --parse-tree main.go
 .RE
-.SH FILES
-.TP
-.I ~/.config/diffmantic/config.yaml
-.br
-User configuration file on Linux and macOS (also accepts config.yml).
-.TP
-.I %APPDATA%\ediffmantic\econfig.yaml
-.br
-User configuration file on Windows (also accepts config.yml or %LOCALAPPDATA%).
 .SH SEE ALSO
 .BR git (1),
 .BR git-difftool (1),

@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
-	"github.com/HarshK97/diffmantic/internal/config"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/inline"
@@ -23,6 +22,12 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+)
+
+const (
+	defaultTabWidth       = 4
+	defaultSizeLimitKB    = 1024
+	defaultLineLimitLines = 10000
 )
 
 func isTerminal(f *os.File) bool {
@@ -70,15 +75,6 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			os.Exit(1)
 		}
 
-		cfg, err := config.Load()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-		}
-		if cfg == nil {
-			defaultCfg := config.DefaultConfig()
-			cfg = &defaultCfg
-		}
-
 		noPager, _ := cmd.Flags().GetBool("no-pager")
 		patchMode, _ := cmd.Flags().GetBool("patch")
 		if patchMode && !cmd.Flags().Changed("no-pager") {
@@ -88,9 +84,12 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 		format, _ := cmd.Flags().GetString("format")
 		if patchMode && !cmd.Flags().Changed("format") {
 			format = "inline"
-		} else if !cmd.Flags().Changed("format") && cfg.Format != "" {
-			format = cfg.Format
-		} else if format == "" {
+		} else if !cmd.Flags().Changed("format") {
+			if envFmt := getEnvString("DIFFM_FORMAT", ""); envFmt != "" {
+				format = envFmt
+			}
+		}
+		if format == "" {
 			format = "side-by-side"
 		}
 
@@ -102,22 +101,22 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 		ignoreComments, _ := cmd.Flags().GetBool("ignore-comments")
 		if !cmd.Flags().Changed("ignore-comments") {
-			ignoreComments = cfg.IgnoreComments
+			ignoreComments = getEnvBool("DIFFM_IGNORE_COMMENTS", false)
 		}
 
 		parseErrorLimit, _ := cmd.Flags().GetInt("parse-error-limit")
 		if !cmd.Flags().Changed("parse-error-limit") {
-			parseErrorLimit = cfg.ParseErrorLimit
+			parseErrorLimit = getEnvInt("DIFFM_PARSE_ERROR_LIMIT", 0)
 		}
 
 		sizeLimitKB, _ := cmd.Flags().GetInt("size-limit")
-		if !cmd.Flags().Changed("size-limit") && cfg.SizeLimit != nil {
-			sizeLimitKB = *cfg.SizeLimit
+		if !cmd.Flags().Changed("size-limit") {
+			sizeLimitKB = getEnvInt("DIFFM_SIZE_LIMIT", defaultSizeLimitKB)
 		}
 
 		lineLimitLines, _ := cmd.Flags().GetInt("line-limit")
-		if !cmd.Flags().Changed("line-limit") && cfg.LineLimit != nil {
-			lineLimitLines = *cfg.LineLimit
+		if !cmd.Flags().Changed("line-limit") {
+			lineLimitLines = getEnvInt("DIFFM_LINE_LIMIT", defaultLineLimitLines)
 		}
 
 		parseTree, _ := cmd.Flags().GetBool("parse-tree")
@@ -181,7 +180,7 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 					return
 				}
 
-				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/config.go)
+				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/git/git.go)
 				if isRevA && isTrackedOrFileB {
 					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 					return
@@ -736,14 +735,7 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 		wrapFlag = false
 	}
 
-	cfg, _ := config.Load()
-	tabWidth, _ := cmd.Flags().GetInt("tab-width")
-	if !cmd.Flags().Changed("tab-width") && cfg != nil && cfg.TabWidth > 0 {
-		tabWidth = cfg.TabWidth
-	}
-	if tabWidth <= 0 {
-		tabWidth = 4
-	}
+	tabWidth := resolveTabWidth(cmd)
 
 	return inline.RenderOptions{
 		Color:              useColor,
@@ -754,6 +746,17 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 		TerminalWidth:      termWidth,
 		TabWidth:           tabWidth,
 	}
+}
+
+func resolveTabWidth(cmd *cobra.Command) int {
+	tabWidth, _ := cmd.Flags().GetInt("tab-width")
+	if !cmd.Flags().Changed("tab-width") {
+		tabWidth = getEnvInt("DIFFM_TAB_WIDTH", defaultTabWidth)
+	}
+	if tabWidth <= 0 {
+		tabWidth = defaultTabWidth
+	}
+	return tabWidth
 }
 
 func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
@@ -796,14 +799,7 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 		adaptiveThreshold = 0
 	}
 
-	cfg, _ := config.Load()
-	tabWidth, _ := cmd.Flags().GetInt("tab-width")
-	if !cmd.Flags().Changed("tab-width") && cfg != nil && cfg.TabWidth > 0 {
-		tabWidth = cfg.TabWidth
-	}
-	if tabWidth <= 0 {
-		tabWidth = 4
-	}
+	tabWidth := resolveTabWidth(cmd)
 
 	return sidebyside.RenderOptions{
 		Color:              useColor,

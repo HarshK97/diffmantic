@@ -109,11 +109,24 @@ Requires Go 1.26+ and a C compiler for the native Tree-sitter bridge.
 git clone https://github.com/HarshK97/diffmantic.git
 cd diffmantic
 
-# Default build: 16 core languages
+# Build binary
 make build
+
+# Install binary and man pages (defaults to ~/.local)
+make install
 
 # Or install directly with Go:
 go install github.com/HarshK97/diffmantic/cmd/diffm@latest
+```
+
+### Manual Pages
+
+Full documentation is available via Unix manual pages:
+
+```bash
+man diffm
+# or
+man diffmantic
 ```
 
 ## Usage
@@ -164,19 +177,19 @@ diffm before.go after.go -f json --full
 diffm before.go after.go -f actions
 ```
 
-## Configuration
+## Environment Variables
 
-`diffmantic` loads configuration from `~/.config/diffmantic/config.yml` (or `$XDG_CONFIG_HOME/diffmantic/config.yml`).
+`diffmantic` can be configured via environment variables. Command-line flags always take precedence over environment variables.
 
-```yaml
-# Flag defaults
-format: side-by-side      # "side-by-side" | "inline" | "json" | "actions"
-tab_width: 4              # spaces per tab stop
-ignore_comments: false    # ignore comments during AST diffing
-parse_error_limit: 0      # max parse errors before fallback to line diff
-size_limit: 1024          # max file size before fallback to line diff
-line_limit: 10000         # max file lines before fallback to line diff
-```
+| Variable | Default | Description |
+|:---|:---|:---|
+| `DIFFM_FORMAT` | `side-by-side` | Default diff output format (`side-by-side`, `inline`, `json`, `actions`) |
+| `DIFFM_TAB_WIDTH` | `4` | Number of spaces per tab stop |
+| `DIFFM_IGNORE_COMMENTS` | `0` | Ignore comments during AST diffing (`1`, `true`, `yes`) |
+| `DIFFM_PARSE_ERROR_LIMIT` | `0` | Maximum parse errors permitted before falling back to line diffing |
+| `DIFFM_SIZE_LIMIT` | `1024` | Maximum file size in KB for AST parsing before fallback |
+| `DIFFM_LINE_LIMIT` | `10000` | Maximum line count for AST parsing before fallback |
+| `DIFFM_NO_PAGER` | Unset | If set to any non-empty value, disables the interactive terminal pager |
 
 ## How It Works
 
