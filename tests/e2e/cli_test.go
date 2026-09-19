@@ -362,7 +362,7 @@ format: actions
 	_ = os.WriteFile(oldPath, []byte(oldContent), 0o644)
 	_ = os.WriteFile(newPath, []byte(newContent), 0o644)
 
-	// No CLI flags passed — should pick up format=actions and ignore_comments from config
+	// No CLI flags passed - should pick up format=actions and ignore_comments from config
 	stdout, stderr, err := runDiffm(oldPath, newPath)
 	if err != nil {
 		t.Fatalf("diffm failed with custom config: %v\nstderr: %s", err, stderr)

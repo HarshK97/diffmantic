@@ -658,7 +658,7 @@ func TestRender_LineWrapping_ColorMode(t *testing.T) {
 	got := Render("old.go", "new.go", src, dst, dr.Envelope, opts)
 
 	lines := strings.Split(got, "\n")
-	// Continuation rows shouldn't have color codes in the gutter — it should be plain spaces.
+	// Continuation rows shouldn't have color codes in the gutter - it should be plain spaces.
 	// With ~5 lines, numWidth is 3, so the gutter is 9 chars wide in color mode.
 	const contGutterWidth = 9
 	for _, l := range lines {

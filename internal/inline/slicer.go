@@ -190,7 +190,7 @@ func sliceInlineLine(
 			}
 
 			if curDisplayCol+tabSpaces > maxTextWidth {
-				// Tab doesn't fit — wrap and reset the tab stop.
+				// Tab doesn't fit - wrap and reset the tab stop.
 				finishChunk()
 				tabSpaces = tabWidth
 			}
@@ -227,7 +227,7 @@ func sliceInlineLine(
 		if curDisplayCol+tok.displayWidth > maxTextWidth {
 			// Token doesn't fit on this row.
 			if tok.displayWidth > targetWidth {
-				// Too long for any row — cut it rune by rune.
+				// Too long for any row - cut it rune by rune.
 				currRuneOffset := byteOffset
 				for currRuneOffset < byteOffset+tok.byteLen {
 					r, rLen := utf8.DecodeRuneInString(lineText[currRuneOffset:])
@@ -261,7 +261,7 @@ func sliceInlineLine(
 				continue
 			}
 
-			// It fits on the next row — wrap at the word boundary.
+			// It fits on the next row - wrap at the word boundary.
 			finishChunk()
 		}
 
@@ -300,7 +300,7 @@ func sliceInlineLine(
 	}
 
 	// Badge goes at the end of the whole line (last visual row), not the
-	// first — that way it doesn't steal width from the first row and end
+	// first - that way it doesn't steal width from the first row and end
 	// up mid-sentence.
 	if badgeText != "" {
 		if len(chunks) > 0 {

@@ -36,7 +36,7 @@ func TestPipeline_LineLimitFallback(t *testing.T) {
 		t.Errorf("expected AST parsed when line limit disabled")
 	}
 
-	// With higher limit of 20, file has fewer lines — should parse as AST.
+	// With higher limit of 20, file has fewer lines - should parse as AST.
 	resHigher, err := Run(content, content, "main.go", "main.go", DiffOptions{
 		MaxASTFileLines: 20,
 	})
