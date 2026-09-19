@@ -105,3 +105,26 @@ tab_width: 2
 		t.Errorf("tab_width = %d, want 2", cfg.TabWidth)
 	}
 }
+
+func TestCandidateConfigDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	dirs := CandidateConfigDirs()
+	if len(dirs) == 0 {
+		t.Fatal("expected non-empty candidate config dirs")
+	}
+
+	expectedPrefix := filepath.Join(tmpDir, "diffmantic")
+	if dirs[0] != expectedPrefix {
+		t.Errorf("dirs[0] = %q, want %q", dirs[0], expectedPrefix)
+	}
+
+	paths, err := CandidateConfigFilePaths()
+	if err != nil {
+		t.Fatalf("CandidateConfigFilePaths failed: %v", err)
+	}
+	if len(paths) < 2 {
+		t.Fatalf("expected at least 2 candidate paths, got %d", len(paths))
+	}
+}

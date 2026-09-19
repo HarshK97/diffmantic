@@ -119,7 +119,7 @@ func getBinaryFiles(cwd string, args ...string) map[string]bool {
 
 // GetStatus returns the Git status of the repository.
 func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
-	args := []string{"status", "--porcelain=v1"}
+	args := []string{"status", "--porcelain=v1", "-uall"}
 	if pathFilter != "" {
 		args = append(args, "--", pathFilter)
 	}
@@ -154,6 +154,12 @@ func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
 		}
 		status := line[0:2]
 		pathPart := strings.Trim(line[3:], "\"")
+		if strings.HasSuffix(pathPart, "/") {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(cwd, pathPart)); err == nil && info.IsDir() {
+			continue
+		}
 
 		gitFile := GitFile{
 			Status: status,

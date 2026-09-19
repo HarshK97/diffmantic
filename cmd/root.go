@@ -1,24 +1,4 @@
-/*
-Copyright © 2026 Harsh Kapse <harshkapse.dev@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
+// Package cmd implements the CLI commands for diffm.
 package cmd
 
 import (
@@ -61,10 +41,8 @@ differences. It detects not just what lines changed, but what code structures
 were inserted, deleted, updated, moved, or renamed.
 
 Works as a standalone file diff tool, a git difftool, or a backend engine for
-editor plugins (Neovim, VS Code) via JSON output.
-
-Examples:
-  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
+editor plugins (Neovim, VS Code) via JSON output.`,
+	Example: `  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
   diffm before.go after.go -f inline           Print AST-aware inline diff with pager
   diffm before.go after.go -f json             JSON output for editor plugins
   diffm before.go after.go -f actions          Print structural actions list
@@ -528,6 +506,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 			dstFile := f.Path
 
+			if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
+				continue
+			}
+			if fi, err := os.Stat(dstFile); err == nil && fi.IsDir() {
+				continue
+			}
+
 			if f.IsBinary && !textconv {
 				renderBinaryDiff(srcFile, dstFile)
 				continue
@@ -594,6 +579,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				srcFile = f.OldPath
 			}
 			dstFile := f.Path
+
+			if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
+				continue
+			}
+			if fi, err := os.Stat(dstFile); err == nil && fi.IsDir() {
+				continue
+			}
 
 			if f.IsBinary && !textconv {
 				renderBinaryDiff(srcFile, dstFile)
@@ -1040,6 +1032,11 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+// RootCmd returns the root Cobra command for documentation generation and inspection.
+func RootCmd() *cobra.Command {
+	return rootCmd
 }
 
 func init() {

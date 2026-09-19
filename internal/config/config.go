@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"gopkg.in/yaml.v3"
 )
@@ -51,29 +52,52 @@ func DefaultConfig() Config {
 	}
 }
 
-// ConfigDir returns the path to the diffmantic config directory,
-// respecting $XDG_CONFIG_HOME or falling back to ~/.config/diffmantic.
-func ConfigDir() (string, error) {
+// CandidateConfigDirs returns user configuration directory candidates in priority order.
+func CandidateConfigDirs() []string {
+	var dirs []string
+
+	if runtime.GOOS == "windows" {
+		if appData := os.Getenv("APPDATA"); appData != "" {
+			dirs = append(dirs, filepath.Join(appData, "diffmantic"))
+		}
+		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+			dirs = append(dirs, filepath.Join(localAppData, "diffmantic"))
+		}
+	}
+
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "diffmantic"), nil
+		dirs = append(dirs, filepath.Join(xdg, "diffmantic"))
+	} else if home, err := os.UserHomeDir(); err == nil && home != "" {
+		dirs = append(dirs, filepath.Join(home, ".config", "diffmantic"))
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+
+	return dirs
+}
+
+// ConfigDir returns the primary path to the diffmantic configuration directory.
+func ConfigDir() (string, error) {
+	dirs := CandidateConfigDirs()
+	if len(dirs) > 0 {
+		return dirs[0], nil
 	}
-	return filepath.Join(home, ".config", "diffmantic"), nil
+	return "", fmt.Errorf("could not determine user configuration directory")
 }
 
 // CandidateConfigFilePaths returns config file paths to try in order of preference.
 func CandidateConfigFilePaths() ([]string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return nil, err
+	dirs := CandidateConfigDirs()
+	if len(dirs) == 0 {
+		return nil, fmt.Errorf("could not determine user configuration directory")
 	}
-	return []string{
-		filepath.Join(dir, "config.yml"),
-		filepath.Join(dir, "config.yaml"),
-	}, nil
+
+	var paths []string
+	for _, dir := range dirs {
+		paths = append(paths,
+			filepath.Join(dir, "config.yml"),
+			filepath.Join(dir, "config.yaml"),
+		)
+	}
+	return paths, nil
 }
 
 // Load reads configuration from ~/.config/diffmantic/config.yml (or config.yaml).

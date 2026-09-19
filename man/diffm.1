@@ -1,0 +1,319 @@
+.TH DIFFM 1 "2026-09-19" "Diffmantic 0.8.0" "Diffmantic Manual"
+.SH NAME
+diffm \- structural, semantic diff engine powered by Tree-sitter
+.SH SYNOPSIS
+.B diffm
+[\fIOPTIONS\fR]
+\fIFILE_A\fR \fIFILE_B\fR
+.br
+.B diffm
+[\fIOPTIONS\fR]
+[\fIREVISION\fR]
+[\fIPATH\fR]
+.br
+.B diffm
+[\fIOPTIONS\fR]
+\fIREV_A\fR \fIREV_B\fR
+.br
+.B diffm
+\fIPATH\fR \fIOLD_FILE\fR \fIOLD_HEX\fR \fIOLD_MODE\fR
+\fINEW_FILE\fR \fINEW_HEX\fR \fINEW_MODE\fR
+.br
+.B diffm
+[\fB\-\-parse\-tree\fR | \fB\-\-cst\fR]
+\fIFILE\fR...
+.SH DESCRIPTION
+.B diffmantic
+is a structural source code diff engine.
+Instead of diffing files line-by-line, it parses source code into Abstract
+Syntax Trees (ASTs) using Tree-sitter and tracks how language constructs
+shift across revisions.
+.PP
+Diffmantic recognizes when entire functions, classes, methods, or blocks are
+moved or reordered, when identifiers or expressions are updated in-place,
+and when statements are inserted or deleted.
+.PP
+If a file exceeds size limits or contains parse errors beyond configured
+thresholds, diffmantic falls back to line diffing so you always get a
+usable diff.
+.SH OPTIONS
+.TP
+\fB\-\-annotations\fR
+.br
+Include AST move annotations in diff (default: true)
+.TP
+\fB\-\-cached\fR
+.br
+Show only staged changes in Git mode
+.TP
+\fB\-\-color\fR=\fIWHEN\fR
+.br
+Color output: always, never, auto (default: auto)
+.TP
+\fB\-U\fR, \fB\-\-context\fR=\fILINES\fR
+.br
+Lines of context to show for diff (default: 3)
+.TP
+\fB\-\-cst\fR
+.br
+Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic
+AST
+.TP
+\fB\-\-force\-sbs\fR
+.br
+Force strict 50/50 side-by-side rendering without adaptive hybrid inline
+switching
+.TP
+\fB\-f\fR, \fB\-\-format\fR=\fIFORMAT\fR
+.br
+Output format: side-by-side, inline, json, actions (default:
+side-by-side)
+.TP
+\fB\-\-full\fR
+.br
+Include actions, line alignment, and highlight spans in JSON output
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+.br
+help for diffm
+.TP
+\fB\-C\fR, \fB\-\-ignore\-comments\fR
+.br
+Ignore all comments when diffing
+.TP
+\fB\-\-line\-limit\fR=\fILINES\fR
+.br
+Maximum line count for AST parsing before falling back to line diff (0
+to disable limit) (default: 10000)
+.TP
+\fB\-n\fR, \fB\-\-line\-numbers\fR
+.br
+Show line numbers in diff output (default: true)
+.TP
+\fB\-\-no\-pager\fR
+.br
+Do not pipe output into a pager
+.TP
+\fB\-e\fR, \fB\-\-parse\-error\-limit\fR=\fIN\fR
+.br
+Maximum parse errors allowed before falling back to line diffing
+.TP
+\fB\-\-parse\-tree\fR
+.br
+Parse files and dump the syntax tree for debugging
+.TP
+\fB\-p\fR, \fB\-\-patch\fR
+.br
+Generate a standard patch suitable for git apply / patch tools
+.TP
+\fB\-\-size\-limit\fR=\fIKB\fR
+.br
+Maximum file size in KB for AST parsing before falling back to line diff
+(0 to disable limit) (default: 1024)
+.TP
+\fB\-\-tab\-width\fR=\fIN\fR
+.br
+Number of spaces per tab stop in diff output (default: 4)
+.TP
+\fB\-\-textconv\fR
+.br
+Allow external text conversion filters to be run when comparing binary
+files
+.TP
+\fB\-\-ui\fR
+.br
+Include line alignment and highlight spans in JSON output
+.TP
+\fB\-v\fR, \fB\-\-version\fR
+.br
+version for diffm
+.TP
+\fB\-\-wrap\fR
+.br
+Wrap long lines to terminal width in inline diff
+.TP
+\fB\-\-wrap\-width\fR=\fICOLS\fR
+.br
+Explicit column width for line wrapping (0 to auto-detect terminal
+width)
+.SH GIT INTEGRATION
+You can use
+.B diffm
+as a standalone command, or wire it directly into your Git workflow.
+.SS Git Difftool
+To configure diffmantic as your default Git difftool:
+.PP
+.nf
+git config --global diff.tool diffm
+git config --global difftool.diffm.cmd 'diffm "$LOCAL" "$REMOTE"'
+git config --global difftool.prompt false
+.fi
+.PP
+Then run:
+.PP
+.nf
+git difftool
+git difftool HEAD~1
+.fi
+.SS Git External Diff Driver
+To use diffmantic whenever you run \fBgit diff\fR:
+.PP
+.nf
+git config --global diff.external diffm
+.fi
+.PP
+Diffmantic implements Git's 7-argument external diff driver protocol:
+\fIpath old-file old-hex old-mode new-file new-hex new-mode\fR.
+.SS File-Specific Driver via .gitattributes
+To use diffmantic only for specific file types in a repository, add this to
+your \fB.gitconfig\fR:
+.PP
+.nf
+[diff "diffmantic"]
+    command = diffm
+.fi
+.PP
+And add this line to your repository's \fB.gitattributes\fR:
+.PP
+.nf
+*.go diff=diffmantic
+*.rs diff=diffmantic
+.fi
+.SH CONFIGURATION
+Diffmantic reads its user configuration from
+\fB~/.config/diffmantic/config.yaml\fR (or \fBconfig.yml\fR) on Unix,
+or \fB%APPDATA%\ediffmantic\econfig.yaml\fR on Windows.
+.PP
+Available settings include:
+.TP
+.B format
+.br
+Default diff output format (\fIside-by-side\fR, \fIinline\fR, \fIjson\fR,
+\fIactions\fR).
+.TP
+.B tab_width
+.br
+Number of spaces per tab stop (default: 4).
+.TP
+.B ignore_comments
+.br
+Boolean (\fItrue\fR or \fIfalse\fR) to ignore comments during AST diffing.
+.TP
+.B parse_error_limit
+.br
+Maximum parse errors permitted before falling back to line diffing.
+.TP
+.B size_limit
+.br
+Maximum file size in KB for AST parsing.
+.TP
+.B line_limit
+.br
+Maximum line count for AST parsing.
+.SH SUPPORTED LANGUAGES
+Diffmantic includes native Tree-sitter parsers for 10 programming languages:
+.IP \(bu 2
+\fBGo\fR (\fI.go\fR)
+.IP \(bu 2
+\fBJava\fR (\fI.java\fR)
+.IP \(bu 2
+\fBJavaScript\fR (\fI.js\fR, \fI.jsx\fR)
+.IP \(bu 2
+\fBTypeScript\fR (\fI.ts\fR)
+.IP \(bu 2
+\fBTSX\fR (\fI.tsx\fR)
+.IP \(bu 2
+\fBPython\fR (\fI.py\fR)
+.IP \(bu 2
+\fBRust\fR (\fI.rs\fR)
+.IP \(bu 2
+\fBZig\fR (\fI.zig\fR)
+.IP \(bu 2
+\fBC\fR (\fI.c\fR, \fI.h\fR)
+.IP \(bu 2
+\fBC++\fR (\fI.cpp\fR, \fI.cc\fR, \fI.hpp\fR)
+.IP \(bu 2
+\fBLua\fR (\fI.lua\fR)
+.PP
+Files in other languages fall back automatically to standard line diffing.
+.SH EXIT STATUS
+.TP
+.B 0
+.br
+Success. Files were diffed, syntax trees were dumped, or files are identical.
+.TP
+.B 1
+.br
+Differences detected or an error occurred (such as invalid arguments,
+unreadable files, or internal parsing failures).
+.SH EXAMPLES
+Compare two local Go files side-by-side with an interactive pager:
+.PP
+.RS
+diffm old.go new.go
+.RE
+.PP
+Print an AST-aware inline diff:
+.PP
+.RS
+diffm -f inline old.rs new.rs
+.RE
+.PP
+Generate an inline patch suitable for patch tools:
+.PP
+.RS
+diffm -p old.py new.py
+.RE
+.PP
+Inspect unstaged working directory changes in a Git repository:
+.PP
+.RS
+diffm
+.RE
+.PP
+Inspect staged changes only:
+.PP
+.RS
+diffm --cached
+.RE
+.PP
+Compare two Git branches or commits:
+.PP
+.RS
+diffm main feature-branch
+.RE
+.PP
+Compare a single file between commits:
+.PP
+.RS
+diffm HEAD~1 src/server.go
+.RE
+.PP
+Export structured JSON for editor integration (Neovim, VS Code):
+.PP
+.RS
+diffm --ui -f json old.go new.go
+.RE
+.PP
+Dump the simplified AST for debugging parser output:
+.PP
+.RS
+diffm --parse-tree main.go
+.RE
+.SH FILES
+.TP
+.I ~/.config/diffmantic/config.yaml
+.br
+User configuration file on Linux and macOS (also accepts config.yml).
+.TP
+.I %APPDATA%\ediffmantic\econfig.yaml
+.br
+User configuration file on Windows (also accepts config.yml or %LOCALAPPDATA%).
+.SH SEE ALSO
+.BR git (1),
+.BR git-difftool (1),
+.BR diff (1)
+.SH AUTHORS
+Harsh Kapse <harshkapse.dev@gmail.com>
+.PP
+Source code and issue tracker: https://github.com/HarshK97/diffmantic
