@@ -7,8 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-19
+
+### Added
+- Side-by-side diff renderer (`-f side-by-side` / `-f sbs`). Diffmantic streams side-by-side output directly through your pager (`$PAGER`, `less`, or `more`) without buffering delays.
+- Support for Git external diff drivers (`git -c diff.external=diffm diff` or `git config diff.external diffm`), letting you use Diffmantic as Git's global diff tool.
+- On-the-fly streaming for Git diffs and revisions. Changes render concurrently file-by-file instead of buffering the entire repository diff in memory first.
+- Unix manual pages (`diffm.1` and `diffmantic.1`) for command documentation directly in your terminal via `man diffm`.
+- Move destination badges (`[L...]`) rendered in move-teal on moved blocks and declarations, making it obvious where code moved.
+- Configuration through standard environment variables (`DIFFM_FORMAT`, `DIFFM_TAB_WIDTH`, `DIFFM_IGNORE_COMMENTS`, `DIFFM_PARSE_ERROR_LIMIT`, `DIFFM_SIZE_LIMIT`, `DIFFM_LINE_LIMIT`, `DIFFM_NO_PAGER`).
+- Added `--line-limit` flag to set the maximum line count (default 10,000) for AST parsing before falling back to line diffing.
+- Added `--textconv` flag to run external text conversion filters when diffing binary files configured in Git.
+- Shell tab completion for `--format` and `--color` flags.
+
 ### Changed
-- Side-by-side (`sbs`) is now the default diff format everywhere. Running `diffm` without `-f` prints a side-by-side diff through your pager (`$PAGER`, `less`, or `more`).
+- Side-by-side (`sbs`) is now the default diff format everywhere. Running `diffm` without `-f` prints a side-by-side diff through your terminal pager.
+- Replaced YAML config files (`~/.config/diffmantic/config.yml`) with zero-dependency `DIFFM_*` environment variables for simpler shell scripts and CI.
+
+### Fixed
+- Collapsed noisy nested move highlights into outermost containers, preventing inner tokens from rendering as fragmented "tag soup".
+- Absorbed list commas (`,`) in argument lists, parameter lists, and array literals so delimiter punctuation highlights with surrounding changes instead of being left behind.
+- Fixed closing brackets on indexed expressions (like Python subscripts `obj[...]`) picking up false move highlights.
+- Contiguous deletions and insertions now group into clean replacement blocks instead of alternating back and forth between single lines.
+- Misplaced flags passed after the `--` positional delimiter (like `diffm a b -- -f json`) now trigger a clear error message explaining flag placement.
+- Stopped exit calls (like `os.Exit` or `panic`) and boilerplate guards from falsely matching as moves across unrelated functions.
+
+### Performance
+- Faster, cleaner line alignment on large files with heavy edits. Uses affine gap costs to keep matched code blocks aligned side-by-side without artificial zipper gaps.
+- Unified structural move scoring into a single pass, speeding up matching on large refactors.
 
 ## [0.8.0] - 2026-09-15
 
@@ -218,7 +244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/HarshK97/diffmantic/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/HarshK97/diffmantic/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/HarshK97/diffmantic/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HarshK97/diffmantic/compare/v0.5.0...v0.6.0

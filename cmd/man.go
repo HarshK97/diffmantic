@@ -20,7 +20,7 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 
 	version := cmd.Version
 	if version == "" {
-		version = "0.8.0"
+		version = "0.9.0"
 	}
 	fmt.Fprintf(&buf, ".TH DIFFM 1 %q %q \"Diffmantic Manual\"\n", releaseDate, "Diffmantic "+version)
 
