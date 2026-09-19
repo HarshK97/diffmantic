@@ -204,11 +204,13 @@ Maximum parse errors permitted before falling back to line diffing
 .TP
 .B DIFFM_SIZE_LIMIT
 .br
-Maximum file size in KB for AST parsing before fallback (default: 1024).
+Maximum file size in KB for AST parsing before fallback (0 to disable,
+default: 1024).
 .TP
 .B DIFFM_LINE_LIMIT
 .br
-Maximum line count for AST parsing before fallback (default: 10000).
+Maximum line count for AST parsing before fallback (0 to disable,
+default: 10000).
 .TP
 .B DIFFM_NO_PAGER
 .br

@@ -187,8 +187,8 @@ diffm before.go after.go -f actions
 | `DIFFM_TAB_WIDTH` | `4` | Number of spaces per tab stop |
 | `DIFFM_IGNORE_COMMENTS` | `0` | Ignore comments during AST diffing (`1`, `true`, `yes`) |
 | `DIFFM_PARSE_ERROR_LIMIT` | `0` | Maximum parse errors permitted before falling back to line diffing |
-| `DIFFM_SIZE_LIMIT` | `1024` | Maximum file size in KB for AST parsing before fallback |
-| `DIFFM_LINE_LIMIT` | `10000` | Maximum line count for AST parsing before fallback |
+| `DIFFM_SIZE_LIMIT` | `1024` | Maximum file size in KB for AST parsing before fallback (0 to disable) |
+| `DIFFM_LINE_LIMIT` | `10000` | Maximum line count for AST parsing before fallback (0 to disable) |
 | `DIFFM_NO_PAGER` | Unset | If set to any non-empty value, disables the interactive terminal pager |
 
 ## How It Works

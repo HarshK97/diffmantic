@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// GenerateManPage creates a formatted Unix roff manual page for the diffm CLI.
+// GenerateManPage renders a Unix roff man page from the CLI command tree and flag definitions.
 func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	if releaseDate == "" {
 		releaseDate = "2026-09-19"
@@ -18,18 +18,15 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 
 	var buf bytes.Buffer
 
-	// Header (.TH)
 	version := cmd.Version
 	if version == "" {
 		version = "0.8.0"
 	}
 	fmt.Fprintf(&buf, ".TH DIFFM 1 %q %q \"Diffmantic Manual\"\n", releaseDate, "Diffmantic "+version)
 
-	// NAME
 	buf.WriteString(".SH NAME\n")
 	buf.WriteString("diffm \\- structural, semantic diff engine powered by Tree-sitter\n")
 
-	// SYNOPSIS
 	buf.WriteString(".SH SYNOPSIS\n")
 	buf.WriteString(".B diffm\n")
 	buf.WriteString("[\\fIOPTIONS\\fR]\n")
@@ -52,7 +49,6 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString("[\\fB\\-\\-parse\\-tree\\fR | \\fB\\-\\-cst\\fR]\n")
 	buf.WriteString("\\fIFILE\\fR...\n")
 
-	// DESCRIPTION
 	buf.WriteString(".SH DESCRIPTION\n")
 	buf.WriteString(".B diffmantic\n")
 	buf.WriteString("is a structural source code diff engine.\n")
@@ -68,7 +64,6 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString("thresholds, diffmantic falls back to line diffing so you always get a\n")
 	buf.WriteString("usable diff.\n")
 
-	// OPTIONS
 	cmd.InitDefaultHelpFlag()
 	cmd.InitDefaultVersionFlag()
 
@@ -88,7 +83,6 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 		formatFlagOption(&buf, f)
 	}
 
-	// GIT INTEGRATION
 	buf.WriteString(".SH GIT INTEGRATION\n")
 	buf.WriteString("You can use\n")
 	buf.WriteString(".B diffm\n")
@@ -133,7 +127,6 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString("*.rs diff=diffmantic\n")
 	buf.WriteString(".fi\n")
 
-	// ENVIRONMENT
 	buf.WriteString(".SH ENVIRONMENT\n")
 	buf.WriteString("Diffmantic supports configuration via the following environment variables.\n")
 	buf.WriteString("Command-line flags always take precedence over environment variables.\n")
@@ -159,17 +152,18 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString(".TP\n")
 	buf.WriteString(".B DIFFM_SIZE_LIMIT\n")
 	buf.WriteString(".br\n")
-	buf.WriteString("Maximum file size in KB for AST parsing before fallback (default: 1024).\n")
+	buf.WriteString("Maximum file size in KB for AST parsing before fallback (0 to disable,\n")
+	buf.WriteString("default: 1024).\n")
 	buf.WriteString(".TP\n")
 	buf.WriteString(".B DIFFM_LINE_LIMIT\n")
 	buf.WriteString(".br\n")
-	buf.WriteString("Maximum line count for AST parsing before fallback (default: 10000).\n")
+	buf.WriteString("Maximum line count for AST parsing before fallback (0 to disable,\n")
+	buf.WriteString("default: 10000).\n")
 	buf.WriteString(".TP\n")
 	buf.WriteString(".B DIFFM_NO_PAGER\n")
 	buf.WriteString(".br\n")
 	buf.WriteString("If set to any non-empty value, disables the interactive terminal pager.\n")
 
-	// SUPPORTED LANGUAGES
 	buf.WriteString(".SH SUPPORTED LANGUAGES\n")
 	buf.WriteString("Diffmantic includes native Tree-sitter parsers for 10 programming languages:\n")
 	buf.WriteString(".IP \\(bu 2\n")
@@ -197,7 +191,6 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString(".PP\n")
 	buf.WriteString("Files in other languages fall back automatically to standard line diffing.\n")
 
-	// EXIT STATUS
 	buf.WriteString(".SH EXIT STATUS\n")
 	buf.WriteString(".TP\n")
 	buf.WriteString(".B 0\n")
@@ -209,7 +202,6 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString("Differences detected or an error occurred (such as invalid arguments,\n")
 	buf.WriteString("unreadable files, or internal parsing failures).\n")
 
-	// EXAMPLES
 	buf.WriteString(".SH EXAMPLES\n")
 	buf.WriteString("Compare two local Go files side-by-side with an interactive pager:\n")
 	buf.WriteString(".PP\n")
@@ -265,13 +257,11 @@ func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	buf.WriteString("diffm --parse-tree main.go\n")
 	buf.WriteString(".RE\n")
 
-	// SEE ALSO
 	buf.WriteString(".SH SEE ALSO\n")
 	buf.WriteString(".BR git (1),\n")
 	buf.WriteString(".BR git-difftool (1),\n")
 	buf.WriteString(".BR diff (1)\n")
 
-	// AUTHORS
 	buf.WriteString(".SH AUTHORS\n")
 	buf.WriteString("Harsh Kapse <harshkapse.dev@gmail.com>\n")
 	buf.WriteString(".PP\n")

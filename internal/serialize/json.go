@@ -226,11 +226,9 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					ja.Parent = parentRef
 				}
 
-				pos := a.Position
-				ja.Position = &pos
+				ja.Position = ptr(a.Position)
 				if a.Subtree {
-					subtree := true
-					ja.Subtree = &subtree
+					ja.Subtree = ptr(true)
 				}
 
 			case actions.Delete:
@@ -264,11 +262,9 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					ja.Parent = parentRef
 				}
 
-				pos := a.Position
-				ja.Position = &pos
+				ja.Position = ptr(a.Position)
 				if a.Subtree {
-					subtree := true
-					ja.Subtree = &subtree
+					ja.Subtree = ptr(true)
 				}
 
 			case actions.Update:
@@ -361,8 +357,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					return nil, fmt.Errorf("failed to build parent reference for move: %w", err)
 				}
 				ja.Parent = parentRef
-				pos := a.Position
-				ja.Position = &pos
+				ja.Position = ptr(a.Position)
 
 				if a.Node.Parent != nil {
 					oldParentRef, err := makeNodeRef(a.Node.Parent, "before")
@@ -376,11 +371,10 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if oldPos == -1 {
 					oldPos = 0
 				}
-				ja.OldPosition = &oldPos
+				ja.OldPosition = ptr(oldPos)
 
 				if a.Subtree {
-					subtree := true
-					ja.Subtree = &subtree
+					ja.Subtree = ptr(true)
 				}
 
 				if a.DestNode != nil {
@@ -399,8 +393,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 							})
 						}
 					}
-					ja.DestStartByte = &startByte
-					ja.DestEndByte = &endByte
+					ja.DestStartByte = ptr(startByte)
+					ja.DestEndByte = ptr(endByte)
 					destRef, err := makeNodeRef(a.DestNode, "after")
 					if err != nil {
 						return nil, fmt.Errorf("failed to build dest_node reference for move: %w", err)
@@ -423,8 +417,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 								})
 							}
 						}
-						ja.DestStartByte = &startByte
-						ja.DestEndByte = &endByte
+						ja.DestStartByte = ptr(startByte)
+						ja.DestEndByte = ptr(endByte)
 					}
 				}
 			}
@@ -601,4 +595,8 @@ func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
 	tok := bytes.Trim(trimmed, ",; \t\r\n")
 	return bytes.Equal(tok, []byte("}")) || bytes.Equal(tok, []byte("]")) ||
 		bytes.Equal(tok, []byte(")")) || bytes.Equal(tok, []byte("end"))
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
