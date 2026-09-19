@@ -648,7 +648,7 @@ func TestIsTrivialJumpBody(t *testing.T) {
 		}
 	})
 
-	// An error print followed by an exit is still boilerplate — the print
+	// An error print followed by an exit is still boilerplate - the print
 	// shouldn't keep it from being scored as a trivial exit block.
 	t.Run("body pairing an error print with a terminating call is trivial", func(t *testing.T) {
 		openBrace := mkNode("{", "{")
@@ -990,7 +990,7 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 		dstStmt.StartRow = 200
 		dstBlock.Children = []*treesitter.ASTNode{dstStmt}
 
-		// No parent mapping — cross-scope with no mapped enclosing decl.
+		// No parent mapping: cross-scope with no mapped enclosing decl.
 		ms2 := engine.NewMapping()
 
 		es := actions.NewEditScript()

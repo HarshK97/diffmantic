@@ -286,7 +286,7 @@ func TestMatchDataContainersHashCollisionSafety(t *testing.T) {
 	srcRoot.Language = "json"
 
 	k2 := testutil.Leaf("string", "\"new_key\"")
-	// v2 has a different AST structure (an object with one child) — distinct child count.
+	// v2 has a different AST structure (an object with one child): distinct child count.
 	innerChild := testutil.Leaf("string", "\"inner\"")
 	v2 := testutil.Node("object", "", innerChild)
 	p2 := testutil.Node("pair", "", k2, v2)
