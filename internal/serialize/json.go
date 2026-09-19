@@ -226,9 +226,11 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					ja.Parent = parentRef
 				}
 
-				ja.Position = new(a.Position)
+				pos := a.Position
+				ja.Position = &pos
 				if a.Subtree {
-					ja.Subtree = new(true)
+					subtree := true
+					ja.Subtree = &subtree
 				}
 
 			case actions.Delete:
@@ -262,9 +264,11 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					ja.Parent = parentRef
 				}
 
-				ja.Position = new(a.Position)
+				pos := a.Position
+				ja.Position = &pos
 				if a.Subtree {
-					ja.Subtree = new(true)
+					subtree := true
+					ja.Subtree = &subtree
 				}
 
 			case actions.Update:
@@ -357,7 +361,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					return nil, fmt.Errorf("failed to build parent reference for move: %w", err)
 				}
 				ja.Parent = parentRef
-				ja.Position = new(a.Position)
+				pos := a.Position
+				ja.Position = &pos
 
 				if a.Node.Parent != nil {
 					oldParentRef, err := makeNodeRef(a.Node.Parent, "before")
@@ -371,10 +376,11 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if oldPos == -1 {
 					oldPos = 0
 				}
-				ja.OldPosition = new(oldPos)
+				ja.OldPosition = &oldPos
 
 				if a.Subtree {
-					ja.Subtree = new(true)
+					subtree := true
+					ja.Subtree = &subtree
 				}
 
 				if a.DestNode != nil {
@@ -417,8 +423,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 								})
 							}
 						}
-						ja.DestStartByte = new(startByte)
-						ja.DestEndByte = new(endByte)
+						ja.DestStartByte = &startByte
+						ja.DestEndByte = &endByte
 					}
 				}
 			}

@@ -20,6 +20,11 @@ type Config struct {
 	LineLimit       *int   `yaml:"line_limit,omitempty"`
 }
 
+const (
+	defaultSizeLimit = 1024
+	defaultLineLimit = 10000
+)
+
 // UnmarshalYAML supports both modern config fields and legacy tui.tab_width.
 func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	type rawConfig Config
@@ -32,23 +37,27 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 		c.TabWidth = 4
 	}
 	if c.SizeLimit == nil {
-		c.SizeLimit = new(1024)
+		size := defaultSizeLimit
+		c.SizeLimit = &size
 	}
 	if c.LineLimit == nil {
-		c.LineLimit = new(10000)
+		lines := defaultLineLimit
+		c.LineLimit = &lines
 	}
 	return nil
 }
 
 // DefaultConfig returns the baseline configuration when no config file is found.
 func DefaultConfig() Config {
+	size := defaultSizeLimit
+	lines := defaultLineLimit
 	return Config{
 		Format:          "",
 		TabWidth:        4,
 		IgnoreComments:  false,
 		ParseErrorLimit: 0,
-		SizeLimit:       new(1024),
-		LineLimit:       new(10000),
+		SizeLimit:       &size,
+		LineLimit:       &lines,
 	}
 }
 
