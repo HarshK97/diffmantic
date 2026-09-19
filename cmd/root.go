@@ -87,6 +87,11 @@ Examples:
 		return refs, cobra.ShellCompDirectiveDefault
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := validateNoMisplacedFlags(args); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		cfg, err := config.Load()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
@@ -825,6 +830,21 @@ func isFileOrDevNull(path string) bool {
 	}
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// Cobra stops parsing flags at '--' and treats everything after as a positional
+// arg. Catch flags accidentally put after '--', unless they're real files starting with '-'.
+func validateNoMisplacedFlags(args []string) error {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") && arg != "-" && !isFileOrDevNull(arg) && !git.IsTrackedFile(".", arg) {
+			return fmt.Errorf("flag %q cannot be placed after '--'\n\n"+
+				"In CLI syntax, '--' marks the end of options; all subsequent arguments are treated as paths.\n"+
+				"Place flags before '--' or omit '--':\n"+
+				"  diffm [flags] [refs...] [--] [paths...]\n"+
+				"  diffm [refs...] [paths...] [flags]", arg)
+		}
+	}
+	return nil
 }
 
 func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
