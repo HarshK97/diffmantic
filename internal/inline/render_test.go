@@ -202,7 +202,8 @@ func TestRender_Tier1_IntraHunkMoveCleanliness(t *testing.T) {
 
 	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
-	// Under Tier 1, intra-hunk moves suppress right-margin ghost text completely.
+	// One-line shifts in the same hunk don't get badges. You can already see
+	// where they went.
 	if strings.Contains(got, "←") || strings.Contains(got, "➔") || strings.Contains(got, "⤹") || strings.Contains(got, "moved to line") {
 		t.Errorf("expected zero right-margin trailing ghost annotations for intra-hunk move, got:\n%s", got)
 	}

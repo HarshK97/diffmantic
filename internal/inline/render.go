@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -74,7 +72,7 @@ func (s *inlineScratch) ensureCapacity(n int) {
 type hunkMoveMetadata struct {
 	srcLine1Badges map[int]string // Line index -> " ➔ L..."
 	dstLine1Badges map[int]string // Line index -> " ⤹ L..."
-	hunkHeaders    map[int]string // Hunk index -> " <sig> (moved {from/to} L...[, modified])"
+	hunkHeaders    map[int]string // Hunk index -> " <sig> (moved {from/to} L...)"
 }
 
 // Render formats the diff envelope as an inline diff with AST highlights and move markers.
@@ -453,7 +451,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 					lineRendered := renderLineWithSpans(l.text, leftSpansByLine[l.srcLineIdx], true, "left", opts.Color, scratch, peerDepictsEdit(leftToRight, rightSpansByLine, l.srcLineIdx))
 					if opts.Color {
 						if badge != "" {
-							badge = color.Italic + color.OverlayFg + badge + color.Reset
+							badge = color.MoveFg + badge + color.Reset
 						}
 						if opts.LineNumbers {
 							out.WriteString(gutter + lineRendered + badge + "\n")
@@ -504,7 +502,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 					lineRendered := renderLineWithSpans(l.text, rightSpansByLine[l.dstLineIdx], false, "right", opts.Color, scratch, peerDepictsEdit(rightToLeft, leftSpansByLine, l.dstLineIdx))
 					if opts.Color {
 						if badge != "" {
-							badge = color.Italic + color.OverlayFg + badge + color.Reset
+							badge = color.MoveFg + badge + color.Reset
 						}
 						if opts.LineNumbers {
 							out.WriteString(gutter + lineRendered + badge + "\n")
@@ -662,19 +660,6 @@ func buildHunkMoveMetadata(actions []serialize.Action, hunks []interval, pairs [
 		return meta
 	}
 
-	// Collect destination mutating byte offsets to check whether moved nodes were edited
-	var dstMutOffsets []uint32
-	for _, a := range actions {
-		if a.Action == "insert" || a.Action == "update" || a.Action == "move_update" {
-			if a.DestStartByte != nil {
-				dstMutOffsets = append(dstMutOffsets, *a.DestStartByte)
-			} else if a.DestNode != nil {
-				dstMutOffsets = append(dstMutOffsets, a.DestNode.StartByte)
-			}
-		}
-	}
-	slices.Sort(dstMutOffsets)
-
 	// Index lines into hunks so we can tell if moves cross hunk boundaries
 	srcLineToHunk := make(map[int]int)
 	dstLineToHunk := make(map[int]int)
@@ -699,15 +684,12 @@ func buildHunkMoveMetadata(actions []serialize.Action, hunks []interval, pairs [
 		sEnd, _ := serialize.ByteToLineCol(srcOffsets, a.Node.EndByte)
 
 		var dStart, dEnd int
-		var dStartByte, dEndByte uint32
 		if a.DestStartByte != nil && a.DestEndByte != nil {
 			dStart, _ = serialize.ByteToLineCol(dstOffsets, *a.DestStartByte)
 			dEnd, _ = serialize.ByteToLineCol(dstOffsets, *a.DestEndByte)
-			dStartByte, dEndByte = *a.DestStartByte, *a.DestEndByte
 		} else if a.DestNode != nil {
 			dStart, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.StartByte)
 			dEnd, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.EndByte)
-			dStartByte, dEndByte = a.DestNode.StartByte, a.DestNode.EndByte
 		} else {
 			continue
 		}
@@ -715,16 +697,7 @@ func buildHunkMoveMetadata(actions []serialize.Action, hunks []interval, pairs [
 		hSrc, inSrcHunk := srcLineToHunk[sStart]
 		hDst, inDstHunk := dstLineToHunk[dStart]
 
-		// Omit annotations for moves staying within the same hunk
-		if inSrcHunk && inDstHunk && hSrc == hDst {
-			continue
-		}
-
-		// Check if any mutations fall inside the destination range
-		idx := sort.Search(len(dstMutOffsets), func(i int) bool {
-			return dstMutOffsets[i] >= dStartByte
-		})
-		isModified := idx < len(dstMutOffsets) && dstMutOffsets[idx] < dEndByte
+		// Teal alone doesn't say where it went, so badge every structural move.
 
 		isDecl := r != nil && r.IsDeclaration(a.Node.Type)
 		isBlock := r != nil && r.IsBlock(a.Node.Type)
@@ -733,24 +706,24 @@ func buildHunkMoveMetadata(actions []serialize.Action, hunks []interval, pairs [
 		if !isDecl && !isBlock && !isMultiLine && !isStatement {
 			continue
 		}
+		// Same-hunk one-liners can see their destination on screen, so skip the badge.
+		if !isDecl && !isBlock && !isMultiLine && inSrcHunk && inDstHunk && hSrc == hDst {
+			continue
+		}
 		if isDecl {
 			// Top-level declaration moves are summarized directly in the hunk header
 			sig := extractDeclarationSignature(a.Node, srcLines, sStart, sEnd)
 			if sig == "declaration" {
 				sig = extractDeclarationSignature(a.Node, dstLines, dStart, dEnd)
 			}
-			modStr := ""
-			if isModified {
-				modStr = ", modified"
-			}
 			if inSrcHunk && sig != "" {
 				if _, exists := meta.hunkHeaders[hSrc]; !exists {
-					meta.hunkHeaders[hSrc] = fmt.Sprintf(" %s (moved to L%d%s)", sig, dStart+1, modStr)
+					meta.hunkHeaders[hSrc] = fmt.Sprintf(" %s (moved to L%d)", sig, dStart+1)
 				}
 			}
 			if inDstHunk && sig != "" {
 				if _, exists := meta.hunkHeaders[hDst]; !exists {
-					meta.hunkHeaders[hDst] = fmt.Sprintf(" %s (moved from L%d%s)", sig, sStart+1, modStr)
+					meta.hunkHeaders[hDst] = fmt.Sprintf(" %s (moved from L%d)", sig, sStart+1)
 				}
 			}
 		} else {
