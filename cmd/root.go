@@ -1,24 +1,4 @@
-/*
-Copyright © 2026 Harsh Kapse <harshkapse.dev@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
+// Package cmd implements the CLI commands for diffm.
 package cmd
 
 import (
@@ -32,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
-	"github.com/HarshK97/diffmantic/internal/config"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/inline"
@@ -43,6 +22,12 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+)
+
+const (
+	defaultTabWidth       = 4
+	defaultSizeLimitKB    = 1024
+	defaultLineLimitLines = 10000
 )
 
 func isTerminal(f *os.File) bool {
@@ -61,10 +46,8 @@ differences. It detects not just what lines changed, but what code structures
 were inserted, deleted, updated, moved, or renamed.
 
 Works as a standalone file diff tool, a git difftool, or a backend engine for
-editor plugins (Neovim, VS Code) via JSON output.
-
-Examples:
-  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
+editor plugins (Neovim, VS Code) via JSON output.`,
+	Example: `  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
   diffm before.go after.go -f inline           Print AST-aware inline diff with pager
   diffm before.go after.go -f json             JSON output for editor plugins
   diffm before.go after.go -f actions          Print structural actions list
@@ -92,15 +75,6 @@ Examples:
 			os.Exit(1)
 		}
 
-		cfg, err := config.Load()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-		}
-		if cfg == nil {
-			defaultCfg := config.DefaultConfig()
-			cfg = &defaultCfg
-		}
-
 		noPager, _ := cmd.Flags().GetBool("no-pager")
 		patchMode, _ := cmd.Flags().GetBool("patch")
 		if patchMode && !cmd.Flags().Changed("no-pager") {
@@ -110,9 +84,12 @@ Examples:
 		format, _ := cmd.Flags().GetString("format")
 		if patchMode && !cmd.Flags().Changed("format") {
 			format = "inline"
-		} else if !cmd.Flags().Changed("format") && cfg.Format != "" {
-			format = cfg.Format
-		} else if format == "" {
+		} else if !cmd.Flags().Changed("format") {
+			if envFmt := getEnvString("DIFFM_FORMAT", ""); envFmt != "" {
+				format = envFmt
+			}
+		}
+		if format == "" {
 			format = "side-by-side"
 		}
 
@@ -124,22 +101,22 @@ Examples:
 
 		ignoreComments, _ := cmd.Flags().GetBool("ignore-comments")
 		if !cmd.Flags().Changed("ignore-comments") {
-			ignoreComments = cfg.IgnoreComments
+			ignoreComments = getEnvBool("DIFFM_IGNORE_COMMENTS", false)
 		}
 
 		parseErrorLimit, _ := cmd.Flags().GetInt("parse-error-limit")
 		if !cmd.Flags().Changed("parse-error-limit") {
-			parseErrorLimit = cfg.ParseErrorLimit
+			parseErrorLimit = getEnvInt("DIFFM_PARSE_ERROR_LIMIT", 0)
 		}
 
 		sizeLimitKB, _ := cmd.Flags().GetInt("size-limit")
-		if !cmd.Flags().Changed("size-limit") && cfg.SizeLimit != nil {
-			sizeLimitKB = *cfg.SizeLimit
+		if !cmd.Flags().Changed("size-limit") {
+			sizeLimitKB = getEnvInt("DIFFM_SIZE_LIMIT", defaultSizeLimitKB)
 		}
 
 		lineLimitLines, _ := cmd.Flags().GetInt("line-limit")
-		if !cmd.Flags().Changed("line-limit") && cfg.LineLimit != nil {
-			lineLimitLines = *cfg.LineLimit
+		if !cmd.Flags().Changed("line-limit") {
+			lineLimitLines = getEnvInt("DIFFM_LINE_LIMIT", defaultLineLimitLines)
 		}
 
 		parseTree, _ := cmd.Flags().GetBool("parse-tree")
@@ -203,7 +180,7 @@ Examples:
 					return
 				}
 
-				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/config.go)
+				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/git/git.go)
 				if isRevA && isTrackedOrFileB {
 					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 					return
@@ -528,6 +505,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 			dstFile := f.Path
 
+			if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
+				continue
+			}
+			if fi, err := os.Stat(dstFile); err == nil && fi.IsDir() {
+				continue
+			}
+
 			if f.IsBinary && !textconv {
 				renderBinaryDiff(srcFile, dstFile)
 				continue
@@ -594,6 +578,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				srcFile = f.OldPath
 			}
 			dstFile := f.Path
+
+			if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
+				continue
+			}
+			if fi, err := os.Stat(dstFile); err == nil && fi.IsDir() {
+				continue
+			}
 
 			if f.IsBinary && !textconv {
 				renderBinaryDiff(srcFile, dstFile)
@@ -744,14 +735,7 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 		wrapFlag = false
 	}
 
-	cfg, _ := config.Load()
-	tabWidth, _ := cmd.Flags().GetInt("tab-width")
-	if !cmd.Flags().Changed("tab-width") && cfg != nil && cfg.TabWidth > 0 {
-		tabWidth = cfg.TabWidth
-	}
-	if tabWidth <= 0 {
-		tabWidth = 4
-	}
+	tabWidth := resolveTabWidth(cmd)
 
 	return inline.RenderOptions{
 		Color:              useColor,
@@ -762,6 +746,17 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 		TerminalWidth:      termWidth,
 		TabWidth:           tabWidth,
 	}
+}
+
+func resolveTabWidth(cmd *cobra.Command) int {
+	tabWidth, _ := cmd.Flags().GetInt("tab-width")
+	if !cmd.Flags().Changed("tab-width") {
+		tabWidth = getEnvInt("DIFFM_TAB_WIDTH", defaultTabWidth)
+	}
+	if tabWidth <= 0 {
+		tabWidth = defaultTabWidth
+	}
+	return tabWidth
 }
 
 func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
@@ -804,14 +799,7 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 		adaptiveThreshold = 0
 	}
 
-	cfg, _ := config.Load()
-	tabWidth, _ := cmd.Flags().GetInt("tab-width")
-	if !cmd.Flags().Changed("tab-width") && cfg != nil && cfg.TabWidth > 0 {
-		tabWidth = cfg.TabWidth
-	}
-	if tabWidth <= 0 {
-		tabWidth = 4
-	}
+	tabWidth := resolveTabWidth(cmd)
 
 	return sidebyside.RenderOptions{
 		Color:              useColor,
@@ -1040,6 +1028,11 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+// RootCmd returns the root Cobra command for documentation generation and inspection.
+func RootCmd() *cobra.Command {
+	return rootCmd
 }
 
 func init() {

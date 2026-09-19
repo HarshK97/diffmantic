@@ -335,22 +335,9 @@ func TestCLI_IgnoreComments(t *testing.T) {
 	}
 }
 
-func TestCLI_ConfigFileDefaults(t *testing.T) {
-	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, "diffmantic")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	configYAML := `
-ignore_comments: true
-format: actions
-`
-	if err := os.WriteFile(filepath.Join(configDir, "config.yml"), []byte(configYAML), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+func TestCLI_EnvVarDefaults(t *testing.T) {
+	t.Setenv("DIFFM_IGNORE_COMMENTS", "1")
+	t.Setenv("DIFFM_FORMAT", "actions")
 
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "old.go")
@@ -362,14 +349,14 @@ format: actions
 	_ = os.WriteFile(oldPath, []byte(oldContent), 0o644)
 	_ = os.WriteFile(newPath, []byte(newContent), 0o644)
 
-	// No CLI flags passed - should pick up format=actions and ignore_comments from config
+	// No CLI flags passed - should pick up format=actions and ignore_comments from env vars
 	stdout, stderr, err := runDiffm(oldPath, newPath)
 	if err != nil {
-		t.Fatalf("diffm failed with custom config: %v\nstderr: %s", err, stderr)
+		t.Fatalf("diffm failed with env vars: %v\nstderr: %s", err, stderr)
 	}
 
 	if !strings.Contains(stdout, "Diffing") {
-		t.Errorf("expected actions output with 'Diffing' header from config default, got: %s", stdout)
+		t.Errorf("expected actions output with 'Diffing' header from DIFFM_FORMAT, got: %s", stdout)
 	}
 }
 

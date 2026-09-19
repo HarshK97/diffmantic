@@ -142,6 +142,17 @@ fi
 mv "$TEMP_DIR/$REAL_BINARY_NAME" "$INSTALL_DIR/$REAL_BINARY_NAME"
 chmod +x "$INSTALL_DIR/$REAL_BINARY_NAME"
 
+# Install man pages if present in archive
+if [ -f "$TEMP_DIR/man/diffm.1" ]; then
+  MAN_DIR="${HOME}/.local/share/man/man1"
+  if mkdir -p "$MAN_DIR" 2>/dev/null; then
+    cp "$TEMP_DIR/man/diffm.1" "$MAN_DIR/diffm.1" 2>/dev/null || true
+    if [ -f "$TEMP_DIR/man/diffmantic.1" ]; then
+      cp "$TEMP_DIR/man/diffmantic.1" "$MAN_DIR/diffmantic.1" 2>/dev/null || true
+    fi
+  fi
+fi
+
 # Cleanup temp files
 rm -rf "$TEMP_DIR"
 
