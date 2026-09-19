@@ -45,7 +45,7 @@ jobs:
         if: steps.cache-grammars.outputs.cache-hit != 'true'
         run: go run ./native/bridge/build_grammars.go --cross-all
 
-      - name: Run test suite (pre-release verification)
+      - name: Run test suite (release verification)
         run: go test -v ./...
 
       - name: Verify CHANGELOG has release version header and extract notes
