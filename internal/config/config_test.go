@@ -3,8 +3,16 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func isolateTestConfig(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("APPDATA", dir)
+	t.Setenv("LOCALAPPDATA", "")
+	t.Setenv("XDG_CONFIG_HOME", dir)
+}
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -24,7 +32,7 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestLoadNonExistentConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	isolateTestConfig(t, tmpDir)
 
 	cfg, err := Load()
 	if err != nil {
@@ -40,7 +48,7 @@ func TestLoadNonExistentConfig(t *testing.T) {
 
 func TestLoadValidConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	isolateTestConfig(t, tmpDir)
 
 	configDir := filepath.Join(tmpDir, "diffmantic")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -78,7 +86,7 @@ parse_error_limit: 5
 
 func TestLoadValidConfigYAMLFallback(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	isolateTestConfig(t, tmpDir)
 
 	configDir := filepath.Join(tmpDir, "diffmantic")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -107,24 +115,82 @@ tab_width: 2
 }
 
 func TestCandidateConfigDirs(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Run("isolated primary candidate", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		isolateTestConfig(t, tmpDir)
 
-	dirs := CandidateConfigDirs()
-	if len(dirs) == 0 {
-		t.Fatal("expected non-empty candidate config dirs")
+		dirs := CandidateConfigDirs()
+		if len(dirs) == 0 {
+			t.Fatal("expected non-empty candidate config dirs")
+		}
+
+		expectedPrefix := filepath.Join(tmpDir, "diffmantic")
+		if dirs[0] != expectedPrefix {
+			t.Errorf("dirs[0] = %q, want %q", dirs[0], expectedPrefix)
+		}
+
+		paths, err := CandidateConfigFilePaths()
+		if err != nil {
+			t.Fatalf("CandidateConfigFilePaths failed: %v", err)
+		}
+		if len(paths) < 2 {
+			t.Fatalf("expected at least 2 candidate paths, got %d", len(paths))
+		}
+	})
+
+	if runtime.GOOS == "windows" {
+		t.Run("windows appdata priority", func(t *testing.T) {
+			appDataDir := t.TempDir()
+			localAppDataDir := t.TempDir()
+			xdgDir := t.TempDir()
+
+			t.Setenv("APPDATA", appDataDir)
+			t.Setenv("LOCALAPPDATA", localAppDataDir)
+			t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+			dirs := CandidateConfigDirs()
+			if len(dirs) < 3 {
+				t.Fatalf("expected at least 3 dirs on windows, got %d", len(dirs))
+			}
+			if dirs[0] != filepath.Join(appDataDir, "diffmantic") {
+				t.Errorf("dirs[0] = %q, want APPDATA %q", dirs[0], filepath.Join(appDataDir, "diffmantic"))
+			}
+			if dirs[1] != filepath.Join(localAppDataDir, "diffmantic") {
+				t.Errorf("dirs[1] = %q, want LOCALAPPDATA %q", dirs[1], filepath.Join(localAppDataDir, "diffmantic"))
+			}
+			if dirs[2] != filepath.Join(xdgDir, "diffmantic") {
+				t.Errorf("dirs[2] = %q, want XDG %q", dirs[2], filepath.Join(xdgDir, "diffmantic"))
+			}
+		})
+
+		t.Run("windows localappdata fallback", func(t *testing.T) {
+			localAppDataDir := t.TempDir()
+			t.Setenv("APPDATA", "")
+			t.Setenv("LOCALAPPDATA", localAppDataDir)
+			t.Setenv("XDG_CONFIG_HOME", "")
+
+			dirs := CandidateConfigDirs()
+			if len(dirs) == 0 {
+				t.Fatal("expected non-empty dirs")
+			}
+			if dirs[0] != filepath.Join(localAppDataDir, "diffmantic") {
+				t.Errorf("dirs[0] = %q, want LOCALAPPDATA %q", dirs[0], filepath.Join(localAppDataDir, "diffmantic"))
+			}
+		})
 	}
 
-	expectedPrefix := filepath.Join(tmpDir, "diffmantic")
-	if dirs[0] != expectedPrefix {
-		t.Errorf("dirs[0] = %q, want %q", dirs[0], expectedPrefix)
-	}
+	if runtime.GOOS != "windows" {
+		t.Run("unix xdg priority", func(t *testing.T) {
+			xdgDir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
-	paths, err := CandidateConfigFilePaths()
-	if err != nil {
-		t.Fatalf("CandidateConfigFilePaths failed: %v", err)
-	}
-	if len(paths) < 2 {
-		t.Fatalf("expected at least 2 candidate paths, got %d", len(paths))
+			dirs := CandidateConfigDirs()
+			if len(dirs) == 0 {
+				t.Fatal("expected non-empty dirs")
+			}
+			if dirs[0] != filepath.Join(xdgDir, "diffmantic") {
+				t.Errorf("dirs[0] = %q, want XDG %q", dirs[0], filepath.Join(xdgDir, "diffmantic"))
+			}
+		})
 	}
 }
