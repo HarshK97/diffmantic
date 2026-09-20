@@ -227,8 +227,9 @@ func suppressInlineParentRedundancy(
 	}
 }
 
-// suppressCoextensiveWrappers climbs single-line parents and suppresses wrapper actions
-// that are truly coextensive with the child (exact same byte range).
+// suppressCoextensiveWrappers walks single-line parents and drops wrapper actions
+// that share the child's start byte, like single-child statements with trailing
+// semicolons or scaffolding.
 func suppressCoextensiveWrappers(
 	node *treesitter.ASTNode,
 	actionMap map[*treesitter.ASTNode]*actions.Action,
@@ -242,14 +243,12 @@ func suppressCoextensiveWrappers(
 		if r != nil && r.IsPair(parent.Type) {
 			continue
 		}
-		// Strict opening invariant: parent must not start before child (protects {hash}, [array], (expr))
-		if parent.StartByte == node.StartByte {
-			// Only suppress if parent is truly coextensive (exact same EndByte) and is a single-child or scaffolding wrapper
-			if parent.EndByte == node.EndByte && (len(parent.Children) <= 1 || parent.IsScaffolding()) {
-				parentAct := actionMap[parent]
-				if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
-					suppressed[parentAct] = true
-				}
+		// Parent can't start before the child: keeps opening delimiters like {hash}, [array], or (expr) intact.
+		if parent.StartByte == node.StartByte &&
+			(len(parent.Children) <= 1 || parent.IsScaffolding() || parent.EndByte == node.EndByte) {
+			parentAct := actionMap[parent]
+			if parentAct != nil && !suppressed[parentAct] && !parentAct.Subtree {
+				suppressed[parentAct] = true
 			}
 		}
 	}

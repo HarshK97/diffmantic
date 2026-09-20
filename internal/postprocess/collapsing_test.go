@@ -536,8 +536,7 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (h) Trailing statement terminator (semicolon) in single-child expression_statement
-	// must STILL suppress the parent wrapper Insert even though parent.EndByte > dstChild.EndByte.
+	// (h) Trailing semicolons shouldn't keep single-child wrappers alive when their child moves.
 	t.Run("moved-child-suppresses-inline-parent-insert-with-semicolon", func(t *testing.T) {
 		srcChild := &treesitter.ASTNode{
 			Type:      "assignment_expression",
@@ -580,17 +579,17 @@ func TestInlineParentSuppression(t *testing.T) {
 				moveSurvives = true
 			}
 		}
-		if !parentSurvives {
-			t.Error("expected parent expression_statement Insert with trailing semicolon to survive for delimiter coverage")
+		if parentSurvives {
+			t.Error("expected parent expression_statement Insert with trailing semicolon to be suppressed")
 		}
 		if !moveSurvives {
 			t.Error("expected child assignment_expression Move to survive")
 		}
 	})
 
-	// (i) Bidirectional symmetry: source-side single-line statement wrapper Delete is preserved
-	// when parent contains trailing delimiter punctuation (e.g. semicolon).
-	t.Run("moved-child-preserves-source-side-parent-delete-with-semicolon", func(t *testing.T) {
+	// (i) Symmetrical delete: source-side single-line statement wrappers with trailing
+	// semicolons get dropped too when their child moves.
+	t.Run("moved-child-suppresses-source-side-parent-delete-with-semicolon", func(t *testing.T) {
 		srcChild := &treesitter.ASTNode{
 			Type:      "assignment_expression",
 			StartByte: 100, EndByte: 120,
@@ -633,8 +632,8 @@ func TestInlineParentSuppression(t *testing.T) {
 				moveSurvives = true
 			}
 		}
-		if !srcParentSurvives {
-			t.Error("expected source-side parent expression_statement Delete with trailing semicolon to survive")
+		if srcParentSurvives {
+			t.Error("expected source-side parent expression_statement Delete with trailing semicolon to be suppressed")
 		}
 		if !moveSurvives {
 			t.Error("expected child Move action to survive")
