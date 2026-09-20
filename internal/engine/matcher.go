@@ -54,7 +54,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 		mappings.Add(t1, t2)
 	}
 
-	sortMappingsByPreOrder(mappings)
+	RevokeOrphanedGlue(mappings)
 
 	return &MatchResult{Mappings: mappings}
 }
