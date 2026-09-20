@@ -723,6 +723,96 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 			t.Fatal("expected operator-only expression shell inside same statement to be demoted")
 		}
 	})
+
+	t.Run("preserves move when wrapper unwrap depth exceeds limit", func(t *testing.T) {
+		oldClass := mkNode("class_specifier", "")
+		oldClass.Language = "cpp"
+		w1 := mkNode("friend_declaration", "")
+		w1.Language = "cpp"
+		w2 := mkNode("friend_declaration", "")
+		w2.Language = "cpp"
+		w3 := mkNode("friend_declaration", "")
+		w3.Language = "cpp"
+		w4 := mkNode("friend_declaration", "")
+		w4.Language = "cpp"
+		oldFn := mkNode("function_definition", "foo")
+		oldFn.Language = "cpp"
+		oldClass.Children = []*treesitter.ASTNode{w1}
+		w1.Parent = oldClass
+		w1.Children = []*treesitter.ASTNode{w2}
+		w2.Parent = w1
+		w2.Children = []*treesitter.ASTNode{w3}
+		w3.Parent = w2
+		w3.Children = []*treesitter.ASTNode{w4}
+		w4.Parent = w3
+		w4.Children = []*treesitter.ASTNode{oldFn}
+		oldFn.Parent = w4
+
+		newClass := mkNode("class_specifier", "")
+		newClass.Language = "cpp"
+		newFn := mkNode("function_definition", "foo")
+		newFn.Language = "cpp"
+		newClass.Children = []*treesitter.ASTNode{newFn}
+		newFn.Parent = newClass
+
+		ms := engine.NewMapping()
+		ms.Add(oldClass, newClass)
+		ms.Add(oldFn, newFn)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: oldFn, DestNode: newFn})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		// With maxUnwrapDepth = 3, 4 hops cannot unwrap to oldClass, so move is preserved
+		if result.Size() != 1 {
+			t.Fatalf("expected move to be preserved across >3 wrapper hops, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("preserves move when wrapper unwrap is asymmetric", func(t *testing.T) {
+		oldClass := mkNode("class_specifier", "")
+		oldClass.Language = "cpp"
+		w1 := mkNode("friend_declaration", "")
+		w1.Language = "cpp"
+		w2 := mkNode("friend_declaration", "")
+		w2.Language = "cpp"
+		w3 := mkNode("friend_declaration", "")
+		w3.Language = "cpp"
+		oldFn := mkNode("function_definition", "foo")
+		oldFn.Language = "cpp"
+		oldClass.Children = []*treesitter.ASTNode{w1}
+		w1.Parent = oldClass
+		w1.Children = []*treesitter.ASTNode{w2}
+		w2.Parent = w1
+		w2.Children = []*treesitter.ASTNode{w3}
+		w3.Parent = w2
+		w3.Children = []*treesitter.ASTNode{oldFn}
+		oldFn.Parent = w3
+
+		newClass := mkNode("class_specifier", "")
+		newClass.Language = "cpp"
+		nw1 := mkNode("friend_declaration", "")
+		nw1.Language = "cpp"
+		newFn := mkNode("function_definition", "foo")
+		newFn.Language = "cpp"
+		newClass.Children = []*treesitter.ASTNode{nw1}
+		nw1.Parent = newClass
+		nw1.Children = []*treesitter.ASTNode{newFn}
+		newFn.Parent = nw1
+
+		ms := engine.NewMapping()
+		ms.Add(oldClass, newClass)
+		ms.Add(oldFn, newFn)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: oldFn, DestNode: newFn})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		// srcDepth = 3, dstDepth = 1, diff = 2 > 1 → asymmetric unwrap, move is preserved
+		if result.Size() != 1 {
+			t.Fatalf("expected move to be preserved across asymmetric unwrap depths, got %d actions", result.Size())
+		}
+	})
 }
 
 func TestIsTerminatingStatement(t *testing.T) {
@@ -2059,6 +2149,106 @@ func TestShouldDemoteMove(t *testing.T) {
 
 		if shouldDemoteMove(srcBlock, dstBlock, ms, r) {
 			t.Error("expected cross-scope container move with high retention (90%) to be preserved")
+		}
+	})
+
+	t.Run("anchor protection preserves high-value node despite cascade eviction", func(t *testing.T) {
+		fn1 := mkNode("function_declaration", "handlerA")
+		fn1.Language = "go"
+		fn2 := mkNode("function_declaration", "handlerB")
+		fn2.Language = "go"
+
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcBlock.Parent = fn1
+		srcBlock.StartRow = 10
+		srcBlock.EndRow = 20
+		fn1.Children = append(fn1.Children, srcBlock)
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstBlock.Parent = fn2
+		dstBlock.StartRow = 210
+		dstBlock.EndRow = 220
+		fn2.Children = append(fn2.Children, dstBlock)
+
+		for i := range 20 {
+			c := mkNode("identifier", fmt.Sprintf("x%d", i))
+			c.Language = "go"
+			c.Parent = srcBlock
+			srcBlock.Children = append(srcBlock.Children, c)
+
+			d := mkNode("identifier", fmt.Sprintf("x%d", i))
+			d.Language = "go"
+			d.Parent = dstBlock
+			dstBlock.Children = append(dstBlock.Children, d)
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcBlock, dstBlock)
+		for i := range 20 {
+			ms.Add(srcBlock.Children[i], dstBlock.Children[i])
+		}
+
+		// Evict 8 of 20 leaves: retention drops from 100% to 60%.
+		// Score after churn penalty drops from 62 to 37, which is below threshold (70).
+		// Anchor protection (score >= 30, intrinsic retention 100%) prevents demotion.
+		evicted := make(map[*treesitter.ASTNode]struct{})
+		for i := range 8 {
+			evicted[srcBlock.Children[i]] = struct{}{}
+			evicted[dstBlock.Children[i]] = struct{}{}
+		}
+
+		if shouldDemoteMove(srcBlock, dstBlock, ms, r, evicted) {
+			t.Error("expected anchor move (score >= 30 with intrinsic retention 100%) to resist cascade demotion")
+		}
+	})
+
+	t.Run("anchor protection does not exempt node when cascade caused no retention loss", func(t *testing.T) {
+		fn1 := mkNode("function_declaration", "handlerA")
+		fn1.Language = "go"
+		fn2 := mkNode("function_declaration", "handlerB")
+		fn2.Language = "go"
+
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcBlock.Parent = fn1
+		srcBlock.StartRow = 10
+		srcBlock.EndRow = 20
+		fn1.Children = append(fn1.Children, srcBlock)
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstBlock.Parent = fn2
+		dstBlock.StartRow = 210
+		dstBlock.EndRow = 220
+		fn2.Children = append(fn2.Children, dstBlock)
+
+		for i := range 8 {
+			c := mkNode("identifier", fmt.Sprintf("x%d", i))
+			c.Language = "go"
+			c.Parent = srcBlock
+			srcBlock.Children = append(srcBlock.Children, c)
+
+			d := mkNode("identifier", fmt.Sprintf("x%d", i))
+			d.Language = "go"
+			d.Parent = dstBlock
+			dstBlock.Children = append(dstBlock.Children, d)
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcBlock, dstBlock)
+		for i := range 8 {
+			ms.Add(srcBlock.Children[i], dstBlock.Children[i])
+		}
+
+		unrelatedNode := mkNode("identifier", "unrelated")
+		evicted := map[*treesitter.ASTNode]struct{}{unrelatedNode: {}}
+
+		// Node had 0 cascade degradation (retention == preEvictionRetention == 1.0),
+		// so anchor protection must not exempt it from score < threshold demotion.
+		if !shouldDemoteMove(srcBlock, dstBlock, ms, r, evicted) {
+			t.Error("expected move below threshold without cascade degradation to be demoted")
 		}
 	})
 }

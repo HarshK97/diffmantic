@@ -193,14 +193,24 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		return false
 	}
 
-	for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil {
+	const maxUnwrapDepth = 3
+	srcDepth := 0
+	for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil && srcDepth < maxUnwrapDepth {
 		srcChild = srcBase
 		srcBase = srcBase.Parent
+		srcDepth++
 	}
 
-	for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil {
+	dstDepth := 0
+	for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil && dstDepth < maxUnwrapDepth {
 		dstChild = dstBase
 		dstBase = dstBase.Parent
+		dstDepth++
+	}
+
+	// Different unwrap depths mean code moved into or out of nesting instead of staying put.
+	if srcDepth > 0 && dstDepth > 0 && max(srcDepth, dstDepth)-min(srcDepth, dstDepth) > 1 {
+		return false
 	}
 
 	isStationaryPos := srcChild.ChildIndex() == dstChild.ChildIndex() ||
@@ -733,7 +743,8 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 		}
 	}
 
-	for {
+	const maxDemotionRounds = 3
+	for range maxDemotionRounds {
 		changed := false
 		for _, a := range es.Actions() {
 			if a.Type != actions.Move || a.Node == nil {
@@ -1014,5 +1025,19 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 		score = max(int(float64(score)*retention), 1)
 	}
+
+	// Anchor protection: don't let a demotion cascade drag down a solid node
+	// if its own retention was fine before the cascade.
+	const anchorScoreFloor = 30
+	if score >= anchorScoreFloor && len(evicted) > 0 {
+		if retention < 0 {
+			retention = computeMoveRetention(src, dst, ms, r, evicted)
+		}
+		preEvictionRetention := computeMoveRetention(src, dst, ms, r, nil)
+		if retention < preEvictionRetention && preEvictionRetention >= 0.5 {
+			return false
+		}
+	}
+
 	return score < threshold
 }
