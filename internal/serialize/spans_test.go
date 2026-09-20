@@ -90,6 +90,8 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	fileBytes := []byte("def hello_world():\n")
 	// Container delete covers 0..18 (astLen=18)
 	// Inner delete covers 4..15 (astLen=11)
+	// Partitioner: inner wins [4,15), container gets [0,4) and [15,18).
+	// Same action coalesces → 1 span covering entire range.
 	actions := []Action{
 		{
 			Action: "delete",
@@ -102,11 +104,15 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(leftSpans) != 2 {
-		t.Fatalf("expected 2 delete spans (outer and inner preserved), got %d", len(leftSpans))
+	if len(leftSpans) != 1 {
+		t.Fatalf("expected 1 coalesced delete span (same action merges), got %d: %+v", len(leftSpans), leftSpans)
+	}
+	if leftSpans[0].StartCol != 0 || leftSpans[0].EndCol != 18 {
+		t.Errorf("expected coalesced span [0,18), got [%d,%d)", leftSpans[0].StartCol, leftSpans[0].EndCol)
 	}
 
-	// Also test when inner starts at same start col (e.g. 0..10 and 0..18)
+	// Also test when inner starts at same start col (e.g. 0..3 and 0..18)
+	// Partitioner: inner wins [0,3), outer wins [3,18), same action coalesces → 1 span
 	actionsCoaligned := []Action{
 		{
 			Action: "delete",
@@ -119,8 +125,11 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	}
 
 	coalignedSpans := BuildHighlightSpans(fileBytes, actionsCoaligned, "left")
-	if len(coalignedSpans) != 2 {
-		t.Fatalf("expected 2 delete spans for coaligned start (inner 0..3 and outer 0..18), got %d", len(coalignedSpans))
+	if len(coalignedSpans) != 1 {
+		t.Fatalf("expected 1 coalesced delete span for coaligned start, got %d: %+v", len(coalignedSpans), coalignedSpans)
+	}
+	if coalignedSpans[0].StartCol != 0 || coalignedSpans[0].EndCol != 18 {
+		t.Errorf("expected coalesced span [0,18), got [%d,%d)", coalignedSpans[0].StartCol, coalignedSpans[0].EndCol)
 	}
 }
 
@@ -445,5 +454,119 @@ func TestNestedMoveActionsKeepsOutermost(t *testing.T) {
 	}
 	if len(spans) == 0 {
 		t.Fatal("expected outermost move span, got none")
+	}
+}
+
+func TestPartitionDisjointSpans_MoveDeleteOverlap(t *testing.T) {
+	fileBytes := []byte("abcdef\n")
+	// move covers [0,6) astLen=6, delete covers [0,6) astLen=6
+	// Same astLen → tiebreak by priority: move(3) > delete(2) → move wins entire range
+	actions := []Action{
+		{Action: "move", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 6}},
+		{Action: "delete", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 6}},
+	}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span after partition, got %d: %+v", len(spans), spans)
+	}
+	if spans[0].Action != "move" {
+		t.Errorf("expected move to win tiebreak, got %s", spans[0].Action)
+	}
+}
+
+func TestPartitionDisjointSpans_CoextensiveDuplicates(t *testing.T) {
+	fileBytes := []byte("hello world\n")
+	// Two identical delete spans on same bytes → inner (same astLen) wins, coalesces to 1
+	actions := []Action{
+		{Action: "delete", Node: &NodeRef{Type: "a", StartByte: 0, EndByte: 11}},
+		{Action: "delete", Node: &NodeRef{Type: "b", StartByte: 0, EndByte: 11}},
+	}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 coalesced span for coextensive duplicates, got %d: %+v", len(spans), spans)
+	}
+}
+
+func TestPartitionDisjointSpans_UpdateInsideMove(t *testing.T) {
+	fileBytes := []byte("abcdef\n")
+	// An update inside a move promotes to move_update, flanked by the outer move segments.
+	// [0,2) move, [2,4) move_update, [4,6) move.
+	actions := []Action{
+		{Action: "move", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 6}},
+		{Action: "update", Node: &NodeRef{Type: "id", StartByte: 2, EndByte: 4}},
+	}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+	if len(spans) != 3 {
+		t.Fatalf("expected 3 spans (move, move_update, move), got %d: %+v", len(spans), spans)
+	}
+	// Find the middle span
+	for _, s := range spans {
+		if s.StartCol == 2 && s.EndCol == 4 {
+			if s.Action != "move_update" {
+				t.Errorf("expected move_update for update inside move, got %s", s.Action)
+			}
+			return
+		}
+	}
+	t.Error("expected move_update span at [2,4)")
+}
+
+func TestPartitionDisjointSpans_ThreeWayNesting(t *testing.T) {
+	fileBytes := []byte("0123456789abcdef\n")
+	// Three-way conflict: delete [0,16), move [0,16), and nested update [2,5).
+	// Move beats delete on tiebreak; update beats move on AST specificity and promotes to move_update.
+	actions := []Action{
+		{Action: "delete", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 16}},
+		{Action: "move", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 16}},
+		{Action: "update", Node: &NodeRef{Type: "id", StartByte: 2, EndByte: 5}},
+	}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+	if len(spans) != 3 {
+		t.Fatalf("expected 3 disjoint spans, got %d: %+v", len(spans), spans)
+	}
+	// Verify update segment is promoted to moveUpdate (inside original move)
+	for _, s := range spans {
+		if s.StartCol == 2 && s.EndCol == 5 {
+			if s.Action != "move_update" {
+				t.Errorf("expected moveUpdate at [2,5) (inside move), got %s", s.Action)
+			}
+			return
+		}
+	}
+	t.Error("expected moveUpdate span at [2,5)")
+}
+
+func TestPartitionDisjointSpans_NilActionRefFallback(t *testing.T) {
+	fileBytes := []byte("abcdef\n")
+	// move with ActionRef (astLen=6) vs nil-ActionRef delete (fallback=span width=6)
+	// Same astLen → tiebreak: move(3) > delete(2) → move wins
+	actions := []Action{
+		{Action: "move", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 6}},
+		{Action: "delete", Node: nil}, // nil Node → ActionRef will be nil on the span
+	}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+	// The nil-Node delete won't produce a span at all (addSpan requires non-nil Node for delete)
+	// So only the move span survives
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span (nil-Node delete produces nothing), got %d: %+v", len(spans), spans)
+	}
+	if spans[0].Action != "move" {
+		t.Errorf("expected move, got %s", spans[0].Action)
+	}
+}
+
+func TestPartitionDisjointSpans_DisjointSpansUnchanged(t *testing.T) {
+	fileBytes := []byte("hello world\n")
+	// Two non-overlapping spans → partitioner should not change them
+	actions := []Action{
+		{Action: "delete", Node: &NodeRef{Type: "a", StartByte: 0, EndByte: 5}},
+		{Action: "insert", Node: &NodeRef{Type: "b", StartByte: 6, EndByte: 11}},
+	}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 delete span (insert not on left), got %d: %+v", len(spans), spans)
+	}
+	if spans[0].StartCol != 0 || spans[0].EndCol != 5 || spans[0].Action != "delete" {
+		t.Errorf("expected delete [0,5), got %+v", spans[0])
 	}
 }
