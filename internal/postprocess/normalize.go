@@ -415,11 +415,16 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	// Pass 1: Find moves to demote and collect nodes to evict from the mapping.
 	// We have to do this first because Chawathe emits Update actions before Move,
 	// and we need to drop those orphaned updates in Pass 2.
+	toDemote := make(map[*treesitter.ASTNode]*treesitter.ASTNode)
+	demotedDescendants := make(map[*treesitter.ASTNode]struct{})
 	evicted := make(map[*treesitter.ASTNode]struct{})
 	for _, a := range es.Actions() {
 		if a.Type != actions.Move || a.Node == nil {
 			continue
 		}
+		if _, ok := demotedDescendants[a.Node]; ok {
+			continue
+		}
 		dstNode := a.DestNode
 		if dstNode == nil {
 			dstNode = ms.Src()[a.Node]
@@ -434,49 +439,44 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 		if !shouldDemoteMove(a.Node, dstNode, ms, r) {
 			continue
 		}
+		toDemote[a.Node] = dstNode
 		for _, d := range a.Node.Descendants() {
+			demotedDescendants[d] = struct{}{}
 			evicted[d] = struct{}{}
 		}
 		evicted[a.Node] = struct{}{}
 	}
 
-	// Pass 2: Rebuild the edit script, demoting flagged moves and dropping
-	// orphaned updates on evicted nodes.
+	// Pass 2: Rebuild the edit script: demote flagged moves to delete+insert,
+	// and drop any orphaned updates or nested moves inside those subtrees.
 	result := actions.NewEditScript()
 	for _, a := range es.Actions() {
-		// Suppress orphaned Update actions on nodes whose paired Move was demoted.
-		if a.Type == actions.Update && a.Node != nil {
+		if a.Node == nil {
+			result.Add(a)
+			continue
+		}
+
+		switch a.Type {
+		case actions.Update:
+			// Drop updates on nodes that are getting deleted anyway.
 			if _, ok := evicted[a.Node]; ok {
 				continue
 			}
-		}
-
-		if a.Type != actions.Move || a.Node == nil {
 			result.Add(a)
-			continue
-		}
-
-		dstNode := a.DestNode
-		if dstNode == nil {
-			dstNode = ms.Src()[a.Node]
-		}
-		if dstNode == nil {
+		case actions.Move:
+			// Skip nested moves inside an ancestor that's already turned into a subtree delete+insert.
+			if _, ok := demotedDescendants[a.Node]; ok {
+				continue
+			}
+			dstNode, shouldDemote := toDemote[a.Node]
+			if !shouldDemote {
+				result.Add(a)
+				continue
+			}
+			demoteMoveToDelIns(result, ms, a.Node, dstNode)
+		default:
 			result.Add(a)
-			continue
 		}
-
-		r := rules.Get(a.Node.GetLanguage())
-		if r == nil {
-			result.Add(a)
-			continue
-		}
-
-		if !shouldDemoteMove(a.Node, dstNode, ms, r) {
-			result.Add(a)
-			continue
-		}
-
-		demoteMoveToDelIns(result, ms, a.Node, dstNode)
 	}
 	return result
 }

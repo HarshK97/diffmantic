@@ -1,6 +1,7 @@
 package postprocess
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -1013,6 +1014,41 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 		result := normalizeMovesByStructure(es, ms)
 		if result.Size() != 2 {
 			t.Errorf("expected non-move actions to pass through, got %d", result.Size())
+		}
+	})
+
+	t.Run("nested move inside demoted ancestor move is suppressed", func(t *testing.T) {
+		childSrc := mkNode("identifier", "val")
+		childSrc.Language = "go"
+		parentSrc := mkNode("expression_statement", "", childSrc)
+		parentSrc.Language = "go"
+		parentSrc.StartRow = 10
+		parentSrc.EndRow = 10
+
+		childDst := mkNode("identifier", "val")
+		childDst.Language = "go"
+		parentDst := mkNode("expression_statement", "", childDst)
+		parentDst.Language = "go"
+		parentDst.StartRow = 500
+		parentDst.EndRow = 500
+
+		msNested := engine.NewMapping()
+		msNested.Add(parentSrc, parentDst)
+		msNested.Add(childSrc, childDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: parentSrc, DestNode: parentDst})
+		es.Add(actions.Action{Type: actions.Move, Node: childSrc, DestNode: childDst})
+
+		result := normalizeMovesByStructure(es, msNested)
+		if result.Size() != 2 {
+			t.Fatalf("expected exactly 2 actions (Delete+Insert) after ancestor demotion, got %d", result.Size())
+		}
+		if idx := slices.IndexFunc(result.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move
+		}); idx != -1 {
+			a := result.Actions()[idx]
+			t.Fatalf("expected no move actions to survive demotion of ancestor move, got %s on %s", a.Type, a.Node.Type)
 		}
 	})
 }
