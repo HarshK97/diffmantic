@@ -107,7 +107,13 @@ func isGlueToken(n *treesitter.ASTNode, r *rules.Rules) bool {
 		return false
 	}
 	if r != nil {
+		if r.IsType(n.Type) {
+			return false
+		}
 		return r.IsOperatorLiteral(n.Type) || r.IsPunctuation(n.Type) || n.IsKeyword || r.IsKeyword(n.Type, n.Label)
+	}
+	if rules.IsType(n.Type) {
+		return false
 	}
 	return rules.IsOperatorLiteral(n.Type) || rules.IsPunctuation(n.Type) || n.IsKeyword || rules.IsKeyword(n.Type, n.Label)
 }

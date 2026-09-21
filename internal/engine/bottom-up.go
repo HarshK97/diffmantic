@@ -390,10 +390,7 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 			currCommon, _, _ := commonMappedDescendants(currentT1, t2, m.Src())
 			currDice := m.DiceSrc(currentT1, t2)
-			currAffinity := computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true)
-			if currAffinity < 0 {
-				currAffinity = 0
-			}
+			currAffinity := max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
 
 			for _, candidate := range t1MappedParent.Children {
 				if candidate == currentT1 || !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) {
@@ -406,10 +403,7 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				}
 
 				candDice := m.DiceSrc(candidate, t2)
-				candAffinity := computeAffinity(candidate, t2, m, DefaultAffinityWeights, true)
-				if candAffinity < 0 {
-					continue
-				}
+				candAffinity := max(0, computeAffinity(candidate, t2, m, DefaultAffinityWeights, true))
 
 				isSuperior := false
 				if candCommon > currCommon && (candDice >= currDice || candAffinity >= currAffinity) {
@@ -445,54 +439,78 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			continue
 		}
 
-		// Vertical Contest: T1 sits deeper than expected. Look for an unmapped sibling at the expected depth.
+		// Vertical Contest: currentT1 sits deeper than expected (e.g. inside an inner if-block).
+		// Find an unmapped peer under t1MappedParent at the expected depth to reclaim t2.
+		var bestCandidate *treesitter.ASTNode
+		bestScore := -1.0
+
+		currCommon, _, _ := commonMappedDescendants(currentT1, t2, m.Src())
+		currDice := m.DiceSrc(currentT1, t2)
+		currAffinity := max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+
 		for _, candidate := range t1MappedParent.Children {
 			if !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) {
 				continue
 			}
 
-			canReclaim := false
 			if candidate.Contains(currentT1) {
-				if m.DiceSrc(candidate, t2) > m.DiceSrc(currentT1, t2) {
-					canReclaim = true
-				} else if isBlockNode(candidate, r) {
-					// Outer block (e.g. function body) reclaiming peer block from deleted inner construct
-					canReclaim = true
+				if m.DiceSrc(candidate, t2) > currDice || isBlockNode(candidate, r) {
+					bestCandidate = candidate
+					break
 				}
-			} else {
-				if directKeyMatch(candidate, t2) && !directKeyMatch(currentT1, t2) {
-					canReclaim = true
-				}
-			}
-
-			if !canReclaim {
 				continue
 			}
 
-			// Free any mapped descendants of t2 that came from currentT1.
-			for _, t2Desc := range t2.Descendants() {
-				if srcLeaf := dstMap[t2Desc]; srcLeaf != nil && currentT1.Contains(srcLeaf) {
-					m.Remove(srcLeaf)
-				}
-			}
-			m.Remove(currentT1)
-			m.Add(candidate, t2)
+			candCommon, _, _ := commonMappedDescendants(candidate, t2, m.Src())
+			candDice := m.DiceSrc(candidate, t2)
+			candAffinity := max(0, computeAffinity(candidate, t2, m, DefaultAffinityWeights, true))
 
-			if hasUnmappedChild(candidate, m.Has) && hasUnmappedChild(t2, m.HasDst) {
-				Recover(candidate, t2, m)
+			canReclaim := (candCommon > currCommon && (candDice >= currDice || candAffinity >= currAffinity)) ||
+				(candDice > currDice && candAffinity > currAffinity) ||
+				(directKeyMatch(candidate, t2) && !directKeyMatch(currentT1, t2))
+
+			if canReclaim && candAffinity > bestScore {
+				bestScore = candAffinity
+				bestCandidate = candidate
 			}
-			break
+		}
+
+		if bestCandidate == nil {
+			continue
+		}
+
+		for _, c1 := range currentT1.Children {
+			if c2 := m.Src()[c1]; c2 != nil && c2.Parent == t2 {
+				m.Remove(c1)
+			}
+		}
+		m.Remove(currentT1)
+		m.Add(bestCandidate, t2)
+
+		if hasUnmappedChild(bestCandidate, m.Has) && hasUnmappedChild(t2, m.HasDst) {
+			Recover(bestCandidate, t2, m)
 		}
 	}
 }
 
+// directKeyMatch reports whether the primary key (first child, unwrapping single-child
+// wrappers) of n1 matches n2 by identical label or subtree isomorphism.
 func directKeyMatch(n1, n2 *treesitter.ASTNode) bool {
 	if n1 == nil || n2 == nil || len(n1.Children) == 0 || len(n2.Children) == 0 {
 		return false
 	}
 	c1 := n1.Children[0]
 	c2 := n2.Children[0]
-	return c1.Type == c2.Type && c1.Label != "" && c1.Label == c2.Label
+	for len(c1.Children) == 1 {
+		c1 = c1.Children[0]
+	}
+	for len(c2.Children) == 1 {
+		c2 = c2.Children[0]
+	}
+	if c1.Type == c2.Type && c1.Label != "" && c1.Label == c2.Label {
+		return true
+	}
+	return Isomorphic(c1, c2)
 }
 
 // hasEnclosingConstructAncestor checks if an outer ancestor matches the peer's parent construct,

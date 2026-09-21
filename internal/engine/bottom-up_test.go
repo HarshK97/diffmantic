@@ -450,3 +450,115 @@ func TestRollupMatchedContainers_TieBreaking_NodeID(t *testing.T) {
 		t.Errorf("expected candSecond to lose to candFirst via Tier 3 Pre-order Node ID")
 	}
 }
+
+func TestContestContainers_VerticalReclaim(t *testing.T) {
+	// Source tree:
+	// block1 contains:
+	//   if_stmt -> block -> currentT1 (assignment_statement "pairCount = len(pairs)")
+	//   candidate (assignment_statement "s.cpySrcToDst = make(...)")
+	lhsOld := testutil.Node("expression_list", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "s"),
+			testutil.Leaf("field_identifier", "cpySrcToDst"),
+		),
+	)
+	opOld := testutil.Leaf("assignment_operator_literal", "=")
+	rhsOld := testutil.Node("expression_list", "",
+		testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "make"),
+			testutil.Node("argument_list", "",
+				testutil.Node("map_type", "",
+					testutil.Leaf("map", "map"),
+					testutil.Leaf("type_identifier", "key"),
+					testutil.Leaf("type_identifier", "val"),
+				),
+				testutil.Leaf("identifier", "pairCount"),
+			),
+		),
+	)
+	candidate := testutil.Node("assignment_statement", "", lhsOld, opOld, rhsOld)
+
+	lhsDecomp := testutil.Node("expression_list", "", testutil.Leaf("identifier", "pairCount"))
+	opDecomp := testutil.Leaf("assignment_operator_literal", "=")
+	rhsDecomp := testutil.Node("expression_list", "",
+		testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "len"),
+			testutil.Node("argument_list", "", testutil.Leaf("identifier", "pairs")),
+		),
+	)
+	currentT1 := testutil.Node("assignment_statement", "", lhsDecomp, opDecomp, rhsDecomp)
+	ifBlock := testutil.Node("block", "", currentT1)
+	ifStmt := testutil.Node("if_statement", "", ifBlock)
+
+	block1 := testutil.Node("block", "", ifStmt, candidate)
+	root1 := testutil.Node("source_file", "", block1)
+	root1.Language = "go"
+
+	// Destination tree:
+	// block2 contains:
+	//   t2 (assignment_statement "s.cpySrcToDst = make(map[...], len(pairs))")
+	lhsNew := testutil.Node("expression_list", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "s"),
+			testutil.Leaf("field_identifier", "cpySrcToDst"),
+		),
+	)
+	opNew := testutil.Leaf("assignment_operator_literal", "=")
+	rhsNew := testutil.Node("expression_list", "",
+		testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "make"),
+			testutil.Node("argument_list", "",
+				testutil.Node("map_type", "",
+					testutil.Leaf("map", "map"),
+					testutil.Leaf("type_identifier", "key"),
+					testutil.Leaf("type_identifier", "val"),
+				),
+				testutil.Node("call_expression", "",
+					testutil.Leaf("identifier", "len"),
+					testutil.Node("argument_list", "", testutil.Leaf("identifier", "pairs")),
+				),
+			),
+		),
+	)
+	t2 := testutil.Node("assignment_statement", "", lhsNew, opNew, rhsNew)
+	block2 := testutil.Node("block", "", t2)
+	root2 := testutil.Node("source_file", "", block2)
+	root2.Language = "go"
+
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(root1, root2)
+	m.Add(block1, block2)
+
+	// TopDown leaf mappings
+	m.Add(lhsOld, lhsNew)
+	for i := range lhsOld.Children {
+		m.Add(lhsOld.Children[i], lhsNew.Children[i])
+	}
+	// map_type leaves matched
+	mapTypeOld := rhsOld.Children[0].Children[1].Children[0]
+	mapTypeNew := rhsNew.Children[0].Children[1].Children[0]
+	m.Add(mapTypeOld, mapTypeNew)
+	for i := range mapTypeOld.Children {
+		m.Add(mapTypeOld.Children[i], mapTypeNew.Children[i])
+	}
+
+	// Simulate BottomUp greedily matching currentT1 to t2 before contest:
+	m.Add(currentT1, t2)
+	m.Add(opDecomp, opNew)
+	m.Add(rhsDecomp, rhsNew)
+
+	ContestContainers(root1, root2, m)
+
+	if got := m.Get(currentT1); got != nil {
+		t.Errorf("m.Get(currentT1) = %v, want nil", got)
+	}
+	if got := m.Get(candidate); got != t2 {
+		t.Fatalf("m.Get(candidate) = %v, want %v", got, t2)
+	}
+	if got := m.Get(opOld); got != opNew {
+		t.Errorf("m.Get(opOld) = %v, want %v", got, opNew)
+	}
+}
