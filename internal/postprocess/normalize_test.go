@@ -1275,4 +1275,96 @@ func TestShouldDemoteMove(t *testing.T) {
 			t.Error("expected boilerplate if block across distant scope to be demoted")
 		}
 	})
+
+	t.Run("returns false for nil arguments", func(t *testing.T) {
+		ms := engine.NewMapping()
+		node := mkNode("identifier", "x")
+		if shouldDemoteMove(nil, node, ms, r) {
+			t.Error("expected false for nil src")
+		}
+		if shouldDemoteMove(node, nil, ms, r) {
+			t.Error("expected false for nil dst")
+		}
+		if shouldDemoteMove(node, node, nil, r) {
+			t.Error("expected false for nil mapping")
+		}
+		if shouldDemoteMove(node, node, ms, nil) {
+			t.Error("expected false for nil rules")
+		}
+	})
+
+	t.Run("returns true for cross-scope move with asymmetric destination mass", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "funcA")
+		srcFunc.Language = "go"
+		dstFunc := mkNode("function_declaration", "funcB")
+		dstFunc.Language = "go"
+
+		srcCall := mkNode("call_expression", "")
+		srcCall.Language = "go"
+		srcCall.Parent = srcFunc
+		srcCall.StartRow = 10
+		srcCall.EndRow = 25
+		for range 40 {
+			c := mkNode("identifier", "arg")
+			c.Language = "go"
+			c.Parent = srcCall
+			srcCall.Children = append(srcCall.Children, c)
+		}
+
+		dstCall := mkNode("call_expression", "")
+		dstCall.Language = "go"
+		dstCall.Parent = dstFunc
+		dstCall.StartRow = 350
+		dstCall.EndRow = 353
+		for range 5 {
+			c := mkNode("identifier", "arg")
+			c.Language = "go"
+			c.Parent = dstCall
+			dstCall.Children = append(dstCall.Children, c)
+		}
+
+		ms := engine.NewMapping()
+		// Even if the deleted call was huge, the destination snippet is too small
+		// to justify a cross-scope move.
+		if !shouldDemoteMove(srcCall, dstCall, ms, r) {
+			t.Error("expected cross-scope move with tiny destination to be demoted via bidirectional scoring")
+		}
+	})
+
+	t.Run("returns false for cross-scope move with substantial mass on both ends", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "funcA")
+		srcFunc.Language = "go"
+		dstFunc := mkNode("function_declaration", "funcB")
+		dstFunc.Language = "go"
+
+		srcCall := mkNode("call_expression", "")
+		srcCall.Language = "go"
+		srcCall.Parent = srcFunc
+		srcCall.StartRow = 10
+		srcCall.EndRow = 40
+		for range 80 {
+			c := mkNode("identifier", "arg")
+			c.Language = "go"
+			c.Parent = srcCall
+			srcCall.Children = append(srcCall.Children, c)
+		}
+
+		dstCall := mkNode("call_expression", "")
+		dstCall.Language = "go"
+		dstCall.Parent = dstFunc
+		dstCall.StartRow = 350
+		dstCall.EndRow = 380
+		for range 80 {
+			c := mkNode("identifier", "arg")
+			c.Language = "go"
+			c.Parent = dstCall
+			dstCall.Children = append(dstCall.Children, c)
+		}
+
+		ms := engine.NewMapping()
+		// Substantial mass on both sides clears the cross-scope drift penalty.
+		if shouldDemoteMove(srcCall, dstCall, ms, r) {
+			t.Error("expected cross-scope move with substantial mass on both ends to be preserved")
+		}
+	})
 }
