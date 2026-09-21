@@ -44,6 +44,7 @@ type Rules struct {
 	JumpStatements        []string // Control-flow exit statements (return, break, continue, goto, throw, raise).
 	TerminalCalls         []string // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
 	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
+	Expressions           []string // Expression container node types.
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -67,6 +68,7 @@ type Rules struct {
 	jumpStatementsSet        map[string]struct{}
 	terminalCallsSet         map[string]struct{}
 	delimitedContainersSet   map[string]struct{}
+	expressionsSet           map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -105,6 +107,7 @@ func (r *Rules) CompileSets() {
 	r.jumpStatementsSet = sliceToSet(r.JumpStatements)
 	r.terminalCallsSet = sliceToSet(r.TerminalCalls)
 	r.delimitedContainersSet = sliceToSet(r.DelimitedContainers)
+	r.expressionsSet = sliceToSet(r.Expressions)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -695,6 +698,50 @@ func IsJumpStatement(nodeType string) bool {
 		}
 	}
 	return defaultRules.IsJumpStatement(nodeType)
+}
+
+// IsExpression reports whether nodeType represents an expression node.
+func (r *Rules) IsExpression(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	if r != nil {
+		if len(r.expressionsSet) > 0 {
+			if _, ok := r.expressionsSet[nodeType]; ok {
+				return true
+			}
+		} else if slices.Contains(r.Expressions, nodeType) {
+			return true
+		}
+		if r.IsCall(nodeType) || r.IsIndexed(nodeType) {
+			return true
+		}
+	}
+	return strings.HasSuffix(nodeType, "_expression") ||
+		strings.HasSuffix(nodeType, "_operator") ||
+		nodeType == "expression" ||
+		nodeType == "binary" ||
+		nodeType == "unary"
+}
+
+// IsExpression reports whether nodeType is configured as an expression in any language rule set.
+func IsExpression(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	if strings.HasSuffix(nodeType, "_expression") ||
+		strings.HasSuffix(nodeType, "_operator") ||
+		nodeType == "expression" ||
+		nodeType == "binary" ||
+		nodeType == "unary" {
+		return true
+	}
+	for _, r := range registry {
+		if r.IsExpression(nodeType) {
+			return true
+		}
+	}
+	return defaultRules.IsExpression(nodeType)
 }
 
 var registry = map[string]*Rules{

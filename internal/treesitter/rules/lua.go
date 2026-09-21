@@ -156,4 +156,16 @@ var luaRules = &Rules{
 		"parameters",
 		"table_constructor",
 	},
+	Expressions: []string{
+		"binary_expression",
+		"bracket_index_expression",
+		"dot_index_expression",
+		"expression",
+		"function_call",
+		"method_index_expression",
+		"parenthesized_expression",
+		"table_constructor",
+		"unary_expression",
+		"vararg_expression",
+	},
 }

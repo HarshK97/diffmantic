@@ -510,6 +510,68 @@ func TestRulesIsOperatorLiteral(t *testing.T) {
 	}
 }
 
+func TestRulesIsExpression(t *testing.T) {
+	r := &Rules{
+		Calls:   []string{"custom_call"},
+		Indexed: []string{"custom_index"},
+	}
+	r.CompileSets()
+
+	universal := []string{
+		"binary_expression",
+		"unary_expression",
+		"call_expression",
+		"update_expression",
+		"assignment_expression",
+		"binary_operator",
+		"boolean_operator",
+		"comparison_operator",
+		"unary_operator",
+		"expression",
+		"binary",
+		"unary",
+	}
+
+	for _, p := range universal {
+		if !r.IsExpression(p) {
+			t.Errorf("r.IsExpression(%q) = false, want true", p)
+		}
+		if !IsExpression(p) {
+			t.Errorf("IsExpression(%q) = false, want true", p)
+		}
+	}
+
+	custom := []string{
+		"custom_call",
+		"custom_index",
+	}
+	for _, c := range custom {
+		if !r.IsExpression(c) {
+			t.Errorf("r.IsExpression(%q) = false, want true", c)
+		}
+	}
+
+	negative := []string{
+		"",
+		"expression_statement",
+		"function_declaration",
+		"method_declaration",
+		"block",
+		"short_var_declaration",
+		"assignment_statement",
+		"identifier",
+	}
+
+	for _, n := range negative {
+		if r.IsExpression(n) {
+			t.Errorf("r.IsExpression(%q) = true, want false", n)
+		}
+		if IsExpression(n) {
+			t.Errorf("IsExpression(%q) = true, want false", n)
+		}
+	}
+}
+
 func TestLanguageKind(t *testing.T) {
 	expectedKinds := map[string]LanguageKind{
 		"c":          KindCode,

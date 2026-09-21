@@ -47,4 +47,8 @@ var cssRules = &Rules{
 		"arguments",
 		"selectors",
 	},
+	Expressions: []string{
+		"binary_expression",
+		"call_expression",
+	},
 }
