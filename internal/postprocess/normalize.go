@@ -484,7 +484,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 // shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert
 // based on structural significance scoring and scope-aware threshold comparison.
 func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
-	if ms == nil {
+	if src == nil || dst == nil || ms == nil || r == nil {
 		return false
 	}
 	// Sibling relocation: src.Parent mapped to dst.Parent means the parent
@@ -506,6 +506,11 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 
 	score := moveStructuralScore(src, r)
 	threshold := requiredMoveThreshold(src, dst, ms, r)
+	// When moving across functions or scopes, require the destination to have
+	// enough mass on its own so a tiny snippet doesn't match a deleted block.
+	if !sameScopeDeclaration(src, dst, ms, r) && !r.IsDeclaration(src.Type) {
+		score = min(score, moveStructuralScore(dst, r))
+	}
 	return score < threshold
 }
 
