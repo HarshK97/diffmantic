@@ -215,4 +215,18 @@ var golangRules = &Rules{
 		"parameter_list",
 		"type_parameter_list",
 	},
+	Expressions: []string{
+		"binary_expression",
+		"call_expression",
+		"composite_literal",
+		"func_literal",
+		"index_expression",
+		"parenthesized_expression",
+		"selector_expression",
+		"slice_expression",
+		"type_assertion_expression",
+		"type_conversion_expression",
+		"type_instantiation_expression",
+		"unary_expression",
+	},
 }

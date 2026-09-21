@@ -63,6 +63,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 // parent Dice similarity and positional scores to break ties. Leaves under unmatched
 // parents are allowed if they share a matched ancestor.
 func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *LinePartition) {
+	r := rulesFor(t1Root)
 	type leafKey struct{ Type, Label string }
 	t2Leaves := make(map[leafKey][]*treesitter.ASTNode)
 	for _, t2 := range t2Root.PostOrder() {
@@ -122,9 +123,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 
 			parentPositional := false
-			if anc1 != nil && anc2 != nil &&
-				t1.Parent != nil && t2.Parent != nil &&
-				anc1 != t1.Parent && anc2 != t2.Parent {
+			if t1.Parent != nil && t2.Parent != nil &&
+				t1.Parent.Parent != nil && t2.Parent.Parent != nil &&
+				m.Src()[t1.Parent.Parent] == t2.Parent.Parent {
 				p1Idx := t1.Parent.ChildIndex()
 				p2Idx := t2.Parent.ChildIndex()
 				if p1Idx >= 0 && p2Idx >= 0 {
@@ -138,11 +139,19 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 					for _, offset := range []int{-1, 1} {
 						i1, i2 := t1Idx+offset, t2Idx+offset
 						if i1 >= 0 && i1 < len(t1.Parent.Children) && i2 >= 0 && i2 < len(t2.Parent.Children) {
-							if m.Src()[t1.Parent.Children[i1]] == t2.Parent.Children[i2] {
+							if areSiblingsMatched(t1.Parent.Children[i1], t2.Parent.Children[i2], m) {
 								siblingScore += 500
 							}
 						}
 					}
+				}
+			}
+
+			isGlue := (r != nil && (r.IsOperatorLiteral(t1.Type) || r.IsPunctuation(t1.Type))) || (r == nil && (rules.IsOperatorLiteral(t1.Type) || rules.IsPunctuation(t1.Type)))
+			if isGlue && !parentMatched && siblingScore == 0 {
+				isExpression := t1.Parent != nil && t2.Parent != nil && ((r != nil && r.IsExpression(t1.Parent.Type)) || (r == nil && rules.IsExpression(t1.Parent.Type))) && TypesMatch(t1.Parent.Type, t2.Parent.Type, r)
+				if !isExpression {
+					continue
 				}
 			}
 
@@ -169,8 +178,8 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 				}
 			}
 
-			depth1 := t1.DepthTo(anc1)
-			depth2 := t2.DepthTo(anc2)
+			depth1 := effectiveDepthTo(t1, anc1, r)
+			depth2 := effectiveDepthTo(t2, anc2, r)
 			if !parentMatched && siblingScore == 0 && d < 0.25 && (depth1 > 2 || depth2 > 2) {
 				continue
 			}
@@ -203,6 +212,56 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 		}
 		m.Add(cand.t1, cand.t2)
 	}
+}
+
+// effectiveDepthTo measures the structural depth from node up to anc,
+// skipping single-child transparent wrappers (scaffolding/wrappers that are not
+// declarations or blocks) to eliminate grammar depth disparities.
+func effectiveDepthTo(node, anc *treesitter.ASTNode, r *rules.Rules) int {
+	if node == nil || anc == nil {
+		return 0
+	}
+	depth := 0
+	curr := node
+	for curr != nil && curr != anc {
+		if !isTransparentWrapper(curr, r) {
+			depth++
+		}
+		curr = curr.Parent
+	}
+	return depth
+}
+
+// isTransparentWrapper reports whether n is a single-child transparent wrapper.
+// Never treats declarations or blocks as transparent, even with a single child.
+func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || len(n.Children) != 1 {
+		return false
+	}
+	if (r != nil && (r.IsDeclaration(n.Type) || r.IsBlock(n.Type))) || (r == nil && (rules.IsDeclaration(n.Type) || rules.IsBlock(n.Type))) {
+		return false
+	}
+	return (r != nil && (r.IsWrapper(n.Type) || r.IsScaffolding(n.Type))) ||
+		(r == nil && (rules.IsWrapper(n.Type) || rules.IsScaffolding(n.Type)))
+}
+
+// areSiblingsMatched reports whether sibling nodes s1 and s2 are matched directly
+// or through single-child intermediate containers (e.g. expression_list -> identifier).
+func areSiblingsMatched(s1, s2 *treesitter.ASTNode, m *Mapping) bool {
+	if s1 == nil || s2 == nil || m == nil {
+		return false
+	}
+	if m.Src()[s1] == s2 {
+		return true
+	}
+	k1, k2 := s1, s2
+	for len(k1.Children) == 1 {
+		k1 = k1.Children[0]
+	}
+	for len(k2.Children) == 1 {
+		k2 = k2.Children[0]
+	}
+	return m.Src()[k1] == k2
 }
 
 // MatchContainerKeywords maps unmapped keyword children between mapped parent containers.

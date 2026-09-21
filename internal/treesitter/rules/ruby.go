@@ -223,4 +223,10 @@ var rubyRules = &Rules{
 		"hash",
 		"method_parameters",
 	},
+	Expressions: []string{
+		"binary",
+		"call",
+		"element_reference",
+		"unary",
+	},
 }

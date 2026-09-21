@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestComputeAffinity_HardConstraints(t *testing.T) {
@@ -298,5 +300,153 @@ func TestRollupMatchedContainers_UnmatchedBodyGuard(t *testing.T) {
 
 	if m.Get(f1) != nil {
 		t.Errorf("expected function_declaration with unmatched body not to roll up, but got mapped to %v", m.Get(f1))
+	}
+}
+
+func TestRollupMatchedContainers_MassWeighting(t *testing.T) {
+	// t1 (short_var_declaration) has:
+	// Child 1: operator leaf ":=" (size 1)
+	// Child 2: compound RHS expression (size 3)
+	leafOp1 := testutil.Leaf("assignment_operator_literal", ":=")
+	rhsCompound1 := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "a"),
+		testutil.Leaf("arithmetic_operator_literal", "+"),
+		testutil.Leaf("identifier", "b"),
+	)
+	t1 := testutil.Node("short_var_declaration", "", leafOp1, rhsCompound1)
+	root1 := testutil.Node("source_file", "", t1)
+
+	// In T2:
+	// c2Wrong has a child matched to leafOp1 (1 vote)
+	leafOp2 := testutil.Leaf("assignment_operator_literal", ":=")
+	c2Wrong := testutil.Node("short_var_declaration", "", leafOp2, testutil.Leaf("identifier", "other"))
+
+	// c2Right has a child matched to rhsCompound1 (3 votes from subtree mass)
+	rhsCompound2 := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "a"),
+		testutil.Leaf("arithmetic_operator_literal", "+"),
+		testutil.Leaf("identifier", "b"),
+	)
+	c2Right := testutil.Node("short_var_declaration", "", testutil.Leaf("assignment_operator_literal", ":="), rhsCompound2)
+	root2 := testutil.Node("source_file", "", c2Wrong, c2Right)
+
+	m := NewMapping()
+	m.Add(root1, root2)
+	m.Add(leafOp1, leafOp2)
+	m.Add(rhsCompound1, rhsCompound2)
+	m.Add(rhsCompound1.Children[0], rhsCompound2.Children[0])
+	m.Add(rhsCompound1.Children[1], rhsCompound2.Children[1])
+	m.Add(rhsCompound1.Children[2], rhsCompound2.Children[2])
+
+	RollupMatchedContainers(root1, root2, m)
+
+	if m.Get(t1) != c2Right {
+		t.Fatalf("expected t1 to roll up to c2Right by structural mass, got %v", m.Get(t1))
+	}
+}
+
+func TestRollupMatchedContainers_TieBreaking_ScopeAffinity(t *testing.T) {
+	// t1 is inside func1_src
+	t1Child := testutil.Leaf("identifier", "x")
+	t1 := testutil.Node("assignment_statement", "", t1Child)
+	b1 := testutil.Node("block", "", t1)
+	func1Src := testutil.Node("function_declaration", "", b1)
+	root1 := testutil.Node("source_file", "", func1Src)
+
+	// T2: func1_dst (mapped to func1_src) and func2_dst (unrelated function)
+	candInScopeChild := testutil.Leaf("identifier", "x")
+	candInScope := testutil.Node("assignment_statement", "", candInScopeChild)
+	b2 := testutil.Node("block", "", candInScope)
+	func1Dst := testutil.Node("function_declaration", "", b2)
+
+	candForeignChild := testutil.Leaf("identifier", "x")
+	candForeign := testutil.Node("assignment_statement", "", candForeignChild)
+	b3 := testutil.Node("block", "", candForeign)
+	func2Dst := testutil.Node("function_declaration", "", b3)
+
+	root2 := testutil.Node("source_file", "", func1Dst, func2Dst)
+
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(root1, root2)
+	m.Add(func1Src, func1Dst)
+
+	// Both candidate parents get equal votes
+	r := rules.Get("go")
+	superior := isSuperiorCandidate(candInScope, candForeign, t1, m, r)
+	if !superior {
+		t.Errorf("expected candInScope to be superior to candForeign via Tier 1 Scope Affinity")
+	}
+
+	inferior := isSuperiorCandidate(candForeign, candInScope, t1, m, r)
+	if inferior {
+		t.Errorf("expected candForeign NOT to be superior to candInScope via Tier 1 Scope Affinity")
+	}
+}
+
+func TestRollupMatchedContainers_TieBreaking_LineDistance(t *testing.T) {
+	t1Child := testutil.Leaf("identifier", "x")
+	t1 := testutil.Node("assignment_statement", "", t1Child)
+	t1.StartRow = 10
+
+	candCloseChild := testutil.Leaf("identifier", "x")
+	candClose := testutil.Node("assignment_statement", "", candCloseChild)
+	candClose.StartRow = 12 // distance 2
+
+	candFarChild := testutil.Leaf("identifier", "x")
+	candFar := testutil.Node("assignment_statement", "", candFarChild)
+	candFar.StartRow = 35 // distance 25
+
+	root1 := testutil.Node("source_file", "", t1)
+	root2 := testutil.Node("source_file", "", candClose, candFar)
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(root1, root2)
+
+	r := rules.Get("go")
+	if !isSuperiorCandidate(candClose, candFar, t1, m, r) {
+		t.Errorf("expected candClose to defeat candFar via Tier 2 Drift-Compensated Proximity")
+	}
+	if isSuperiorCandidate(candFar, candClose, t1, m, r) {
+		t.Errorf("expected candFar to lose to candClose via Tier 2 Drift-Compensated Proximity")
+	}
+}
+
+func TestRollupMatchedContainers_TieBreaking_NodeID(t *testing.T) {
+	t1Child := testutil.Leaf("identifier", "x")
+	t1 := testutil.Node("assignment_statement", "", t1Child)
+	t1.StartRow = 10
+
+	candFirstChild := testutil.Leaf("identifier", "x")
+	candFirst := testutil.Node("assignment_statement", "", candFirstChild)
+	candFirst.StartRow = 10
+
+	candSecondChild := testutil.Leaf("identifier", "x")
+	candSecond := testutil.Node("assignment_statement", "", candSecondChild)
+	candSecond.StartRow = 10
+
+	root1 := testutil.Node("source_file", "", t1)
+	root2 := testutil.Node("source_file", "", candFirst, candSecond)
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	// Since candFirst comes before candSecond in root2, candFirst.ID < candSecond.ID
+	if candFirst.ID >= candSecond.ID {
+		t.Fatalf("expected candFirst.ID (%d) < candSecond.ID (%d)", candFirst.ID, candSecond.ID)
+	}
+
+	m := NewMapping()
+	m.Add(root1, root2)
+
+	r := rules.Get("go")
+	if !isSuperiorCandidate(candFirst, candSecond, t1, m, r) {
+		t.Errorf("expected candFirst to defeat candSecond via Tier 3 Pre-order Node ID")
+	}
+	if isSuperiorCandidate(candSecond, candFirst, t1, m, r) {
+		t.Errorf("expected candSecond to lose to candFirst via Tier 3 Pre-order Node ID")
 	}
 }

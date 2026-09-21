@@ -240,6 +240,8 @@ func hasCommonDescendant(
 // RollupMatchedContainers pairs unmatched container nodes in post-order when their
 // mapped children predominantly belong to the same unmatched parent container in T2.
 func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	treesitter.EnsureIndex(t1Root)
+	treesitter.EnsureIndex(t2Root)
 	r := rulesFor(t1Root)
 	for _, t1 := range t1Root.PostOrder() {
 		if m.Has(t1) || len(t1.Children) == 0 {
@@ -251,9 +253,10 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		bestCount := 0
 		for _, c := range t1.Children {
 			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && TypesMatch(t1.Type, c2.Parent.Type, r) {
-				cnt := parentCounts[c2.Parent] + 1
+				weight := c.Size()
+				cnt := parentCounts[c2.Parent] + weight
 				parentCounts[c2.Parent] = cnt
-				if cnt > bestCount {
+				if cnt > bestCount || (cnt == bestCount && isSuperiorCandidate(c2.Parent, bestParent, t1, m, r)) {
 					bestCount = cnt
 					bestParent = c2.Parent
 				}
@@ -292,6 +295,54 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			}
 		}
 	}
+}
+
+// isSuperiorCandidate breaks ties between candidate destination containers during rollup.
+// Prefers candidates in the same enclosing scope, then closest by line distance,
+// then earlier in AST pre-order.
+func isSuperiorCandidate(cand, currBest, t1 *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if currBest == nil {
+		return true
+	}
+	if cand == nil {
+		return false
+	}
+
+	// 1. Same enclosing scope wins.
+	t1Decl := getEnclosingDeclarationWithRules(t1, r)
+	candDecl := getEnclosingDeclarationWithRules(cand, r)
+	currDecl := getEnclosingDeclarationWithRules(currBest, r)
+
+	candSame := (candDecl == t1Decl && t1Decl != nil) || (m != nil && t1Decl != nil && m.Src()[t1Decl] == candDecl) || (t1Decl == nil && candDecl == nil)
+	currSame := (currDecl == t1Decl && t1Decl != nil) || (m != nil && t1Decl != nil && m.Src()[t1Decl] == currDecl) || (t1Decl == nil && currDecl == nil)
+
+	if candSame != currSame {
+		return candSame
+	}
+
+	// 2. Closer line distance wins.
+	candDist := m.AdjustedLineDistance(t1, cand)
+	currDist := m.AdjustedLineDistance(t1, currBest)
+	if candDist != currDist {
+		return candDist < currDist
+	}
+
+	// 3. Earlier node in AST order breaks remaining ties.
+	return cand.ID < currBest.ID
+}
+
+// getEnclosingDeclarationWithRules traverses up from n to find the nearest ancestor
+// registered as a declaration in the provided rules or global registry.
+func getEnclosingDeclarationWithRules(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if (r != nil && r.IsDeclaration(curr.Type)) || (r == nil && rules.IsDeclaration(curr.Type)) {
+			return curr
+		}
+	}
+	return nil
 }
 
 func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
