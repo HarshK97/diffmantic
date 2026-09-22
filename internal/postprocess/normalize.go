@@ -379,8 +379,10 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		return 1
 	}
 
-	// Top-level declarations: zero distance penalty.
-	if r.IsDeclaration(src.Type) {
+	// Only apply T=20 when both sides are declarations. If only src is a
+	// declaration, dst could be any arbitrary node and steal stubs or forward
+	// declarations across distant files.
+	if r.IsDeclaration(src.Type) && r.IsDeclaration(dst.Type) {
 		return 20
 	}
 

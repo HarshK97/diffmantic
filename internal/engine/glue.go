@@ -44,6 +44,13 @@ func isMovingScope(src, dst *treesitter.ASTNode, m *Mapping) bool {
 	if src == nil || dst == nil || m == nil {
 		return false
 	}
+	r := rulesFor(src)
+	srcStmt := FindEnclosingStatement(src, r)
+	dstStmt := FindEnclosingStatement(dst, r)
+	// Changes staying inside the same matched statement haven't moved scope.
+	if srcStmt != nil && dstStmt != nil && src != srcStmt && dst != dstStmt && m.Src()[srcStmt] == dstStmt {
+		return false
+	}
 	if src.Parent != nil && (dst.Parent == nil || m.Src()[src.Parent] != dst.Parent) {
 		return true
 	}
