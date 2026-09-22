@@ -53,7 +53,7 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	uc1 = unmatchedChildren(t1, m.Has)
 	uc2 = unmatchedChildren(t2, m.HasDst)
 
-	for _, pair := range uniqueTypePairs(uc1, uc2) {
+	for _, pair := range uniqueTypePairs(uc1, uc2, m) {
 		m.Add(pair[0], pair[1])
 		Recover(pair[0], pair[1], m)
 	}
@@ -71,6 +71,7 @@ func unmatchedChildren(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bo
 
 func uniqueTypePairs(
 	uc1, uc2 []*treesitter.ASTNode,
+	m *Mapping,
 ) [][2]*treesitter.ASTNode {
 	count1 := make(map[string][]*treesitter.ASTNode)
 	count2 := make(map[string][]*treesitter.ASTNode)
@@ -93,10 +94,17 @@ func uniqueTypePairs(
 		nodes2 := count2[typ]
 		if len(nodes1) == 1 && len(nodes2) == 1 && CompatiblePairRoles(nodes1[0], nodes2[0]) {
 			n1, n2 := nodes1[0], nodes2[0]
+			r := rulesFor(n1)
+			if (r != nil && r.IsExpression(n1.Type)) || (r == nil && rules.IsExpression(n1.Type)) {
+				if cand1 := findUnwrappedExpressionCandidate(n1, n2, m, r); cand1 != nil {
+					n1 = cand1
+				} else if cand2 := findUnwrappedDstExpressionCandidate(n1, n2, m, r); cand2 != nil {
+					n2 = cand2
+				}
+			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {
 				labels1 := n1.LeafLabels()
 				labels2 := n2.LeafLabels()
-				r := rulesFor(n1)
 				isDeclaration := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
 				isWrapper := ((r != nil && r.IsWrapper(n1.Type)) || (r == nil && rules.IsWrapper(n1.Type))) && !isDeclaration
 				if !isWrapper {
@@ -158,4 +166,102 @@ func uniqueTypePairs(
 		}
 	}
 	return pairs
+}
+
+// findUnwrappedExpressionCandidate searches compound for an inner expression
+// that matches target better than compound's root. Without this, uniqueTypePairs
+// binds to the outer || or && instead of the specific arm being checked.
+func findUnwrappedExpressionCandidate(
+	compound, target *treesitter.ASTNode,
+	m *Mapping,
+	r *rules.Rules,
+) *treesitter.ASTNode {
+	hasFn := func(d *treesitter.ASTNode) bool { return m != nil && m.Has(d) }
+	typesMatchFn := func(d *treesitter.ASTNode) bool {
+		return TypesMatch(d.Type, target.Type, r) && CompatiblePairRoles(d, target)
+	}
+	commonFn := func(d *treesitter.ASTNode) bool { return m != nil && hasCommonDescendant(d, target, m) }
+	return findBestExpressionMatch(compound, target, r, hasFn, typesMatchFn, commonFn)
+}
+
+// findUnwrappedDstExpressionCandidate mirrors findUnwrappedExpressionCandidate
+// when the compound expression is on dst instead of src.
+func findUnwrappedDstExpressionCandidate(
+	target, compound *treesitter.ASTNode,
+	m *Mapping,
+	r *rules.Rules,
+) *treesitter.ASTNode {
+	hasFn := func(d *treesitter.ASTNode) bool { return m != nil && m.HasDst(d) }
+	typesMatchFn := func(d *treesitter.ASTNode) bool {
+		return TypesMatch(target.Type, d.Type, r) && CompatiblePairRoles(target, d)
+	}
+	commonFn := func(d *treesitter.ASTNode) bool { return m != nil && hasCommonDescendant(target, d, m) }
+	return findBestExpressionMatch(compound, target, r, hasFn, typesMatchFn, commonFn)
+}
+
+// findBestExpressionMatch picks the descendant in compound that best matches
+// target by leaf overlap. It skips mapped nodes, checks type/role compatibility,
+// and gives a heavy score boost if an inner node is already mapped to target.
+func findBestExpressionMatch(
+	compound, target *treesitter.ASTNode,
+	r *rules.Rules,
+	hasFn func(*treesitter.ASTNode) bool,
+	typesMatchFn func(*treesitter.ASTNode) bool,
+	commonFn func(*treesitter.ASTNode) bool,
+) *treesitter.ASTNode {
+	if compound == nil || target == nil {
+		return nil
+	}
+	targetOp := getOperatorNode(target, r)
+	compoundOp := getOperatorNode(compound, r)
+
+	// If compound shares target's operator and isn't deeper,
+	// compound itself is already the closest possible match.
+	if targetOp != nil && compoundOp != nil && targetOp.Label == compoundOp.Label && Height(compound) <= Height(target) {
+		return nil
+	}
+
+	targetLabels := target.LeafLabels()
+	var bestCandidate *treesitter.ASTNode
+	bestScore := 0.0
+
+	for _, d := range compound.Descendants() {
+		if d == compound || hasFn(d) {
+			continue
+		}
+		if !typesMatchFn(d) {
+			continue
+		}
+		dOp := getOperatorNode(d, r)
+		if targetOp != nil {
+			if dOp == nil || dOp.Label != targetOp.Label {
+				continue
+			}
+		}
+
+		dLabels := d.LeafLabels()
+		overlap := 0
+		totalD := 0
+		for k, vD := range dLabels {
+			totalD += vD
+			if vT, ok := targetLabels[k]; ok {
+				overlap += min(vD, vT)
+			}
+		}
+		if overlap == 0 {
+			continue
+		}
+
+		score := float64(overlap) / float64(max(totalD, len(targetLabels)))
+		if commonFn(d) {
+			score += 10.0
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestCandidate = d
+		}
+	}
+
+	return bestCandidate
 }

@@ -85,6 +85,7 @@ func TestUniqueTypePairs(t *testing.T) {
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{a1, a2},
 		[]*treesitter.ASTNode{b1, b2},
+		nil,
 	)
 	if len(pairs) != 2 {
 		t.Errorf("want 2 unique-type pairs, got %d", len(pairs))
@@ -99,6 +100,7 @@ func TestUniqueTypePairsAmbiguous(t *testing.T) {
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{a1, a2},
 		[]*treesitter.ASTNode{b1},
+		nil,
 	)
 	if len(pairs) != 0 {
 		t.Errorf("ambiguous type should not pair, got %d", len(pairs))
@@ -152,6 +154,7 @@ func TestUniqueTypePairsDeclarationNoSemanticOverlap(t *testing.T) {
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{v1},
 		[]*treesitter.ASTNode{v2},
+		nil,
 	)
 	if len(pairs) != 0 {
 		t.Fatalf("declarations sharing only keywords should not pair, got %d pairs", len(pairs))
@@ -179,8 +182,127 @@ func TestUniqueTypePairsDeclarationWithSemanticOverlap(t *testing.T) {
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{v1},
 		[]*treesitter.ASTNode{v2},
+		nil,
 	)
 	if len(pairs) != 1 {
 		t.Fatalf("declarations sharing semantic identifier should pair, got %d pairs", len(pairs))
+	}
+}
+
+func TestUniqueTypePairs_UnwrappedCondition(t *testing.T) {
+	// src is a chained || while dst is a single check.
+	// uniqueTypePairs should match the inner z == nil, not the root ||.
+	c1 := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "x"),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	c2 := testutil.Node("binary_expression", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf("field_identifier", "Parent"),
+		),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	c3 := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "z"),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	c12 := testutil.Node("binary_expression", "",
+		c1,
+		testutil.Leaf("logical_operator_literal", "||"),
+		c2,
+	)
+	compoundSrc := testutil.Node("binary_expression", "",
+		c12,
+		testutil.Leaf("logical_operator_literal", "||"),
+		c3,
+	)
+	compoundSrc.Language = "go"
+
+	simpleDst := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "v"),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	simpleDst.Language = "go"
+
+	m := NewMapping()
+	m.Add(c3.Children[2], simpleDst.Children[2])
+
+	pairs := uniqueTypePairs(
+		[]*treesitter.ASTNode{compoundSrc},
+		[]*treesitter.ASTNode{simpleDst},
+		m,
+	)
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 pair, got %d", len(pairs))
+	}
+	if pairs[0][0] != c3 {
+		t.Errorf("expected inner c3 (z == nil) to be paired, got %v", pairs[0][0])
+	}
+	if pairs[0][1] != simpleDst {
+		t.Errorf("expected simpleDst (v == nil) to be paired, got %v", pairs[0][1])
+	}
+}
+
+func TestUniqueTypePairs_WrappedCondition(t *testing.T) {
+	// Flipped case: src is simple and dst is the chained ||.
+	// It should still pair v == nil with the inner z == nil.
+	simpleSrc := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "v"),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	simpleSrc.Language = "go"
+
+	c1 := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "x"),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	c2 := testutil.Node("binary_expression", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf("field_identifier", "Parent"),
+		),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	c3 := testutil.Node("binary_expression", "",
+		testutil.Leaf("identifier", "z"),
+		testutil.Leaf("comparison_operator_literal", "=="),
+		testutil.Leaf("nil", "nil"),
+	)
+	c12 := testutil.Node("binary_expression", "",
+		c1,
+		testutil.Leaf("logical_operator_literal", "||"),
+		c2,
+	)
+	compoundDst := testutil.Node("binary_expression", "",
+		c12,
+		testutil.Leaf("logical_operator_literal", "||"),
+		c3,
+	)
+	compoundDst.Language = "go"
+
+	m := NewMapping()
+	m.Add(simpleSrc.Children[2], c3.Children[2])
+
+	pairs := uniqueTypePairs(
+		[]*treesitter.ASTNode{simpleSrc},
+		[]*treesitter.ASTNode{compoundDst},
+		m,
+	)
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 pair, got %d", len(pairs))
+	}
+	if pairs[0][0] != simpleSrc {
+		t.Errorf("expected simpleSrc (v == nil) to be paired, got %v", pairs[0][0])
+	}
+	if pairs[0][1] != c3 {
+		t.Errorf("expected inner c3 (z == nil) to be paired, got %v", pairs[0][1])
 	}
 }

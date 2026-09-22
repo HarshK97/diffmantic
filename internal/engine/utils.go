@@ -512,3 +512,22 @@ func isStatementBlock(p *treesitter.ASTNode, r *rules.Rules) bool {
 	}
 	return rules.IsBlock(p.Type)
 }
+
+// getOperatorNode finds the operator or punctuation child in n. If grammar
+// rules don't identify one and n has 3 children, it assumes a standard
+// (left, op, right) infix layout and returns the middle child.
+func getOperatorNode(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for _, c := range n.Children {
+		if (r != nil && (r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type))) ||
+			(r == nil && (rules.IsOperatorLiteral(c.Type) || rules.IsPunctuation(c.Type))) {
+			return c
+		}
+	}
+	if len(n.Children) == 3 {
+		return n.Children[1]
+	}
+	return nil
+}
