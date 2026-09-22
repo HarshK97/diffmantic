@@ -1003,6 +1003,122 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 		}
 	})
 
+	t.Run("demotes small inlined expression across different statements", func(t *testing.T) {
+		srcFn := mkNode("function_declaration", "init")
+		srcFn.Language = "go"
+		dstFn := mkNode("function_declaration", "init")
+		dstFn.Language = "go"
+
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcBlock.Parent = srcFn
+		srcFn.Children = []*treesitter.ASTNode{srcBlock}
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstBlock.Parent = dstFn
+		dstFn.Children = []*treesitter.ASTNode{dstBlock}
+
+		srcCall := mkNode("call_expression", "", mkNode("identifier", "len"), mkNode("argument_list", "", mkNode("identifier", "pairs")))
+		srcCall.Language = "go"
+		srcCall.StartRow = 20
+		srcCall.EndRow = 20
+		srcStmt := mkNode("assignment_statement", "", mkNode("identifier", "pairCount"), srcCall)
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcBlock
+		srcCall.Parent = srcStmt
+		srcBlock.Children = []*treesitter.ASTNode{srcStmt}
+
+		dstCall := mkNode("call_expression", "", mkNode("identifier", "len"), mkNode("argument_list", "", mkNode("identifier", "pairs")))
+		dstCall.Language = "go"
+		dstCall.StartRow = 25
+		dstCall.EndRow = 25
+		dstStmt := mkNode("assignment_statement", "", mkNode("identifier", "s"), dstCall)
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstBlock
+		dstCall.Parent = dstStmt
+		dstBlock.Children = []*treesitter.ASTNode{dstStmt}
+
+		ms := engine.NewMapping()
+		ms.Add(srcFn, dstFn)
+		ms.Add(srcCall, dstCall)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcCall, DestNode: dstCall})
+
+		result := normalizeMovesByStructure(es, ms)
+		if result.Size() != 2 {
+			t.Fatalf("expected 2 actions (delete+insert) for small inlined expression, got %d", result.Size())
+		}
+		if result.Actions()[0].Type != actions.Delete || result.Actions()[1].Type != actions.Insert {
+			t.Errorf("expected delete then insert, got %v and %v", result.Actions()[0].Type, result.Actions()[1].Type)
+		}
+	})
+
+	t.Run("preserves substantial inlined call across different statements", func(t *testing.T) {
+		srcFn := mkNode("function_declaration", "init")
+		srcFn.Language = "go"
+		dstFn := mkNode("function_declaration", "init")
+		dstFn.Language = "go"
+
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcBlock.Parent = srcFn
+		srcFn.Children = []*treesitter.ASTNode{srcBlock}
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstBlock.Parent = dstFn
+		dstFn.Children = []*treesitter.ASTNode{dstBlock}
+
+		srcArgs := make([]*treesitter.ASTNode, 0, 10)
+		dstArgs := make([]*treesitter.ASTNode, 0, 10)
+		for range 10 {
+			a1 := mkNode("identifier", "arg")
+			a1.Language = "go"
+			srcArgs = append(srcArgs, a1)
+			a2 := mkNode("identifier", "arg")
+			a2.Language = "go"
+			dstArgs = append(dstArgs, a2)
+		}
+		srcArgList := mkNode("argument_list", "", srcArgs...)
+		srcArgList.Language = "go"
+		dstArgList := mkNode("argument_list", "", dstArgs...)
+		dstArgList.Language = "go"
+
+		srcCall := mkNode("call_expression", "", mkNode("identifier", "format"), srcArgList)
+		srcCall.Language = "go"
+		srcCall.StartRow = 20
+		srcCall.EndRow = 22
+
+		dstCall := mkNode("call_expression", "", mkNode("identifier", "format"), dstArgList)
+		dstCall.Language = "go"
+		dstCall.StartRow = 25
+		dstCall.EndRow = 27
+
+		srcStmt := mkNode("assignment_statement", "", mkNode("identifier", "v"), srcCall)
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcBlock
+		srcCall.Parent = srcStmt
+
+		dstStmt := mkNode("assignment_statement", "", mkNode("identifier", "res"), dstCall)
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstBlock
+		dstCall.Parent = dstStmt
+
+		ms := engine.NewMapping()
+		ms.Add(srcFn, dstFn)
+		ms.Add(srcCall, dstCall)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcCall, DestNode: dstCall})
+
+		result := normalizeMovesByStructure(es, ms)
+		if result.Size() != 1 || result.Actions()[0].Type != actions.Move {
+			t.Fatalf("expected 1 Move action for substantial inlined call, got %d actions", result.Size())
+		}
+	})
+
 	t.Run("non-move actions pass through unchanged", func(t *testing.T) {
 		node := mkNode("identifier", "x")
 		node.Language = "go"

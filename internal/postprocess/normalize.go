@@ -384,6 +384,14 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		return 20
 	}
 
+	// Require higher weight (T=20) for expressions moving across different statements
+	// (like inlining a variable), so small helpers or field accesses don't show as moves.
+	srcStmt := engine.FindEnclosingStatement(src, r)
+	dstStmt := engine.FindEnclosingStatement(dst, r)
+	if (src != srcStmt || dst != dstStmt) && ms.Get(srcStmt) != dstStmt {
+		return 20
+	}
+
 	// Intra-scope statements: mild distance scaling. Floor of 4 so small
 	// expressions like bare condition calls (S=4) can still clear the threshold.
 	if sameScopeDeclaration(src, dst, ms, r) {

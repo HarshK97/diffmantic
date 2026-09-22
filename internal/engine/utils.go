@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -479,4 +480,35 @@ func IsScopePreserved(ms *Mapping, n1, n2 *treesitter.ASTNode, r1, r2 *rules.Rul
 		return false
 	}
 	return ms.Get(s1) == s2
+}
+
+// FindEnclosingStatement walks up from n to find the statement sitting
+// directly under a block or root container.
+func FindEnclosingStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rules.Get(n.GetLanguage()))
+	for curr := n; curr != nil && curr.Parent != nil; curr = curr.Parent {
+		if isStatementBlock(curr.Parent, r) {
+			isPunct := (r != nil && r.IsPunctuation(curr.Type)) || (r == nil && rules.IsPunctuation(curr.Type))
+			if !isPunct {
+				return curr
+			}
+		}
+	}
+	return n
+}
+
+func isStatementBlock(p *treesitter.ASTNode, r *rules.Rules) bool {
+	if p == nil {
+		return false
+	}
+	if p.Parent == nil {
+		return true
+	}
+	if r != nil {
+		return r.IsBlock(p.Type)
+	}
+	return rules.IsBlock(p.Type)
 }
