@@ -157,8 +157,17 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			infoB, errB := os.Stat(argB)
 
 			if (errA == nil && infoA.IsDir()) || (errB == nil && infoB.IsDir()) {
-				fmt.Fprintln(os.Stderr, "Error: Directory diffing is not supported yet")
-				os.Exit(1)
+				// Handle directory diffing
+				if errA != nil || !infoA.IsDir() {
+					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
+					os.Exit(1)
+				}
+				if errB != nil || !infoB.IsDir() {
+					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
+					os.Exit(1)
+				}
+				runDirectoryDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+				return
 			}
 
 			// Case 1: Both exist on disk as files or /dev/null
