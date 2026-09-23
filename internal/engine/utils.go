@@ -500,6 +500,7 @@ func FindEnclosingStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.A
 	return n
 }
 
+// Treat case clauses as statement blocks because they hold statements directly without curly braces.
 func isStatementBlock(p *treesitter.ASTNode, r *rules.Rules) bool {
 	if p == nil {
 		return false
@@ -508,9 +509,9 @@ func isStatementBlock(p *treesitter.ASTNode, r *rules.Rules) bool {
 		return true
 	}
 	if r != nil {
-		return r.IsBlock(p.Type)
+		return r.IsBlock(p.Type) || r.IsCaseClause(p.Type)
 	}
-	return rules.IsBlock(p.Type)
+	return rules.IsBlock(p.Type) || rules.IsCaseClause(p.Type)
 }
 
 // getOperatorNode finds the operator or punctuation child in n. If grammar

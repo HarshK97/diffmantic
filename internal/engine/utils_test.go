@@ -480,3 +480,26 @@ func TestGetKeyLabel(t *testing.T) {
 		}
 	})
 }
+
+func TestFindEnclosingStatement_CaseClause(t *testing.T) {
+	stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "matchDeclarations"))
+	defaultCase := testutil.Node("default_case", "",
+		testutil.Leaf("default", "default"),
+		testutil.Leaf(":", ":"),
+		stmt,
+	)
+	switchStmt := testutil.Node("expression_switch_statement", "", defaultCase)
+	block := testutil.Node("block", "", switchStmt)
+	block.Language = "go"
+
+	got := FindEnclosingStatement(stmt, nil)
+	if got != stmt {
+		t.Errorf("FindEnclosingStatement(stmt inside default_case) = %v (%s), want %v (%s)", got, got.Type, stmt, stmt.Type)
+	}
+
+	innerID := stmt.Children[0]
+	gotInner := FindEnclosingStatement(innerID, nil)
+	if gotInner != stmt {
+		t.Errorf("FindEnclosingStatement(inner identifier) = %v (%s), want enclosing stmt %v (%s)", gotInner, gotInner.Type, stmt, stmt.Type)
+	}
+}

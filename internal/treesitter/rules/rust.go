@@ -252,6 +252,9 @@ var rustRules = &Rules{
 		"token_tree",
 		"tuple_expression",
 	},
+	CaseClauses: []string{
+		"match_arm",
+	},
 	Expressions: []string{
 		"array_expression",
 		"assignment_expression",

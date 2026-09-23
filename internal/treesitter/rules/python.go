@@ -239,6 +239,9 @@ var pythonRules = &Rules{
 		"tuple",
 		"set",
 	},
+	CaseClauses: []string{
+		"case_clause",
+	},
 	Expressions: []string{
 		"attribute",
 		"await",

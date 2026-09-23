@@ -246,6 +246,10 @@ var phpRules = &Rules{
 		"array_creation_expression",
 		"formal_parameters",
 	},
+	CaseClauses: []string{
+		"case_statement",
+		"default_statement",
+	},
 	Expressions: []string{
 		"array_creation_expression",
 		"assignment_expression",

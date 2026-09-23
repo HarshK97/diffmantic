@@ -315,6 +315,10 @@ var tsxRules = &Rules{
 		"object_pattern",
 		"object_type",
 	},
+	CaseClauses: []string{
+		"switch_case",
+		"switch_default",
+	},
 	Expressions: []string{
 		"arrow_function",
 		"as_expression",

@@ -215,6 +215,12 @@ var golangRules = &Rules{
 		"parameter_list",
 		"type_parameter_list",
 	},
+	CaseClauses: []string{
+		"expression_case",
+		"default_case",
+		"type_case",
+		"communication_case",
+	},
 	Expressions: []string{
 		"binary_expression",
 		"call_expression",

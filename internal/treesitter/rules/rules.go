@@ -45,6 +45,7 @@ type Rules struct {
 	TerminalCalls         []string // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
 	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
 	Expressions           []string // Expression container node types.
+	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -69,6 +70,7 @@ type Rules struct {
 	terminalCallsSet         map[string]struct{}
 	delimitedContainersSet   map[string]struct{}
 	expressionsSet           map[string]struct{}
+	caseClausesSet           map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -108,6 +110,7 @@ func (r *Rules) CompileSets() {
 	r.terminalCallsSet = sliceToSet(r.TerminalCalls)
 	r.delimitedContainersSet = sliceToSet(r.DelimitedContainers)
 	r.expressionsSet = sliceToSet(r.Expressions)
+	r.caseClausesSet = sliceToSet(r.CaseClauses)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -437,6 +440,18 @@ func (r *Rules) IsBlock(nodeType string) bool {
 	return slices.Contains(r.Blocks, nodeType)
 }
 
+// IsCaseClause reports whether nodeType is a branch or pattern arm in a switch/match/select statement.
+func (r *Rules) IsCaseClause(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.caseClausesSet) > 0 {
+		_, ok := r.caseClausesSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.CaseClauses, nodeType)
+}
+
 // IsWrapper reports whether nodeType is a syntactic wrapper (e.g. parentheses, generics, subscripts).
 func (r *Rules) IsWrapper(nodeType string) bool {
 	if r == nil || nodeType == "" {
@@ -553,6 +568,16 @@ func IsScaffolding(nodeType string) bool {
 func IsBlock(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsBlock(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsCaseClause reports whether nodeType is configured as a case clause in any language rule set.
+func IsCaseClause(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsCaseClause(nodeType) {
 			return true
 		}
 	}

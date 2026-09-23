@@ -655,3 +655,57 @@ func TestIsIdentifier(t *testing.T) {
 		t.Error("nilRules.IsIdentifier should return false")
 	}
 }
+
+func TestRulesIsCaseClause(t *testing.T) {
+	tests := []struct {
+		lang     string
+		nodeType string
+		want     bool
+	}{
+		{"go", "expression_case", true},
+		{"go", "default_case", true},
+		{"go", "type_case", true},
+		{"go", "communication_case", true},
+		{"go", "block", false},
+	}
+	for _, tt := range tests {
+		r := Get(tt.lang)
+		if got := r.IsCaseClause(tt.nodeType); got != tt.want {
+			t.Errorf("Get(%q).IsCaseClause(%q) = %v, want %v", tt.lang, tt.nodeType, got, tt.want)
+		}
+	}
+
+	globalTests := []struct {
+		nodeType string
+		want     bool
+	}{
+		{"switch_case", true},
+		{"case_clause", true},
+		{"match_arm", true},
+		{"some_random_type", false},
+	}
+	for _, tt := range globalTests {
+		if got := IsCaseClause(tt.nodeType); got != tt.want {
+			t.Errorf("IsCaseClause(%q) = %v, want %v", tt.nodeType, got, tt.want)
+		}
+	}
+
+	// Uncompiled fallback uses slices.Contains.
+	uncompiled := &Rules{CaseClauses: []string{"custom_case"}}
+	if !uncompiled.IsCaseClause("custom_case") {
+		t.Errorf("uncompiled.IsCaseClause(custom_case) = false, want true")
+	}
+	if uncompiled.IsCaseClause("other") {
+		t.Errorf("uncompiled.IsCaseClause(other) = true, want false")
+	}
+
+	var nilR *Rules
+	if nilR.IsCaseClause("expression_case") {
+		t.Errorf("nilR.IsCaseClause = true, want false")
+	}
+
+	r := Get("go")
+	if r.IsCaseClause("") {
+		t.Errorf("r.IsCaseClause(\"\") = true, want false")
+	}
+}

@@ -248,6 +248,10 @@ var javascriptRules = &Rules{
 		"formal_parameters",
 		"object",
 	},
+	CaseClauses: []string{
+		"switch_case",
+		"switch_default",
+	},
 	Expressions: []string{
 		"arrow_function",
 		"assignment_expression",

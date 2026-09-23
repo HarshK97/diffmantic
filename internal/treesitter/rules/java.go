@@ -263,6 +263,10 @@ var javaRules = &Rules{
 		"array_initializer",
 		"formal_parameters",
 	},
+	CaseClauses: []string{
+		"switch_block_statement_group",
+		"switch_rule",
+	},
 	Expressions: []string{
 		"array_access",
 		"array_creation_expression",
