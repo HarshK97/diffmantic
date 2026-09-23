@@ -709,3 +709,65 @@ func TestRender_LineWrapping_DisabledWhenWrapFalse(t *testing.T) {
 		t.Errorf("expected unwrapped line to contain full string, got:\n%s", got)
 	}
 }
+
+func TestRender_SpanAwareIdenticalLineEdits(t *testing.T) {
+	src := []byte("if true {\n\treturn\n}\n")
+	dst := []byte("if true {\n\treturn\n} else if false {\n\treturn\n}\n")
+
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: 1},
+			{LeftLine: -1, RightLine: 2},
+			{LeftLine: -1, RightLine: 3},
+			{LeftLine: 2, RightLine: 4}, // same "}" text on both sides — LineDiff aligned them
+		},
+		RightHighlights: []serialize.HighlightSpan{
+			{
+				Line:     2,
+				StartCol: 0,
+				EndCol:   17,
+				Action:   "insert",
+			},
+			{
+				Line:     3,
+				StartCol: 0,
+				EndCol:   7,
+				Action:   "insert",
+			},
+			{
+				Line:     4,
+				StartCol: 0,
+				EndCol:   1,
+				Action:   "insert",
+			},
+		},
+	}
+
+	opts := RenderOptions{
+		Color:        false,
+		ContextLines: 1,
+		LineNumbers:  true,
+	}
+
+	got := Render("old.go", "new.go", src, dst, env, opts)
+
+	// The "}" is identical on both sides but carries a highlight — so it needs to
+	// render as paired -/+ lines, not collapse into quiet context.
+	if !strings.Contains(got, "-}") {
+		t.Errorf("expected old delimiter to be emitted as deletion line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "+}") {
+		t.Errorf("expected new delimiter to be emitted as insertion line, got:\n%s", got)
+	}
+
+	optsColor := RenderOptions{
+		Color:        true,
+		ContextLines: 1,
+		LineNumbers:  false,
+	}
+	gotColor := Render("old.go", "new.go", src, dst, env, optsColor)
+	if !strings.Contains(gotColor, color.InsertFg) {
+		t.Errorf("expected insert color styling in colored output, got:\n%s", gotColor)
+	}
+}

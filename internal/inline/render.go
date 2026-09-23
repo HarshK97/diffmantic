@@ -172,6 +172,9 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		if pair.LeftLine == -1 || pair.RightLine == -1 {
 			isPairChanged[i] = true
 			hasAnyChange = true
+		} else if len(leftSpansByLine[pair.LeftLine]) > 0 || len(rightSpansByLine[pair.RightLine]) > 0 {
+			isPairChanged[i] = true
+			hasAnyChange = true
 		} else {
 			sText := ""
 			if pair.LeftLine < len(srcLines) {
