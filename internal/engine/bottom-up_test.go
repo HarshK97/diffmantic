@@ -562,3 +562,65 @@ func TestContestContainers_VerticalReclaim(t *testing.T) {
 		t.Errorf("m.Get(opOld) = %v, want %v", got, opNew)
 	}
 }
+
+func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
+	childA1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "a"))
+	childB1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "b"))
+	cond1 := testutil.Node("binary_expression", "", childA1, childB1)
+	body1 := testutil.Node("block", "")
+	ifStmt1 := testutil.Node("if_statement", "", cond1, body1)
+	block1 := testutil.Node("block", "", ifStmt1)
+	root1 := testutil.Node("source_file", "", block1)
+	root1.Language = "go"
+
+	childA2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "a"))
+	childC2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "c"))
+	cond2 := testutil.Node("binary_expression", "", childA2, childC2)
+	body2 := testutil.Node("block", "")
+	ifStmt2 := testutil.Node("if_statement", "", cond2, body2)
+
+	childB2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "b"))
+	childD2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "d"))
+	cond3 := testutil.Node("binary_expression", "", childB2, childD2)
+	body3 := testutil.Node("block", "")
+	ifStmt3 := testutil.Node("if_statement", "", cond3, body3)
+
+	block2 := testutil.Node("block", "", ifStmt2, ifStmt3)
+	root2 := testutil.Node("source_file", "", block2)
+	root2.Language = "go"
+
+	otherBodyA := testutil.Node("block", "")
+	otherStmtA := testutil.Node("if_statement", "", otherBodyA)
+	otherBodyB := testutil.Node("block", "")
+	otherStmtB := testutil.Node("if_statement", "", otherBodyB)
+
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(root1, root2)
+	m.Add(block1, block2)
+	m.Add(otherStmtA, ifStmt2)
+	m.Add(otherBodyA, body2)
+	m.Add(otherStmtB, ifStmt3)
+	m.Add(otherBodyB, body3)
+	m.Add(childA1, childA2)
+	m.Add(childB1, childB2)
+
+	if !hasForeignBodyOwner(cond1, cond2, m, nil) {
+		t.Errorf("expected hasForeignBodyOwner to reject cond1 vs cond2 across distinct statements")
+	}
+
+	// Verify reverse direction: t1's enclosing body is mapped to a construct that does not contain c.
+	mReverse := NewMapping()
+	mReverse.Add(body1, body2)
+	if !hasForeignBodyOwner(cond1, cond3, mReverse, nil) {
+		t.Errorf("expected hasForeignBodyOwner to reject cond1 vs cond3 when body1 is mapped outside cond3")
+	}
+
+	RollupMatchedContainers(root1, root2, m)
+
+	if m.Get(cond1) != nil {
+		t.Errorf("expected cond1 NOT to roll up across distinct statement boundaries, but got %v", m.Get(cond1))
+	}
+}
