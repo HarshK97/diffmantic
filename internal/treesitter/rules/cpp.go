@@ -299,6 +299,9 @@ var cppRules = &Rules{
 		"template_argument_list",
 		"template_parameter_list",
 	},
+	CaseClauses: []string{
+		"case_statement",
+	},
 	Expressions: []string{
 		"alignof_expression",
 		"assignment_expression",

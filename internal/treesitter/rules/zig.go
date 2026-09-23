@@ -196,6 +196,9 @@ var zigRules = &Rules{
 		"initializer_list",
 		"parameters",
 	},
+	CaseClauses: []string{
+		"switch_case",
+	},
 	Expressions: []string{
 		"asm_expression",
 		"assignment_expression",

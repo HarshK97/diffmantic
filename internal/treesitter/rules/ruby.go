@@ -162,6 +162,8 @@ var rubyRules = &Rules{
 		"body_statement",
 		"do_block",
 		"block",
+		"then",
+		"else",
 	},
 	Wrappers: []string{
 		"parenthesized_statements",
@@ -222,6 +224,11 @@ var rubyRules = &Rules{
 		"array",
 		"hash",
 		"method_parameters",
+	},
+	CaseClauses: []string{
+		"when",
+		"in_clause",
+		"else",
 	},
 	Expressions: []string{
 		"binary",

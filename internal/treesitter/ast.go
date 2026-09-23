@@ -144,6 +144,14 @@ func (n *ASTNode) IsBlock() bool {
 	return rules.Get(n.GetLanguage()).IsBlock(n.Type)
 }
 
+// IsCaseClause reports whether the node is a switch/match/select case clause.
+func (n *ASTNode) IsCaseClause() bool {
+	if n == nil {
+		return false
+	}
+	return rules.Get(n.GetLanguage()).IsCaseClause(n.Type)
+}
+
 // Descendants returns all child nodes under n in pre-order.
 func (n *ASTNode) Descendants() []*ASTNode {
 	size := n.Size()

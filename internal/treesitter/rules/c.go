@@ -218,6 +218,9 @@ var cRules = &Rules{
 		"initializer_list",
 		"parameter_list",
 	},
+	CaseClauses: []string{
+		"case_statement",
+	},
 	Expressions: []string{
 		"alignof_expression",
 		"assignment_expression",
