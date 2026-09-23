@@ -6,6 +6,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/color"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
+	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
@@ -321,7 +322,7 @@ func TestExtractDeclarationSignature(t *testing.T) {
 		"\treturn nil",
 		"}",
 	}
-	sig := extractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, lines, 0, 2)
+	sig := renderutil.ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, lines, 0, 2)
 	if sig != "func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error" {
 		t.Errorf("unexpected signature: %q", sig)
 	}
@@ -334,14 +335,14 @@ func TestExtractDeclarationSignature(t *testing.T) {
 		"def handle_request(req):",
 		"\tpass",
 	}
-	sigDec := extractDeclarationSignature(&serialize.NodeRef{Type: "function_definition"}, linesWithDecorator, 0, 4)
+	sigDec := renderutil.ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_definition"}, linesWithDecorator, 0, 4)
 	if sigDec != "def handle_request(req):" {
 		t.Errorf("expected decorator bypass, got %q", sigDec)
 	}
 
 	longLine := "func VeryLongFunctionNameToTestTruncationBehaviorAcrossBoundaries(withManyArgumentsA string, withManyArgumentsB int) error {"
 	longLines := []string{longLine}
-	sigLong := extractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, longLines, 0, 0)
+	sigLong := renderutil.ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, longLines, 0, 0)
 	if len(sigLong) > 80 {
 		t.Errorf("expected signature length <= 80, got %d (%q)", len(sigLong), sigLong)
 	}
@@ -720,7 +721,7 @@ func TestRender_SpanAwareIdenticalLineEdits(t *testing.T) {
 			{LeftLine: 1, RightLine: 1},
 			{LeftLine: -1, RightLine: 2},
 			{LeftLine: -1, RightLine: 3},
-			{LeftLine: 2, RightLine: 4}, // same "}" text on both sides — LineDiff aligned them
+			{LeftLine: 2, RightLine: 4}, // same "}" text on both sides; LineDiff aligned them
 		},
 		RightHighlights: []serialize.HighlightSpan{
 			{
@@ -752,7 +753,7 @@ func TestRender_SpanAwareIdenticalLineEdits(t *testing.T) {
 
 	got := Render("old.go", "new.go", src, dst, env, opts)
 
-	// The "}" is identical on both sides but carries a highlight — so it needs to
+	// The "}" is identical on both sides but carries a highlight, so it needs to
 	// render as paired -/+ lines, not collapse into quiet context.
 	if !strings.Contains(got, "-}") {
 		t.Errorf("expected old delimiter to be emitted as deletion line, got:\n%s", got)

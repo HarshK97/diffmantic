@@ -7,6 +7,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/color"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
+	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/mattn/go-runewidth"
 )
@@ -15,7 +16,7 @@ func TestSliceLineToColumn_ASCII_And_Padding(t *testing.T) {
 	scratch := &RenderScratch{}
 	var buf bytes.Buffer
 
-	err := scratch.SliceLineToColumn("hello world", "", nil, 20, "left", false, false, &buf)
+	err := scratch.SliceLineToColumn("hello world", "", nil, 20, renderutil.LineContextAligned, true, false, &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestSliceLineToChunks_Wrapping(t *testing.T) {
 
 	// 1. Function signature wrapping without mid-word splits
 	line := "func ComputeHash(seed uint32) int64"
-	chunks := scratch.SliceLineToChunks(line, "", nil, 25, "left", false, false)
+	chunks := scratch.SliceLineToChunks(line, "", nil, 25, renderutil.LineContextAligned, true, false)
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
 	}
@@ -59,7 +60,7 @@ func TestSliceLineToChunks_Wrapping(t *testing.T) {
 
 	// 2. Long comment wrapping cleanly at word boundaries
 	comment := "// Dispatch sends a payload over HTTP with full context cancellation and retry logic."
-	cChunks := scratch.SliceLineToChunks(comment, "", nil, 40, "left", false, false)
+	cChunks := scratch.SliceLineToChunks(comment, "", nil, 40, renderutil.LineContextAligned, true, false)
 	for i, c := range cChunks {
 		s := string(c)
 		if runewidth.StringWidth(s) != 40 {
@@ -77,7 +78,7 @@ func TestSliceLineToChunks_Wrapping(t *testing.T) {
 	spans := []serialize.HighlightSpan{
 		{StartCol: 0, EndCol: len(insLine), Action: "insert"},
 	}
-	colorChunks := scratch.SliceLineToChunks(insLine, "", spans, 50, "right", true, true)
+	colorChunks := scratch.SliceLineToChunks(insLine, "", spans, 50, renderutil.LineContextStandaloneInsert, true, true)
 	if len(colorChunks) < 2 {
 		t.Fatalf("expected at least 2 color chunks, got %d", len(colorChunks))
 	}
@@ -92,7 +93,7 @@ func TestSliceLineToChunks_WideRune(t *testing.T) {
 
 	// "世界你好" (4 CJK runes, 8 display cols) with targetWidth 6
 	// chunk0 gets 世(2)+界(4)+pad(2)=6 cols, chunk1 gets 你(2)+好(4)+pad(2)=6 cols
-	chunks := scratch.SliceLineToChunks("世界你好", "", nil, 6, "left", false, false)
+	chunks := scratch.SliceLineToChunks("世界你好", "", nil, 6, renderutil.LineContextAligned, true, false)
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
 	}
@@ -110,7 +111,7 @@ func TestSliceLineToColumn_TabExpansion(t *testing.T) {
 	var buf bytes.Buffer
 
 	// "\ta" -> tab expands to 4 spaces, 'a' at col 4 -> "    a" padded to 10
-	err := scratch.SliceLineToColumn("\ta", "", nil, 10, "left", false, false, &buf)
+	err := scratch.SliceLineToColumn("\ta", "", nil, 10, renderutil.LineContextAligned, true, false, &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestSliceLineToColumn_CustomTabWidth(t *testing.T) {
 	// TabWidth = 2: "\ta" -> 2 spaces + 'a' -> "  a       " (padded to 10)
 	scratch2 := &RenderScratch{TabWidth: 2}
 	var buf2 bytes.Buffer
-	if err := scratch2.SliceLineToColumn("\ta", "", nil, 10, "left", false, false, &buf2); err != nil {
+	if err := scratch2.SliceLineToColumn("\ta", "", nil, 10, renderutil.LineContextAligned, true, false, &buf2); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got, want := buf2.String(), "  a       "; got != want {
@@ -136,7 +137,7 @@ func TestSliceLineToColumn_CustomTabWidth(t *testing.T) {
 	// TabWidth = 8: "\ta" -> 8 spaces + 'a' -> "        a " (padded to 10)
 	scratch8 := &RenderScratch{TabWidth: 8}
 	var buf8 bytes.Buffer
-	if err := scratch8.SliceLineToColumn("\ta", "", nil, 10, "left", false, false, &buf8); err != nil {
+	if err := scratch8.SliceLineToColumn("\ta", "", nil, 10, renderutil.LineContextAligned, true, false, &buf8); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got, want := buf8.String(), "        a "; got != want {
@@ -148,7 +149,7 @@ func TestSliceLineToColumn_MoveBadge(t *testing.T) {
 	scratch := &RenderScratch{}
 	var buf bytes.Buffer
 
-	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, "left", false, false, &buf)
+	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, renderutil.LineContextAligned, true, false, &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -705,5 +706,63 @@ func TestRender_AdaptiveHybridLayout_SubBlockGrouping(t *testing.T) {
 
 	if idxDel1 >= idxDel2 || idxDel2 >= idxDel3 || idxDel3 >= idxIns {
 		t.Errorf("expected all 3 deleted lines to precede inserted line, but got relative order:\n%s", out)
+	}
+}
+
+func TestSliceLineToChunks_AlignedPairRetainsGranularHighlights(t *testing.T) {
+	scratch := &RenderScratch{}
+	line := "changeIntervals := buildChangeIntervals(isPairChanged)"
+	// Spans only on "buildChangeIntervals" (cols 19..39)
+	spans := []serialize.HighlightSpan{
+		{StartCol: 19, EndCol: 39, Action: "delete"},
+	}
+
+	chunks := scratch.SliceLineToChunks(line, "", spans, 100, renderutil.LineContextAligned, false, true)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+
+	got := string(chunks[0])
+	// "changeIntervals := " must NOT be colored with DeleteFg
+	delPrefix := color.DeleteFg + "changeIntervals"
+	if strings.Contains(got, delPrefix) {
+		t.Errorf("unspanned prefix should not take DeleteFg, got:\n%q", got)
+	}
+	// "buildChangeIntervals" must have DeleteFg
+	delToken := color.DeleteFg + "buildChangeIntervals"
+	if !strings.Contains(got, delToken) {
+		t.Errorf("spanned token should take DeleteFg, got:\n%q", got)
+	}
+}
+
+func TestSliceLineToChunks_StandaloneInsertFallback(t *testing.T) {
+	scratch := &RenderScratch{}
+	line := "    newStandaloneMethod()"
+
+	// 0 spans on standalone insert should color unspanned tokens as InsertFg
+	chunks := scratch.SliceLineToChunks(line, "", nil, 100, renderutil.LineContextStandaloneInsert, false, true)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+
+	got := string(chunks[0])
+	insToken := color.InsertFg + "newStandaloneMethod()"
+	if !strings.Contains(got, insToken) {
+		t.Errorf("standalone insert line should fallback to InsertFg on unspanned tokens, got:\n%q", got)
+	}
+}
+
+func TestSliceLineToChunks_NoTrailingPaddingWhenDisabled(t *testing.T) {
+	scratch := &RenderScratch{}
+	line := "short line"
+
+	chunks := scratch.SliceLineToChunks(line, "", nil, 80, renderutil.LineContextAligned, false, false)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+
+	got := string(chunks[0])
+	if got != "short line" {
+		t.Errorf("expected no trailing padding, got %q (len %d)", got, len(got))
 	}
 }

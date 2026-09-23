@@ -89,12 +89,13 @@ func TestActionKind_String(t *testing.T) {
 		kind ActionKind
 		want string
 	}{
+		{ActionNone, "none"},
 		{ActionDelete, "delete"},
 		{ActionInsert, "insert"},
 		{ActionUpdate, "update"},
 		{ActionMove, "move"},
 		{ActionMoveUpdate, "move_update"},
-		{ActionKind(-1), "unknown"},
+		{ActionKind(-2), "unknown"},
 		{ActionKind(99), "unknown"},
 		{ActionKind(1000), "unknown"},
 	}

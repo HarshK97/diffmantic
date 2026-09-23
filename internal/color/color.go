@@ -5,7 +5,8 @@ package color
 type ActionKind int
 
 const (
-	ActionDelete ActionKind = iota
+	ActionNone ActionKind = iota - 1
+	ActionDelete
 	ActionInsert
 	ActionUpdate
 	ActionMove
@@ -15,6 +16,8 @@ const (
 // String returns the canonical name for an action kind.
 func (k ActionKind) String() string {
 	switch k {
+	case ActionNone:
+		return "none"
 	case ActionDelete:
 		return "delete"
 	case ActionInsert:
