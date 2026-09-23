@@ -197,7 +197,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				continue
 			}
 			_ = engine.FprintMappings(writer, dr.MatchResult)
-			_ = actions.FprintActions(writer, dr.EditScrt)
+			_ = actions.FprintActions(writer, dr.EditScript)
 		}
 	}
 
