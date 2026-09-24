@@ -22,7 +22,6 @@ func TestSlicer_SBS_GridAlignment_And_PaddingUnwind(t *testing.T) {
 
 	lineText := "func ComputeHash(seed uint32) int64"
 	badgeText := " ➔ L42"
-	badgeWidth := runewidth.StringWidth(badgeText)
 
 	spans := []serialize.HighlightSpan{
 		{StartCol: 5, EndCol: 16, Action: "update"}, // "ComputeHash"
@@ -34,7 +33,6 @@ func TestSlicer_SBS_GridAlignment_And_PaddingUnwind(t *testing.T) {
 		TabWidth:         4,
 		ColorMode:        true,
 		PadToTargetWidth: true,
-		BadgeAnchor:      BadgeAnchorRow0,
 		Context:          LineContextAligned,
 	}
 
@@ -43,14 +41,13 @@ func TestSlicer_SBS_GridAlignment_And_PaddingUnwind(t *testing.T) {
 		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
 	}
 
-	// Chunk 0 must have the badge appended and be padded to exactly targetWidth display columns
 	chunk0Str := string(chunks[0])
 	chunk0Width := runewidth.StringWidth(stripANSI(chunk0Str))
 	if chunk0Width != targetWidth {
 		t.Errorf("chunk 0 display width = %d, want %d", chunk0Width, targetWidth)
 	}
-	if !strings.Contains(chunk0Str, "➔ L42") {
-		t.Errorf("expected chunk 0 to contain move badge, got: %q", chunk0Str)
+	if strings.Contains(chunk0Str, "➔ L42") {
+		t.Errorf("expected chunk 0 to NOT contain move badge, got: %q", chunk0Str)
 	}
 
 	// SGR Pre-Padding Unwind: color.Reset must precede padding spaces to prevent trailing color bleed.
@@ -63,22 +60,99 @@ func TestSlicer_SBS_GridAlignment_And_PaddingUnwind(t *testing.T) {
 		t.Errorf("expected color.Reset before trailing padding spaces, got: %q", chunk0Str)
 	}
 
-	// Chunk 1 must be padded to full targetWidth and not contain the badge
+	// Chunk 1 must be padded to full targetWidth and contain the badge
 	chunk1Str := string(chunks[1])
 	chunk1Width := runewidth.StringWidth(stripANSI(chunk1Str))
 	if chunk1Width != targetWidth {
 		t.Errorf("chunk 1 display width = %d, want %d", chunk1Width, targetWidth)
 	}
-	if strings.Contains(chunk1Str, "➔ L42") {
-		t.Errorf("chunk 1 should not contain move badge, got: %q", chunk1Str)
+	if !strings.Contains(chunk1Str, "➔ L42") {
+		t.Errorf("expected chunk 1 to contain move badge, got: %q", chunk1Str)
+	}
+}
+
+func TestSlicer_SBS_LastRowBadge_GridAlignment_And_Padding(t *testing.T) {
+	slicer := &Slicer{}
+
+	lineText := "if prevLayout == HunkLayoutFullWidthInline || seg.layout == HunkLayoutFullWidthInline {"
+	badgeText := " ➔ L205"
+
+	targetWidth := 60
+	cfg := SliceConfig{
+		TargetWidth:      targetWidth,
+		TabWidth:         4,
+		ColorMode:        true,
+		PadToTargetWidth: true,
+		Context:          LineContextAligned,
 	}
 
-	// Chunk 0 must deduct badgeWidth from maxTextWidth.
-	maxChunk0TextWidth := targetWidth - badgeWidth
-	plainChunk0 := stripANSI(chunk0Str)
-	beforeBadge := plainChunk0[:strings.Index(plainChunk0, "➔ L42")]
-	if runewidth.StringWidth(beforeBadge) > maxChunk0TextWidth {
-		t.Errorf("text before badge on chunk 0 width = %d, exceeded maxTextWidth %d", runewidth.StringWidth(beforeBadge), maxChunk0TextWidth)
+	chunks := slicer.SliceLineToChunks(lineText, badgeText, nil, cfg)
+	if len(chunks) < 2 {
+		t.Fatalf("expected at least 2 chunks for long wrapped line, got %d", len(chunks))
+	}
+
+	chunk0Str := string(chunks[0])
+	if strings.Contains(chunk0Str, "➔ L205") {
+		t.Errorf("expected chunk 0 to NOT contain move badge, got: %q", chunk0Str)
+	}
+	if runewidth.StringWidth(stripANSI(chunk0Str)) != targetWidth {
+		t.Errorf("chunk 0 display width = %d, want %d", runewidth.StringWidth(stripANSI(chunk0Str)), targetWidth)
+	}
+
+	lastIdx := len(chunks) - 1
+	lastChunkStr := string(chunks[lastIdx])
+	if !strings.Contains(lastChunkStr, "➔ L205") {
+		t.Errorf("expected last chunk to contain move badge, got: %q", lastChunkStr)
+	}
+	if runewidth.StringWidth(stripANSI(lastChunkStr)) != targetWidth {
+		t.Errorf("last chunk display width = %d, want %d", runewidth.StringWidth(stripANSI(lastChunkStr)), targetWidth)
+	}
+
+	plainLastChunk := stripANSI(lastChunkStr)
+	braceIdx := strings.Index(plainLastChunk, "{")
+	badgeIdx := strings.Index(plainLastChunk, "➔ L205")
+	if braceIdx == -1 || badgeIdx == -1 || badgeIdx < braceIdx {
+		t.Errorf("expected move badge after '{', got: %q", plainLastChunk)
+	}
+}
+
+func TestSlicer_BadgeOverflow_WrapsToDedicatedRow(t *testing.T) {
+	slicer := &Slicer{}
+
+	// lineText takes 20 columns, targetWidth is 25.
+	// badgeText is 7 columns (" ➔ L205").
+	// 20 + 7 = 27 > 25, so the badge cannot fit on Chunk 0 and wraps to Chunk 1.
+	lineText := "let totalScore = 100"
+	badgeText := " ➔ L205"
+
+	targetWidth := 25
+	cfg := SliceConfig{
+		TargetWidth:      targetWidth,
+		TabWidth:         4,
+		ColorMode:        true,
+		PadToTargetWidth: true,
+		Context:          LineContextAligned,
+	}
+
+	chunks := slicer.SliceLineToChunks(lineText, badgeText, nil, cfg)
+	if len(chunks) != 2 {
+		t.Fatalf("expected exactly 2 chunks (text on chunk 0, badge on chunk 1), got %d", len(chunks))
+	}
+
+	chunk0Str := string(chunks[0])
+	if strings.Contains(chunk0Str, "➔ L205") {
+		t.Errorf("expected chunk 0 to NOT contain move badge, got: %q", chunk0Str)
+	}
+	if runewidth.StringWidth(stripANSI(chunk0Str)) != targetWidth {
+		t.Errorf("chunk 0 display width = %d, want %d", runewidth.StringWidth(stripANSI(chunk0Str)), targetWidth)
+	}
+
+	chunk1Str := string(chunks[1])
+	if !strings.Contains(chunk1Str, "➔ L205") {
+		t.Errorf("expected chunk 1 to contain move badge, got: %q", chunk1Str)
+	}
+	if runewidth.StringWidth(stripANSI(chunk1Str)) != targetWidth {
+		t.Errorf("chunk 1 display width = %d, want %d", runewidth.StringWidth(stripANSI(chunk1Str)), targetWidth)
 	}
 }
 
@@ -93,7 +167,6 @@ func TestSlicer_Inline_LastRowBadge(t *testing.T) {
 		TabWidth:         4,
 		ColorMode:        true,
 		PadToTargetWidth: false,
-		BadgeAnchor:      BadgeAnchorLastRow,
 		Context:          LineContextAligned,
 	}
 
@@ -102,13 +175,11 @@ func TestSlicer_Inline_LastRowBadge(t *testing.T) {
 		t.Fatalf("expected at least 2 chunks for long wrapped line, got %d", len(chunks))
 	}
 
-	// In inline mode, Chunk 0 must NOT have the badge
 	chunk0Str := string(chunks[0])
 	if strings.Contains(chunk0Str, "➔ L99") {
 		t.Errorf("inline mode: chunk 0 should NOT contain badge: %q", chunk0Str)
 	}
 
-	// The badge must be anchored exclusively on the final chunk
 	lastChunkStr := string(chunks[len(chunks)-1])
 	if !strings.Contains(lastChunkStr, "➔ L99") {
 		t.Errorf("inline mode: last chunk should contain badge: %q", lastChunkStr)
@@ -133,7 +204,6 @@ func TestSlicer_MultibyteUTF8Boundary(t *testing.T) {
 		TabWidth:         4,
 		ColorMode:        true,
 		PadToTargetWidth: false,
-		BadgeAnchor:      BadgeAnchorLastRow,
 		Context:          LineContextAligned,
 	}
 
@@ -178,7 +248,6 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 		TabWidth:         4,
 		ColorMode:        true,
 		PadToTargetWidth: false,
-		BadgeAnchor:      BadgeAnchorLastRow,
 		Context:          LineContextAligned,
 	}
 
@@ -207,7 +276,6 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 		TabWidth:         4,
 		ColorMode:        true,
 		PadToTargetWidth: false,
-		BadgeAnchor:      BadgeAnchorLastRow,
 		Context:          LineContextStandaloneDelete,
 	}
 	delChunks := slicer.SliceLineToChunks(lineText, "", nil, delCfg)
@@ -225,7 +293,6 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 		TabWidth:         4,
 		ColorMode:        true,
 		PadToTargetWidth: false,
-		BadgeAnchor:      BadgeAnchorLastRow,
 		Context:          LineContextStandaloneInsert,
 	}
 	insChunks := slicer.SliceLineToChunks(lineText, "", nil, insCfg)
