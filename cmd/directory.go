@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,39 +26,35 @@ var excludedDirNames = map[string]bool{
 	".git": true,
 }
 
-
-type FileComparison struct {
-	RelPath   string 
-	PathA     string 
-	PathB     string 
-	Status    string 
-	ExistsInA bool
-	ExistsInB bool
-}
-
-// runDirectoryDiff compares two directories recursively, rendering a diff for every changed file through a single shared pager session 
+// runDirectoryDiff compares two directories recursively, rendering a diff for every changed file through a single shared pager session.
 func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
-	comparisons, err := compareDirectories(dirA, dirB)
+	// Build maps of relative path -> full path for both directories
+	filesA, err := listDirectoryFiles(dirA)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: comparing directories: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: walking directory A: %v\n", err)
+		os.Exit(1)
+	}
+	filesB, err := listDirectoryFiles(dirB)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: walking directory B: %v\n", err)
 		os.Exit(1)
 	}
 
-	var changedFiles []FileComparison
-	for _, comp := range comparisons {
-		if comp.Status != "unchanged" {
-			changedFiles = append(changedFiles, comp)
-		}
+	// Collect all unique relative paths from both directories
+	allPaths := make(map[string]bool, len(filesA)+len(filesB))
+	for relPath := range filesA {
+		allPaths[relPath] = true
+	}
+	for relPath := range filesB {
+		allPaths[relPath] = true
 	}
 
-	
-	sort.Slice(changedFiles, func(i, j int) bool {
-		return changedFiles[i].RelPath < changedFiles[j].RelPath
-	})
-
-	if len(changedFiles) == 0 {
-		return
+	// Convert to sorted slice for deterministic output
+	relPaths := make([]string, 0, len(allPaths))
+	for relPath := range allPaths {
+		relPaths = append(relPaths, relPath)
 	}
+	sort.Strings(relPaths)
 
 	if format == "" {
 		format = "side-by-side"
@@ -83,40 +80,90 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		defer p.Close()
 	}
 
-	showBanner := len(changedFiles) > 1
 	hadErrors := false
 
-	for _, comp := range changedFiles {
+	// First pass: collect changed files
+	type changedFile struct {
+		relPath  string
+		srcBytes []byte
+		dstBytes []byte
+	}
+	var changedFiles []changedFile
+
+	for _, relPath := range relPaths {
+		pathA, existsInA := filesA[relPath]
+		pathB, existsInB := filesB[relPath]
+
+		var srcBytes, dstBytes []byte
+
+		// Determine file status and read bytes
+		if !existsInA {
+			// File added: only exists in B
+			srcBytes = []byte{}
+			var err error
+			dstBytes, err = os.ReadFile(pathB)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathB, err)
+				hadErrors = true
+				continue
+			}
+		} else if !existsInB {
+			// File deleted: only exists in A
+			var err error
+			srcBytes, err = os.ReadFile(pathA)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, err)
+				hadErrors = true
+				continue
+			}
+			dstBytes = []byte{}
+		} else {
+			// Both exist: check if modified
+			var errA, errB error
+			srcBytes, errA = os.ReadFile(pathA)
+			dstBytes, errB = os.ReadFile(pathB)
+			
+			if errA != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, errA)
+				hadErrors = true
+				continue
+			}
+			if errB != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathB, errB)
+				hadErrors = true
+				continue
+			}
+
+			// Skip unchanged files
+			if bytes.Equal(srcBytes, dstBytes) {
+				continue
+			}
+		}
+
+		changedFiles = append(changedFiles, changedFile{
+			relPath:  relPath,
+			srcBytes: srcBytes,
+			dstBytes: dstBytes,
+		})
+	}
+
+	// No changed files - check if it's due to errors or truly no changes
+	if len(changedFiles) == 0 {
+		if hadErrors {
+			os.Exit(1)  // Had errors and nothing to show
+		}
+		return  // No changes, exit with success
+	}
+
+	// Second pass: render all changed files with correct banner setting
+	showBanner := len(changedFiles) > 1
+
+	for _, cf := range changedFiles {
 		if p != nil && !p.IsActive() {
 			break
 		}
 
-		pathA, pathB := comp.PathA, comp.PathB
-		switch comp.Status {
-		case "added":
-			pathA = os.DevNull
-		case "deleted":
-			pathB = os.DevNull
-		}
-
-		srcBytes, err := readFileOrDevNull(pathA)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, err)
-			hadErrors = true
-			continue 
-			
-	// one unreadable file no longer aborts the whole batch
-		}
-
-
-		dstBytes, err := readFileOrDevNull(pathB)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathB, err)
-			hadErrors = true
-			continue
-		}
-
-		dr, err := pipeline.Run(srcBytes, dstBytes, comp.RelPath, comp.RelPath, pipeline.DiffOptions{
+		dr, err := pipeline.Run(cf.srcBytes, cf.dstBytes, cf.relPath, cf.relPath, pipeline.DiffOptions{
 			ParseErrorLimit:  parseErrorLimit,
 			IgnoreComments:   ignoreComments,
 			DisableSizeLimit: sizeLimitKB <= 0,
@@ -127,7 +174,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		})
 
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", comp.RelPath, err)
+			fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", cf.relPath, err)
 			hadErrors = true
 			continue
 		}
@@ -135,8 +182,8 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		switch format {
 		case "side-by-side":
 			if showBanner {
-				numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
-				if err := sidebyside.RenderFileBanner(comp.RelPath, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
+				numIns, numDel, numUpd := countLineStats(cf.srcBytes, cf.dstBytes, dr.Envelope)
+				if err := sidebyside.RenderFileBanner(cf.relPath, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
 					if pager.IsBrokenPipe(err) {
 						return
 					}
@@ -145,7 +192,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 					continue
 				}
 			}
-			if err := sidebyside.Render(comp.RelPath, comp.RelPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, sbsOpts, writer); err != nil {
+			if err := sidebyside.Render(cf.relPath, cf.relPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, sbsOpts, writer); err != nil {
 				if pager.IsBrokenPipe(err) {
 					return
 				}
@@ -153,7 +200,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				hadErrors = true
 			}
 		case "inline":
-			output := inline.Render(comp.RelPath, comp.RelPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, inlineOpts)
+			output := inline.Render(cf.relPath, cf.relPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, inlineOpts)
 			if output != "" {
 				if _, err := io.WriteString(writer, output); err != nil {
 					if pager.IsBrokenPipe(err) {
@@ -178,18 +225,18 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				jsonData, jsonErr = json.MarshalIndent(dr.Envelope, "", "  ")
 			}
 			if jsonErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: serializing JSON for %s: %v\n", comp.RelPath, jsonErr)
+				fmt.Fprintf(os.Stderr, "Error: serializing JSON for %s: %v\n", cf.relPath, jsonErr)
 				hadErrors = true
 				continue
 			}
 			if _, err := writer.Write(jsonData); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: writing JSON for %s: %v\n", comp.RelPath, err)
+				fmt.Fprintf(os.Stderr, "Error: writing JSON for %s: %v\n", cf.relPath, err)
 				hadErrors = true
 				continue
 			}
 			_, _ = writer.Write([]byte("\n"))
 		case "actions":
-			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", comp.RelPath, comp.RelPath); err != nil {
+			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", cf.relPath, cf.relPath); err != nil {
 				if pager.IsBrokenPipe(err) {
 					return
 				}
@@ -205,69 +252,6 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		os.Exit(1)
 	}
 }
-
-func readFileOrDevNull(path string) ([]byte, error) {
-	if path == "" || path == os.DevNull || path == "/dev/null" {
-		return []byte{}, nil
-	}
-	return os.ReadFile(path)
-}
-
-
-func compareDirectories(dirA, dirB string) ([]FileComparison, error) {
-	filesA, err := listDirectoryFiles(dirA)
-	if err != nil {
-		return nil, fmt.Errorf("walking directory A: %w", err)
-	}
-	filesB, err := listDirectoryFiles(dirB)
-	if err != nil {
-		return nil, fmt.Errorf("walking directory B: %w", err)
-	}
-
-	allPaths := make(map[string]bool, len(filesA)+len(filesB))
-	for path := range filesA {
-		allPaths[path] = true
-	}
-	for path := range filesB {
-		allPaths[path] = true
-	}
-
-	comparisons := make([]FileComparison, 0, len(allPaths))
-	for relPath := range allPaths {
-		pathA, existsA := filesA[relPath]
-		pathB, existsB := filesB[relPath]
-
-		comp := FileComparison{
-			RelPath:   relPath,
-			PathA:     pathA,
-			PathB:     pathB,
-			ExistsInA: existsA,
-			ExistsInB: existsB,
-		}
-
-		switch {
-		case existsA && existsB:
-			identical, err := areFilesIdentical(pathA, pathB)
-			if err != nil {
- // Can't confirm equality (like for the permission error) — treat as modified rather than silently dropping the file.
-				comp.Status = "modified"
-			} else if identical {
-				comp.Status = "unchanged"
-			} else {
-				comp.Status = "modified"
-			}
-		case existsB:
-			comp.Status = "added"
-		case existsA:
-			comp.Status = "deleted"
-		}
-
-		comparisons = append(comparisons, comp)
-	}
-
-	return comparisons, nil
-}
-
 
 func listDirectoryFiles(root string) (map[string]string, error) {
 	files := make(map[string]string)
@@ -292,17 +276,4 @@ func listDirectoryFiles(root string) (map[string]string, error) {
 		return nil, err
 	}
 	return files, nil
-}
-
-
-func areFilesIdentical(pathA, pathB string) (bool, error) {
-	bytesA, err := os.ReadFile(pathA)
-	if err != nil {
-		return false, err
-	}
-	bytesB, err := os.ReadFile(pathB)
-	if err != nil {
-		return false, err
-	}
-	return string(bytesA) == string(bytesB), nil
 }
