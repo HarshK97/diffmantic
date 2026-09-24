@@ -14,12 +14,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// excludedDirNames lists directory names that are never walked when
-// comparing two directory trees, regardless of depth.
-var excludedDirNames = map[string]bool{
-	".git": true,
-}
-
 // runDirectoryDiff compares two directories recursively, rendering a diff for every changed file through a single shared pager session.
 func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
 	// Build maps of relative path -> full path for both directories
@@ -194,10 +188,10 @@ func listDirectoryFiles(root string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
+		if d.IsDir() && d.Name() == ".git" && path != root {
+			return filepath.SkipDir
+		}
 		if d.IsDir() {
-			if path != root && excludedDirNames[d.Name()] {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		relPath, err := filepath.Rel(root, path)
