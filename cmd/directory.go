@@ -2,21 +2,15 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
-	"github.com/HarshK97/diffmantic/internal/actions"
-	"github.com/HarshK97/diffmantic/internal/engine"
-	"github.com/HarshK97/diffmantic/internal/inline"
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/sidebyside"
 	"github.com/spf13/cobra"
 )
 
@@ -179,72 +173,13 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			continue
 		}
 
-		switch format {
-		case "side-by-side":
-			if showBanner {
-				numIns, numDel, numUpd := countLineStats(cf.srcBytes, cf.dstBytes, dr.Envelope)
-				if err := sidebyside.RenderFileBanner(cf.relPath, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
-					if pager.IsBrokenPipe(err) {
-						return
-					}
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					hadErrors = true
-					continue
-				}
+		// Use the shared rendering function
+		if err := processFile(cf.relPath, cf.relPath, cf.srcBytes, cf.dstBytes, dr, format, showBanner, writer, inlineOpts, sbsOpts); err != nil {
+			if pager.IsBrokenPipe(err) {
+				return
 			}
-			if err := sidebyside.Render(cf.relPath, cf.relPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, sbsOpts, writer); err != nil {
-				if pager.IsBrokenPipe(err) {
-					return
-				}
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				hadErrors = true
-			}
-		case "inline":
-			output := inline.Render(cf.relPath, cf.relPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, inlineOpts)
-			if output != "" {
-				if _, err := io.WriteString(writer, output); err != nil {
-					if pager.IsBrokenPipe(err) {
-						return
-					}
-					fmt.Fprintf(os.Stderr, "Error: writing diff output: %v\n", err)
-					hadErrors = true
-					continue
-				}
-				if !strings.HasSuffix(output, "\n") {
-					if _, err := io.WriteString(writer, "\n"); err != nil && pager.IsBrokenPipe(err) {
-						return
-					}
-				}
-			}
-		case "json":
-			var jsonData []byte
-			var jsonErr error
-			if showBanner {
-				jsonData, jsonErr = json.Marshal(dr.Envelope)
-			} else {
-				jsonData, jsonErr = json.MarshalIndent(dr.Envelope, "", "  ")
-			}
-			if jsonErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: serializing JSON for %s: %v\n", cf.relPath, jsonErr)
-				hadErrors = true
-				continue
-			}
-			if _, err := writer.Write(jsonData); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: writing JSON for %s: %v\n", cf.relPath, err)
-				hadErrors = true
-				continue
-			}
-			_, _ = writer.Write([]byte("\n"))
-		case "actions":
-			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", cf.relPath, cf.relPath); err != nil {
-				if pager.IsBrokenPipe(err) {
-					return
-				}
-				hadErrors = true
-				continue
-			}
-			_ = engine.FprintMappings(writer, dr.MatchResult)
-			_ = actions.FprintActions(writer, dr.EditScript)
+			fmt.Fprintf(os.Stderr, "Error: rendering %s: %v\n", cf.relPath, err)
+			hadErrors = true
 		}
 	}
 

@@ -333,6 +333,95 @@ func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	return ins, del, upd
 }
 
+// processFile renders a single diff result in the specified format.
+// It handles all output formats (side-by-side, inline, json, actions) consistently.
+func processFile(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipeline.DiffResult, format string, showBanner bool, writer io.Writer, inlineOpts inline.RenderOptions, sbsOpts sidebyside.RenderOptions) error {
+	switch format {
+	case "side-by-side":
+		if showBanner {
+			numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
+			if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
+				return err
+			}
+		}
+		err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, sbsOpts, writer)
+		if err != nil {
+			return err
+		}
+	case "inline":
+		output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, inlineOpts)
+		if output != "" {
+			if _, err := io.WriteString(writer, output); err != nil {
+				return err
+			}
+			if !strings.HasSuffix(output, "\n") {
+				if _, err := io.WriteString(writer, "\n"); err != nil {
+					return err
+				}
+			}
+		}
+	case "json":
+		var jsonData []byte
+		var err error
+		if showBanner {
+			jsonData, err = json.Marshal(dr.Envelope)
+		} else {
+			jsonData, err = json.MarshalIndent(dr.Envelope, "", "  ")
+		}
+		if err == nil {
+			if _, err := writer.Write(jsonData); err != nil {
+				return err
+			}
+			if _, err := writer.Write([]byte("\n")); err != nil {
+				return err
+			}
+		}
+	case "actions":
+		if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
+			return err
+		}
+		if err := engine.FprintMappings(writer, dr.MatchResult); err != nil {
+			return err
+		}
+		if err := actions.FprintActions(writer, dr.EditScript); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// renderBinaryDiff outputs a message indicating that files are binary and differ.
+func renderBinaryDiff(srcFile, dstFile string, format string, showBanner bool, writer io.Writer, sbsOpts sidebyside.RenderOptions) {
+	switch format {
+	case "side-by-side":
+		if showBanner {
+			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, sbsOpts.Color, writer)
+		}
+		_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+	case "inline":
+		_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+	case "json":
+		env := &serialize.Envelope{
+			Version:  serialize.SchemaVersion,
+			IsBinary: true,
+		}
+		var jsonData []byte
+		var err error
+		if showBanner {
+			jsonData, err = json.Marshal(env)
+		} else {
+			jsonData, err = json.MarshalIndent(env, "", "  ")
+		}
+		if err == nil {
+			_, _ = writer.Write(jsonData)
+			_, _ = writer.Write([]byte("\n"))
+		}
+	case "actions":
+		_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+	}
+}
+
 func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
 	stagedOnly, _ := cmd.Flags().GetBool("cached")
 
@@ -390,7 +479,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	showBanner := len(files) > 1
 	var filesRendered int
 
-	processFile := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
+	processFileWrapper := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
 		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
 			return nil
 		}
@@ -409,93 +498,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		}
 
 		filesRendered++
-
-		switch format {
-		case "side-by-side":
-			if showBanner {
-				numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
-				if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
-					return err
-				}
-			}
-			err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, sbsOpts, writer)
-			if err != nil {
-				return err
-			}
-		case "inline":
-			output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, inlineOpts)
-			if output != "" {
-				if _, err := io.WriteString(writer, output); err != nil {
-					return err
-				}
-				if !strings.HasSuffix(output, "\n") {
-					if _, err := io.WriteString(writer, "\n"); err != nil {
-						return err
-					}
-				}
-			}
-		case "json":
-			var jsonData []byte
-			var err error
-			if showBanner {
-				jsonData, err = json.Marshal(dr.Envelope)
-			} else {
-				jsonData, err = json.MarshalIndent(dr.Envelope, "", "  ")
-			}
-			if err == nil {
-				if _, err := writer.Write(jsonData); err != nil {
-					return err
-				}
-				if _, err := writer.Write([]byte("\n")); err != nil {
-					return err
-				}
-			}
-		case "actions":
-			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
-				return err
-			}
-			if err := engine.FprintMappings(writer, dr.MatchResult); err != nil {
-				return err
-			}
-			if err := actions.FprintActions(writer, dr.EditScript); err != nil {
-				return err
-			}
-		}
-
-		return nil
+		return processFile(srcFile, dstFile, srcBytes, dstBytes, dr, format, showBanner, writer, inlineOpts, sbsOpts)
 	}
 
 	textconv, _ := cmd.Flags().GetBool("textconv")
 
-	renderBinaryDiff := func(srcFile, dstFile string) {
+	renderBinaryDiffWrapper := func(srcFile, dstFile string) {
 		filesRendered++
-		switch format {
-		case "side-by-side":
-			if showBanner {
-				_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, sbsOpts.Color, writer)
-			}
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-		case "inline":
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-		case "json":
-			env := &serialize.Envelope{
-				Version:  serialize.SchemaVersion,
-				IsBinary: true,
-			}
-			var jsonData []byte
-			var err error
-			if showBanner {
-				jsonData, err = json.Marshal(env)
-			} else {
-				jsonData, err = json.MarshalIndent(env, "", "  ")
-			}
-			if err == nil {
-				_, _ = writer.Write(jsonData)
-				_, _ = writer.Write([]byte("\n"))
-			}
-		case "actions":
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-		}
+		renderBinaryDiff(srcFile, dstFile, format, showBanner, writer, sbsOpts)
 	}
 
 	if refA == "" {
@@ -522,7 +532,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				renderBinaryDiff(srcFile, dstFile)
+				renderBinaryDiffWrapper(srcFile, dstFile)
 				continue
 			}
 
@@ -541,7 +551,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 					}
 					return
 				}
-				if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+				if err := processFileWrapper(srcFile, dstFile, srcBytes, dstBytes); err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					}
@@ -568,7 +578,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 					}
 					return
 				}
-				if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+				if err := processFileWrapper(srcFile, dstFile, srcBytes, dstBytes); err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					}
@@ -596,7 +606,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				renderBinaryDiff(srcFile, dstFile)
+				renderBinaryDiffWrapper(srcFile, dstFile)
 				continue
 			}
 
@@ -615,7 +625,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				return
 			}
 
-			if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+			if err := processFileWrapper(srcFile, dstFile, srcBytes, dstBytes); err != nil {
 				if !pager.IsBrokenPipe(err) {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				}
@@ -671,7 +681,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 		}
 
-		if err := processFile(pathFilter, pathFilter, srcBytes, dstBytes); err != nil {
+		if err := processFileWrapper(pathFilter, pathFilter, srcBytes, dstBytes); err != nil {
 			if !pager.IsBrokenPipe(err) {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			}
