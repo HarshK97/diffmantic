@@ -95,6 +95,10 @@ func TestActionKind_String(t *testing.T) {
 		{ActionUpdate, "update"},
 		{ActionMove, "move"},
 		{ActionMoveUpdate, "move_update"},
+		{ActionMove1, "move"},
+		{ActionMoveUpdate1, "move_update"},
+		{ActionMove2, "move"},
+		{ActionMoveUpdate2, "move_update"},
 		{ActionKind(-2), "unknown"},
 		{ActionKind(99), "unknown"},
 		{ActionKind(1000), "unknown"},
@@ -105,5 +109,33 @@ func TestActionKind_String(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("ActionKind(%d).String() = %q, want %q", int(tt.kind), got, tt.want)
 		}
+	}
+}
+
+func TestMovePalette(t *testing.T) {
+	if MoveFgForSlot(0) != Move0Fg {
+		t.Errorf("expected slot 0 to be Move0Fg, got %q", MoveFgForSlot(0))
+	}
+	if MoveFgForSlot(1) != Move1Fg {
+		t.Errorf("expected slot 1 to be Move1Fg, got %q", MoveFgForSlot(1))
+	}
+	if MoveFgForSlot(2) != Move2Fg {
+		t.Errorf("expected slot 2 to be Move2Fg, got %q", MoveFgForSlot(2))
+	}
+	if MoveFgForSlot(3) != Move0Fg {
+		t.Errorf("expected slot 3 (wrapped) to be Move0Fg, got %q", MoveFgForSlot(3))
+	}
+
+	if MoveActionKindForSlot(0, false) != ActionMove {
+		t.Errorf("expected slot 0 move to be ActionMove")
+	}
+	if MoveActionKindForSlot(1, false) != ActionMove1 {
+		t.Errorf("expected slot 1 move to be ActionMove1")
+	}
+	if MoveActionKindForSlot(2, false) != ActionMove2 {
+		t.Errorf("expected slot 2 move to be ActionMove2")
+	}
+	if MoveActionKindForSlot(1, true) != ActionMoveUpdate1 {
+		t.Errorf("expected slot 1 update to be ActionMoveUpdate1")
 	}
 }

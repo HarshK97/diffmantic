@@ -163,6 +163,34 @@ func TestSliceLineToColumn_MoveBadge(t *testing.T) {
 	}
 }
 
+func TestSliceLineToColumn_MoveBadge_MultiColor(t *testing.T) {
+	scratch := &RenderScratch{}
+	var buf bytes.Buffer
+
+	// Slot 0 (Teal): color.Move0Fg
+	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, renderutil.LineContextAligned, true, true, &buf, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, color.Move0Fg+" ➔ L42"+color.Reset) {
+		t.Errorf("expected badge with Move0Fg, got %q", got)
+	}
+
+	// Slot 1 (Mauve): color.Move1Fg
+	buf.Reset()
+	err = scratch.SliceLineToColumn("func Bar()", " ➔ L50", nil, 20, renderutil.LineContextAligned, true, true, &buf, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got = buf.String()
+	if !strings.Contains(got, color.Move1Fg+" ➔ L50"+color.Reset) {
+		t.Errorf("expected badge with Move1Fg, got %q", got)
+	}
+}
+
 func TestRender_BasicSideBySide(t *testing.T) {
 	src := "package main\n\nfunc A() int {\n\treturn 1\n}\n"
 	dst := "package main\n\nfunc A() int {\n\treturn 2\n}\n"

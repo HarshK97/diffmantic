@@ -22,13 +22,19 @@ func (s *RenderScratch) SliceLineToChunks(
 	lineCtx renderutil.LineContext,
 	padToTargetWidth bool,
 	colorMode bool,
+	badgeColor ...int,
 ) [][]byte {
+	bColor := 0
+	if len(badgeColor) > 0 {
+		bColor = badgeColor[0]
+	}
 	cfg := renderutil.SliceConfig{
 		TargetWidth:      targetWidth,
 		TabWidth:         s.TabWidth,
 		ColorMode:        colorMode,
 		PadToTargetWidth: padToTargetWidth,
 		BadgeAnchor:      renderutil.BadgeAnchorRow0,
+		BadgeColor:       bColor,
 		Context:          lineCtx,
 	}
 	return s.slicer.SliceLineToChunks(lineText, badgeText, spans, cfg)
@@ -44,8 +50,9 @@ func (s *RenderScratch) SliceLineToColumn(
 	padToTargetWidth bool,
 	colorMode bool,
 	w io.Writer,
+	badgeColor ...int,
 ) error {
-	chunks := s.SliceLineToChunks(lineText, badgeText, spans, targetWidth, lineCtx, padToTargetWidth, colorMode)
+	chunks := s.SliceLineToChunks(lineText, badgeText, spans, targetWidth, lineCtx, padToTargetWidth, colorMode, badgeColor...)
 	for _, chunk := range chunks {
 		if _, err := w.Write(chunk); err != nil {
 			return err

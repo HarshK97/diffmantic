@@ -474,3 +474,80 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 		t.Errorf("expected subscript opening delimiter at [11:12] ('['), got [%d:%d] ('%s')", subStart, subEnd, string(pySubscriptCode[subStart:subEnd]))
 	}
 }
+
+func TestAssignMoveColors(t *testing.T) {
+	srcOffsets := []int{0, 20, 40, 60, 80, 100, 120}
+	dstOffsets := []int{0, 20, 40, 60, 80, 100, 120}
+
+	t.Run("single move", func(t *testing.T) {
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 5, EndByte: 15},
+				DestStartByte: ptr(uint32(25)),
+				DestEndByte:   ptr(uint32(35)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 {
+			t.Errorf("expected single move to have MoveColorIndex 0, got %d", actions[0].MoveColorIndex)
+		}
+	})
+
+	t.Run("intertwined moves", func(t *testing.T) {
+		// Move 0: outer statement lines 0-3 (bytes 0-60) -> lines 0-3 (bytes 0-60)
+		// Move 1: old branch 1 lines 1-2 (bytes 20-40) -> branch 2 lines 2-3 (bytes 40-60)
+		// Move 2: old branch 2 lines 2-3 (bytes 40-60) -> branch 1 lines 1-2 (bytes 20-40)
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 60},
+				DestStartByte: ptr(uint32(0)),
+				DestEndByte:   ptr(uint32(60)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 20, EndByte: 40},
+				DestStartByte: ptr(uint32(40)),
+				DestEndByte:   ptr(uint32(60)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 40, EndByte: 60},
+				DestStartByte: ptr(uint32(20)),
+				DestEndByte:   ptr(uint32(40)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 {
+			t.Errorf("expected move 0 to have MoveColorIndex 0, got %d", actions[0].MoveColorIndex)
+		}
+		if actions[1].MoveColorIndex != 1 {
+			t.Errorf("expected move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
+		}
+		if actions[2].MoveColorIndex != 2 {
+			t.Errorf("expected move 2 to have MoveColorIndex 2 (Sapphire), got %d", actions[2].MoveColorIndex)
+		}
+	})
+
+	t.Run("distant non-overlapping moves", func(t *testing.T) {
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(0)),
+				DestEndByte:   ptr(uint32(10)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 100, EndByte: 110},
+				DestStartByte: ptr(uint32(100)),
+				DestEndByte:   ptr(uint32(110)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 0 {
+			t.Errorf("expected distant moves to both have MoveColorIndex 0, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
+}

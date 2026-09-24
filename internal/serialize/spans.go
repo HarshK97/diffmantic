@@ -14,11 +14,12 @@ import (
 
 // HighlightSpan is a visual column range to color on a specific line.
 type HighlightSpan struct {
-	Line      int     `json:"line"`
-	StartCol  int     `json:"start_col"`
-	EndCol    int     `json:"end_col"`
-	Action    string  `json:"action"` // "insert", "delete", "update", "move"
-	ActionRef *Action `json:"-"`
+	Line       int     `json:"line"`
+	StartCol   int     `json:"start_col"`
+	EndCol     int     `json:"end_col"`
+	Action     string  `json:"action"` // "insert", "delete", "update", "move"
+	ColorIndex int     `json:"-"`
+	ActionRef  *Action `json:"-"`
 }
 
 func (s HighlightSpan) MarshalJSON() ([]byte, error) {
@@ -170,7 +171,9 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 					if onlyNonChars {
 						if actStr == "update" || actStr == "move" {
 							if curr.actRef != nil && next.actRef != nil {
-								if curr.actRef.GroupID != "" && curr.actRef.GroupID == next.actRef.GroupID {
+								if curr.actRef.MoveColorIndex != next.actRef.MoveColorIndex {
+									canMerge = false
+								} else if curr.actRef.GroupID != "" && curr.actRef.GroupID == next.actRef.GroupID {
 									canMerge = true
 								} else if actStr == "update" {
 									canMerge = sharesLineage(curr.actRef.Parent, next.actRef.Parent)
@@ -224,12 +227,17 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		})
 
 		for _, mSpan := range lineMerged {
+			colorIdx := 0
+			if mSpan.actRef != nil {
+				colorIdx = mSpan.actRef.MoveColorIndex
+			}
 			result = append(result, HighlightSpan{
-				Line:      line,
-				StartCol:  mSpan.startCol,
-				EndCol:    mSpan.endCol,
-				Action:    mSpan.action,
-				ActionRef: mSpan.actRef,
+				Line:       line,
+				StartCol:   mSpan.startCol,
+				EndCol:     mSpan.endCol,
+				Action:     mSpan.action,
+				ColorIndex: colorIdx,
+				ActionRef:  mSpan.actRef,
 			})
 		}
 	}

@@ -294,6 +294,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			}
 
 			var badge string
+			var badgeColor int
 			var spans []serialize.HighlightSpan
 			lineCtx := renderutil.LineContextAligned
 
@@ -302,6 +303,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			case kindDelete:
 				if !opts.DisableAnnotations {
 					badge = meta.SrcLineBadges[l.srcLineIdx]
+					badgeColor = meta.SrcLineBadgeColors[l.srcLineIdx]
 				}
 				spans = leftSpansByLine[l.srcLineIdx]
 				if !l.hasCounterpart {
@@ -310,6 +312,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			case kindInsert:
 				if !opts.DisableAnnotations {
 					badge = meta.DstLineBadges[l.dstLineIdx]
+					badgeColor = meta.DstLineBadgeColors[l.dstLineIdx]
 				}
 				spans = rightSpansByLine[l.dstLineIdx]
 				if !l.hasCounterpart {
@@ -323,6 +326,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				ColorMode:        opts.Color,
 				PadToTargetWidth: false,
 				BadgeAnchor:      renderutil.BadgeAnchorLastRow,
+				BadgeColor:       badgeColor,
 				Context:          lineCtx,
 			}
 
