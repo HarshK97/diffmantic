@@ -158,6 +158,11 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Don't pair a condition or header if its enclosing body was already mapped to a different construct.
+	if hasForeignBodyOwner(t1, c, m, r) {
+		return -1.0
+	}
+
 	sim := ChawatheSimilarity(t1, c, m.Src())
 	dice := Dice(t1, c, m.Src())
 
@@ -203,6 +208,71 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	}
 
 	return (w.Sim * sim) + (w.Dice * dice) + (w.Scope * scopeScore) + (w.Pos * posScore) + (w.Label * lblScore) + keyBonus - depthPenalty
+}
+
+// hasForeignBodyOwner reports whether t1 or c belongs to an enclosing construct
+// whose body block is already paired with an unrelated statement or block.
+func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(t1)
+	}
+
+	isBlock := func(n *treesitter.ASTNode) bool {
+		if n == nil {
+			return false
+		}
+		if r != nil {
+			return r.IsBlock(n.Type)
+		}
+		return rules.IsBlock(n.Type)
+	}
+
+	// Check if c's enclosing body is mapped to a source construct that doesn't contain t1.
+	for curr := c; curr != nil && curr.Parent != nil; curr = curr.Parent {
+		if isBlock(curr) {
+			continue
+		}
+		p := curr.Parent
+		if isBlock(p) {
+			continue
+		}
+		for _, b := range p.Children {
+			if !isBlock(b) {
+				continue
+			}
+			if srcBody, ok := m.Dst()[b]; ok && srcBody.Parent != nil {
+				if srcBody.Parent != t1 && !srcBody.Parent.Contains(t1) {
+					return true
+				}
+			}
+		}
+	}
+
+	// Same check in reverse: ensure t1's enclosing body doesn't point outside c.
+	for curr := t1; curr != nil && curr.Parent != nil; curr = curr.Parent {
+		if isBlock(curr) {
+			continue
+		}
+		p := curr.Parent
+		if isBlock(p) {
+			continue
+		}
+		for _, b := range p.Children {
+			if !isBlock(b) {
+				continue
+			}
+			if dstBody, ok := m.Src()[b]; ok && dstBody.Parent != nil {
+				if dstBody.Parent != c && !dstBody.Parent.Contains(c) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // candidate finds the best unmatched node in T2 to pair with t1 using unified affinity scoring.
@@ -252,7 +322,11 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		var bestParent *treesitter.ASTNode
 		bestCount := 0
 		for _, c := range t1.Children {
-			if c2, ok := m.Src()[c]; ok && c2.Parent != nil && !m.HasDst(c2.Parent) && TypesMatch(t1.Type, c2.Parent.Type, r) {
+			if c2, ok := m.Src()[c]; ok &&
+				c2.Parent != nil &&
+				!m.HasDst(c2.Parent) &&
+				TypesMatch(t1.Type, c2.Parent.Type, r) &&
+				!hasForeignBodyOwner(t1, c2.Parent, m, r) {
 				weight := c.Size()
 				cnt := parentCounts[c2.Parent] + weight
 				parentCounts[c2.Parent] = cnt
