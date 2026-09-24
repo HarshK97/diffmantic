@@ -39,6 +39,7 @@ type SliceConfig struct {
 	ColorMode        bool
 	PadToTargetWidth bool
 	BadgeAnchor      BadgeAnchor
+	BadgeColor       int
 	Context          LineContext
 }
 
@@ -125,9 +126,17 @@ func appendTransition(b []byte, targetStyle, activeStyle color.ActionKind) []byt
 	case color.ActionUpdate:
 		return append(b, color.Bold+color.UpdateFg...)
 	case color.ActionMove:
-		return append(b, color.Bold+color.MoveFg...)
+		return append(b, color.Bold+color.Move0Fg...)
+	case color.ActionMove1:
+		return append(b, color.Bold+color.Move1Fg...)
+	case color.ActionMove2:
+		return append(b, color.Bold+color.Move2Fg...)
 	case color.ActionMoveUpdate:
-		return append(b, color.Bold+color.Underline+color.UpdateFg...)
+		return append(b, color.Bold+color.Underline+color.Move0Fg...)
+	case color.ActionMoveUpdate1:
+		return append(b, color.Bold+color.Underline+color.Move1Fg...)
+	case color.ActionMoveUpdate2:
+		return append(b, color.Bold+color.Underline+color.Move2Fg...)
 	default: // stylePlain
 		return append(b, color.TextFg...)
 	}
@@ -184,7 +193,7 @@ func (s *Slicer) SliceLineToChunks(
 
 		if isFirstChunk && cfg.BadgeAnchor == BadgeAnchorRow0 && badgeText != "" {
 			if cfg.ColorMode {
-				curChunk = append(curChunk, color.MoveFg+badgeText+color.Reset...)
+				curChunk = append(curChunk, color.MoveFgForSlot(cfg.BadgeColor)+badgeText+color.Reset...)
 			} else {
 				curChunk = append(curChunk, badgeText...)
 			}
@@ -333,7 +342,7 @@ func (s *Slicer) SliceLineToChunks(
 	if cfg.BadgeAnchor == BadgeAnchorLastRow && badgeText != "" {
 		var badgeBytes []byte
 		if cfg.ColorMode {
-			badgeBytes = []byte(color.MoveFg + badgeText + color.Reset)
+			badgeBytes = []byte(color.MoveFgForSlot(cfg.BadgeColor) + badgeText + color.Reset)
 		} else {
 			badgeBytes = []byte(badgeText)
 		}

@@ -160,6 +160,7 @@ func Render(
 	}
 
 	var srcLineBadges, dstLineBadges map[int]string
+	var srcLineBadgeColors, dstLineBadgeColors map[int]int
 	var hunkHeaders map[int]string
 	if !opts.DisableAnnotations {
 		badges := renderutil.BuildMoveBadges(
@@ -175,6 +176,8 @@ func Render(
 		)
 		srcLineBadges = badges.SrcLineBadges
 		dstLineBadges = badges.DstLineBadges
+		srcLineBadgeColors = badges.SrcLineBadgeColors
+		dstLineBadgeColors = badges.DstLineBadgeColors
 		hunkHeaders = badges.HunkHeaders
 	}
 
@@ -207,9 +210,9 @@ func Render(
 		}
 
 		if layout == HunkLayoutDualColumn {
-			renderSideBySideHunk(w, h, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
+			renderSideBySideHunk(w, h, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, srcLineBadgeColors, dstLineBadgeColors, leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
 		} else {
-			renderSingleColumnHunk(w, h, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx, layout)
+			renderSingleColumnHunk(w, h, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, srcLineBadgeColors, dstLineBadgeColors, leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx, layout)
 		}
 	}
 
@@ -222,6 +225,7 @@ func renderSideBySideHunk(
 	filteredPairs []serialize.LineAlignmentPair,
 	srcLines, dstLines []string,
 	srcLineBadges, dstLineBadges map[int]string,
+	srcLineBadgeColors, dstLineBadgeColors map[int]int,
 	leftSpansByLine, rightSpansByLine map[int][]serialize.HighlightSpan,
 	numWidth, codeWidth int,
 	opts RenderOptions,
@@ -239,21 +243,23 @@ func renderSideBySideHunk(
 		var leftChunks [][]byte
 		if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
 			badge := srcLineBadges[pair.LeftLine]
+			badgeColor := srcLineBadgeColors[pair.LeftLine]
 			lineCtx := renderutil.LineContextAligned
 			if pair.RightLine == -1 {
 				lineCtx = renderutil.LineContextStandaloneDelete
 			}
-			leftChunks = scratch.SliceLineToChunks(srcLines[pair.LeftLine], badge, leftSpansByLine[pair.LeftLine], codeWidth, lineCtx, true, opts.Color)
+			leftChunks = scratch.SliceLineToChunks(srcLines[pair.LeftLine], badge, leftSpansByLine[pair.LeftLine], codeWidth, lineCtx, true, opts.Color, badgeColor)
 		}
 
 		var rightChunks [][]byte
 		if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 			badge := dstLineBadges[pair.RightLine]
+			badgeColor := dstLineBadgeColors[pair.RightLine]
 			lineCtx := renderutil.LineContextAligned
 			if pair.LeftLine == -1 {
 				lineCtx = renderutil.LineContextStandaloneInsert
 			}
-			rightChunks = scratch.SliceLineToChunks(dstLines[pair.RightLine], badge, rightSpansByLine[pair.RightLine], codeWidth, lineCtx, true, opts.Color)
+			rightChunks = scratch.SliceLineToChunks(dstLines[pair.RightLine], badge, rightSpansByLine[pair.RightLine], codeWidth, lineCtx, true, opts.Color, badgeColor)
 		}
 
 		numSubRows := max(1, max(len(leftChunks), len(rightChunks)))
@@ -305,6 +311,7 @@ func renderSingleColumnHunk(
 	isPairChanged []bool,
 	srcLines, dstLines []string,
 	srcLineBadges, dstLineBadges map[int]string,
+	srcLineBadgeColors, dstLineBadgeColors map[int]int,
 	leftSpansByLine, rightSpansByLine map[int][]serialize.HighlightSpan,
 	numWidth, termWidth int,
 	opts RenderOptions,
@@ -327,6 +334,7 @@ func renderSingleColumnHunk(
 
 		var text string
 		var badge string
+		var badgeColor int
 		var spans []serialize.HighlightSpan
 		var lineCtx renderutil.LineContext
 		var leftLineNum, rightLineNum int
@@ -349,6 +357,7 @@ func renderSingleColumnHunk(
 				text = dstLines[pair.RightLine]
 			}
 			badge = dstLineBadges[pair.RightLine]
+			badgeColor = dstLineBadgeColors[pair.RightLine]
 			spans = rightSpansByLine[pair.RightLine]
 			lineCtx = renderutil.LineContextStandaloneInsert
 			action = color.ActionInsert
@@ -359,6 +368,7 @@ func renderSingleColumnHunk(
 				text = srcLines[pair.LeftLine]
 			}
 			badge = srcLineBadges[pair.LeftLine]
+			badgeColor = srcLineBadgeColors[pair.LeftLine]
 			spans = leftSpansByLine[pair.LeftLine]
 			lineCtx = renderutil.LineContextStandaloneDelete
 			action = color.ActionDelete
@@ -370,6 +380,7 @@ func renderSingleColumnHunk(
 					text = dstLines[pair.RightLine]
 					spans = rightSpansByLine[pair.RightLine]
 					badge = dstLineBadges[pair.RightLine]
+					badgeColor = dstLineBadgeColors[pair.RightLine]
 				}
 				lineCtx = renderutil.LineContextStandaloneInsert
 				action = color.ActionInsert
@@ -380,13 +391,14 @@ func renderSingleColumnHunk(
 					text = srcLines[pair.LeftLine]
 					spans = leftSpansByLine[pair.LeftLine]
 					badge = srcLineBadges[pair.LeftLine]
+					badgeColor = srcLineBadgeColors[pair.LeftLine]
 				}
 				lineCtx = renderutil.LineContextStandaloneDelete
 				action = color.ActionDelete
 			}
 		}
 
-		chunks := scratch.SliceLineToChunks(text, badge, spans, fullCodeWidth, lineCtx, false, opts.Color)
+		chunks := scratch.SliceLineToChunks(text, badge, spans, fullCodeWidth, lineCtx, false, opts.Color, badgeColor)
 		if len(chunks) == 0 {
 			chunks = [][]byte{nil}
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -57,19 +58,20 @@ type Envelope struct {
 // Action represents a serialized edit-script action.
 // The absence of the "subtree" field always indicates false.
 type Action struct {
-	Action        string   `json:"action"` // "insert", "delete", "update", "move"
-	Node          *NodeRef `json:"node"`
-	Parent        *NodeRef `json:"parent,omitempty"`
-	Position      *int     `json:"position,omitempty"`
-	OldParent     *NodeRef `json:"old_parent,omitempty"`
-	OldPosition   *int     `json:"old_position,omitempty"`
-	OldValue      string   `json:"old_value,omitempty"`
-	NewValue      string   `json:"new_value,omitempty"`
-	Subtree       *bool    `json:"subtree,omitempty"`
-	DestNode      *NodeRef `json:"dest_node,omitempty"`
-	DestStartByte *uint32  `json:"dest_start_byte,omitempty"`
-	DestEndByte   *uint32  `json:"dest_end_byte,omitempty"`
-	GroupID       string   `json:"group_id,omitempty"`
+	Action         string   `json:"action"` // "insert", "delete", "update", "move"
+	Node           *NodeRef `json:"node"`
+	Parent         *NodeRef `json:"parent,omitempty"`
+	Position       *int     `json:"position,omitempty"`
+	OldParent      *NodeRef `json:"old_parent,omitempty"`
+	OldPosition    *int     `json:"old_position,omitempty"`
+	OldValue       string   `json:"old_value,omitempty"`
+	NewValue       string   `json:"new_value,omitempty"`
+	Subtree        *bool    `json:"subtree,omitempty"`
+	DestNode       *NodeRef `json:"dest_node,omitempty"`
+	DestStartByte  *uint32  `json:"dest_start_byte,omitempty"`
+	DestEndByte    *uint32  `json:"dest_end_byte,omitempty"`
+	GroupID        string   `json:"group_id,omitempty"`
+	MoveColorIndex int      `json:"-"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -452,6 +454,15 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 		}
 	}
 
+	hasMoves := slices.ContainsFunc(actionsList, func(a Action) bool {
+		return a.Action == "move" || a.Action == "move_update"
+	})
+	if hasMoves {
+		offsetsSrc := BuildLineIndex(srcBytes)
+		offsetsDst := BuildLineIndex(dstBytes)
+		AssignMoveColors(actionsList, offsetsSrc, offsetsDst)
+	}
+
 	if opts.IncludeActions {
 		env.Actions = actionsList
 	}
@@ -462,6 +473,90 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	}
 
 	return &env, nil
+}
+
+// AssignMoveColors picks a color (0: Teal, 1: Mauve, 2: Sapphire) for each move,
+// making sure overlapping or adjacent moves don't share the same color.
+func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
+	type moveInterval struct {
+		actIdx int
+		sStart int
+		sEnd   int
+		dStart int
+		dEnd   int
+	}
+
+	var moves []moveInterval
+	for i := range actions {
+		a := &actions[i]
+		if a.Action != "move" && a.Action != "move_update" {
+			continue
+		}
+		var sStart, sEnd, dStart, dEnd int
+		if a.Node != nil {
+			sStart, _ = ByteToLineCol(srcOffsets, a.Node.StartByte)
+			sEnd, _ = ByteToLineCol(srcOffsets, a.Node.EndByte)
+		}
+		if a.DestStartByte != nil && a.DestEndByte != nil {
+			dStart, _ = ByteToLineCol(dstOffsets, *a.DestStartByte)
+			dEnd, _ = ByteToLineCol(dstOffsets, *a.DestEndByte)
+		} else if a.DestNode != nil {
+			dStart, _ = ByteToLineCol(dstOffsets, a.DestNode.StartByte)
+			dEnd, _ = ByteToLineCol(dstOffsets, a.DestNode.EndByte)
+		}
+		moves = append(moves, moveInterval{
+			actIdx: i,
+			sStart: sStart,
+			sEnd:   sEnd,
+			dStart: dStart,
+			dEnd:   dEnd,
+		})
+	}
+
+	if len(moves) <= 1 {
+		return
+	}
+
+	groupColors := make(map[string]int)
+
+	for i, cur := range moves {
+		curAct := &actions[cur.actIdx]
+
+		if curAct.GroupID != "" {
+			if c, ok := groupColors[curAct.GroupID]; ok {
+				curAct.MoveColorIndex = c
+				continue
+			}
+		}
+
+		var used [3]bool
+		for _, prev := range moves[:i] {
+			prevAct := &actions[prev.actIdx]
+			if curAct.GroupID != "" && curAct.GroupID == prevAct.GroupID {
+				continue
+			}
+
+			// Treat moves within 2 lines of each other as interfering so they get distinct colors.
+			sOverlap := max(cur.sStart, prev.sStart) <= min(cur.sEnd, prev.sEnd)+2
+			dOverlap := max(cur.dStart, prev.dStart) <= min(cur.dEnd, prev.dEnd)+2
+
+			if sOverlap || dOverlap {
+				used[prevAct.MoveColorIndex] = true
+			}
+		}
+
+		slot := 0
+		for slot < 3 && used[slot] {
+			slot++
+		}
+		if slot == 3 {
+			slot = 0
+		}
+		curAct.MoveColorIndex = slot
+		if curAct.GroupID != "" {
+			groupColors[curAct.GroupID] = slot
+		}
+	}
 }
 
 // MarshalWithOptions formats the diff envelope as indented JSON using the given options.
