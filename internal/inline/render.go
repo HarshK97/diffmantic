@@ -260,59 +260,12 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			}
 		}
 
-		srcCount := 0
-		dstCount := 0
-		srcStart := -1
-		dstStart := -1
-
-		for _, l := range lines {
-			if l.kind == kindContext || l.kind == kindDelete {
-				if srcStart == -1 && l.srcLineIdx != -1 {
-					srcStart = l.srcLineIdx + 1
-				}
-				srcCount++
-			}
-			if l.kind == kindContext || l.kind == kindInsert {
-				if dstStart == -1 && l.dstLineIdx != -1 {
-					dstStart = l.dstLineIdx + 1
-				}
-				dstCount++
-			}
-		}
-
-		if srcStart == -1 {
-			for p := h.Start - 1; p >= 0; p-- {
-				if filteredPairs[p].LeftLine != -1 {
-					srcStart = filteredPairs[p].LeftLine + 1
-					break
-				}
-			}
-			if srcStart == -1 {
-				if len(srcBytes) > 0 && srcFile != os.DevNull && srcFile != "/dev/null" {
-					srcStart = 1
-				} else {
-					srcStart = 0
-				}
-			}
-		}
-		if dstStart == -1 {
-			for p := h.Start - 1; p >= 0; p-- {
-				if filteredPairs[p].RightLine != -1 {
-					dstStart = filteredPairs[p].RightLine + 1
-					break
-				}
-			}
-			if dstStart == -1 {
-				if len(dstBytes) > 0 && dstFile != os.DevNull && dstFile != "/dev/null" {
-					dstStart = 1
-				} else {
-					dstStart = 0
-				}
-			}
-		}
+		hasSrc := len(srcBytes) > 0 && srcFile != os.DevNull && srcFile != "/dev/null"
+		hasDst := len(dstBytes) > 0 && dstFile != os.DevNull && dstFile != "/dev/null"
+		srcStart, srcCount, dstStart, dstCount := renderutil.ComputeHunkRange(h, filteredPairs, hasSrc, hasDst)
 
 		hunkHdrExtra := meta.HunkHeaders[hunkIdx]
-		hunkHeader := fmt.Sprintf("@@ -%s +%s @@%s", formatRange(srcStart, srcCount), formatRange(dstStart, dstCount), hunkHdrExtra)
+		hunkHeader := renderutil.FormatHunkHeader(srcStart, srcCount, dstStart, dstCount, hunkHdrExtra)
 		if opts.Color {
 			out.WriteString(color.HeaderFg + hunkHeader + color.Reset + "\n")
 		} else {
@@ -452,9 +405,9 @@ func formatLineGutter(srcLine, dstLine int, numWidth int, colorMode bool, kind l
 	if colorMode {
 		switch kind {
 		case kindDelete:
-			return color.DeleteFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + "  "
+			return color.Bold + color.DeleteFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + "  "
 		case kindInsert:
-			return color.OverlayFg + srcPad + color.Reset + " " + color.InsertFg + dstPad + color.Reset + "  "
+			return color.OverlayFg + srcPad + color.Reset + " " + color.Bold + color.InsertFg + dstPad + color.Reset + "  "
 		default:
 			return color.OverlayFg + srcPad + color.Reset + " " + color.OverlayFg + dstPad + color.Reset + "  "
 		}
@@ -465,13 +418,6 @@ func formatLineGutter(srcLine, dstLine int, numWidth int, colorMode bool, kind l
 func formatContinuationGutter(numWidth int) string {
 	blankPad := strings.Repeat(" ", numWidth)
 	return blankPad + " " + blankPad + "  "
-}
-
-func formatRange(start, count int) string {
-	if count == 1 {
-		return strconv.Itoa(start)
-	}
-	return fmt.Sprintf("%d,%d", start, count)
 }
 
 // formatFilePath builds standard diff headers like "a/foo.go" or "/dev/null".
