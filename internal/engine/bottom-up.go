@@ -106,7 +106,7 @@ type AffinityWeights struct {
 	Pos        float64 // Sibling index alignment weight
 	Label      float64 // Leaf label similarity weight
 	KeyBonus   float64 // Exact key match bonus for pair nodes
-	DepthCoeff float64 // Quadratic penalty for relative depth divergence
+	DepthCoeff float64 // Linear capped penalty coefficient for relative depth divergence
 }
 
 // DefaultAffinityWeights is the default set of scoring weights used by candidate selection.
@@ -201,10 +201,10 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 
 	depthPenalty := 0.0
 	if anc1 != nil && anc2 != nil {
-		d1 := t1.DepthTo(anc1)
-		d2 := c.DepthTo(anc2)
-		diff := float64(d1 - d2)
-		depthPenalty = w.DepthCoeff * (diff * diff)
+		d1 := effectiveDepthTo(t1, anc1, r)
+		d2 := effectiveDepthTo(c, anc2, r)
+		diff := math.Abs(float64(d1 - d2))
+		depthPenalty = min(0.30, w.DepthCoeff*diff)
 	}
 
 	return (w.Sim * sim) + (w.Dice * dice) + (w.Scope * scopeScore) + (w.Pos * posScore) + (w.Label * lblScore) + keyBonus - depthPenalty

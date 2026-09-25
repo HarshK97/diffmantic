@@ -216,6 +216,7 @@ var tsxRules = &Rules{
 		"array",
 		"arguments",
 		"formal_parameters",
+		"jsx_expression",
 	},
 	Pairs: []string{
 		"pair",
