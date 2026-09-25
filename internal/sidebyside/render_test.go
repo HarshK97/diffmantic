@@ -163,6 +163,34 @@ func TestSliceLineToColumn_MoveBadge(t *testing.T) {
 	}
 }
 
+func TestSliceLineToColumn_MoveBadge_MultiColor(t *testing.T) {
+	scratch := &RenderScratch{}
+	var buf bytes.Buffer
+
+	// Slot 0 (Teal): color.Move0Fg
+	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, renderutil.LineContextAligned, true, true, &buf, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, color.Move0Fg+" ➔ L42"+color.Reset) {
+		t.Errorf("expected badge with Move0Fg, got %q", got)
+	}
+
+	// Slot 1 (Mauve): color.Move1Fg
+	buf.Reset()
+	err = scratch.SliceLineToColumn("func Bar()", " ➔ L50", nil, 20, renderutil.LineContextAligned, true, true, &buf, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got = buf.String()
+	if !strings.Contains(got, color.Move1Fg+" ➔ L50"+color.Reset) {
+		t.Errorf("expected badge with Move1Fg, got %q", got)
+	}
+}
+
 func TestRender_BasicSideBySide(t *testing.T) {
 	src := "package main\n\nfunc A() int {\n\treturn 1\n}\n"
 	dst := "package main\n\nfunc A() int {\n\treturn 2\n}\n"
@@ -339,11 +367,10 @@ func TestRender_AdaptiveHybridLayout_MonolithicInsert(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := RenderOptions{
-		TerminalWidth:     100,
-		ContextLines:      2,
-		LineNumbers:       true,
-		Color:             false,
-		AdaptiveThreshold: 6,
+		TerminalWidth: 100,
+		ContextLines:  2,
+		LineNumbers:   true,
+		Color:         false,
 	}
 
 	err = Render("a.go", "b.go", []byte(src), []byte(dst), dr.Envelope, opts, &buf)
@@ -352,9 +379,9 @@ func TestRender_AdaptiveHybridLayout_MonolithicInsert(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Large insert block (8+ lines) renders full-width inline with double gutters
-	if !strings.Contains(out, "      7  func NewBigFunction() error {") {
-		t.Errorf("expected inserted function in full-width output with double gutter:\n%s", out)
+	// Pure addition hunk should render single-column without central divider
+	if !strings.Contains(out, " ..   7 func NewBigFunction() error {") {
+		t.Errorf("expected inserted function in single-column output with ' ..   7':\n%s", out)
 	}
 }
 
@@ -375,11 +402,10 @@ func TestRender_AdaptiveHybridLayout_PairedModifications(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := RenderOptions{
-		TerminalWidth:     100,
-		ContextLines:      3,
-		LineNumbers:       true,
-		Color:             false,
-		AdaptiveThreshold: 6,
+		TerminalWidth: 100,
+		ContextLines:  3,
+		LineNumbers:   true,
+		Color:         false,
 	}
 
 	err = Render("a.go", "b.go", []byte(src), []byte(dst), dr.Envelope, opts, &buf)
@@ -428,50 +454,10 @@ func TestRender_AdaptiveHybridLayout_ForceSBS(t *testing.T) {
 	}
 }
 
-func TestRender_AdaptiveHybridLayout_MixedHunkWithPairedAndMonolithicBlock(t *testing.T) {
-	// Mixed hunk: paired edit at top, followed by 10-line contiguous insert at bottom
-	src := "package main\n\nfunc A() {\n\tport := 8080\n\tprintln(port)\n}\n"
-	dst := "package main\n\nfunc A() {\n\tport := 9090\n\tprintln(port)\n}\n\nfunc NewBigHandler() {\n\t// Line 1\n\t// Line 2\n\t// Line 3\n\t// Line 4\n\t// Line 5\n\t// Line 6\n\t// Line 7\n\tprintln(\"done\")\n}\n"
-
-	dr, err := pipeline.Run([]byte(src), []byte(dst), "a.go", "b.go", pipeline.DiffOptions{
-		EnvelopeOpts: serialize.EnvelopeOptions{
-			IncludeActions:    true,
-			IncludeAlignment:  true,
-			IncludeHighlights: true,
-		},
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
-	}
-
-	var buf bytes.Buffer
-	opts := RenderOptions{
-		TerminalWidth:     100,
-		ContextLines:      3,
-		LineNumbers:       true,
-		Color:             false,
-		AdaptiveThreshold: 6,
-	}
-
-	err = Render("a.go", "b.go", []byte(src), []byte(dst), dr.Envelope, opts, &buf)
-	if err != nil {
-		t.Fatalf("Render failed: %v", err)
-	}
-
-	out := buf.String()
-	if !strings.Contains(out, "port := 8080") || !strings.Contains(out, "port := 9090") {
-		t.Errorf("expected paired edit in output:\n%s", out)
-	}
-	if !strings.Contains(out, "      8  func NewBigHandler() {") {
-		t.Errorf("expected full-width inline insert for big handler:\n%s", out)
-	}
-}
-
-func TestRender_AdaptiveHybridLayout_WrappingTokenEdit(t *testing.T) {
-	// A wide line with a small token edit (e.g. removing ", th") that wraps in 50/50 SBS
-	// should adaptively switch to full-width inline.
-	src := []byte("package main\n\nfunc Run() {\n\trunFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, th, noPager)\n}\n")
-	dst := []byte("package main\n\nfunc Run() {\n\trunFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)\n}\n")
+func TestRender_Hybrid_PureAdditionHunk(t *testing.T) {
+	// A file where a function is added at the end
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n\nfunc B() {\n\treturn 2\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
 		EnvelopeOpts: serialize.EnvelopeOptions{
@@ -485,7 +471,7 @@ func TestRender_AdaptiveHybridLayout_WrappingTokenEdit(t *testing.T) {
 	}
 
 	opts := DefaultOptions()
-	opts.TerminalWidth = 100 // codeWidth is ~45, while the line is ~95 chars
+	opts.TerminalWidth = 100
 	opts.Color = false
 
 	var buf bytes.Buffer
@@ -494,26 +480,17 @@ func TestRender_AdaptiveHybridLayout_WrappingTokenEdit(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Should render as full-width inline with double number gutters
-	if !strings.Contains(out, "  4          runFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB,") {
-		t.Errorf("expected full-width inline delete line, got:\n%s", out)
+	if !strings.Contains(out, "@@") {
+		t.Errorf("expected hunk header '@@', got:\n%s", out)
 	}
-	if !strings.Contains(out, "      4      runFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB,") {
-		t.Errorf("expected full-width inline insert line, got:\n%s", out)
-	}
-	if !strings.Contains(out, " ..      th, noPager)") {
-		t.Errorf("expected continuation gutter for delete line, got:\n%s", out)
-	}
-	if !strings.Contains(out, "     ..  noPager)") {
-		t.Errorf("expected continuation gutter for insert line, got:\n%s", out)
+	if !strings.Contains(out, " ..   7 func B() {") {
+		t.Errorf("expected ' ..   7 func B() {', got:\n%s", out)
 	}
 }
 
-func TestRender_AdaptiveHybridLayout_NonWrappingTokenEdit(t *testing.T) {
-	// A short line with a token edit (e.g. timeout = 10 -> timeout = 20)
-	// that fits easily in 50/50 SBS should remain in side-by-side mode.
-	src := []byte("package main\n\nfunc Run() {\n\ttimeout := 10\n\t_ = timeout\n}\n")
-	dst := []byte("package main\n\nfunc Run() {\n\ttimeout := 20\n\t_ = timeout\n}\n")
+func TestRender_Hybrid_PureDeletionHunk(t *testing.T) {
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n\nfunc B() {\n\treturn 2\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
 		EnvelopeOpts: serialize.EnvelopeOptions{
@@ -527,7 +504,7 @@ func TestRender_AdaptiveHybridLayout_NonWrappingTokenEdit(t *testing.T) {
 	}
 
 	opts := DefaultOptions()
-	opts.TerminalWidth = 100 // codeWidth is ~45, short line is ~15 chars
+	opts.TerminalWidth = 100
 	opts.Color = false
 
 	var buf bytes.Buffer
@@ -536,19 +513,52 @@ func TestRender_AdaptiveHybridLayout_NonWrappingTokenEdit(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Should NOT have "-" or "+" gutters on line numbers
-	if strings.Contains(out, "-   4 ") || strings.Contains(out, "+   4 ") {
-		t.Errorf("expected side-by-side layout, not full-width inline, got:\n%s", out)
+	if !strings.Contains(out, "@@") {
+		t.Errorf("expected hunk header '@@', got:\n%s", out)
 	}
-	if !strings.Contains(out, "timeout := 10") || !strings.Contains(out, "timeout := 20") {
-		t.Errorf("expected token edits in output:\n%s", out)
+	if !strings.Contains(out, "  7  .. func B() {") {
+		t.Errorf("expected '  7  .. func B() {', got:\n%s", out)
 	}
 }
 
-func TestRender_AdaptiveHybridLayout_ForceSBS_WrappingTokenEdit(t *testing.T) {
-	// Wide line that would normally switch to inline, but ForceSideBySide is set.
-	src := []byte("package main\n\nfunc Run() {\n\trunFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, th, noPager)\n}\n")
-	dst := []byte("package main\n\nfunc Run() {\n\trunFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)\n}\n")
+func TestRender_Hybrid_MixedHunk(t *testing.T) {
+	// In-place edit has changes on both sides: renders dual-column SBS
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 2\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := DefaultOptions()
+	opts.TerminalWidth = 100
+	opts.Color = false
+
+	var buf bytes.Buffer
+	if err := Render("main.go", "main.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "@@") {
+		t.Errorf("expected hunk header '@@', got:\n%s", out)
+	}
+	if !strings.Contains(out, "return 1") || !strings.Contains(out, "return 2") {
+		t.Errorf("expected both sides in output:\n%s", out)
+	}
+}
+
+func TestRender_Hybrid_ForceSideBySide(t *testing.T) {
+	// Pure addition hunk, but ForceSideBySide is true
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n\nfunc B() {\n\treturn 2\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
 		EnvelopeOpts: serialize.EnvelopeOptions{
@@ -572,15 +582,122 @@ func TestRender_AdaptiveHybridLayout_ForceSBS_WrappingTokenEdit(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "..") {
-		t.Errorf("expected force-sbs to wrap and have continuation gutter '..', got:\n%s", out)
+	if !strings.Contains(out, "func B() {") {
+		t.Errorf("expected func B() in output:\n%s", out)
 	}
 }
 
-func TestRender_AdaptiveHybridLayout_NoLineNumbers_ShowsSymbols(t *testing.T) {
-	// When LineNumbers is false, symbols '-' and '+' must be rendered since there are no line numbers.
-	src := []byte("package main\n\nfunc Run() {\n\trunFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, th, noPager)\n}\n")
-	dst := []byte("package main\n\nfunc Run() {\n\trunFileDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, noPager)\n}\n")
+func TestRender_Hybrid_WholeFileAddition(t *testing.T) {
+	src := []byte("")
+	dst := []byte("package main\n\nfunc New() {\n\treturn\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "new.go", "new.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := DefaultOptions()
+	opts.TerminalWidth = 100
+	opts.Color = false
+
+	var buf bytes.Buffer
+	if err := Render("new.go", "new.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "@@ -0,0 +1,6 @@") {
+		t.Errorf("expected hunk header '@@ -0,0 +1,6 @@', got:\n%s", out)
+	}
+	if !strings.Contains(out, "  3 func New() {") {
+		t.Errorf("expected single line number gutter '  3 func New() {', got:\n%s", out)
+	}
+}
+
+func TestRender_Hybrid_WholeFileDeletion(t *testing.T) {
+	src := []byte("package main\n\nfunc Old() {\n\treturn\n}\n")
+	dst := []byte("")
+
+	dr, err := pipeline.Run(src, dst, "old.go", "old.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := DefaultOptions()
+	opts.TerminalWidth = 100
+	opts.Color = false
+
+	var buf bytes.Buffer
+	if err := Render("old.go", "old.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "@@ -1,6 +0,0 @@") {
+		t.Errorf("expected hunk header '@@ -1,6 +0,0 @@', got:\n%s", out)
+	}
+	if !strings.Contains(out, "  3 func Old() {") {
+		t.Errorf("expected single line number gutter '  3 func Old() {', got:\n%s", out)
+	}
+}
+
+func TestRender_BoldLineNumbers_ColorMode(t *testing.T) {
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n\nfunc B() {\n\treturn 2\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	// 1. Single column hybrid with Color = true -> bold insert number
+	opts := DefaultOptions()
+	opts.TerminalWidth = 100
+	opts.Color = true
+
+	var buf bytes.Buffer
+	if err := Render("main.go", "main.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	out := buf.String()
+	expectedBoldInsert := color.Bold + color.InsertFg
+	if !strings.Contains(out, expectedBoldInsert) {
+		t.Errorf("expected bold insert line number in single column, got:\n%s", out)
+	}
+
+	// 2. Dual column SBS with Color = true -> bold insert number in right gutter
+	opts.ForceSideBySide = true
+	var bufSBS bytes.Buffer
+	if err := Render("main.go", "main.go", src, dst, dr.Envelope, opts, &bufSBS); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	outSBS := bufSBS.String()
+	if !strings.Contains(outSBS, expectedBoldInsert) {
+		t.Errorf("expected bold insert line number in dual column SBS, got:\n%s", outSBS)
+	}
+}
+
+func TestRender_Hybrid_NoLineNumbers_ShowsSymbols(t *testing.T) {
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n\nfunc B() {\n\treturn 2\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
 		EnvelopeOpts: serialize.EnvelopeOptions{
@@ -604,12 +721,8 @@ func TestRender_AdaptiveHybridLayout_NoLineNumbers_ShowsSymbols(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Should have "- " and "+ " symbols because line numbers are disabled
-	if !strings.Contains(out, "- ") {
-		t.Errorf("expected '- ' symbol when line numbers disabled, got:\n%s", out)
-	}
-	if !strings.Contains(out, "+ ") {
-		t.Errorf("expected '+ ' symbol when line numbers disabled, got:\n%s", out)
+	if !strings.Contains(out, "+ func B() {") {
+		t.Errorf("expected '+ func B() {' when line numbers are disabled, got:\n%s", out)
 	}
 }
 
@@ -659,11 +772,10 @@ func TestRender_CustomTabWidth(t *testing.T) {
 	}
 }
 
-func TestRender_AdaptiveHybridLayout_SubBlockGrouping(t *testing.T) {
-	// A wide line with a small token edit triggers full-width hybrid layout for the segment.
-	// Within that segment, 3 lines of filter(...) are replaced by 1 line of reduce(...).
-	// Verifies that all 3 deleted lines are rendered before the 1 replacement line.
-	src := []byte("function OverviewPanel({ events, registrations, team, crew, partners, sections, onToggleSection }: any) {\n" +
+func TestRender_SubBlockSideBySide(t *testing.T) {
+	src := []byte("function OverviewPanel({ events,\n" +
+		"\tregistrations, team, crew, partners,\n" +
+		"\tsections, onToggleSection }: any) {\n" +
 		"\tconst confirmedCount = (registrations || []).filter(\n" +
 		"\t\t(r: any) => r.status === 'CONFIRMED' || r.status === 'ATTENDED',\n" +
 		"\t).length\n" +
@@ -693,19 +805,8 @@ func TestRender_AdaptiveHybridLayout_SubBlockGrouping(t *testing.T) {
 	}
 
 	out := buf.String()
-
-	// All 3 deleted lines must appear before the 1 inserted line.
-	idxDel1 := strings.Index(out, "const confirmedCount = (registrations || []).filter(")
-	idxDel2 := strings.Index(out, "(r: any) => r.status === 'CONFIRMED' || r.status === 'ATTENDED',")
-	idxDel3 := strings.Index(out, ").length")
-	idxIns := strings.Index(out, "const confirmedCount = (events || []).reduce(")
-
-	if idxDel1 == -1 || idxDel2 == -1 || idxDel3 == -1 || idxIns == -1 {
-		t.Fatalf("missing expected text in output:\n%s", out)
-	}
-
-	if idxDel1 >= idxDel2 || idxDel2 >= idxDel3 || idxDel3 >= idxIns {
-		t.Errorf("expected all 3 deleted lines to precede inserted line, but got relative order:\n%s", out)
+	if !strings.Contains(out, "filter(") || !strings.Contains(out, "reduce(") {
+		t.Errorf("missing expected text in output:\n%s", out)
 	}
 }
 

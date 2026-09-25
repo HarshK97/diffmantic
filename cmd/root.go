@@ -813,11 +813,6 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 
 	forceSBSFlag, _ := cmd.Flags().GetBool("force-sbs")
 
-	adaptiveThreshold := 6
-	if forceSBSFlag {
-		adaptiveThreshold = 0
-	}
-
 	tabWidth := resolveTabWidth(cmd)
 
 	return sidebyside.RenderOptions{
@@ -827,7 +822,6 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 		DisableAnnotations: !annotations,
 		TabWidth:           tabWidth,
 		ForceSideBySide:    forceSBSFlag,
-		AdaptiveThreshold:  adaptiveThreshold,
 	}
 }
 

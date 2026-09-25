@@ -24,7 +24,8 @@ func (c *SpanCursor) ActionAt(col int) color.ActionKind {
 		c.idx++
 	}
 	if c.idx < len(c.spans) && col >= c.spans[c.idx].StartCol {
-		return parseActionKind(c.spans[c.idx].Action)
+		sp := c.spans[c.idx]
+		return parseActionKind(sp.Action, sp.ColorIndex)
 	}
 	return color.ActionNone
 }
@@ -34,7 +35,7 @@ func (c *SpanCursor) HasSpans() bool {
 	return len(c.spans) > 0
 }
 
-func parseActionKind(action string) color.ActionKind {
+func parseActionKind(action string, colorIndex int) color.ActionKind {
 	switch action {
 	case "delete", "DELETE":
 		return color.ActionDelete
@@ -43,9 +44,9 @@ func parseActionKind(action string) color.ActionKind {
 	case "update", "UPDATE":
 		return color.ActionUpdate
 	case "move", "MOVE":
-		return color.ActionMove
+		return color.MoveActionKindForSlot(colorIndex, false)
 	case "move_update", "MOVE_UPDATE":
-		return color.ActionMoveUpdate
+		return color.MoveActionKindForSlot(colorIndex, true)
 	default:
 		return color.ActionNone
 	}

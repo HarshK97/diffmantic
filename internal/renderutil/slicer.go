@@ -10,16 +10,6 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// BadgeAnchor controls where the move badge is visually anchored on wrapped lines.
-type BadgeAnchor uint8
-
-const (
-	// BadgeAnchorRow0 docks the badge on visual Chunk 0 and deducts badge width upfront (Side-by-Side).
-	BadgeAnchorRow0 BadgeAnchor = iota
-	// BadgeAnchorLastRow appends the badge to the final visual chunk (Inline).
-	BadgeAnchorLastRow
-)
-
 // LineContext distinguishes paired aligned lines from single-sided additions or deletions.
 type LineContext uint8
 
@@ -38,7 +28,7 @@ type SliceConfig struct {
 	TabWidth         int
 	ColorMode        bool
 	PadToTargetWidth bool
-	BadgeAnchor      BadgeAnchor
+	BadgeColor       int
 	Context          LineContext
 }
 
@@ -125,9 +115,17 @@ func appendTransition(b []byte, targetStyle, activeStyle color.ActionKind) []byt
 	case color.ActionUpdate:
 		return append(b, color.Bold+color.UpdateFg...)
 	case color.ActionMove:
-		return append(b, color.Bold+color.MoveFg...)
+		return append(b, color.Bold+color.Move0Fg...)
+	case color.ActionMove1:
+		return append(b, color.Bold+color.Move1Fg...)
+	case color.ActionMove2:
+		return append(b, color.Bold+color.Move2Fg...)
 	case color.ActionMoveUpdate:
-		return append(b, color.Bold+color.Underline+color.UpdateFg...)
+		return append(b, color.Bold+color.Underline+color.Move0Fg...)
+	case color.ActionMoveUpdate1:
+		return append(b, color.Bold+color.Underline+color.Move1Fg...)
+	case color.ActionMoveUpdate2:
+		return append(b, color.Bold+color.Underline+color.Move2Fg...)
 	default: // stylePlain
 		return append(b, color.TextFg...)
 	}
@@ -159,16 +157,6 @@ func (s *Slicer) SliceLineToChunks(
 		badgeWidth = runewidth.StringWidth(badgeText)
 	}
 
-	maxTextWidth := targetWidth
-	if cfg.BadgeAnchor == BadgeAnchorRow0 && targetWidth > 0 && badgeWidth > 0 {
-		maxTextWidth = targetWidth - badgeWidth
-		if maxTextWidth <= 0 {
-			maxTextWidth = targetWidth
-			badgeText = ""
-			badgeWidth = 0
-		}
-	}
-
 	var chunks [][]byte
 	curChunk := s.curChunk[:0]
 	curDisplayCol := 0
@@ -176,19 +164,10 @@ func (s *Slicer) SliceLineToChunks(
 	cursor := NewSpanCursor(spans)
 	byteOffset := 0
 
-	finishChunk := func(isFirstChunk bool) {
+	finishChunk := func() {
 		if cfg.ColorMode && activeStyle != styleUnset && activeStyle != styleLeadWS {
 			curChunk = append(curChunk, color.Reset...)
 			activeStyle = styleUnset
-		}
-
-		if isFirstChunk && cfg.BadgeAnchor == BadgeAnchorRow0 && badgeText != "" {
-			if cfg.ColorMode {
-				curChunk = append(curChunk, color.MoveFg+badgeText+color.Reset...)
-			} else {
-				curChunk = append(curChunk, badgeText...)
-			}
-			curDisplayCol += badgeWidth
 		}
 
 		if cfg.PadToTargetWidth && targetWidth > 0 {
@@ -205,7 +184,6 @@ func (s *Slicer) SliceLineToChunks(
 		chunks = append(chunks, bytes.Clone(curChunk))
 		curChunk = curChunk[:0]
 		curDisplayCol = 0
-		maxTextWidth = targetWidth
 		activeStyle = styleUnset
 	}
 
@@ -217,8 +195,8 @@ func (s *Slicer) SliceLineToChunks(
 
 		// Fast path: a space is always one display column wide.
 		if tok.isSpace && lineText[byteOffset] == ' ' {
-			if maxTextWidth > 0 && curDisplayCol+1 > maxTextWidth {
-				finishChunk(len(chunks) == 0)
+			if targetWidth > 0 && curDisplayCol+1 > targetWidth {
+				finishChunk()
 				activeStyle = styleUnset
 				if !cfg.PadToTargetWidth {
 					for byteOffset < len(lineText) && (lineText[byteOffset] == ' ' || lineText[byteOffset] == '\t') {
@@ -256,8 +234,8 @@ func (s *Slicer) SliceLineToChunks(
 
 			tabSpaces := tabWidth - (curDisplayCol % tabWidth)
 
-			if maxTextWidth > 0 && curDisplayCol+tabSpaces > maxTextWidth {
-				finishChunk(len(chunks) == 0)
+			if targetWidth > 0 && curDisplayCol+tabSpaces > targetWidth {
+				finishChunk()
 				activeStyle = styleUnset
 				tabSpaces = tabWidth
 			}
@@ -276,7 +254,7 @@ func (s *Slicer) SliceLineToChunks(
 			continue
 		}
 
-		if maxTextWidth > 0 && curDisplayCol+tok.displayWidth > maxTextWidth {
+		if targetWidth > 0 && curDisplayCol+tok.displayWidth > targetWidth {
 			if tok.displayWidth > targetWidth {
 				// Break mid-word rune-by-rune when the token is wider than the entire column.
 				currRuneOffset := byteOffset
@@ -284,8 +262,8 @@ func (s *Slicer) SliceLineToChunks(
 					r, rLen := utf8.DecodeRuneInString(lineText[currRuneOffset:])
 					rWidth := max(1, runewidth.RuneWidth(r))
 
-					if maxTextWidth > 0 && curDisplayCol+rWidth > maxTextWidth {
-						finishChunk(len(chunks) == 0)
+					if targetWidth > 0 && curDisplayCol+rWidth > targetWidth {
+						finishChunk()
 						activeStyle = styleUnset
 					}
 
@@ -304,7 +282,7 @@ func (s *Slicer) SliceLineToChunks(
 			}
 
 			// Overflow: push token to the next row and start fresh.
-			finishChunk(len(chunks) == 0)
+			finishChunk()
 			activeStyle = styleUnset
 		}
 
@@ -326,23 +304,27 @@ func (s *Slicer) SliceLineToChunks(
 		byteOffset += tok.byteLen
 	}
 
-	if len(chunks) == 0 || curDisplayCol > 0 || len(curChunk) > 0 {
-		finishChunk(len(chunks) == 0)
+	// Dock move badge on the final visual chunk before flushing so it participates in line wrapping and padding.
+	if badgeText != "" {
+		if targetWidth > 0 && curDisplayCol+badgeWidth > targetWidth && curDisplayCol > 0 {
+			finishChunk()
+		}
+
+		if cfg.ColorMode && activeStyle != styleUnset && activeStyle != styleLeadWS {
+			curChunk = append(curChunk, color.Reset...)
+			activeStyle = styleUnset
+		}
+
+		if cfg.ColorMode {
+			curChunk = append(curChunk, color.MoveFgForSlot(cfg.BadgeColor)+badgeText+color.Reset...)
+		} else {
+			curChunk = append(curChunk, badgeText...)
+		}
+		curDisplayCol += badgeWidth
 	}
 
-	if cfg.BadgeAnchor == BadgeAnchorLastRow && badgeText != "" {
-		var badgeBytes []byte
-		if cfg.ColorMode {
-			badgeBytes = []byte(color.MoveFg + badgeText + color.Reset)
-		} else {
-			badgeBytes = []byte(badgeText)
-		}
-		if len(chunks) > 0 {
-			last := len(chunks) - 1
-			chunks[last] = append(chunks[last], badgeBytes...)
-		} else {
-			chunks = append(chunks, badgeBytes)
-		}
+	if len(chunks) == 0 || curDisplayCol > 0 || len(curChunk) > 0 {
+		finishChunk()
 	}
 
 	s.curChunk = curChunk[:0]

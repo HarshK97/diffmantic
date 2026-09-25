@@ -3,6 +3,8 @@ package renderutil
 import (
 	"reflect"
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
 func TestBuildChangeIntervals(t *testing.T) {
@@ -121,5 +123,57 @@ func TestMergeHunks(t *testing.T) {
 				t.Errorf("MergeHunks() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestComputeHunkRange(t *testing.T) {
+	pairs := []serialize.LineAlignmentPair{
+		{LeftLine: 0, RightLine: 0},
+		{LeftLine: 1, RightLine: -1},
+		{LeftLine: 2, RightLine: -1},
+		{LeftLine: -1, RightLine: 1},
+		{LeftLine: 3, RightLine: 2},
+	}
+
+	// Hunk covering middle changes [1..3]
+	h := Interval{Start: 1, End: 3}
+	srcStart, srcCount, dstStart, dstCount := ComputeHunkRange(h, pairs, true, true)
+	if srcStart != 2 || srcCount != 2 {
+		t.Errorf("expected srcStart=2, srcCount=2, got srcStart=%d, srcCount=%d", srcStart, srcCount)
+	}
+	if dstStart != 2 || dstCount != 1 {
+		t.Errorf("expected dstStart=2, dstCount=1, got dstStart=%d, dstCount=%d", dstStart, dstCount)
+	}
+
+	// Pure addition hunk with no left lines
+	pureAddPairs := []serialize.LineAlignmentPair{
+		{LeftLine: -1, RightLine: 0},
+		{LeftLine: -1, RightLine: 1},
+	}
+	hAdd := Interval{Start: 0, End: 1}
+	srcStart, srcCount, dstStart, dstCount = ComputeHunkRange(hAdd, pureAddPairs, false, true)
+	if srcStart != 0 || srcCount != 0 {
+		t.Errorf("expected srcStart=0, srcCount=0, got srcStart=%d, srcCount=%d", srcStart, srcCount)
+	}
+	if dstStart != 1 || dstCount != 2 {
+		t.Errorf("expected dstStart=1, dstCount=2, got dstStart=%d, dstCount=%d", dstStart, dstCount)
+	}
+}
+
+func TestFormatHunkHeader(t *testing.T) {
+	if got := FormatRange(1, 1); got != "1" {
+		t.Errorf("FormatRange(1, 1) = %q, want '1'", got)
+	}
+	if got := FormatRange(1, 5); got != "1,5" {
+		t.Errorf("FormatRange(1, 5) = %q, want '1,5'", got)
+	}
+	if got := FormatRange(1, 0); got != "1,0" {
+		t.Errorf("FormatRange(1, 0) = %q, want '1,0'", got)
+	}
+
+	header := FormatHunkHeader(1, 5, 1, 6, " func Foo()")
+	want := "@@ -1,5 +1,6 @@ func Foo()"
+	if header != want {
+		t.Errorf("FormatHunkHeader = %q, want %q", header, want)
 	}
 }

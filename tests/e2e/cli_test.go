@@ -154,11 +154,19 @@ func TestCLI_NonInteractive_DefaultsToSideBySide(t *testing.T) {
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
-	if strings.Contains(stdout, "@@") || strings.Contains(stdout, "--- a/") {
-		t.Fatalf("expected side-by-side output by default, got inline headers:\n%s", stdout)
+	if strings.Contains(stdout, "--- a/") || strings.Contains(stdout, "+++ b/") {
+		t.Fatalf("expected side-by-side output by default, got inline file headers:\n%s", stdout)
 	}
 	if len(stdout) == 0 {
 		t.Fatal("expected non-empty side-by-side output")
+	}
+
+	stdoutSBS, stderrSBS, err := runDiffm(oldPath, newPath, "-f", "side-by-side", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm -f side-by-side failed: %v\nstderr: %s", err, stderrSBS)
+	}
+	if stdout != stdoutSBS {
+		t.Fatalf("expected default output to match -f side-by-side exactly, got diff:\n%s vs\n%s", stdout, stdoutSBS)
 	}
 }
 

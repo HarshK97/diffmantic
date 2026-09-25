@@ -772,3 +772,35 @@ func TestRender_SpanAwareIdenticalLineEdits(t *testing.T) {
 		t.Errorf("expected insert color styling in colored output, got:\n%s", gotColor)
 	}
 }
+
+func TestRender_BoldLineNumbers_ColorMode(t *testing.T) {
+	src := []byte("package main\n\nfunc A() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc A() {\n\treturn 2\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:        true,
+		ContextLines: 1,
+		LineNumbers:  true,
+	}
+	got := Render("a.go", "b.go", src, dst, dr.Envelope, opts)
+
+	expectedBoldDelete := color.Bold + color.DeleteFg
+	expectedBoldInsert := color.Bold + color.InsertFg
+	if !strings.Contains(got, expectedBoldDelete) {
+		t.Errorf("expected bold delete line number in inline output, got:\n%s", got)
+	}
+	if !strings.Contains(got, expectedBoldInsert) {
+		t.Errorf("expected bold insert line number in inline output, got:\n%s", got)
+	}
+}

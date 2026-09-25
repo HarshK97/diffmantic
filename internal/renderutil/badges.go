@@ -10,9 +10,11 @@ import (
 
 // MoveBadges contains line-level arrow annotations and hunk header descriptions for moves.
 type MoveBadges struct {
-	SrcLineBadges map[int]string // Source line index -> " ➔ L{dst}"
-	DstLineBadges map[int]string // Destination line index -> " ⤹ L{src}"
-	HunkHeaders   map[int]string // Hunk index -> " func Foo() (moved to L{dst})"
+	SrcLineBadges      map[int]string // Source line index -> " ➔ L{dst}"
+	DstLineBadges      map[int]string // Destination line index -> " ⤹ L{src}"
+	SrcLineBadgeColors map[int]int    // Source line index -> Color index (0: Teal, 1: Mauve, 2: Sapphire)
+	DstLineBadgeColors map[int]int    // Destination line index -> Color index (0: Teal, 1: Mauve, 2: Sapphire)
+	HunkHeaders        map[int]string // Hunk index -> " func Foo() (moved to L{dst})"
 }
 
 // BuildMoveBadges computes directional line badges and hunk header move annotations.
@@ -26,9 +28,11 @@ func BuildMoveBadges(
 	promoteDeclarations bool,
 ) MoveBadges {
 	meta := MoveBadges{
-		SrcLineBadges: make(map[int]string),
-		DstLineBadges: make(map[int]string),
-		HunkHeaders:   make(map[int]string),
+		SrcLineBadges:      make(map[int]string),
+		DstLineBadges:      make(map[int]string),
+		SrcLineBadgeColors: make(map[int]int),
+		DstLineBadgeColors: make(map[int]int),
+		HunkHeaders:        make(map[int]string),
 	}
 	if len(hunks) == 0 || len(actions) == 0 {
 		return meta
@@ -103,11 +107,13 @@ func BuildMoveBadges(
 			if inSrcHunk && sStart >= 0 && sStart < len(srcLines) {
 				if _, exists := meta.SrcLineBadges[sStart]; !exists {
 					meta.SrcLineBadges[sStart] = fmt.Sprintf(" ➔ L%d", dStart+1)
+					meta.SrcLineBadgeColors[sStart] = a.MoveColorIndex
 				}
 			}
 			if inDstHunk && dStart >= 0 && dStart < len(dstLines) {
 				if _, exists := meta.DstLineBadges[dStart]; !exists {
 					meta.DstLineBadges[dStart] = fmt.Sprintf(" ⤹ L%d", sStart+1)
+					meta.DstLineBadgeColors[dStart] = a.MoveColorIndex
 				}
 			}
 		}
