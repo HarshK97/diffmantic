@@ -504,3 +504,84 @@ func TestMethodReceiverDisambiguation(t *testing.T) {
 		}
 	})
 }
+
+func TestDeclarationSignaturePreservation(t *testing.T) {
+	t.Run("renamed outer function preserves parameter list instead of siphoning to inner helper", func(t *testing.T) {
+		// src:
+		// fn is_hidden(dent: &DirEntry) -> bool { ... body ... }
+		srcParams := testutil.Node("parameters", "",
+			testutil.Node("parameter", "",
+				testutil.Leaf("identifier", "dent"),
+				testutil.Leaf("type_identifier", "DirEntry"),
+			),
+		)
+		srcBody := testutil.Node("block", "",
+			testutil.Leaf("expr", "check_hidden()"),
+			testutil.Leaf("expr", "more_code()"),
+			testutil.Leaf("return", "true"),
+		)
+		srcFunc := testutil.Node("function_item", "",
+			testutil.Leaf("identifier", "is_hidden"),
+			srcParams,
+			srcBody,
+		)
+		srcFunc.Language = "rust"
+		src := testutil.Node("source_file", "", srcFunc)
+		src.Language = "rust"
+
+		// dst:
+		// fn is_hidden_entry(dent: &DirEntry) -> bool {
+		//     fn imp(dent: &DirEntry) -> bool { ... body ... }
+		//     imp(dent)
+		// }
+		dstOuterParams := testutil.Node("parameters", "",
+			testutil.Node("parameter", "",
+				testutil.Leaf("identifier", "dent"),
+				testutil.Leaf("type_identifier", "DirEntry"),
+			),
+		)
+		dstInnerParams := testutil.Node("parameters", "",
+			testutil.Node("parameter", "",
+				testutil.Leaf("identifier", "dent"),
+				testutil.Leaf("type_identifier", "DirEntry"),
+			),
+		)
+		dstInnerBody := testutil.Node("block", "",
+			testutil.Leaf("expr", "check_hidden()"),
+			testutil.Leaf("expr", "more_code()"),
+			testutil.Leaf("return", "true"),
+		)
+		dstInnerFunc := testutil.Node("function_item", "",
+			testutil.Leaf("identifier", "imp"),
+			dstInnerParams,
+			dstInnerBody,
+		)
+		dstOuterBody := testutil.Node("block", "",
+			dstInnerFunc,
+			testutil.Leaf("call", "imp(dent)"),
+		)
+		dstOuterFunc := testutil.Node("function_item", "",
+			testutil.Leaf("identifier", "is_hidden_entry"),
+			dstOuterParams,
+			dstOuterBody,
+		)
+		dstOuterFunc.Language = "rust"
+		dst := testutil.Node("source_file", "", dstOuterFunc)
+		dst.Language = "rust"
+
+		r := Match(src, dst, nil, nil, nil)
+		if r == nil || r.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		if r.Mappings.Src()[srcFunc] != dstOuterFunc {
+			t.Errorf("outer function should match outer function: got %v, want %v", r.Mappings.Src()[srcFunc], dstOuterFunc)
+		}
+		if r.Mappings.Src()[srcParams] != dstOuterParams {
+			t.Errorf("outer parameters should match outer parameters: got %v, want %v", r.Mappings.Src()[srcParams], dstOuterParams)
+		}
+		if r.Mappings.Src()[srcParams] == dstInnerParams {
+			t.Errorf("outer parameters must NOT be siphoned into inner helper function")
+		}
+	})
+}
