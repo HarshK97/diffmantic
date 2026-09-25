@@ -82,7 +82,8 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		var srcBytes, dstBytes []byte
 
 		// Determine file status and read bytes
-		if !existsInA {
+		switch {
+		case !existsInA:
 			// File added: only exists in B
 			srcBytes = []byte{}
 			var err error
@@ -92,7 +93,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				hadErrors = true
 				continue
 			}
-		} else if !existsInB {
+		case !existsInB:
 			// File deleted: only exists in A
 			var err error
 			srcBytes, err = os.ReadFile(pathA)
@@ -102,7 +103,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				continue
 			}
 			dstBytes = []byte{}
-		} else {
+		default:
 			// Both exist: check if modified
 			var errA, errB error
 			srcBytes, errA = os.ReadFile(pathA)
