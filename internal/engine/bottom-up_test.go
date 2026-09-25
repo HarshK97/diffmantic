@@ -174,8 +174,8 @@ func TestComputeAffinity_DepthPenaltyFires(t *testing.T) {
 	sharedLeaf1d := testutil.Leaf("id", "shared")
 	sharedLeaf2d := testutil.Leaf("id", "shared")
 	block1Deep := testutil.Node("block", "", sharedLeaf1d, testutil.Leaf("id", "x"))
-	ifNode := testutil.Node("if", "", block1Deep)    // block1Deep.Parent = ifNode
-	parent1Deep := testutil.Node("func", "", ifNode) // block1Deep depth = 2
+	ifNode := testutil.Node("if", "", testutil.Leaf("id", "cond"), block1Deep) // block1Deep.Parent = ifNode
+	parent1Deep := testutil.Node("func", "", ifNode)                           // block1Deep depth = 2
 
 	block2Shallow := testutil.Node("block", "", sharedLeaf2d, testutil.Leaf("id", "x"))
 	parent2Shallow := testutil.Node("func", "", block2Shallow) // block2Shallow depth = 1
@@ -185,7 +185,7 @@ func TestComputeAffinity_DepthPenaltyFires(t *testing.T) {
 	mSame.Add(parent1, parent2)
 	scoreSameDepth := computeAffinity(block1, block2, mSame, DefaultAffinityWeights, false)
 
-	// depthPenalty = DepthCoeff × (2−1)² = 0.20 × 1 = 0.20 → cross-depth score is lower.
+	// depthPenalty = min(0.30, DepthCoeff × |2−1|) = 0.20 → cross-depth score is lower.
 	mDeep := NewMapping()
 	mDeep.Add(sharedLeaf1d, sharedLeaf2d)
 	mDeep.Add(parent1Deep, parent2Shallow)

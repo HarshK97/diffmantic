@@ -191,6 +191,7 @@ var javascriptRules = &Rules{
 		"object_pattern",
 		"arguments",
 		"formal_parameters",
+		"jsx_expression",
 	},
 	Pairs: []string{
 		"pair",
