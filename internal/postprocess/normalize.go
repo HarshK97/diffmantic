@@ -369,9 +369,12 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 	// can "move" from one struct field to an unrelated one.
 	crossKey := src.Parent != nil && dst.Parent != nil && r.IsPair(src.Parent.Type) && r.IsPair(dst.Parent.Type)
 
-	lineDist := ms.AdjustedLineDistance(src, dst)
+	lineDist := int(src.StartRow) - int(dst.StartRow)
+	if lineDist < 0 {
+		lineDist = -lineDist
+	}
 
-	// Same-line inline shifts.
+	// Same-line shifts.
 	if lineDist == 0 {
 		if crossKey {
 			return 5
@@ -400,9 +403,8 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		return 4 + lineDist/5
 	}
 
-	// Nearby cross-scope moves (drift < 10) get mild scaling, but only when the
-	// source function survived deletion. If it was deleted, AdjustedLineDistance
-	// shrinks the gap and lets weak moves slip through.
+	// Moves within 10 lines get mild scaling, but only if the source function
+	// wasn't deleted.
 	if lineDist < 10 {
 		srcDecl := src.EnclosingContainerDeclaration(r)
 		if srcDecl != nil && ms.Src()[srcDecl] != nil {

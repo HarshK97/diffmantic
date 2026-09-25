@@ -794,6 +794,62 @@ func TestRequiredMoveThreshold(t *testing.T) {
 			t.Errorf("expected threshold >= 5 for cross-key bare literal, got %d (a clamped S=1 token would survive as a Move)", threshold)
 		}
 	})
+
+	t.Run("same-line inline shift returns 1", func(t *testing.T) {
+		ms := engine.NewMapping()
+		srcStmt := mkNode("expression_statement", "foo()")
+		srcStmt.Language = "go"
+		srcStmt.StartRow, srcStmt.EndRow = 10, 10
+		dstStmt := mkNode("expression_statement", "foo()")
+		dstStmt.Language = "go"
+		dstStmt.StartRow, dstStmt.EndRow = 10, 10
+
+		threshold := requiredMoveThreshold(srcStmt, dstStmt, ms, r)
+		if threshold != 1 {
+			t.Errorf("requiredMoveThreshold() = %d, want 1", threshold)
+		}
+	})
+
+	t.Run("distant statement across scopes does not get same-line threshold of 1", func(t *testing.T) {
+		// A surviving outer scope shouldn't cancel out line distance between distant functions.
+		rootSrc := mkNode("source_file", "")
+		rootSrc.Language = "go"
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcFunc.Parent = rootSrc
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcIf := mkNode("if_statement", "")
+		srcIf.Language = "go"
+		srcIf.StartRow = 10
+		srcIf.Parent = srcBody
+
+		rootDst := mkNode("source_file", "")
+		rootDst.Language = "go"
+		dstFunc := mkNode("function_declaration", "bar")
+		dstFunc.Language = "go"
+		dstFunc.Parent = rootDst
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstIf := mkNode("if_statement", "")
+		dstIf.Language = "go"
+		dstIf.StartRow = 210
+		dstIf.Parent = dstBody
+
+		msDrift := engine.NewMapping()
+		msDrift.Add(rootSrc, rootDst)
+
+		threshold := requiredMoveThreshold(srcIf, dstIf, msDrift, r)
+		if threshold <= 1 {
+			t.Errorf("expected threshold > 1 for distant statement 200 lines away, got %d", threshold)
+		}
+		// 200 lines apart gets the cross-scope penalty: 50 + 200/10 = 70.
+		if threshold < 50 {
+			t.Errorf("expected threshold >= 50 for 200-line distant statement across scopes, got %d", threshold)
+		}
+	})
 }
 
 func TestNormalizeMovesByStructure(t *testing.T) {
