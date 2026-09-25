@@ -329,29 +329,38 @@ func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	return ins, del, upd
 }
 
-// processFile renders a single diff result in the specified format.
+// renderConfig groups all configuration needed to render a diff result.
+type renderConfig struct {
+	format      string
+	showBanner  bool
+	writer      io.Writer
+	inlineOpts  inline.RenderOptions
+	sbsOpts     sidebyside.RenderOptions
+}
+
+// renderDiffResult renders a single diff result in the specified format.
 // It handles all output formats (side-by-side, inline, json, actions) consistently.
-func processFile(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipeline.DiffResult, format string, showBanner bool, writer io.Writer, inlineOpts inline.RenderOptions, sbsOpts sidebyside.RenderOptions) error {
-	switch format {
+func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipeline.DiffResult, rc renderConfig) error {
+	switch rc.format {
 	case "side-by-side":
-		if showBanner {
+		if rc.showBanner {
 			numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
-			if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
+			if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, rc.sbsOpts.Color, rc.writer); err != nil {
 				return err
 			}
 		}
-		err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, sbsOpts, writer)
+		err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.sbsOpts, rc.writer)
 		if err != nil {
 			return err
 		}
 	case "inline":
-		output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, inlineOpts)
+		output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.inlineOpts)
 		if output != "" {
-			if _, err := io.WriteString(writer, output); err != nil {
+			if _, err := io.WriteString(rc.writer, output); err != nil {
 				return err
 			}
 			if !strings.HasSuffix(output, "\n") {
-				if _, err := io.WriteString(writer, "\n"); err != nil {
+				if _, err := io.WriteString(rc.writer, "\n"); err != nil {
 					return err
 				}
 			}
@@ -359,27 +368,27 @@ func processFile(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipelin
 	case "json":
 		var jsonData []byte
 		var err error
-		if showBanner {
+		if rc.showBanner {
 			jsonData, err = json.Marshal(dr.Envelope)
 		} else {
 			jsonData, err = json.MarshalIndent(dr.Envelope, "", "  ")
 		}
 		if err == nil {
-			if _, err := writer.Write(jsonData); err != nil {
+			if _, err := rc.writer.Write(jsonData); err != nil {
 				return err
 			}
-			if _, err := writer.Write([]byte("\n")); err != nil {
+			if _, err := rc.writer.Write([]byte("\n")); err != nil {
 				return err
 			}
 		}
 	case "actions":
-		if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
+		if _, err := fmt.Fprintf(rc.writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
 			return err
 		}
-		if err := engine.FprintMappings(writer, dr.MatchResult); err != nil {
+		if err := engine.FprintMappings(rc.writer, dr.MatchResult); err != nil {
 			return err
 		}
-		if err := actions.FprintActions(writer, dr.EditScript); err != nil {
+		if err := actions.FprintActions(rc.writer, dr.EditScript); err != nil {
 			return err
 		}
 	}
@@ -494,7 +503,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		}
 
 		filesRendered++
-		return processFile(srcFile, dstFile, srcBytes, dstBytes, dr, format, showBanner, writer, inlineOpts, sbsOpts)
+		return renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
+			format:     format,
+			showBanner: showBanner,
+			writer:     writer,
+			inlineOpts: inlineOpts,
+			sbsOpts:    sbsOpts,
+		})
 	}
 
 	textconv, _ := cmd.Flags().GetBool("textconv")

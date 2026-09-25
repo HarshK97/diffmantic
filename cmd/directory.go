@@ -166,7 +166,13 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		}
 
 		// Use the shared rendering function
-		if err := processFile(cf.relPath, cf.relPath, cf.srcBytes, cf.dstBytes, dr, format, showBanner, writer, inlineOpts, sbsOpts); err != nil {
+		if err := renderDiffResult(cf.relPath, cf.relPath, cf.srcBytes, cf.dstBytes, dr, renderConfig{
+			format:     format,
+			showBanner: showBanner,
+			writer:     writer,
+			inlineOpts: inlineOpts,
+			sbsOpts:    sbsOpts,
+		}); err != nil {
 			if pager.IsBrokenPipe(err) {
 				return
 			}
