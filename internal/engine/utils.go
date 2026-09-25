@@ -276,7 +276,7 @@ func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {
 		return nil
 	}
 	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		if slices.Contains(r.Declarations, curr.Type) {
+		if r.IsDeclaration(curr.Type) {
 			return curr
 		}
 	}
@@ -531,4 +531,41 @@ func getOperatorNode(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode 
 		return n.Children[1]
 	}
 	return nil
+}
+
+// findBodyBlock returns the first executable block child of n.
+func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	for _, c := range n.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		if isBlock {
+			return c
+		}
+	}
+	return nil
+}
+
+// isDeclarationHeader reports whether n sits in a function's signature
+// (parameters, return types) rather than its body.
+func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isContainer := (r != nil && r.IsContainerDeclaration(curr.Type)) ||
+			(r == nil && rules.IsContainerDeclaration(curr.Type))
+		if isContainer {
+			body := findBodyBlock(curr, r)
+			if body == nil {
+				return false
+			}
+			return body != n && !body.Contains(n)
+		}
+	}
+	return false
 }
