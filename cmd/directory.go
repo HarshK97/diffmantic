@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
@@ -38,11 +39,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	}
 
 	// Convert to sorted slice for deterministic output
-	relPaths := make([]string, 0, len(allPaths))
-	for relPath := range allPaths {
-		relPaths = append(relPaths, relPath)
-	}
-	sort.Strings(relPaths)
+	relPaths := slices.Sorted(maps.Keys(allPaths))
 
 	if format == "" {
 		format = "side-by-side"
