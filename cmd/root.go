@@ -158,11 +158,7 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 			if (errA == nil && infoA.IsDir()) || (errB == nil && infoB.IsDir()) {
 				// Handle directory diffing
-				if errA != nil || !infoA.IsDir() {
-					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
-					os.Exit(1)
-				}
-				if errB != nil || !infoB.IsDir() {
+				if errA != nil || !infoA.IsDir() || errB != nil || !infoB.IsDir() {
 					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
 					os.Exit(1)
 				}
