@@ -199,7 +199,6 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			MaxASTFileLines:  lineLimitLines,
 			EnvelopeOpts:     opts,
 		})
-
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", cf.relPath, err)
 			hadErrors = true
