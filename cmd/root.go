@@ -157,8 +157,12 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			infoB, errB := os.Stat(argB)
 
 			if (errA == nil && infoA.IsDir()) || (errB == nil && infoB.IsDir()) {
-				fmt.Fprintln(os.Stderr, "Error: Directory diffing is not supported yet")
-				os.Exit(1)
+				if errA != nil || !infoA.IsDir() || errB != nil || !infoB.IsDir() {
+					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
+					os.Exit(1)
+				}
+				runDirectoryDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+				return
 			}
 
 			// Case 1: Both exist on disk as files or /dev/null
@@ -324,6 +328,108 @@ func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	return ins, del, upd
 }
 
+// renderConfig groups settings needed to render a diff.
+type renderConfig struct {
+	format     string
+	showBanner bool
+	writer     io.Writer
+	inlineOpts inline.RenderOptions
+	sbsOpts    sidebyside.RenderOptions
+}
+
+// renderDiffResult writes a single diff result to writer in the requested format.
+func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipeline.DiffResult, rc renderConfig) error {
+	if dr.IsBinary {
+		renderBinaryDiff(srcFile, dstFile, rc)
+		return nil
+	}
+
+	switch rc.format {
+	case "side-by-side":
+		if rc.showBanner {
+			numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
+			if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, rc.sbsOpts.Color, rc.writer); err != nil {
+				return err
+			}
+		}
+		err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.sbsOpts, rc.writer)
+		if err != nil {
+			return err
+		}
+	case "inline":
+		output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.inlineOpts)
+		if output != "" {
+			if _, err := io.WriteString(rc.writer, output); err != nil {
+				return err
+			}
+			if !strings.HasSuffix(output, "\n") {
+				if _, err := io.WriteString(rc.writer, "\n"); err != nil {
+					return err
+				}
+			}
+		}
+	case "json":
+		var jsonData []byte
+		var err error
+		if rc.showBanner {
+			jsonData, err = json.Marshal(dr.Envelope)
+		} else {
+			jsonData, err = json.MarshalIndent(dr.Envelope, "", "  ")
+		}
+		if err == nil {
+			if _, err := rc.writer.Write(jsonData); err != nil {
+				return err
+			}
+			if _, err := rc.writer.Write([]byte("\n")); err != nil {
+				return err
+			}
+		}
+	case "actions":
+		if _, err := fmt.Fprintf(rc.writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
+			return err
+		}
+		if err := engine.FprintMappings(rc.writer, dr.MatchResult); err != nil {
+			return err
+		}
+		if err := actions.FprintActions(rc.writer, dr.EditScript); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// renderBinaryDiff prints the "Binary files ... differ" notice for the active format.
+func renderBinaryDiff(srcFile, dstFile string, rc renderConfig) {
+	switch rc.format {
+	case "side-by-side":
+		if rc.showBanner {
+			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, rc.sbsOpts.Color, rc.writer)
+		}
+		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+	case "inline":
+		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+	case "json":
+		env := &serialize.Envelope{
+			Version:  serialize.SchemaVersion,
+			IsBinary: true,
+		}
+		var jsonData []byte
+		var err error
+		if rc.showBanner {
+			jsonData, err = json.Marshal(env)
+		} else {
+			jsonData, err = json.MarshalIndent(env, "", "  ")
+		}
+		if err == nil {
+			_, _ = rc.writer.Write(jsonData)
+			_, _ = rc.writer.Write([]byte("\n"))
+		}
+	case "actions":
+		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+	}
+}
+
 func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
 	stagedOnly, _ := cmd.Flags().GetBool("cached")
 
@@ -381,6 +487,8 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	showBanner := len(files) > 1
 	var filesRendered int
 
+	textconv, _ := cmd.Flags().GetBool("textconv")
+
 	processFile := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
 		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
 			return nil
@@ -400,93 +508,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		}
 
 		filesRendered++
-
-		switch format {
-		case "side-by-side":
-			if showBanner {
-				numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
-				if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, sbsOpts.Color, writer); err != nil {
-					return err
-				}
-			}
-			err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, sbsOpts, writer)
-			if err != nil {
-				return err
-			}
-		case "inline":
-			output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, inlineOpts)
-			if output != "" {
-				if _, err := io.WriteString(writer, output); err != nil {
-					return err
-				}
-				if !strings.HasSuffix(output, "\n") {
-					if _, err := io.WriteString(writer, "\n"); err != nil {
-						return err
-					}
-				}
-			}
-		case "json":
-			var jsonData []byte
-			var err error
-			if showBanner {
-				jsonData, err = json.Marshal(dr.Envelope)
-			} else {
-				jsonData, err = json.MarshalIndent(dr.Envelope, "", "  ")
-			}
-			if err == nil {
-				if _, err := writer.Write(jsonData); err != nil {
-					return err
-				}
-				if _, err := writer.Write([]byte("\n")); err != nil {
-					return err
-				}
-			}
-		case "actions":
-			if _, err := fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", srcFile, dstFile); err != nil {
-				return err
-			}
-			if err := engine.FprintMappings(writer, dr.MatchResult); err != nil {
-				return err
-			}
-			if err := actions.FprintActions(writer, dr.EditScript); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	textconv, _ := cmd.Flags().GetBool("textconv")
-
-	renderBinaryDiff := func(srcFile, dstFile string) {
-		filesRendered++
-		switch format {
-		case "side-by-side":
-			if showBanner {
-				_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, sbsOpts.Color, writer)
-			}
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-		case "inline":
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-		case "json":
-			env := &serialize.Envelope{
-				Version:  serialize.SchemaVersion,
-				IsBinary: true,
-			}
-			var jsonData []byte
-			var err error
-			if showBanner {
-				jsonData, err = json.Marshal(env)
-			} else {
-				jsonData, err = json.MarshalIndent(env, "", "  ")
-			}
-			if err == nil {
-				_, _ = writer.Write(jsonData)
-				_, _ = writer.Write([]byte("\n"))
-			}
-		case "actions":
-			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-		}
+		return renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
+			format:     format,
+			showBanner: showBanner,
+			writer:     writer,
+			inlineOpts: inlineOpts,
+			sbsOpts:    sbsOpts,
+		})
 	}
 
 	if refA == "" {
@@ -513,7 +541,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				renderBinaryDiff(srcFile, dstFile)
+				filesRendered++
+				renderBinaryDiff(srcFile, dstFile, renderConfig{
+					format:     format,
+					showBanner: showBanner,
+					writer:     writer,
+					inlineOpts: inlineOpts,
+					sbsOpts:    sbsOpts,
+				})
 				continue
 			}
 
@@ -587,7 +622,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				renderBinaryDiff(srcFile, dstFile)
+				filesRendered++
+				renderBinaryDiff(srcFile, dstFile, renderConfig{
+					format:     format,
+					showBanner: showBanner,
+					writer:     writer,
+					inlineOpts: inlineOpts,
+					sbsOpts:    sbsOpts,
+				})
 				continue
 			}
 
@@ -980,12 +1022,12 @@ func dumpFiles(w io.Writer, paths []string, isCST bool) error {
 
 		if multiple {
 			if i > 0 {
-				if _, err := fmt.Fprintln(w); err != nil {
-					return err
+				if _, werr := fmt.Fprintln(w); werr != nil {
+					return werr
 				}
 			}
-			if _, err := fmt.Fprintf(w, "=== %s ===\n", path); err != nil {
-				return err
+			if _, werr := fmt.Fprintf(w, "=== %s ===\n", path); werr != nil {
+				return werr
 			}
 		}
 

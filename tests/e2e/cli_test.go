@@ -214,16 +214,32 @@ func TestCLI_UnsupportedFormat(t *testing.T) {
 	}
 }
 
-func TestCLI_DirectoryInput(t *testing.T) {
+func TestCLI_DirectoryInput_EmptyDirsProduceNoOutput(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()
 
-	_, stderr, err := runDiffm(dirA, dirB)
-	if err == nil {
-		t.Fatal("expected non-zero exit for directory input")
+	stdout, stderr, err := runDiffm(dirA, dirB, "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm failed on two empty dirs: %v\nstderr: %s", err, stderr)
 	}
-	if !strings.Contains(stderr, "Directory diffing is not supported") {
-		t.Errorf("expected directory not supported message, got: %s", stderr)
+	if stdout != "" {
+		t.Errorf("expected no output for two empty/identical directories, got: %s", stdout)
+	}
+}
+
+func TestCLI_DirectoryInput_OneDirOneFile(t *testing.T) {
+	dirA := t.TempDir()
+	filePath := filepath.Join(t.TempDir(), "file.go")
+	if err := os.WriteFile(filePath, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("writing fixture file: %v", err)
+	}
+
+	_, stderr, err := runDiffm(dirA, filePath, "--no-pager")
+	if err == nil {
+		t.Fatal("expected non-zero exit when comparing a directory against a file")
+	}
+	if !strings.Contains(stderr, "must be directories") {
+		t.Errorf("expected 'must be directories' error, got: %s", stderr)
 	}
 }
 
