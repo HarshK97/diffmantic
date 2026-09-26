@@ -484,46 +484,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	showBanner := len(files) > 1
 	var filesRendered int
 
-	processFileWrapper := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
-		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
-			return nil
-		}
-
-		dr, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
-			ParseErrorLimit:  parseErrorLimit,
-			IgnoreComments:   ignoreComments,
-			DisableSizeLimit: sizeLimitKB <= 0,
-			MaxASTFileSize:   sizeLimitKB * 1024,
-			DisableLineLimit: lineLimitLines <= 0,
-			MaxASTFileLines:  lineLimitLines,
-			EnvelopeOpts:     opts,
-		})
-		if err != nil {
-			return fmt.Errorf("diffing %s: %w", dstFile, err)
-		}
-
-		filesRendered++
-		return renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
-			format:     format,
-			showBanner: showBanner,
-			writer:     writer,
-			inlineOpts: inlineOpts,
-			sbsOpts:    sbsOpts,
-		})
-	}
-
 	textconv, _ := cmd.Flags().GetBool("textconv")
-
-	renderBinaryDiffWrapper := func(srcFile, dstFile string) {
-		filesRendered++
-		renderBinaryDiff(srcFile, dstFile, renderConfig{
-			format:     format,
-			showBanner: showBanner,
-			writer:     writer,
-			inlineOpts: inlineOpts,
-			sbsOpts:    sbsOpts,
-		})
-	}
 
 	if refA == "" {
 		for _, f := range files {
@@ -549,7 +510,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				renderBinaryDiffWrapper(srcFile, dstFile)
+				filesRendered++
+				renderBinaryDiff(srcFile, dstFile, renderConfig{
+					format:     format,
+					showBanner: showBanner,
+					writer:     writer,
+					inlineOpts: inlineOpts,
+					sbsOpts:    sbsOpts,
+				})
 				continue
 			}
 
@@ -568,7 +536,34 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 					}
 					return
 				}
-				if err := processFileWrapper(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+				if bytes.Equal(srcBytes, dstBytes) && format != "json" {
+					continue
+				}
+
+				dr, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
+					ParseErrorLimit:  parseErrorLimit,
+					IgnoreComments:   ignoreComments,
+					DisableSizeLimit: sizeLimitKB <= 0,
+					MaxASTFileSize:   sizeLimitKB * 1024,
+					DisableLineLimit: lineLimitLines <= 0,
+					MaxASTFileLines:  lineLimitLines,
+					EnvelopeOpts:     opts,
+				})
+				if err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", dstFile, err)
+					}
+					return
+				}
+
+				filesRendered++
+				if err := renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
+					format:     format,
+					showBanner: showBanner,
+					writer:     writer,
+					inlineOpts: inlineOpts,
+					sbsOpts:    sbsOpts,
+				}); err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					}
@@ -595,7 +590,34 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 					}
 					return
 				}
-				if err := processFileWrapper(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+				if bytes.Equal(srcBytes, dstBytes) && format != "json" {
+					continue
+				}
+
+				dr, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
+					ParseErrorLimit:  parseErrorLimit,
+					IgnoreComments:   ignoreComments,
+					DisableSizeLimit: sizeLimitKB <= 0,
+					MaxASTFileSize:   sizeLimitKB * 1024,
+					DisableLineLimit: lineLimitLines <= 0,
+					MaxASTFileLines:  lineLimitLines,
+					EnvelopeOpts:     opts,
+				})
+				if err != nil {
+					if !pager.IsBrokenPipe(err) {
+						fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", dstFile, err)
+					}
+					return
+				}
+
+				filesRendered++
+				if err := renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
+					format:     format,
+					showBanner: showBanner,
+					writer:     writer,
+					inlineOpts: inlineOpts,
+					sbsOpts:    sbsOpts,
+				}); err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					}
@@ -623,7 +645,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				renderBinaryDiffWrapper(srcFile, dstFile)
+				filesRendered++
+				renderBinaryDiff(srcFile, dstFile, renderConfig{
+					format:     format,
+					showBanner: showBanner,
+					writer:     writer,
+					inlineOpts: inlineOpts,
+					sbsOpts:    sbsOpts,
+				})
 				continue
 			}
 
@@ -642,7 +671,34 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				return
 			}
 
-			if err := processFileWrapper(srcFile, dstFile, srcBytes, dstBytes); err != nil {
+			if bytes.Equal(srcBytes, dstBytes) && format != "json" {
+				continue
+			}
+
+			dr, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
+				ParseErrorLimit:  parseErrorLimit,
+				IgnoreComments:   ignoreComments,
+				DisableSizeLimit: sizeLimitKB <= 0,
+				MaxASTFileSize:   sizeLimitKB * 1024,
+				DisableLineLimit: lineLimitLines <= 0,
+				MaxASTFileLines:  lineLimitLines,
+				EnvelopeOpts:     opts,
+			})
+			if err != nil {
+				if !pager.IsBrokenPipe(err) {
+					fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", dstFile, err)
+				}
+				return
+			}
+
+			filesRendered++
+			if err := renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
+				format:     format,
+				showBanner: showBanner,
+				writer:     writer,
+				inlineOpts: inlineOpts,
+				sbsOpts:    sbsOpts,
+			}); err != nil {
 				if !pager.IsBrokenPipe(err) {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				}
@@ -698,7 +754,34 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 		}
 
-		if err := processFileWrapper(pathFilter, pathFilter, srcBytes, dstBytes); err != nil {
+		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
+			return
+		}
+
+		dr, err := pipeline.Run(srcBytes, dstBytes, pathFilter, pathFilter, pipeline.DiffOptions{
+			ParseErrorLimit:  parseErrorLimit,
+			IgnoreComments:   ignoreComments,
+			DisableSizeLimit: sizeLimitKB <= 0,
+			MaxASTFileSize:   sizeLimitKB * 1024,
+			DisableLineLimit: lineLimitLines <= 0,
+			MaxASTFileLines:  lineLimitLines,
+			EnvelopeOpts:     opts,
+		})
+		if err != nil {
+			if !pager.IsBrokenPipe(err) {
+				fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", pathFilter, err)
+			}
+			return
+		}
+
+		filesRendered++
+		if err := renderDiffResult(pathFilter, pathFilter, srcBytes, dstBytes, dr, renderConfig{
+			format:     format,
+			showBanner: showBanner,
+			writer:     writer,
+			inlineOpts: inlineOpts,
+			sbsOpts:    sbsOpts,
+		}); err != nil {
 			if !pager.IsBrokenPipe(err) {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			}
