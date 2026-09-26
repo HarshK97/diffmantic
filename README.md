@@ -34,10 +34,11 @@ It works as a standalone CLI, a drop-in for `git diff`, or a backend for editor 
 
 ## Features
 
-- **Move Detection.** When you move a function or a block, diffmantic tracks it as a Move. Not a delete + re-add. Moved functions, blocks, and statements are all first-class.
+- **Move Detection.** When you move a function or a block, diffmantic tracks it as a Move. Not a delete + re-add. Moved functions, blocks, and statements are all first-class, with distinct colors for swapped or concurrent moves.
 - **Update & Rename Detection.** Shows exactly what changed inside a syntax node. A variable rename, a string literal swap, a type change, you see the precise edit, not a wall of red and green.
+- **Side-by-Side & Inline Views.** Fast side-by-side view by default, streaming directly through your pager. Uses full-width hybrid hunks for pure additions and deletions so you never get stuck in cramped columns. Also supports standard inline view (`-f inline`), line wrapping (`--wrap`), and `git apply` patches (`-p`).
+- **Directory Diffing.** Run `diffm dir_a dir_b` to diff entire directory trees recursively, streaming changed files through a single pager session.
 - **Git Integration.** Run `diffm` in any Git repo to stream a pager-backed diff of unstaged changes, staged changes with `--cached`, or any two revisions.
-- **Inline Diff.** Static inline view with syntax highlighting and a 16-color ANSI palette, no special terminal setup needed. Long lines wrap to terminal width with `--wrap`, and `-p` prints a `git apply` compatible patch.
 - **JSON Output.** Stable schema with AST actions, line alignment, and character-level highlight spans. Includes selective `--ui` and `--full` modes for editor plugins and frontends.
 - **16 Core Languages.** Go, Java, JavaScript, TypeScript, Python, Rust, Zig, C, C++, PHP, Ruby, JSON, YAML, TOML, HTML, CSS, Lua. Full AST normalization and matching rules powered by Tree-sitter.
 - **Line Diff Fallback.** For unsupported file types or plain text files, Diffmantic automatically falls back to line-based diffing so you can diff any file.
@@ -88,7 +89,7 @@ It auto-detects your OS and architecture, grabs the right binary from [GitHub Re
 curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --dir=/usr/local/bin
 
 # Install a specific version
-curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --version=v0.9.0
+curl -fsSL https://raw.githubusercontent.com/HarshK97/diffmantic/main/install.sh | sh -s -- --version=v0.10.0
 ```
 
 ### Homebrew
@@ -152,14 +153,27 @@ diffm HEAD~1 HEAD
 diffm main...feature-branch
 ```
 
+### Directory-to-Directory Diff
+
+```bash
+# Diff two directories recursively with pager
+diffm dir-a/ dir-b/
+```
+
 ### File-to-File Diff
 
 ```bash
-# Inline diff with pager (default when a terminal is attached)
+# Side-by-side diff with pager (default when a terminal is attached)
 diffm before.go after.go
 
-# Wrap long lines to terminal width
-diffm before.go after.go --wrap
+# Inline diff with pager
+diffm before.go after.go -f inline
+
+# Wrap long lines to terminal width in inline mode
+diffm before.go after.go -f inline --wrap
+
+# Force strict 50/50 side-by-side columns (disables hybrid full-width expansion)
+diffm before.go after.go --force-sbs
 
 # Standard patch suitable for git apply
 diffm before.go after.go -p

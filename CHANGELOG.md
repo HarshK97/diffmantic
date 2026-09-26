@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-26
+
+### Added
+- Recursive directory diffing (`diffm dir_a dir_b`). Compares two directories file-by-file and streams the diffs straight to your pager. Unchanged and binary files are skipped automatically. Huge thanks to @ParthVitnor in #180, Diffmantic's very first contributor!
+- Full-width view for one-sided changes in side-by-side mode. Files or hunks that are purely added or purely deleted now take up the whole terminal instead of squeezing into cramped half-screen columns. Mixed edits stay in the 50/50 dual-column view.
+- Added `--force-sbs` flag if you prefer strict 50/50 split columns even for pure additions or deletions.
+- Distinct colors for separate moves. When code moves around or swaps places in the same file, Diffmantic cycles through teal, mauve, and sapphire so you can tell which moved block belongs where. The destination badges match the colors too.
+- Better move detection inside `switch`, `case`, and pattern-matching blocks. Moving code into or between case arms now shows up as a move instead of getting split into a delete and insert.
+
+### Changed
+- Move badges (`[L...]`) in side-by-side mode now dock at the end of wrapped lines instead of sticking to the first line.
+- Dropped the split divider lines (`─── ··· ───`) between hunks in side-by-side mode for a cleaner look.
+
+### Fixed
+- Stopped small helpers and field lookups from showing up as moves when inlining or extracting a variable. Big expressions still show as moved, but tiny shared calls now cleanly show as deletes and inserts instead of creating distracting color mismatches.
+- Stopped small snippets, bare `return` statements, and boilerplate guards from falsely matching as moves across unrelated functions far apart in the file.
+- Stopped deleted `if` conditions from pairing with surviving code when the inner block was completely rewritten or matched elsewhere.
+- Kept function signatures (parameters and return types) bound to their own function during refactors instead of letting extracted helpers steal them.
+- Fixed code appearing later in a file stealing move matches from earlier code when both blocks were the same size.
+- Stopped standalone operators, keywords, and punctuation from jumping across blocks as phantom moves.
+- Better matching for JSX attributes. Shared attributes like `className` now match their actual element instead of pairing with neighboring tags.
+- Stopped move badges and headers from showing up on JSX tags that were simply added or deleted.
+- Fixed JSX expressions wrapped in `{...}` losing their structure when diffed.
+- Removed phantom highlight boxes around moved lines that end with a semicolon.
+- Fixed ghost move highlights showing up inside code whose outer block already fell back to a regular delete and insert.
+- Fixed false red deletion highlights when multiple lines are collapsed into one. Unchanged text now stays neutral while line numbers show lines were removed.
+- Fixed closing brackets and delimiter lines in inline diffs collapsing into unchanged context when surrounded by changes.
+- Fixed nested highlights (like an edit inside a moved block) overlapping and glitching terminal colors.
+
 ## [0.9.0] - 2026-09-19
 
 ### Added
@@ -244,7 +273,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/HarshK97/diffmantic/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/HarshK97/diffmantic/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/HarshK97/diffmantic/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/HarshK97/diffmantic/compare/v0.6.0...v0.7.0
