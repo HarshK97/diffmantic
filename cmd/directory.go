@@ -57,11 +57,11 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 
 	hadErrors := false
 
-	// First pass: collect changed files
+	// First pass: identify changed files without buffering content
 	type changedFile struct {
-		relPath  string
-		srcBytes []byte
-		dstBytes []byte
+		relPath string
+		pathA   string
+		pathB   string
 	}
 	var changedFiles []changedFile
 
@@ -69,35 +69,19 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		pathA, existsInA := filesA[relPath]
 		pathB, existsInB := filesB[relPath]
 
-		var srcBytes, dstBytes []byte
-
-		// Determine file status and read bytes
+		// Determine if file changed
+		var changed bool
 		switch {
 		case !existsInA:
 			// File added: only exists in B
-			srcBytes = []byte{}
-			var err error
-			dstBytes, err = os.ReadFile(pathB)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathB, err)
-				hadErrors = true
-				continue
-			}
+			changed = true
 		case !existsInB:
 			// File deleted: only exists in A
-			var err error
-			srcBytes, err = os.ReadFile(pathA)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, err)
-				hadErrors = true
-				continue
-			}
-			dstBytes = []byte{}
+			changed = true
 		default:
-			// Both exist: check if modified
-			var errA, errB error
-			srcBytes, errA = os.ReadFile(pathA)
-			dstBytes, errB = os.ReadFile(pathB)
+			// Both exist: check if modified using size first, then content
+			infoA, errA := os.Stat(pathA)
+			infoB, errB := os.Stat(pathB)
 			
 			if errA != nil {
 				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, errA)
@@ -110,17 +94,36 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				continue
 			}
 
-			// Skip unchanged files
-			if bytes.Equal(srcBytes, dstBytes) {
-				continue
+			// If sizes differ, files are different
+			if infoA.Size() != infoB.Size() {
+				changed = true
+			} else {
+				// Same size - read and compare content
+				srcBytes, errA := os.ReadFile(pathA)
+				dstBytes, errB := os.ReadFile(pathB)
+				
+				if errA != nil {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, errA)
+					hadErrors = true
+					continue
+				}
+				if errB != nil {
+					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathB, errB)
+					hadErrors = true
+					continue
+				}
+
+				changed = !bytes.Equal(srcBytes, dstBytes)
 			}
 		}
 
-		changedFiles = append(changedFiles, changedFile{
-			relPath:  relPath,
-			srcBytes: srcBytes,
-			dstBytes: dstBytes,
-		})
+		if changed {
+			changedFiles = append(changedFiles, changedFile{
+				relPath: relPath,
+				pathA:   pathA,
+				pathB:   pathB,
+			})
+		}
 	}
 
 	// No changed files - check if it's due to errors or truly no changes
@@ -139,7 +142,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		defer p.Close()
 	}
 
-	// Second pass: render all changed files with correct banner setting
+	// Second pass: read and render each changed file on demand
 	showBanner := len(changedFiles) > 1
 
 	for _, cf := range changedFiles {
@@ -147,7 +150,47 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			break
 		}
 
-		dr, err := pipeline.Run(cf.srcBytes, cf.dstBytes, cf.relPath, cf.relPath, pipeline.DiffOptions{
+		// Read file bytes on demand
+		var srcBytes, dstBytes []byte
+		var err error
+
+		if cf.pathA == "" {
+			// File added: only exists in B
+			srcBytes = []byte{}
+			dstBytes, err = os.ReadFile(cf.pathB)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathB, err)
+				hadErrors = true
+				continue
+			}
+		} else if cf.pathB == "" {
+			// File deleted: only exists in A
+			srcBytes, err = os.ReadFile(cf.pathA)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathA, err)
+				hadErrors = true
+				continue
+			}
+			dstBytes = []byte{}
+		} else {
+			// Both exist
+			var errA, errB error
+			srcBytes, errA = os.ReadFile(cf.pathA)
+			dstBytes, errB = os.ReadFile(cf.pathB)
+			
+			if errA != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathA, errA)
+				hadErrors = true
+				continue
+			}
+			if errB != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathB, errB)
+				hadErrors = true
+				continue
+			}
+		}
+
+		dr, err := pipeline.Run(srcBytes, dstBytes, cf.relPath, cf.relPath, pipeline.DiffOptions{
 			ParseErrorLimit:  parseErrorLimit,
 			IgnoreComments:   ignoreComments,
 			DisableSizeLimit: sizeLimitKB <= 0,
@@ -164,7 +207,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		}
 
 		// Use the shared rendering function
-		if err := renderDiffResult(cf.relPath, cf.relPath, cf.srcBytes, cf.dstBytes, dr, renderConfig{
+		if err := renderDiffResult(cf.relPath, cf.relPath, srcBytes, dstBytes, dr, renderConfig{
 			format:     format,
 			showBanner: showBanner,
 			writer:     writer,
