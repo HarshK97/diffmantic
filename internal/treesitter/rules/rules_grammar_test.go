@@ -76,5 +76,6 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		checkField("DelimitedContainers", r.DelimitedContainers)
 		checkField("Expressions", r.Expressions)
 		checkField("CaseClauses", r.CaseClauses)
+		checkField("Tags", r.Tags)
 	}
 }

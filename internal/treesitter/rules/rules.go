@@ -46,6 +46,7 @@ type Rules struct {
 	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
 	Expressions           []string // Expression container node types.
 	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
+	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -71,6 +72,7 @@ type Rules struct {
 	delimitedContainersSet   map[string]struct{}
 	expressionsSet           map[string]struct{}
 	caseClausesSet           map[string]struct{}
+	tagsSet                  map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -111,6 +113,7 @@ func (r *Rules) CompileSets() {
 	r.delimitedContainersSet = sliceToSet(r.DelimitedContainers)
 	r.expressionsSet = sliceToSet(r.Expressions)
 	r.caseClausesSet = sliceToSet(r.CaseClauses)
+	r.tagsSet = sliceToSet(r.Tags)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -260,6 +263,18 @@ func (r *Rules) IsIdentifier(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Identifiers, nodeType)
+}
+
+// IsTag reports whether nodeType represents a markup element or tag.
+func (r *Rules) IsTag(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.tagsSet) > 0 {
+		_, ok := r.tagsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Tags, nodeType)
 }
 
 // IsJumpStatement reports whether nodeType is an early-exit jump statement
@@ -767,6 +782,16 @@ func IsExpression(nodeType string) bool {
 		}
 	}
 	return defaultRules.IsExpression(nodeType)
+}
+
+// IsExpressionStatement reports whether nodeType represents an expression statement.
+func (r *Rules) IsExpressionStatement(nodeType string) bool {
+	return nodeType == "expression_statement"
+}
+
+// IsExpressionStatement reports whether nodeType represents an expression statement.
+func IsExpressionStatement(nodeType string) bool {
+	return nodeType == "expression_statement"
 }
 
 var registry = map[string]*Rules{

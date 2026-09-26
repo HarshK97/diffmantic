@@ -163,6 +163,13 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Markup elements and tags with different tag names must not match across different tags.
+	tag1 := getTagName(t1)
+	tag2 := getTagName(c)
+	if tag1 != "" && tag2 != "" && tag1 != tag2 {
+		return -1.0
+	}
+
 	sim := ChawatheSimilarity(t1, c, m.Src())
 	dice := Dice(t1, c, m.Src())
 

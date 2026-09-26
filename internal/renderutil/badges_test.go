@@ -125,3 +125,79 @@ func TestBuildMoveBadges_Tier2Promotion(t *testing.T) {
 		t.Errorf("SBS mode expected DstLineBadges[5] to contain '⤹ L3', got %q", badge)
 	}
 }
+
+func TestBuildMoveBadges_SuppressedWhenOpeningIsDeletedOrInserted(t *testing.T) {
+	tsxRules := rules.Get("tsx")
+
+	srcContent := "export function Page() {\n  return (\n    <div className=\"grid\">\n      <div className=\"card\">\n        <Content />\n      </div>\n    </div>\n  )\n}\n"
+	dstContent := "export function Page() {\n  return (\n    <main className=\"main\">\n      <div className=\"card\">\n        <Content />\n      </div>\n    </main>\n  )\n}\n"
+
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	// Move action on outer container from line 2 to line 2 (e.g. div.grid -> main.main)
+	sStartByte := uint32(srcOffsets[2])
+	sEndByte := uint32(srcOffsets[6])
+	dStartByte := uint32(dstOffsets[2])
+	dEndByte := uint32(dstOffsets[6])
+
+	// But opening element on line 2 in source was deleted, and opening element on line 2 in dest was inserted.
+	actions := []serialize.Action{
+		{
+			Action: "move",
+			Node: &serialize.NodeRef{
+				Type:      "jsx_element",
+				StartByte: sStartByte,
+				EndByte:   sEndByte,
+			},
+			DestStartByte: &dStartByte,
+			DestEndByte:   &dEndByte,
+		},
+		{
+			Action: "delete",
+			Node: &serialize.NodeRef{
+				Type:      "jsx_opening_element",
+				StartByte: sStartByte,
+				EndByte:   sStartByte + 22,
+			},
+		},
+		{
+			Action: "insert",
+			Node: &serialize.NodeRef{
+				Type:      "jsx_opening_element",
+				StartByte: dStartByte,
+				EndByte:   dStartByte + 23,
+			},
+		},
+	}
+
+	hunks := []Interval{
+		{Start: 0, End: 8},
+	}
+
+	pairs := []serialize.LineAlignmentPair{
+		{LeftLine: 0, RightLine: 0},
+		{LeftLine: 1, RightLine: 1},
+		{LeftLine: 2, RightLine: -1},
+		{LeftLine: -1, RightLine: 2},
+		{LeftLine: 3, RightLine: 3},
+		{LeftLine: 4, RightLine: 4},
+		{LeftLine: 5, RightLine: 5},
+		{LeftLine: 6, RightLine: 6},
+		{LeftLine: 7, RightLine: 7},
+	}
+
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, tsxRules, false)
+
+	// Since line 2's opening tag was deleted on source, no '➔ L3' should appear on line 2
+	if badge, exists := badges.SrcLineBadges[2]; exists {
+		t.Errorf("expected no SrcLineBadges on line 2 when opening is deleted, got %q", badge)
+	}
+	// Since line 2's opening tag was inserted on dest, no '⤹ L3' should appear on line 2
+	if badge, exists := badges.DstLineBadges[2]; exists {
+		t.Errorf("expected no DstLineBadges on line 2 when opening is inserted, got %q", badge)
+	}
+}

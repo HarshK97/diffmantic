@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"slices"
 	"sort"
 
@@ -210,6 +211,15 @@ func (l *priorityList) Pop() []*treesitter.ASTNode {
 	l.heights = l.heights[:len(l.heights)-1]
 	nodes := l.buckets[maxH]
 	delete(l.buckets, maxH)
+	// Sort by document position so ties between equal-height candidates
+	// resolve in preorder instead of queue traversal discovery order.
+	slices.SortFunc(nodes, func(a, b *treesitter.ASTNode) int {
+		return cmp.Or(
+			cmp.Compare(a.StartByte, b.StartByte),
+			cmp.Compare(a.StartRow, b.StartRow),
+			cmp.Compare(a.StartCol, b.StartCol),
+		)
+	})
 	return nodes
 }
 
@@ -233,8 +243,9 @@ func openUnmatched(
 	}
 }
 
-// Checks if the immediate parent and grandparent node types match to help break
-// ties when identical subtrees appear in different parts of the file.
+// parentLineageSimilarity reports whether the immediate parent and grandparent
+// node types match to help break ties when identical subtrees appear in different
+// parts of the file.
 func parentLineageSimilarity(t1, t2 *treesitter.ASTNode) int {
 	score := 0
 	p1, p2 := t1.Parent, t2.Parent
