@@ -201,3 +201,27 @@ func TestFindCandidatesWithCommonDescendants(t *testing.T) {
 		t.Errorf("findCandidatesWithCommonDescendants() = %v, want [%v]", candidates, t2)
 	}
 }
+
+func TestTopDown_AmbiguityPreorderTieBreaker(t *testing.T) {
+	// If dst has duplicate candidate subtrees at different lines, match the stationary
+	// row 20 candidate first, even if traversal opened row 50 earlier.
+	srcLeaf := testutil.NodeAtRC("identifier", "score", 20, 5)
+	srcExpr := testutil.Tree(testutil.NodeAtRC("expression_list", "", 20, 5), srcLeaf)
+	srcRoot := testutil.Node("function_declaration", "myFunc", srcExpr)
+
+	dstLeafFar := testutil.NodeAtRC("identifier", "score", 50, 5)
+	dstExprFar := testutil.Tree(testutil.NodeAtRC("expression_list", "", 50, 5), dstLeafFar)
+
+	dstLeafClose := testutil.NodeAtRC("identifier", "score", 20, 5)
+	dstExprClose := testutil.Tree(testutil.NodeAtRC("expression_list", "", 20, 5), dstLeafClose)
+
+	// Put the farther node first so traversal would visit it first without preorder sorting.
+	dstRoot := testutil.Node("function_declaration", "myFunc", dstExprFar, dstExprClose)
+
+	m := NewMapping()
+	TopDown(srcRoot, dstRoot, 2, m, nil)
+
+	if m.Src()[srcExpr] != dstExprClose {
+		t.Errorf("TopDown matched srcExpr to %v, want dstExprClose at row 20", m.Src()[srcExpr])
+	}
+}
