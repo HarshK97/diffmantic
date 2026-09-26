@@ -20,12 +20,12 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	// Build maps of relative path -> full path for both directories
 	filesA, err := listDirectoryFiles(dirA)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: walking directory A: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: walking directory %s: %v\n", dirA, err)
 		os.Exit(1)
 	}
 	filesB, err := listDirectoryFiles(dirB)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: walking directory B: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: walking directory %s: %v\n", dirB, err)
 		os.Exit(1)
 	}
 
