@@ -55,14 +55,6 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	inlineOpts := resolveRenderOptions(cmd)
 	sbsOpts := resolveSideBySideOptions(cmd)
 
-	// One pager session for the whole batch, not one per file.
-	var p *pager.Pager
-	var writer io.Writer = os.Stdout
-	if format == "inline" || format == "side-by-side" || format == "actions" {
-		p, writer = pager.Start(noPager)
-		defer p.Close()
-	}
-
 	hadErrors := false
 
 	// First pass: collect changed files
@@ -137,6 +129,14 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			os.Exit(1)  // Had errors and nothing to show
 		}
 		return  // No changes, exit with success
+	}
+
+	// Initialize pager now that we know we have changes to display
+	var p *pager.Pager
+	var writer io.Writer = os.Stdout
+	if format == "inline" || format == "side-by-side" || format == "actions" {
+		p, writer = pager.Start(noPager)
+		defer p.Close()
 	}
 
 	// Second pass: render all changed files with correct banner setting
