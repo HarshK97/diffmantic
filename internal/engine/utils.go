@@ -116,9 +116,34 @@ func descendantSet(n *treesitter.ASTNode) map[*treesitter.ASTNode]struct{} {
 	return s
 }
 
+// getTagName extracts the tag name (like "div" or "span") from markup elements and tags.
+func getTagName(n *treesitter.ASTNode) string {
+	if n == nil {
+		return ""
+	}
+	r := rulesFor(n)
+	if r == nil || !r.IsTag(n.Type) {
+		return ""
+	}
+	for _, ch := range n.Children {
+		if r.IsIdentifier(ch.Type) || r.IsExpression(ch.Type) {
+			return identifierText(ch)
+		}
+		if r.IsTag(ch.Type) {
+			if name := getTagName(ch); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
 func getKeyLabel(n *treesitter.ASTNode) string {
 	if n == nil || len(n.Children) == 0 {
 		return ""
+	}
+	if tag := getTagName(n); tag != "" {
+		return tag
 	}
 	r := rulesFor(n)
 	isCall := (r != nil && r.IsCall(n.Type)) || (r == nil && rules.IsCall(n.Type))
@@ -131,11 +156,11 @@ func getKeyLabel(n *treesitter.ASTNode) string {
 		}
 	}
 	k := n.Children[0]
-	if k.Label != "" {
+	if k.Label != "" && (r == nil || (!r.IsPunctuation(k.Label) && !r.IsIgnored(k.Type, k.Label))) {
 		return k.Label
 	}
 	for _, desc := range k.Descendants() {
-		if desc.Label != "" {
+		if desc.Label != "" && (r == nil || (!r.IsPunctuation(desc.Label) && !r.IsIgnored(desc.Type, desc.Label))) {
 			return desc.Label
 		}
 	}

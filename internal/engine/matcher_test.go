@@ -298,6 +298,40 @@ func TestMatchPairKeyNameAffinity(t *testing.T) {
 	}
 }
 
+func TestMatchPairValuesDisparateJSXTags(t *testing.T) {
+	kOld := testutil.Leaf("property_identifier", "className")
+	valOld := testutil.Leaf("string", "\"text-[11px] font-semibold text-gray-400\"")
+	attrOld := testutil.Node("jsx_attribute", "", kOld, valOld)
+	openOld := testutil.Node("jsx_opening_element", "", testutil.Leaf("identifier", "span"), attrOld)
+
+	kNew1 := testutil.Leaf("property_identifier", "className")
+	valNew1 := testutil.Leaf("string", "\"fa-solid fa-clipboard-user text-gray-400\"")
+	attrNew1 := testutil.Node("jsx_attribute", "", kNew1, valNew1)
+	openNew1 := testutil.Node("jsx_opening_element", "", testutil.Leaf("identifier", "i"), attrNew1)
+
+	kNew2 := testutil.Leaf("property_identifier", "className")
+	valNew2 := testutil.Leaf("string", "\"text-[11px] font-semibold text-gray-400 ml-1\"")
+	attrNew2 := testutil.Node("jsx_attribute", "", kNew2, valNew2)
+	openNew2 := testutil.Node("jsx_opening_element", "", testutil.Leaf("identifier", "span"), attrNew2)
+
+	srcRoot := testutil.Node("program", "", openOld)
+	srcRoot.Language = "tsx"
+	dstRoot := testutil.Node("program", "", openNew1, openNew2)
+	dstRoot.Language = "tsx"
+
+	m := NewMapping()
+	m.Add(srcRoot, dstRoot)
+
+	matchPairValues(srcRoot, dstRoot, m)
+
+	if m.Src()[attrOld] == attrNew1 {
+		t.Errorf("attrOld ('span') should NOT match attrNew1 ('i') across disparate tags")
+	}
+	if m.Src()[attrOld] != attrNew2 {
+		t.Errorf("attrOld ('span') should match attrNew2 ('span'), got %v", m.Src()[attrOld])
+	}
+}
+
 func TestBottomUpOuterAncestorPreservation(t *testing.T) {
 	srcBytes, err := os.ReadFile("../../tests/testdata/lua_neovim_write_spec_refactor/old.lua")
 	if err != nil {
@@ -603,5 +637,50 @@ func TestMatchUnmatchedLeaves_ContainerWrappedSiblingScore(t *testing.T) {
 
 	if !m.Has(op1) || m.Src()[op1] != op2 {
 		t.Errorf("expected ':=' to match via container-aware sibling score, got %v", m.Src()[op1])
+	}
+}
+
+func TestMatchPairValues_HighSimilarityPreferred(t *testing.T) {
+	// When multiple div tags share the same 'className' attribute, match the one
+	// with similar class names (> 0.5) and reject completely different ones.
+	strFragOld1 := testutil.Leaf("string_fragment", "grid grid-cols-1 lg:grid-cols-3 gap-6")
+	strOld1 := testutil.Node("string", "", strFragOld1)
+	attrOld1 := testutil.Node("jsx_attribute", "", testutil.Leaf("property_identifier", "className"), testutil.Leaf("=", "="), strOld1)
+	tagOld1 := testutil.Node("jsx_opening_element", "", testutil.Leaf("<", "<"), testutil.Leaf("identifier", "div"), attrOld1, testutil.Leaf(">", ">"))
+
+	strFragOld2 := testutil.Leaf("string_fragment", "lg:col-span-2 bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col items-center")
+	strOld2 := testutil.Node("string", "", strFragOld2)
+	attrOld2 := testutil.Node("jsx_attribute", "", testutil.Leaf("property_identifier", "className"), testutil.Leaf("=", "="), strOld2)
+	tagOld2 := testutil.Node("jsx_opening_element", "", testutil.Leaf("<", "<"), testutil.Leaf("identifier", "div"), attrOld2, testutil.Leaf(">", ">"))
+
+	root1 := testutil.Node("program", "", tagOld1, tagOld2)
+	root1.Language = "tsx"
+	tagOld1.Language = "tsx"
+	tagOld2.Language = "tsx"
+	attrOld1.Language = "tsx"
+	attrOld2.Language = "tsx"
+
+	strFragNew := testutil.Leaf("string_fragment", "bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col items-center")
+	strNew := testutil.Node("string", "", strFragNew)
+	attrNew := testutil.Node("jsx_attribute", "", testutil.Leaf("property_identifier", "className"), testutil.Leaf("=", "="), strNew)
+	tagNew := testutil.Node("jsx_opening_element", "", testutil.Leaf("<", "<"), testutil.Leaf("identifier", "div"), attrNew, testutil.Leaf(">", ">"))
+
+	root2 := testutil.Node("program", "", tagNew)
+	root2.Language = "tsx"
+	tagNew.Language = "tsx"
+	attrNew.Language = "tsx"
+
+	m := NewMapping()
+	m.Add(root1, root2)
+
+	matchPairValues(root1, root2, m)
+
+	// 'grid' shouldn't match 'bg-white ...'
+	if m.Has(attrOld1) {
+		t.Errorf("attrOld1 (grid) should not match attrNew, got mapped to %v", m.Src()[attrOld1])
+	}
+	// 'lg:col-span-2 bg-white ...' matches 'bg-white ...' (>90% similar)
+	if !m.Has(attrOld2) || m.Src()[attrOld2] != attrNew {
+		t.Errorf("attrOld2 should match attrNew via similarity, got %v", m.Src()[attrOld2])
 	}
 }

@@ -52,6 +52,20 @@ func BuildMoveBadges(
 		}
 	}
 
+	deletedStartBytes := make(map[uint32]struct{}, len(actions))
+	insertedStartBytes := make(map[uint32]struct{}, len(actions))
+	for _, a := range actions {
+		if a.Node == nil {
+			continue
+		}
+		if a.Action == "delete" {
+			deletedStartBytes[a.Node.StartByte] = struct{}{}
+		}
+		if a.Action == "insert" {
+			insertedStartBytes[a.Node.StartByte] = struct{}{}
+		}
+	}
+
 	for _, a := range actions {
 		if a.Action != "move" || a.Node == nil {
 			continue
@@ -60,10 +74,13 @@ func BuildMoveBadges(
 		sEnd, _ := serialize.ByteToLineCol(srcOffsets, a.Node.EndByte)
 
 		var dStart, dEnd int
+		var dStartByte uint32
 		if a.DestStartByte != nil && a.DestEndByte != nil {
+			dStartByte = *a.DestStartByte
 			dStart, _ = serialize.ByteToLineCol(dstOffsets, *a.DestStartByte)
 			dEnd, _ = serialize.ByteToLineCol(dstOffsets, *a.DestEndByte)
 		} else if a.DestNode != nil {
+			dStartByte = a.DestNode.StartByte
 			dStart, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.StartByte)
 			dEnd, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.EndByte)
 		} else {
@@ -85,18 +102,21 @@ func BuildMoveBadges(
 			continue
 		}
 
+		_, isDeleted := deletedStartBytes[a.Node.StartByte]
+		_, isInserted := insertedStartBytes[dStartByte]
+
 		if promoteDeclarations && isDecl {
 			// Top-level declaration moves are summarized directly in the hunk header
 			sig := ExtractDeclarationSignature(a.Node, srcLines, sStart, sEnd)
 			if sig == "declaration" {
 				sig = ExtractDeclarationSignature(a.Node, dstLines, dStart, dEnd)
 			}
-			if inSrcHunk && sig != "" {
+			if inSrcHunk && sig != "" && !isDeleted {
 				if _, exists := meta.HunkHeaders[hSrc]; !exists {
 					meta.HunkHeaders[hSrc] = fmt.Sprintf(" %s (moved to L%d)", sig, dStart+1)
 				}
 			}
-			if inDstHunk && sig != "" {
+			if inDstHunk && sig != "" && !isInserted {
 				if _, exists := meta.HunkHeaders[hDst]; !exists {
 					meta.HunkHeaders[hDst] = fmt.Sprintf(" %s (moved from L%d)", sig, sStart+1)
 				}
@@ -104,13 +124,13 @@ func BuildMoveBadges(
 		} else {
 			// Sub-block or nested moves show a directional badge on the opening line
 			// (or top-level declarations when promoteDeclarations is false in SBS)
-			if inSrcHunk && sStart >= 0 && sStart < len(srcLines) {
+			if inSrcHunk && sStart >= 0 && sStart < len(srcLines) && !isDeleted {
 				if _, exists := meta.SrcLineBadges[sStart]; !exists {
 					meta.SrcLineBadges[sStart] = fmt.Sprintf(" ➔ L%d", dStart+1)
 					meta.SrcLineBadgeColors[sStart] = a.MoveColorIndex
 				}
 			}
-			if inDstHunk && dStart >= 0 && dStart < len(dstLines) {
+			if inDstHunk && dStart >= 0 && dStart < len(dstLines) && !isInserted {
 				if _, exists := meta.DstLineBadges[dStart]; !exists {
 					meta.DstLineBadges[dStart] = fmt.Sprintf(" ⤹ L%d", sStart+1)
 					meta.DstLineBadgeColors[dStart] = a.MoveColorIndex

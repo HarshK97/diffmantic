@@ -306,3 +306,38 @@ func TestUniqueTypePairs_WrappedCondition(t *testing.T) {
 		t.Errorf("expected inner c3 (z == nil) to be paired, got %v", pairs[0][1])
 	}
 }
+
+func TestUniqueTypePairsDisparateJSXTags(t *testing.T) {
+	spanOpen := testutil.Node("jsx_opening_element", "",
+		testutil.Leaf("comparison_operator_literal", "<"),
+		testutil.Leaf("identifier", "span"),
+		testutil.Leaf("comparison_operator_literal", ">"),
+	)
+	spanText := testutil.Leaf("jsx_text", "Recent Admissions")
+	spanClose := testutil.Node("jsx_closing_element", "",
+		testutil.Leaf("jsx_closing_tag_lt_slash", "</"),
+		testutil.Leaf("identifier", "span"),
+		testutil.Leaf("comparison_operator_literal", ">"),
+	)
+	spanElem := testutil.Node("jsx_element", "", spanOpen, spanText, spanClose)
+	spanElem.Language = "tsx"
+
+	iOpen := testutil.Node("jsx_opening_element", "",
+		testutil.Leaf("comparison_operator_literal", "<"),
+		testutil.Leaf("identifier", "i"),
+		testutil.Leaf("comparison_operator_literal", ">"),
+	)
+	iClose := testutil.Node("jsx_closing_element", "",
+		testutil.Leaf("jsx_closing_tag_lt_slash", "</"),
+		testutil.Leaf("identifier", "i"),
+		testutil.Leaf("comparison_operator_literal", ">"),
+	)
+	iElem := testutil.Node("jsx_element", "", iOpen, iClose)
+	iElem.Language = "tsx"
+
+	m := NewMapping()
+	pairs := uniqueTypePairs([]*treesitter.ASTNode{spanElem}, []*treesitter.ASTNode{iElem}, m)
+	if len(pairs) != 0 {
+		t.Errorf("uniqueTypePairs should NOT pair disparate JSX tags ('span' vs 'i'), got %d pairs", len(pairs))
+	}
+}

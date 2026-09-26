@@ -159,7 +159,12 @@ func uniqueTypePairs(
 					if ratio < minRatio {
 						continue
 					}
-					if isDeclaration && semanticOverlap == 0 {
+					tag1 := getTagName(n1)
+					tag2 := getTagName(n2)
+					if tag1 != "" && tag2 != "" && tag1 != tag2 {
+						continue
+					}
+					if semanticOverlap == 0 && (isDeclaration || tag1 != "" || tag2 != "") {
 						continue
 					}
 				}

@@ -346,4 +346,10 @@ var tsxRules = &Rules{
 		"update_expression",
 		"yield_expression",
 	},
+	Tags: []string{
+		"jsx_element",
+		"jsx_opening_element",
+		"jsx_closing_element",
+		"jsx_self_closing_element",
+	},
 }

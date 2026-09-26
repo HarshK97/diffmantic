@@ -202,7 +202,7 @@ func flatFindEnclosingDeclarationHierarchy(idx uint32, nodes []treesitter.FlatNo
 	pIdx := nodes[idx].ParentIdx
 	for pIdx != flatSentinel && int(pIdx) < len(nodes) {
 		t := flatSymbol(&nodes[pIdx], symbols)
-		if r.IsDeclaration(t) {
+		if r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t) {
 			relPath := "body"
 			if len(containers) > 0 {
 				slices.Reverse(containers)
@@ -211,7 +211,9 @@ func flatFindEnclosingDeclarationHierarchy(idx uint32, nodes []treesitter.FlatNo
 			return nodes[pIdx].StartByte, nodes[pIdx].EndByte, t, relPath
 		}
 		if r.IsBlock(t) || r.IsScaffolding(t) {
-			containers = append(containers, t)
+			if !r.IsWrapper(t) && !r.IsJumpStatement(t) && !r.IsExpressionStatement(t) && !r.IsTag(t) {
+				containers = append(containers, t)
+			}
 		}
 		pIdx = nodes[pIdx].ParentIdx
 	}
@@ -232,7 +234,7 @@ func flatFindEnclosingDeclaration(idx uint32, nodes []treesitter.FlatNode, symbo
 	pIdx := nodes[idx].ParentIdx
 	for pIdx != flatSentinel && int(pIdx) < len(nodes) {
 		t := flatSymbol(&nodes[pIdx], symbols)
-		if r.IsDeclaration(t) {
+		if r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t) {
 			name := flatGetDeclarationIdentifier(&nodes[pIdx], nodes, symbols, src, r, srcLen)
 			decl := t
 			if name != "" {
@@ -245,7 +247,9 @@ func flatFindEnclosingDeclaration(idx uint32, nodes []treesitter.FlatNode, symbo
 			return decl
 		}
 		if r.IsBlock(t) || r.IsScaffolding(t) {
-			containers = append(containers, t)
+			if !r.IsWrapper(t) && !r.IsJumpStatement(t) && !r.IsExpressionStatement(t) && !r.IsTag(t) {
+				containers = append(containers, t)
+			}
 		}
 		pIdx = nodes[pIdx].ParentIdx
 	}

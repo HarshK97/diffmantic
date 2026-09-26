@@ -254,6 +254,7 @@ func TestRulesHelperMethods(t *testing.T) {
 			Blocks:       []string{"block", "compound_statement"},
 			Calls:        []string{"call_expression"},
 			Indexed:      []string{"subscript_expression", "index_expression"},
+			Tags:         []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
 			EquivalentTypes: [][]string{
 				{"function_declaration", "function_definition", "variable_declaration"},
 				{"assignment_statement", "variable_declaration"},
@@ -327,6 +328,10 @@ func TestRulesHelperMethods(t *testing.T) {
 			t.Errorf("IsIndexed(other) = true, want false")
 		}
 
+		if !r.IsTag("element") || !r.IsTag("jsx_element") || !r.IsTag("start_tag") || !r.IsTag("jsx_opening_element") || r.IsTag("other") {
+			t.Errorf("IsTag failed in compiled sets")
+		}
+
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent(function_declaration, variable_declaration) = false, want true")
 		}
@@ -374,6 +379,9 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if !r.IsIndexed("subscript_expression") || r.IsIndexed("other") {
 			t.Errorf("IsIndexed uncompiled fallback failed")
+		}
+		if !r.IsTag("element") || !r.IsTag("jsx_element") || !r.IsTag("start_tag") || !r.IsTag("jsx_opening_element") || r.IsTag("other") {
+			t.Errorf("IsTag uncompiled fallback failed")
 		}
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent uncompiled fallback failed")

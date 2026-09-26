@@ -35,4 +35,14 @@ var htmlRules = &Rules{
 	Comments: []string{
 		"comment",
 	},
+	Tags: []string{
+		"element",
+		"start_tag",
+		"end_tag",
+		"self_closing_tag",
+	},
+	Identifiers: []string{
+		"tag_name",
+		"attribute_name",
+	},
 }
