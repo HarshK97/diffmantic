@@ -157,7 +157,6 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			infoB, errB := os.Stat(argB)
 
 			if (errA == nil && infoA.IsDir()) || (errB == nil && infoB.IsDir()) {
-				// Handle directory diffing
 				if errA != nil || !infoA.IsDir() || errB != nil || !infoB.IsDir() {
 					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
 					os.Exit(1)
@@ -329,7 +328,7 @@ func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	return ins, del, upd
 }
 
-// renderConfig groups all configuration needed to render a diff result.
+// renderConfig groups settings needed to render a diff.
 type renderConfig struct {
 	format     string
 	showBanner bool
@@ -338,8 +337,7 @@ type renderConfig struct {
 	sbsOpts    sidebyside.RenderOptions
 }
 
-// renderDiffResult renders a single diff result in the specified format.
-// It handles all output formats (side-by-side, inline, json, actions) consistently.
+// renderDiffResult writes a single diff result to writer in the requested format.
 func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipeline.DiffResult, rc renderConfig) error {
 	if dr.IsBinary {
 		renderBinaryDiff(srcFile, dstFile, rc)
@@ -401,7 +399,7 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 	return nil
 }
 
-// renderBinaryDiff outputs a message indicating that files are binary and differ.
+// renderBinaryDiff prints the "Binary files ... differ" notice for the active format.
 func renderBinaryDiff(srcFile, dstFile string, rc renderConfig) {
 	switch rc.format {
 	case "side-by-side":

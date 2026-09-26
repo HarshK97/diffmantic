@@ -16,9 +16,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// runDirectoryDiff compares two directories recursively, rendering a diff for every changed file through a single shared pager session.
+// runDirectoryDiff recursively diffs two directories, streaming all changed files through a single pager session.
 func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
-	// Build maps of relative path -> full path for both directories
 	filesA, err := listDirectoryFiles(dirA)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: walking directory %s: %v\n", dirA, err)
@@ -38,7 +37,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		allPaths[relPath] = struct{}{}
 	}
 
-	// Convert to sorted slice for deterministic output
+	// Sort paths so diff output order is deterministic across runs.
 	relPaths := slices.Sorted(maps.Keys(allPaths))
 
 	format = cmp.Or(format, "side-by-side")
@@ -57,7 +56,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 
 	hadErrors := false
 
-	// First pass: identify changed files without buffering content
+	// Find which files changed before starting the pager.
 	type changedFile struct {
 		relPath string
 		pathA   string
@@ -69,17 +68,11 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		pathA, existsInA := filesA[relPath]
 		pathB, existsInB := filesB[relPath]
 
-		// Determine if file changed
 		var changed bool
 		switch {
-		case !existsInA:
-			// File added: only exists in B
-			changed = true
-		case !existsInB:
-			// File deleted: only exists in A
+		case !existsInA, !existsInB:
 			changed = true
 		default:
-			// Both exist: check if modified using size first, then content
 			infoA, errA := os.Stat(pathA)
 			infoB, errB := os.Stat(pathB)
 
@@ -94,11 +87,9 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				continue
 			}
 
-			// If sizes differ, files are different
 			if infoA.Size() != infoB.Size() {
 				changed = true
 			} else {
-				// Same size - read and compare content
 				srcBytes, errA := os.ReadFile(pathA)
 				dstBytes, errB := os.ReadFile(pathB)
 
@@ -126,15 +117,14 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		}
 	}
 
-	// No changed files - check if it's due to errors or truly no changes
 	if len(changedFiles) == 0 {
 		if hadErrors {
-			os.Exit(1) // Had errors and nothing to show
+			os.Exit(1)
 		}
-		return // No changes, exit with success
+		return
 	}
 
-	// Initialize pager now that we know we have changes to display
+	// Only launch the pager when there are diffs to display.
 	var p *pager.Pager
 	var writer io.Writer = os.Stdout
 	if format == "inline" || format == "side-by-side" || format == "actions" {
@@ -142,7 +132,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		defer p.Close()
 	}
 
-	// Second pass: read and render each changed file on demand
+	// Second pass: stream diffs file by file so memory stays flat.
 	showBanner := len(changedFiles) > 1
 
 	for _, cf := range changedFiles {
@@ -150,41 +140,21 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			break
 		}
 
-		// Read file bytes on demand
 		var srcBytes, dstBytes []byte
 		var err error
 
-		if cf.pathA == "" {
-			// File added: only exists in B
-			srcBytes = []byte{}
-			dstBytes, err = os.ReadFile(cf.pathB)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathB, err)
-				hadErrors = true
-				continue
-			}
-		} else if cf.pathB == "" {
-			// File deleted: only exists in A
+		if cf.pathA != "" {
 			srcBytes, err = os.ReadFile(cf.pathA)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathA, err)
 				hadErrors = true
 				continue
 			}
-			dstBytes = []byte{}
-		} else {
-			// Both exist
-			var errA, errB error
-			srcBytes, errA = os.ReadFile(cf.pathA)
-			dstBytes, errB = os.ReadFile(cf.pathB)
-
-			if errA != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathA, errA)
-				hadErrors = true
-				continue
-			}
-			if errB != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathB, errB)
+		}
+		if cf.pathB != "" {
+			dstBytes, err = os.ReadFile(cf.pathB)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathB, err)
 				hadErrors = true
 				continue
 			}
