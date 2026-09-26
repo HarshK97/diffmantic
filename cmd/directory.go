@@ -82,7 +82,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			// Both exist: check if modified using size first, then content
 			infoA, errA := os.Stat(pathA)
 			infoB, errB := os.Stat(pathB)
-			
+
 			if errA != nil {
 				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, errA)
 				hadErrors = true
@@ -101,7 +101,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 				// Same size - read and compare content
 				srcBytes, errA := os.ReadFile(pathA)
 				dstBytes, errB := os.ReadFile(pathB)
-				
+
 				if errA != nil {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathA, errA)
 					hadErrors = true
@@ -129,9 +129,9 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	// No changed files - check if it's due to errors or truly no changes
 	if len(changedFiles) == 0 {
 		if hadErrors {
-			os.Exit(1)  // Had errors and nothing to show
+			os.Exit(1) // Had errors and nothing to show
 		}
-		return  // No changes, exit with success
+		return // No changes, exit with success
 	}
 
 	// Initialize pager now that we know we have changes to display
@@ -177,7 +177,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			var errA, errB error
 			srcBytes, errA = os.ReadFile(cf.pathA)
 			dstBytes, errB = os.ReadFile(cf.pathB)
-			
+
 			if errA != nil {
 				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathA, errA)
 				hadErrors = true
