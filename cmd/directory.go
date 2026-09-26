@@ -206,8 +206,12 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 			continue
 		}
 
+		
+		displayPathA := filepath.Join(dirA, cf.relPath)
+		displayPathB := filepath.Join(dirB, cf.relPath)
+
 		// Use the shared rendering function
-		if err := renderDiffResult(cf.relPath, cf.relPath, srcBytes, dstBytes, dr, renderConfig{
+		if err := renderDiffResult(displayPathA, displayPathB, srcBytes, dstBytes, dr, renderConfig{
 			format:     format,
 			showBanner: showBanner,
 			writer:     writer,
