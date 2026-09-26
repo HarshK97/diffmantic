@@ -397,15 +397,15 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 }
 
 // renderBinaryDiff outputs a message indicating that files are binary and differ.
-func renderBinaryDiff(srcFile, dstFile string, format string, showBanner bool, writer io.Writer, sbsOpts sidebyside.RenderOptions) {
-	switch format {
+func renderBinaryDiff(srcFile, dstFile string, rc renderConfig) {
+	switch rc.format {
 	case "side-by-side":
-		if showBanner {
-			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, sbsOpts.Color, writer)
+		if rc.showBanner {
+			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, rc.sbsOpts.Color, rc.writer)
 		}
-		_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
 	case "inline":
-		_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
 	case "json":
 		env := &serialize.Envelope{
 			Version:  serialize.SchemaVersion,
@@ -413,17 +413,17 @@ func renderBinaryDiff(srcFile, dstFile string, format string, showBanner bool, w
 		}
 		var jsonData []byte
 		var err error
-		if showBanner {
+		if rc.showBanner {
 			jsonData, err = json.Marshal(env)
 		} else {
 			jsonData, err = json.MarshalIndent(env, "", "  ")
 		}
 		if err == nil {
-			_, _ = writer.Write(jsonData)
-			_, _ = writer.Write([]byte("\n"))
+			_, _ = rc.writer.Write(jsonData)
+			_, _ = rc.writer.Write([]byte("\n"))
 		}
 	case "actions":
-		_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", srcFile, dstFile)
+		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
 	}
 }
 
@@ -516,7 +516,13 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 
 	renderBinaryDiffWrapper := func(srcFile, dstFile string) {
 		filesRendered++
-		renderBinaryDiff(srcFile, dstFile, format, showBanner, writer, sbsOpts)
+		renderBinaryDiff(srcFile, dstFile, renderConfig{
+			format:     format,
+			showBanner: showBanner,
+			writer:     writer,
+			inlineOpts: inlineOpts,
+			sbsOpts:    sbsOpts,
+		})
 	}
 
 	if refA == "" {
