@@ -68,10 +68,11 @@ func TopDown(
 					}
 					if Isomorphic(t1, t2) {
 						effectiveHeight := Height(t1)
-						if r := rulesFor(t1); r != nil && r.IsWrapper(t1.Type) && len(t1.Children) == 1 {
+						r := rulesFor(t1)
+						if r != nil && r.IsWrapper(t1.Type) && len(t1.Children) == 1 {
 							effectiveHeight = Height(t1.Children[0])
 						}
-						if effectiveHeight <= 2 {
+						if effectiveHeight <= 2 || isDeclarationHeader(t1, r) {
 							s1 := getScopeName(t1)
 							s2 := getScopeName(t2)
 							if s1 != "" && s2 != "" && s1 != s2 {
@@ -158,7 +159,7 @@ func TopDown(
 		if m.Has(t1) || m.HasDst(t2) {
 			continue
 		}
-		if sp.mismatched && Height(t1) <= 2 {
+		if sp.mismatched && (Height(t1) <= 2 || isDeclarationHeader(t1, rulesFor(t1))) {
 			continue
 		}
 

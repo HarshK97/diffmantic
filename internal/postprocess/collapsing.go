@@ -278,6 +278,38 @@ func isDelimitedContainer(n *treesitter.ASTNode) bool {
 	return false
 }
 
+// Peek through single-child wrappers so we don't suppress an outer container
+// when its wrapped inner expression survived and was matched.
+func hasMappedChildOrWrapper(n *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	for _, child := range n.Children {
+		if _, ok := m[child]; ok {
+			return true
+		}
+		if r != nil && r.IsWrapper(child.Type) {
+			curr := child
+			for curr != nil && len(curr.Children) == 1 && r.IsWrapper(curr.Type) {
+				curr = curr.Children[0]
+				if _, ok := m[curr]; ok {
+					return true
+				}
+			}
+		}
+	}
+	if r != nil && r.IsCall(n.Type) {
+		for _, child := range n.Children {
+			for _, arg := range child.Children {
+				if _, ok := m[arg]; ok {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // isReceiverMapped checks if the innermost receiver in a method chain is mapped.
 func isReceiverMapped(n *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
 	curr := n
@@ -308,24 +340,7 @@ func suppressSurvivingContainers(
 		if hasOuterSyntax {
 			continue
 		}
-		hasMapped := false
-		for _, child := range parent.Children {
-			if _, ok := targetMap[child]; ok {
-				hasMapped = true
-				break
-			}
-			if r != nil && r.IsCall(parent.Type) {
-				for _, arg := range child.Children {
-					if _, ok := targetMap[arg]; ok {
-						hasMapped = true
-						break
-					}
-				}
-			}
-		}
-		if !hasMapped && isReceiverMapped(parent, targetMap) {
-			hasMapped = true
-		}
+		hasMapped := hasMappedChildOrWrapper(parent, targetMap, r) || isReceiverMapped(parent, targetMap)
 		hasDescAction := false
 		for _, d := range parent.Descendants() {
 			if childAct, ok := actionMap[d]; ok && !suppressed[childAct] {

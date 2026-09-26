@@ -867,3 +867,55 @@ func TestSliceLineToChunks_NoTrailingPaddingWhenDisabled(t *testing.T) {
 		t.Errorf("expected no trailing padding, got %q (len %d)", got, len(got))
 	}
 }
+
+func TestRender_UnpairedMatchedLineDoesNotColorTextAsDelete(t *testing.T) {
+	src := []byte("func test() {\n\tfoo()\n\tbar()\n}\n")
+	dst := []byte("func test() {\n\tfoo(); bar()\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:         true,
+		ContextLines:  3,
+		LineNumbers:   true,
+		TerminalWidth: 100,
+	}
+	var buf bytes.Buffer
+	if err := Render("a.go", "b.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	rendered := buf.String()
+
+	if strings.Contains(rendered, color.DeleteFg+"bar()") {
+		t.Errorf("expected matched code on unpaired left line NOT to use DeleteFg, got:\n%s", rendered)
+	}
+}
+
+func TestRender_UnpairedMatchedLineDoesNotColorTextAsInsert(t *testing.T) {
+	src := []byte("func test() {\n\tfoo(); bar()\n}\n")
+	dst := []byte("func test() {\n\tfoo()\n\tbar()\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:         true,
+		ContextLines:  3,
+		LineNumbers:   true,
+		TerminalWidth: 100,
+	}
+	var buf bytes.Buffer
+	if err := Render("a.go", "b.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	rendered := buf.String()
+
+	if strings.Contains(rendered, color.InsertFg+"bar()") {
+		t.Errorf("expected matched code on unpaired right line NOT to use InsertFg, got:\n%s", rendered)
+	}
+}

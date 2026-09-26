@@ -106,7 +106,7 @@ type AffinityWeights struct {
 	Pos        float64 // Sibling index alignment weight
 	Label      float64 // Leaf label similarity weight
 	KeyBonus   float64 // Exact key match bonus for pair nodes
-	DepthCoeff float64 // Quadratic penalty for relative depth divergence
+	DepthCoeff float64 // Linear capped penalty coefficient for relative depth divergence
 }
 
 // DefaultAffinityWeights is the default set of scoring weights used by candidate selection.
@@ -201,10 +201,10 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 
 	depthPenalty := 0.0
 	if anc1 != nil && anc2 != nil {
-		d1 := t1.DepthTo(anc1)
-		d2 := c.DepthTo(anc2)
-		diff := float64(d1 - d2)
-		depthPenalty = w.DepthCoeff * (diff * diff)
+		d1 := effectiveDepthTo(t1, anc1, r)
+		d2 := effectiveDepthTo(c, anc2, r)
+		diff := math.Abs(float64(d1 - d2))
+		depthPenalty = min(0.30, w.DepthCoeff*diff)
 	}
 
 	return (w.Sim * sim) + (w.Dice * dice) + (w.Scope * scopeScore) + (w.Pos * posScore) + (w.Label * lblScore) + keyBonus - depthPenalty
@@ -364,6 +364,7 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			}
 
 			m.Add(t1, bestParent)
+			reconcileDeclarationSignatures(t1, bestParent, m, r)
 			if hasUnmappedChild(t1, m.Has) && hasUnmappedChild(bestParent, m.HasDst) {
 				Recover(t1, bestParent, m)
 			}
@@ -419,17 +420,63 @@ func getEnclosingDeclarationWithRules(n *treesitter.ASTNode, r *rules.Rules) *tr
 	return nil
 }
 
-func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
-	if n == nil {
-		return nil
+// reconcileDeclarationSignatures keeps signature nodes (params, type params, return types)
+// bound to their own function instead of letting an extracted helper steal them.
+func reconcileDeclarationSignatures(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if t1 == nil || t2 == nil || m == nil {
+		return
 	}
-	for _, c := range n.Children {
-		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
-		if isBlock {
-			return c
+	if r == nil {
+		r = rulesFor(t1)
+	}
+	isDecl := (r != nil && r.IsContainerDeclaration(t1.Type)) ||
+		(r == nil && rules.IsContainerDeclaration(t1.Type))
+	if !isDecl {
+		return
+	}
+
+	body1 := findBodyBlock(t1, r)
+	body2 := findBodyBlock(t2, r)
+	if body1 == nil || body2 == nil {
+		return
+	}
+
+	for _, c1 := range t1.Children {
+		if c1 == body1 || body1.Contains(c1) {
+			continue
+		}
+		if c1.Label != "" {
+			continue
+		}
+		mappedC1 := m.Src()[c1]
+		if mappedC1 != nil && mappedC1.Parent == t2 {
+			continue
+		}
+
+		for _, c2 := range t2.Children {
+			if c2 == body2 || body2.Contains(c2) {
+				continue
+			}
+			if c2.Label != "" {
+				continue
+			}
+			if !m.HasDst(c2) && TypesMatch(c1.Type, c2.Type, r) && CompatiblePairRoles(c1, c2) {
+				if mappedC1 != nil {
+					for _, d := range c1.Descendants() {
+						m.Remove(d)
+					}
+					m.Remove(c1)
+				}
+				if Isomorphic(c1, c2) {
+					addIsomorphicPairs(c1, c2, m)
+				} else {
+					m.Add(c1, c2)
+					Recover(c1, c2, m)
+				}
+				break
+			}
 		}
 	}
-	return nil
 }
 
 // ContestContainers reassigns T2 containers that got greedily claimed by an inner T1 node
@@ -506,6 +553,7 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			}
 			m.Remove(currentT1)
 			m.Add(bestCandidate, t2)
+			reconcileDeclarationSignatures(bestCandidate, t2, m, r)
 
 			if hasUnmappedChild(bestCandidate, m.Has) && hasUnmappedChild(t2, m.HasDst) {
 				Recover(bestCandidate, t2, m)
@@ -560,6 +608,7 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 		m.Remove(currentT1)
 		m.Add(bestCandidate, t2)
+		reconcileDeclarationSignatures(bestCandidate, t2, m, r)
 
 		if hasUnmappedChild(bestCandidate, m.Has) && hasUnmappedChild(t2, m.HasDst) {
 			Recover(bestCandidate, t2, m)
