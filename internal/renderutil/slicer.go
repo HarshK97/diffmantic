@@ -3,6 +3,7 @@ package renderutil
 import (
 	"bytes"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/HarshK97/diffmantic/internal/color"
@@ -14,13 +15,26 @@ import (
 type LineContext uint8
 
 const (
-	// LineContextAligned represents an aligned line pair (LeftLine >= 0 && RightLine >= 0).
 	LineContextAligned LineContext = iota
-	// LineContextStandaloneDelete represents an unpaired deletion (LeftLine >= 0 && RightLine == -1).
 	LineContextStandaloneDelete
-	// LineContextStandaloneInsert represents an unpaired insertion (LeftLine == -1 && RightLine >= 0).
 	LineContextStandaloneInsert
 )
+
+// IsPunctuationOrWhitespace reports whether s has no letters, digits, or identifier characters.
+func IsPunctuationOrWhitespace(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// ShouldStyleStandalone returns true if an unpaired line is edited or just punctuation.
+// Matched code stays neutral so shifted tokens aren't painted red or green.
+func ShouldStyleStandalone(isUnpaired bool, spans []serialize.HighlightSpan, text string) bool {
+	return isUnpaired && (len(spans) > 0 || IsPunctuationOrWhitespace(text))
+}
 
 // SliceConfig configures line slicing, wrapping, and highlight styling.
 type SliceConfig struct {

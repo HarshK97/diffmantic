@@ -306,7 +306,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 					badgeColor = meta.SrcLineBadgeColors[l.srcLineIdx]
 				}
 				spans = leftSpansByLine[l.srcLineIdx]
-				if !l.hasCounterpart {
+				if renderutil.ShouldStyleStandalone(!l.hasCounterpart, spans, l.text) {
 					lineCtx = renderutil.LineContextStandaloneDelete
 				}
 			case kindInsert:
@@ -315,7 +315,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 					badgeColor = meta.DstLineBadgeColors[l.dstLineIdx]
 				}
 				spans = rightSpansByLine[l.dstLineIdx]
-				if !l.hasCounterpart {
+				if renderutil.ShouldStyleStandalone(!l.hasCounterpart, spans, l.text) {
 					lineCtx = renderutil.LineContextStandaloneInsert
 				}
 			}
