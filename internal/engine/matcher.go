@@ -699,9 +699,13 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 }
 
 func getParentPairKey(n *treesitter.ASTNode) string {
+	r := rulesFor(n)
+	if r == nil {
+		return ""
+	}
 	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		if label := getKeyLabel(curr.Parent); label != "" {
-			return label
+		if r.IsPair(curr.Type) {
+			return getKeyLabel(curr)
 		}
 	}
 	return ""
@@ -763,29 +767,66 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 			lookupKey := pairIndexKey{anc: mappedAnc2, pKey: pKey1, key: key1}
 			candidates := t2PairsIndex[lookupKey]
 			var bestCand *treesitter.ASTNode
+			var bestScore float64
 			var val1 *treesitter.ASTNode
 			if len(n1.Children) >= 2 {
 				val1 = n1.Children[len(n1.Children)-1]
 			}
+			v1Text := identifierText(val1)
+
+			tag1 := getTagName(n1.Parent)
 
 			for _, cand := range candidates {
 				if m.HasDst(cand) {
 					continue
 				}
-				if bestCand == nil {
-					bestCand = cand
+				tag2 := getTagName(cand.Parent)
+				if tag1 != "" && tag2 != "" && tag1 != tag2 {
+					continue
 				}
+
+				// If the parent or grandparent containers already matched, pair them directly.
+				if n1.Parent != nil && cand.Parent != nil && m.Src()[n1.Parent] == cand.Parent {
+					bestCand = cand
+					bestScore = 1.0
+					break
+				}
+				if n1.Parent != nil && cand.Parent != nil && n1.Parent.Parent != nil && cand.Parent.Parent != nil && m.Src()[n1.Parent.Parent] == cand.Parent.Parent {
+					bestCand = cand
+					bestScore = 1.0
+					break
+				}
+
 				if val1 != nil && len(cand.Children) >= 2 {
 					candVal := cand.Children[len(cand.Children)-1]
-					if val1.Label != "" && val1.Label == candVal.Label {
+					v2Text := identifierText(candVal)
+					if v1Text != "" && v1Text == v2Text {
 						bestCand = cand
+						bestScore = 1.0
 						break
 					}
 					if Isomorphic(val1, candVal) {
 						bestCand = cand
+						bestScore = 1.0
+						break
+					}
+					sim := max(CommentSimilarity(v1Text, v2Text), LeafSimilarity(val1, candVal))
+					if sim > bestScore && sim >= 0.5 {
+						bestScore = sim
+						bestCand = cand
+					}
+				} else if val1 == nil && len(cand.Children) < 2 {
+					if len(candidates) == 1 && (tag1 == "" || tag1 == tag2) {
+						bestCand = cand
+						bestScore = 1.0
 						break
 					}
 				}
+			}
+
+			// If there's only one candidate under the same tag, treat it as an update.
+			if bestCand == nil && len(candidates) == 1 && tag1 != "" && tag1 == getTagName(candidates[0].Parent) {
+				bestCand = candidates[0]
 			}
 
 			if bestCand != nil {

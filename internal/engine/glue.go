@@ -54,12 +54,46 @@ func isMovingScope(src, dst *treesitter.ASTNode, m *Mapping) bool {
 	if src.Parent != nil && (dst.Parent == nil || m.Src()[src.Parent] != dst.Parent) {
 		return true
 	}
-	srcDecl := GetEnclosingDeclaration(src)
-	dstDecl := GetEnclosingDeclaration(dst)
+	srcDecl := getEnclosingScopeDeclaration(src, r)
+	dstDecl := getEnclosingScopeDeclaration(dst, r)
 	if srcDecl != nil && (dstDecl == nil || m.Src()[srcDecl] != dstDecl) {
 		return true
 	}
 	return false
+}
+
+func getEnclosingScopeDeclaration(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	isContainer := func(t string) bool {
+		if r != nil {
+			return r.IsContainerDeclaration(t) || r.IsClosure(t)
+		}
+		return rules.IsContainerDeclaration(t) || rules.IsClosure(t)
+	}
+	isDecl := func(t string) bool {
+		if r != nil {
+			return !r.IsLocalVarDeclaration(t) && r.IsDeclaration(t)
+		}
+		return !rules.IsLocalVarDeclaration(t) && rules.IsDeclaration(t)
+	}
+
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if isContainer(curr.Type) {
+			return curr
+		}
+	}
+	// Fall back to general declarations if we're not inside a function or container.
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if isDecl(curr.Type) {
+			return curr
+		}
+	}
+	return nil
 }
 
 // hasMatchedDirectNonGlueChild checks if the containers share at least one
