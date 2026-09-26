@@ -223,6 +223,9 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	}
 
 	if hadErrors {
+		if p != nil {
+			p.Close()
+		}
 		os.Exit(1)
 	}
 }
