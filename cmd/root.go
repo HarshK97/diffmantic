@@ -341,6 +341,11 @@ type renderConfig struct {
 // renderDiffResult renders a single diff result in the specified format.
 // It handles all output formats (side-by-side, inline, json, actions) consistently.
 func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pipeline.DiffResult, rc renderConfig) error {
+	if dr.IsBinary {
+		renderBinaryDiff(srcFile, dstFile, rc)
+		return nil
+	}
+
 	switch rc.format {
 	case "side-by-side":
 		if rc.showBanner {
