@@ -245,7 +245,7 @@ func renderSideBySideHunk(
 			badge := srcLineBadges[pair.LeftLine]
 			badgeColor := srcLineBadgeColors[pair.LeftLine]
 			lineCtx := renderutil.LineContextAligned
-			if pair.RightLine == -1 {
+			if renderutil.ShouldStyleStandalone(pair.RightLine == -1, leftSpansByLine[pair.LeftLine], srcLines[pair.LeftLine]) {
 				lineCtx = renderutil.LineContextStandaloneDelete
 			}
 			leftChunks = scratch.SliceLineToChunks(srcLines[pair.LeftLine], badge, leftSpansByLine[pair.LeftLine], codeWidth, lineCtx, true, opts.Color, badgeColor)
@@ -256,7 +256,7 @@ func renderSideBySideHunk(
 			badge := dstLineBadges[pair.RightLine]
 			badgeColor := dstLineBadgeColors[pair.RightLine]
 			lineCtx := renderutil.LineContextAligned
-			if pair.LeftLine == -1 {
+			if renderutil.ShouldStyleStandalone(pair.LeftLine == -1, rightSpansByLine[pair.RightLine], dstLines[pair.RightLine]) {
 				lineCtx = renderutil.LineContextStandaloneInsert
 			}
 			rightChunks = scratch.SliceLineToChunks(dstLines[pair.RightLine], badge, rightSpansByLine[pair.RightLine], codeWidth, lineCtx, true, opts.Color, badgeColor)

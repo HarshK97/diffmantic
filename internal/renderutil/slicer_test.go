@@ -304,3 +304,67 @@ func TestSlicer_NeutralContext_WhitespaceAligned(t *testing.T) {
 		t.Errorf("standalone insert with 0 spans must contain InsertFg: %q", insStr)
 	}
 }
+
+func TestIsPunctuationOrWhitespace(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{input: "", want: true},
+		{input: "   \t\n  ", want: true},
+		{input: "}", want: true},
+		{input: ");", want: true},
+		{input: "]", want: true},
+		{input: ",", want: true},
+		{input: "};", want: true},
+		{input: " := ", want: true},
+		{input: "foo", want: false},
+		{input: "123", want: false},
+		{input: "_", want: false},
+		{input: "_,", want: false},
+		{input: "\tfoo()", want: false},
+		{input: "\tbar()", want: false},
+		{input: " // comment with letters", want: false},
+	}
+
+	for _, tc := range tests {
+		got := IsPunctuationOrWhitespace(tc.input)
+		if got != tc.want {
+			t.Errorf("IsPunctuationOrWhitespace(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestShouldStyleStandalone(t *testing.T) {
+	spans := []serialize.HighlightSpan{
+		{StartCol: 0, EndCol: 3, Action: "delete"},
+	}
+
+	// Paired lines never take standalone styling.
+	if ShouldStyleStandalone(false, spans, "foo()") {
+		t.Errorf("expected paired line with spans to NOT take standalone styling")
+	}
+	if ShouldStyleStandalone(false, nil, "}") {
+		t.Errorf("expected paired line without spans to NOT take standalone styling")
+	}
+
+	// Unpaired line with active diff spans takes standalone styling.
+	if !ShouldStyleStandalone(true, spans, "foo()") {
+		t.Errorf("expected unpaired line with spans to take standalone styling")
+	}
+
+	// Unpaired line with zero spans and delimiters/punctuation takes standalone styling.
+	if !ShouldStyleStandalone(true, nil, "}\n") {
+		t.Errorf("expected unpaired line with delimiters to take standalone styling")
+	}
+
+	// Unpaired line with zero spans and substantive code remains neutral context.
+	if ShouldStyleStandalone(true, nil, "foo()") {
+		t.Errorf("expected unpaired line with substantive code and 0 spans to NOT take standalone styling")
+	}
+
+	// Unpaired line with blank identifier remains neutral context.
+	if ShouldStyleStandalone(true, nil, "_,") {
+		t.Errorf("expected unpaired line with blank identifier and 0 spans to NOT take standalone styling")
+	}
+}
