@@ -1024,12 +1024,12 @@ func dumpFiles(w io.Writer, paths []string, isCST bool) error {
 
 		if multiple {
 			if i > 0 {
-				if _, err := fmt.Fprintln(w); err != nil {
-					return err
+				if _, werr := fmt.Fprintln(w); werr != nil {
+					return werr
 				}
 			}
-			if _, err := fmt.Fprintf(w, "=== %s ===\n", path); err != nil {
-				return err
+			if _, werr := fmt.Fprintf(w, "=== %s ===\n", path); werr != nil {
+				return werr
 			}
 		}
 
