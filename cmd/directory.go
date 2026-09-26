@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"maps"
@@ -29,21 +30,18 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		os.Exit(1)
 	}
 
-	// Collect all unique relative paths from both directories
-	allPaths := make(map[string]bool, len(filesA)+len(filesB))
+	allPaths := make(map[string]struct{}, len(filesA)+len(filesB))
 	for relPath := range filesA {
-		allPaths[relPath] = true
+		allPaths[relPath] = struct{}{}
 	}
 	for relPath := range filesB {
-		allPaths[relPath] = true
+		allPaths[relPath] = struct{}{}
 	}
 
 	// Convert to sorted slice for deterministic output
 	relPaths := slices.Sorted(maps.Keys(allPaths))
 
-	if format == "" {
-		format = "side-by-side"
-	}
+	format = cmp.Or(format, "side-by-side")
 
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
