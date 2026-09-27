@@ -243,6 +243,158 @@ func TestCLI_DirectoryInput_OneDirOneFile(t *testing.T) {
 	}
 }
 
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("creating parent dirs for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+}
+
+func TestCLI_DirectoryDiff_IdenticalNonEmptyDirs(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	content := "package main\n\nfunc main() {\n\tprintln(\"same\")\n}\n"
+	writeTestFile(t, filepath.Join(dirA, "main.go"), content)
+	writeTestFile(t, filepath.Join(dirB, "main.go"), content)
+
+	stdout, stderr, err := runDiffm(dirA, dirB, "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm failed on identical dirs: %v\nstderr: %s", err, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("expected empty output for identical directories, got:\n%s", stdout)
+	}
+}
+
+func TestCLI_DirectoryDiff_ModifiedFile(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dirA, "main.go"), "package main\n\nfunc main() {\n\tprintln(\"old value\")\n}\n")
+	writeTestFile(t, filepath.Join(dirB, "main.go"), "package main\n\nfunc main() {\n\tprintln(\"new value\")\n}\n")
+
+	stdoutSBS, stderrSBS, err := runDiffm(dirA, dirB, "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm directory sbs failed: %v\nstderr: %s", err, stderrSBS)
+	}
+	if !strings.Contains(stdoutSBS, "old value") || !strings.Contains(stdoutSBS, "new value") {
+		t.Errorf("expected old and new values in sbs output, got:\n%s", stdoutSBS)
+	}
+
+	stdoutInline, stderrInline, err := runDiffm(dirA, dirB, "-f", "inline", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm directory inline failed: %v\nstderr: %s", err, stderrInline)
+	}
+	expectedPathA := filepath.Join(dirA, "main.go")
+	expectedPathB := filepath.Join(dirB, "main.go")
+	if !strings.Contains(stdoutInline, expectedPathA) || !strings.Contains(stdoutInline, expectedPathB) {
+		t.Errorf("expected directory-prefixed paths %q and %q in inline output, got:\n%s", expectedPathA, expectedPathB, stdoutInline)
+	}
+}
+
+func TestCLI_DirectoryDiff_AddedAndDeletedFiles(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dirA, "deleted.go"), "package main\n\nfunc removedHelper() {}\n")
+	writeTestFile(t, filepath.Join(dirB, "added.go"), "package main\n\nfunc addedHelper() {}\n")
+	writeTestFile(t, filepath.Join(dirA, "unchanged.go"), "package main\n\nfunc untouchedHelper() {}\n")
+	writeTestFile(t, filepath.Join(dirB, "unchanged.go"), "package main\n\nfunc untouchedHelper() {}\n")
+
+	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "inline", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm failed on added/deleted files: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "removedHelper") {
+		t.Errorf("expected deleted file content in output, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "addedHelper") {
+		t.Errorf("expected added file content in output, got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "untouchedHelper") {
+		t.Errorf("expected unchanged file to be omitted from output, got:\n%s", stdout)
+	}
+}
+
+func TestCLI_DirectoryDiff_NestedAndGitIgnore(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dirA, "pkg", "sub", "calc.go"), "package sub\n\nfunc Add(a, b int) int { return a }\n")
+	writeTestFile(t, filepath.Join(dirB, "pkg", "sub", "calc.go"), "package sub\n\nfunc Add(a, b int) int { return a + b }\n")
+	writeTestFile(t, filepath.Join(dirA, ".git", "HEAD"), "ref: refs/heads/old-branch\n")
+	writeTestFile(t, filepath.Join(dirB, ".git", "HEAD"), "ref: refs/heads/new-branch\n")
+
+	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "inline", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm failed on nested dirs: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "return a + b") {
+		t.Errorf("expected nested file diff in output, got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "old-branch") || strings.Contains(stdout, "new-branch") {
+		t.Errorf("expected .git directory to be ignored, got:\n%s", stdout)
+	}
+}
+
+func TestCLI_DirectoryDiff_BinaryFiles(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	binA := filepath.Join(dirA, "image.png")
+	binB := filepath.Join(dirB, "image.png")
+	if err := os.WriteFile(binA, []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binB, []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := runDiffm(dirA, dirB, "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm directory binary failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Binary files") || !strings.Contains(stdout, "differ") {
+		t.Errorf("expected binary differ notice in directory diff, got:\n%s", stdout)
+	}
+}
+
+func TestCLI_DirectoryDiff_JSON(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dirA, "a.go"), "package main\n\nvar x = 1\n")
+	writeTestFile(t, filepath.Join(dirB, "a.go"), "package main\n\nvar x = 2\n")
+	writeTestFile(t, filepath.Join(dirA, "b.go"), "package main\n\nvar y = 10\n")
+	writeTestFile(t, filepath.Join(dirB, "b.go"), "package main\n\nvar y = 20\n")
+
+	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "json", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm directory json failed: %v\nstderr: %s", err, stderr)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSON lines for 2 changed files, got %d:\n%s", len(lines), stdout)
+	}
+	for i, line := range lines {
+		var env serialize.Envelope
+		if err := json.Unmarshal([]byte(line), &env); err != nil {
+			t.Fatalf("line %d is not valid JSON: %v\nline: %s", i+1, err, line)
+		}
+		if env.Version != serialize.SchemaVersion {
+			t.Errorf("line %d: expected schema version %q, got %q", i+1, serialize.SchemaVersion, env.Version)
+		}
+		if len(env.Actions) == 0 {
+			t.Errorf("line %d: expected non-empty actions in JSON envelope", i+1)
+		}
+	}
+}
+
 func TestCLI_NonGitRepo_OneArg(t *testing.T) {
 	oldPath, _ := fixtureFiles(t, sampleFixture(t))
 
