@@ -289,8 +289,8 @@ func TestCLI_DirectoryDiff_ModifiedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("diffm directory inline failed: %v\nstderr: %s", err, stderrInline)
 	}
-	expectedPathA := filepath.Join(dirA, "main.go")
-	expectedPathB := filepath.Join(dirB, "main.go")
+	expectedPathA := filepath.ToSlash(filepath.Join(dirA, "main.go"))
+	expectedPathB := filepath.ToSlash(filepath.Join(dirB, "main.go"))
 	if !strings.Contains(stdoutInline, expectedPathA) || !strings.Contains(stdoutInline, expectedPathB) {
 		t.Errorf("expected directory-prefixed paths %q and %q in inline output, got:\n%s", expectedPathA, expectedPathB, stdoutInline)
 	}
