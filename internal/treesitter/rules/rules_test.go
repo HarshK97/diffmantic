@@ -717,3 +717,57 @@ func TestRulesIsCaseClause(t *testing.T) {
 		t.Errorf("r.IsCaseClause(\"\") = true, want false")
 	}
 }
+
+func TestRulesIsSentinel(t *testing.T) {
+	tests := []struct {
+		lang      string
+		sentinels []string
+	}{
+		{"c", []string{"NULL", "true", "false"}},
+		{"cpp", []string{"NULL", "nullptr", "true", "false"}},
+		{"go", []string{"nil", "true", "false"}},
+		{"java", []string{"null", "true", "false"}},
+		{"javascript", []string{"undefined", "null", "NaN", "Infinity", "true", "false"}},
+		{"lua", []string{"nil", "true", "false"}},
+		{"python", []string{"None", "True", "False"}},
+		{"rust", []string{"None"}},
+		{"tsx", []string{"undefined", "null", "NaN", "Infinity", "true", "false"}},
+		{"typescript", []string{"undefined", "null", "NaN", "Infinity", "true", "false"}},
+		{"zig", []string{"null", "undefined", "true", "false"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.lang, func(t *testing.T) {
+			r := Get(tc.lang)
+			for _, s := range tc.sentinels {
+				if !r.IsSentinel(s) {
+					t.Errorf("r.IsSentinel(%q) = false, want true for %s", s, tc.lang)
+				}
+				if !IsSentinel(s) {
+					t.Errorf("IsSentinel(%q) = false, want true", s)
+				}
+			}
+		})
+	}
+
+	rGo := Get("go")
+	if rGo.IsSentinel("foo") {
+		t.Errorf("rGo.IsSentinel(foo) = true, want false")
+	}
+	if IsSentinel("unknown_var") {
+		t.Errorf("IsSentinel(unknown_var) = true, want false")
+	}
+
+	uncompiled := &Rules{Sentinels: []string{"custom_sentinel"}}
+	if !uncompiled.IsSentinel("custom_sentinel") {
+		t.Errorf("uncompiled.IsSentinel(custom_sentinel) = false, want true")
+	}
+	if uncompiled.IsSentinel("other") {
+		t.Errorf("uncompiled.IsSentinel(other) = true, want false")
+	}
+
+	var nilR *Rules
+	if nilR.IsSentinel("NULL") {
+		t.Errorf("nilR.IsSentinel = true, want false")
+	}
+}

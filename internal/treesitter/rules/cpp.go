@@ -330,4 +330,10 @@ var cppRules = &Rules{
 		"unary_expression",
 		"update_expression",
 	},
+	Sentinels: []string{
+		"NULL",
+		"nullptr",
+		"true",
+		"false",
+	},
 }

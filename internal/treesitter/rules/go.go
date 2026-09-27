@@ -235,4 +235,9 @@ var golangRules = &Rules{
 		"type_instantiation_expression",
 		"unary_expression",
 	},
+	Sentinels: []string{
+		"nil",
+		"true",
+		"false",
+	},
 }

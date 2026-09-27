@@ -168,4 +168,9 @@ var luaRules = &Rules{
 		"unary_expression",
 		"vararg_expression",
 	},
+	Sentinels: []string{
+		"nil",
+		"true",
+		"false",
+	},
 }

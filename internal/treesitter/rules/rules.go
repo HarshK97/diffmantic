@@ -47,6 +47,7 @@ type Rules struct {
 	Expressions           []string // Expression container node types.
 	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
 	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
+	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -73,6 +74,7 @@ type Rules struct {
 	expressionsSet           map[string]struct{}
 	caseClausesSet           map[string]struct{}
 	tagsSet                  map[string]struct{}
+	sentinelsSet             map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -114,6 +116,7 @@ func (r *Rules) CompileSets() {
 	r.expressionsSet = sliceToSet(r.Expressions)
 	r.caseClausesSet = sliceToSet(r.CaseClauses)
 	r.tagsSet = sliceToSet(r.Tags)
+	r.sentinelsSet = sliceToSet(r.Sentinels)
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -509,6 +512,31 @@ func (r *Rules) IsOperatorLiteral(nodeType string) bool {
 		return false
 	}
 	return strings.HasSuffix(nodeType, "_operator_literal")
+}
+
+// IsSentinel reports whether label is a built-in sentinel identifier (like NULL, None, or undefined).
+func (r *Rules) IsSentinel(label string) bool {
+	if r == nil || label == "" {
+		return false
+	}
+	if len(r.sentinelsSet) > 0 {
+		_, ok := r.sentinelsSet[label]
+		return ok
+	}
+	return slices.Contains(r.Sentinels, label)
+}
+
+// IsSentinel reports whether label is a sentinel in any language rule set.
+func IsSentinel(label string) bool {
+	if label == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsSentinel(label) {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultRootType returns the top-level root AST node type for the language.

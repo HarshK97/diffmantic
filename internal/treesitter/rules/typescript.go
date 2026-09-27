@@ -332,4 +332,12 @@ var typescriptRules = &Rules{
 		"update_expression",
 		"yield_expression",
 	},
+	Sentinels: []string{
+		"undefined",
+		"null",
+		"NaN",
+		"Infinity",
+		"true",
+		"false",
+	},
 }
