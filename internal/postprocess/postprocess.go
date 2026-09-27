@@ -16,5 +16,5 @@ func Run(
 		return nil
 	}
 	es = Collapse(es, ms, srcRoot, dstRoot)
-	return GroupMoves(es)
+	return GroupMoves(es, ms)
 }
