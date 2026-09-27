@@ -430,33 +430,46 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	toDemote := make(map[*treesitter.ASTNode]*treesitter.ASTNode)
 	demotedDescendants := make(map[*treesitter.ASTNode]struct{})
 	evicted := make(map[*treesitter.ASTNode]struct{})
-	for _, a := range es.Actions() {
-		if a.Type != actions.Move || a.Node == nil {
-			continue
+
+	for {
+		changed := false
+		for _, a := range es.Actions() {
+			if a.Type != actions.Move || a.Node == nil {
+				continue
+			}
+			if _, ok := demotedDescendants[a.Node]; ok {
+				continue
+			}
+			if _, already := toDemote[a.Node]; already {
+				continue
+			}
+			dstNode := a.DestNode
+			if dstNode == nil {
+				dstNode = ms.Src()[a.Node]
+			}
+			if dstNode == nil {
+				continue
+			}
+			r := rules.Get(a.Node.GetLanguage())
+			if r == nil {
+				continue
+			}
+			if !shouldDemoteMove(a.Node, dstNode, ms, r, evicted) {
+				continue
+			}
+			toDemote[a.Node] = dstNode
+			for _, d := range a.Node.Descendants() {
+				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+					demotedDescendants[d] = struct{}{}
+					evicted[d] = struct{}{}
+				}
+			}
+			evicted[a.Node] = struct{}{}
+			changed = true
 		}
-		if _, ok := demotedDescendants[a.Node]; ok {
-			continue
+		if !changed {
+			break
 		}
-		dstNode := a.DestNode
-		if dstNode == nil {
-			dstNode = ms.Src()[a.Node]
-		}
-		if dstNode == nil {
-			continue
-		}
-		r := rules.Get(a.Node.GetLanguage())
-		if r == nil {
-			continue
-		}
-		if !shouldDemoteMove(a.Node, dstNode, ms, r) {
-			continue
-		}
-		toDemote[a.Node] = dstNode
-		for _, d := range a.Node.Descendants() {
-			demotedDescendants[d] = struct{}{}
-			evicted[d] = struct{}{}
-		}
-		evicted[a.Node] = struct{}{}
 	}
 
 	// Pass 2: Rebuild the edit script: demote flagged moves to delete+insert,
@@ -485,7 +498,53 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				result.Add(a)
 				continue
 			}
-			demoteMoveToDelIns(result, ms, a.Node, dstNode)
+
+			r := rules.Get(a.Node.GetLanguage())
+			isDelim := (r != nil && (r.IsWrapper(a.Node.Type) || r.IsBlock(a.Node.Type) || r.IsDelimitedContainer(a.Node.Type))) ||
+				(r == nil && (rules.IsWrapper(a.Node.Type) || rules.IsBlock(a.Node.Type) || rules.IsDelimitedContainer(a.Node.Type)))
+
+			hasSurvivingOutside := false
+			for _, d := range a.Node.Descendants() {
+				if dDst, ok := ms.Src()[d]; ok && !dstNode.Contains(dDst) {
+					hasSurvivingOutside = true
+					break
+				}
+			}
+
+			deleteSubtree := len(a.Node.Children) > 0 && !isDelim && !hasSurvivingOutside
+
+			hasSurvivingSrcOutside := false
+			for _, d := range dstNode.Descendants() {
+				if dSrc, ok := ms.Dst()[d]; ok && !a.Node.Contains(dSrc) {
+					hasSurvivingSrcOutside = true
+					break
+				}
+			}
+			isDstDelim := (r != nil && (r.IsWrapper(dstNode.Type) || r.IsBlock(dstNode.Type) || r.IsDelimitedContainer(dstNode.Type))) ||
+				(r == nil && (rules.IsWrapper(dstNode.Type) || rules.IsBlock(dstNode.Type) || rules.IsDelimitedContainer(dstNode.Type)))
+
+			insertSubtree := len(dstNode.Children) > 0 && !isDstDelim && !hasSurvivingSrcOutside
+
+			result.Add(actions.Action{
+				Type:    actions.Delete,
+				Node:    a.Node,
+				Parent:  a.Node.Parent,
+				Subtree: deleteSubtree,
+			})
+			result.Add(actions.Action{
+				Type:     actions.Insert,
+				Node:     dstNode,
+				Parent:   dstNode.Parent,
+				Position: dstNode.ChildIndex(),
+				Subtree:  insertSubtree,
+			})
+			// Unmap descendants inside dstNode so downstream passes don't treat them as matched.
+			for _, d := range a.Node.Descendants() {
+				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+					ms.Remove(d)
+				}
+			}
+			ms.Remove(a.Node)
 		default:
 			result.Add(a)
 		}
@@ -493,9 +552,38 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	return result
 }
 
+// hasSurvivingMappedDescendants reports whether src has any non-punctuation, non-operator
+// leaf mapped inside dst that hasn't been evicted.
+func hasSurvivingMappedDescendants(src, dst *treesitter.ASTNode, ms *engine.Mapping, evicted map[*treesitter.ASTNode]struct{}, r *rules.Rules) bool {
+	if src == nil || dst == nil || ms == nil {
+		return false
+	}
+	for _, d1 := range src.Descendants() {
+		if evicted != nil {
+			if _, isEvicted := evicted[d1]; isEvicted {
+				continue
+			}
+		}
+		if len(d1.Children) > 0 {
+			continue
+		}
+		isPunct := (r != nil && (r.IsPunctuation(d1.Type) || r.IsOperatorLiteral(d1.Type))) ||
+			(r == nil && (rules.IsPunctuation(d1.Type) || rules.IsOperatorLiteral(d1.Type)))
+		if isPunct {
+			continue
+		}
+		if d2, ok := ms.Src()[d1]; ok {
+			if dst.Contains(d2) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert
 // based on structural significance scoring and scope-aware threshold comparison.
-func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evictedOpt ...map[*treesitter.ASTNode]struct{}) bool {
 	if src == nil || dst == nil || ms == nil || r == nil {
 		return false
 	}
@@ -516,6 +604,18 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
+	var evicted map[*treesitter.ASTNode]struct{}
+	if len(evictedOpt) > 0 {
+		evicted = evictedOpt[0]
+	}
+
+	// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
+	isDelimContainer := (r != nil && (r.IsWrapper(src.Type) || r.IsBlock(src.Type) || r.IsDelimitedContainer(src.Type))) ||
+		(r == nil && (rules.IsWrapper(src.Type) || rules.IsBlock(src.Type) || rules.IsDelimitedContainer(src.Type)))
+	if isDelimContainer && len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
+		return true
+	}
+
 	score := moveStructuralScore(src, r)
 	threshold := requiredMoveThreshold(src, dst, ms, r)
 	// When moving across functions or scopes, require the destination to have
@@ -524,26 +624,4 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		score = min(score, moveStructuralScore(dst, r))
 	}
 	return score < threshold
-}
-
-// demoteMoveToDelIns demotes a Move action into separate Delete and Insert actions
-// and clears descendant mappings from the mapping store.
-func demoteMoveToDelIns(result *actions.EditScript, ms *engine.Mapping, srcNode, dstNode *treesitter.ASTNode) {
-	result.Add(actions.Action{
-		Type:    actions.Delete,
-		Node:    srcNode,
-		Parent:  srcNode.Parent,
-		Subtree: len(srcNode.Children) > 0,
-	})
-	result.Add(actions.Action{
-		Type:     actions.Insert,
-		Node:     dstNode,
-		Parent:   dstNode.Parent,
-		Position: dstNode.ChildIndex(),
-		Subtree:  len(dstNode.Children) > 0,
-	})
-	for _, d := range srcNode.Descendants() {
-		ms.Remove(d)
-	}
-	ms.Remove(srcNode)
 }

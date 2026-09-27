@@ -624,3 +624,62 @@ func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
 		t.Errorf("expected cond1 NOT to roll up across distinct statement boundaries, but got %v", m.Get(cond1))
 	}
 }
+
+func TestComputeAffinity_BodyBlockConsistency(t *testing.T) {
+	body1 := testutil.Node("block", "")
+	cond1 := testutil.Node("identifier", "cond")
+	ifStmt1 := testutil.Node("if_statement", "", cond1, body1)
+	ifStmt1.Language = "go"
+
+	body2 := testutil.Node("block", "")
+	cond2 := testutil.Node("identifier", "cond")
+	ifStmt2 := testutil.Node("if_statement", "", cond2, body2)
+	ifStmt2.Language = "go"
+
+	body3 := testutil.Node("block", "")
+	cond3 := testutil.Node("identifier", "cond")
+	ifStmt3 := testutil.Node("if_statement", "", cond3, body3)
+	ifStmt3.Language = "go"
+
+	m := NewMapping()
+	m.Add(body1, body2)
+
+	w := DefaultAffinityWeights
+	scoreForeign := computeAffinity(ifStmt1, ifStmt3, m, w, false)
+	if scoreForeign != -1.0 {
+		t.Errorf("expected affinity to be -1.0 when candidate has foreign body block, got %f", scoreForeign)
+	}
+
+	scoreMatching := computeAffinity(ifStmt1, ifStmt2, m, w, false)
+	if scoreMatching <= 0.0 {
+		t.Errorf("expected positive affinity for candidate matching mapped body, got %f", scoreMatching)
+	}
+}
+
+func TestRollupMatchedContainers_WrapperForeignDescendant(t *testing.T) {
+	// Going from (a && (b)) to (a && b), the inner (b) wrapper shouldn't roll up
+	// to the outer (a && b) container since 'a' came from outside (b).
+	leafA1 := testutil.Leaf("id", "a")
+	leafB1 := testutil.Leaf("id", "b")
+	inner1 := testutil.Node("parenthesized_expression", "", leafB1)
+	inner1.Language = "go"
+	outer1 := testutil.Node("parenthesized_expression", "", leafA1, inner1)
+	outer1.Language = "go"
+
+	leafA2 := testutil.Leaf("id", "a")
+	leafB2 := testutil.Leaf("id", "b")
+	dstParen := testutil.Node("parenthesized_expression", "", leafA2, leafB2)
+	dstParen.Language = "go"
+
+	m := NewMapping()
+	m.Add(leafA1, leafA2)
+	m.Add(leafB1, leafB2)
+
+	if !hasForeignMappedDescendants(inner1, dstParen, m) {
+		t.Errorf("expected hasForeignMappedDescendants to be true for inner wrapper vs outer container")
+	}
+
+	if hasForeignMappedDescendants(outer1, dstParen, m) {
+		t.Errorf("expected hasForeignMappedDescendants to be false for outer wrapper containing all mapped descendants")
+	}
+}

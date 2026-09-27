@@ -1539,4 +1539,151 @@ func TestShouldDemoteMove(t *testing.T) {
 			t.Error("expected cross-scope move with substantial mass on both ends to be preserved")
 		}
 	})
+
+	t.Run("demotes wrapper/block moves when no child moves with them into destination", func(t *testing.T) {
+		// (r == nil && (...)) moving to (r == nil && rules.IsDeclaration(...))
+		// where no leaf tokens inside src move to dst.
+		srcParen := mkNode("parenthesized_expression", "")
+		srcParen.Language = "go"
+		srcBin := mkNode("binary_expression", "")
+		srcBin.Language = "go"
+		srcBin.Parent = srcParen
+		srcParen.Children = append(srcParen.Children, srcBin)
+
+		srcOp := mkNode("logical_operator_literal", "&&")
+		srcOp.Language = "go"
+		srcOp.Parent = srcBin
+		srcBin.Children = append(srcBin.Children, srcOp)
+
+		dstParen := mkNode("parenthesized_expression", "")
+		dstParen.Language = "go"
+		dstBin := mkNode("binary_expression", "")
+		dstBin.Language = "go"
+		dstBin.Parent = dstParen
+		dstParen.Children = append(dstParen.Children, dstBin)
+
+		dstOp := mkNode("logical_operator_literal", "&&")
+		dstOp.Language = "go"
+		dstOp.Parent = dstBin
+		dstBin.Children = append(dstBin.Children, dstOp)
+
+		ms := engine.NewMapping()
+		ms.Add(srcParen, dstParen)
+		ms.Add(srcBin, dstBin)
+		ms.Add(srcOp, dstOp)
+
+		// Only the operator and internal binary_expression match, no leaf expressions/identifiers.
+		if !shouldDemoteMove(srcParen, dstParen, ms, r) {
+			t.Error("expected empty wrapper move with no substantive child to be demoted")
+		}
+	})
+
+	t.Run("preserves wrapper move when substantive leaf moves with it into destination", func(t *testing.T) {
+		srcParen := mkNode("parenthesized_expression", "")
+		srcParen.Language = "go"
+		srcIdent := mkNode("identifier", "foo")
+		srcIdent.Language = "go"
+		srcIdent.Parent = srcParen
+		srcParen.Children = append(srcParen.Children, srcIdent)
+
+		dstParen := mkNode("parenthesized_expression", "")
+		dstParen.Language = "go"
+		dstIdent := mkNode("identifier", "foo")
+		dstIdent.Language = "go"
+		dstIdent.Parent = dstParen
+		dstParen.Children = append(dstParen.Children, dstIdent)
+
+		// Create sibling relocation context (same parent) so it isn't demoted by sibling/threshold
+		parent1 := mkNode("call_expression", "")
+		parent1.Language = "go"
+		parent2 := mkNode("call_expression", "")
+		parent2.Language = "go"
+		srcParen.Parent = parent1
+		dstParen.Parent = parent2
+
+		ms := engine.NewMapping()
+		ms.Add(parent1, parent2)
+		ms.Add(srcParen, dstParen)
+		ms.Add(srcIdent, dstIdent)
+
+		if shouldDemoteMove(srcParen, dstParen, ms, r) {
+			t.Error("expected wrapper move with surviving substantive child to be preserved")
+		}
+	})
+}
+
+func TestNormalizeMovesByStructure_ScopedEviction(t *testing.T) {
+	// Container t1 moves across statements to dst1, but contains a substantial child call c1 mapped to c2 elsewhere.
+	var srcArgs []*treesitter.ASTNode
+	var dstArgs []*treesitter.ASTNode
+	for range 10 {
+		a1 := mkNode("identifier", "arg")
+		a1.Language = "go"
+		srcArgs = append(srcArgs, a1)
+		a2 := mkNode("identifier", "arg")
+		a2.Language = "go"
+		dstArgs = append(dstArgs, a2)
+	}
+	srcArgList := mkNode("argument_list", "", srcArgs...)
+	srcArgList.Language = "go"
+	for _, a := range srcArgs {
+		a.Parent = srcArgList
+	}
+	dstArgList := mkNode("argument_list", "", dstArgs...)
+	dstArgList.Language = "go"
+	for _, a := range dstArgs {
+		a.Parent = dstArgList
+	}
+
+	c1 := mkNode("call_expression", "", mkNode("identifier", "format"), srcArgList)
+	c1.Language = "go"
+	c1.StartRow = 10
+	c1.EndRow = 12
+	srcArgList.Parent = c1
+	c1.Children[0].Parent = c1
+
+	t1 := mkNode("parenthesized_expression", "", c1)
+	t1.Language = "go"
+	c1.Parent = t1
+	t1.StartRow = 10
+	t1.EndRow = 12
+
+	dst1 := mkNode("parenthesized_expression", "")
+	dst1.Language = "go"
+	dst1.StartRow = 50
+	dst1.EndRow = 50
+
+	c2 := mkNode("call_expression", "", mkNode("identifier", "format"), dstArgList)
+	c2.Language = "go"
+	c2.StartRow = 100
+	c2.EndRow = 102
+	dstArgList.Parent = c2
+	c2.Children[0].Parent = c2
+
+	ms := engine.NewMapping()
+	ms.Add(t1, dst1)
+	ms.Add(c1, c2)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: t1, DestNode: dst1})
+	es.Add(actions.Action{Type: actions.Move, Node: c1, DestNode: c2})
+
+	result := normalizeMovesByStructure(es, ms)
+
+	if ms.Src()[c1] != c2 {
+		t.Errorf("expected mapping of survivor child c1 to be preserved, got %v", ms.Src()[c1])
+	}
+
+	var c1Moved bool
+	for _, a := range result.Actions() {
+		if a.Node == c1 && a.Type == actions.Move {
+			c1Moved = true
+		}
+		if a.Node == t1 && a.Type == actions.Delete && a.Subtree {
+			t.Errorf("expected demoted container delete to have Subtree: false, got true")
+		}
+	}
+	if !c1Moved {
+		t.Errorf("expected survivor child Move action to be preserved")
+	}
 }

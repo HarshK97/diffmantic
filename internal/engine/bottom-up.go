@@ -163,6 +163,22 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// If either construct's body block is already mapped, it has to map to the other's body.
+	body1 := findBodyBlock(t1, r)
+	body2 := findBodyBlock(c, r)
+	if body1 != nil && m.Has(body1) {
+		mapped := m.Src()[body1]
+		if body2 == nil || mapped != body2 {
+			return -1.0
+		}
+	}
+	if body2 != nil && m.HasDst(body2) {
+		mappedSrc := m.Dst()[body2]
+		if body1 == nil || mappedSrc != body1 {
+			return -1.0
+		}
+	}
+
 	// Markup elements and tags with different tag names must not match across different tags.
 	tag1 := getTagName(t1)
 	tag2 := getTagName(c)
@@ -328,12 +344,16 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		parentCounts := make(map[*treesitter.ASTNode]int)
 		var bestParent *treesitter.ASTNode
 		bestCount := 0
+		isWrapper := (r != nil && r.IsWrapper(t1.Type)) || (r == nil && rules.IsWrapper(t1.Type))
 		for _, c := range t1.Children {
 			if c2, ok := m.Src()[c]; ok &&
 				c2.Parent != nil &&
 				!m.HasDst(c2.Parent) &&
 				TypesMatch(t1.Type, c2.Parent.Type, r) &&
 				!hasForeignBodyOwner(t1, c2.Parent, m, r) {
+				if isWrapper && hasForeignMappedDescendants(t1, c2.Parent, m) {
+					continue
+				}
 				weight := c.Size()
 				cnt := parentCounts[c2.Parent] + weight
 				parentCounts[c2.Parent] = cnt
@@ -353,6 +373,12 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			isDecl := (r != nil && r.IsDeclaration(t1.Type)) || (r == nil && rules.IsDeclaration(t1.Type))
 			srcBody := findBodyBlock(t1, r)
 			dstBody := findBodyBlock(bestParent, r)
+			if srcBody != nil && m.Has(srcBody) && m.Src()[srcBody] != dstBody {
+				continue
+			}
+			if dstBody != nil && m.HasDst(dstBody) && m.Dst()[dstBody] != srcBody {
+				continue
+			}
 			if srcBody != nil && dstBody != nil {
 				if m.Src()[srcBody] != dstBody && m.DiceSrc(srcBody, dstBody) == 0 {
 					if isDecl || lineDist >= 10 {
@@ -646,7 +672,7 @@ func directKeyMatch(n1, n2 *treesitter.ASTNode) bool {
 // hasEnclosingConstructAncestor checks if an outer ancestor matches the peer's parent construct,
 // preventing inner blocks from stealing outer containers during post-order traversal.
 func hasEnclosingConstructAncestor(t1, c *treesitter.ASTNode, r *rules.Rules) bool {
-	if r == nil || (!r.IsBlock(t1.Type) && !r.IsDeclaration(t1.Type)) {
+	if r == nil || (!r.IsBlock(t1.Type) && !r.IsDeclaration(t1.Type) && !r.IsWrapper(t1.Type)) {
 		return false
 	}
 	if t1.Parent != nil && c.Parent != nil && !TypesMatch(t1.Parent.Type, c.Parent.Type, r) {
@@ -720,4 +746,20 @@ func extractCalleeLabel(n *treesitter.ASTNode, r *rules.Rules) string {
 		}
 	}
 	return ""
+}
+
+// hasForeignMappedDescendants reports whether candidate contains a node mapped from outside t1.
+func hasForeignMappedDescendants(t1, candidate *treesitter.ASTNode, m *Mapping) bool {
+	if t1 == nil || candidate == nil || m == nil {
+		return false
+	}
+	dstMap := m.Dst()
+	for _, d2 := range candidate.Descendants() {
+		if src := dstMap[d2]; src != nil {
+			if !t1.Contains(src) {
+				return true
+			}
+		}
+	}
+	return false
 }
