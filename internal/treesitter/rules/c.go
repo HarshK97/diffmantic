@@ -243,4 +243,9 @@ var cRules = &Rules{
 		"unary_expression",
 		"update_expression",
 	},
+	Sentinels: []string{
+		"NULL",
+		"true",
+		"false",
+	},
 }

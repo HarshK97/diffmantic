@@ -281,4 +281,12 @@ var javascriptRules = &Rules{
 		"jsx_closing_element",
 		"jsx_self_closing_element",
 	},
+	Sentinels: []string{
+		"undefined",
+		"null",
+		"NaN",
+		"Infinity",
+		"true",
+		"false",
+	},
 }

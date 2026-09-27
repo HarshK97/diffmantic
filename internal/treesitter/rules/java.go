@@ -287,4 +287,9 @@ var javaRules = &Rules{
 		"unary_expression",
 		"update_expression",
 	},
+	Sentinels: []string{
+		"null",
+		"true",
+		"false",
+	},
 }

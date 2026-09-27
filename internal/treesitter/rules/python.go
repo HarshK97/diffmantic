@@ -265,4 +265,9 @@ var pythonRules = &Rules{
 		"unary_operator",
 		"yield",
 	},
+	Sentinels: []string{
+		"None",
+		"True",
+		"False",
+	},
 }

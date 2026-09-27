@@ -284,4 +284,7 @@ var rustRules = &Rules{
 		"while_expression",
 		"yield_expression",
 	},
+	Sentinels: []string{
+		"None",
+	},
 }

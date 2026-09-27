@@ -233,4 +233,10 @@ var zigRules = &Rules{
 		"unary_expression",
 		"while_expression",
 	},
+	Sentinels: []string{
+		"null",
+		"undefined",
+		"true",
+		"false",
+	},
 }
