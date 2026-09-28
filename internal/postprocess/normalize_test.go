@@ -1223,6 +1223,61 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 			t.Fatalf("expected no move actions to survive demotion of ancestor move, got %s on %s", a.Type, a.Node.Type)
 		}
 	})
+
+	t.Run("nested move inside demoted ancestor wrapper is not suppressed and demotes to delete and insert", func(t *testing.T) {
+		childSrc := mkNode("call_expression", "r.IsDeclaration(n1.Type)")
+		childSrc.Language = "go"
+		childSrc.StartRow = 10
+		childSrc.EndRow = 10
+		binSrc := mkNode("binary_expression", "", childSrc)
+		binSrc.Language = "go"
+		binSrc.StartRow = 10
+		binSrc.EndRow = 10
+		childSrc.Parent = binSrc
+		parentSrc := mkNode("parenthesized_expression", "", binSrc)
+		parentSrc.Language = "go"
+		parentSrc.StartRow = 10
+		parentSrc.EndRow = 10
+		binSrc.Parent = parentSrc
+
+		childDst := mkNode("call_expression", "r.IsDeclaration(n1.Type)")
+		childDst.Language = "go"
+		childDst.StartRow = 500
+		childDst.EndRow = 500
+		binDst := mkNode("binary_expression", "", childDst)
+		binDst.Language = "go"
+		binDst.StartRow = 500
+		binDst.EndRow = 500
+		childDst.Parent = binDst
+		parentDst := mkNode("parenthesized_expression", "", binDst)
+		parentDst.Language = "go"
+		parentDst.StartRow = 500
+		parentDst.EndRow = 500
+		binDst.Parent = parentDst
+
+		msNested := engine.NewMapping()
+		msNested.Add(parentSrc, parentDst)
+		msNested.Add(childSrc, childDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: parentSrc, DestNode: parentDst})
+		es.Add(actions.Action{Type: actions.Move, Node: childSrc, DestNode: childDst})
+
+		result := normalizeMovesByStructure(es, msNested)
+		foundChildDelete := false
+		foundChildInsert := false
+		for _, a := range result.Actions() {
+			if a.Node == childSrc && a.Type == actions.Delete {
+				foundChildDelete = true
+			}
+			if a.Node == childDst && a.Type == actions.Insert {
+				foundChildInsert = true
+			}
+		}
+		if !foundChildDelete || !foundChildInsert {
+			t.Errorf("expected childSrc to be demoted to delete and insert, got actions: %+v", result.Actions())
+		}
+	})
 }
 
 func TestSameScopeDeclaration(t *testing.T) {

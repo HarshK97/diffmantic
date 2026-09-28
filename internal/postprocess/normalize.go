@@ -459,10 +459,14 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				continue
 			}
 			toDemote[a.Node] = dstNode
-			for _, d := range a.Node.Descendants() {
-				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
-					demotedDescendants[d] = struct{}{}
-					evicted[d] = struct{}{}
+			deleteSubtree, insertSubtree := isSubtreeDemotion(a.Node, dstNode, ms, r)
+			// If the whole subtree was demoted, evict child mappings so nested moves get suppressed.
+			if deleteSubtree && insertSubtree {
+				for _, d := range a.Node.Descendants() {
+					if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+						demotedDescendants[d] = struct{}{}
+						evicted[d] = struct{}{}
+					}
 				}
 			}
 			evicted[a.Node] = struct{}{}
@@ -501,30 +505,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			}
 
 			r := rules.Get(a.Node.GetLanguage())
-			isDelim := (r != nil && (r.IsWrapper(a.Node.Type) || r.IsBlock(a.Node.Type) || r.IsDelimitedContainer(a.Node.Type))) ||
-				(r == nil && (rules.IsWrapper(a.Node.Type) || rules.IsBlock(a.Node.Type) || rules.IsDelimitedContainer(a.Node.Type)))
-
-			hasSurvivingOutside := false
-			for _, d := range a.Node.Descendants() {
-				if dDst, ok := ms.Src()[d]; ok && !dstNode.Contains(dDst) {
-					hasSurvivingOutside = true
-					break
-				}
-			}
-
-			deleteSubtree := len(a.Node.Children) > 0 && !isDelim && !hasSurvivingOutside
-
-			hasSurvivingSrcOutside := false
-			for _, d := range dstNode.Descendants() {
-				if dSrc, ok := ms.Dst()[d]; ok && !a.Node.Contains(dSrc) {
-					hasSurvivingSrcOutside = true
-					break
-				}
-			}
-			isDstDelim := (r != nil && (r.IsWrapper(dstNode.Type) || r.IsBlock(dstNode.Type) || r.IsDelimitedContainer(dstNode.Type))) ||
-				(r == nil && (rules.IsWrapper(dstNode.Type) || rules.IsBlock(dstNode.Type) || rules.IsDelimitedContainer(dstNode.Type)))
-
-			insertSubtree := len(dstNode.Children) > 0 && !isDstDelim && !hasSurvivingSrcOutside
+			deleteSubtree, insertSubtree := isSubtreeDemotion(a.Node, dstNode, ms, r)
 
 			result.Add(actions.Action{
 				Type:    actions.Delete,
@@ -539,10 +520,12 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				Position: dstNode.ChildIndex(),
 				Subtree:  insertSubtree,
 			})
-			// Unmap descendants inside dstNode so downstream passes don't treat them as matched.
-			for _, d := range a.Node.Descendants() {
-				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
-					ms.Remove(d)
+			// Only clear child mappings if we're replacing the whole subtree.
+			if deleteSubtree && insertSubtree {
+				for _, d := range a.Node.Descendants() {
+					if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+						ms.Remove(d)
+					}
 				}
 			}
 			ms.Remove(a.Node)
@@ -551,6 +534,45 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 		}
 	}
 	return result
+}
+
+// isDelimitedOrBlockContainer checks if a node is a wrapper, block, or delimited container.
+func isDelimitedOrBlockContainer(nodeType string, r *rules.Rules) bool {
+	if r != nil {
+		return r.IsWrapper(nodeType) || r.IsBlock(nodeType) || r.IsDelimitedContainer(nodeType)
+	}
+	return rules.IsWrapper(nodeType) || rules.IsBlock(nodeType) || rules.IsDelimitedContainer(nodeType)
+}
+
+// isSubtreeDemotion checks whether demoting this move replaces the entire subtree,
+// or just re-frames delimiters like () or {}.
+func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) (deleteSubtree, insertSubtree bool) {
+	if src == nil || dst == nil || ms == nil {
+		return false, false
+	}
+	isDelim := isDelimitedOrBlockContainer(src.Type, r)
+
+	hasSurvivingOutside := false
+	for _, d := range src.Descendants() {
+		if dDst, ok := ms.Src()[d]; ok && !dst.Contains(dDst) {
+			hasSurvivingOutside = true
+			break
+		}
+	}
+	deleteSubtree = len(src.Children) > 0 && !isDelim && !hasSurvivingOutside
+
+	hasSurvivingSrcOutside := false
+	for _, d := range dst.Descendants() {
+		if dSrc, ok := ms.Dst()[d]; ok && !src.Contains(dSrc) {
+			hasSurvivingSrcOutside = true
+			break
+		}
+	}
+	isDstDelim := isDelimitedOrBlockContainer(dst.Type, r)
+
+	insertSubtree = len(dst.Children) > 0 && !isDstDelim && !hasSurvivingSrcOutside
+
+	return deleteSubtree, insertSubtree
 }
 
 // hasSurvivingMappedDescendants reports whether src has any non-punctuation, non-operator
@@ -611,9 +633,7 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	}
 
 	// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
-	isDelimContainer := (r != nil && (r.IsWrapper(src.Type) || r.IsBlock(src.Type) || r.IsDelimitedContainer(src.Type))) ||
-		(r == nil && (rules.IsWrapper(src.Type) || rules.IsBlock(src.Type) || rules.IsDelimitedContainer(src.Type)))
-	if isDelimContainer && len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
+	if isDelimitedOrBlockContainer(src.Type, r) && len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
 		return true
 	}
 
