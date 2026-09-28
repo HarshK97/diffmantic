@@ -462,6 +462,13 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	demotedDescendants := make(map[*treesitter.ASTNode]struct{})
 	evicted := make(map[*treesitter.ASTNode]struct{})
 
+	explicitMoves := make(map[*treesitter.ASTNode]bool)
+	for _, a := range es.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			explicitMoves[a.Node] = true
+		}
+	}
+
 	for {
 		changed := false
 		for _, a := range es.Actions() {
@@ -489,8 +496,21 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				continue
 			}
 			toDemote[a.Node] = dstNode
-			deleteSubtree, insertSubtree := isSubtreeDemotion(a.Node, dstNode, ms, r)
-			// If the whole subtree was demoted, evict child mappings so nested moves get suppressed.
+			evicted[a.Node] = struct{}{}
+			changed = true
+
+			// Children without their own Move only moved as part of a.Node. Evict them
+			// first so isSubtreeDemotion doesn't count them as surviving inside dstNode.
+			for _, d := range a.Node.Descendants() {
+				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+					if !explicitMoves[d] {
+						demotedDescendants[d] = struct{}{}
+						evicted[d] = struct{}{}
+					}
+				}
+			}
+
+			deleteSubtree, insertSubtree := isSubtreeDemotion(a.Node, dstNode, ms, r, evicted)
 			if deleteSubtree && insertSubtree {
 				for _, d := range a.Node.Descendants() {
 					if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
@@ -499,8 +519,6 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 					}
 				}
 			}
-			evicted[a.Node] = struct{}{}
-			changed = true
 		}
 		if !changed {
 			break
@@ -535,7 +553,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			}
 
 			r := rules.Get(a.Node.GetLanguage())
-			deleteSubtree, insertSubtree := isSubtreeDemotion(a.Node, dstNode, ms, r)
+			deleteSubtree, insertSubtree := isSubtreeDemotion(a.Node, dstNode, ms, r, evicted)
 
 			result.Add(actions.Action{
 				Type:    actions.Delete,
@@ -550,10 +568,10 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				Position: dstNode.ChildIndex(),
 				Subtree:  insertSubtree,
 			})
-			// Only clear child mappings if we're replacing the whole subtree.
-			if deleteSubtree && insertSubtree {
-				for _, d := range a.Node.Descendants() {
-					if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+			// Unmap evicted children so later passes don't treat them as still matched.
+			for _, d := range a.Node.Descendants() {
+				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
+					if _, isEv := evicted[d]; isEv {
 						ms.Remove(d)
 					}
 				}
@@ -576,7 +594,7 @@ func isDelimitedOrBlockContainer(nodeType string, r *rules.Rules) bool {
 
 // isSubtreeDemotion checks whether demoting this move replaces the entire subtree,
 // or just re-frames delimiters like () or {}.
-func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) (deleteSubtree, insertSubtree bool) {
+func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) (deleteSubtree, insertSubtree bool) {
 	if src == nil || dst == nil || ms == nil {
 		return false, false
 	}
@@ -589,7 +607,7 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 			break
 		}
 	}
-	hasSurvivingInside := hasSurvivingMappedDescendants(src, dst, ms, nil, r)
+	hasSurvivingInside := hasSurvivingMappedDescendants(src, dst, ms, evicted, r)
 	deleteSubtree = len(src.Children) > 0 && (!isDelim || !hasSurvivingInside) && !hasSurvivingOutside
 
 	hasSurvivingSrcOutside := false
@@ -607,6 +625,9 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 			continue
 		}
 		if d1, ok := ms.Dst()[d2]; ok && src.Contains(d1) {
+			if _, isEv := evicted[d1]; isEv {
+				continue
+			}
 			hasDstSurvivingInside = true
 			break
 		}
@@ -616,16 +637,14 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 	return deleteSubtree, insertSubtree
 }
 
-// Reports whether any real payload leaves in src mapped to dst without being evicted.
+// hasSurvivingMappedDescendants reports whether any real payload leaves in src mapped to dst without being evicted.
 func hasSurvivingMappedDescendants(src, dst *treesitter.ASTNode, ms *engine.Mapping, evicted map[*treesitter.ASTNode]struct{}, r *rules.Rules) bool {
 	if src == nil || dst == nil || ms == nil {
 		return false
 	}
 	for _, d1 := range src.Descendants() {
-		if evicted != nil {
-			if _, isEvicted := evicted[d1]; isEvicted {
-				continue
-			}
+		if _, isEvicted := evicted[d1]; isEvicted {
+			continue
 		}
 		if !isPayloadLeaf(d1, r) {
 			continue

@@ -336,7 +336,6 @@ func renderSingleColumnHunk(
 		var badge string
 		var badgeColor int
 		var spans []serialize.HighlightSpan
-		var lineCtx renderutil.LineContext
 		var leftLineNum, rightLineNum int
 		var action color.ActionKind
 
@@ -348,7 +347,6 @@ func renderSingleColumnHunk(
 			} else if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
 				text = srcLines[pair.LeftLine]
 			}
-			lineCtx = renderutil.LineContextAligned
 			action = color.ActionKind(-1)
 		} else if pair.LeftLine == -1 && pair.RightLine >= 0 {
 			leftLineNum = -1
@@ -359,7 +357,6 @@ func renderSingleColumnHunk(
 			badge = dstLineBadges[pair.RightLine]
 			badgeColor = dstLineBadgeColors[pair.RightLine]
 			spans = rightSpansByLine[pair.RightLine]
-			lineCtx = renderutil.LineContextStandaloneInsert
 			action = color.ActionInsert
 		} else if pair.LeftLine >= 0 && pair.RightLine == -1 {
 			leftLineNum = pair.LeftLine
@@ -370,7 +367,6 @@ func renderSingleColumnHunk(
 			badge = srcLineBadges[pair.LeftLine]
 			badgeColor = srcLineBadgeColors[pair.LeftLine]
 			spans = leftSpansByLine[pair.LeftLine]
-			lineCtx = renderutil.LineContextStandaloneDelete
 			action = color.ActionDelete
 		} else {
 			if layout == HunkLayoutSingleColumnRight {
@@ -382,7 +378,6 @@ func renderSingleColumnHunk(
 					badge = dstLineBadges[pair.RightLine]
 					badgeColor = dstLineBadgeColors[pair.RightLine]
 				}
-				lineCtx = renderutil.LineContextStandaloneInsert
 				action = color.ActionInsert
 			} else {
 				leftLineNum = pair.LeftLine
@@ -393,8 +388,17 @@ func renderSingleColumnHunk(
 					badge = srcLineBadges[pair.LeftLine]
 					badgeColor = srcLineBadgeColors[pair.LeftLine]
 				}
-				lineCtx = renderutil.LineContextStandaloneDelete
 				action = color.ActionDelete
+			}
+		}
+
+		lineCtx := renderutil.LineContextAligned
+		if renderutil.ShouldStyleStandalone(true, spans, text) {
+			switch action {
+			case color.ActionInsert:
+				lineCtx = renderutil.LineContextStandaloneInsert
+			case color.ActionDelete:
+				lineCtx = renderutil.LineContextStandaloneDelete
 			}
 		}
 
