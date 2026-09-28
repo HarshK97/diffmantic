@@ -1009,11 +1009,6 @@ func lineMatchScore(
 	mappedStatements map[int]int,
 	scratch *alignScratch,
 ) int {
-	// Suppress diagonal match for lines moved across scopes
-	if isInsideMove(sIdx, dIdx, moves) {
-		return -1000
-	}
-
 	bonus := 0
 	if targetDst, ok := mappedStatements[sIdx]; ok {
 		if targetDst == dIdx {
@@ -1021,6 +1016,11 @@ func lineMatchScore(
 		} else {
 			bonus = -20
 		}
+	}
+
+	// Suppress diagonal match for lines moved across scopes (unless they are the mapped statement)
+	if bonus <= 0 && isInsideMove(sIdx, dIdx, moves) {
+		return -1000
 	}
 
 	sTrim := strings.TrimSpace(sLine)
