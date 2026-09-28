@@ -1313,6 +1313,88 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 			t.Errorf("expected childSrc to be demoted to delete and insert, got actions: %+v", result.Actions())
 		}
 	})
+
+	t.Run("descendants without own move are evicted and demoted to full subtree delete and insert", func(t *testing.T) {
+		childSrc := mkNode("call_expression", "min(v1, v2)")
+		childSrc.Language = "go"
+		childSrc.StartRow = 110
+		childSrc.EndRow = 110
+		parentSrc := mkNode("expression_list", "", childSrc)
+		parentSrc.Language = "go"
+		parentSrc.StartRow = 110
+		parentSrc.EndRow = 110
+		childSrc.Parent = parentSrc
+
+		childDst := mkNode("call_expression", "min(v1, v2)")
+		childDst.Language = "go"
+		childDst.StartRow = 109
+		childDst.EndRow = 109
+		parentDst := mkNode("expression_list", "", childDst)
+		parentDst.Language = "go"
+		parentDst.StartRow = 109
+		parentDst.EndRow = 109
+		childDst.Parent = parentDst
+
+		// Enclosing statements on different lines so cross-statement guard demotes move.
+		stmtSrc := mkNode("assignment_statement", "", parentSrc)
+		stmtSrc.Language = "go"
+		stmtSrc.StartRow = 110
+		stmtSrc.EndRow = 110
+		parentSrc.Parent = stmtSrc
+
+		stmtDst := mkNode("short_var_declaration", "", parentDst)
+		stmtDst.Language = "go"
+		stmtDst.StartRow = 109
+		stmtDst.EndRow = 109
+		parentDst.Parent = stmtDst
+
+		declSrc := mkNode("function_declaration", "", stmtSrc)
+		declSrc.Language = "go"
+		declSrc.StartRow = 100
+		declSrc.EndRow = 150
+		stmtSrc.Parent = declSrc
+
+		declDst := mkNode("function_declaration", "", stmtDst)
+		declDst.Language = "go"
+		declDst.StartRow = 100
+		declDst.EndRow = 150
+		stmtDst.Parent = declDst
+
+		ms := engine.NewMapping()
+		ms.Add(declSrc, declDst)
+		ms.Add(parentSrc, parentDst)
+		ms.Add(childSrc, childDst)
+
+		// Only parentSrc has a Move action in es (childSrc moves implicitly).
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: parentSrc, DestNode: parentDst})
+
+		result := normalizeMovesByStructure(es, ms)
+
+		if ms.Has(childSrc) {
+			t.Errorf("expected childSrc to be evicted from mapping, but still present")
+		}
+		if ms.HasDst(childDst) {
+			t.Errorf("expected childDst to be evicted from mapping destination, but still present")
+		}
+
+		foundDeleteSubtree := false
+		foundInsertSubtree := false
+		for _, a := range result.Actions() {
+			if a.Node == parentSrc && a.Type == actions.Delete && a.Subtree {
+				foundDeleteSubtree = true
+			}
+			if a.Node == parentDst && a.Type == actions.Insert && a.Subtree {
+				foundInsertSubtree = true
+			}
+			if a.Type == actions.Move {
+				t.Errorf("unexpected move action survived: %+v", a)
+			}
+		}
+		if !foundDeleteSubtree || !foundInsertSubtree {
+			t.Errorf("expected parentSrc to demote with Subtree: true, got actions: %+v", result.Actions())
+		}
+	})
 }
 
 func TestSameScopeDeclaration(t *testing.T) {

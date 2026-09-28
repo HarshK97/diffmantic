@@ -919,3 +919,29 @@ func TestRender_UnpairedMatchedLineDoesNotColorTextAsInsert(t *testing.T) {
 		t.Errorf("expected matched code on unpaired right line NOT to use InsertFg, got:\n%s", rendered)
 	}
 }
+
+func TestRender_UnpairedSplitLineDoesNotColorMatchedTokensAsInsert(t *testing.T) {
+	src := []byte("body = '<p>' + msg + '. Redirecting to ' + u + '</p>'\n")
+	dst := []byte("body = '<title>' + msg + '</title>'\n  + '<p>' + msg + '. Redirecting to ' + u + '</p>'\n")
+
+	dr, err := pipeline.Run(src, dst, "a.js", "b.js", pipeline.DiffOptions{})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:         true,
+		ContextLines:  3,
+		LineNumbers:   true,
+		TerminalWidth: 120,
+	}
+	var buf bytes.Buffer
+	if err := Render("a.js", "b.js", src, dst, dr.Envelope, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	rendered := buf.String()
+
+	if strings.Contains(rendered, color.InsertFg+". Redirecting to") {
+		t.Errorf("expected matched code on unpaired right line NOT to use InsertFg, got:\n%s", rendered)
+	}
+}
