@@ -225,3 +225,98 @@ func TestTopDown_AmbiguityPreorderTieBreaker(t *testing.T) {
 		t.Errorf("TopDown matched srcExpr to %v, want dstExprClose at row 20", m.Src()[srcExpr])
 	}
 }
+
+func TestTopDown_IdentifierlessScopeIsolation(t *testing.T) {
+	t.Run("rejects identifier-less subtree across different function scopes", func(t *testing.T) {
+		srcExit := testutil.Node("block", "",
+			testutil.Node("return_statement", "",
+				testutil.Node("expression_list", "", testutil.Leaf("false", "false")),
+			),
+		)
+		srcDecl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "funcA"),
+			testutil.Node("block", "", srcExit),
+		)
+		srcDecl.Language = "go"
+
+		dstExit := testutil.Node("block", "",
+			testutil.Node("return_statement", "",
+				testutil.Node("expression_list", "", testutil.Leaf("false", "false")),
+			),
+		)
+		dstDecl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "funcB"),
+			testutil.Node("block", "", dstExit),
+		)
+		dstDecl.Language = "go"
+
+		m := NewMapping()
+		TopDown(srcDecl, dstDecl, 2, m, nil)
+
+		if m.Has(srcExit) {
+			t.Errorf("expected identifier-less subtree not to match across funcA and funcB, got %v", m.Src()[srcExit])
+		}
+	})
+
+	t.Run("matches identifier-less subtree within same function scope", func(t *testing.T) {
+		srcExit := testutil.Node("block", "",
+			testutil.Node("return_statement", "",
+				testutil.Node("expression_list", "", testutil.Leaf("false", "false")),
+			),
+		)
+		srcDecl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "funcA"),
+			testutil.Node("block", "", srcExit),
+		)
+		srcDecl.Language = "go"
+
+		dstExit := testutil.Node("block", "",
+			testutil.Node("return_statement", "",
+				testutil.Node("expression_list", "", testutil.Leaf("false", "false")),
+			),
+		)
+		dstDecl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "funcA"),
+			testutil.Node("block", "", dstExit),
+		)
+		dstDecl.Language = "go"
+
+		m := NewMapping()
+		TopDown(srcDecl, dstDecl, 2, m, nil)
+
+		if m.Src()[srcExit] != dstExit {
+			t.Errorf("expected identifier-less subtree to match within same function scope funcA, got %v", m.Src()[srcExit])
+		}
+	})
+
+	t.Run("matches subtree containing identifier across different function scopes", func(t *testing.T) {
+		srcSub := testutil.Node("block", "",
+			testutil.Node("return_statement", "",
+				testutil.Node("expression_list", "", testutil.Leaf("identifier", "err")),
+			),
+		)
+		srcDecl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "funcA"),
+			testutil.Node("block", "", srcSub),
+		)
+		srcDecl.Language = "go"
+
+		dstSub := testutil.Node("block", "",
+			testutil.Node("return_statement", "",
+				testutil.Node("expression_list", "", testutil.Leaf("identifier", "err")),
+			),
+		)
+		dstDecl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "funcB"),
+			testutil.Node("block", "", dstSub),
+		)
+		dstDecl.Language = "go"
+
+		m := NewMapping()
+		TopDown(srcDecl, dstDecl, 2, m, nil)
+
+		if m.Src()[srcSub] != dstSub {
+			t.Errorf("expected subtree with identifier to match across funcA and funcB, got %v", m.Src()[srcSub])
+		}
+	})
+}

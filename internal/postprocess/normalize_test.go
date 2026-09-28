@@ -689,11 +689,12 @@ func setLanguageRecursive(n *treesitter.ASTNode, lang string) {
 
 func TestMoveStructuralScore(t *testing.T) {
 	r := rules.Get("go")
+	ms := engine.NewMapping()
 
 	t.Run("bare token clamped to 1", func(t *testing.T) {
 		op := mkNode("arithmetic_operator_literal", "+")
 		op.Language = "go"
-		score := moveStructuralScore(op, r)
+		score := moveStructuralScore(op, r, ms)
 		if score != 1 {
 			t.Errorf("expected token score 1, got %d", score)
 		}
@@ -713,7 +714,7 @@ func TestMoveStructuralScore(t *testing.T) {
 		cond.Parent = ifStmt
 		body.Parent = ifStmt
 
-		score := moveStructuralScore(ifStmt, r)
+		score := moveStructuralScore(ifStmt, r, ms)
 		// Size ~4, height ~2, lines 0, boilerplate -20 → clamp to 1
 		if score < 1 {
 			t.Errorf("expected score >= 1, got %d", score)
@@ -726,9 +727,43 @@ func TestMoveStructuralScore(t *testing.T) {
 		decl.Children = []*treesitter.ASTNode{mkNode("block", "")}
 		decl.Children[0].Parent = decl
 
-		score := moveStructuralScore(decl, r)
+		score := moveStructuralScore(decl, r, ms)
 		if score < 40 {
 			t.Errorf("expected declaration score >= 40, got %d", score)
+		}
+	})
+
+	t.Run("container with deleted contents discounts size by surviving mass", func(t *testing.T) {
+		id1 := mkNode("identifier", "a")
+		id2 := mkNode("identifier", "b")
+		id3 := mkNode("identifier", "c")
+		stmt1 := mkNode("expression_statement", "", id1)
+		stmt2 := mkNode("expression_statement", "", id2)
+		stmt3 := mkNode("expression_statement", "", id3)
+		block := mkNode("block", "", stmt1, stmt2, stmt3)
+		setLanguageRecursive(block, "go")
+
+		emptyMs := engine.NewMapping()
+		scoreEmpty := moveStructuralScore(block, r, emptyMs)
+
+		partialMs := engine.NewMapping()
+		partner := mkNode("identifier", "a")
+		partner.Language = "go"
+		partialMs.Add(id1, partner)
+		scorePartial := moveStructuralScore(block, r, partialMs)
+
+		if scorePartial <= scoreEmpty {
+			t.Errorf("expected score with surviving child (%d) > empty score (%d)", scorePartial, scoreEmpty)
+		}
+
+		fullMs := engine.NewMapping()
+		fullMs.Add(id1, partner)
+		fullMs.Add(id2, partner)
+		fullMs.Add(id3, partner)
+		scoreFull := moveStructuralScore(block, r, fullMs)
+		expectedScore := block.Size() + 2*subtreeHeight(block) + 10
+		if scoreFull > expectedScore {
+			t.Errorf("expected scoreFull (%d) not to exceed undiscounted score (%d)", scoreFull, expectedScore)
 		}
 	})
 }

@@ -179,6 +179,33 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		}
 	}
 
+	// Don't match bodies across different functions unless the functions are mapped
+	// or the bodies share at least 60% of their contents.
+	p1 := t1.Parent
+	p2 := c.Parent
+	if p1 != nil && p2 != nil && ((r != nil && r.IsDeclaration(p1.Type) && r.IsDeclaration(p2.Type)) ||
+		(r == nil && rules.IsDeclaration(p1.Type) && rules.IsDeclaration(p2.Type))) {
+		name1 := getDeclarationName(p1)
+		name2 := getDeclarationName(p2)
+		if name1 != "" && name2 != "" && name1 != name2 && m.Src()[p1] != p2 {
+			if m.DiceSrc(t1, c) < 0.60 && ChawatheSimilarity(t1, c, m.Src()) < 0.60 {
+				return -1.0
+			}
+		}
+	}
+
+	// Require at least 60% similarity to match two declarations with different names.
+	isDecl := (r != nil && r.IsDeclaration(t1.Type)) || (r == nil && rules.IsDeclaration(t1.Type))
+	if isDecl {
+		name1 := getDeclarationName(t1)
+		name2 := getDeclarationName(c)
+		if name1 != "" && name2 != "" && name1 != name2 {
+			if m.DiceSrc(t1, c) < 0.60 && ChawatheSimilarity(t1, c, m.Src()) < 0.60 {
+				return -1.0
+			}
+		}
+	}
+
 	// Markup elements and tags with different tag names must not match across different tags.
 	tag1 := getTagName(t1)
 	tag2 := getTagName(c)
@@ -387,8 +414,15 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				}
 			}
 
-			if isDecl && m.DiceSrc(t1, bestParent) < 0.30 {
-				continue
+			if isDecl {
+				name1 := getDeclarationName(t1)
+				name2 := getDeclarationName(bestParent)
+				if name1 != "" && name2 != "" && name1 != name2 && m.DiceSrc(t1, bestParent) < 0.60 {
+					continue
+				}
+				if m.DiceSrc(t1, bestParent) < 0.30 {
+					continue
+				}
 			}
 
 			isCall := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))

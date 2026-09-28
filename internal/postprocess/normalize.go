@@ -313,12 +313,27 @@ func isTokenNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 		r.IsType(n.Type) || r.IsIdentifier(n.Type)
 }
 
+// isPayloadLeaf reports whether d is a non-punctuation, non-operator, non-keyword leaf.
+func isPayloadLeaf(d *treesitter.ASTNode, r *rules.Rules) bool {
+	if len(d.Children) > 0 || d.IsKeyword {
+		return false
+	}
+	if (r != nil && (r.IsPunctuation(d.Type) || r.IsOperatorLiteral(d.Type))) ||
+		(r == nil && (rules.IsPunctuation(d.Type) || rules.IsOperatorLiteral(d.Type))) {
+		return false
+	}
+	if (r != nil && r.IsKeyword(d.Type, d.Label)) || (r == nil && rules.IsKeyword(d.Type, d.Label)) {
+		return false
+	}
+	return true
+}
+
 // moveStructuralScore scores how structurally significant a node is.
 //
 //	S = BaseSize + 2*Height + 3*LineSpan + RoleBonus - BoilerplatePenalty
 //
 // Bare tokens are clamped to S=1. Declarations receive +40. Boilerplate bodies receive -20.
-func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules) int {
+func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Mapping) int {
 	if node == nil || r == nil {
 		return 0
 	}
@@ -331,6 +346,21 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules) int {
 	size := node.Size()
 	height := subtreeHeight(node)
 	lines := subtreeLines(node)
+
+	// If most of a container was deleted, score it by its surviving nodes so a
+	// gutted block doesn't look like a real move.
+	if ms != nil && (r.IsBlock(node.Type) || r.IsWrapper(node.Type) || r.IsDelimitedContainer(node.Type)) {
+		surviving := 0
+		for _, d := range node.Descendants() {
+			if !isPayloadLeaf(d, r) {
+				continue
+			}
+			if ms.Has(d) {
+				surviving++
+			}
+		}
+		size = min(size, surviving*3)
+	}
 
 	score := size + 2*height + 3*int(lines)
 
@@ -559,7 +589,8 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 			break
 		}
 	}
-	deleteSubtree = len(src.Children) > 0 && !isDelim && !hasSurvivingOutside
+	hasSurvivingInside := hasSurvivingMappedDescendants(src, dst, ms, nil, r)
+	deleteSubtree = len(src.Children) > 0 && (!isDelim || !hasSurvivingInside) && !hasSurvivingOutside
 
 	hasSurvivingSrcOutside := false
 	for _, d := range dst.Descendants() {
@@ -570,13 +601,22 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 	}
 	isDstDelim := isDelimitedOrBlockContainer(dst.Type, r)
 
-	insertSubtree = len(dst.Children) > 0 && !isDstDelim && !hasSurvivingSrcOutside
+	hasDstSurvivingInside := false
+	for _, d2 := range dst.Descendants() {
+		if !isPayloadLeaf(d2, r) {
+			continue
+		}
+		if d1, ok := ms.Dst()[d2]; ok && src.Contains(d1) {
+			hasDstSurvivingInside = true
+			break
+		}
+	}
+	insertSubtree = len(dst.Children) > 0 && (!isDstDelim || !hasDstSurvivingInside) && !hasSurvivingSrcOutside
 
 	return deleteSubtree, insertSubtree
 }
 
-// hasSurvivingMappedDescendants reports whether src has any non-punctuation, non-operator
-// leaf mapped inside dst that hasn't been evicted.
+// Reports whether any real payload leaves in src mapped to dst without being evicted.
 func hasSurvivingMappedDescendants(src, dst *treesitter.ASTNode, ms *engine.Mapping, evicted map[*treesitter.ASTNode]struct{}, r *rules.Rules) bool {
 	if src == nil || dst == nil || ms == nil {
 		return false
@@ -587,12 +627,7 @@ func hasSurvivingMappedDescendants(src, dst *treesitter.ASTNode, ms *engine.Mapp
 				continue
 			}
 		}
-		if len(d1.Children) > 0 {
-			continue
-		}
-		isPunct := (r != nil && (r.IsPunctuation(d1.Type) || r.IsOperatorLiteral(d1.Type))) ||
-			(r == nil && (rules.IsPunctuation(d1.Type) || rules.IsOperatorLiteral(d1.Type)))
-		if isPunct {
+		if !isPayloadLeaf(d1, r) {
 			continue
 		}
 		if d2, ok := ms.Src()[d1]; ok {
@@ -637,12 +672,12 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		return true
 	}
 
-	score := moveStructuralScore(src, r)
+	score := moveStructuralScore(src, r, ms)
 	threshold := requiredMoveThreshold(src, dst, ms, r)
 	// When moving across functions or scopes, require the destination to have
 	// enough mass on its own so a tiny snippet doesn't match a deleted block.
 	if !sameScopeDeclaration(src, dst, ms, r) && !r.IsDeclaration(src.Type) {
-		score = min(score, moveStructuralScore(dst, r))
+		score = min(score, moveStructuralScore(dst, r, ms))
 	}
 	return score < threshold
 }

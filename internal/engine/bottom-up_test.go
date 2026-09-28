@@ -683,3 +683,130 @@ func TestRollupMatchedContainers_WrapperForeignDescendant(t *testing.T) {
 		t.Errorf("expected hasForeignMappedDescendants to be false for outer wrapper containing all mapped descendants")
 	}
 }
+
+func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
+	makeFunc := func(name string) (*treesitter.ASTNode, *treesitter.ASTNode, []*treesitter.ASTNode) {
+		stmts := []*treesitter.ASTNode{
+			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s1")),
+			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s2")),
+			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s3")),
+			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s4")),
+		}
+		body := testutil.Node("block", "", stmts...)
+		decl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", name),
+			body,
+		)
+		root := testutil.Node("source_file", "", decl)
+		root.Language = "go"
+		for _, n := range root.PreOrder() {
+			n.Language = "go"
+		}
+		treesitter.EnsureIndex(root)
+		return decl, body, stmts
+	}
+
+	t.Run("rejects function bodies across different declaration names when similarity < 60%", func(t *testing.T) {
+		_, bodyA, stmtsA := makeFunc("funcA")
+		_, bodyB, stmtsB := makeFunc("funcB")
+
+		m := NewMapping()
+		// Map only 1 of 4 statements (~22% similarity).
+		m.Add(stmtsA[0], stmtsB[0])
+		m.Add(stmtsA[0].Children[0], stmtsB[0].Children[0])
+
+		score := computeAffinity(bodyA, bodyB, m, DefaultAffinityWeights, false)
+		if score != -1.0 {
+			t.Errorf("expected -1.0 for low-similarity bodies under different function names, got %f", score)
+		}
+	})
+
+	t.Run("allows function bodies across different declaration names when similarity >= 60%", func(t *testing.T) {
+		_, bodyA, stmtsA := makeFunc("funcA")
+		_, bodyB, stmtsB := makeFunc("funcB")
+
+		m := NewMapping()
+		// Map all 4 statements (>60% similarity).
+		for i := range stmtsA {
+			m.Add(stmtsA[i], stmtsB[i])
+			m.Add(stmtsA[i].Children[0], stmtsB[i].Children[0])
+		}
+
+		score := computeAffinity(bodyA, bodyB, m, DefaultAffinityWeights, false)
+		if score <= 0.0 {
+			t.Errorf("expected positive affinity for high-similarity bodies under different function names, got %f", score)
+		}
+	})
+
+	t.Run("enforces 60% similarity threshold on declarations with different names", func(t *testing.T) {
+		declA, _, stmtsA := makeFunc("funcA")
+		declB, _, stmtsB := makeFunc("funcB")
+
+		mLow := NewMapping()
+		mLow.Add(stmtsA[0], stmtsB[0])
+		mLow.Add(stmtsA[0].Children[0], stmtsB[0].Children[0])
+		if score := computeAffinity(declA, declB, mLow, DefaultAffinityWeights, false); score != -1.0 {
+			t.Errorf("expected -1.0 for low-similarity declarations with different names, got %f", score)
+		}
+
+		mHigh := NewMapping()
+		for i := range stmtsA {
+			mHigh.Add(stmtsA[i], stmtsB[i])
+			mHigh.Add(stmtsA[i].Children[0], stmtsB[i].Children[0])
+		}
+		if score := computeAffinity(declA, declB, mHigh, DefaultAffinityWeights, false); score <= 0.0 {
+			t.Errorf("expected positive affinity for high-similarity declarations with different names, got %f", score)
+		}
+	})
+}
+
+func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
+	buildTree := func(name string) (*treesitter.ASTNode, *treesitter.ASTNode, *treesitter.ASTNode, []*treesitter.ASTNode) {
+		leaves := []*treesitter.ASTNode{
+			testutil.Leaf("identifier", "a"),
+			testutil.Leaf("identifier", "b"),
+			testutil.Leaf("identifier", "c"),
+			testutil.Leaf("identifier", "d"),
+			testutil.Leaf("identifier", "e"),
+		}
+		body := testutil.Node("block", "", leaves...)
+		decl := testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", name),
+			body,
+		)
+		root := testutil.Node("source_file", "", decl)
+		for _, n := range root.PreOrder() {
+			n.Language = "go"
+		}
+		treesitter.EnsureIndex(root)
+		return root, decl, body, leaves
+	}
+
+	// 2 of 5 leaves + body mapped gives ~38% Dice (< 0.60, but >= 0.30).
+	root1, declA, bodyA, leavesA := buildTree("funcA")
+	root2, _, bodyB, leavesB := buildTree("funcB")
+
+	m := NewMapping()
+	m.Add(root1, root2)
+	m.Add(bodyA, bodyB)
+	m.Add(leavesA[0], leavesB[0])
+	m.Add(leavesA[1], leavesB[1])
+
+	RollupMatchedContainers(root1, root2, m)
+	if m.Get(declA) != nil {
+		t.Errorf("expected RollupMatchedContainers to reject declA -> declB with mismatched names at <60%% Dice, got %v", m.Get(declA))
+	}
+
+	// Same overlap when declaration names match ("funcA" -> "funcA") should roll up (>= 30% Dice).
+	rootSame2, declSameA, bodySameA, leavesSameA := buildTree("funcA")
+	mSame := NewMapping()
+	mSame.Add(root1, rootSame2)
+	mSame.Add(bodyA, bodySameA)
+	mSame.Add(leavesA[0], leavesSameA[0])
+	mSame.Add(leavesA[1], leavesSameA[1])
+
+	RollupMatchedContainers(root1, rootSame2, mSame)
+	if mSame.Get(declA) != declSameA {
+		t.Errorf("expected RollupMatchedContainers to pair matching declaration names at >=30%% Dice, got %v", mSame.Get(declA))
+	}
+}

@@ -73,7 +73,8 @@ func TopDown(
 						if r != nil && r.IsWrapper(t1.Type) && len(t1.Children) == 1 {
 							effectiveHeight = Height(t1.Children[0])
 						}
-						if effectiveHeight <= 2 || isDeclarationHeader(t1, r) {
+						// Subtrees without identifiers (like boilerplate `{ return false }`) shouldn't match across different scopes.
+						if effectiveHeight <= 2 || isDeclarationHeader(t1, r) || !hasIdentifier(t1, r) {
 							s1 := getScopeName(t1)
 							s2 := getScopeName(t2)
 							if s1 != "" && s2 != "" && s1 != s2 {
@@ -160,7 +161,7 @@ func TopDown(
 		if m.Has(t1) || m.HasDst(t2) {
 			continue
 		}
-		if sp.mismatched && (Height(t1) <= 2 || isDeclarationHeader(t1, rulesFor(t1))) {
+		if sp.mismatched && (Height(t1) <= 2 || isDeclarationHeader(t1, rulesFor(t1)) || !hasIdentifier(t1, rulesFor(t1))) {
 			continue
 		}
 
@@ -311,4 +312,31 @@ func isCallNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 		return r.IsCall(n.Type)
 	}
 	return rules.IsCall(n.Type)
+}
+
+// hasIdentifier reports whether n or any descendant contains an identifier.
+func hasIdentifier(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	isIdent := func(t string) bool {
+		return (r != nil && r.IsIdentifier(t)) || (r == nil && rules.IsIdentifier(t))
+	}
+	if n.Index != nil && n.PreSize > 0 {
+		for _, d := range n.Index.Nodes[n.ID : n.ID+n.PreSize] {
+			if isIdent(d.Type) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, d := range n.PreOrder() {
+		if isIdent(d.Type) {
+			return true
+		}
+	}
+	return false
 }
