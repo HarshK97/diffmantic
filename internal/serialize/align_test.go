@@ -602,6 +602,56 @@ func TestAlignLines_InPlaceClosureMove(t *testing.T) {
 	}
 }
 
+func TestAlignLines_AttachedElseClause(t *testing.T) {
+	withoutElse := []byte("void f() {\n  if (cond) {\n    a = 1;\n  }\n  after();\n}")
+	withElse := []byte("void f() {\n  if (cond) {\n    a = 1;\n  } else {\n    b = 2;\n  }\n  after();\n}")
+	chainWithoutElse := []byte("void f() {\n  if (cond1) {\n    a = 1;\n  } else if (cond2) {\n    b = 2;\n  }\n  after();\n}")
+	chainWithElse := []byte("void f() {\n  if (cond1) {\n    a = 1;\n  } else if (cond2) {\n    b = 2;\n  } else {\n    c = 3;\n  }\n  after();\n}")
+
+	cases := []struct {
+		name              string
+		src, dst          []byte
+		inPlaceMoveIfStmt bool
+		wantLine          int
+	}{
+		{name: "AddedElse", src: withoutElse, dst: withElse, wantLine: 3},
+		{name: "RemovedElse", src: withElse, dst: withoutElse, wantLine: 3},
+		{name: "AddedElseOnElseIfChain", src: chainWithoutElse, dst: chainWithElse, wantLine: 5},
+		{name: "RemovedElseOnElseIfChain", src: chainWithElse, dst: chainWithoutElse, wantLine: 5},
+		{name: "InPlaceMovedIfWithAddedElse", src: withoutElse, dst: withElse, inPlaceMoveIfStmt: true, wantLine: 3},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t1, err := treesitter.Parse(tc.src, "src.c")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			t2, err := treesitter.Parse(tc.dst, "dst.c")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+			res := engine.Match(t1, t2, tc.src, tc.dst, nil)
+			var es *actions.EditScript
+			if tc.inPlaceMoveIfStmt {
+				es = actions.NewEditScript()
+				for _, pair := range res.Mappings.Pairs {
+					if pair.Src != nil && pair.Src.Type == "if_statement" {
+						es.Add(actions.Action{Type: actions.Move, Node: pair.Src, DestNode: pair.Dst})
+						break
+					}
+				}
+			}
+			got := AlignLines(tc.src, tc.dst, res.Mappings, es)
+			for _, p := range got {
+				if p.LeftLine == tc.wantLine && p.RightLine != tc.wantLine {
+					t.Errorf("AlignLines(%s) left line %d aligned with right line %d, want %d (grid: %+v)", tc.name, tc.wantLine, p.RightLine, tc.wantLine, got)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkAlignLines(b *testing.B) {
 	b.Run("SmallGap", func(b *testing.B) {
 		src := []byte("func foo() {\n  a := 1\n  b := 2\n  return a + b\n}")

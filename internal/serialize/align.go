@@ -88,16 +88,14 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 	anchors := mergeAnchors(primary, text)
 
 	// In-place monotonic statements receive mapping prior bonus in Gotoh.
-	inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
-		return inPlaceNodes[n1] && inPlaceNodes[n2]
-	})
-
-	gotohMappedStatements := make(map[int]int, len(stationaryStatements)+len(inPlaceStatements))
-	maps.Copy(gotohMappedStatements, stationaryStatements)
-	for k, v := range inPlaceStatements {
-		if _, exists := gotohMappedStatements[k]; !exists {
-			gotohMappedStatements[k] = v
-		}
+	gotohMappedStatements := stationaryStatements
+	if len(inPlaceNodes) > 0 {
+		inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
+			return (!movedNodes[n1] || inPlaceNodes[n1]) && (!movedNodes[n2] || inPlaceNodes[n2])
+		})
+		gotohMappedStatements = make(map[int]int, len(stationaryStatements)+len(inPlaceStatements))
+		maps.Copy(gotohMappedStatements, inPlaceStatements)
+		maps.Copy(gotohMappedStatements, stationaryStatements)
 	}
 
 	scratch := alignScratchPool.Get().(*alignScratch)
@@ -379,9 +377,29 @@ func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, al
 		if n1.EndRow > n1.StartRow && n2.EndRow > n2.StartRow {
 			sEnd := int(n1.EndRow)
 			dEnd := int(n2.EndRow)
+			endNode1 := n1
+			endNode2 := n2
+
+			// When an else branch is added, n2 extends past the original if-body.
+			// Snap dEnd back to the mapped body's closing line so "}" lines up with "} else {".
+			if c2 := findSnappedTrailingBlock(n1, n2, ms.Get, allowNode, r); c2 != nil {
+				dEnd = int(c2.EndRow)
+				endNode2 = c2
+			}
+
+			// Same thing in reverse when a trailing else branch is removed from n1.
+			if c1 := findSnappedTrailingBlock(n2, n1, func(n *treesitter.ASTNode) *treesitter.ASTNode {
+				return ms.Dst()[n]
+			}, func(a, b *treesitter.ASTNode) bool {
+				return allowNode == nil || allowNode(b, a)
+			}, r); c1 != nil {
+				sEnd = int(c1.EndRow)
+				endNode1 = c1
+			}
+
 			if sEnd >= 0 && sEnd < len(srcLines) && dEnd >= 0 && dEnd < len(dstLines) && !seenSrc[sEnd] && !seenDst[dEnd] {
-				sEndTrim := strings.TrimSpace(srcLines[sEnd])
-				dEndTrim := strings.TrimSpace(dstLines[dEnd])
+				sEndTrim := nodeEndLine(srcLines[sEnd], endNode1)
+				dEndTrim := nodeEndLine(dstLines[dEnd], endNode2)
 				if sEndTrim != "" && dEndTrim != "" && sEndTrim == dEndTrim {
 					seenSrc[sEnd] = true
 					seenDst[dEnd] = true
@@ -392,6 +410,40 @@ func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, al
 	}
 
 	return mapped
+}
+
+func findSnappedTrailingBlock(
+	n1, n2 *treesitter.ASTNode,
+	lookup func(*treesitter.ASTNode) *treesitter.ASTNode,
+	allowNode func(n1, n2 *treesitter.ASTNode) bool,
+	r *rules.Rules,
+) *treesitter.ASTNode {
+	for _, c1 := range n1.Children {
+		if c1 == nil || c1.EndRow != n1.EndRow {
+			continue
+		}
+		c2 := lookup(c1)
+		if c2 == nil || c2.Parent != n2 || (allowNode != nil && !allowNode(c1, c2)) {
+			continue
+		}
+		if (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type)) {
+			if c2.EndRow != n2.EndRow {
+				return c2
+			}
+			return nil
+		}
+		if len(c1.Children) > 0 {
+			return findSnappedTrailingBlock(c1, c2, lookup, allowNode, r)
+		}
+	}
+	return nil
+}
+
+func nodeEndLine(line string, n *treesitter.ASTNode) string {
+	if n != nil && n.EndRow > n.StartRow && n.EndCol > 0 && int(n.EndCol) <= len(line) {
+		line = line[:n.EndCol]
+	}
+	return strings.TrimSpace(line)
 }
 
 func collectTextAnchors(srcLines, dstLines []string, moves []moveRange, mappedStatements map[int]int, matched map[int]int) []anchor {
