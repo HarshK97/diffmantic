@@ -568,13 +568,33 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				Position: dstNode.ChildIndex(),
 				Subtree:  insertSubtree,
 			})
-			// Unmap evicted children so later passes don't treat them as still matched.
+			// Unmap evicted children so later passes don't treat them as matched. If the
+			// parent demotion wasn't a full-subtree delete/insert, emit individual actions
+			// for them here so they don't vanish from the edit script.
 			for _, d := range a.Node.Descendants() {
-				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
-					if _, isEv := evicted[d]; isEv {
-						ms.Remove(d)
-					}
+				dDst, ok := ms.Src()[d]
+				if !ok || !dstNode.Contains(dDst) {
+					continue
 				}
+				if _, isEv := evicted[d]; !isEv {
+					continue
+				}
+				if !deleteSubtree {
+					result.Add(actions.Action{
+						Type:   actions.Delete,
+						Node:   d,
+						Parent: d.Parent,
+					})
+				}
+				if !insertSubtree {
+					result.Add(actions.Action{
+						Type:     actions.Insert,
+						Node:     dDst,
+						Parent:   dDst.Parent,
+						Position: dDst.ChildIndex(),
+					})
+				}
+				ms.Remove(d)
 			}
 			ms.Remove(a.Node)
 		default:

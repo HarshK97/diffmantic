@@ -1859,3 +1859,66 @@ func TestNormalizeMovesByStructure_ScopedEviction(t *testing.T) {
 		t.Errorf("expected survivor child Move action to be preserved")
 	}
 }
+
+func TestNormalizeMovesByStructure_EmitsDeleteForEvictedDescendantsWhenNonSubtree(t *testing.T) {
+	// Moving c1 out of t1 (and c0 into dst1) keeps the demoted container's Delete
+	// and Insert non-subtree. Evicted children like opSrc/opDst that stayed inside
+	// the container still need their own Delete and Insert actions.
+	opSrc := mkNode("logical_operator_literal", "&&")
+	opSrc.Language = "go"
+	c1 := mkNode("identifier", "survivor")
+	c1.Language = "go"
+	t1 := mkNode("binary_expression", "", c1, opSrc)
+	t1.Language = "go"
+	t1.StartRow = 10
+	t1.EndRow = 10
+
+	opDst := mkNode("logical_operator_literal", "&&")
+	opDst.Language = "go"
+	c3 := mkNode("identifier", "survivor2")
+	c3.Language = "go"
+	dst1 := mkNode("binary_expression", "", c3, opDst)
+	dst1.Language = "go"
+	dst1.StartRow = 50
+	dst1.EndRow = 50
+
+	c2 := mkNode("identifier", "survivor")
+	c2.Language = "go"
+	c2.StartRow = 80
+	c2.EndRow = 80
+
+	c0 := mkNode("identifier", "survivor2")
+	c0.Language = "go"
+	c0.StartRow = 2
+	c0.EndRow = 2
+
+	ms := engine.NewMapping()
+	ms.Add(t1, dst1)
+	ms.Add(opSrc, opDst)
+	ms.Add(c1, c2)
+	ms.Add(c0, c3)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: t1, DestNode: dst1})
+	es.Add(actions.Action{Type: actions.Move, Node: c1, DestNode: c2})
+	es.Add(actions.Action{Type: actions.Move, Node: c0, DestNode: c3})
+
+	result := normalizeMovesByStructure(es, ms)
+
+	opDeleted := slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == opSrc && a.Type == actions.Delete
+	})
+	opInserted := slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == opDst && a.Type == actions.Insert
+	})
+
+	if !opDeleted {
+		t.Errorf("normalizeMovesByStructure() missing Delete for opSrc; got actions = %+v", result.Actions())
+	}
+	if !opInserted {
+		t.Errorf("normalizeMovesByStructure() missing Insert for opDst; got actions = %+v", result.Actions())
+	}
+	if ms.Has(opSrc) {
+		t.Error("normalizeMovesByStructure() kept opSrc in mapping, want evicted")
+	}
+}
