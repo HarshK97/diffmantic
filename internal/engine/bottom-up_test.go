@@ -810,3 +810,38 @@ func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
 		t.Errorf("expected RollupMatchedContainers to pair matching declaration names at >=30%% Dice, got %v", mSame.Get(declA))
 	}
 }
+
+func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing.T) {
+	// Extracting min(v1, v2) from `overlap += min(v1, v2)` into `matched := min(v1, v2)`
+	// shouldn't roll the old `overlap +=` container up into `matched :=`.
+	idOverlap1 := testutil.Node("identifier", "overlap")
+	lhsList1 := testutil.Node("expression_list", "", idOverlap1)
+	opPlus1 := testutil.Node("assignment_operator_literal", "+=")
+	callMin1 := testutil.Node("call_expression", "min")
+	rhsList1 := testutil.Node("expression_list", "", callMin1)
+	assignStmt1 := testutil.Node("assignment_statement", "", lhsList1, opPlus1, rhsList1)
+	assignStmt1.Language = "go"
+
+	idMatched2 := testutil.Node("identifier", "matched")
+	lhsList2 := testutil.Node("expression_list", "", idMatched2)
+	opDecl2 := testutil.Node("assignment_operator_literal", ":=")
+	callMin2 := testutil.Node("call_expression", "min")
+	rhsList2 := testutil.Node("expression_list", "", callMin2)
+	shortDecl2 := testutil.Node("short_var_declaration", "", lhsList2, opDecl2, rhsList2)
+	shortDecl2.Language = "go"
+
+	root1 := testutil.Node("block", "", assignStmt1)
+	root2 := testutil.Node("block", "", shortDecl2)
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(callMin1, callMin2)
+	m.Add(rhsList1, rhsList2)
+
+	RollupMatchedContainers(root1, root2, m)
+
+	if m.Get(assignStmt1) != nil {
+		t.Errorf("expected assignStmt1 NOT to roll up to shortDecl2 with different target variable, got: %v", m.Get(assignStmt1))
+	}
+}

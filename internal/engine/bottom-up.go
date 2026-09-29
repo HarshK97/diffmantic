@@ -138,6 +138,13 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Don't pair a declaration with an assignment (like := vs +=) unless they touch
+	// the same variable, otherwise extracting an expression into a temp var steals
+	// the original statement.
+	if hasDisjointAssignmentTargets(t1, c, r) {
+		return -1.0
+	}
+
 	anc1 := NearestMatchedAncestor(t1, m, false)
 	anc2 := NearestMatchedAncestor(c, m, true)
 	cMatches := areAncestorsMatched(anc1, anc2, m)
@@ -378,6 +385,9 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				!m.HasDst(c2.Parent) &&
 				TypesMatch(t1.Type, c2.Parent.Type, r) &&
 				!hasForeignBodyOwner(t1, c2.Parent, m, r) {
+				if hasDisjointAssignmentTargets(t1, c2.Parent, r) {
+					continue
+				}
 				if isWrapper && hasForeignMappedDescendants(t1, c2.Parent, m) {
 					continue
 				}
@@ -796,4 +806,43 @@ func hasForeignMappedDescendants(t1, candidate *treesitter.ASTNode, m *Mapping) 
 		}
 	}
 	return false
+}
+
+func hasDisjointAssignmentTargets(t1, c *treesitter.ASTNode, r *rules.Rules) bool {
+	if t1.Type == c.Type {
+		return false
+	}
+	names1 := getAssignmentTargetNames(t1, r)
+	names2 := getAssignmentTargetNames(c, r)
+	if len(names1) == 0 || len(names2) == 0 {
+		return false
+	}
+	return !slices.ContainsFunc(names1, func(n1 string) bool {
+		return slices.Contains(names2, n1)
+	})
+}
+
+func getAssignmentTargetNames(n *treesitter.ASTNode, r *rules.Rules) []string {
+	if n == nil {
+		return nil
+	}
+	opIdx := slices.IndexFunc(n.Children, func(child *treesitter.ASTNode) bool {
+		return isOperatorGlue(child, r)
+	})
+	limit := len(n.Children)
+	if opIdx >= 0 {
+		limit = opIdx
+	} else if len(n.Children) > 0 {
+		limit = 1
+	}
+	var names []string
+	for _, child := range n.Children[:limit] {
+		for _, desc := range child.PreOrder() {
+			isID := (r != nil && r.IsIdentifier(desc.Type)) || (r == nil && rules.IsIdentifier(desc.Type))
+			if isID && desc.Label != "" {
+				names = append(names, desc.Label)
+			}
+		}
+	}
+	return names
 }
