@@ -1,6 +1,8 @@
 package postprocess
 
 import (
+	"cmp"
+
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -17,10 +19,7 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 	result := actions.NewEditScript()
 	for _, a := range es.Actions() {
 		if a.Type == actions.Move && a.Node != nil {
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
+			dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
 			if dstNode != nil && a.Node.Parent != nil && dstNode.Parent != nil {
 				hasPos := (a.Node.EndByte > 0 || a.Node.StartRow > 0 || a.Node.EndRow > 0) &&
 					(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
@@ -33,6 +32,11 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 				// If direct parents match, the node moved within the same container (like swapped arguments).
 				if ms.Src()[srcParent] == dstParent {
 					result.Add(a)
+					continue
+				}
+
+				r := rules.Get(a.Node.GetLanguage())
+				if isStationaryExpressionMove(a.Node, dstNode, ms, r, nil) {
 					continue
 				}
 
@@ -94,6 +98,119 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 		result.Add(a)
 	}
 	return result
+}
+
+// isStationaryExpressionMove reports whether a Move between expressions in the
+// same statement only regroups operators or parens without reordering the
+// underlying operands.
+func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) bool {
+	if src == nil || dst == nil || ms == nil || r == nil {
+		return false
+	}
+	if len(src.Children) == 0 || len(dst.Children) == 0 {
+		return false
+	}
+	if !r.IsExpression(src.Type) || !r.IsExpression(dst.Type) {
+		return false
+	}
+
+	srcStmt := engine.FindEnclosingStatement(src, r)
+	dstStmt := engine.FindEnclosingStatement(dst, r)
+	if srcStmt == nil || dstStmt == nil || ms.Src()[srcStmt] != dstStmt {
+		return false
+	}
+
+	// FindEnclosingStatement returns the node itself if it sits directly under a block,
+	// so check the parents to make sure neither side is a nested block of the statement.
+	if engine.FindEnclosingStatement(src.Parent, r) != srcStmt || engine.FindEnclosingStatement(dst.Parent, r) != dstStmt {
+		return false
+	}
+
+	var mappedSrcLeaves []*treesitter.ASTNode
+	hasSurvivingPayloadInDst := false
+	for _, d := range src.Descendants() {
+		if len(d.Children) > 0 {
+			continue
+		}
+		if _, isEv := evicted[d]; isEv {
+			continue
+		}
+		if engine.FindEnclosingStatement(d, r) != srcStmt {
+			continue
+		}
+		if dDst, ok := ms.Src()[d]; ok {
+			if !dstStmt.Contains(dDst) || engine.FindEnclosingStatement(dDst, r) != dstStmt {
+				return false
+			}
+			if isPayloadLeaf(d, r) && dst.Contains(dDst) {
+				hasSurvivingPayloadInDst = true
+			}
+			mappedSrcLeaves = append(mappedSrcLeaves, d)
+		}
+	}
+	if !hasSurvivingPayloadInDst {
+		return false
+	}
+
+	for _, dDst := range dst.Descendants() {
+		if len(dDst.Children) > 0 {
+			continue
+		}
+		if engine.FindEnclosingStatement(dDst, r) != dstStmt {
+			continue
+		}
+		if dSrc, ok := ms.Dst()[dDst]; ok {
+			if _, isEv := evicted[dSrc]; isEv {
+				continue
+			}
+			if !srcStmt.Contains(dSrc) || engine.FindEnclosingStatement(dSrc, r) != srcStmt {
+				return false
+			}
+		}
+	}
+
+	var allMappedStmtLeaves []*treesitter.ASTNode
+	var collectStmtLeaves func(n *treesitter.ASTNode)
+	collectStmtLeaves = func(n *treesitter.ASTNode) {
+		for _, c := range n.Children {
+			if len(c.Children) == 0 {
+				if _, isEv := evicted[c]; isEv {
+					continue
+				}
+				if engine.FindEnclosingStatement(c, r) != srcStmt {
+					continue
+				}
+				if cDst, ok := ms.Src()[c]; ok && dstStmt.Contains(cDst) && engine.FindEnclosingStatement(cDst, r) == dstStmt {
+					allMappedStmtLeaves = append(allMappedStmtLeaves, c)
+				}
+				continue
+			}
+			if r.IsBlock(c.Type) || r.IsCaseClause(c.Type) || engine.FindEnclosingStatement(c, r) != srcStmt {
+				continue
+			}
+			collectStmtLeaves(c)
+		}
+	}
+	collectStmtLeaves(srcStmt)
+
+	// Bail if any operand crossed over another token in the statement.
+	for _, d := range mappedSrcLeaves {
+		dDst := ms.Src()[d]
+		for _, o := range allMappedStmtLeaves {
+			if o == d {
+				continue
+			}
+			oDst := ms.Src()[o]
+			if d.StartByte < o.StartByte && dDst.StartByte > oDst.StartByte {
+				return false
+			}
+			if d.StartByte > o.StartByte && dDst.StartByte < oDst.StartByte {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // canUnwrapSubExpression checks if n is a lightweight wrapper or sub-expression
@@ -481,10 +598,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			if _, already := toDemote[a.Node]; already {
 				continue
 			}
-			dstNode := a.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[a.Node]
-			}
+			dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
 			if dstNode == nil {
 				continue
 			}
@@ -684,6 +798,17 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	if src == nil || dst == nil || ms == nil || r == nil {
 		return false
 	}
+
+	var evicted map[*treesitter.ASTNode]struct{}
+	if len(evictedOpt) > 0 {
+		evicted = evictedOpt[0]
+	}
+
+	// Leave stationary expression moves alone here so normalizeStationaryWrapperMoves
+	// can drop the Move in the next pass without evicting the mapping.
+	if isStationaryExpressionMove(src, dst, ms, r, evicted) {
+		return false
+	}
 	// Sibling relocation: src.Parent mapped to dst.Parent means the parent
 	// container is intact and the child was simply reordered within it.
 	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent {
@@ -699,11 +824,6 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 			(r.IsPair(dst.Parent.Type) || r.IsWrapper(dst.Parent.Type)) {
 			return false
 		}
-	}
-
-	var evicted map[*treesitter.ASTNode]struct{}
-	if len(evictedOpt) > 0 {
-		evicted = evictedOpt[0]
 	}
 
 	// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
