@@ -38,6 +38,8 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		}
 	}
 
+	matchIntroducingKeywords(t1, t2, m)
+
 	uc1 := unmatchedChildren(t1, m.Has)
 	uc2 := unmatchedChildren(t2, m.HasDst)
 
@@ -271,4 +273,46 @@ func findBestExpressionMatch(
 	}
 
 	return bestCandidate
+}
+
+// matchIntroducingKeywords pairs keywords like "else" or "catch" that sit
+// immediately before an already-matched sibling block, even when re-nesting
+// changed one side's parent container.
+func matchIntroducingKeywords(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	for idx2, c2 := range t2.Children {
+		if idx2 == 0 {
+			continue
+		}
+		c1 := m.Dst()[c2]
+		if c1 == nil || c1.Parent == nil {
+			continue
+		}
+		idx1 := c1.ChildIndex()
+		if idx1 == 0 {
+			continue
+		}
+		prev1 := c1.Parent.Children[idx1-1]
+		prev2 := t2.Children[idx2-1]
+		if !m.Has(prev1) && !m.HasDst(prev2) && prev1.Label == prev2.Label && prev1.Type == prev2.Type && (prev1.IsKeyword || prev2.IsKeyword) {
+			m.Add(prev1, prev2)
+		}
+	}
+	for idx1, c1 := range t1.Children {
+		if idx1 == 0 {
+			continue
+		}
+		c2 := m.Src()[c1]
+		if c2 == nil || c2.Parent == nil {
+			continue
+		}
+		idx2 := c2.ChildIndex()
+		if idx2 == 0 {
+			continue
+		}
+		prev1 := t1.Children[idx1-1]
+		prev2 := c2.Parent.Children[idx2-1]
+		if !m.Has(prev1) && !m.HasDst(prev2) && prev1.Label == prev2.Label && prev1.Type == prev2.Type && (prev1.IsKeyword || prev2.IsKeyword) {
+			m.Add(prev1, prev2)
+		}
+	}
 }

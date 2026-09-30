@@ -700,7 +700,8 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 		newOp := mkNode("logical_operator_literal", "&&")
 		newBin := mkNode("binary_expression", "&&", mkNode("identifier", "c"), newOp, mkNode("identifier", "d"))
 		newParen := mkNode("parenthesized_expression", "", newBin)
-		newIf := mkNode("if_statement", "", newParen)
+		newRoot := mkNode("binary_expression", "||", newParen, mkNode("identifier", "other"))
+		newIf := mkNode("if_statement", "", newRoot)
 		newOuter := mkNode("block", "", newIf)
 		setLanguageRecursive(newOuter, "go")
 
@@ -715,6 +716,9 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 		ms.Add(oldOp, newOp)
 
 		r := rules.Get("go")
+		if isStationaryExpressionMove(oldParen, newParen, ms, r, nil) {
+			t.Fatal("expected operator-only expression shell to not be treated as stationary")
+		}
 		if !shouldDemoteMove(oldParen, newParen, ms, r) {
 			t.Fatal("expected operator-only expression shell inside same statement to be demoted")
 		}

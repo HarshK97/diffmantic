@@ -136,20 +136,24 @@ func TopDown(
 		})
 	}
 
-	sort.SliceStable(scored, func(i, j int) bool {
-		if scored[i].nameMatched != scored[j].nameMatched {
-			return scored[i].nameMatched
+	slices.SortStableFunc(scored, func(a, b scoredPair) int {
+		if a.nameMatched != b.nameMatched {
+			if a.nameMatched {
+				return -1
+			}
+			return 1
 		}
-		if scored[i].mismatched != scored[j].mismatched {
-			return !scored[i].mismatched
+		if a.mismatched != b.mismatched {
+			if !a.mismatched {
+				return -1
+			}
+			return 1
 		}
-		if scored[i].ancSim != scored[j].ancSim {
-			return scored[i].ancSim > scored[j].ancSim
-		}
-		if scored[i].dice != scored[j].dice {
-			return scored[i].dice > scored[j].dice
-		}
-		return scored[i].lineageSim > scored[j].lineageSim
+		return cmp.Or(
+			cmp.Compare(b.dice, a.dice),
+			cmp.Compare(b.ancSim, a.ancSim),
+			cmp.Compare(b.lineageSim, a.lineageSim),
+		)
 	})
 
 	for len(scored) > 0 {

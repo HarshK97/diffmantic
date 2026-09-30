@@ -36,6 +36,9 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 				}
 
 				r := rules.Get(a.Node.GetLanguage())
+				if a.Node.IsKeyword || (r != nil && r.IsKeyword(a.Node.Type, a.Node.Label)) {
+					continue
+				}
 				if isStationaryExpressionMove(a.Node, dstNode, ms, r, nil) {
 					continue
 				}
@@ -77,6 +80,12 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 						}
 						return base.ChildIndex() == 0 || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
 					}
+					if canUnwrapSubExpression(base) {
+						if isDst {
+							return ms.Dst()[base] != srcBase && ms.Dst()[base.Parent] == srcBase
+						}
+						return ms.Src()[base] != dstBase && ms.Src()[base.Parent] == dstBase
+					}
 					return false
 				}
 
@@ -90,7 +99,9 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 					dstBase = dstBase.Parent
 				}
 
-				if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase && srcChild.ChildIndex() == dstChild.ChildIndex() {
+				isStationaryPos := srcChild.ChildIndex() == dstChild.ChildIndex() ||
+					(srcChild.ChildIndex() == len(srcBase.Children)-1 && dstChild.ChildIndex() == len(dstBase.Children)-1)
+				if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase && isStationaryPos {
 					continue
 				}
 			}
@@ -430,17 +441,19 @@ func isTokenNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 		r.IsType(n.Type) || r.IsIdentifier(n.Type)
 }
 
-// isPayloadLeaf reports whether d is a non-punctuation, non-operator, non-keyword leaf.
+// isPayloadLeaf reports whether d is a content-bearing leaf rather than syntax
+// glue. Jump keywords (return, break, continue) count as payload so bare jumps
+// still contribute to their enclosing block's retention.
 func isPayloadLeaf(d *treesitter.ASTNode, r *rules.Rules) bool {
-	if len(d.Children) > 0 || d.IsKeyword {
+	if len(d.Children) > 0 {
 		return false
 	}
 	if (r != nil && (r.IsPunctuation(d.Type) || r.IsOperatorLiteral(d.Type))) ||
 		(r == nil && (rules.IsPunctuation(d.Type) || rules.IsOperatorLiteral(d.Type))) {
 		return false
 	}
-	if (r != nil && r.IsKeyword(d.Type, d.Label)) || (r == nil && rules.IsKeyword(d.Type, d.Label)) {
-		return false
+	if d.IsKeyword || (r != nil && r.IsKeyword(d.Type, d.Label)) || (r == nil && rules.IsKeyword(d.Type, d.Label)) {
+		return r != nil && d.Parent != nil && r.IsJumpStatement(d.Parent.Type)
 	}
 	return true
 }
@@ -859,6 +872,14 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	// can drop the Move in the next pass without evicting the mapping.
 	if isStationaryExpressionMove(src, dst, ms, r, evicted) {
 		return false
+	}
+
+	// Keep the move when an intermediate wrapper around src was removed
+	// and src now sits directly inside the same matched outer container.
+	if src.Parent != nil && dst.Parent != nil && src.Parent.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
+		if !ms.Has(src.Parent) && ms.Src()[src.Parent.Parent] == dst.Parent {
+			return false
+		}
 	}
 
 	// Sibling relocation: src.Parent mapped to dst.Parent within the same enclosing declaration
