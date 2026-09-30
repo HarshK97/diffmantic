@@ -94,7 +94,7 @@ func nextToken(s string, offset int) tokenInfo {
 	return tokenInfo{byteLen: byteLen, displayWidth: displayWidth, isSpace: false}
 }
 
-func resolveStyle(offset int, firstNonWS int, cursor *SpanCursor, cfg SliceConfig) color.ActionKind {
+func resolveStyle(offset int, firstNonWS int, cursor *SpanCursor) color.ActionKind {
 	spanKind := cursor.ActionAt(offset)
 	if spanKind != color.ActionNone {
 		return spanKind
@@ -102,14 +102,7 @@ func resolveStyle(offset int, firstNonWS int, cursor *SpanCursor, cfg SliceConfi
 	if offset < firstNonWS {
 		return styleLeadWS
 	}
-	switch cfg.Context {
-	case LineContextStandaloneDelete:
-		return color.ActionDelete
-	case LineContextStandaloneInsert:
-		return color.ActionInsert
-	default:
-		return stylePlain
-	}
+	return stylePlain
 }
 
 func appendTransition(b []byte, targetStyle, activeStyle color.ActionKind) []byte {
@@ -222,7 +215,7 @@ func (s *Slicer) SliceLineToChunks(
 				continue
 			}
 
-			targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor, cfg)
+			targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor)
 			if cfg.ColorMode && targetStyle != activeStyle {
 				curChunk = appendTransition(curChunk, targetStyle, activeStyle)
 				activeStyle = targetStyle
@@ -236,7 +229,7 @@ func (s *Slicer) SliceLineToChunks(
 		// Expand tabs to the next tab stop using the current column offset.
 		if tok.isSpace && lineText[byteOffset] == '\t' {
 			if targetWidth <= 0 {
-				targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor, cfg)
+				targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor)
 				if cfg.ColorMode && targetStyle != activeStyle {
 					curChunk = appendTransition(curChunk, targetStyle, activeStyle)
 					activeStyle = targetStyle
@@ -254,7 +247,7 @@ func (s *Slicer) SliceLineToChunks(
 				tabSpaces = tabWidth
 			}
 
-			targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor, cfg)
+			targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor)
 			if cfg.ColorMode && targetStyle != activeStyle {
 				curChunk = appendTransition(curChunk, targetStyle, activeStyle)
 				activeStyle = targetStyle
@@ -281,7 +274,7 @@ func (s *Slicer) SliceLineToChunks(
 						activeStyle = styleUnset
 					}
 
-					targetStyle := resolveStyle(currRuneOffset, firstNonWS, &cursor, cfg)
+					targetStyle := resolveStyle(currRuneOffset, firstNonWS, &cursor)
 					if cfg.ColorMode && targetStyle != activeStyle {
 						curChunk = appendTransition(curChunk, targetStyle, activeStyle)
 						activeStyle = targetStyle
@@ -305,7 +298,7 @@ func (s *Slicer) SliceLineToChunks(
 			r, rLen := utf8.DecodeRuneInString(lineText[currRuneOffset:])
 			rWidth := max(1, runewidth.RuneWidth(r))
 
-			targetStyle := resolveStyle(currRuneOffset, firstNonWS, &cursor, cfg)
+			targetStyle := resolveStyle(currRuneOffset, firstNonWS, &cursor)
 			if cfg.ColorMode && targetStyle != activeStyle {
 				curChunk = appendTransition(curChunk, targetStyle, activeStyle)
 				activeStyle = targetStyle

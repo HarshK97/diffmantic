@@ -504,19 +504,16 @@ func TestRender_UnchangedMultilineLineUsesBaseColor(t *testing.T) {
 
 	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: true, ContextLines: 3, LineNumbers: true})
 
-	// The container header is paired with the old single line, and the old
-	// side carries the highlights (moved args). So the header renders plain.
-	// It didn't change. The closing brace is a pure insert, so it keeps
-	// InsertFg.
+	// The container header and closing brace didn't change (only the args moved),
+	// so neither has highlight spans and both stay plain TextFg.
 	if !strings.Contains(rendered, color.TextFg+"start.Name = xml.Name{") {
 		t.Errorf("expected container header on paired inserted line to use TextFg color, got:\n%q", rendered)
 	}
 	if strings.Contains(rendered, color.InsertFg+"start.Name = xml.Name{") {
 		t.Errorf("expected container header on paired inserted line NOT to use InsertFg color, got:\n%q", rendered)
 	}
-	// Closing brace `}` on inserted line also uses base InsertFg
-	if !strings.Contains(rendered, color.InsertFg+"}") {
-		t.Errorf("expected closing brace on inserted line to use InsertFg color, got:\n%q", rendered)
+	if !strings.Contains(rendered, color.TextFg+"}") {
+		t.Errorf("expected closing brace on inserted line to use neutral TextFg color, got:\n%q", rendered)
 	}
 }
 
