@@ -1,6 +1,8 @@
 package postprocess
 
 import (
+	"cmp"
+
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -106,34 +108,28 @@ func Collapse(
 	}
 
 	// A Move action on a parent can only be a subtree move if all its descendants moved with it.
+	demoted := make(map[*treesitter.ASTNode]bool)
 	for parent, act := range moved {
 		if act.Subtree && len(parent.Children) > 0 {
-			dstNode := act.DestNode
-			if dstNode == nil {
-				dstNode = ms.Src()[parent]
-			}
+			dstNode := cmp.Or(act.DestNode, ms.Src()[parent])
 			if dstNode == nil {
 				act.Subtree = false
 				continue
 			}
-			for _, d := range parent.Descendants() {
-				if dst, ok := ms.Src()[d]; ok {
-					if !dstNode.Contains(dst) && dst != dstNode {
-						act.Subtree = false
-						break
-					}
-				}
+			if !canMoveAsSubtree(parent, dstNode, ms) {
+				act.Subtree = false
+				demoted[parent] = true
 			}
-			if act.Subtree {
-				for _, d := range dstNode.Descendants() {
-					if src, ok := ms.Dst()[d]; ok {
-						if !parent.Contains(src) && src != parent {
-							act.Subtree = false
-							break
-						}
-					}
-				}
+		}
+	}
+
+	for _, a := range actionPtrs {
+		if !suppressed[a] && a.Type == actions.Move && demoted[a.Node] {
+			dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
+			if dstNode == nil {
+				continue
 			}
+			actionPtrs = promoteOrphanedChildren(a.Node, dstNode, ms, moved, deleted, actionPtrs)
 		}
 	}
 
@@ -364,4 +360,64 @@ func suppressSurvivingContainers(
 			suppressed[act] = true
 		}
 	}
+}
+
+// canMoveAsSubtree reports whether every mapped descendant inside src maps into
+// dst and vice versa, so the move can stay a single subtree action.
+func canMoveAsSubtree(src, dst *treesitter.ASTNode, ms *engine.Mapping) bool {
+	for _, d := range src.Descendants() {
+		if dDst, ok := ms.Src()[d]; ok && !dst.Contains(dDst) && dDst != dst {
+			return false
+		}
+	}
+	for _, d := range dst.Descendants() {
+		if dSrc, ok := ms.Dst()[d]; ok && !src.Contains(dSrc) && dSrc != src {
+			return false
+		}
+	}
+	return true
+}
+
+// promoteOrphanedChildren gives mapped children their own Move actions when a
+// parent move loses Subtree: true. Chawathe skips child moves when the parent
+// moves as a unit, so without this they'd drop back to plain context.
+func promoteOrphanedChildren(
+	parent, dstNode *treesitter.ASTNode,
+	ms *engine.Mapping,
+	moved, deleted map[*treesitter.ASTNode]*actions.Action,
+	actionPtrs []*actions.Action,
+) []*actions.Action {
+	for _, childSrc := range parent.Children {
+		if childSrc.IsAnonymous() {
+			continue
+		}
+		if moved[childSrc] != nil || deleted[childSrc] != nil {
+			continue
+		}
+		childDst, ok := ms.Src()[childSrc]
+		if !ok || childDst == nil {
+			continue
+		}
+		if !dstNode.Contains(childDst) && childDst != dstNode {
+			continue
+		}
+
+		subtree := len(childSrc.Children) > 0 && canMoveAsSubtree(childSrc, childDst, ms)
+
+		newAct := &actions.Action{
+			Type:     actions.Move,
+			Node:     childSrc,
+			DestNode: childDst,
+			Parent:   dstNode,
+			Position: childDst.ChildIndex(),
+			Subtree:  subtree,
+		}
+		actionPtrs = append(actionPtrs, newAct)
+		moved[childSrc] = newAct
+
+		if !subtree && len(childSrc.Children) > 0 {
+			actionPtrs = promoteOrphanedChildren(childSrc, childDst, ms, moved, deleted, actionPtrs)
+		}
+	}
+	return actionPtrs
 }

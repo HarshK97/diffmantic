@@ -84,8 +84,8 @@ func TestSubtreeMoveWithExternalDescendantInDest(t *testing.T) {
 	})
 
 	collapsed := Collapse(es, ms, pSrc, qDst)
-	if collapsed.Size() != 1 {
-		t.Fatalf("expected collapsed edit script size 1, got %d", collapsed.Size())
+	if collapsed.Size() != 2 {
+		t.Fatalf("expected collapsed edit script size 2, got %d", collapsed.Size())
 	}
 	if collapsed.Actions()[0].Subtree {
 		t.Errorf("expected Subtree to be demoted to false because qDst contains otherDst from outside pSrc")
@@ -856,5 +856,160 @@ func TestCollapseBlockDelimitersPreserved(t *testing.T) {
 	}
 	if !hasBlockInsert {
 		t.Fatalf("expected compound_statement Insert action to survive for block delimiters, got actions: %+v", collapsed.Actions())
+	}
+}
+
+func TestDiscreteChildPromotionOnSubtreeDemotion(t *testing.T) {
+	srcBlock := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100, Language: "go"}
+
+	callSrc := &treesitter.ASTNode{Type: "call_expression", StartByte: 1, EndByte: 40, Parent: srcBlock, Language: "go"}
+	callSrcChild := &treesitter.ASTNode{Type: "identifier", StartByte: 2, EndByte: 10, Parent: callSrc, Language: "go"}
+	callSrc.Children = []*treesitter.ASTNode{callSrcChild}
+
+	decRowSrc := &treesitter.ASTNode{Type: "dec_statement", StartByte: 45, EndByte: 50, Parent: srcBlock, Language: "go"}
+	identRowSrc := &treesitter.ASTNode{Type: "identifier", Label: "row", StartByte: 45, EndByte: 48, Parent: decRowSrc, Language: "go"}
+	decRowSrc.Children = []*treesitter.ASTNode{identRowSrc}
+
+	decColSrc := &treesitter.ASTNode{Type: "dec_statement", StartByte: 55, EndByte: 60, Parent: srcBlock, Language: "go"}
+	identColSrc := &treesitter.ASTNode{Type: "identifier", Label: "col", StartByte: 55, EndByte: 58, Parent: decColSrc, Language: "go"}
+	decColSrc.Children = []*treesitter.ASTNode{identColSrc}
+
+	srcBlock.Children = []*treesitter.ASTNode{callSrc, decRowSrc, decColSrc}
+
+	otherCallDst := &treesitter.ASTNode{Type: "other_call", StartByte: 600, EndByte: 650, Language: "go"}
+
+	dstBlock := &treesitter.ASTNode{Type: "block", StartByte: 200, EndByte: 350, Language: "go"}
+
+	callDst := &treesitter.ASTNode{Type: "call_expression", StartByte: 201, EndByte: 240, Parent: dstBlock, Language: "go"}
+
+	decRowDst := &treesitter.ASTNode{Type: "dec_statement", StartByte: 245, EndByte: 250, Parent: dstBlock, Language: "go"}
+	identRowDst := &treesitter.ASTNode{Type: "identifier", Label: "row", StartByte: 245, EndByte: 248, Parent: decRowDst, Language: "go"}
+	decRowDst.Children = []*treesitter.ASTNode{identRowDst}
+
+	decColDst := &treesitter.ASTNode{Type: "dec_statement", StartByte: 255, EndByte: 260, Parent: dstBlock, Language: "go"}
+	identColDst := &treesitter.ASTNode{Type: "identifier", Label: "col", StartByte: 255, EndByte: 258, Parent: decColDst, Language: "go"}
+	decColDst.Children = []*treesitter.ASTNode{identColDst}
+
+	assignDst := &treesitter.ASTNode{Type: "assignment_statement", StartByte: 265, EndByte: 280, Parent: dstBlock, Language: "go"}
+
+	dstBlock.Children = []*treesitter.ASTNode{callDst, decRowDst, decColDst, assignDst}
+
+	ms := engine.NewMapping()
+	ms.Add(srcBlock, dstBlock)
+	ms.Add(callSrc, otherCallDst) // Map callSrc outside dstBlock so srcBlock loses Subtree: true.
+	ms.Add(decRowSrc, decRowDst)
+	ms.Add(identRowSrc, identRowDst)
+	ms.Add(decColSrc, decColDst)
+	ms.Add(identColSrc, identColDst)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:     actions.Move,
+		Node:     srcBlock,
+		DestNode: dstBlock,
+		Parent:   dstBlock,
+		Position: 0,
+		Subtree:  true,
+	})
+
+	collapsed := Collapse(es, ms, srcBlock, dstBlock)
+
+	actionsList := collapsed.Actions()
+	if len(actionsList) != 3 {
+		t.Fatalf("expected collapsed edit script to have size 3, got %d", len(actionsList))
+	}
+
+	var pMove, rowMove, colMove *actions.Action
+	for i := range actionsList {
+		a := &actionsList[i]
+		switch a.Node {
+		case srcBlock:
+			pMove = a
+		case decRowSrc:
+			rowMove = a
+		case decColSrc:
+			colMove = a
+		}
+	}
+
+	if pMove == nil || pMove.Subtree {
+		t.Errorf("expected parent block Move with Subtree: false, got %+v", pMove)
+	}
+	if rowMove == nil || rowMove.Type != actions.Move || rowMove.DestNode != decRowDst || !rowMove.Subtree {
+		t.Errorf("expected decRowSrc child Move with Subtree: true and DestNode: decRowDst, got %+v", rowMove)
+	}
+	if colMove == nil || colMove.Type != actions.Move || colMove.DestNode != decColDst || !colMove.Subtree {
+		t.Errorf("expected decColSrc child Move with Subtree: true and DestNode: decColDst, got %+v", colMove)
+	}
+}
+
+func TestPromoteOrphanedChildrenRecursiveNestedContainer(t *testing.T) {
+	// if -> block -> for -> call_expression, where for gains a second child in dst.
+	leafSrc := &treesitter.ASTNode{Type: "call_expression", StartByte: 30, EndByte: 50, Language: "go"}
+	gcSrc := &treesitter.ASTNode{Type: "for_statement", StartByte: 20, EndByte: 60, Children: []*treesitter.ASTNode{leafSrc}, Language: "go"}
+	leafSrc.Parent = gcSrc
+	cSrc := &treesitter.ASTNode{Type: "block", StartByte: 10, EndByte: 70, Children: []*treesitter.ASTNode{gcSrc}, Language: "go"}
+	gcSrc.Parent = cSrc
+	pSrc := &treesitter.ASTNode{Type: "if_statement", StartByte: 0, EndByte: 80, Children: []*treesitter.ASTNode{cSrc}, Language: "go"}
+	cSrc.Parent = pSrc
+
+	otherSrc := &treesitter.ASTNode{Type: "expression_statement", StartByte: 200, EndByte: 220, Language: "go"}
+
+	leafDst := &treesitter.ASTNode{Type: "call_expression", StartByte: 130, EndByte: 150, Language: "go"}
+	otherDst := &treesitter.ASTNode{Type: "expression_statement", StartByte: 155, EndByte: 175, Language: "go"}
+	gcDst := &treesitter.ASTNode{Type: "for_statement", StartByte: 120, EndByte: 180, Children: []*treesitter.ASTNode{leafDst, otherDst}, Language: "go"}
+	leafDst.Parent = gcDst
+	otherDst.Parent = gcDst
+	cDst := &treesitter.ASTNode{Type: "block", StartByte: 110, EndByte: 190, Children: []*treesitter.ASTNode{gcDst}, Language: "go"}
+	gcDst.Parent = cDst
+	pDst := &treesitter.ASTNode{Type: "if_statement", StartByte: 100, EndByte: 200, Children: []*treesitter.ASTNode{cDst}, Language: "go"}
+	cDst.Parent = pDst
+
+	ms := engine.NewMapping()
+	ms.Add(pSrc, pDst)
+	ms.Add(cSrc, cDst)
+	ms.Add(gcSrc, gcDst)
+	ms.Add(leafSrc, leafDst)
+	ms.Add(otherSrc, otherDst)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:     actions.Move,
+		Node:     pSrc,
+		DestNode: pDst,
+		Parent:   pDst,
+		Position: 0,
+		Subtree:  true,
+	})
+
+	collapsed := Collapse(es, ms, pSrc, pDst)
+	actionsList := collapsed.Actions()
+
+	var pMove, cMove, gcMove, leafMove *actions.Action
+	for i := range actionsList {
+		a := &actionsList[i]
+		switch a.Node {
+		case pSrc:
+			pMove = a
+		case cSrc:
+			cMove = a
+		case gcSrc:
+			gcMove = a
+		case leafSrc:
+			leafMove = a
+		}
+	}
+
+	if pMove == nil || pMove.Subtree {
+		t.Errorf("expected pSrc Move with Subtree: false, got %+v", pMove)
+	}
+	if cMove == nil || cMove.Subtree {
+		t.Errorf("expected cSrc Move with Subtree: false, got %+v", cMove)
+	}
+	if gcMove == nil || gcMove.Subtree {
+		t.Errorf("expected gcSrc (nested for_statement) Move with Subtree: false, got %+v", gcMove)
+	}
+	if leafMove == nil || leafMove.Type != actions.Move || leafMove.DestNode != leafDst {
+		t.Errorf("expected leafSrc Move to leafDst, got %+v", leafMove)
 	}
 }
