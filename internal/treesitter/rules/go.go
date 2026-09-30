@@ -66,6 +66,7 @@ var golangRules = &Rules{
 		"parenthesized_expression",
 		"expression_list",
 		"literal_value",
+		"literal_element",
 		"import_spec_list",
 		"function_declaration",
 		"method_declaration",
@@ -138,6 +139,8 @@ var golangRules = &Rules{
 		"pointer_type",
 		"expression_list",
 		"var_declaration",
+		"literal_value",
+		"literal_element",
 	},
 	Pairs: []string{
 		"keyed_element",

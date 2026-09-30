@@ -125,6 +125,9 @@ func RevokeOrphanedGlue(m *Mapping) {
 			}
 			continue
 		}
+		if isSiblingGlueBound(src, dst, m, r) {
+			continue
+		}
 		m.Remove(src)
 	}
 	sortMappingsByPreOrder(m)
@@ -371,4 +374,29 @@ func isBoilerplateCondition(c *treesitter.ASTNode, r *rules.Rules) bool {
 		}
 	}
 	return semanticTokens <= 3 && len(userVars) <= 1
+}
+
+// isSiblingGlueBound keeps a glue token mapped across different parent
+// containers when its immediately adjacent non-glue sibling in both trees is mapped.
+func isSiblingGlueBound(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || src.Parent == nil || dst.Parent == nil || m == nil {
+		return false
+	}
+	srcIdx := src.ChildIndex()
+	dstIdx := dst.ChildIndex()
+	if srcIdx+1 < len(src.Parent.Children) && dstIdx+1 < len(dst.Parent.Children) {
+		nextSrc := src.Parent.Children[srcIdx+1]
+		nextDst := dst.Parent.Children[dstIdx+1]
+		if !isGlueToken(nextSrc, r) && m.Src()[nextSrc] == nextDst {
+			return true
+		}
+	}
+	if srcIdx > 0 && dstIdx > 0 {
+		prevSrc := src.Parent.Children[srcIdx-1]
+		prevDst := dst.Parent.Children[dstIdx-1]
+		if !isGlueToken(prevSrc, r) && m.Src()[prevSrc] == prevDst {
+			return true
+		}
+	}
+	return false
 }
