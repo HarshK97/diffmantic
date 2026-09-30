@@ -115,6 +115,14 @@ func (n *ASTNode) IsBracketOrParen() bool {
 	return false
 }
 
+// IsAnonymous reports whether n is an unnamed syntax token like punctuation or a delimiter.
+func (n *ASTNode) IsAnonymous() bool {
+	if n == nil || len(n.Type) == 0 {
+		return false
+	}
+	return !IsWordChar(n.Type[0])
+}
+
 // IsWordChar checks if c is an ASCII letter, digit, or underscore.
 func IsWordChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
