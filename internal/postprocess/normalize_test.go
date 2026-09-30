@@ -562,6 +562,162 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 			t.Fatalf("expected pruned condition move to be dropped, got %d actions", result.Size())
 		}
 	})
+
+	t.Run("drops Move when boolean operator precedence or parens rebalance within if condition", func(t *testing.T) {
+		// Old: if (A || B) || C { block }
+		oldAId := mkNode("identifier", "A")
+		oldBId := mkNode("identifier", "B")
+		oldCId := mkNode("identifier", "C")
+		oldA := mkNode("binary_expression", "==", oldAId)
+		oldB := mkNode("binary_expression", "<=", oldBId)
+		oldC := mkNode("call_expression", "", oldCId)
+		oldLeftBin := mkNode("binary_expression", "||", oldA, oldB)
+		oldRootBin := mkNode("binary_expression", "||", oldLeftBin, oldC)
+		oldBlock := mkNode("block", "")
+		oldIf := mkNode("if_statement", "", mkNode("if", "if"), oldRootBin, oldBlock)
+		oldOuterBlock := mkNode("block", "", oldIf)
+		setLanguageRecursive(oldOuterBlock, "go")
+
+		// New: if A && (B || C) { block }
+		newAId := mkNode("identifier", "A")
+		newBId := mkNode("identifier", "B")
+		newCId := mkNode("identifier", "C")
+		newA := mkNode("binary_expression", "==", newAId)
+		newB := mkNode("binary_expression", "<=", newBId)
+		newC := mkNode("call_expression", "", newCId)
+		newRightBin := mkNode("binary_expression", "||", newB, newC)
+		newParen := mkNode("parenthesized_expression", "", newRightBin)
+		newRootBin := mkNode("binary_expression", "&&", newA, newParen)
+		newBlock := mkNode("block", "")
+		newIf := mkNode("if_statement", "", mkNode("if", "if"), newRootBin, newBlock)
+		newOuterBlock := mkNode("block", "", newIf)
+		setLanguageRecursive(newOuterBlock, "go")
+
+		oldA.StartByte, oldA.EndByte = 10, 20
+		oldAId.StartByte, oldAId.EndByte = 10, 20
+		oldB.StartByte, oldB.EndByte = 30, 40
+		oldBId.StartByte, oldBId.EndByte = 30, 40
+		oldC.StartByte, oldC.EndByte = 50, 60
+		oldCId.StartByte, oldCId.EndByte = 50, 60
+		oldLeftBin.StartByte, oldLeftBin.EndByte = 10, 40
+		oldRootBin.StartByte, oldRootBin.EndByte = 10, 60
+
+		newA.StartByte, newA.EndByte = 10, 20
+		newAId.StartByte, newAId.EndByte = 10, 20
+		newB.StartByte, newB.EndByte = 35, 45
+		newBId.StartByte, newBId.EndByte = 35, 45
+		newC.StartByte, newC.EndByte = 55, 65
+		newCId.StartByte, newCId.EndByte = 55, 65
+		newRightBin.StartByte, newRightBin.EndByte = 35, 65
+		newParen.StartByte, newParen.EndByte = 34, 66
+		newRootBin.StartByte, newRootBin.EndByte = 10, 66
+
+		ms := engine.NewMapping()
+		ms.Add(oldOuterBlock, newOuterBlock)
+		ms.Add(oldIf, newIf)
+		ms.Add(oldBlock, newBlock)
+		ms.Add(oldA, newA)
+		ms.Add(oldAId, newAId)
+		ms.Add(oldB, newB)
+		ms.Add(oldBId, newBId)
+		ms.Add(oldC, newC)
+		ms.Add(oldCId, newCId)
+		ms.Add(oldLeftBin, newRootBin)
+		ms.Add(oldRootBin, newRightBin)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: oldLeftBin, DestNode: newRootBin, Subtree: true})
+		es.Add(actions.Action{Type: actions.Move, Node: oldRootBin, DestNode: newRightBin, Subtree: true})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 0 {
+			t.Fatalf("expected stationary expression moves to be dropped, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("preserves Move when operands are swapped across intermediate expressions", func(t *testing.T) {
+		oldAId := mkNode("identifier", "A")
+		oldBId := mkNode("identifier", "B")
+		oldA := mkNode("binary_expression", "==", oldAId)
+		oldB := mkNode("binary_expression", "==", oldBId)
+		oldRootBin := mkNode("binary_expression", "||", oldA, oldB)
+		oldIf := mkNode("if_statement", "", oldRootBin)
+		oldOuterBlock := mkNode("block", "", oldIf)
+		setLanguageRecursive(oldOuterBlock, "go")
+
+		oldA.StartByte, oldA.EndByte = 10, 20
+		oldA.StartCol, oldA.EndCol = 10, 20
+		oldAId.StartByte, oldAId.EndByte = 10, 20
+		oldB.StartByte, oldB.EndByte = 30, 40
+		oldBId.StartByte, oldBId.EndByte = 30, 40
+
+		newAId := mkNode("identifier", "A")
+		newBId := mkNode("identifier", "B")
+		newA := mkNode("binary_expression", "==", newAId)
+		newB := mkNode("binary_expression", "==", newBId)
+		newParen := mkNode("parenthesized_expression", "", newB)
+		newRootBin := mkNode("binary_expression", "||", newParen, newA)
+		newIf := mkNode("if_statement", "", newRootBin)
+		newOuterBlock := mkNode("block", "", newIf)
+		setLanguageRecursive(newOuterBlock, "go")
+
+		// B is now before A in document order.
+		newParen.StartByte, newParen.EndByte = 10, 24
+		newB.StartByte, newB.EndByte = 12, 22
+		newBId.StartByte, newBId.EndByte = 12, 22
+		newA.StartByte, newA.EndByte = 26, 36
+		newA.StartCol, newA.EndCol = 26, 36
+		newAId.StartByte, newAId.EndByte = 26, 36
+
+		ms := engine.NewMapping()
+		ms.Add(oldOuterBlock, newOuterBlock)
+		ms.Add(oldIf, newIf)
+		ms.Add(oldA, newA)
+		ms.Add(oldAId, newAId)
+		ms.Add(oldB, newB)
+		ms.Add(oldBId, newBId)
+		ms.Add(oldRootBin, newRootBin)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: oldA, DestNode: newA})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 1 {
+			t.Fatalf("expected swapped operand move to be preserved, got %d actions", result.Size())
+		}
+	})
+
+	t.Run("does not treat operator-only shell inside same statement as stationary expression move", func(t *testing.T) {
+		oldOp := mkNode("logical_operator_literal", "&&")
+		oldBin := mkNode("binary_expression", "&&", mkNode("identifier", "a"), oldOp, mkNode("identifier", "b"))
+		oldParen := mkNode("parenthesized_expression", "", oldBin)
+		oldRoot := mkNode("binary_expression", "||", oldParen, mkNode("identifier", "keep"))
+		oldIf := mkNode("if_statement", "", oldRoot)
+		oldOuter := mkNode("block", "", oldIf)
+		setLanguageRecursive(oldOuter, "go")
+
+		newOp := mkNode("logical_operator_literal", "&&")
+		newBin := mkNode("binary_expression", "&&", mkNode("identifier", "c"), newOp, mkNode("identifier", "d"))
+		newParen := mkNode("parenthesized_expression", "", newBin)
+		newIf := mkNode("if_statement", "", newParen)
+		newOuter := mkNode("block", "", newIf)
+		setLanguageRecursive(newOuter, "go")
+
+		oldParen.StartCol, oldParen.EndCol = 3, 11
+		newParen.StartCol, newParen.EndCol = 3, 15
+
+		ms := engine.NewMapping()
+		ms.Add(oldOuter, newOuter)
+		ms.Add(oldIf, newIf)
+		ms.Add(oldParen, newParen)
+		ms.Add(oldBin, newBin)
+		ms.Add(oldOp, newOp)
+
+		r := rules.Get("go")
+		if !shouldDemoteMove(oldParen, newParen, ms, r) {
+			t.Fatal("expected operator-only expression shell inside same statement to be demoted")
+		}
+	})
 }
 
 func TestIsTerminatingStatement(t *testing.T) {
