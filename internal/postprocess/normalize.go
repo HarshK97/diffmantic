@@ -468,15 +468,22 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 	// gutted block doesn't look like a real move.
 	if ms != nil && (r.IsBlock(node.Type) || r.IsWrapper(node.Type) || r.IsDelimitedContainer(node.Type)) {
 		surviving := 0
+		totalLeaves := 0
 		for _, d := range node.Descendants() {
 			if !isPayloadLeaf(d, r) {
 				continue
 			}
-			if ms.Has(d) {
+			totalLeaves++
+			if ms.Has(d) || ms.HasDst(d) {
 				surviving++
 			}
 		}
-		size = min(size, surviving*3)
+		if totalLeaves > 0 && surviving < totalLeaves {
+			ratio := float64(surviving) / float64(totalLeaves)
+			size = min(size, surviving*3)
+			height = int(float64(height) * ratio)
+			lines = uint32(float64(lines) * ratio)
+		}
 	}
 
 	score := size + 2*height + 3*int(lines)
@@ -504,8 +511,8 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		return 50
 	}
 
-	// Intra-container reorder: src.Parent mapped to dst.Parent.
-	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent {
+	// Intra-container reorder: src.Parent mapped to dst.Parent within the same enclosing declaration.
+	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent && sameScopeDeclaration(src, dst, ms, r) {
 		return 1
 	}
 
@@ -792,6 +799,50 @@ func hasSurvivingMappedDescendants(src, dst *treesitter.ASTNode, ms *engine.Mapp
 	return false
 }
 
+// computeMoveRetention returns the fraction of payload leaves preserved between
+// src and dst in [0.0, 1.0], counting updated leaves at half weight.
+func computeMoveRetention(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) float64 {
+	if src == nil || dst == nil || ms == nil {
+		return 1.0
+	}
+
+	nSrc := 0
+	mExact := 0
+	mUpdated := 0
+	for _, d1 := range src.Descendants() {
+		if !isPayloadLeaf(d1, r) {
+			continue
+		}
+		nSrc++
+		if _, isEv := evicted[d1]; isEv {
+			continue
+		}
+		if d2, ok := ms.Src()[d1]; ok && dst.Contains(d2) {
+			if d1.Label == d2.Label {
+				mExact++
+			} else {
+				mUpdated++
+			}
+		}
+	}
+
+	nDst := 0
+	for _, d2 := range dst.Descendants() {
+		if !isPayloadLeaf(d2, r) {
+			continue
+		}
+		nDst++
+	}
+
+	nMax := max(nSrc, nDst)
+	if nMax == 0 {
+		return 1.0
+	}
+
+	effectiveSurviving := float64(mExact) + 0.5*float64(mUpdated)
+	return effectiveSurviving / float64(nMax)
+}
+
 // shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert
 // based on structural significance scoring and scope-aware threshold comparison.
 func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evictedOpt ...map[*treesitter.ASTNode]struct{}) bool {
@@ -809,16 +860,17 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	if isStationaryExpressionMove(src, dst, ms, r, evicted) {
 		return false
 	}
-	// Sibling relocation: src.Parent mapped to dst.Parent means the parent
-	// container is intact and the child was simply reordered within it.
-	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent {
+
+	// Sibling relocation: src.Parent mapped to dst.Parent within the same enclosing declaration
+	// means the parent container is intact and the child was simply reordered within it.
+	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent && sameScopeDeclaration(src, dst, ms, r) {
 		return false
 	}
 
 	// One-hop container-preserving reparent: the value got wrapped in a brand-new
 	// node (e.g. a bare element promoted into a freshly-keyed field) but its
 	// structurally-matched container never actually changed.
-	if src.Parent != nil && dst.Parent != nil {
+	if src.Parent != nil && dst.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
 		mappedSrcParent := ms.Src()[src.Parent]
 		if mappedSrcParent != nil && dst.Parent.Parent == mappedSrcParent &&
 			(r.IsPair(dst.Parent.Type) || r.IsWrapper(dst.Parent.Type)) {
@@ -826,9 +878,21 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
-	// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
-	if isDelimitedOrBlockContainer(src.Type, r) && len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
-		return true
+	isDelimContainer := isDelimitedOrBlockContainer(src.Type, r) || isDelimitedOrBlockContainer(dst.Type, r)
+	retention := 1.0
+	if isDelimContainer {
+		// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
+		if len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
+			return true
+		}
+
+		retention = computeMoveRetention(src, dst, ms, r, evicted)
+
+		// Cross-scope container moves need at least 25% leaf retention so matching
+		// shells or boilerplate don't get paired across functions.
+		if len(src.Children) > 0 && !sameScopeDeclaration(src, dst, ms, r) && retention < 0.25 {
+			return true
+		}
 	}
 
 	score := moveStructuralScore(src, r, ms)
@@ -837,6 +901,11 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	// enough mass on its own so a tiny snippet doesn't match a deleted block.
 	if !sameScopeDeclaration(src, dst, ms, r) && !r.IsDeclaration(src.Type) {
 		score = min(score, moveStructuralScore(dst, r, ms))
+	}
+
+	// Scale container scores by leaf retention so heavily rewritten blocks don't clear the threshold.
+	if isDelimContainer {
+		score = max(int(float64(score)*retention), 1)
 	}
 	return score < threshold
 }

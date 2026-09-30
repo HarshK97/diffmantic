@@ -1,6 +1,7 @@
 package postprocess
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -1722,6 +1723,39 @@ func TestShouldDemoteMove(t *testing.T) {
 		}
 	})
 
+	t.Run("demotes sibling relocation across different enclosing scopes", func(t *testing.T) {
+		fn1 := mkNode("function_declaration", "funcA")
+		fn1.Language = "go"
+		parent1 := mkNode("binary_expression", "")
+		parent1.Language = "go"
+		parent1.Parent = fn1
+		src := mkNode("identifier", "a")
+		src.Language = "go"
+		src.Parent = parent1
+		parent1.Children = []*treesitter.ASTNode{src}
+
+		fn2 := mkNode("function_declaration", "funcB")
+		fn2.Language = "go"
+		parent2 := mkNode("binary_expression", "")
+		parent2.Language = "go"
+		parent2.Parent = fn2
+		parent2.StartRow = 500
+		parent2.EndRow = 500
+		dst := mkNode("identifier", "b")
+		dst.Language = "go"
+		dst.Parent = parent2
+		dst.StartRow = 500
+		dst.EndRow = 500
+		parent2.Children = []*treesitter.ASTNode{dst}
+
+		ms := engine.NewMapping()
+		ms.Add(parent1, parent2)
+
+		if !shouldDemoteMove(src, dst, ms, r) {
+			t.Error("expected sibling relocation across different enclosing functions to be demoted")
+		}
+	})
+
 	t.Run("returns false for declaration move", func(t *testing.T) {
 		srcFunc := mkNode("function_declaration", "foo")
 		srcFunc.Language = "go"
@@ -1936,6 +1970,91 @@ func TestShouldDemoteMove(t *testing.T) {
 
 		if shouldDemoteMove(srcParen, dstParen, ms, r) {
 			t.Error("expected wrapper move with surviving substantive child to be preserved")
+		}
+	})
+
+	t.Run("demotes cross-scope container move with low retention", func(t *testing.T) {
+		fn1 := mkNode("function_declaration", "f1")
+		fn1.Language = "go"
+		fn2 := mkNode("function_declaration", "f2")
+		fn2.Language = "go"
+
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcBlock.Parent = fn1
+		fn1.Children = append(fn1.Children, srcBlock)
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstBlock.Parent = fn2
+		fn2.Children = append(fn2.Children, dstBlock)
+
+		for i := range 20 {
+			c := mkNode("identifier", fmt.Sprintf("src%d", i))
+			c.Language = "go"
+			c.Parent = srcBlock
+			srcBlock.Children = append(srcBlock.Children, c)
+		}
+		for i := range 20 {
+			c := mkNode("identifier", fmt.Sprintf("dst%d", i))
+			c.Language = "go"
+			c.Parent = dstBlock
+			dstBlock.Children = append(dstBlock.Children, c)
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcBlock, dstBlock)
+		// Map only 2 out of 20 leaves (10% retention < 25%).
+		ms.Add(srcBlock.Children[0], dstBlock.Children[0])
+		ms.Add(srcBlock.Children[1], dstBlock.Children[1])
+
+		if !shouldDemoteMove(srcBlock, dstBlock, ms, r) {
+			t.Error("expected cross-scope container move with low retention (10%) to be demoted")
+		}
+	})
+
+	t.Run("preserves cross-scope container move with high retention", func(t *testing.T) {
+		fn1 := mkNode("function_declaration", "f1")
+		fn1.Language = "go"
+		fn2 := mkNode("function_declaration", "f2")
+		fn2.Language = "go"
+
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		srcBlock.Parent = fn1
+		srcBlock.StartRow = 10
+		srcBlock.EndRow = 30
+		fn1.Children = append(fn1.Children, srcBlock)
+
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+		dstBlock.Parent = fn2
+		dstBlock.StartRow = 35
+		dstBlock.EndRow = 55
+		fn2.Children = append(fn2.Children, dstBlock)
+
+		for i := range 20 {
+			c := mkNode("identifier", fmt.Sprintf("var%d", i))
+			c.Language = "go"
+			c.Parent = srcBlock
+			srcBlock.Children = append(srcBlock.Children, c)
+		}
+		for i := range 20 {
+			c := mkNode("identifier", fmt.Sprintf("var%d", i))
+			c.Language = "go"
+			c.Parent = dstBlock
+			dstBlock.Children = append(dstBlock.Children, c)
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcBlock, dstBlock)
+		// Map 18 out of 20 leaves (90% retention >= 25%).
+		for i := range 18 {
+			ms.Add(srcBlock.Children[i], dstBlock.Children[i])
+		}
+
+		if shouldDemoteMove(srcBlock, dstBlock, ms, r) {
+			t.Error("expected cross-scope container move with high retention (90%) to be preserved")
 		}
 	})
 }
