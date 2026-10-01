@@ -62,7 +62,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 
 	// Only the outermost move of a relocated block gets spans. The nested
 	// ones would paint the same teal twice.
-	skipNestedMove := nestedMoveActions(actions, side)
+	skipNestedMove := nestedMoveActions(actions)
 
 	for i := range actions {
 		a := &actions[i]
@@ -287,59 +287,114 @@ func isOnlyNonCharacters(b []byte) bool {
 	return true
 }
 
-// nestedMoveActions finds moves buried inside a bigger move on the same side.
-// Skipping them keeps a relocated block to one span instead of one per token.
-func nestedMoveActions(actions []Action, side string) map[int]bool {
-	type byteRange struct {
-		idx int
-		s   uint32
-		e   uint32
+// nestedMoveActions drops moves nested inside a larger move across both sides.
+// Intact relocated blocks collapse to a single span, while moves that split
+// away or unbundle keep their own spans so both sides stay in sync.
+func nestedMoveActions(actions []Action) map[int]bool {
+	type moveRange struct {
+		idx     int
+		sStart  uint32
+		sEnd    uint32
+		dStart  uint32
+		dEnd    uint32
+		hasDest bool
 	}
-	var ranges []byteRange
+	type byteInterval struct {
+		s uint32
+		e uint32
+	}
+
+	var moves []moveRange
+	var deletes []byteInterval
+	var inserts []byteInterval
+
 	for i := range actions {
 		a := &actions[i]
-		if a.Action != "move" {
-			continue
-		}
-		var s, e uint32
-		var ok bool
-		if side == "left" && a.Node != nil {
-			s, e, ok = a.Node.StartByte, a.Node.EndByte, true
-		} else if side == "right" {
-			if a.DestStartByte != nil && a.DestEndByte != nil {
-				s, e, ok = *a.DestStartByte, *a.DestEndByte, true
-			} else if a.DestNode != nil {
-				s, e, ok = a.DestNode.StartByte, a.DestNode.EndByte, true
+		switch a.Action {
+		case "delete":
+			if a.Node != nil && a.Node.EndByte > a.Node.StartByte {
+				deletes = append(deletes, byteInterval{s: a.Node.StartByte, e: a.Node.EndByte})
 			}
+		case "insert":
+			if a.Node != nil && a.Node.EndByte > a.Node.StartByte {
+				inserts = append(inserts, byteInterval{s: a.Node.StartByte, e: a.Node.EndByte})
+			}
+		case "move":
+			if a.Node == nil || a.Node.EndByte <= a.Node.StartByte {
+				continue
+			}
+			var dStart, dEnd uint32
+			var hasDest bool
+			if a.DestStartByte != nil && a.DestEndByte != nil && *a.DestEndByte > *a.DestStartByte {
+				dStart, dEnd, hasDest = *a.DestStartByte, *a.DestEndByte, true
+			} else if a.DestNode != nil && a.DestNode.EndByte > a.DestNode.StartByte {
+				dStart, dEnd, hasDest = a.DestNode.StartByte, a.DestNode.EndByte, true
+			}
+			moves = append(moves, moveRange{
+				idx:     i,
+				sStart:  a.Node.StartByte,
+				sEnd:    a.Node.EndByte,
+				dStart:  dStart,
+				dEnd:    dEnd,
+				hasDest: hasDest,
+			})
 		}
-		if !ok || e <= s {
-			continue
-		}
-		ranges = append(ranges, byteRange{idx: i, s: s, e: e})
 	}
-	// Plain O(n^2) scan, there are never enough moves per file for this to matter.
-	slices.SortFunc(ranges, func(a, b byteRange) int {
+
+	// Sort by total span size descending so outermost moves are processed first.
+	slices.SortFunc(moves, func(a, b moveRange) int {
+		aLen := a.sEnd - a.sStart
+		if a.hasDest {
+			aLen += a.dEnd - a.dStart
+		}
+		bLen := b.sEnd - b.sStart
+		if b.hasDest {
+			bLen += b.dEnd - b.dStart
+		}
 		return cmp.Or(
-			cmp.Compare(b.e-b.s, a.e-a.s),
-			cmp.Compare(a.s, b.s),
+			cmp.Compare(bLen, aLen),
+			cmp.Compare(a.sStart, b.sStart),
 		)
 	})
+
 	skip := make(map[int]bool)
-	var kept []byteRange
-	for _, r := range ranges {
+	var kept []moveRange
+
+	for _, r := range moves {
 		contained := false
 		for _, k := range kept {
-			if k.s <= r.s && k.e >= r.e {
-				contained = true
-				break
+			srcContained := k.sStart <= r.sStart && k.sEnd >= r.sEnd
+			dstContained := true
+			if k.hasDest && r.hasDest {
+				dstContained = k.dStart <= r.dStart && k.dEnd >= r.dEnd
+			} else if k.hasDest != r.hasDest {
+				dstContained = false
+			}
+
+			if srcContained && dstContained {
+				// If an inserted or deleted container sits between k and r, it takes precedence
+				// over the outer move. Keep r so the container doesn't swallow it.
+				hasInterveningDel := slices.ContainsFunc(deletes, func(del byteInterval) bool {
+					return del.s <= r.sStart && del.e >= r.sEnd && k.sStart <= del.s && k.sEnd >= del.e
+				})
+				hasInterveningIns := k.hasDest && r.hasDest && slices.ContainsFunc(inserts, func(ins byteInterval) bool {
+					return ins.s <= r.dStart && ins.e >= r.dEnd && k.dStart <= ins.s && k.dEnd >= ins.e
+				})
+
+				if !hasInterveningDel && !hasInterveningIns {
+					contained = true
+					break
+				}
 			}
 		}
+
 		if contained {
 			skip[r.idx] = true
 			continue
 		}
 		kept = append(kept, r)
 	}
+
 	return skip
 }
 
@@ -495,7 +550,15 @@ checkOverlap:
 	var coalesced []internalSpan
 	cur := segments[0]
 	for i := 1; i < len(segments); i++ {
-		if segments[i].action == cur.action && segments[i].startCol == cur.endCol {
+		canCoalesce := segments[i].action == cur.action && segments[i].startCol == cur.endCol
+		if canCoalesce && (cur.action == "move" || cur.action == "move_update") {
+			// Don't merge move segments from different actions, or an outer move
+			// would swallow an inner breakaway move's color.
+			if cur.actRef != segments[i].actRef {
+				canCoalesce = false
+			}
+		}
+		if canCoalesce {
 			cur.endCol = segments[i].endCol
 		} else {
 			coalesced = append(coalesced, cur)
