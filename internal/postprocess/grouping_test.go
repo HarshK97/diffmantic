@@ -163,3 +163,36 @@ func TestGroupMoves_UnresolvedDstNoFalseSwap(t *testing.T) {
 		t.Errorf("expected co-moving nodes without resolved dst to group as group-1, got %q and %q", acts[0].GroupID, acts[1].GroupID)
 	}
 }
+
+func TestGroupMovesPropagateToBlock(t *testing.T) {
+	funcBody := &treesitter.ASTNode{Type: "block", Language: "go"}
+	newFuncBody := &treesitter.ASTNode{Type: "block", Language: "go"}
+
+	stmt := &treesitter.ASTNode{Type: "if_statement", Language: "go"}
+	setParentAndRange(stmt, funcBody, 10, 50)
+
+	stmt2 := &treesitter.ASTNode{Type: "for_statement", Language: "go"}
+	setParentAndRange(stmt2, funcBody, 51, 90)
+
+	stmtBlock := &treesitter.ASTNode{Type: "block", Language: "go"}
+	setParentAndRange(stmtBlock, stmt, 20, 50)
+
+	es := actions.NewEditScript()
+	// stmt and stmt2 share funcBody as parent -> get grouped into group-1
+	es.Add(actions.Action{Type: actions.Move, Node: stmt, Parent: newFuncBody})
+	es.Add(actions.Action{Type: actions.Move, Node: stmt2, Parent: newFuncBody})
+	// stmtBlock has stmt as parent
+	es.Add(actions.Action{Type: actions.Move, Node: stmtBlock, Parent: stmt})
+
+	grouped := GroupMoves(es, nil)
+	acts := grouped.Actions()
+	if len(acts) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(acts))
+	}
+	if acts[0].GroupID != "group-1" {
+		t.Errorf("expected stmt to have GroupID group-1, got %q", acts[0].GroupID)
+	}
+	if acts[2].GroupID != "group-1" {
+		t.Errorf("expected child stmtBlock to inherit GroupID group-1, got %q", acts[2].GroupID)
+	}
+}

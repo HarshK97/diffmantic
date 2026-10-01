@@ -550,4 +550,25 @@ func TestAssignMoveColors(t *testing.T) {
 			t.Errorf("expected distant moves to both have MoveColorIndex 0, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
 		}
 	})
+
+	t.Run("hierarchical co-movers", func(t *testing.T) {
+		actions := []Action{
+			{
+				Action:   "move",
+				Node:     &NodeRef{StartByte: 0, EndByte: 15, Type: "if_statement"},
+				DestNode: &NodeRef{StartByte: 50, EndByte: 65, Type: "if_statement"},
+			},
+			{
+				Action:    "move",
+				Node:      &NodeRef{StartByte: 16, EndByte: 40, Type: "block"},
+				OldParent: &NodeRef{StartByte: 0, Type: "if_statement"},
+				Parent:    &NodeRef{StartByte: 50, Type: "if_statement"},
+				DestNode:  &NodeRef{StartByte: 66, EndByte: 90, Type: "block"},
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 0 {
+			t.Errorf("expected hierarchical co-movers to share MoveColorIndex 0, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
 }

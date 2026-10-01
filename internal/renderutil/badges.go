@@ -1,7 +1,9 @@
 package renderutil
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
@@ -66,7 +68,25 @@ func BuildMoveBadges(
 		}
 	}
 
-	for _, a := range actions {
+	type moveCandidate struct {
+		act            *serialize.Action
+		sStart, sEnd   int
+		dStart, dEnd   int
+		sStartByte     uint32
+		sEndByte       uint32
+		dStartByte     uint32
+		dEndByte       uint32
+		dStartByteLine uint32
+		hSrc, hDst     int
+		inSrc, inDst   bool
+		isDecl         bool
+		hasSrcBadge    bool
+		hasDstBadge    bool
+	}
+
+	candidates := make([]*moveCandidate, 0, len(actions))
+	for i := range actions {
+		a := &actions[i]
 		if a.Action != "move" || a.Node == nil {
 			continue
 		}
@@ -74,13 +94,13 @@ func BuildMoveBadges(
 		sEnd, _ := serialize.ByteToLineCol(srcOffsets, a.Node.EndByte)
 
 		var dStart, dEnd int
-		var dStartByte uint32
+		var dStartByteLine uint32
 		if a.DestStartByte != nil && a.DestEndByte != nil {
-			dStartByte = *a.DestStartByte
+			dStartByteLine = *a.DestStartByte
 			dStart, _ = serialize.ByteToLineCol(dstOffsets, *a.DestStartByte)
 			dEnd, _ = serialize.ByteToLineCol(dstOffsets, *a.DestEndByte)
 		} else if a.DestNode != nil {
-			dStartByte = a.DestNode.StartByte
+			dStartByteLine = a.DestNode.StartByte
 			dStart, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.StartByte)
 			dEnd, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.EndByte)
 		} else {
@@ -102,38 +122,113 @@ func BuildMoveBadges(
 			continue
 		}
 
-		_, isDeleted := deletedStartBytes[a.Node.StartByte]
-		_, isInserted := insertedStartBytes[dStartByte]
+		sStartByte := a.OrigStartByte
+		sEndByte := a.OrigEndByte
+		if sStartByte == 0 && sEndByte == 0 {
+			sStartByte = a.Node.StartByte
+			sEndByte = a.Node.EndByte
+		}
 
-		if promoteDeclarations && isDecl {
-			// Top-level declaration moves are summarized directly in the hunk header
-			sig := ExtractDeclarationSignature(a.Node, srcLines, sStart, sEnd)
-			if sig == "declaration" {
-				sig = ExtractDeclarationSignature(a.Node, dstLines, dStart, dEnd)
+		dStartByte := a.DestOrigStartByte
+		dEndByte := a.DestOrigEndByte
+		if dStartByte == 0 && dEndByte == 0 {
+			if a.DestStartByte != nil && a.DestEndByte != nil {
+				dStartByte = *a.DestStartByte
+				dEndByte = *a.DestEndByte
+			} else if a.DestNode != nil {
+				dStartByte = a.DestNode.StartByte
+				dEndByte = a.DestNode.EndByte
 			}
-			if inSrcHunk && sig != "" && !isDeleted {
-				if _, exists := meta.HunkHeaders[hSrc]; !exists {
-					meta.HunkHeaders[hSrc] = fmt.Sprintf(" %s (moved to L%d)", sig, dStart+1)
+		}
+
+		candidates = append(candidates, &moveCandidate{
+			act:            a,
+			sStart:         sStart,
+			sEnd:           sEnd,
+			dStart:         dStart,
+			dEnd:           dEnd,
+			sStartByte:     sStartByte,
+			sEndByte:       sEndByte,
+			dStartByte:     dStartByte,
+			dEndByte:       dEndByte,
+			dStartByteLine: dStartByteLine,
+			hSrc:           hSrc,
+			hDst:           hDst,
+			inSrc:          inSrcHunk,
+			inDst:          inDstHunk,
+			isDecl:         isDecl,
+		})
+	}
+
+	// Sort by AST byte span descending so outer enclosing containers claim badges first
+	slices.SortFunc(candidates, func(a, b *moveCandidate) int {
+		return cmp.Or(
+			cmp.Compare(b.sEndByte-b.sStartByte, a.sEndByte-a.sStartByte),
+			cmp.Compare(b.dEndByte-b.dStartByte, a.dEndByte-a.dStartByte),
+			cmp.Compare(a.sStart, b.sStart),
+		)
+	})
+
+	for cIdx, c := range candidates {
+		suppressSrc := false
+		suppressDst := false
+
+		// Don't badge children if their enclosing parent move already has a badge and they stayed inside it.
+		for _, p := range candidates[:cIdx] {
+			enclosesSrc := p.sStartByte <= c.sStartByte && c.sEndByte <= p.sEndByte &&
+				(p.sStartByte < c.sStartByte || c.sEndByte < p.sEndByte)
+			enclosesDst := p.dStartByte <= c.dStartByte && c.dEndByte <= p.dEndByte &&
+				(p.dStartByte < c.dStartByte || c.dEndByte < p.dEndByte)
+
+			if enclosesSrc && enclosesDst {
+				if p.hasSrcBadge {
+					suppressSrc = true
+				}
+				if p.hasDstBadge {
+					suppressDst = true
+				}
+				if suppressSrc && suppressDst {
+					break
 				}
 			}
-			if inDstHunk && sig != "" && !isInserted {
-				if _, exists := meta.HunkHeaders[hDst]; !exists {
-					meta.HunkHeaders[hDst] = fmt.Sprintf(" %s (moved from L%d)", sig, sStart+1)
+		}
+
+		_, isDeleted := deletedStartBytes[c.act.Node.StartByte]
+		_, isInserted := insertedStartBytes[c.dStartByteLine]
+
+		if promoteDeclarations && c.isDecl {
+			// Top-level declaration moves are summarized directly in the hunk header
+			sig := ExtractDeclarationSignature(c.act.Node, srcLines, c.sStart, c.sEnd)
+			if sig == "declaration" {
+				sig = ExtractDeclarationSignature(c.act.Node, dstLines, c.dStart, c.dEnd)
+			}
+			if c.inSrc && sig != "" && !isDeleted && !suppressSrc {
+				if _, exists := meta.HunkHeaders[c.hSrc]; !exists {
+					meta.HunkHeaders[c.hSrc] = fmt.Sprintf(" %s (moved to L%d)", sig, c.dStart+1)
+					c.hasSrcBadge = true
+				}
+			}
+			if c.inDst && sig != "" && !isInserted && !suppressDst {
+				if _, exists := meta.HunkHeaders[c.hDst]; !exists {
+					meta.HunkHeaders[c.hDst] = fmt.Sprintf(" %s (moved from L%d)", sig, c.sStart+1)
+					c.hasDstBadge = true
 				}
 			}
 		} else {
 			// Sub-block or nested moves show a directional badge on the opening line
 			// (or top-level declarations when promoteDeclarations is false in SBS)
-			if inSrcHunk && sStart >= 0 && sStart < len(srcLines) && !isDeleted {
-				if _, exists := meta.SrcLineBadges[sStart]; !exists {
-					meta.SrcLineBadges[sStart] = fmt.Sprintf(" ➔ L%d", dStart+1)
-					meta.SrcLineBadgeColors[sStart] = a.MoveColorIndex
+			if c.inSrc && c.sStart >= 0 && c.sStart < len(srcLines) && !isDeleted && !suppressSrc {
+				if _, exists := meta.SrcLineBadges[c.sStart]; !exists {
+					meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" ➔ L%d", c.dStart+1)
+					meta.SrcLineBadgeColors[c.sStart] = c.act.MoveColorIndex
+					c.hasSrcBadge = true
 				}
 			}
-			if inDstHunk && dStart >= 0 && dStart < len(dstLines) && !isInserted {
-				if _, exists := meta.DstLineBadges[dStart]; !exists {
-					meta.DstLineBadges[dStart] = fmt.Sprintf(" ⤹ L%d", sStart+1)
-					meta.DstLineBadgeColors[dStart] = a.MoveColorIndex
+			if c.inDst && c.dStart >= 0 && c.dStart < len(dstLines) && !isInserted && !suppressDst {
+				if _, exists := meta.DstLineBadges[c.dStart]; !exists {
+					meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ⤹ L%d", c.sStart+1)
+					meta.DstLineBadgeColors[c.dStart] = c.act.MoveColorIndex
+					c.hasDstBadge = true
 				}
 			}
 		}
