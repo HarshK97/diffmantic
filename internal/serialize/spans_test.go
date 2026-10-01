@@ -570,3 +570,139 @@ func TestPartitionDisjointSpans_DisjointSpansUnchanged(t *testing.T) {
 		t.Errorf("expected delete [0,5), got %+v", spans[0])
 	}
 }
+
+func TestNestedMoveActions_InterveningInsertionPreservesInnerMove(t *testing.T) {
+	// Enclosing move k: [0..100] -> [0..100]
+	// Intervening insert ins: [20..80]
+	// Inner move r: [30..70] -> [30..70]
+	// ins sits between k and r on the destination side, so r must not be skipped.
+	// We use temporary vars for &uint32 pointers instead of Go 1.26 new(uint32(...)).
+	// tree-sitter-go doesn't parse value expressions in new() yet (https://github.com/tree-sitter/tree-sitter-go/pull/199).
+	destStartK := uint32(0)
+	destEndK := uint32(100)
+	destStartR := uint32(30)
+	destEndR := uint32(70)
+	actions := []Action{
+		{
+			Action:        "move",
+			Node:          &NodeRef{StartByte: 0, EndByte: 100},
+			DestStartByte: &destStartK,
+			DestEndByte:   &destEndK,
+		},
+		{
+			Action: "insert",
+			Node:   &NodeRef{StartByte: 20, EndByte: 80},
+		},
+		{
+			Action:        "move",
+			Node:          &NodeRef{StartByte: 30, EndByte: 70},
+			DestStartByte: &destStartR,
+			DestEndByte:   &destEndR,
+		},
+	}
+
+	skip := nestedMoveActions(actions)
+	if skip[2] {
+		t.Errorf("expected inner move at index 2 NOT to be skipped when enclosed in intervening insertion")
+	}
+}
+
+func TestNestedMoveActions_BreakawayMovePreserved(t *testing.T) {
+	// Outer move k: [0..100] -> [500..600]
+	// Inner move r: [30..70] -> [200..240] (breaks away to a completely different location)
+	destStartK := uint32(500)
+	destEndK := uint32(600)
+	destStartR := uint32(200)
+	destEndR := uint32(240)
+	actions := []Action{
+		{
+			Action:        "move",
+			Node:          &NodeRef{StartByte: 0, EndByte: 100},
+			DestStartByte: &destStartK,
+			DestEndByte:   &destEndK,
+		},
+		{
+			Action:        "move",
+			Node:          &NodeRef{StartByte: 30, EndByte: 70},
+			DestStartByte: &destStartR,
+			DestEndByte:   &destEndR,
+		},
+	}
+
+	skip := nestedMoveActions(actions)
+	if skip[1] {
+		t.Errorf("expected breakaway move at index 1 NOT to be skipped")
+	}
+}
+
+func TestNestedMoveActions_IntactRelocatedBlockSubsumesInnerMove(t *testing.T) {
+	// Outer move k: [0..100] -> [500..600]
+	// Inner move r: [30..70] -> [530..570] (moves together inside k)
+	destStartK := uint32(500)
+	destEndK := uint32(600)
+	destStartR := uint32(530)
+	destEndR := uint32(570)
+	actions := []Action{
+		{
+			Action:        "move",
+			Node:          &NodeRef{StartByte: 0, EndByte: 100},
+			DestStartByte: &destStartK,
+			DestEndByte:   &destEndK,
+		},
+		{
+			Action:        "move",
+			Node:          &NodeRef{StartByte: 30, EndByte: 70},
+			DestStartByte: &destStartR,
+			DestEndByte:   &destEndR,
+		},
+	}
+
+	skip := nestedMoveActions(actions)
+	if !skip[1] {
+		t.Errorf("expected inner move at index 1 to be skipped when intact inside outer move")
+	}
+}
+
+func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
+	// Two adjacent or overlapping move segments with different actRef and colors:
+	// Outer move act1 (color 0) and inner move act2 (color 2).
+	// partitionLineSpans must not coalesce them into a single color 0 span.
+	destStart1 := uint32(500)
+	destEnd1 := uint32(600)
+	destStart2 := uint32(200)
+	destEnd2 := uint32(240)
+
+	act1 := Action{
+		Action:         "move",
+		MoveColorIndex: 0,
+		Node:           &NodeRef{Type: "if_statement", StartByte: 0, EndByte: 50},
+		DestStartByte:  &destStart1,
+		DestEndByte:    &destEnd1,
+	}
+	act2 := Action{
+		Action:         "move",
+		MoveColorIndex: 2,
+		Node:           &NodeRef{Type: "short_var_declaration", StartByte: 5, EndByte: 35},
+		DestStartByte:  &destStart2,
+		DestEndByte:    &destEnd2,
+	}
+
+	spans := []internalSpan{
+		{startCol: 0, endCol: 50, action: "move", actRef: &act1},
+		{startCol: 5, endCol: 35, action: "move", actRef: &act2},
+	}
+
+	partitioned := partitionLineSpans(spans, "left")
+	foundColor2 := false
+	for _, p := range partitioned {
+		if p.actRef != nil && p.actRef.MoveColorIndex == 2 {
+			foundColor2 = true
+			if p.startCol != 5 || p.endCol != 35 {
+				t.Errorf("expected color 2 span at [5..35], got [%d..%d]", p.startCol, p.endCol)
+			}
+		}
+	}
+	if !foundColor2 {
+		t.Errorf("expected inner move with color 2 to survive partitioning without being swallowed by color 0")
+	}
+}
