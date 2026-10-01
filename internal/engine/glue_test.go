@@ -546,3 +546,69 @@ func TestIsBoilerplateCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestRevokeOrphanedGlue_RelocatedControlFlowAnchoredSolelyByKeyword(t *testing.T) {
+	kwOld := testutil.Leaf("if", "if")
+	kwOld.IsKeyword = true
+	condOld := testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr"))
+	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "ret"))
+	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
+	srcIf.StartRow = 10
+
+	kwNew := testutil.Leaf("if", "if")
+	kwNew.IsKeyword = true
+	unaryCond := testutil.Node("unary_expression", "", testutil.Leaf("!", "!"), testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr")))
+	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "logErr"))
+	dstIf := testutil.Node("if_statement", "", kwNew, unaryCond, bodyNew)
+	dstIf.StartRow = 46
+
+	outerBlockSrc := testutil.Node("block", "", srcIf)
+	outerBlockDst := testutil.Node("block", "", dstIf)
+
+	m := NewMapping()
+	m.Add(outerBlockSrc, outerBlockDst)
+	m.Add(srcIf, dstIf)
+	m.Add(kwOld, kwNew)
+
+	RevokeOrphanedGlue(m)
+
+	if m.Has(srcIf) {
+		t.Fatal("relocated if_statement anchored solely by if keyword across lines must be revoked")
+	}
+	if m.Has(kwOld) {
+		t.Fatal("if keyword of revoked if_statement must be revoked")
+	}
+}
+
+func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *testing.T) {
+	kwOld := testutil.Leaf("if", "if")
+	kwOld.IsKeyword = true
+	condOld := testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr"))
+	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "ret"))
+	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
+	srcIf.StartRow = 10
+
+	kwNew := testutil.Leaf("if", "if")
+	kwNew.IsKeyword = true
+	unaryCond := testutil.Node("unary_expression", "", testutil.Leaf("!", "!"), testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr")))
+	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "logErr"))
+	dstIf := testutil.Node("if_statement", "", kwNew, unaryCond, bodyNew)
+	dstIf.StartRow = 11
+
+	outerBlockSrc := testutil.Node("block", "", srcIf)
+	outerBlockDst := testutil.Node("block", "", dstIf)
+
+	m := NewMapping()
+	m.Add(outerBlockSrc, outerBlockDst)
+	m.Add(srcIf, dstIf)
+	m.Add(kwOld, kwNew)
+
+	RevokeOrphanedGlue(m)
+
+	if !m.Has(srcIf) {
+		t.Fatal("adjacent if_statement on nearby line in same block should be preserved")
+	}
+	if !m.Has(kwOld) {
+		t.Fatal("if keyword of adjacent if_statement should be preserved")
+	}
+}

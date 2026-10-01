@@ -118,7 +118,26 @@ func RevokeOrphanedGlue(m *Mapping) {
 		if dst.Parent != nil && m.Src()[src.Parent] == dst.Parent {
 			srcParent := src.Parent
 			dstParent := dst.Parent
+			lineDist := int(srcParent.StartRow) - int(dstParent.StartRow)
+			if lineDist < 0 {
+				lineDist = -lineDist
+			}
+
+			isJump := (r != nil && r.IsJumpStatement(srcParent.Type)) || (r == nil && rules.IsJumpStatement(srcParent.Type))
+			hasNonGlue := hasNonGlueChildren(srcParent, r) || hasNonGlueChildren(dstParent, r)
+			hasPayload := hasAnyMatchedNonGlueChild(srcParent, dstParent, m, r)
+
+			// If a container has code inside but none of its children matched, it's only
+			// held by glue tokens like keywords. Don't let it drift across lines or scopes.
+			if !isJump && hasNonGlue && !hasPayload && lineDist > 2 {
+				revokeSubtreeMatchUnder(srcParent, dstParent, m)
+				continue
+			}
 			isMoving := isMovingScope(srcParent, dstParent, m)
+			if !isJump && hasNonGlue && !hasPayload && isMoving {
+				revokeSubtreeMatchUnder(srcParent, dstParent, m)
+				continue
+			}
 			if isMoving && !hasMatchedDirectNonGlueChild(srcParent, dstParent, m, r) {
 				revokeSubtreeMatchUnder(srcParent, dstParent, m)
 				continue
@@ -374,6 +393,42 @@ func isBoilerplateCondition(c *treesitter.ASTNode, r *rules.Rules) bool {
 		}
 	}
 	return semanticTokens <= 3 && len(userVars) <= 1
+}
+
+// hasAnyMatchedNonGlueChild reports whether srcParent and dstParent share at least one
+// matched non-glue child, peeling single-child wrappers if needed.
+func hasAnyMatchedNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if srcParent == nil || dstParent == nil || m == nil {
+		return false
+	}
+	for _, c := range srcParent.Children {
+		if isGlueToken(c, r) {
+			continue
+		}
+		if dstC, ok := m.Src()[c]; ok && dstC.Parent == dstParent {
+			return true
+		}
+		isWrap := (r != nil && r.IsWrapper(c.Type)) || (r == nil && rules.IsWrapper(c.Type))
+		if isWrap && len(c.Children) == 1 {
+			inner := c.Children[0]
+			if dstInner, ok := m.Src()[inner]; ok {
+				if dstInner.Parent == dstParent || (dstInner.Parent != nil && dstInner.Parent.Parent == dstParent) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// hasNonGlueChildren reports whether n has any child that is not a glue token.
+func hasNonGlueChildren(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	return slices.ContainsFunc(n.Children, func(c *treesitter.ASTNode) bool {
+		return !isGlueToken(c, r)
+	})
 }
 
 // isSiblingGlueBound keeps a glue token mapped across different parent
