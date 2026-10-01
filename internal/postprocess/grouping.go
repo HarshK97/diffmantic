@@ -182,6 +182,23 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 		}
 	}
 
+	// Pass the container's group ID down to child delimiter blocks.
+	for i, act := range actionsSlice {
+		if act.Type == actions.Move && act.Node != nil && groupIDMap[i] == "" {
+			r := rules.Get(act.Node.GetLanguage())
+			if r != nil && r.IsBlock(act.Node.Type) && act.Node.Parent != nil {
+				pIdx := slices.IndexFunc(actionsSlice, func(pAct actions.Action) bool {
+					return pAct.Type == actions.Move && pAct.Node == act.Node.Parent
+				})
+				if pIdx >= 0 {
+					if parentGid := groupIDMap[pIdx]; parentGid != "" {
+						groupIDMap[i] = parentGid
+					}
+				}
+			}
+		}
+	}
+
 	result := actions.NewEditScript()
 	for i, act := range actionsSlice {
 		if act.Type == actions.Move {

@@ -58,20 +58,24 @@ type Envelope struct {
 // Action represents a serialized edit-script action.
 // The absence of the "subtree" field always indicates false.
 type Action struct {
-	Action         string   `json:"action"` // "insert", "delete", "update", "move"
-	Node           *NodeRef `json:"node"`
-	Parent         *NodeRef `json:"parent,omitempty"`
-	Position       *int     `json:"position,omitempty"`
-	OldParent      *NodeRef `json:"old_parent,omitempty"`
-	OldPosition    *int     `json:"old_position,omitempty"`
-	OldValue       string   `json:"old_value,omitempty"`
-	NewValue       string   `json:"new_value,omitempty"`
-	Subtree        *bool    `json:"subtree,omitempty"`
-	DestNode       *NodeRef `json:"dest_node,omitempty"`
-	DestStartByte  *uint32  `json:"dest_start_byte,omitempty"`
-	DestEndByte    *uint32  `json:"dest_end_byte,omitempty"`
-	GroupID        string   `json:"group_id,omitempty"`
-	MoveColorIndex int      `json:"-"`
+	Action            string   `json:"action"` // "insert", "delete", "update", "move"
+	Node              *NodeRef `json:"node"`
+	Parent            *NodeRef `json:"parent,omitempty"`
+	Position          *int     `json:"position,omitempty"`
+	OldParent         *NodeRef `json:"old_parent,omitempty"`
+	OldPosition       *int     `json:"old_position,omitempty"`
+	OldValue          string   `json:"old_value,omitempty"`
+	NewValue          string   `json:"new_value,omitempty"`
+	Subtree           *bool    `json:"subtree,omitempty"`
+	DestNode          *NodeRef `json:"dest_node,omitempty"`
+	DestStartByte     *uint32  `json:"dest_start_byte,omitempty"`
+	DestEndByte       *uint32  `json:"dest_end_byte,omitempty"`
+	GroupID           string   `json:"group_id,omitempty"`
+	MoveColorIndex    int      `json:"-"`
+	OrigStartByte     uint32   `json:"-"`
+	OrigEndByte       uint32   `json:"-"`
+	DestOrigStartByte uint32   `json:"-"`
+	DestOrigEndByte   uint32   `json:"-"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -195,6 +199,10 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 		for _, a := range es.Actions() {
 			var ja Action
 			ja.Action = a.Type.String()
+			if a.Node != nil {
+				ja.OrigStartByte = a.Node.StartByte
+				ja.OrigEndByte = a.Node.EndByte
+			}
 
 			switch a.Type {
 			case actions.Insert:
@@ -289,6 +297,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 
 				if destNodeDst != nil {
+					ja.DestOrigStartByte = destNodeDst.StartByte
+					ja.DestOrigEndByte = destNodeDst.EndByte
 					destRef, err := makeNodeRef(destNodeDst, "after")
 					if err != nil {
 						return nil, fmt.Errorf("failed to build dest_node reference for update: %w", err)
@@ -380,6 +390,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				}
 
 				if a.DestNode != nil {
+					ja.DestOrigStartByte = a.DestNode.StartByte
+					ja.DestOrigEndByte = a.DestNode.EndByte
 					startByte := a.DestNode.StartByte
 					endByte := a.DestNode.EndByte
 					if !a.Subtree {
@@ -404,6 +416,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					ja.DestNode = destRef
 				} else if ms != nil {
 					if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
+						ja.DestOrigStartByte = destNodeDst.StartByte
+						ja.DestOrigEndByte = destNodeDst.EndByte
 						startByte := destNodeDst.StartByte
 						endByte := destNodeDst.EndByte
 						if !a.Subtree {
@@ -529,10 +543,25 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			}
 		}
 
+		// Inherit the parent move's color if this child moved along with it.
+		if pIdx := slices.IndexFunc(moves[:i], func(prev moveInterval) bool {
+			return isChildCoMover(curAct, &actions[prev.actIdx])
+		}); pIdx >= 0 {
+			c := actions[moves[pIdx].actIdx].MoveColorIndex
+			curAct.MoveColorIndex = c
+			if curAct.GroupID != "" {
+				groupColors[curAct.GroupID] = c
+			}
+			continue
+		}
+
 		var used [3]bool
 		for _, prev := range moves[:i] {
 			prevAct := &actions[prev.actIdx]
 			if curAct.GroupID != "" && curAct.GroupID == prevAct.GroupID {
+				continue
+			}
+			if isHierarchicalCoMover(curAct, prevAct) {
 				continue
 			}
 
@@ -557,6 +586,31 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			groupColors[curAct.GroupID] = slot
 		}
 	}
+}
+
+// isHierarchicalCoMover reports whether either action is a child of the other in both trees.
+func isHierarchicalCoMover(a, b *Action) bool {
+	return isChildCoMover(a, b) || isChildCoMover(b, a)
+}
+
+// isChildCoMover reports whether child is a direct child of parent in both the before and after trees.
+func isChildCoMover(child, parent *Action) bool {
+	if child == nil || parent == nil || child.OldParent == nil || parent.Node == nil {
+		return false
+	}
+	if child.OldParent.StartByte != parent.Node.StartByte || child.OldParent.Type != parent.Node.Type {
+		return false
+	}
+	if child.Parent == nil {
+		return false
+	}
+	if parent.DestNode != nil {
+		return child.Parent.StartByte == parent.DestNode.StartByte && child.Parent.Type == parent.DestNode.Type
+	}
+	if parent.DestStartByte != nil {
+		return child.Parent.StartByte == *parent.DestStartByte && child.Parent.Type == parent.Node.Type
+	}
+	return false
 }
 
 // MarshalWithOptions formats the diff envelope as indented JSON using the given options.
