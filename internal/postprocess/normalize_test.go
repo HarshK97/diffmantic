@@ -2201,3 +2201,107 @@ func TestNormalizeMovesByStructure_EmitsDeleteForEvictedDescendantsWhenNonSubtre
 		t.Error("normalizeMovesByStructure() kept opSrc in mapping, want evicted")
 	}
 }
+
+func TestNormalizeMovesByStructure_TrivialJumpBlockDemoted(t *testing.T) {
+	// A breakaway trivial jump block ({ return }) in another scope should not move on its own.
+	retStmt1 := mkNode("return_statement", "", mkNode("return", "return"))
+	retStmt1.Language = "go"
+	retStmt1.Children[0].Parent = retStmt1
+	block1 := mkNode("block", "", retStmt1)
+	block1.Language = "go"
+	retStmt1.Parent = block1
+	block1.StartRow = 10
+	block1.EndRow = 12
+
+	retStmt2 := mkNode("return_statement", "", mkNode("return", "return"))
+	retStmt2.Language = "go"
+	retStmt2.Children[0].Parent = retStmt2
+	block2 := mkNode("block", "", retStmt2)
+	block2.Language = "go"
+	retStmt2.Parent = block2
+	block2.StartRow = 100
+	block2.EndRow = 102
+
+	ms := engine.NewMapping()
+	ms.Add(block1, block2)
+	ms.Add(retStmt1, retStmt2)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: block1, DestNode: block2})
+
+	// Boilerplate penalty knocks the score to 1 (below the threshold of 20), forcing delete+insert.
+	result := normalizeMovesByStructure(es, ms)
+
+	hasMove := slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == block1 && a.Type == actions.Move
+	})
+	hasDelete := slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == block1 && a.Type == actions.Delete
+	})
+	hasInsert := slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == block2 && a.Type == actions.Insert
+	})
+
+	if hasMove {
+		t.Errorf("expected breakaway trivial jump block move to be demoted, but Move action survived")
+	}
+	if !hasDelete || !hasInsert {
+		t.Errorf("expected trivial jump block to be demoted to Delete+Insert, got delete=%v, insert=%v", hasDelete, hasInsert)
+	}
+}
+
+func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T) {
+	// A call expression reorganized within the same line and statement shouldn't stay a move.
+	outerBlock := mkNode("block", "")
+	outerBlock.Language = "go"
+
+	stmt1 := mkNode("expression_statement", "")
+	stmt1.Language = "go"
+	stmt1.Parent = outerBlock
+	stmt1.StartRow = 10
+
+	call1 := mkNode("call_expression", "")
+	call1.Language = "go"
+	call1.Parent = stmt1
+	call1.StartRow = 10
+
+	stmt2 := mkNode("expression_statement", "")
+	stmt2.Language = "go"
+	stmt2.Parent = outerBlock
+	stmt2.StartRow = 10
+
+	call2 := mkNode("call_expression", "")
+	call2.Language = "go"
+	call2.Parent = stmt2
+	call2.StartRow = 10
+
+	id1 := mkNode("identifier", "foo")
+	id1.Language = "go"
+	id1.Parent = call1
+
+	id2 := mkNode("identifier", "foo")
+	id2.Language = "go"
+	id2.Parent = call2
+
+	call1.Children = []*treesitter.ASTNode{id1}
+	call2.Children = []*treesitter.ASTNode{id2}
+	stmt1.Children = []*treesitter.ASTNode{call1}
+	stmt2.Children = []*treesitter.ASTNode{call2}
+
+	ms := engine.NewMapping()
+	ms.Add(outerBlock, outerBlock)
+	ms.Add(stmt1, stmt2)
+	ms.Add(call1, call2)
+	ms.Add(id1, id2)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: call1, DestNode: call2})
+
+	result := normalizeMovesByStructure(es, ms)
+
+	if slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == call1 && a.Type == actions.Move
+	}) {
+		t.Errorf("expected stationary expression Move to be dropped from edit script")
+	}
+}
