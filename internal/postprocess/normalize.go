@@ -130,6 +130,11 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	if srcStmt == nil || dstStmt == nil || ms.Src()[srcStmt] != dstStmt {
 		return false
 	}
+	// An expression reorganization is only stationary if its enclosing statement
+	// stayed in the same scope and at the same line position.
+	if srcStmt.StartRow != dstStmt.StartRow || !sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
+		return false
+	}
 
 	// FindEnclosingStatement returns the node itself if it sits directly under a block,
 	// so check the parents to make sure neither side is a nested block of the statement.
@@ -509,7 +514,11 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 	}
 
 	// Boilerplate penalty: bodies consisting entirely of terminating statements.
-	if body := findBodyBlock(node, r); body != nil && isTrivialJumpBody(body, r) {
+	body := node
+	if !r.IsBlock(node.Type) {
+		body = findBodyBlock(node, r)
+	}
+	if body != nil && isTrivialJumpBody(body, r) {
 		score -= 20
 	}
 
@@ -596,6 +605,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	// We have to do this first because Chawathe emits Update actions before Move,
 	// and we need to drop those orphaned updates in Pass 2.
 	toDemote := make(map[*treesitter.ASTNode]*treesitter.ASTNode)
+	toDrop := make(map[*treesitter.ASTNode]struct{})
 	demotedDescendants := make(map[*treesitter.ASTNode]struct{})
 	evicted := make(map[*treesitter.ASTNode]struct{})
 
@@ -603,6 +613,13 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	for _, a := range es.Actions() {
 		if a.Type == actions.Move && a.Node != nil {
 			explicitMoves[a.Node] = true
+			dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
+			if dstNode != nil {
+				r := rules.Get(a.Node.GetLanguage())
+				if r != nil && isStationaryExpressionMove(a.Node, dstNode, ms, r, nil) {
+					toDrop[a.Node] = struct{}{}
+				}
+			}
 		}
 	}
 
@@ -610,6 +627,9 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 		changed := false
 		for _, a := range es.Actions() {
 			if a.Type != actions.Move || a.Node == nil {
+				continue
+			}
+			if _, ok := toDrop[a.Node]; ok {
 				continue
 			}
 			if _, ok := demotedDescendants[a.Node]; ok {
@@ -676,6 +696,9 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			}
 			result.Add(a)
 		case actions.Move:
+			if _, ok := toDrop[a.Node]; ok {
+				continue
+			}
 			// Skip nested moves inside an ancestor that's already turned into a subtree delete+insert.
 			if _, ok := demotedDescendants[a.Node]; ok {
 				continue
@@ -735,6 +758,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			result.Add(a)
 		}
 	}
+
 	return result
 }
 
