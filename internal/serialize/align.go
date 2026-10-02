@@ -88,15 +88,26 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 	anchors := mergeAnchors(primary, text)
 
 	// In-place monotonic statements receive mapping prior bonus in Gotoh.
-	gotohMappedStatements := stationaryStatements
-	if len(inPlaceNodes) > 0 {
-		inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
-			return (!movedNodes[n1] || inPlaceNodes[n1]) && (!movedNodes[n2] || inPlaceNodes[n2])
-		})
-		gotohMappedStatements = make(map[int]int, len(stationaryStatements)+len(inPlaceStatements))
-		maps.Copy(gotohMappedStatements, inPlaceStatements)
-		maps.Copy(gotohMappedStatements, stationaryStatements)
-	}
+	inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
+		if inPlaceNodes[n1] && inPlaceNodes[n2] {
+			return true
+		}
+		r := rules.Get(n1.GetLanguage())
+		isBlock := (r != nil && r.IsBlock(n1.Type)) || (r == nil && rules.IsBlock(n1.Type))
+		return isBlock && !movedNodes[n1] && !movedNodes[n2]
+	})
+
+	// Give statements inside the same moved block a Gotoh prior bonus so their interior lines align.
+	intraMoveStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
+		sRow := int(n1.StartRow)
+		dRow := int(n2.StartRow)
+		return isIntraMove(sRow, dRow, moves)
+	})
+
+	gotohMappedStatements := make(map[int]int, len(stationaryStatements)+len(inPlaceStatements)+len(intraMoveStatements))
+	maps.Copy(gotohMappedStatements, intraMoveStatements)
+	maps.Copy(gotohMappedStatements, inPlaceStatements)
+	maps.Copy(gotohMappedStatements, stationaryStatements)
 
 	scratch := alignScratchPool.Get().(*alignScratch)
 	defer alignScratchPool.Put(scratch)
@@ -885,7 +896,7 @@ func alignGapGotohBanded(
 		sLine := srcLines[sIdx]
 		rowIdx := i * stride
 
-		jMinCurr, jMaxCurr := bandBounds(i, n, k, alpha)
+		jMinCurr, jMaxCurr := bandBounds(i, m, n, k, alpha)
 
 		for j := jMinCurr; j <= jMaxCurr; j++ {
 			dIdx := dStart + j - 1
@@ -947,8 +958,8 @@ func alignGapGotohBanded(
 		// If the optimal path hugs the artificial band boundary on an internal cell, fall back to dense DP.
 		if i > 0 && i < m && j > 0 && j < n {
 			center := float64(i) * alpha
-			rawMin := int(math.Floor(center)) - k
-			rawMax := int(math.Ceil(center)) + k
+			rawMin := min(int(math.Floor(center)), i, i+n-m) - k
+			rawMax := max(int(math.Ceil(center)), i, i+n-m) + k
 			if (rawMin > 1 && j == rawMin) || (rawMax < n && j == rawMax) {
 				return alignGapGotohDense(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, scratch)
 			}
@@ -1005,13 +1016,13 @@ func alignGapGotohBanded(
 	return append(grid, temp...)
 }
 
-func bandBounds(i, n, k int, alpha float64) (int, int) {
+func bandBounds(i, m, n, k int, alpha float64) (int, int) {
 	if i <= 1 {
-		return 1, min(n, int(math.Ceil(alpha))+k)
+		return 1, min(n, max(int(math.Ceil(alpha)), 0, n-m)+k)
 	}
 	center := float64(i) * alpha
-	minCol := max(1, int(math.Floor(center))-k)
-	maxCol := min(n, int(math.Ceil(center))+k)
+	minCol := max(1, min(int(math.Floor(center)), i, i+n-m)-k)
+	maxCol := min(n, max(int(math.Ceil(center)), i, i+n-m)+k)
 	return minCol, maxCol
 }
 
@@ -1070,8 +1081,8 @@ func lineMatchScore(
 		}
 	}
 
-	// Suppress diagonal match for lines moved across scopes (unless they are the mapped statement)
-	if bonus <= 0 && isInsideMove(sIdx, dIdx, moves) {
+	// Suppress matching lines that belong to different moves or between moved and unmoved code.
+	if bonus <= 0 && isCrossMoveMismatch(sIdx, dIdx, moves) {
 		return -1000
 	}
 
@@ -1166,6 +1177,44 @@ func isInsideMove(s, d int, moves []moveRange) bool {
 		}
 	}
 	return false
+}
+
+// isCrossMoveMismatch reports whether sIdx and dIdx conflict across move boundaries.
+// Matching is permitted between unmoved lines or lines within the same move, but not
+// between moved and unmoved lines or across two distinct moves.
+func isCrossMoveMismatch(sIdx, dIdx int, moves []moveRange) bool {
+	if len(moves) == 0 {
+		return false
+	}
+	var sMove, dMove *moveRange
+	sLen := math.MaxInt
+	dLen := math.MaxInt
+	for i := range moves {
+		m := &moves[i]
+		if sIdx >= m.sStart && sIdx <= m.sEnd {
+			if l := m.sEnd - m.sStart; l < sLen {
+				sMove = m
+				sLen = l
+			}
+		}
+		if m.hasDst && dIdx >= m.dStart && dIdx <= m.dEnd {
+			if l := m.dEnd - m.dStart; l < dLen {
+				dMove = m
+				dLen = l
+			}
+		}
+	}
+	if sMove == nil && dMove == nil {
+		return false
+	}
+	if sMove != nil && dMove != nil && *sMove == *dMove {
+		return false
+	}
+	return true
+}
+
+func isIntraMove(s, d int, moves []moveRange) bool {
+	return isInsideMove(s, d, moves) && !isCrossMoveMismatch(s, d, moves)
 }
 
 func isScopePreserved(ms *engine.Mapping, n1, n2 *treesitter.ASTNode, r1, r2 *rules.Rules) bool {

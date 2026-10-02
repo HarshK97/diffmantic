@@ -7,6 +7,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -223,11 +224,9 @@ func TestAlignLinesExtraction(t *testing.T) {
 	want := []LineAlignmentPair{
 		{LeftLine: 0, RightLine: 0},  // func f() {
 		{LeftLine: 1, RightLine: -1}, // if ok { (deleted container)
-		{LeftLine: 2, RightLine: -1}, //   doA()
-		{LeftLine: 3, RightLine: -1}, //   doB()
+		{LeftLine: 2, RightLine: 1},  // doA()
+		{LeftLine: 3, RightLine: 2},  // doB()
 		{LeftLine: 4, RightLine: -1}, // }
-		{LeftLine: -1, RightLine: 1}, // doA() (extracted container)
-		{LeftLine: -1, RightLine: 2}, // doB()
 		{LeftLine: 5, RightLine: 3},  // return
 		{LeftLine: 6, RightLine: 4},  // }
 	}
@@ -649,6 +648,65 @@ func TestAlignLines_AttachedElseClause(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAlignLines_ExtractedClosureIntraMoveAlignment(t *testing.T) {
+	src := `func run() {
+  switch format {
+  case "json":
+    printJSON()
+  case "text":
+    printText()
+  }
+}
+`
+	dst := `func run() {
+  processItem := func() {
+    switch format {
+    case "json":
+      printJSON()
+    case "text":
+      printText()
+    }
+  }
+  processItem()
+}
+`
+
+	oldTree, err := treesitter.Parse([]byte(src), "old.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	newTree, err := treesitter.Parse([]byte(dst), "new.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(src), []byte(dst))
+	mr := engine.Match(oldTree, newTree, []byte(src), []byte(dst), part)
+	es := actions.GenerateEditScript(oldTree, newTree, mr.Mappings)
+	postprocess.Run(es, mr.Mappings, oldTree, newTree)
+
+	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
+
+	alignedMap := make(map[int]int)
+	for _, p := range alignment {
+		if p.LeftLine != -1 {
+			alignedMap[p.LeftLine] = p.RightLine
+		}
+	}
+
+	// Verify that the switch header and its cases align across the closure boundary.
+	want := map[int]int{
+		1: 2, // switch format {
+		2: 3, // case "json":
+		4: 5, // case "text":
+	}
+	for left, wantRight := range want {
+		if got := alignedMap[left]; got != wantRight {
+			t.Errorf("expected left line %d to align with right line %d, got %d", left, wantRight, got)
+		}
 	}
 }
 
