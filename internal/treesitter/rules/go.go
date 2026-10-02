@@ -1,7 +1,6 @@
 package rules
 
 var golangRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"interpreted_string_literal",
 		"raw_string_literal",

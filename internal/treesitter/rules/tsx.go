@@ -1,7 +1,6 @@
 package rules
 
 var tsxRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"template_string",

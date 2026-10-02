@@ -40,37 +40,25 @@ It works as a standalone CLI, a drop-in for `git diff`, or a backend for editor 
 - **Directory Diffing.** Run `diffm dir_a dir_b` to diff entire directory trees recursively, streaming changed files through a single pager session.
 - **Git Integration.** Run `diffm` in any Git repo to stream a pager-backed diff of unstaged changes, staged changes with `--cached`, or any two revisions.
 - **JSON Output.** Stable schema with AST actions, line alignment, and character-level highlight spans. Includes selective `--ui` and `--full` modes for editor plugins and frontends.
-- **16 Core Languages.** Go, Java, JavaScript, TypeScript, Python, Rust, Zig, C, C++, PHP, Ruby, JSON, YAML, TOML, HTML, CSS, Lua. Full AST normalization and matching rules powered by Tree-sitter.
+- **10 Core Languages.** Go, Java, JavaScript, TypeScript, TSX, Python, Rust, Zig, C, C++, Lua. Full AST normalization and matching rules powered by Tree-sitter.
 - **Line Diff Fallback.** For unsupported file types or plain text files, Diffmantic automatically falls back to line-based diffing so you can diff any file.
 
 ## Supported Languages
 
-### Programming Languages (10)
 | Language | Extensions |
 |:---------|:-----------|
 | Go | `.go` |
 | Java | `.java` |
 | JavaScript | `.js` `.jsx` `.mjs` `.cjs` |
-| TypeScript | `.ts` `.tsx` `.mts` `.cts` |
+| TypeScript / TSX | `.ts` `.tsx` `.mts` `.cts` |
 | Python | `.py` |
 | Rust | `.rs` |
 | Zig | `.zig` |
 | C | `.c` `.h` |
 | C++ | `.cpp` `.cc` `.cxx` `.hpp` `.hh` |
-| PHP | `.php` |
-| Ruby | `.rb` |
-
-### Markup & Data Formats (6)
-| Format | Extensions |
-|:-------|:-----------|
-| JSON | `.json` |
-| YAML | `.yaml` `.yml` |
-| TOML | `.toml` |
-| HTML | `.html` `.htm` |
-| CSS | `.css` |
 | Lua | `.lua` |
 
-> **Note**: Fully supported languages include tailored AST normalization (stripping punctuation noise and flattening comment/string blocks). Other languages built via `make build-core` or `make build-all` fall back to raw AST matching.
+> **Note**: Fully supported languages include tailored AST normalization (stripping punctuation noise and flattening comment/string blocks). Unrecognized languages fall back to line diffing.
 
 ## Installation
 

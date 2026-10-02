@@ -178,27 +178,27 @@ func TestDiffCommentsMovedScope(t *testing.T) {
 	}
 }
 
-func TestDiffCommentsGuzzlePhp(t *testing.T) {
-	src, err := os.ReadFile("../../tests/testdata/php_guzzle_handler_curl_multi/old.php")
+func TestDiffCommentsGinGo(t *testing.T) {
+	src, err := os.ReadFile("../../tests/testdata/go_gin_fix_1784/old.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := os.ReadFile("../../tests/testdata/php_guzzle_handler_curl_multi/new.php")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, flatNodesA, symbolsA, err := treesitter.ParseForPipeline(src, "php")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, flatNodesB, symbolsB, err := treesitter.ParseForPipeline(dst, "php")
+	dst, err := os.ReadFile("../../tests/testdata/go_gin_fix_1784/new.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	srcComments := ExtractComments(flatNodesA, symbolsA, src, "php")
-	dstComments := ExtractComments(flatNodesB, symbolsB, dst, "php")
+	_, flatNodesA, symbolsA, err := treesitter.ParseForPipeline(src, "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, flatNodesB, symbolsB, err := treesitter.ParseForPipeline(dst, "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srcComments := ExtractComments(flatNodesA, symbolsA, src, "go")
+	dstComments := ExtractComments(flatNodesB, symbolsB, dst, "go")
 
 	res := DiffComments(srcComments, dstComments, nil)
 	moveCount := 0
@@ -208,7 +208,7 @@ func TestDiffCommentsGuzzlePhp(t *testing.T) {
 		}
 	}
 	if moveCount != 0 {
-		t.Errorf("expected 0 Move actions for comment trivia in Guzzle PHP diff, got %d", moveCount)
+		t.Errorf("expected 0 Move actions for comment trivia in Gin Go diff, got %d", moveCount)
 	}
 }
 

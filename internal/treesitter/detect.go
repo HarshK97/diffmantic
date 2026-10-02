@@ -6,60 +6,40 @@ import (
 	"strings"
 )
 
-// Language represents a recognized programming or data language.
+// Language represents a recognized programming language.
 type Language struct {
 	Name string
 }
 
 var extToLang = map[string]string{
-	".go":      "go",
-	".c":       "c",
-	".h":       "c",
-	".cpp":     "cpp",
-	".cc":      "cpp",
-	".cxx":     "cpp",
-	".c++":     "cpp",
-	".hpp":     "cpp",
-	".hh":      "cpp",
-	".hxx":     "cpp",
-	".h++":     "cpp",
-	".rs":      "rust",
-	".py":      "python",
-	".pyi":     "python",
-	".js":      "javascript",
-	".jsx":     "javascript",
-	".mjs":     "javascript",
-	".cjs":     "javascript",
-	".ts":      "typescript",
-	".mts":     "typescript",
-	".cts":     "typescript",
-	".tsx":     "tsx",
-	".java":    "java",
-	".php":     "php",
-	".phtml":   "php",
-	".php3":    "php",
-	".php4":    "php",
-	".php5":    "php",
-	".php7":    "php",
-	".phps":    "php",
-	".rb":      "ruby",
-	".rake":    "ruby",
-	".gemspec": "ruby",
-	".zig":     "zig",
-	".lua":     "lua",
-	".html":    "html",
-	".htm":     "html",
-	".css":     "css",
-	".json":    "json",
-	".toml":    "toml",
-	".yaml":    "yaml",
-	".yml":     "yaml",
+	".go":   "go",
+	".c":    "c",
+	".h":    "c",
+	".cpp":  "cpp",
+	".cc":   "cpp",
+	".cxx":  "cpp",
+	".c++":  "cpp",
+	".hpp":  "cpp",
+	".hh":   "cpp",
+	".hxx":  "cpp",
+	".h++":  "cpp",
+	".rs":   "rust",
+	".py":   "python",
+	".pyi":  "python",
+	".js":   "javascript",
+	".jsx":  "javascript",
+	".mjs":  "javascript",
+	".cjs":  "javascript",
+	".ts":   "typescript",
+	".mts":  "typescript",
+	".cts":  "typescript",
+	".tsx":  "tsx",
+	".java": "java",
+	".zig":  "zig",
+	".lua":  "lua",
 }
 
-var basenameToLang = map[string]string{
-	"rakefile": "ruby",
-	"gemfile":  "ruby",
-}
+var basenameToLang map[string]string
 
 // DetectLanguage detects the language for a given filename or path.
 func DetectLanguage(filename string) (*Language, error) {
@@ -88,7 +68,7 @@ func DetectLanguageName(filename string) (string, error) {
 		return lang, nil
 	}
 
-	// Support compression wrappers (e.g. .json.gz, .go.zst, .yaml.xz)
+	// Support compression wrappers (e.g. .go.zst, .py.gz)
 	if ext == ".gz" || ext == ".zst" || ext == ".xz" || ext == ".bz2" {
 		trimmed := strings.TrimSuffix(lowerBase, ext)
 		if innerLang, ok := basenameToLang[trimmed]; ok {

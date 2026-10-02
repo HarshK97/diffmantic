@@ -715,7 +715,7 @@ func isIndentationConstruct(n, child *treesitter.ASTNode) bool {
 		return false
 	}
 	lang := n.GetLanguage()
-	if lang != "python" && lang != "yaml" && lang != "toml" {
+	if lang != "python" {
 		return false
 	}
 	r := rules.Get(lang)

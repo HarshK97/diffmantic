@@ -1,7 +1,6 @@
 package rules
 
 var javaRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"character_literal",

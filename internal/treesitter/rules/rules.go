@@ -5,21 +5,8 @@ import (
 	"strings"
 )
 
-// LanguageKind classifies grammars into high-level parsing and diffing categories.
-type LanguageKind uint8
-
-const (
-	// KindCode is for general programming languages (Go, Rust, Python, C++, etc.).
-	KindCode LanguageKind = iota
-	// KindData is for structured key-value formats (JSON, YAML, TOML).
-	KindData
-	// KindMarkup is for markup and styling languages (HTML, CSS).
-	KindMarkup
-)
-
 // Rules configures language-specific AST transformations and node matching.
 type Rules struct {
-	Kind                  LanguageKind
 	Flattened             []string
 	Ignored               []string
 	Aliased               map[string]string
@@ -125,14 +112,6 @@ func (r *Rules) CompileSets() {
 			}
 		}
 	}
-}
-
-// GetKind returns the language category (KindCode, KindData, or KindMarkup).
-func (r *Rules) GetKind() LanguageKind {
-	if r == nil {
-		return KindCode
-	}
-	return r.Kind
 }
 
 // IsCall reports whether nodeType is a function, method, or macro invocation.
@@ -825,21 +804,14 @@ func IsExpressionStatement(nodeType string) bool {
 var registry = map[string]*Rules{
 	"c":          cRules,
 	"cpp":        cppRules,
-	"css":        cssRules,
 	"go":         golangRules,
-	"html":       htmlRules,
 	"java":       javaRules,
 	"javascript": javascriptRules,
-	"json":       jsonRules,
 	"lua":        luaRules,
-	"php":        phpRules,
 	"python":     pythonRules,
-	"ruby":       rubyRules,
 	"rust":       rustRules,
-	"toml":       tomlRules,
 	"tsx":        tsxRules,
 	"typescript": typescriptRules,
-	"yaml":       yamlRules,
 	"zig":        zigRules,
 }
 

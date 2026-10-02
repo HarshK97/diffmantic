@@ -1,7 +1,6 @@
 package rules
 
 var zigRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"multiline_string",

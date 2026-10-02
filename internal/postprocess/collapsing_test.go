@@ -492,21 +492,21 @@ func TestInlineParentSuppression(t *testing.T) {
 			StartByte: 10, EndByte: 20,
 			StartRow: 28, EndRow: 28,
 		}
-		srcChild.Language = "ruby"
+		srcChild.Language = "javascript"
 
 		dstChild := &treesitter.ASTNode{
 			Type:      "pair",
 			StartByte: 11, EndByte: 21,
 			StartRow: 28, EndRow: 28,
 		}
-		// Parent hash spans bytes 10..22 (wider due to { and })
+		// Parent object spans bytes 10..22 (wider due to { and })
 		parent := &treesitter.ASTNode{
-			Type:      "hash",
+			Type:      "object",
 			StartByte: 10, EndByte: 22,
 			StartRow: 28, EndRow: 28,
 			Children: []*treesitter.ASTNode{dstChild},
 		}
-		parent.Language = "ruby"
+		parent.Language = "javascript"
 		dstChild.Parent = parent
 
 		ms := engine.NewMapping()

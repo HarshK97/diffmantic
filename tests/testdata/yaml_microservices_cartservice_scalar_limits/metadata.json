@@ -1,6 +1,0 @@
-{
-  "repository": "GoogleCloudPlatform/microservices-demo",
-  "commit": "157ef700208683999b756e2c55454ca82a5a2994",
-  "description": "Use native Kubernetes grpc health probes instead of exec probe binary",
-  "language": "yaml"
-}
