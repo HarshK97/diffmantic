@@ -2305,3 +2305,123 @@ func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T)
 		t.Errorf("expected stationary expression Move to be dropped from edit script")
 	}
 }
+
+func TestNormalizeMovesByStructure_HollowLoopDemotedAcrossScopes(t *testing.T) {
+	// Even if the loop header matches across functions, drop the move if the body was completely wiped out.
+	rangeClause1 := mkNode("range_clause", "", mkNode("identifier", "a"), mkNode("identifier", "Actions"))
+	rangeClause1.Language = "go"
+	for _, c := range rangeClause1.Children {
+		c.Parent = rangeClause1
+	}
+
+	bodyStmt1 := mkNode("expression_statement", "", mkNode("identifier", "deadLogic"))
+	bodyStmt1.Language = "go"
+	bodyStmt1.Children[0].Parent = bodyStmt1
+	bodyBlock1 := mkNode("block", "", bodyStmt1)
+	bodyBlock1.Language = "go"
+	bodyStmt1.Parent = bodyBlock1
+
+	forStmt1 := mkNode("for_statement", "", rangeClause1, bodyBlock1)
+	forStmt1.Language = "go"
+	forStmt1.StartRow = 160
+	forStmt1.EndRow = 211
+	rangeClause1.Parent = forStmt1
+	bodyBlock1.Parent = forStmt1
+
+	rangeClause2 := mkNode("range_clause", "", mkNode("identifier", "a"), mkNode("identifier", "Actions"))
+	rangeClause2.Language = "go"
+	for _, c := range rangeClause2.Children {
+		c.Parent = rangeClause2
+	}
+
+	bodyStmt2 := mkNode("expression_statement", "", mkNode("identifier", "brandNewLogic"))
+	bodyStmt2.Language = "go"
+	bodyStmt2.Children[0].Parent = bodyStmt2
+	bodyBlock2 := mkNode("block", "", bodyStmt2)
+	bodyBlock2.Language = "go"
+	bodyStmt2.Parent = bodyBlock2
+
+	forStmt2 := mkNode("for_statement", "", rangeClause2, bodyBlock2)
+	forStmt2.Language = "go"
+	forStmt2.StartRow = 476
+	forStmt2.EndRow = 525
+	rangeClause2.Parent = forStmt2
+	bodyBlock2.Parent = forStmt2
+
+	ms := engine.NewMapping()
+	ms.Add(forStmt1, forStmt2)
+	ms.Add(rangeClause1, rangeClause2)
+	for i := range rangeClause1.Children {
+		ms.Add(rangeClause1.Children[i], rangeClause2.Children[i])
+	}
+	// Only the loop header is mapped — body has 0% retention.
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: forStmt1, DestNode: forStmt2})
+
+	result := normalizeMovesByStructure(es, ms)
+
+	if slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == forStmt1 && a.Type == actions.Move
+	}) {
+		t.Errorf("expected hollow loop move with 0%% body retention to be demoted, but Move survived")
+	}
+}
+
+func TestNormalizeMovesByStructure_LoopExtractionPreserved(t *testing.T) {
+	// Moving a loop out to a helper function should stay a Move when its body logic survives.
+	rangeClause1 := mkNode("range_clause", "", mkNode("identifier", "item"))
+	rangeClause1.Language = "go"
+	rangeClause1.Children[0].Parent = rangeClause1
+
+	stmt1 := mkNode("expression_statement", "", mkNode("identifier", "process"))
+	stmt1.Language = "go"
+	stmt1.Children[0].Parent = stmt1
+	bodyBlock1 := mkNode("block", "", stmt1)
+	bodyBlock1.Language = "go"
+	stmt1.Parent = bodyBlock1
+
+	forStmt1 := mkNode("for_statement", "", rangeClause1, bodyBlock1)
+	forStmt1.Language = "go"
+	forStmt1.StartRow = 20
+	forStmt1.EndRow = 30
+	rangeClause1.Parent = forStmt1
+	bodyBlock1.Parent = forStmt1
+
+	rangeClause2 := mkNode("range_clause", "", mkNode("identifier", "item"))
+	rangeClause2.Language = "go"
+	rangeClause2.Children[0].Parent = rangeClause2
+
+	stmt2 := mkNode("expression_statement", "", mkNode("identifier", "process"))
+	stmt2.Language = "go"
+	stmt2.Children[0].Parent = stmt2
+	bodyBlock2 := mkNode("block", "", stmt2)
+	bodyBlock2.Language = "go"
+	stmt2.Parent = bodyBlock2
+
+	forStmt2 := mkNode("for_statement", "", rangeClause2, bodyBlock2)
+	forStmt2.Language = "go"
+	forStmt2.StartRow = 150
+	forStmt2.EndRow = 160
+	rangeClause2.Parent = forStmt2
+	bodyBlock2.Parent = forStmt2
+
+	ms := engine.NewMapping()
+	ms.Add(forStmt1, forStmt2)
+	ms.Add(rangeClause1, rangeClause2)
+	ms.Add(rangeClause1.Children[0], rangeClause2.Children[0])
+	ms.Add(bodyBlock1, bodyBlock2)
+	ms.Add(stmt1, stmt2)
+	ms.Add(stmt1.Children[0], stmt2.Children[0])
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: forStmt1, DestNode: forStmt2})
+
+	result := normalizeMovesByStructure(es, ms)
+
+	if !slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
+		return a.Node == forStmt1 && a.Type == actions.Move
+	}) {
+		t.Errorf("expected extracted loop with 100%% surviving body to be preserved as Move")
+	}
+}
