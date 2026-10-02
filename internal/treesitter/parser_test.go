@@ -25,14 +25,14 @@ func TestDetectLanguage(t *testing.T) {
 		{"test.h", false},
 		{"test.cs", true},
 		{"test.java", false},
-		{"test.php", false},
-		{"test.rb", false},
-		{"test.json", false},
-		{"test.toml", false},
-		{"test.yaml", false},
-		{"test.yml", false},
-		{"test.html", false},
-		{"test.css", false},
+		{"test.php", true},
+		{"test.rb", true},
+		{"test.json", true},
+		{"test.toml", true},
+		{"test.yaml", true},
+		{"test.yml", true},
+		{"test.html", true},
+		{"test.css", true},
 		{"test.lua", false},
 		{"test.zig", false},
 		{"test.sh", true},
@@ -187,28 +187,6 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 		}
 	})
 
-	t.Run("valid php source", func(t *testing.T) {
-		src := []byte(`<?php echo "Hello World"; ?>`)
-		ast, err := Parse(src, "main.php")
-		if err != nil {
-			t.Fatalf("Parse(): unexpected error: %v", err)
-		}
-		if ast == nil {
-			t.Error("Parse(): expected non-nil AST root")
-		}
-	})
-
-	t.Run("valid ruby source", func(t *testing.T) {
-		src := []byte(`def hello; puts "Hello World"; end`)
-		ast, err := Parse(src, "main.rb")
-		if err != nil {
-			t.Fatalf("Parse(): unexpected error: %v", err)
-		}
-		if ast == nil {
-			t.Error("Parse(): expected non-nil AST root")
-		}
-	})
-
 	t.Run("valid lua source", func(t *testing.T) {
 		src := []byte(`local function greet(name) print("Hello, " .. name) end`)
 		ast, err := Parse(src, "main.lua")
@@ -220,42 +198,9 @@ int main() { std::cout << "Hello C++\n"; return 0; }`)
 		}
 	})
 
-	t.Run("valid json source", func(t *testing.T) {
-		src := []byte(`{"name": "diffmantic", "version": 1.0, "active": true}`)
-		ast, err := Parse(src, "config.json")
-		if err != nil {
-			t.Fatalf("Parse(): unexpected error: %v", err)
-		}
-		if ast == nil {
-			t.Error("Parse(): expected non-nil AST root")
-		}
-	})
-
-	t.Run("valid html source", func(t *testing.T) {
-		src := []byte("<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>")
-		ast, err := Parse(src, "index.html")
-		if err != nil {
-			t.Fatalf("Parse(): unexpected error: %v", err)
-		}
-		if ast == nil {
-			t.Error("Parse(): expected non-nil AST root")
-		}
-	})
-
-	t.Run("valid css source", func(t *testing.T) {
-		src := []byte("body { margin: 0; padding: 0; background-color: #fff; }\nh1, h2 { font-family: sans-serif; }\n")
-		ast, err := Parse(src, "style.css")
-		if err != nil {
-			t.Fatalf("Parse(): unexpected error: %v", err)
-		}
-		if ast == nil {
-			t.Error("Parse(): expected non-nil AST root")
-		}
-	})
-
-	t.Run("valid yaml source", func(t *testing.T) {
-		src := []byte("name: diffmantic\nversion: 1.0\nservices:\n  - web\n  - db\n")
-		ast, err := Parse(src, "config.yaml")
+	t.Run("valid zig source", func(t *testing.T) {
+		src := []byte(`pub fn main() void {}`)
+		ast, err := Parse(src, "main.zig")
 		if err != nil {
 			t.Fatalf("Parse(): unexpected error: %v", err)
 		}

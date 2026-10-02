@@ -13,22 +13,15 @@ func TestASTIndexMatchesRecursiveTraversal(t *testing.T) {
 	fixtures := []string{
 		"c_redis_write_handler",
 		"cpp_fmt_handling_pointers_format_string",
-		"css_mdn_box_model_sizing_example",
 		"go_gin_fix_lint",
-		"html_mdn_stopwatch_controls",
 		"java_commons_lang_reject_non_ascii",
 		"js_express_call_callback",
-		"json_schemastore_workflow_step_reorder",
 		"jsx_express_feat_add",
 		"lua_neovim_ui2_messages",
-		"php_guzzle_client_pool_options",
 		"py_requests_make_json",
-		"ruby_sinatra_add_regression_test_for_conten_2",
 		"rust_tokio_time_test_util",
-		"toml_cargo_fix_comment_typo",
 		"ts_zod_json_schema",
 		"tsx_zod_docs",
-		"yaml_microservices_kustomization_scalar",
 		"zig_clap_compile_error_when",
 	}
 

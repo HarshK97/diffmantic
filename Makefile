@@ -29,7 +29,7 @@ build: native/bridge/lib/libdiffmantic_grammars.a ## Build binary with native Tr
 native/bridge/lib/libdiffmantic_grammars.a: $(GRAMMAR_SRCS)
 	@$(MAKE) grammars-native
 
-grammars-native: ## Fetch and compile 18 native Tree-sitter grammars
+grammars-native: ## Fetch and compile 11 native Tree-sitter grammars
 	go run ./native/bridge/build_grammars.go
 
 man: ## Generate Unix man pages in man/

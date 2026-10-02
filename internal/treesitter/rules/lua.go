@@ -1,7 +1,6 @@
 package rules
 
 var luaRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string",
 	},

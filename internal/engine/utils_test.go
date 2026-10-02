@@ -196,7 +196,7 @@ func TestAncestorNameSimilarity(t *testing.T) {
 }
 
 func TestAncestorNameSimilarityPairKey(t *testing.T) {
-	// Ancestor pair keys (like in JSON/YAML) should contribute to similarity overlap.
+	// Ancestor pair keys (e.g. in object literals or dicts) should contribute to similarity overlap.
 	pair1 := testutil.Node("pair", "", testutil.Leaf("string", "\"priority\""), testutil.Node("object", "", testutil.Leaf("string", "min")))
 	pair2 := testutil.Node("pair", "", testutil.Leaf("string", "\"priority\""), testutil.Node("object", "", testutil.Leaf("string", "max")))
 	leaf1 := pair1.Children[1].Children[0]
@@ -315,19 +315,19 @@ func TestNodePairRole(t *testing.T) {
 	})
 
 	t.Run("orphan node", func(t *testing.T) {
-		orphan := testutil.Leaf("plain_scalar", "val")
-		orphan.Language = "yaml"
+		orphan := testutil.Leaf("identifier", "val")
+		orphan.Language = "javascript"
 		if got := NodePairRole(orphan); got != PairRoleNone {
 			t.Errorf("NodePairRole(orphan) = %v, want %v", got, PairRoleNone)
 		}
 	})
 
-	t.Run("yaml pair key and value", func(t *testing.T) {
-		key := testutil.Leaf("plain_scalar", "name")
-		val := testutil.Leaf("plain_scalar", "service")
-		pair := testutil.Node("block_mapping_pair", "", key, val)
-		root := testutil.Node("block_mapping", "", pair)
-		root.Language = "yaml"
+	t.Run("javascript pair key and value", func(t *testing.T) {
+		key := testutil.Leaf("property_identifier", "name")
+		val := testutil.Leaf("string", "service")
+		pair := testutil.Node("pair", "", key, val)
+		root := testutil.Node("object", "", pair)
+		root.Language = "javascript"
 
 		if got := NodePairRole(key); got != PairRoleKey {
 			t.Errorf("NodePairRole(key) = %v, want %v", got, PairRoleKey)
@@ -337,28 +337,11 @@ func TestNodePairRole(t *testing.T) {
 		}
 	})
 
-	t.Run("yaml pair with scaffolding flow_node wrapper", func(t *testing.T) {
-		keyLeaf := testutil.Leaf("plain_scalar", "image")
-		keyWrap := testutil.Node("flow_node", "", keyLeaf)
-		valLeaf := testutil.Leaf("double_quote_scalar", `"nginx"`)
-		valWrap := testutil.Node("flow_node", "", valLeaf)
-		pair := testutil.Node("block_mapping_pair", "", keyWrap, valWrap)
-		root := testutil.Node("block_mapping", "", pair)
-		root.Language = "yaml"
-
-		if got := NodePairRole(keyLeaf); got != PairRoleKey {
-			t.Errorf("NodePairRole(keyLeaf) = %v, want %v", got, PairRoleKey)
-		}
-		if got := NodePairRole(valLeaf); got != PairRoleValue {
-			t.Errorf("NodePairRole(valLeaf) = %v, want %v", got, PairRoleValue)
-		}
-	})
-
 	t.Run("non-pair node in hierarchy", func(t *testing.T) {
-		item1 := testutil.Leaf("plain_scalar", "item1")
-		item2 := testutil.Leaf("plain_scalar", "item2")
-		root := testutil.Node("block_sequence", "", item1, item2)
-		root.Language = "yaml"
+		item1 := testutil.Leaf("identifier", "item1")
+		item2 := testutil.Leaf("identifier", "item2")
+		root := testutil.Node("array", "", item1, item2)
+		root.Language = "javascript"
 
 		if got := NodePairRole(item1); got != PairRoleNone {
 			t.Errorf("NodePairRole(item1) = %v, want %v", got, PairRoleNone)
@@ -367,21 +350,21 @@ func TestNodePairRole(t *testing.T) {
 }
 
 func TestCompatiblePairRoles(t *testing.T) {
-	key1 := testutil.Leaf("plain_scalar", "k1")
-	val1 := testutil.Leaf("plain_scalar", "v1")
-	pair1 := testutil.Node("block_mapping_pair", "", key1, val1)
-	root1 := testutil.Node("block_mapping", "", pair1)
-	root1.Language = "yaml"
+	key1 := testutil.Leaf("property_identifier", "k1")
+	val1 := testutil.Leaf("string", "v1")
+	pair1 := testutil.Node("pair", "", key1, val1)
+	root1 := testutil.Node("object", "", pair1)
+	root1.Language = "javascript"
 
-	key2 := testutil.Leaf("plain_scalar", "k2")
-	val2 := testutil.Leaf("plain_scalar", "v2")
-	pair2 := testutil.Node("block_mapping_pair", "", key2, val2)
-	root2 := testutil.Node("block_mapping", "", pair2)
-	root2.Language = "yaml"
+	key2 := testutil.Leaf("property_identifier", "k2")
+	val2 := testutil.Leaf("string", "v2")
+	pair2 := testutil.Node("pair", "", key2, val2)
+	root2 := testutil.Node("object", "", pair2)
+	root2.Language = "javascript"
 
-	nonPairNode := testutil.Leaf("plain_scalar", "plain")
-	root3 := testutil.Node("block_sequence", "", nonPairNode)
-	root3.Language = "yaml"
+	nonPairNode := testutil.Leaf("identifier", "plain")
+	root3 := testutil.Node("array", "", nonPairNode)
+	root3.Language = "javascript"
 
 	tests := []struct {
 		name string

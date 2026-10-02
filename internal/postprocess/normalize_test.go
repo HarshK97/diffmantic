@@ -255,13 +255,13 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 
 	t.Run("preserves Move when expression is passed into a new function argument list", func(t *testing.T) {
 		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "php"
+		oldCall.Language = "javascript"
 		oldArgs := mkNode("arguments", "")
-		oldArgs.Language = "php"
+		oldArgs.Language = "javascript"
 		oldArg := mkNode("argument", "")
-		oldArg.Language = "php"
+		oldArg.Language = "javascript"
 		oldExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		oldExpr.Language = "php"
+		oldExpr.Language = "javascript"
 
 		oldCall.Children = []*treesitter.ASTNode{oldArgs}
 		oldArgs.Parent = oldCall
@@ -271,17 +271,17 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 		oldExpr.Parent = oldArg
 
 		newOuterCall := mkNode("call_expression", "")
-		newOuterCall.Language = "php"
+		newOuterCall.Language = "javascript"
 		newOuterArgs := mkNode("arguments", "")
-		newOuterArgs.Language = "php"
+		newOuterArgs.Language = "javascript"
 		newNestedCall := mkNode("call_expression", "")
-		newNestedCall.Language = "php"
+		newNestedCall.Language = "javascript"
 		newNestedArgs := mkNode("arguments", "")
-		newNestedArgs.Language = "php"
+		newNestedArgs.Language = "javascript"
 		newArg := mkNode("argument", "")
-		newArg.Language = "php"
+		newArg.Language = "javascript"
 		newExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		newExpr.Language = "php"
+		newExpr.Language = "javascript"
 
 		newOuterCall.Children = []*treesitter.ASTNode{newOuterArgs}
 		newOuterArgs.Parent = newOuterCall
@@ -307,18 +307,18 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move across lines when argument is wrapped in nested function calls", func(t *testing.T) {
-		oldCall := mkNode("function_call_expression", "")
-		oldCall.Language = "php"
+		oldCall := mkNode("call_expression", "")
+		oldCall.Language = "javascript"
 		oldArgs := mkNode("arguments", "")
-		oldArgs.Language = "php"
+		oldArgs.Language = "javascript"
 		oldArg := mkNode("argument", "")
-		oldArg.Language = "php"
+		oldArg.Language = "javascript"
 		oldExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		oldExpr.Language = "php"
+		oldExpr.Language = "javascript"
 		oldExpr.StartRow, oldExpr.EndRow = 98, 98
 
 		oldName := mkNode("name", "pack")
-		oldName.Language = "php"
+		oldName.Language = "javascript"
 		oldCall.Children = []*treesitter.ASTNode{oldName, oldArgs}
 		oldName.Parent = oldCall
 		oldArgs.Parent = oldCall
@@ -327,22 +327,22 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 		oldArg.Children = []*treesitter.ASTNode{oldExpr}
 		oldExpr.Parent = oldArg
 
-		newOuterCall := mkNode("function_call_expression", "")
-		newOuterCall.Language = "php"
+		newOuterCall := mkNode("call_expression", "")
+		newOuterCall.Language = "javascript"
 		newOuterName := mkNode("name", "hex2bin")
-		newOuterName.Language = "php"
+		newOuterName.Language = "javascript"
 		newOuterArgs := mkNode("arguments", "")
-		newOuterArgs.Language = "php"
+		newOuterArgs.Language = "javascript"
 		newOuterCall.Children = []*treesitter.ASTNode{newOuterName, newOuterArgs}
 		newOuterName.Parent = newOuterCall
 		newOuterArgs.Parent = newOuterCall
 
-		newNestedCall := mkNode("member_call_expression", "")
-		newNestedCall.Language = "php"
+		newNestedCall := mkNode("call_expression", "")
+		newNestedCall.Language = "javascript"
 		newReceiver := mkNode("variable_name", "$this")
-		newReceiver.Language = "php"
+		newReceiver.Language = "javascript"
 		newNestedArgs := mkNode("arguments", "")
-		newNestedArgs.Language = "php"
+		newNestedArgs.Language = "javascript"
 		newNestedCall.Children = []*treesitter.ASTNode{newReceiver, newNestedArgs}
 		newReceiver.Parent = newNestedCall
 		newNestedArgs.Parent = newNestedCall
@@ -351,9 +351,9 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 		newNestedCall.Parent = newOuterArgs
 
 		newArg := mkNode("argument", "")
-		newArg.Language = "php"
+		newArg.Language = "javascript"
 		newExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		newExpr.Language = "php"
+		newExpr.Language = "javascript"
 		newExpr.StartRow, newExpr.EndRow = 99, 99
 
 		newNestedArgs.Children = []*treesitter.ASTNode{newArg}
@@ -1119,11 +1119,11 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 		// Chawathe emits Update + Move on the same node when labels differ.
 		// When the Move is demoted, the Update must also be suppressed.
 		srcVal := mkNode("string", "main")
-		srcVal.Language = "toml"
+		srcVal.Language = "javascript"
 		srcVal.StartRow = 5
 
 		dstVal := mkNode("string", "2.0.0")
-		dstVal.Language = "toml"
+		dstVal.Language = "javascript"
 		dstVal.StartRow = 500
 
 		es := actions.NewEditScript()
@@ -1167,20 +1167,20 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 
 	t.Run("preserves one-hop container-preserving reparent", func(t *testing.T) {
 		// Value wrapped in a brand-new pair node, but the matched container is intact.
-		srcContainer := mkNode("table", "")
-		srcContainer.Language = "toml"
+		srcContainer := mkNode("object", "")
+		srcContainer.Language = "javascript"
 		srcVal := mkNode("string", "hello")
-		srcVal.Language = "toml"
+		srcVal.Language = "javascript"
 		srcVal.Parent = srcContainer
 		srcContainer.Children = []*treesitter.ASTNode{srcVal}
 
-		dstContainer := mkNode("table", "")
-		dstContainer.Language = "toml"
+		dstContainer := mkNode("object", "")
+		dstContainer.Language = "javascript"
 		dstPair := mkNode("pair", "")
-		dstPair.Language = "toml"
+		dstPair.Language = "javascript"
 		dstPair.Parent = dstContainer
 		dstVal := mkNode("string", "hello")
-		dstVal.Language = "toml"
+		dstVal.Language = "javascript"
 		dstVal.Parent = dstPair
 		dstPair.Children = []*treesitter.ASTNode{dstVal}
 		dstContainer.Children = []*treesitter.ASTNode{dstPair}
@@ -2423,5 +2423,29 @@ func TestNormalizeMovesByStructure_LoopExtractionPreserved(t *testing.T) {
 		return a.Node == forStmt1 && a.Type == actions.Move
 	}) {
 		t.Errorf("expected extracted loop with 100%% surviving body to be preserved as Move")
+	}
+}
+
+func TestTSXSelfClosingTagConversion(t *testing.T) {
+	src := []byte(`<Component name="diffmantic" />`)
+	dst := []byte(`<Component name="diffmantic"></Component>`)
+
+	srcAST, err := treesitter.Parse(src, "Component.tsx")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "Component.tsx")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+	for _, a := range normalized.Actions() {
+		if a.Type == actions.Move {
+			t.Errorf("expected 0 Move actions for TSX self-closing tag conversion after postprocessing, got: %s on node %s (%s)", a.Type, a.Node.Type, a.Node.Label)
+		}
 	}
 }

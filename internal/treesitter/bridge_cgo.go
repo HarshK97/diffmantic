@@ -135,7 +135,7 @@ func parseWithNativeFlatBufferKeepNodes(src []byte, tsLangPtr unsafe.Pointer, la
 
 type FlatASTResult = C.FlatASTResult
 
-// GetNativeLanguage retrieves the statically linked native Tree-sitter language for any of the 16 core languages (18 grammars).
+// GetNativeLanguage retrieves the statically linked native Tree-sitter language for any of the 10 core languages (11 grammars).
 func GetNativeLanguage(langName string) (unsafe.Pointer, error) {
 	cName := C.CString(langName)
 	defer C.free(unsafe.Pointer(cName))

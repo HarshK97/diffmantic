@@ -20,15 +20,8 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		{"typescript"},
 		{"tsx"},
 		{"java"},
-		{"php"},
-		{"ruby"},
 		{"lua"},
 		{"zig"},
-		{"css"},
-		{"html"},
-		{"json"},
-		{"toml"},
-		{"yaml"},
 	}
 
 	for _, l := range langs {

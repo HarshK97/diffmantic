@@ -408,27 +408,6 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 		t.Errorf("expected hasFooter=false for Python function_definition indentation block")
 	}
 
-	// TOML table has no closing delimiter
-	// [files]
-	// yaml = ["*.yaml"]
-	// \n\n
-	tomlCode := []byte("[files]\nyaml = [\"*.yaml\"]\n\n")
-	tomlRoot := &treesitter.ASTNode{Type: "document", Language: "toml"}
-	setParentAndRange(tomlRoot, nil, 0, uint32(len(tomlCode)))
-
-	table := &treesitter.ASTNode{Type: "table", StartRow: 0, EndRow: 1}
-	setParentAndRange(table, tomlRoot, 0, uint32(len(tomlCode)))
-
-	pair := &treesitter.ASTNode{Type: "pair", StartRow: 1, EndRow: 1}
-	setParentAndRange(pair, table, 8, 25)
-
-	tStart := table.StartByte
-	tEnd := table.EndByte
-	hasTomlFooter, _, _ := adjustRangeForContainer(table, &tStart, &tEnd, tomlCode)
-	if hasTomlFooter {
-		t.Errorf("expected hasFooter=false for TOML table")
-	}
-
 	// Trailing comments should not be treated as closing delimiter
 	codeWithComment := []byte("{\n    x = 1\n    // trailing comment\n")
 	cRoot := &treesitter.ASTNode{Type: "source_file", Language: "go"}

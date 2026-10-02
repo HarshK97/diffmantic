@@ -1,7 +1,6 @@
 package rules
 
 var rustRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"raw_string_literal",

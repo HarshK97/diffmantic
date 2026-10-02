@@ -127,26 +127,6 @@ func TestRulesAliased(t *testing.T) {
 			},
 		},
 		{
-			lang: "php",
-			operators: []string{
-				"+", "-", "*", "/", "%", "**",
-				"==", "!=", "<>", "===", "!==", "<", "<=", ">", ">=", "<=>",
-				"&&", "||", "!", "and", "or", "xor",
-				"=", "+=", "-=", "*=", "/=", "%=", ".=", "**=", "<<=", ">>=", "&=", "^=", "|=", "??=",
-				"++", "--", "??", "?",
-			},
-		},
-		{
-			lang: "ruby",
-			operators: []string{
-				"==", "!=", "===", "<=>", "<", "<=", ">", ">=", "=~", "!~",
-				"&&", "||", "!", "?",
-				"=", "+=", "-=", "*=", "/=", "%=", "**=", "&=", "|=", "^=", "<<=", ">>=", "||=", "&&=",
-				"+", "-", "*", "/", "%", "**",
-				"&", "|", "^", "<<", ">>", "~",
-			},
-		},
-		{
 			lang: "lua",
 			operators: []string{
 				"+", "-", "*", "/", "//", "%", "^",
@@ -204,19 +184,6 @@ func TestRulesPairs(t *testing.T) {
 	}
 	if r.Pairs[0] != "pair" || r.Pairs[1] != "key_value_pair" {
 		t.Errorf("unexpected pairs entries: %v", r.Pairs)
-	}
-}
-
-func TestRulesTOML(t *testing.T) {
-	rules := Get("toml")
-	if rules == nil {
-		t.Fatal("expected toml rules to be loaded")
-	}
-	if len(rules.Scaffolding) == 0 {
-		t.Error("expected scaffolding in toml rules")
-	}
-	if len(rules.Unordered) == 0 {
-		t.Error("expected unordered nodes in toml rules")
 	}
 }
 
@@ -577,48 +544,6 @@ func TestRulesIsExpression(t *testing.T) {
 		if IsExpression(n) {
 			t.Errorf("IsExpression(%q) = true, want false", n)
 		}
-	}
-}
-
-func TestLanguageKind(t *testing.T) {
-	expectedKinds := map[string]LanguageKind{
-		"c":          KindCode,
-		"cpp":        KindCode,
-		"go":         KindCode,
-		"rust":       KindCode,
-		"python":     KindCode,
-		"javascript": KindCode,
-		"typescript": KindCode,
-		"tsx":        KindCode,
-		"java":       KindCode,
-		"php":        KindCode,
-		"ruby":       KindCode,
-		"lua":        KindCode,
-		"zig":        KindCode,
-		"json":       KindData,
-		"yaml":       KindData,
-		"toml":       KindData,
-		"html":       KindMarkup,
-		"css":        KindMarkup,
-	}
-
-	for lang, expected := range expectedKinds {
-		r := Get(lang)
-		if r == nil {
-			t.Errorf("Get(%q) returned nil", lang)
-			continue
-		}
-		if r.GetKind() != expected {
-			t.Errorf("Get(%q).GetKind() = %v, want %v", lang, r.GetKind(), expected)
-		}
-		if r.Kind != expected {
-			t.Errorf("Get(%q).Kind = %v, want %v", lang, r.Kind, expected)
-		}
-	}
-
-	var nilRules *Rules
-	if nilRules.GetKind() != KindCode {
-		t.Errorf("nil.GetKind() = %v, want KindCode", nilRules.GetKind())
 	}
 }
 

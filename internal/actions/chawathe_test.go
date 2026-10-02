@@ -42,16 +42,15 @@ func TestUnorderedNodeMatching(t *testing.T) {
 	}
 }
 
-func TestHTMLSelfClosingTagMatching(t *testing.T) {
-	// Verify that <meta charset="utf-8"> vs <meta charset="utf-8"/> produces 0 actions
-	src := []byte(`<meta charset="utf-8">`)
-	dst := []byte(`<meta charset="utf-8"/>`)
+func TestTSXUnorderedAttributesMatching(t *testing.T) {
+	src := []byte(`<Component a="1" b="2" />`)
+	dst := []byte(`<Component b="2" a="1" />`)
 
-	srcAST, err := treesitter.Parse(src, "index.html")
+	srcAST, err := treesitter.Parse(src, "Component.tsx")
 	if err != nil {
 		t.Fatalf("failed to parse src: %v", err)
 	}
-	dstAST, err := treesitter.Parse(dst, "index.html")
+	dstAST, err := treesitter.Parse(dst, "Component.tsx")
 	if err != nil {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
@@ -61,15 +60,11 @@ func TestHTMLSelfClosingTagMatching(t *testing.T) {
 
 	for _, a := range script.Actions() {
 		if a.Type == Move {
-			t.Errorf("expected 0 Move actions for void self-closing tag conversion, got: %s on node %s", a.Type, a.Node.Type)
+			t.Errorf("expected 0 Move actions for unordered JSX attribute reordering, got: %s on node %s", a.Type, a.Node.Type)
 		}
 	}
-
 	if script.Size() != 0 {
-		t.Errorf("expected 0 actions for semantic void tag conversion, got %d actions", script.Size())
-		for _, a := range script.Actions() {
-			t.Logf("unexpected action: %s on node %s (%s)", a.Type, a.Node.Type, a.Node.Label)
-		}
+		t.Errorf("expected 0 actions for unordered JSX attribute reordering, got %d actions", script.Size())
 	}
 }
 

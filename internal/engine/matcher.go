@@ -34,13 +34,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 	// Match AST nodes top-down, by declaration, and bottom-up using line partitioning.
 	TopDown(t1, t2, minHeight, mappings, part)
 
-	r := rulesFor(t1)
-	switch r.GetKind() {
-	case rules.KindData, rules.KindMarkup:
-		MatchDataContainers(t1, t2, mappings, r)
-	default: // KindCode
-		matchDeclarations(t1, t2, mappings)
-	}
+	matchDeclarations(t1, t2, mappings)
 	matchPairValues(t1, t2, mappings)
 
 	BottomUp(t1, t2, mappings, minDice)

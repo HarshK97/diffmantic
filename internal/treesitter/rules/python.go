@@ -1,7 +1,6 @@
 package rules
 
 var pythonRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"concatenated_string",

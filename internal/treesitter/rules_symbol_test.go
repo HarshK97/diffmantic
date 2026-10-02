@@ -7,10 +7,9 @@ import (
 )
 
 var allLanguageExtensions = []string{
-	"c.c", "cpp.cc", "css.css", "go.go", "html.html", "java.java",
-	"javascript.js", "json.json", "lua.lua", "php.php", "python.py",
-	"ruby.rb", "rust.rs", "toml.toml", "tsx.tsx", "typescript.ts",
-	"yaml.yaml", "zig.zig",
+	"c.c", "cpp.cc", "go.go", "java.java",
+	"javascript.js", "lua.lua", "python.py",
+	"rust.rs", "tsx.tsx", "typescript.ts", "zig.zig",
 }
 
 func getNamedGrammarSymbols(ext string) (string, map[string]bool, *rules.Rules) {

@@ -1,7 +1,6 @@
 package rules
 
 var typescriptRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string",
 		"template_string",

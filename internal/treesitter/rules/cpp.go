@@ -1,7 +1,6 @@
 package rules
 
 var cppRules = &Rules{
-	Kind: KindCode,
 	Flattened: []string{
 		"string_literal",
 		"char_literal",

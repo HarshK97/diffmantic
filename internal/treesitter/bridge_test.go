@@ -6,10 +6,10 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-func TestAll18NativeGrammarsLoaded(t *testing.T) {
+func TestAll11NativeGrammarsLoaded(t *testing.T) {
 	langs := []string{
 		"c", "cpp", "go", "rust", "python", "javascript", "typescript", "tsx",
-		"java", "php", "ruby", "lua", "zig", "css", "html", "json", "toml", "yaml",
+		"java", "lua", "zig",
 	}
 
 	for _, lang := range langs {
@@ -44,15 +44,8 @@ func TestNativeFlatBufferParsing_AllLanguages(t *testing.T) {
 		{lang: "typescript", filename: "main.ts", src: "function main(): void {}"},
 		{lang: "tsx", filename: "main.tsx", src: "const App = () => <div>Hello</div>;"},
 		{lang: "java", filename: "Main.java", src: "class Main { public static void main(String[] args) {} }"},
-		{lang: "php", filename: "main.php", src: "<?php echo 'hello'; ?>"},
-		{lang: "ruby", filename: "main.rb", src: "def main; puts 'hello'; end"},
 		{lang: "lua", filename: "main.lua", src: "function main() print('hello') end"},
 		{lang: "zig", filename: "main.zig", src: "pub fn main() void {}"},
-		{lang: "css", filename: "style.css", src: "body { color: red; }"},
-		{lang: "html", filename: "index.html", src: "<html><body>Hello</body></html>"},
-		{lang: "json", filename: "data.json", src: "{\"key\": \"value\", \"count\": 42}"},
-		{lang: "toml", filename: "config.toml", src: "[server]\nport = 8080\n"},
-		{lang: "yaml", filename: "config.yaml", src: "name: diffmantic\nversion: 1.0\n"},
 	}
 
 	for _, tc := range testCases {

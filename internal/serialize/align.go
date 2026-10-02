@@ -245,8 +245,7 @@ func collectDeclarationAndCommentAnchors(srcLines, dstLines []string, ms *engine
 				r = rules.Get(lang)
 			}
 			isDecl := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
-			isDataKind := r != nil && (r.GetKind() == rules.KindData || r.GetKind() == rules.KindMarkup)
-			if !isDecl && !isDataKind {
+			if !isDecl {
 				continue
 			}
 			if n1.Type != n2.Type && (r == nil || !r.AreTypesEquivalent(n1.Type, n2.Type)) {
@@ -289,9 +288,6 @@ func collectDeclarationAndCommentAnchors(srcLines, dstLines []string, ms *engine
 			dTrim := strings.TrimSpace(dstLines[dRow])
 			isPunct := (r != nil && (r.IsPunctuation(sTrim) || r.IsPunctuation(dTrim))) || (r == nil && (rules.IsPunctuation(sTrim) || rules.IsPunctuation(dTrim)))
 			if sTrim == "" || dTrim == "" || isPunct {
-				continue
-			}
-			if isDataKind && sTrim != dTrim {
 				continue
 			}
 

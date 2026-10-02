@@ -50,15 +50,8 @@ var grammars = []GrammarSpec{
 	{Name: "typescript", SubDir: "typescript/src", ExtraInc: "common"},
 	{Name: "tsx", SubDir: "tsx/src", ExtraInc: "common"},
 	{Name: "java", SubDir: "src"},
-	{Name: "php", SubDir: "php/src", ExtraInc: "common"},
-	{Name: "ruby", SubDir: "src"},
 	{Name: "lua", SubDir: "src"},
 	{Name: "zig", SubDir: "src"},
-	{Name: "css", SubDir: "src"},
-	{Name: "html", SubDir: "src"},
-	{Name: "json", SubDir: "src"},
-	{Name: "toml", SubDir: "src"},
-	{Name: "yaml", SubDir: "src"},
 }
 
 type compileJob struct {
@@ -145,7 +138,7 @@ func run() error {
 }
 
 func ensureAllRepos(bridgeDir, grammarsDir string, manifest map[string]RepoInfo) error {
-	fmt.Println("==> Fetching and syncing Tree-sitter core + 18 native grammars...")
+	fmt.Println("==> Fetching and syncing Tree-sitter core + 11 native grammars...")
 	tsInfo, ok := manifest["tree-sitter"]
 	if !ok {
 		return fmt.Errorf("missing 'tree-sitter' in grammars.json")

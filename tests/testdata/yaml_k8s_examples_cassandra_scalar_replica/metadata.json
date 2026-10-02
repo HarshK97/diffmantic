@@ -1,6 +1,0 @@
-{
-  "repository": "kubernetes/examples",
-  "commit": "unknown",
-  "description": "Update cassandra deployment spec",
-  "language": "yaml"
-}
