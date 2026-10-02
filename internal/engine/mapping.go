@@ -118,6 +118,23 @@ func (m *Mapping) Remove(t1 *treesitter.ASTNode) {
 	})
 }
 
+// RemoveSet drops a batch of source nodes from the mapping and cleans up Pairs in one pass.
+func (m *Mapping) RemoveSet(nodes map[*treesitter.ASTNode]struct{}) {
+	if m == nil || len(nodes) == 0 {
+		return
+	}
+	for n := range nodes {
+		if t2, ok := m.src[n]; ok {
+			delete(m.dst, t2)
+		}
+		delete(m.src, n)
+	}
+	m.Pairs = slices.DeleteFunc(m.Pairs, func(p MappingPair) bool {
+		_, ok := nodes[p.Src]
+		return ok
+	})
+}
+
 // Src exposes the T1->T2 map for use in Dice calculations.
 func (m *Mapping) Src() map[*treesitter.ASTNode]*treesitter.ASTNode { return m.src }
 

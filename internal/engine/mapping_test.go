@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestMappingAddAndLookup(t *testing.T) {
@@ -166,6 +167,61 @@ func TestMappingClone(t *testing.T) {
 	}
 	if len(cp.Pairs) != 2 || cp.Has(a1) || !cp.Has(a3) {
 		t.Error("clone state unexpected after mutation")
+	}
+}
+
+func TestMappingRemoveSet(t *testing.T) {
+	var nilMapping *Mapping
+	nilMapping.RemoveSet(map[*treesitter.ASTNode]struct{}{testutil.Leaf("id", "x"): {}})
+
+	m := NewMapping()
+	m.RemoveSet(nil)
+	m.RemoveSet(map[*treesitter.ASTNode]struct{}{})
+
+	a1 := testutil.Leaf("id", "a1")
+	b1 := testutil.Leaf("id", "b1")
+	a2 := testutil.Leaf("id", "a2")
+	b2 := testutil.Leaf("id", "b2")
+	a3 := testutil.Leaf("id", "a3")
+	b3 := testutil.Leaf("id", "b3")
+	a4 := testutil.Leaf("id", "a4")
+	b4 := testutil.Leaf("id", "b4")
+
+	m.Add(a1, b1)
+	m.Add(a2, b2)
+	m.Add(a3, b3)
+	m.Add(a4, b4)
+
+	unmapped := testutil.Leaf("id", "unmapped")
+	toRemove := map[*treesitter.ASTNode]struct{}{
+		a1:       {},
+		a3:       {},
+		unmapped: {},
+	}
+
+	m.RemoveSet(toRemove)
+
+	if len(m.Pairs) != 2 {
+		t.Fatalf("got len(m.Pairs) = %d, want 2", len(m.Pairs))
+	}
+	if m.Pairs[0].Src != a2 || m.Pairs[0].Dst != b2 {
+		t.Errorf("got pair 0 (%v, %v), want (a2, b2)", m.Pairs[0].Src, m.Pairs[0].Dst)
+	}
+	if m.Pairs[1].Src != a4 || m.Pairs[1].Dst != b4 {
+		t.Errorf("got pair 1 (%v, %v), want (a4, b4)", m.Pairs[1].Src, m.Pairs[1].Dst)
+	}
+
+	if m.Has(a1) || m.HasDst(b1) {
+		t.Error("a1/b1 should be removed")
+	}
+	if m.Has(a3) || m.HasDst(b3) {
+		t.Error("a3/b3 should be removed")
+	}
+	if !m.Has(a2) || !m.HasDst(b2) {
+		t.Error("a2/b2 should be retained")
+	}
+	if !m.Has(a4) || !m.HasDst(b4) {
+		t.Error("a4/b4 should be retained")
 	}
 }
 
