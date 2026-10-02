@@ -484,7 +484,7 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 
 	// If most of a container was deleted, score it by its surviving nodes so a
 	// gutted block doesn't look like a real move.
-	if ms != nil && (r.IsBlock(node.Type) || r.IsWrapper(node.Type) || r.IsDelimitedContainer(node.Type)) {
+	if ms != nil && (r.IsBlock(node.Type) || r.IsWrapper(node.Type) || r.IsDelimitedContainer(node.Type) || (!r.IsDeclaration(node.Type) && findBodyBlock(node, r) != nil)) {
 		surviving := 0
 		totalLeaves := 0
 		for _, d := range node.Descendants() {
@@ -923,9 +923,34 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
+	isDecl := r.IsDeclaration(src.Type) || r.IsDeclaration(dst.Type)
+	isBlock := r.IsBlock(src.Type) || r.IsBlock(dst.Type)
+	var srcBody, dstBody *treesitter.ASTNode
+	if !isDecl && !isBlock {
+		srcBody = findBodyBlock(src, r)
+		dstBody = findBodyBlock(dst, r)
+	}
+	// For compound statements with a body (loops, conditionals), check how much of the
+	// interior body survived. If the body was gutted or replaced across functions,
+	// don't let a matching header turn it into a false move.
+	if srcBody != nil || dstBody != nil {
+		if srcBody == nil || dstBody == nil {
+			return true
+		}
+		bodyRetention := computeMoveRetention(srcBody, dstBody, ms, r, evicted)
+		if bodyRetention == 0.0 {
+			return true
+		}
+		if !sameScopeDeclaration(src, dst, ms, r) && bodyRetention < 0.25 {
+			return true
+		}
+	}
+
 	isDelimContainer := isDelimitedOrBlockContainer(src.Type, r) || isDelimitedOrBlockContainer(dst.Type, r)
+	isStructuralContainer := isDelimContainer || (!isDecl && (srcBody != nil || dstBody != nil))
+
 	retention := 1.0
-	if isDelimContainer {
+	if isStructuralContainer {
 		// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
 		if len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
 			return true
@@ -935,7 +960,7 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 
 		// Cross-scope container moves need at least 25% leaf retention so matching
 		// shells or boilerplate don't get paired across functions.
-		if len(src.Children) > 0 && !sameScopeDeclaration(src, dst, ms, r) && retention < 0.25 {
+		if isDelimContainer && len(src.Children) > 0 && !sameScopeDeclaration(src, dst, ms, r) && retention < 0.25 {
 			return true
 		}
 	}
@@ -949,7 +974,7 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	}
 
 	// Scale container scores by leaf retention so heavily rewritten blocks don't clear the threshold.
-	if isDelimContainer {
+	if isStructuralContainer {
 		score = max(int(float64(score)*retention), 1)
 	}
 	return score < threshold
