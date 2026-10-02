@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-02
+
+### Changed
+- Child blocks and statements moving together inside a parent block now inherit their parent's move color instead of clashing in alternating colors.
+- Directional move badges (`➔ L...`) no longer repeat on every single line inside an already-badged moved block.
+- Swapped code now gets distinct color slots. When two statements swap places, each takes a different color so you can tell them apart immediately.
+- Breakaway moves keep consistent colors across both sides, even when surrounded by newly inserted or deleted code.
+
+### Fixed
+- Surviving statements inside a rewritten or deleted block are now promoted to individual moves instead of vanishing into a generic delete.
+- Stopped hollow blocks, loops, and `if` statements from claiming false moves across functions when their entire body was deleted or replaced.
+- Stopped boilerplate guards and bare exit blocks (like `{ return }` or `err != nil`) from matching as moves across unrelated functions.
+- Relocated statements held only by a lone keyword like `if` or `for` no longer drag across lines as phantom moves when the inner code doesn't match.
+- Editing an expression in place (like reordering terms or chained calls) now shows cleanly as an update rather than marking pieces as moved.
+- Stopped unrelated variable assignments from pairing up unless they actually share variable names on the left-hand side.
+- Lines inside moved blocks now align side-by-side using gap matching, keeping statements and closures aligned without artificial spacer lines.
+- Closing braces before `else`, `catch`, or `finally` now align directly with the attached clause instead of jumping down to the end of the statement.
+- Unpaired lines in single-column side-by-side view now stay neutral instead of lighting up as red or green edits when lines split.
+
+### Performance
+- Batched node cleanup when demoting moves, speeding up post-processing on large refactors.
+- Leaner binary size and faster native builds by dropping non-core grammars.
+
+### Removed
+- Dropped markup and data formats (HTML, CSS, JSON, YAML, TOML) along with PHP and Ruby to focus Diffmantic strictly on its 10 core languages (Go, Java, JavaScript, TypeScript, TSX, Python, Rust, Zig, C, C++, Lua). Unsupported formats automatically fall back to line diffing.
+
 ## [0.10.0] - 2026-09-26
 
 ### Added
@@ -273,7 +299,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/HarshK97/diffmantic/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/HarshK97/diffmantic/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/HarshK97/diffmantic/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/HarshK97/diffmantic/compare/v0.7.0...v0.8.0

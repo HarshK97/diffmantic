@@ -9,7 +9,7 @@ import (
 )
 
 func TestManPageUpToDate(t *testing.T) {
-	expected := GenerateManPage(rootCmd, "2026-09-26")
+	expected := GenerateManPage(rootCmd, "2026-10-02")
 
 	targets := []string{
 		filepath.Join("..", "man", "diffm.1"),
