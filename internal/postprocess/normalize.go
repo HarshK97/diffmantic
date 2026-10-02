@@ -682,6 +682,10 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	// Pass 2: Rebuild the edit script: demote flagged moves to delete+insert,
 	// and drop any orphaned updates or nested moves inside those subtrees.
 	result := actions.NewEditScript()
+	var toRemove map[*treesitter.ASTNode]struct{}
+	if len(toDemote) > 0 {
+		toRemove = make(map[*treesitter.ASTNode]struct{}, len(toDemote)*2)
+	}
 	for _, a := range es.Actions() {
 		if a.Node == nil {
 			result.Add(a)
@@ -725,9 +729,9 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 				Position: dstNode.ChildIndex(),
 				Subtree:  insertSubtree,
 			})
-			// Unmap evicted children so later passes don't treat them as matched. If the
-			// parent demotion wasn't a full-subtree delete/insert, emit individual actions
-			// for them here so they don't vanish from the edit script.
+			// Queue evicted children for batch unmapping so later passes don't treat
+			// them as matched. If the parent demotion wasn't a full-subtree delete/insert,
+			// emit individual actions so they don't get lost from the edit script.
 			for _, d := range a.Node.Descendants() {
 				dDst, ok := ms.Src()[d]
 				if !ok || !dstNode.Contains(dDst) {
@@ -751,12 +755,16 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 						Position: dDst.ChildIndex(),
 					})
 				}
-				ms.Remove(d)
+				toRemove[d] = struct{}{}
 			}
-			ms.Remove(a.Node)
+			toRemove[a.Node] = struct{}{}
 		default:
 			result.Add(a)
 		}
+	}
+
+	if len(toRemove) > 0 {
+		ms.RemoveSet(toRemove)
 	}
 
 	return result
