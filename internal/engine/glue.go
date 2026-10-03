@@ -206,24 +206,56 @@ func getEnclosingScopeDeclaration(n *treesitter.ASTNode, r *rules.Rules) *treesi
 	return nil
 }
 
-// hasMatchedDirectNonGlueChild checks if the containers share at least one
-// non-glue child with enough structural mass (effective height >= 2) to justify
-// treating the container as moved.
+// hasMatchedDirectNonGlueChild reports whether srcParent and dstParent share
+// enough non-glue code to treat the container as moved.
+//
+// A container qualifies if it shares a compound child (effective height >= 2),
+// or is a standalone statement whose non-glue payload is either isomorphic or
+// fully matched.
 func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
 	if srcParent == nil || dstParent == nil || m == nil {
 		return false
 	}
+	r = cmp.Or(r, rulesFor(srcParent), rulesFor(dstParent))
+	isStmt := FindEnclosingStatement(srcParent, r) == srcParent && FindEnclosingStatement(dstParent, r) == dstParent
+	if isStmt && hasNonGlueChildren(srcParent, r) && Isomorphic(srcParent, dstParent) {
+		return true
+	}
+	var nonGlueTotal, nonGlueMatched int
 	for _, c := range srcParent.Children {
 		if isGlueToken(c, r) {
 			continue
 		}
-		if dstC, ok := m.Src()[c]; ok && dstC.Parent == dstParent {
+		nonGlueTotal++
+		if dstC, ok := m.Src()[c]; ok && isDirectOrWrappedChild(dstC, dstParent, r) {
 			if effectiveMatchedHeight(c, dstC, m, r) >= 2 {
 				return true
 			}
+			nonGlueMatched++
 		}
 	}
-	return false
+	if !isStmt {
+		return false
+	}
+	var dstNonGlueTotal int
+	for _, c := range dstParent.Children {
+		if !isGlueToken(c, r) {
+			dstNonGlueTotal++
+		}
+	}
+	return nonGlueTotal > 0 && nonGlueMatched == nonGlueTotal && dstNonGlueTotal == nonGlueTotal
+}
+
+func isDirectOrWrappedChild(node, parent *treesitter.ASTNode, r *rules.Rules) bool {
+	if node == nil || parent == nil || node.Parent == nil {
+		return false
+	}
+	if node.Parent == parent {
+		return true
+	}
+	p := node.Parent
+	isWrap := (r != nil && r.IsWrapper(p.Type)) || (r == nil && rules.IsWrapper(p.Type))
+	return isWrap && p.Parent == parent
 }
 
 func effectiveMatchedHeight(c, dstC *treesitter.ASTNode, m *Mapping, r *rules.Rules) int {

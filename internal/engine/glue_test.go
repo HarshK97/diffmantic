@@ -226,6 +226,69 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	if mKw.Has(srcIf.Children[0]) {
 		t.Fatal("if keyword glue should be revoked")
 	}
+
+	// A moved statement with only leaf tokens (like let far_future = 10_000_000)
+	// should be preserved when both sides are isomorphic.
+	srcIso := testutil.Node("let_declaration", "",
+		testutil.Leaf("let", "let"),
+		testutil.Leaf("identifier", "far_future"),
+		testutil.Leaf("assignment_operator_literal", "="),
+		testutil.Leaf("integer_literal", "10_000_000"),
+	)
+	srcIso.Children[0].IsKeyword = true
+	srcIso.Parent = srcBlock
+	dstIso := testutil.Node("let_declaration", "",
+		testutil.Leaf("let", "let"),
+		testutil.Leaf("identifier", "far_future"),
+		testutil.Leaf("assignment_operator_literal", "="),
+		testutil.Leaf("integer_literal", "10_000_000"),
+	)
+	dstIso.Children[0].IsKeyword = true
+	dstIso.Parent = dstBlock
+	mIso := NewMapping()
+	mIso.Add(srcIso, dstIso)
+	mIso.Add(srcIso.Children[0], dstIso.Children[0]) // let
+	mIso.Add(srcIso.Children[1], dstIso.Children[1]) // far_future
+	mIso.Add(srcIso.Children[2], dstIso.Children[2]) // =
+	mIso.Add(srcIso.Children[3], dstIso.Children[3]) // 10_000_000
+	RevokeOrphanedGlue(mIso)
+	if !mIso.Has(srcIso) {
+		t.Fatal("moving isomorphic container with leaf payload should be preserved")
+	}
+	if !mIso.Has(srcIso.Children[0]) {
+		t.Fatal("glue inside moving isomorphic container should be preserved")
+	}
+
+	// A moved statement should also stay mapped if all non-glue children match,
+	// even when the destination adds a keyword like mut.
+	srcAllNonGlue := testutil.Node("let_declaration", "",
+		testutil.Leaf("let", "let"),
+		testutil.Leaf("identifier", "far_future"),
+		testutil.Leaf("assignment_operator_literal", "="),
+		testutil.Leaf("integer_literal", "10_000_000"),
+	)
+	srcAllNonGlue.Children[0].IsKeyword = true
+	srcAllNonGlue.Parent = srcBlock
+	dstAllNonGlue := testutil.Node("let_declaration", "",
+		testutil.Leaf("let", "let"),
+		testutil.Leaf("mutable_specifier", "mut"),
+		testutil.Leaf("identifier", "far_future"),
+		testutil.Leaf("assignment_operator_literal", "="),
+		testutil.Leaf("integer_literal", "10_000_000"),
+	)
+	dstAllNonGlue.Children[0].IsKeyword = true
+	dstAllNonGlue.Children[1].IsKeyword = true
+	dstAllNonGlue.Parent = dstBlock
+	mAllNonGlue := NewMapping()
+	mAllNonGlue.Add(srcAllNonGlue, dstAllNonGlue)
+	mAllNonGlue.Add(srcAllNonGlue.Children[0], dstAllNonGlue.Children[0]) // let
+	mAllNonGlue.Add(srcAllNonGlue.Children[1], dstAllNonGlue.Children[2]) // far_future
+	mAllNonGlue.Add(srcAllNonGlue.Children[2], dstAllNonGlue.Children[3]) // =
+	mAllNonGlue.Add(srcAllNonGlue.Children[3], dstAllNonGlue.Children[4]) // 10_000_000
+	RevokeOrphanedGlue(mAllNonGlue)
+	if !mAllNonGlue.Has(srcAllNonGlue) {
+		t.Fatal("moving container with all non-glue children matched should be preserved")
+	}
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_RHSMatched(t *testing.T) {
