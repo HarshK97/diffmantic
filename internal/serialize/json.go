@@ -641,19 +641,17 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 		return false, 0, 0
 	}
 	r := rules.Get(n.GetLanguage())
-	for _, child := range n.Children {
-		if r != nil && r.IsBlock(child.Type) {
-			if child.StartByte > *start && child.StartByte < *end {
-				origEnd := *end
-				*end = child.StartByte
-				if len(child.LeadingTrivia) > 0 && child.LeadingTrivia[0].StartByte > *start && child.LeadingTrivia[0].StartByte < *end {
-					*end = child.LeadingTrivia[0].StartByte
-				}
-				if child.EndByte < origEnd && !isIndentationConstruct(n, child) && isClosingDelimiter(fileBytes, child.EndByte, origEnd) {
-					return true, child.EndByte, origEnd
-				}
-				return false, 0, 0
+	if block := findDirectOrEnclosedBlock(n, r); block != nil {
+		if block.StartByte > *start && block.StartByte < *end {
+			origEnd := *end
+			*end = block.StartByte
+			if len(block.LeadingTrivia) > 0 && block.LeadingTrivia[0].StartByte > *start && block.LeadingTrivia[0].StartByte < *end {
+				*end = block.LeadingTrivia[0].StartByte
 			}
+			if block.EndByte < origEnd && !isIndentationConstruct(n, block) && isClosingDelimiter(fileBytes, block.EndByte, origEnd) {
+				return true, block.EndByte, origEnd
+			}
+			return false, 0, 0
 		}
 	}
 	if len(n.Children) > 0 {
@@ -720,6 +718,46 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 		}
 	}
 	return false, 0, 0
+}
+
+// findDirectOrEnclosedBlock finds an immediate block child, or walks down single-line opening
+// wrappers of a multiline call (e.g. arguments, closures) to locate an enclosed block.
+func findDirectOrEnclosedBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil || r == nil {
+		return nil
+	}
+	for _, child := range n.Children {
+		if r.IsBlock(child.Type) {
+			return child
+		}
+	}
+	if n.StartRow != n.EndRow && isCallOrCallStatement(n, r) {
+		for curr := n; curr != nil && len(curr.Children) > 0; {
+			var next *treesitter.ASTNode
+			for _, child := range curr.Children {
+				if r.IsBlock(child.Type) {
+					return child
+				}
+				if child.StartRow == n.StartRow && child.EndRow == n.EndRow {
+					next = child
+				}
+			}
+			curr = next
+		}
+	}
+	return nil
+}
+
+// isCallOrCallStatement reports whether n is a call expression or an expression statement
+// wrapping a call (optionally followed by a trailing semicolon).
+func isCallOrCallStatement(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || r == nil || r.IsBlock(n.Type) || r.IsDeclaration(n.Type) {
+		return false
+	}
+	if r.IsCall(n.Type) {
+		return true
+	}
+	return (len(n.Children) == 1 || len(n.Children) == 2) && r.IsCall(n.Children[0].Type)
 }
 
 func isIndentationConstruct(n, child *treesitter.ASTNode) bool {

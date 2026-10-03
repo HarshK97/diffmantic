@@ -594,3 +594,105 @@ func TestAdjustRangeForContainer_LeadingTrivia(t *testing.T) {
 		t.Errorf("expected footer [30, 32], got [%d, %d]", fStart, fEnd)
 	}
 }
+
+func TestAdjustRangeForContainer_MultilineWrapperWithBlock(t *testing.T) {
+	fileBytes := []byte("model(|| {\n    let a = 1;\n});")
+	exprStmt := &treesitter.ASTNode{
+		Type:      "expression_statement",
+		Language:  "rust",
+		StartByte: 0,
+		EndByte:   uint32(len(fileBytes)),
+		StartRow:  0,
+		EndRow:    2,
+	}
+	callExpr := &treesitter.ASTNode{
+		Type:      "call_expression",
+		Language:  "rust",
+		StartByte: 0,
+		EndByte:   29,
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    exprStmt,
+	}
+	exprStmt.Children = []*treesitter.ASTNode{callExpr}
+
+	args := &treesitter.ASTNode{
+		Type:      "arguments",
+		Language:  "rust",
+		StartByte: 5,
+		EndByte:   29,
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    callExpr,
+	}
+	callExpr.Children = []*treesitter.ASTNode{
+		{Type: "identifier", StartByte: 0, EndByte: 5, StartRow: 0, EndRow: 0, Parent: callExpr},
+		args,
+	}
+
+	closure := &treesitter.ASTNode{
+		Type:      "closure_expression",
+		Language:  "rust",
+		StartByte: 6,
+		EndByte:   27,
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    args,
+	}
+	args.Children = []*treesitter.ASTNode{closure}
+
+	block := &treesitter.ASTNode{
+		Type:      "block",
+		Language:  "rust",
+		StartByte: 9,
+		EndByte:   27,
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    closure,
+	}
+	closure.Children = []*treesitter.ASTNode{
+		{Type: "closure_parameters", StartByte: 6, EndByte: 8, StartRow: 0, EndRow: 0, Parent: closure},
+		block,
+	}
+
+	stmt := &treesitter.ASTNode{
+		Type:      "let_declaration",
+		Language:  "rust",
+		StartByte: 15,
+		EndByte:   25,
+		StartRow:  1,
+		EndRow:    1,
+		Parent:    block,
+	}
+	block.Children = []*treesitter.ASTNode{stmt}
+
+	t.Run("expression_statement", func(t *testing.T) {
+		start := uint32(0)
+		end := uint32(len(fileBytes))
+		hasFooter, fStart, fEnd := adjustRangeForContainer(exprStmt, &start, &end, fileBytes)
+		if end != 9 {
+			t.Errorf("expected exprStmt end to be clamped to 9 (start of block), got %d", end)
+		}
+		if !hasFooter {
+			t.Errorf("expected exprStmt to have closing footer")
+		}
+		if fStart != 27 || fEnd != 29 {
+			t.Errorf("expected exprStmt footer [27, 29], got [%d, %d]", fStart, fEnd)
+		}
+	})
+
+	t.Run("call_expression", func(t *testing.T) {
+		start := uint32(0)
+		end := uint32(28)
+		hasFooter, fStart, fEnd := adjustRangeForContainer(callExpr, &start, &end, fileBytes)
+		if end != 9 {
+			t.Errorf("expected callExpr end to be clamped to 9 (start of block), got %d", end)
+		}
+		if !hasFooter {
+			t.Errorf("expected callExpr to have closing footer")
+		}
+		if fStart != 27 || fEnd != 28 {
+			t.Errorf("expected callExpr footer [27, 28], got [%d, %d]", fStart, fEnd)
+		}
+	})
+}
