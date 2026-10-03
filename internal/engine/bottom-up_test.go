@@ -845,3 +845,45 @@ func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing
 		t.Errorf("expected assignStmt1 NOT to roll up to shortDecl2 with different target variable, got: %v", m.Get(assignStmt1))
 	}
 }
+
+func TestHasCallCalleeOrArgMatch_UnextinguishedPeer(t *testing.T) {
+	r := rules.Get("go")
+
+	// Old: addSpan(spansByLine, lineIndex, fileBytes, a.Node.StartByte)
+	idAddSpan1 := testutil.Node("identifier", "addSpan")
+	argA1 := testutil.Node("identifier", "a")
+	args1 := testutil.Node("argument_list", "", argA1)
+	call1 := testutil.Node("call_expression", "", idAddSpan1, args1)
+
+	// New helper: absorbSyntacticDelimiters(fileBytes, a.Node.StartByte)
+	idAbsorb2 := testutil.Node("identifier", "absorbSyntacticDelimiters")
+	argA2 := testutil.Node("identifier", "a")
+	argsAbsorb2 := testutil.Node("argument_list", "", argA2)
+	callAbsorb2 := testutil.Node("call_expression", "", idAbsorb2, argsAbsorb2)
+	shortDecl2 := testutil.Node("short_var_declaration", "", callAbsorb2)
+
+	// New surviving: addSpan(spansByLine, lineIndex, fileBytes, sb)
+	idAddSpan2 := testutil.Node("identifier", "addSpan")
+	argSb2 := testutil.Node("identifier", "sb")
+	argsAddSpan2 := testutil.Node("argument_list", "", argSb2)
+	callAddSpan2 := testutil.Node("call_expression", "", idAddSpan2, argsAddSpan2)
+	exprStmt2 := testutil.Node("expression_statement", "", callAddSpan2)
+
+	block2 := testutil.Node("block", "", shortDecl2, exprStmt2)
+	treesitter.EnsureIndex(call1)
+	treesitter.EnsureIndex(block2)
+
+	m := NewMapping()
+	// Mapped descendant: argA1 -> argA2
+	m.Add(argA1, argA2)
+
+	// callAbsorb2 shouldn't steal call1 while addSpan is still unmapped in the block.
+	if hasCallCalleeOrArgMatch(call1, callAbsorb2, m, r) {
+		t.Errorf("expected hasCallCalleeOrArgMatch to be false when unmapped peer with callee 'addSpan' exists in scope")
+	}
+
+	// But callAddSpan2 itself should still match call1.
+	if !hasCallCalleeOrArgMatch(call1, callAddSpan2, m, r) {
+		t.Errorf("expected hasCallCalleeOrArgMatch to be true for call with matching callee name")
+	}
+}

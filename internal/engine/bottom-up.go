@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"math"
 	"slices"
 	"strings"
@@ -163,6 +164,15 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	isCall := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))
 	if isCall && !hasCallCalleeOrArgMatch(t1, c, m, r) {
 		return -1.0
+	}
+
+	// Reject call arguments across incompatible calls when the original callee survives in scope.
+	if t1.Parent != nil && c.Parent != nil {
+		pCall1 := (r != nil && r.IsCall(t1.Parent.Type)) || (r == nil && rules.IsCall(t1.Parent.Type))
+		pCall2 := (r != nil && r.IsCall(c.Parent.Type)) || (r == nil && rules.IsCall(c.Parent.Type))
+		if pCall1 && pCall2 && !hasCallCalleeOrArgMatch(t1.Parent, c.Parent, m, r) {
+			return -1.0
+		}
 	}
 
 	// Don't pair a condition or header if its enclosing body was already mapped to a different construct.
@@ -737,6 +747,20 @@ func hasEnclosingConstructAncestor(t1, c *treesitter.ASTNode, r *rules.Rules) bo
 // hasCallCalleeOrArgMatch reports whether two call nodes share any matched tokens
 // outside of trailing block/closure children, or share callee label similarity.
 func hasCallCalleeOrArgMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil {
+		return false
+	}
+	callee1 := extractCalleeLabel(t1, r)
+	callee2 := extractCalleeLabel(c, r)
+
+	// Don't let a newly introduced helper steal t1 if the original callee
+	// is still sitting unmapped in scope.
+	if callee1 != "" && callee2 != "" && !calleesCompatible(callee1, callee2) {
+		if hasUnmappedPeerWithCallee(c, callee1, m, r) {
+			return false
+		}
+	}
+
 	hasNonBlockMatch := false
 	for _, d := range t1.Descendants() {
 		if partner, ok := m.Src()[d]; ok && c.Contains(partner) {
@@ -757,14 +781,51 @@ func hasCallCalleeOrArgMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rul
 		return true
 	}
 
-	callee1 := extractCalleeLabel(t1, r)
-	callee2 := extractCalleeLabel(c, r)
-	if callee1 != "" && callee2 != "" {
-		if callee1 == callee2 {
-			return true
+	return calleesCompatible(callee1, callee2)
+}
+
+// calleesCompatible reports whether two callee names are identical or share a
+// substantive substring prefix/suffix indicating a rename or refactor.
+func calleesCompatible(c1, c2 string) bool {
+	if c1 == "" || c2 == "" {
+		return false
+	}
+	if c1 == c2 {
+		return true
+	}
+	if len(c1) >= 4 && len(c2) >= 4 && (strings.Contains(c1, c2) || strings.Contains(c2, c1)) {
+		return true
+	}
+	return false
+}
+
+// hasUnmappedPeerWithCallee reports whether an unmapped call with calleeName exists
+// in the innermost block enclosing c (Case 48).
+func hasUnmappedPeerWithCallee(c *treesitter.ASTNode, calleeName string, m *Mapping, r *rules.Rules) bool {
+	if c == nil || calleeName == "" {
+		return false
+	}
+	var scope *treesitter.ASTNode
+	for anc := c.Parent; anc != nil; anc = anc.Parent {
+		if (r != nil && r.IsBlock(anc.Type)) || (r == nil && rules.IsBlock(anc.Type)) {
+			scope = anc
+			break
 		}
-		if len(callee1) >= 4 && len(callee2) >= 4 && (strings.Contains(callee1, callee2) || strings.Contains(callee2, callee1)) {
-			return true
+	}
+	scope = cmp.Or(scope, c.Parent)
+	if scope == nil {
+		return false
+	}
+
+	for _, d := range scope.Descendants() {
+		if d == c {
+			continue
+		}
+		isCall := (r != nil && r.IsCall(d.Type)) || (r == nil && rules.IsCall(d.Type))
+		if isCall && !m.HasDst(d) {
+			if extractCalleeLabel(d, r) == calleeName {
+				return true
+			}
 		}
 	}
 	return false
