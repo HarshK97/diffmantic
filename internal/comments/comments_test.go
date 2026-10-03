@@ -75,12 +75,12 @@ func TestDiffCommentsMultiLineLineDiff(t *testing.T) {
 func TestExtractCommentsWithTreeSitter(t *testing.T) {
 	src := []byte("package main\n\n// Line comment 1\nfunc main() {\n\t// Line comment 2\n}\n")
 
-	_, flatNodes, symbols, err := treesitter.ParseForPipeline(src, "go")
+	ast, err := treesitter.ParseWithLanguage(src, "go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	comments := ExtractComments(flatNodes, symbols, src, "go")
+	comments := ExtractComments(ast)
 	if len(comments) != 2 {
 		t.Fatalf("expected 2 comments extracted, got %d", len(comments))
 	}
@@ -188,17 +188,17 @@ func TestDiffCommentsGinGo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, flatNodesA, symbolsA, err := treesitter.ParseForPipeline(src, "go")
+	astA, err := treesitter.ParseWithLanguage(src, "go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, flatNodesB, symbolsB, err := treesitter.ParseForPipeline(dst, "go")
+	astB, err := treesitter.ParseWithLanguage(dst, "go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	srcComments := ExtractComments(flatNodesA, symbolsA, src, "go")
-	dstComments := ExtractComments(flatNodesB, symbolsB, dst, "go")
+	srcComments := ExtractComments(astA)
+	dstComments := ExtractComments(astB)
 
 	res := DiffComments(srcComments, dstComments, nil)
 	moveCount := 0
@@ -506,12 +506,12 @@ public class TestClass {
 }
 `)
 
-	_, flatNodes, symbols, err := treesitter.ParseForPipeline(src, "java")
+	ast, err := treesitter.ParseWithLanguage(src, "java")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	comments := ExtractComments(flatNodes, symbols, src, "java")
+	comments := ExtractComments(ast)
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -521,5 +521,52 @@ public class TestClass {
 	}
 	if c.RelativePath == "doc" {
 		t.Errorf("expected RelativePath NOT to be 'doc' for comment inside method body, got %q", c.RelativePath)
+	}
+}
+
+func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
+	declSrc := &treesitter.ASTNode{Type: "function_declaration", Language: "lua"}
+	declDst := &treesitter.ASTNode{Type: "function_declaration", Language: "lua"}
+
+	// Branch 1 in src and dst (mapped to each other)
+	block1Src := &treesitter.ASTNode{Type: "block", Parent: declSrc, Language: "lua"}
+	block1Dst := &treesitter.ASTNode{Type: "block", Parent: declDst, Language: "lua"}
+
+	// Branch 2 in src and dst (mapped to each other)
+	block2Src := &treesitter.ASTNode{Type: "block", Parent: declSrc, Language: "lua"}
+	block2Dst := &treesitter.ASTNode{Type: "block", Parent: declDst, Language: "lua"}
+
+	mappings := engine.NewMapping()
+	mappings.Add(declSrc, declDst)
+	mappings.Add(block1Src, block1Dst)
+	mappings.Add(block2Src, block2Dst)
+
+	// Comment in src block 2:
+	stmt2Src := &treesitter.ASTNode{Type: "assignment_statement", Parent: block2Src, Language: "lua"}
+	sc := CommentBlock{
+		Text:          "-- TODO: Need to track exact whitespace length for each level.",
+		StartRow:      10,
+		EnclosingDecl: declSrc,
+		AnchorNode:    stmt2Src,
+	}
+
+	// Comment in dst block 1 (similar wording, but in a completely different branch!):
+	stmt1Dst := &treesitter.ASTNode{Type: "assignment_statement", Parent: block1Dst, Language: "lua"}
+	dc := CommentBlock{
+		Text:          "-- Track the leading whitespace for each indent level so that we can dedent",
+		StartRow:      12,
+		EnclosingDecl: declDst,
+		AnchorNode:    stmt1Dst,
+	}
+
+	res := DiffComments([]CommentBlock{sc}, []CommentBlock{dc}, mappings)
+	// Comments in separate control flow branches must not fuzzy-match into an update.
+	if len(res.Actions) != 2 {
+		t.Fatalf("expected 2 actions (1 Delete, 1 Insert) across different mapped blocks, got %d", len(res.Actions))
+	}
+	for _, act := range res.Actions {
+		if act.Type == actions.Update {
+			t.Errorf("expected cross-block fuzzy match to be rejected, but got an Update action")
+		}
 	}
 }

@@ -551,3 +551,46 @@ func TestAssignMoveColors(t *testing.T) {
 		}
 	})
 }
+
+func TestAdjustRangeForContainer_LeadingTrivia(t *testing.T) {
+	fileBytes := []byte("{\n    // comment\n    if (x) {}\n}")
+	block := &treesitter.ASTNode{
+		Type:      "block",
+		Language:  "java",
+		StartByte: 0,
+		EndByte:   32,
+		StartRow:  0,
+		EndRow:    3,
+	}
+	stmt := &treesitter.ASTNode{
+		Type:      "if_statement",
+		StartByte: 17,
+		EndByte:   30,
+		StartRow:  2,
+		EndRow:    2,
+		Parent:    block,
+		LeadingTrivia: []*treesitter.CommentBlock{
+			{
+				StartByte: 6,
+				EndByte:   16,
+				StartRow:  1,
+				EndRow:    1,
+			},
+		},
+	}
+	block.Children = []*treesitter.ASTNode{stmt}
+
+	start := uint32(0)
+	end := uint32(32)
+	hasFooter, fStart, fEnd := adjustRangeForContainer(block, &start, &end, fileBytes)
+
+	if end != 6 {
+		t.Errorf("expected container prologue end to be clamped to 6 (start of comment), got %d", end)
+	}
+	if !hasFooter {
+		t.Errorf("expected container to have footer for closing brace")
+	}
+	if fStart != 30 || fEnd != 32 {
+		t.Errorf("expected footer [30, 32], got [%d, %d]", fStart, fEnd)
+	}
+}

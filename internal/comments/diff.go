@@ -7,6 +7,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // DiffResult holds actions produced from diffing comments.
@@ -15,7 +16,34 @@ type DiffResult struct {
 	LineMappings map[int]int
 }
 
-// DiffComments matches and diffs comments between source and destination files with AST mapping awareness.
+func canonicalScopeKey(c *CommentBlock, mappings *engine.Mapping, isSource bool) string {
+	if c == nil {
+		return "root"
+	}
+	if c.ScopeKey != "" {
+		return c.ScopeKey
+	}
+	if c.EnclosingDecl == nil {
+		if c.RelativePath != "" {
+			return "root:" + c.RelativePath
+		}
+		return "root"
+	}
+
+	if isSource {
+		if mappings != nil && mappings.Src() != nil {
+			if dstDecl, ok := mappings.Src()[c.EnclosingDecl]; ok && dstDecl != nil {
+				return fmt.Sprintf("decl_%d:%s", dstDecl.ID, c.RelativePath)
+			}
+		}
+		// Keep unmapped source declarations isolated so their comments don't leak into new declarations.
+		return fmt.Sprintf("unmapped_src_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
+	}
+
+	return fmt.Sprintf("decl_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
+}
+
+// DiffComments matches and diffs comments between source and destination files using AST mapping awareness.
 func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapping) *DiffResult {
 	res := &DiffResult{
 		LineMappings: make(map[int]int),
@@ -89,7 +117,7 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 		}
 	}
 
-	// PASS 2: Exact text matches across different scopes (treated as moved comments).
+	// Pass 2: exact text across different scopes becomes delete + insert (we never emit actions.Move for comments).
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
@@ -160,6 +188,26 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 				continue
 			}
 
+			if mappings != nil && mappings.Src() != nil && sc.AnchorNode != nil && dc.AnchorNode != nil {
+				if mappings.Src()[sc.AnchorNode] != dc.AnchorNode {
+					srcBlock := findEnclosingBlock(sc.AnchorNode, sc.EnclosingDecl)
+					dstBlock := findEnclosingBlock(dc.AnchorNode, dc.EnclosingDecl)
+					if srcBlock != nil && dstBlock != nil {
+						if mappedDstBlock, ok := mappings.Src()[srcBlock]; ok && mappedDstBlock != nil {
+							if mappedDstBlock != dstBlock {
+								continue
+							}
+						} else if mappings.Dst() != nil {
+							if mappedSrcBlock, ok := mappings.Dst()[dstBlock]; ok && mappedSrcBlock != nil {
+								if mappedSrcBlock != srcBlock {
+									continue
+								}
+							}
+						}
+					}
+				}
+			}
+
 			srcIsMulti := strings.Contains(strings.TrimRight(sc.Text, "\r\n"), "\n")
 			dstIsMulti := strings.Contains(strings.TrimRight(dc.Text, "\r\n"), "\n")
 
@@ -187,7 +235,7 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 		}
 	}
 
-	// Anything left over becomes an insert or delete.
+	// Pass 4: leftovers become deletes or inserts.
 	for i := range srcComments {
 		if !srcMatched[i] {
 			sc := &srcComments[i]
@@ -397,38 +445,26 @@ func createSyntheticNode(nodeType, label string, startByte, endByte, startRow, s
 	}
 }
 
-func canonicalScopeKey(c *CommentBlock, mappings *engine.Mapping, isSource bool) string {
-	if c == nil {
-		return "root"
-	}
-	if c.EnclosingDecl == nil {
-		if c.RelativePath != "" {
-			return "root:" + c.RelativePath
-		}
-		if c.ScopeKey != "" {
-			return c.ScopeKey
-		}
-		return "root"
-	}
-
-	if isSource {
-		if mappings != nil && mappings.Src() != nil {
-			if dstDecl, ok := mappings.Src()[c.EnclosingDecl]; ok && dstDecl != nil {
-				return fmt.Sprintf("decl_%d:%s", dstDecl.ID, c.RelativePath)
-			}
-		}
-		// Strict isolation for unmapped source declarations
-		return fmt.Sprintf("unmapped_src_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
-	}
-
-	// Destination declaration scope key
-	return fmt.Sprintf("decl_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
-}
-
 func commentLineCount(c *CommentBlock) int {
 	t := strings.TrimRight(c.Text, "\r\n")
 	if t == "" {
 		return 1
 	}
 	return strings.Count(t, "\n") + 1
+}
+
+func findEnclosingBlock(n *treesitter.ASTNode, decl *treesitter.ASTNode) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r := rules.Get(n.GetLanguage())
+	if r == nil {
+		return decl
+	}
+	for curr := n; curr != nil && curr != decl; curr = curr.Parent {
+		if r.IsBlock(curr.Type) || r.IsCaseClause(curr.Type) {
+			return curr
+		}
+	}
+	return decl
 }

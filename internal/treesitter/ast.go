@@ -7,6 +7,33 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
+// CommentBlock represents an extracted comment and its source position.
+type CommentBlock struct {
+	Type         string
+	Text         string
+	StartByte    uint32
+	EndByte      uint32
+	StartRow     int // 0-indexed
+	StartCol     int
+	EndRow       int // 0-indexed
+	EndCol       int
+	ScopeKey     string
+	ParentType   string
+	ParentStart  uint32
+	ParentEnd    uint32
+	ParentRow    int
+	ParentEndRow int
+	Language     string
+
+	// Structural Declaration & Scope Context
+	DeclStart     uint32
+	DeclEnd       uint32
+	DeclType      string
+	RelativePath  string
+	EnclosingDecl *ASTNode
+	AnchorNode    *ASTNode
+}
+
 type ASTNode struct {
 	Type            string
 	Label           string
@@ -23,6 +50,10 @@ type ASTNode struct {
 	ParseErrorCount int    // Total count of ERROR nodes in parse tree
 	IsKeyword       bool   // True if node is a keyword token
 	IsUnordered     bool   // True if children of this container node are order-insensitive
+
+	LeadingTrivia  []*CommentBlock
+	TrailingTrivia []*CommentBlock
+	DanglingTrivia []*CommentBlock
 
 	// Hash is the combined hash of node type, label, and children.
 	Hash uint64

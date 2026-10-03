@@ -646,6 +646,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			if child.StartByte > *start && child.StartByte < *end {
 				origEnd := *end
 				*end = child.StartByte
+				if len(child.LeadingTrivia) > 0 && child.LeadingTrivia[0].StartByte > *start && child.LeadingTrivia[0].StartByte < *end {
+					*end = child.LeadingTrivia[0].StartByte
+				}
 				if child.EndByte < origEnd && !isIndentationConstruct(n, child) && isClosingDelimiter(fileBytes, child.EndByte, origEnd) {
 					return true, child.EndByte, origEnd
 				}
@@ -662,6 +665,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				origEnd := *end
 				*start = receiver.EndByte
 				*end = firstIndex.StartByte
+				if len(firstIndex.LeadingTrivia) > 0 && firstIndex.LeadingTrivia[0].StartByte > *start && firstIndex.LeadingTrivia[0].StartByte < *end {
+					*end = firstIndex.LeadingTrivia[0].StartByte
+				}
 				if lastIndex.EndByte > firstIndex.StartByte && lastIndex.EndByte < origEnd {
 					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastIndex.EndByte, origEnd) {
 						return true, lastIndex.EndByte, origEnd
@@ -676,6 +682,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			if firstChild.StartByte > *start && firstChild.StartByte < *end {
 				origEnd := *end
 				*end = firstChild.StartByte
+				if len(firstChild.LeadingTrivia) > 0 && firstChild.LeadingTrivia[0].StartByte > *start && firstChild.LeadingTrivia[0].StartByte < *end {
+					*end = firstChild.LeadingTrivia[0].StartByte
+				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstChild.StartByte && lastChild.EndByte < origEnd {
 					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
@@ -697,6 +706,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			if firstBodyChild != nil {
 				origEnd := *end
 				*end = firstBodyChild.StartByte
+				if len(firstBodyChild.LeadingTrivia) > 0 && firstBodyChild.LeadingTrivia[0].StartByte > *start && firstBodyChild.LeadingTrivia[0].StartByte < *end {
+					*end = firstBodyChild.LeadingTrivia[0].StartByte
+				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {
 					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {

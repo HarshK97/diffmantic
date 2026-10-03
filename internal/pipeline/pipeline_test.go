@@ -47,3 +47,66 @@ func TestPipeline_LineLimitFallback(t *testing.T) {
 		t.Errorf("expected AST parsed when file is under line limit")
 	}
 }
+
+func TestPipeline_UnchangedCommentsRetainedOnLineShift(t *testing.T) {
+	src := []byte(`package main
+
+// Foo does foo things.
+func Foo() {
+	// Step 1: initialize
+	x := 1
+	_ = x
+}
+
+// Bar does bar things.
+func Bar() {
+	// Step 2: finalize
+	y := 2
+	_ = y
+}
+`)
+
+	// dst inserts a 30-line function between Foo and Bar to trigger line distance > 25
+	var filler []string
+	filler = append(filler, "// NewFunction does extra work.", "func NewFunction() {")
+	for i := 0; i < 28; i++ {
+		filler = append(filler, "\tz := 0\n\t_ = z")
+	}
+	filler = append(filler, "}")
+
+	dst := []byte(`package main
+
+// Foo does foo things.
+func Foo() {
+	// Step 1: initialize
+	x := 1
+	_ = x
+}
+
+` + strings.Join(filler, "\n") + `
+
+// Bar does bar things.
+func Bar() {
+	// Step 2: finalize
+	y := 2
+	_ = y
+}
+`)
+
+	res, err := Run(src, dst, "a.go", "b.go", DiffOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify that comments in Foo and Bar are NOT deleted or inserted.
+	for _, act := range res.Envelope.Actions {
+		if act.Node != nil && act.Node.Type == "comment" {
+			if strings.Contains(act.Node.Label, "Foo does foo") ||
+				strings.Contains(act.Node.Label, "Step 1") ||
+				strings.Contains(act.Node.Label, "Bar does bar") ||
+				strings.Contains(act.Node.Label, "Step 2") {
+				t.Errorf("spurious comment action %s on %q", act.Action, act.Node.Label)
+			}
+		}
+	}
+}

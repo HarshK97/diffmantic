@@ -116,3 +116,85 @@ func TestIngestFlatAST_Synthetic(t *testing.T) {
 		t.Errorf("expected ParseErrorCount=0, got %d", root.ParseErrorCount)
 	}
 }
+
+func TestNativeFlatBufferParsing_TriviaAttachment(t *testing.T) {
+	src := []byte(`package main
+
+// Doc for foo
+func foo() {
+	x := 1 // inline comment
+	// done inside
+}
+// trailing file comment
+`)
+
+	root, err := treesitter.ParseWithLanguage(src, "go")
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if root == nil {
+		t.Fatal("expected non-nil root")
+	}
+
+	// 1. Check LeadingTrivia on function_declaration (child 1, after package_clause)
+	var fn *treesitter.ASTNode
+	for _, child := range root.Children {
+		if child.Type == "function_declaration" {
+			fn = child
+			break
+		}
+	}
+	if fn == nil {
+		t.Fatal("expected function_declaration in root children")
+	}
+	if len(fn.LeadingTrivia) != 1 {
+		t.Fatalf("expected 1 LeadingTrivia on func, got %d", len(fn.LeadingTrivia))
+	}
+	if fn.LeadingTrivia[0].Text != "// Doc for foo" {
+		t.Errorf("unexpected LeadingTrivia text: %q", fn.LeadingTrivia[0].Text)
+	}
+
+	// 2. Check TrailingTrivia on x := 1 (inside block)
+	var block *treesitter.ASTNode
+	for _, child := range fn.Children {
+		if child.Type == "block" {
+			block = child
+			break
+		}
+	}
+	if block == nil {
+		t.Fatal("expected block in function_declaration children")
+	}
+	var stmt *treesitter.ASTNode
+	for _, child := range block.Children {
+		if child.Type == "short_var_declaration" {
+			stmt = child
+			break
+		}
+	}
+	if stmt == nil {
+		t.Fatal("expected short_var_declaration in block children")
+	}
+	if len(stmt.TrailingTrivia) != 1 {
+		t.Fatalf("expected 1 TrailingTrivia on short_var_declaration, got %d", len(stmt.TrailingTrivia))
+	}
+	if stmt.TrailingTrivia[0].Text != "// inline comment" {
+		t.Errorf("unexpected TrailingTrivia text: %q", stmt.TrailingTrivia[0].Text)
+	}
+
+	// 3. Check DanglingTrivia on block (for "// done inside")
+	if len(block.DanglingTrivia) != 1 {
+		t.Fatalf("expected 1 DanglingTrivia on block, got %d", len(block.DanglingTrivia))
+	}
+	if block.DanglingTrivia[0].Text != "// done inside" {
+		t.Errorf("unexpected DanglingTrivia on block: %q", block.DanglingTrivia[0].Text)
+	}
+
+	// 4. Check DanglingTrivia on root (for "// trailing file comment")
+	if len(root.DanglingTrivia) != 1 {
+		t.Fatalf("expected 1 DanglingTrivia on root, got %d", len(root.DanglingTrivia))
+	}
+	if root.DanglingTrivia[0].Text != "// trailing file comment" {
+		t.Errorf("unexpected DanglingTrivia on root: %q", root.DanglingTrivia[0].Text)
+	}
+}
