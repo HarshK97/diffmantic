@@ -2354,7 +2354,7 @@ func TestNormalizeMovesByStructure_HollowLoopDemotedAcrossScopes(t *testing.T) {
 	for i := range rangeClause1.Children {
 		ms.Add(rangeClause1.Children[i], rangeClause2.Children[i])
 	}
-	// Only the loop header is mapped — body has 0% retention.
+	// Only the loop header is mapped, body has 0% retention.
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: forStmt1, DestNode: forStmt2})
