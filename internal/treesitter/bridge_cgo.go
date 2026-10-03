@@ -81,26 +81,14 @@ func ParseWithLanguage(src []byte, langName string) (*ASTNode, error) {
 	return ParseWithNativeFlatBuffer(src, ptr, langName, symbols)
 }
 
-// ParseForPipeline parses via the native flat-buffer bridge, returning the root AST,
-// raw flat nodes, and symbol table for comment extraction in the diff pipeline.
-func ParseForPipeline(src []byte, langName string) (*ASTNode, []FlatNode, []string, error) {
+// ParseCST parses source bytes into flat Tree-sitter nodes and symbols for CST debugging dumps.
+func ParseCST(src []byte, langName string) ([]FlatNode, []string, error) {
 	ptr, symbols, err := getLanguageSymbols(langName)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	ast, flatNodes, err := parseWithNativeFlatBufferKeepNodes(src, ptr, langName, symbols)
-	return ast, flatNodes, symbols, err
-}
-
-// parseWithNativeFlatBufferKeepNodes is like ParseWithNativeFlatBuffer but also returns
-// a Go-owned copy of the flat node array for comment extraction.
-func parseWithNativeFlatBufferKeepNodes(src []byte, tsLangPtr unsafe.Pointer, langName string, symbols []string) (*ASTNode, []FlatNode, error) {
-	if tsLangPtr == nil {
+	if ptr == nil {
 		return nil, nil, errors.New("nil native language pointer")
-	}
-
-	if len(symbols) == 0 {
-		symbols = NativeLanguageSymbols(tsLangPtr)
 	}
 
 	var srcPtr *C.uint8_t
@@ -111,13 +99,11 @@ func parseWithNativeFlatBufferKeepNodes(src []byte, tsLangPtr unsafe.Pointer, la
 	res := C.parse_to_flat_ast(
 		srcPtr,
 		C.size_t(len(src)),
-		tsLangPtr,
+		ptr,
 	)
-
 	if res.error_code != 0 {
 		return nil, nil, fmt.Errorf("native flat tree-sitter parse failed (code %d)", int(res.error_code))
 	}
-
 	defer C.free_flat_ast(res)
 
 	var nodes []FlatNode
@@ -125,12 +111,7 @@ func parseWithNativeFlatBufferKeepNodes(src []byte, tsLangPtr unsafe.Pointer, la
 		nodes = unsafe.Slice((*FlatNode)(unsafe.Pointer(res.nodes_ptr)), int(res.node_count))
 	}
 
-	// Copy flat nodes into Go-owned memory for comment extraction (C memory freed on return).
-	goNodes := slices.Clone(nodes)
-
-	root := IngestFlatAST(nodes, symbols, src, langName)
-
-	return root, goNodes, nil
+	return slices.Clone(nodes), symbols, nil
 }
 
 type FlatASTResult = C.FlatASTResult

@@ -144,35 +144,18 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		wg          sync.WaitGroup
 	)
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		var (
-			srcFlatNodes []treesitter.FlatNode
-			srcSymbols   []string
-		)
-		srcAST, srcFlatNodes, srcSymbols, _ = treesitter.ParseForPipeline(srcBytes, langA.Name)
-		if !opts.IgnoreComments && len(srcFlatNodes) > 0 {
-			srcComments = comments.ExtractComments(srcFlatNodes, srcSymbols, srcBytes, langA.Name)
-			if srcAST != nil {
-				comments.BindASTNodes(srcComments, srcAST)
-			}
+	wg.Go(func() {
+		srcAST, _ = treesitter.ParseWithLanguage(srcBytes, langA.Name)
+		if !opts.IgnoreComments && srcAST != nil {
+			srcComments = comments.ExtractComments(srcAST)
 		}
-	}()
-	go func() {
-		defer wg.Done()
-		var (
-			dstFlatNodes []treesitter.FlatNode
-			dstSymbols   []string
-		)
-		dstAST, dstFlatNodes, dstSymbols, _ = treesitter.ParseForPipeline(dstBytes, langB.Name)
-		if !opts.IgnoreComments && len(dstFlatNodes) > 0 {
-			dstComments = comments.ExtractComments(dstFlatNodes, dstSymbols, dstBytes, langB.Name)
-			if dstAST != nil {
-				comments.BindASTNodes(dstComments, dstAST)
-			}
+	})
+	wg.Go(func() {
+		dstAST, _ = treesitter.ParseWithLanguage(dstBytes, langB.Name)
+		if !opts.IgnoreComments && dstAST != nil {
+			dstComments = comments.ExtractComments(dstAST)
 		}
-	}()
+	})
 
 	part := engine.NewLinePartition(srcBytes, dstBytes)
 	wg.Wait()
@@ -195,18 +178,14 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		wgPost     sync.WaitGroup
 	)
 
-	wgPost.Add(1)
-	go func() {
-		defer wgPost.Done()
+	wgPost.Go(func() {
 		es = actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
-	}()
+	})
 
 	if !opts.IgnoreComments && (len(srcComments) > 0 || len(dstComments) > 0) {
-		wgPost.Add(1)
-		go func() {
-			defer wgPost.Done()
+		wgPost.Go(func() {
 			commentRes = comments.DiffComments(srcComments, dstComments, matchResult.Mappings)
-		}()
+		})
 	}
 
 	wgPost.Wait()

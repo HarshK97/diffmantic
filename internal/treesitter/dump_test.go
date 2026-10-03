@@ -61,9 +61,9 @@ func main() {}
 		t.Fatalf("DetectLanguage failed: %v", err)
 	}
 
-	_, flatNodes, symbols, err := ParseForPipeline(src, lang.Name)
+	flatNodes, symbols, err := ParseCST(src, lang.Name)
 	if err != nil {
-		t.Fatalf("ParseForPipeline failed: %v", err)
+		t.Fatalf("ParseCST failed: %v", err)
 	}
 
 	var buf bytes.Buffer

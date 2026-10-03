@@ -1037,7 +1037,7 @@ func dumpFiles(w io.Writer, paths []string, isCST bool) error {
 		}
 
 		if isCST {
-			_, flatNodes, symbols, err := treesitter.ParseForPipeline(srcBytes, lang.Name)
+			flatNodes, symbols, err := treesitter.ParseCST(srcBytes, lang.Name)
 			if err != nil {
 				return fmt.Errorf("parsing CST for %s: %w", path, err)
 			}
