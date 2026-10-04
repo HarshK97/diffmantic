@@ -306,3 +306,74 @@ func TestGetStatus_StagedBinary(t *testing.T) {
 		t.Errorf("expected staged binary file to have IsBinary=true, got false")
 	}
 }
+
+func TestGetBatchContent(t *testing.T) {
+	tempDir := t.TempDir()
+	if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init"); err != nil {
+		t.Fatalf("initial commit failed: %v", err)
+	}
+
+	filePath := filepath.Join(tempDir, "hello.txt")
+	if err := os.WriteFile(filePath, []byte("committed content\n"), 0o644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "add", "hello.txt"); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "add hello"); err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	if err := os.WriteFile(filePath, []byte("disk content\n"), 0o644); err != nil {
+		t.Fatalf("modify file failed: %v", err)
+	}
+
+	subDir := filepath.Join(tempDir, "subdir")
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+
+	reqs := []BlobRequest{
+		{Path: "hello.txt", Revision: "HEAD"},
+		{Path: "hello.txt", Revision: ""},
+		{Path: "missing.txt", Revision: "HEAD"},
+		{Path: "subdir", Revision: ""},
+	}
+
+	batch, err := GetBatchContent(tempDir, reqs)
+	if err != nil {
+		t.Fatalf("GetBatchContent failed: %v", err)
+	}
+
+	if string(batch[BlobRequest{Path: "hello.txt", Revision: "HEAD"}]) != "committed content\n" {
+		t.Errorf("expected committed content, got %q", string(batch[BlobRequest{Path: "hello.txt", Revision: "HEAD"}]))
+	}
+	if string(batch[BlobRequest{Path: "hello.txt", Revision: ""}]) != "disk content\n" {
+		t.Errorf("expected disk content, got %q", string(batch[BlobRequest{Path: "hello.txt", Revision: ""}]))
+	}
+	if batch[BlobRequest{Path: "missing.txt", Revision: "HEAD"}] != nil {
+		t.Errorf("expected nil for missing file, got %q", string(batch[BlobRequest{Path: "missing.txt", Revision: "HEAD"}]))
+	}
+	if batch[BlobRequest{Path: "subdir", Revision: ""}] != nil {
+		t.Errorf("expected nil for directory, got %q", string(batch[BlobRequest{Path: "subdir", Revision: ""}]))
+	}
+}
+
+func TestMetadataCaching(t *testing.T) {
+	tempDir := t.TempDir()
+	ClearCache()
+
+	if IsGitRepository(tempDir) {
+		t.Errorf("expected not a git repo")
+	}
+
+	// Subsequent check verifies retrieval from cache without re-querying git.
+	if IsGitRepository(tempDir) {
+		t.Errorf("expected cached not a git repo")
+	}
+
+	ClearCache()
+}
