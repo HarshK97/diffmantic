@@ -504,8 +504,32 @@ func TestAssignMoveColors(t *testing.T) {
 		if actions[1].MoveColorIndex != 1 {
 			t.Errorf("expected move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
 		}
-		if actions[2].MoveColorIndex != 2 {
-			t.Errorf("expected move 2 to have MoveColorIndex 2 (Sapphire), got %d", actions[2].MoveColorIndex)
+		if actions[2].MoveColorIndex != 0 {
+			t.Errorf("expected move 2 to wrap to MoveColorIndex 0 (modulo 2), got %d", actions[2].MoveColorIndex)
+		}
+	})
+
+	t.Run("pairwise swap", func(t *testing.T) {
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(15)),
+				DestEndByte:   ptr(uint32(25)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 15, EndByte: 25},
+				DestStartByte: ptr(uint32(0)),
+				DestEndByte:   ptr(uint32(10)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 {
+			t.Errorf("expected swap move 0 to have MoveColorIndex 0 (Teal), got %d", actions[0].MoveColorIndex)
+		}
+		if actions[1].MoveColorIndex != 1 {
+			t.Errorf("expected swap move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
 		}
 	})
 

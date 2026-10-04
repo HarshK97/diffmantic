@@ -489,7 +489,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	return &env, nil
 }
 
-// AssignMoveColors picks a color (0: Teal, 1: Mauve, 2: Sapphire) for each move,
+// AssignMoveColors picks a color (0: Teal, 1: Mauve) for each move,
 // making sure overlapping or adjacent moves don't share the same color.
 func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 	type moveInterval struct {
@@ -555,7 +555,7 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			continue
 		}
 
-		var used [3]bool
+		var used [2]bool
 		for _, prev := range moves[:i] {
 			prevAct := &actions[prev.actIdx]
 			if curAct.GroupID != "" && curAct.GroupID == prevAct.GroupID {
@@ -570,15 +570,17 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			dOverlap := max(cur.dStart, prev.dStart) <= min(cur.dEnd, prev.dEnd)+2
 
 			if sOverlap || dOverlap {
-				used[prevAct.MoveColorIndex] = true
+				if prevAct.MoveColorIndex < len(used) {
+					used[prevAct.MoveColorIndex] = true
+				}
 			}
 		}
 
 		slot := 0
-		for slot < 3 && used[slot] {
+		for slot < len(used) && used[slot] {
 			slot++
 		}
-		if slot == 3 {
+		if slot == len(used) {
 			slot = 0
 		}
 		curAct.MoveColorIndex = slot

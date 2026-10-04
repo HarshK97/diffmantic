@@ -681,7 +681,7 @@ func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
 	}
 	act2 := Action{
 		Action:         "move",
-		MoveColorIndex: 2,
+		MoveColorIndex: 1,
 		Node:           &NodeRef{Type: "short_var_declaration", StartByte: 5, EndByte: 35},
 		DestStartByte:  &destStart2,
 		DestEndByte:    &destEnd2,
@@ -693,16 +693,83 @@ func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
 	}
 
 	partitioned := partitionLineSpans(spans, "left")
-	foundColor2 := false
+	foundColor1 := false
 	for _, p := range partitioned {
-		if p.actRef != nil && p.actRef.MoveColorIndex == 2 {
-			foundColor2 = true
+		if p.actRef != nil && p.actRef.MoveColorIndex == 1 {
+			foundColor1 = true
 			if p.startCol != 5 || p.endCol != 35 {
-				t.Errorf("expected color 2 span at [5..35], got [%d..%d]", p.startCol, p.endCol)
+				t.Errorf("expected color 1 span at [5..35], got [%d..%d]", p.startCol, p.endCol)
 			}
 		}
 	}
-	if !foundColor2 {
-		t.Errorf("expected inner move with color 2 to survive partitioning without being swallowed by color 0")
+	if !foundColor1 {
+		t.Errorf("expected inner move with color 1 to survive partitioning without being swallowed by color 0")
 	}
+}
+
+func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
+	// Single-line token moves retain their slot color (Mauve), while multiline
+	// block moves collapse to uniform Teal to reduce visual clutter.
+	fileBytes := []byte("foo(a, b)\nfunc MultiLine() {\n    return 42\n}\n")
+
+	singleLineAct := Action{
+		Action:         "move",
+		MoveColorIndex: 1,
+		Node:           &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
+		DestStartByte:  ptr(uint32(100)),
+		DestEndByte:    ptr(uint32(101)),
+	}
+
+	multiLineAct := Action{
+		Action:         "move",
+		MoveColorIndex: 1,
+		Node:           &NodeRef{Type: "function_declaration", StartByte: 10, EndByte: 44},
+		DestStartByte:  ptr(uint32(200)),
+		DestEndByte:    ptr(uint32(300)),
+	}
+
+	actions := []Action{singleLineAct, multiLineAct}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+
+	var singleSpan, multiSpan *HighlightSpan
+	for i := range spans {
+		if spans[i].Line == 0 && spans[i].Action == "move" {
+			singleSpan = &spans[i]
+		}
+		if spans[i].Line == 1 && spans[i].Action == "move" {
+			multiSpan = &spans[i]
+		}
+	}
+
+	if singleSpan == nil {
+		t.Fatalf("expected move span on line 0")
+	}
+	if singleSpan.ColorIndex != 1 {
+		t.Errorf("expected single-line move to retain ColorIndex 1 (Mauve), got %d", singleSpan.ColorIndex)
+	}
+
+	if multiSpan == nil {
+		t.Fatalf("expected move span on line 1")
+	}
+	if multiSpan.ColorIndex != 0 {
+		t.Errorf("expected multiline move to have adaptive ColorIndex 0 (Teal), got %d", multiSpan.ColorIndex)
+	}
+
+	t.Run("single line with trailing newline", func(t *testing.T) {
+		stmtBytes := []byte("return 42\n")
+		stmtAct := Action{
+			Action:         "move",
+			MoveColorIndex: 1,
+			Node:           &NodeRef{Type: "return_statement", StartByte: 0, EndByte: 10},
+			DestStartByte:  ptr(uint32(50)),
+			DestEndByte:    ptr(uint32(60)),
+		}
+		stmtSpans := BuildHighlightSpans(stmtBytes, []Action{stmtAct}, "left")
+		if len(stmtSpans) == 0 {
+			t.Fatalf("expected highlight span")
+		}
+		if stmtSpans[0].ColorIndex != 1 {
+			t.Errorf("expected statement with trailing newline to retain ColorIndex 1, got %d", stmtSpans[0].ColorIndex)
+		}
+	})
 }

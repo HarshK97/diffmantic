@@ -42,7 +42,7 @@ func TestANSIConstants_Values(t *testing.T) {
 		"DeleteFg":  "\x1b[31m",
 		"MoveFg":    "\x1b[36m",
 		"UpdateFg":  "\x1b[33m",
-		"HeaderFg":  "\x1b[35m",
+		"HeaderFg":  "\x1b[1;94m",
 		"OverlayFg": "\x1b[90m",
 		"SurfaceFg": "\x1b[90m",
 		"TextFg":    "\x1b[39m",
@@ -97,8 +97,6 @@ func TestActionKind_String(t *testing.T) {
 		{ActionMoveUpdate, "move_update"},
 		{ActionMove1, "move"},
 		{ActionMoveUpdate1, "move_update"},
-		{ActionMove2, "move"},
-		{ActionMoveUpdate2, "move_update"},
 		{ActionKind(-2), "unknown"},
 		{ActionKind(99), "unknown"},
 		{ActionKind(1000), "unknown"},
@@ -119,11 +117,11 @@ func TestMovePalette(t *testing.T) {
 	if MoveFgForSlot(1) != Move1Fg {
 		t.Errorf("expected slot 1 to be Move1Fg, got %q", MoveFgForSlot(1))
 	}
-	if MoveFgForSlot(2) != Move2Fg {
-		t.Errorf("expected slot 2 to be Move2Fg, got %q", MoveFgForSlot(2))
+	if MoveFgForSlot(2) != Move0Fg {
+		t.Errorf("expected slot 2 (wrapped) to be Move0Fg, got %q", MoveFgForSlot(2))
 	}
-	if MoveFgForSlot(3) != Move0Fg {
-		t.Errorf("expected slot 3 (wrapped) to be Move0Fg, got %q", MoveFgForSlot(3))
+	if MoveFgForSlot(3) != Move1Fg {
+		t.Errorf("expected slot 3 (wrapped) to be Move1Fg, got %q", MoveFgForSlot(3))
 	}
 
 	if MoveActionKindForSlot(0, false) != ActionMove {
@@ -132,10 +130,13 @@ func TestMovePalette(t *testing.T) {
 	if MoveActionKindForSlot(1, false) != ActionMove1 {
 		t.Errorf("expected slot 1 move to be ActionMove1")
 	}
-	if MoveActionKindForSlot(2, false) != ActionMove2 {
-		t.Errorf("expected slot 2 move to be ActionMove2")
+	if MoveActionKindForSlot(2, false) != ActionMove {
+		t.Errorf("expected slot 2 move (wrapped) to be ActionMove")
 	}
 	if MoveActionKindForSlot(1, true) != ActionMoveUpdate1 {
 		t.Errorf("expected slot 1 update to be ActionMoveUpdate1")
+	}
+	if MoveActionKindForSlot(2, true) != ActionMoveUpdate {
+		t.Errorf("expected slot 2 update (wrapped) to be ActionMoveUpdate")
 	}
 }

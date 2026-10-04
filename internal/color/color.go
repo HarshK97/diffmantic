@@ -13,8 +13,6 @@ const (
 	ActionMoveUpdate
 	ActionMove1
 	ActionMoveUpdate1
-	ActionMove2
-	ActionMoveUpdate2
 )
 
 // String returns the canonical name for an action kind.
@@ -28,36 +26,28 @@ func (k ActionKind) String() string {
 		return "insert"
 	case ActionUpdate:
 		return "update"
-	case ActionMove, ActionMove1, ActionMove2:
+	case ActionMove, ActionMove1:
 		return "move"
-	case ActionMoveUpdate, ActionMoveUpdate1, ActionMoveUpdate2:
+	case ActionMoveUpdate, ActionMoveUpdate1:
 		return "move_update"
 	default:
 		return "unknown"
 	}
 }
 
-// MoveActionKindForSlot maps a slot index (0, 1, 2) and update flag to an ActionKind.
+// MoveActionKindForSlot maps a slot index (0, 1) and update flag to an ActionKind.
 func MoveActionKindForSlot(slot int, isUpdate bool) ActionKind {
-	slot = max(0, slot) % 3
+	slot = max(0, slot) % 2
 	if isUpdate {
-		switch slot {
-		case 1:
+		if slot == 1 {
 			return ActionMoveUpdate1
-		case 2:
-			return ActionMoveUpdate2
-		default:
-			return ActionMoveUpdate
 		}
+		return ActionMoveUpdate
 	}
-	switch slot {
-	case 1:
+	if slot == 1 {
 		return ActionMove1
-	case 2:
-		return ActionMove2
-	default:
-		return ActionMove
 	}
+	return ActionMove
 }
 
 // Terminal text formatting escape sequences.
@@ -76,9 +66,8 @@ const (
 	MoveFg    = "\x1b[36m"
 	Move0Fg   = "\x1b[36m" // Slot 0: Cyan / Teal
 	Move1Fg   = "\x1b[35m" // Slot 1: Magenta / Mauve
-	Move2Fg   = "\x1b[94m" // Slot 2: Bright Blue / Sapphire
 	UpdateFg  = "\x1b[33m"
-	HeaderFg  = "\x1b[35m"
+	HeaderFg  = "\x1b[1;94m" // Bold Bright Blue
 	OverlayFg = "\x1b[90m"
 	SurfaceFg = "\x1b[90m"
 	TextFg    = "\x1b[39m"
@@ -88,17 +77,9 @@ const (
 var movePaletteFg = [...]string{
 	Move0Fg,
 	Move1Fg,
-	Move2Fg,
 }
 
 // MoveFgForSlot returns the ANSI foreground sequence for a given move color slot.
 func MoveFgForSlot(slot int) string {
-	switch max(0, slot) % len(movePaletteFg) {
-	case 1:
-		return Move1Fg
-	case 2:
-		return Move2Fg
-	default:
-		return Move0Fg
-	}
+	return movePaletteFg[max(0, slot)%len(movePaletteFg)]
 }

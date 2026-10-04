@@ -229,7 +229,11 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		for _, mSpan := range lineMerged {
 			colorIdx := 0
 			if mSpan.actRef != nil {
-				colorIdx = mSpan.actRef.MoveColorIndex
+				if mSpan.action == "move" || mSpan.action == "move_update" {
+					if !isActionMultiLine(mSpan.actRef, lineIndex, fileBytes, side) {
+						colorIdx = mSpan.actRef.MoveColorIndex
+					}
+				}
 			}
 			result = append(result, HighlightSpan{
 				Line:       line,
@@ -243,6 +247,50 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	}
 
 	return result
+}
+
+// isActionMultiLine reports whether an action's node spans multiple lines on the given diff side.
+func isActionMultiLine(act *Action, lineIndex []int, fileBytes []byte, side string) bool {
+	if act == nil || len(lineIndex) == 0 {
+		return false
+	}
+	var startByte, endByte uint32
+	switch side {
+	case "left":
+		if act.Node == nil {
+			return false
+		}
+		startByte = act.Node.StartByte
+		endByte = act.Node.EndByte
+	case "right":
+		if act.DestStartByte != nil && act.DestEndByte != nil {
+			startByte = *act.DestStartByte
+			endByte = *act.DestEndByte
+		} else if act.DestNode != nil {
+			startByte = act.DestNode.StartByte
+			endByte = act.DestNode.EndByte
+		} else {
+			return false
+		}
+	default:
+		return false
+	}
+
+	for endByte > startByte && int(endByte) <= len(fileBytes) && endByte > 0 {
+		b := fileBytes[endByte-1]
+		if b == ' ' || b == '\t' || b == '\r' || b == '\n' {
+			endByte--
+		} else {
+			break
+		}
+	}
+
+	sStart, _ := ByteToLineCol(lineIndex, startByte)
+	sEnd, endCol := ByteToLineCol(lineIndex, endByte)
+	if endCol == 0 && sEnd > sStart {
+		sEnd--
+	}
+	return sEnd > sStart
 }
 
 func addSpan(spans map[int][]internalSpan, lineIndex []int, fileBytes []byte, startByte, endByte uint32, actStr string, action *Action) {
