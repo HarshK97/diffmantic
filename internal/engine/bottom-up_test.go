@@ -887,3 +887,123 @@ func TestHasCallCalleeOrArgMatch_UnextinguishedPeer(t *testing.T) {
 		t.Errorf("expected hasCallCalleeOrArgMatch to be true for call with matching callee name")
 	}
 }
+
+func TestReconcileBodyBlocks(t *testing.T) {
+	t.Run("forward wrapping: re-aligns body block to outer container", func(t *testing.T) {
+		s1 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
+		body1 := testutil.Node("block", "", s1)
+		cond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
+		if1 := testutil.Node("if_statement", "", cond1, body1)
+		root1 := testutil.Node("source_file", "", if1)
+		root1.Language = "go"
+		for _, n := range root1.PreOrder() {
+			n.Language = "go"
+		}
+		treesitter.EnsureIndex(root1)
+
+		innerS2 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
+		innerBody2 := testutil.Node("block", "", innerS2)
+		innerCond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "b"))
+		innerIf2 := testutil.Node("if_statement", "", innerCond2, innerBody2)
+		body2 := testutil.Node("block", "", innerIf2)
+		cond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
+		if2 := testutil.Node("if_statement", "", cond2, body2)
+		root2 := testutil.Node("source_file", "", if2)
+		root2.Language = "go"
+		for _, n := range root2.PreOrder() {
+			n.Language = "go"
+		}
+		treesitter.EnsureIndex(root2)
+
+		m := NewMapping()
+		m.Add(if1, if2)
+		m.Add(body1, innerBody2)
+
+		reconcileBodyBlocks(root1, m)
+
+		if m.Get(body1) != body2 {
+			t.Errorf("expected body1 to be reconciled to outer body2, got %v", m.Get(body1))
+		}
+	})
+
+	t.Run("reverse unwrapping: re-aligns outer body block when inner was mapped", func(t *testing.T) {
+		innerS1 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
+		innerBody1 := testutil.Node("block", "", innerS1)
+		innerCond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "b"))
+		innerIf1 := testutil.Node("if_statement", "", innerCond1, innerBody1)
+		body1 := testutil.Node("block", "", innerIf1)
+		cond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
+		if1 := testutil.Node("if_statement", "", cond1, body1)
+		root1 := testutil.Node("source_file", "", if1)
+		root1.Language = "go"
+		for _, n := range root1.PreOrder() {
+			n.Language = "go"
+		}
+		treesitter.EnsureIndex(root1)
+
+		s2 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
+		body2 := testutil.Node("block", "", s2)
+		cond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
+		if2 := testutil.Node("if_statement", "", cond2, body2)
+		root2 := testutil.Node("source_file", "", if2)
+		root2.Language = "go"
+		for _, n := range root2.PreOrder() {
+			n.Language = "go"
+		}
+		treesitter.EnsureIndex(root2)
+
+		m := NewMapping()
+		m.Add(if1, if2)
+		m.Add(innerBody1, body2)
+
+		reconcileBodyBlocks(root1, m)
+
+		if m.Get(body1) != body2 {
+			t.Errorf("expected outer body1 to be reconciled to body2, got %v", m.Get(body1))
+		}
+		if m.Get(innerBody1) != nil {
+			t.Errorf("expected innerBody1 to be evicted, got %v", m.Get(innerBody1))
+		}
+	})
+}
+
+func TestHasHeaderMatch(t *testing.T) {
+	r := rules.Get("go")
+
+	cond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
+	s1 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
+	body1 := testutil.Node("block", "", s1)
+	if1 := testutil.Node("if_statement", "", cond1, body1)
+	root1 := testutil.Node("source_file", "", if1)
+	root1.Language = "go"
+	for _, n := range root1.PreOrder() {
+		n.Language = "go"
+	}
+	treesitter.EnsureIndex(root1)
+
+	cond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
+	s2 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
+	body2 := testutil.Node("block", "", s2)
+	if2 := testutil.Node("if_statement", "", cond2, body2)
+	root2 := testutil.Node("source_file", "", if2)
+	root2.Language = "go"
+	for _, n := range root2.PreOrder() {
+		n.Language = "go"
+	}
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	if hasHeaderMatch(if1, if2, m, r) {
+		t.Errorf("expected hasHeaderMatch to be false with empty mapping")
+	}
+
+	m.Add(s1, s2)
+	if hasHeaderMatch(if1, if2, m, r) {
+		t.Errorf("expected hasHeaderMatch to be false when only body nodes match")
+	}
+
+	m.Add(cond1, cond2)
+	if !hasHeaderMatch(if1, if2, m, r) {
+		t.Errorf("expected hasHeaderMatch to be true when header condition matches")
+	}
+}

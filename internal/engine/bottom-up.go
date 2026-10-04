@@ -58,6 +58,38 @@ func BottomUp(
 			Recover(t1, t2, m)
 		}
 	}
+	reconcileBodyBlocks(t1Root, m)
+}
+
+// reconcileBodyBlocks re-aligns body blocks of matched constructs when an inner
+// block claimed the body first during TopDown.
+func reconcileBodyBlocks(t1Root *treesitter.ASTNode, m *Mapping) {
+	r := rulesFor(t1Root)
+	for _, p := range slices.Clone(m.Pairs) {
+		t1, t2 := p.Src, p.Dst
+		if t1 == nil || t2 == nil || m.Get(t1) != t2 {
+			continue
+		}
+		body1 := findBodyBlock(t1, r)
+		body2 := findBodyBlock(t2, r)
+		if body1 == nil || body2 == nil {
+			continue
+		}
+		mappedBody1 := m.Get(body1)
+		if mappedBody1 == body2 {
+			continue
+		}
+		// Forward case: body1 was mapped to an inner descendant inside body2.
+		if mappedBody1 != nil && body2.Contains(mappedBody1) && !m.HasDst(body2) {
+			m.Add(body1, body2)
+			continue
+		}
+		// Reverse case: body2 was mapped from an inner descendant inside body1.
+		mappedSrc2 := m.Dst()[body2]
+		if mappedSrc2 != nil && body1.Contains(mappedSrc2) && !m.Has(body1) {
+			m.Add(body1, body2)
+		}
+	}
 }
 
 func findCandidatesWithCommonDescendants(t1 *treesitter.ASTNode, m *Mapping) []*treesitter.ASTNode {
@@ -180,18 +212,19 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
-	// If either construct's body block is already mapped, it has to map to the other's body.
+	// Don't pair with a candidate that has a different body, unless the candidate
+	// wraps the mapped block and shares header tokens.
 	body1 := findBodyBlock(t1, r)
 	body2 := findBodyBlock(c, r)
 	if body1 != nil && m.Has(body1) {
-		mapped := m.Src()[body1]
-		if body2 == nil || mapped != body2 {
+		mapped := m.Get(body1)
+		if body2 == nil || (mapped != body2 && (!body2.Contains(mapped) || !hasHeaderMatch(t1, c, m, r))) {
 			return -1.0
 		}
 	}
 	if body2 != nil && m.HasDst(body2) {
 		mappedSrc := m.Dst()[body2]
-		if body1 == nil || mappedSrc != body1 {
+		if body1 == nil || (mappedSrc != body1 && (!body1.Contains(mappedSrc) || !hasHeaderMatch(t1, c, m, r))) {
 			return -1.0
 		}
 	}
@@ -339,6 +372,35 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 		}
 	}
 
+	return false
+}
+
+// hasHeaderMatch reports whether t1 and c share at least one mapped descendant
+// outside of their body blocks (such as conditions, parameters, or header tokens).
+func hasHeaderMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil {
+		return false
+	}
+	body1 := findBodyBlock(t1, r)
+	body2 := findBodyBlock(c, r)
+
+	isHeaderPartner := func(partner *treesitter.ASTNode) bool {
+		return c.Contains(partner) && (body2 == nil || (partner != body2 && !body2.Contains(partner)))
+	}
+
+	for _, child := range t1.Children {
+		if child == body1 {
+			continue
+		}
+		if partner := m.Get(child); partner != nil && isHeaderPartner(partner) {
+			return true
+		}
+		for _, d := range child.Descendants() {
+			if partner := m.Get(d); partner != nil && isHeaderPartner(partner) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
