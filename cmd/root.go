@@ -175,14 +175,14 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			if git.IsGitRepository(".") {
 				isRevA := git.IsValidRevision(".", argA)
 				isRevB := git.IsValidRevision(".", argB)
-				isTrackedOrFileA := isFileOrDevNull(argA) || git.IsTrackedFile(".", argA)
-				isTrackedOrFileB := isFileOrDevNull(argB) || git.IsTrackedFile(".", argB)
 
 				// Case 2: Two Git revisions (e.g. diffm main feature-branch)
 				if isRevA && isRevB {
 					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 					return
 				}
+				isTrackedOrFileA := isFileOrDevNull(argA) || git.IsTrackedFile(".", argA)
+				isTrackedOrFileB := isFileOrDevNull(argB) || git.IsTrackedFile(".", argB)
 
 				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/git/git.go)
 				if isRevA && isTrackedOrFileB {
@@ -517,6 +517,81 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		})
 	}
 
+	var batchMap map[git.BlobRequest][]byte
+	if !textconv {
+		var reqs []git.BlobRequest
+		if refA == "" {
+			for _, f := range files {
+				if stagedOnly && !f.Staged {
+					continue
+				}
+				if f.IsBinary {
+					continue
+				}
+				srcFile := f.Path
+				if f.OldPath != "" {
+					srcFile = f.OldPath
+				}
+				dstFile := f.Path
+
+				if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
+					continue
+				}
+				if fi, err := os.Stat(dstFile); err == nil && fi.IsDir() {
+					continue
+				}
+
+				if f.Staged {
+					reqs = append(reqs, git.BlobRequest{Path: srcFile, Revision: "HEAD"})
+					reqs = append(reqs, git.BlobRequest{Path: dstFile, Revision: ":"})
+				}
+				if f.Unstaged && !stagedOnly {
+					revA := ":"
+					if !f.Staged {
+						revA = "HEAD"
+					}
+					reqs = append(reqs, git.BlobRequest{Path: srcFile, Revision: revA})
+					reqs = append(reqs, git.BlobRequest{Path: dstFile, Revision: ""})
+				}
+			}
+		} else {
+			for _, f := range files {
+				if f.IsBinary {
+					continue
+				}
+				srcFile := f.Path
+				if f.OldPath != "" {
+					srcFile = f.OldPath
+				}
+				dstFile := f.Path
+
+				if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
+					continue
+				}
+				if fi, err := os.Stat(dstFile); err == nil && fi.IsDir() {
+					continue
+				}
+
+				reqs = append(reqs, git.BlobRequest{Path: srcFile, Revision: refA})
+				reqs = append(reqs, git.BlobRequest{Path: dstFile, Revision: refB})
+			}
+		}
+		if len(reqs) > 0 {
+			// On batch failure, batchMap remains nil and getContent falls back to single-file queries.
+			batchMap, _ = git.GetBatchContent(".", reqs)
+		}
+	}
+
+	getContent := func(path, rev string) ([]byte, error) {
+		if !textconv && batchMap != nil {
+			req := git.BlobRequest{Path: path, Revision: rev}
+			if data, ok := batchMap[req]; ok {
+				return data, nil
+			}
+		}
+		return git.GetContent(".", path, rev, textconv)
+	}
+
 	if refA == "" {
 		for _, f := range files {
 			if p != nil && !p.IsActive() {
@@ -553,14 +628,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.Staged {
-				srcBytes, err := git.GetContent(".", srcFile, "HEAD", textconv)
+				srcBytes, err := getContent(srcFile, "HEAD")
 				if err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
 					}
 					return
 				}
-				dstBytes, err := git.GetContent(".", dstFile, ":", textconv)
+				dstBytes, err := getContent(dstFile, ":")
 				if err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
@@ -580,14 +655,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				if !f.Staged {
 					revA = "HEAD"
 				}
-				srcBytes, err := git.GetContent(".", srcFile, revA, textconv)
+				srcBytes, err := getContent(srcFile, revA)
 				if err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
 					}
 					return
 				}
-				dstBytes, err := git.GetContent(".", dstFile, "", textconv)
+				dstBytes, err := getContent(dstFile, "")
 				if err != nil {
 					if !pager.IsBrokenPipe(err) {
 						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
@@ -633,14 +708,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				continue
 			}
 
-			srcBytes, err := git.GetContent(".", srcFile, refA, textconv)
+			srcBytes, err := getContent(srcFile, refA)
 			if err != nil {
 				if !pager.IsBrokenPipe(err) {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
 				}
 				return
 			}
-			dstBytes, err := git.GetContent(".", dstFile, refB, textconv)
+			dstBytes, err := getContent(dstFile, refB)
 			if err != nil {
 				if !pager.IsBrokenPipe(err) {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)

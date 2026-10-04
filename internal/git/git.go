@@ -1,12 +1,15 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -22,9 +25,24 @@ type GitFile struct {
 }
 
 var (
-	sandboxDetected bool
-	sandboxMu       sync.RWMutex
+	sandboxDetected  bool
+	sandboxMu        sync.RWMutex
+	cacheMu          sync.RWMutex
+	isGitRepoCache   = make(map[string]bool)
+	validRevCache    = make(map[string]bool)
+	trackedFileCache = make(map[string]bool)
+	repoPrefixCache  = make(map[string]string)
 )
+
+// ClearCache resets cached repo metadata. Mainly used to isolate test runs.
+func ClearCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	clear(isGitRepoCache)
+	clear(validRevCache)
+	clear(trackedFileCache)
+	clear(repoPrefixCache)
+}
 
 func isSandboxPermissionError(stderr string) bool {
 	return strings.Contains(stderr, "unable to access") ||
@@ -79,8 +97,21 @@ func RunGit(cwd string, args ...string) ([]byte, error) {
 
 // IsGitRepository checks if the directory is a Git repository.
 func IsGitRepository(cwd string) bool {
+	cleanCwd := filepath.Clean(cwd)
+	cacheMu.RLock()
+	val, ok := isGitRepoCache[cleanCwd]
+	cacheMu.RUnlock()
+	if ok {
+		return val
+	}
+
 	_, err := RunGit(cwd, "rev-parse", "--is-inside-work-tree")
-	return err == nil
+	isRepo := (err == nil)
+
+	cacheMu.Lock()
+	isGitRepoCache[cleanCwd] = isRepo
+	cacheMu.Unlock()
+	return isRepo
 }
 
 // IsValidRevision checks if a string is a valid Git revision.
@@ -88,8 +119,21 @@ func IsValidRevision(cwd, ref string) bool {
 	if ref == "" {
 		return false
 	}
+	cleanKey := filepath.Clean(cwd) + "\x00" + ref
+	cacheMu.RLock()
+	val, ok := validRevCache[cleanKey]
+	cacheMu.RUnlock()
+	if ok {
+		return val
+	}
+
 	_, err := RunGit(cwd, "rev-parse", "--verify", ref)
-	return err == nil
+	isValid := (err == nil)
+
+	cacheMu.Lock()
+	validRevCache[cleanKey] = isValid
+	cacheMu.Unlock()
+	return isValid
 }
 
 // IsTrackedFile checks if a path is tracked in the Git repository index or tree.
@@ -97,8 +141,21 @@ func IsTrackedFile(cwd, path string) bool {
 	if path == "" {
 		return false
 	}
+	cleanKey := filepath.Clean(cwd) + "\x00" + filepath.Clean(path)
+	cacheMu.RLock()
+	val, ok := trackedFileCache[cleanKey]
+	cacheMu.RUnlock()
+	if ok {
+		return val
+	}
+
 	_, err := RunGit(cwd, "ls-files", "--error-unmatch", "--", path)
-	return err == nil
+	isTracked := (err == nil)
+
+	cacheMu.Lock()
+	trackedFileCache[cleanKey] = isTracked
+	cacheMu.Unlock()
+	return isTracked
 }
 
 func getBinaryFiles(cwd string, args ...string) map[string]bool {
@@ -126,6 +183,9 @@ func GetStatus(cwd string, pathFilter string) ([]GitFile, error) {
 	out, err := RunGit(cwd, args...)
 	if err != nil {
 		return nil, err
+	}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return nil, nil
 	}
 
 	binMap := make(map[string]bool)
@@ -222,6 +282,9 @@ func GetChangedFiles(cwd, refA, refB string, pathFilter string) ([]GitFile, erro
 	if err != nil {
 		return nil, err
 	}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return nil, nil
+	}
 
 	numstatArgs := []string{"-M", refA}
 	if refB != "" {
@@ -277,11 +340,24 @@ func GetChangedFiles(cwd, refA, refB string, pathFilter string) ([]GitFile, erro
 
 // GetRepoPrefix returns the path prefix of cwd relative to the Git repository worktree root.
 func GetRepoPrefix(cwd string) (string, error) {
+	cleanCwd := filepath.Clean(cwd)
+	cacheMu.RLock()
+	val, ok := repoPrefixCache[cleanCwd]
+	cacheMu.RUnlock()
+	if ok {
+		return val, nil
+	}
+
 	out, err := RunGit(cwd, "rev-parse", "--show-prefix")
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+	prefix := strings.TrimSpace(string(out))
+
+	cacheMu.Lock()
+	repoPrefixCache[cleanCwd] = prefix
+	cacheMu.Unlock()
+	return prefix, nil
 }
 
 var (
@@ -409,15 +485,173 @@ func applyWorkingTreeTextconv(cwd, path, cleanPath string) ([]byte, bool, error)
 	return out, true, nil
 }
 
-// GetContent reads a file at a given revision (e.g. "HEAD", a hash, or ":" for index).
-// If revision is empty, it reads the local file on disk (applying textconv filter only if useTextconv is true).
-func GetContent(cwd, path, revision string, useTextconv bool) ([]byte, error) {
+func cleanRevisionPath(cwd, path string) string {
 	cleanPath := filepath.ToSlash(filepath.Clean(path))
 	if prefix, err := GetRepoPrefix(cwd); err == nil && prefix != "" {
 		if !filepath.IsAbs(path) && !strings.HasPrefix(cleanPath, prefix) {
 			cleanPath = filepath.ToSlash(filepath.Join(prefix, cleanPath))
 		}
 	}
+	return cleanPath
+}
+
+// BlobRequest pairs a repository-relative path with a Git revision.
+type BlobRequest struct {
+	Path     string
+	Revision string
+}
+
+// GetBatchContent fetches blobs in one git cat-file --batch pass.
+// When Revision is empty, it reads the working-tree file straight from disk.
+func GetBatchContent(cwd string, reqs []BlobRequest) (map[BlobRequest][]byte, error) {
+	result := make(map[BlobRequest][]byte, len(reqs))
+	if len(reqs) == 0 {
+		return result, nil
+	}
+
+	var catSpecs []string
+	specToReqs := make(map[string][]BlobRequest)
+
+	for _, req := range reqs {
+		if req.Revision == "" {
+			fullPath := filepath.Join(cwd, req.Path)
+			if fi, err := os.Stat(fullPath); err == nil && fi.IsDir() {
+				result[req] = nil
+				continue
+			}
+			data, err := os.ReadFile(fullPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					result[req] = nil
+					continue
+				}
+				return nil, err
+			}
+			result[req] = data
+			continue
+		}
+
+		cleanPath := cleanRevisionPath(cwd, req.Path)
+		var spec string
+		if req.Revision == ":" {
+			spec = ":" + cleanPath
+		} else {
+			spec = req.Revision + ":" + cleanPath
+		}
+
+		if existing, ok := specToReqs[spec]; ok {
+			specToReqs[spec] = append(existing, req)
+		} else {
+			catSpecs = append(catSpecs, spec)
+			specToReqs[spec] = []BlobRequest{req}
+		}
+	}
+
+	if len(catSpecs) == 0 {
+		return result, nil
+	}
+
+	sandboxMu.RLock()
+	isSandboxed := sandboxDetected
+	sandboxMu.RUnlock()
+
+	cmd := exec.Command("git", "cat-file", "--batch")
+	cmd.Dir = cwd
+	if isSandboxed {
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	} else {
+		cmd.Env = os.Environ()
+	}
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fallbackGetContent(cwd, reqs)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		return fallbackGetContent(cwd, reqs)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fallbackGetContent(cwd, reqs)
+	}
+
+	go func() {
+		defer func() { _ = stdin.Close() }()
+		for _, spec := range catSpecs {
+			if _, err := io.WriteString(stdin, spec+"\n"); err != nil {
+				break
+			}
+		}
+	}()
+
+	r := bufio.NewReader(stdout)
+	for _, spec := range catSpecs {
+		header, err := r.ReadString('\n')
+		if err != nil {
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			return fallbackGetContent(cwd, reqs)
+		}
+		header = strings.TrimRight(header, "\r\n")
+
+		matchingReqs := specToReqs[spec]
+		if strings.HasSuffix(header, " missing") || strings.HasSuffix(header, " ambiguous") {
+			for _, req := range matchingReqs {
+				result[req] = nil
+			}
+			continue
+		}
+
+		_, rest, ok1 := strings.Cut(header, " ")
+		_, sizeStr, ok2 := strings.Cut(rest, " ")
+		if !ok1 || !ok2 {
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			return fallbackGetContent(cwd, reqs)
+		}
+
+		size, err := strconv.Atoi(sizeStr)
+		if err != nil {
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			return fallbackGetContent(cwd, reqs)
+		}
+
+		buf := make([]byte, size)
+		if _, err := io.ReadFull(r, buf); err != nil {
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			return fallbackGetContent(cwd, reqs)
+		}
+		_, _ = r.ReadByte() // git cat-file appends a trailing newline after each object payload
+
+		for _, req := range matchingReqs {
+			result[req] = buf
+		}
+	}
+
+	_ = cmd.Wait()
+	return result, nil
+}
+
+func fallbackGetContent(cwd string, reqs []BlobRequest) (map[BlobRequest][]byte, error) {
+	result := make(map[BlobRequest][]byte, len(reqs))
+	for _, req := range reqs {
+		data, err := GetContent(cwd, req.Path, req.Revision, false)
+		if err != nil {
+			return nil, err
+		}
+		result[req] = data
+	}
+	return result, nil
+}
+
+// GetContent reads a file at a given revision (e.g. "HEAD", a hash, or ":" for index).
+// If revision is empty, it reads the local file on disk (applying textconv filter only if useTextconv is true).
+func GetContent(cwd, path, revision string, useTextconv bool) ([]byte, error) {
+	cleanPath := cleanRevisionPath(cwd, path)
 
 	if revision == "" {
 		if useTextconv {
@@ -429,7 +663,11 @@ func GetContent(cwd, path, revision string, useTextconv bool) ([]byte, error) {
 				return data, nil
 			}
 		}
-		data, err := os.ReadFile(filepath.Join(cwd, path))
+		fullPath := filepath.Join(cwd, path)
+		if fi, err := os.Stat(fullPath); err == nil && fi.IsDir() {
+			return nil, nil
+		}
+		data, err := os.ReadFile(fullPath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, nil
