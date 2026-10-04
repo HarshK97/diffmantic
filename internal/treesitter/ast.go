@@ -398,8 +398,8 @@ func CalleePath(callNode *ASTNode) string {
 	return strings.Join(parts, ".")
 }
 
-// EnclosingContainerDeclaration walks up from n to find the nearest container declaration
-// (such as a function, method, class, or struct).
+// EnclosingContainerDeclaration walks up from n to find the nearest enclosing
+// function, class, struct, or closure (lambda / anonymous function).
 func (n *ASTNode) EnclosingContainerDeclaration(r *rules.Rules) *ASTNode {
 	if n == nil {
 		return nil
@@ -407,10 +407,16 @@ func (n *ASTNode) EnclosingContainerDeclaration(r *rules.Rules) *ASTNode {
 	if r == nil {
 		r = rules.Get(n.GetLanguage())
 	}
+	if r != nil {
+		for curr := n.Parent; curr != nil; curr = curr.Parent {
+			if r.IsContainerDeclaration(curr.Type) || r.IsClosure(curr.Type) {
+				return curr
+			}
+		}
+		return nil
+	}
 	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		isDecl := (r != nil && r.IsContainerDeclaration(curr.Type)) ||
-			(r == nil && rules.IsContainerDeclaration(curr.Type))
-		if isDecl {
+		if rules.IsContainerDeclaration(curr.Type) || rules.IsClosure(curr.Type) {
 			return curr
 		}
 	}
