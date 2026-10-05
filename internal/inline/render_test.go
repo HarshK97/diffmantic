@@ -843,3 +843,34 @@ func TestRender_UnpairedMatchedLineDoesNotColorTextAsInsert(t *testing.T) {
 		t.Errorf("expected matched code on unpaired right line NOT to use InsertFg, got:\n%s", rendered)
 	}
 }
+
+func TestRender_WhitespaceRealignedStructFields_PreservedAsContext(t *testing.T) {
+	src := []byte("package main\n\ntype Action struct {\n\tAction string   `json:\"action\"`\n\tNode   *NodeRef `json:\"node\"`\n}\n")
+	dst := []byte("package main\n\ntype Action struct {\n\tAction          string   `json:\"action\"`\n\tNode            *NodeRef `json:\"node\"`\n\tSourceStartByte *uint32  `json:\"source_start_byte,omitempty\"`\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:        false,
+		ContextLines: 3,
+		LineNumbers:  false,
+	}
+	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, opts)
+
+	// Realigned struct fields without AST changes should stay as context
+	// instead of flashing a red/green line replacement.
+	if strings.Contains(rendered, "-	Action string") {
+		t.Errorf("expected whitespace-aligned Action field not to be deleted, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "+	Action          string") {
+		t.Errorf("expected whitespace-aligned Action field not to be inserted, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "+	SourceStartByte *uint32") {
+		t.Errorf("expected inserted SourceStartByte field to be marked as insert (+), got:\n%s", rendered)
+	}
+}
