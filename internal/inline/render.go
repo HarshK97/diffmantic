@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -131,7 +132,10 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			}
 
 			isEOFLine := (pair.LeftLine == lastSrcLineIdx && pair.RightLine == lastDstLineIdx)
-			if sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL) {
+			// If AST nodes didn't change and only whitespace shifted (like realigned
+			// struct fields or column formatting), treat the line as unchanged context
+			// so we don't trigger a raw delete/insert hunk.
+			if (isEOFLine && srcEndsWithNL != dstEndsWithNL) || (sText != dText && !slices.Equal(strings.Fields(sText), strings.Fields(dText))) {
 				isPairChanged[i] = true
 				hasAnyChange = true
 			}
@@ -211,10 +215,11 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			if !isPairChanged[k] {
 				pair := filteredPairs[k]
 				text := ""
-				if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
-					text = srcLines[pair.LeftLine]
-				} else if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+				// Show the destination file's indentation when rendering unchanged context.
+				if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 					text = dstLines[pair.RightLine]
+				} else if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+					text = srcLines[pair.LeftLine]
 				}
 				lines = append(lines, hunkLine{
 					kind:       kindContext,
