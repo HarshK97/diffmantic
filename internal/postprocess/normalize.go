@@ -9,6 +9,213 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
+// isDelimitedOrBlockContainer reports whether n is a block, wrapper, or delimited container.
+func isDelimitedOrBlockContainer(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r != nil {
+		return r.IsWrapper(n.Type) || r.IsBlock(n.Type) || r.IsDelimitedContainer(n.Type)
+	}
+	return rules.IsWrapper(n.Type) || rules.IsBlock(n.Type) || rules.IsDelimitedContainer(n.Type)
+}
+
+// isPayloadLeaf reports whether d is a content leaf. Jump keywords (return,
+// break, continue) count as payload so bare jumps contribute to their
+// enclosing block's retention.
+func isPayloadLeaf(d *treesitter.ASTNode, r *rules.Rules) bool {
+	if d == nil || len(d.Children) > 0 {
+		return false
+	}
+	if (r != nil && (r.IsPunctuation(d.Type) || r.IsOperatorLiteral(d.Type))) ||
+		(r == nil && (rules.IsPunctuation(d.Type) || rules.IsOperatorLiteral(d.Type))) {
+		return false
+	}
+	isJumpParent := d.Parent != nil && ((r != nil && r.IsJumpStatement(d.Parent.Type)) || (r == nil && rules.IsJumpStatement(d.Parent.Type)))
+	isKw := d.IsKeyword || (r != nil && r.IsKeyword(d.Type, d.Label)) || (r == nil && rules.IsKeyword(d.Type, d.Label))
+	if isJumpParent && isKw {
+		return true
+	}
+	if isKw {
+		return false
+	}
+	return true
+}
+
+type leafSummary struct {
+	total   int
+	exact   int
+	updated int
+}
+
+// summarizeMappedLeaves counts payload leaves in src and measures how many survived in dst.
+func summarizeMappedLeaves(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) leafSummary {
+	var s leafSummary
+	if src == nil || ms == nil {
+		return s
+	}
+	for _, d := range src.Descendants() {
+		if !isPayloadLeaf(d, r) {
+			continue
+		}
+		s.total++
+		if _, isEv := evicted[d]; isEv {
+			continue
+		}
+		if dDst, ok := ms.Src()[d]; ok {
+			if dst != nil && !dst.Contains(dDst) {
+				continue
+			}
+			if d.Label == dDst.Label {
+				s.exact++
+			} else {
+				s.updated++
+			}
+		}
+	}
+	return s
+}
+
+// hasSurvivingMappedLeaves reports whether from has any payload leaf mapped to
+// an unevicted descendant of to, short-circuiting on the first match.
+func hasSurvivingMappedLeaves(from, to *treesitter.ASTNode, mapping map[*treesitter.ASTNode]*treesitter.ASTNode, evicted map[*treesitter.ASTNode]struct{}, r *rules.Rules) bool {
+	if from == nil || to == nil || mapping == nil {
+		return false
+	}
+	for _, d := range from.Descendants() {
+		if !isPayloadLeaf(d, r) {
+			continue
+		}
+		if _, isEv := evicted[d]; isEv {
+			continue
+		}
+		if partner, ok := mapping[d]; ok && to.Contains(partner) {
+			if _, isEv := evicted[partner]; isEv {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// computeMoveRetention returns the fraction of payload leaves preserved between
+// src and dst in [0.0, 1.0], counting updated leaves at half weight.
+func computeMoveRetention(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) float64 {
+	if src == nil || dst == nil || ms == nil {
+		return 1.0
+	}
+	srcSummary := summarizeMappedLeaves(src, dst, ms, r, evicted)
+
+	nDst := 0
+	for _, d := range dst.Descendants() {
+		if isPayloadLeaf(d, r) {
+			nDst++
+		}
+	}
+	nMax := max(srcSummary.total, nDst)
+	if nMax == 0 {
+		return 1.0
+	}
+
+	effectiveSurviving := float64(srcSummary.exact) + 0.5*float64(srcSummary.updated)
+	return effectiveSurviving / float64(nMax)
+}
+
+// isStationaryMove reports whether a Move stayed in place across transparent
+// wrappers (such as template_declaration or friend_declaration) or expression shifts.
+func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if node == nil || dstNode == nil || node.Parent == nil || dstNode.Parent == nil {
+		return false
+	}
+	hasPos := (node.EndByte > 0 || node.StartRow > 0 || node.EndRow > 0) &&
+		(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
+	if hasPos && node.StartRow == dstNode.StartRow && node.EndRow == dstNode.EndRow &&
+		node.StartCol == dstNode.StartCol && node.EndCol == dstNode.EndCol {
+		return true
+	}
+
+	srcParent := node.Parent
+	dstParent := dstNode.Parent
+
+	// If direct parents match, the node moved within the same container (like swapped arguments).
+	if ms.Src()[srcParent] == dstParent {
+		return false
+	}
+
+	if isStationaryExpressionMove(node, dstNode, ms, r, nil) {
+		return true
+	}
+
+	sameLine := node.StartRow == dstNode.StartRow
+
+	// Walk up past transparent wrappers to find the enclosing container.
+	srcBase := srcParent
+	srcChild := node
+	dstBase := dstParent
+	dstChild := dstNode
+
+	canUnwrap := func(base, child *treesitter.ASTNode, isDst bool) bool {
+		if base == nil || base.Parent == nil {
+			return false
+		}
+		br := rules.Get(base.GetLanguage())
+		isCall := (br != nil && br.IsCall(base.Type)) || (br == nil && rules.IsCall(base.Type))
+		if isCall && child.ChildIndex() != 0 && !sameLine {
+			return false
+		}
+		if base.Parent != nil {
+			parentIsCall := (br != nil && br.IsCall(base.Parent.Type)) || (br == nil && rules.IsCall(base.Parent.Type))
+			if parentIsCall && base.ChildIndex() != 0 && !sameLine {
+				return false
+			}
+		}
+
+		if base.IsWrapper() {
+			return true
+		}
+		hasMapping := ms.Has(base)
+		if isDst {
+			hasMapping = ms.HasDst(base)
+		}
+		if !hasMapping && canUnwrapSubExpression(base) {
+			if isDst {
+				return base.ChildIndex() == 0 || ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
+			}
+			return base.ChildIndex() == 0 || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
+		}
+		if canUnwrapSubExpression(base) {
+			if isDst {
+				return ms.Dst()[base] != srcBase && ms.Dst()[base.Parent] == srcBase
+			}
+			return ms.Src()[base] != dstBase && ms.Src()[base.Parent] == dstBase
+		}
+		return false
+	}
+
+	for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil {
+		srcChild = srcBase
+		srcBase = srcBase.Parent
+	}
+
+	for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil {
+		dstChild = dstBase
+		dstBase = dstBase.Parent
+	}
+
+	isStationaryPos := srcChild.ChildIndex() == dstChild.ChildIndex() ||
+		(srcChild.ChildIndex() == len(srcBase.Children)-1 && dstChild.ChildIndex() == len(dstBase.Children)-1)
+	if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase {
+		if isStationaryPos {
+			return true
+		}
+		if (node.IsKeyword || (r != nil && r.IsKeyword(node.Type, node.Label))) && sameScopeDeclaration(srcBase, dstBase, ms, r) {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeStationaryWrapperMoves drops false-positive Move actions when a wrapper
 // (like friend_declaration or template_declaration) is added or removed around code that stayed in place.
 func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript {
@@ -20,88 +227,9 @@ func normalizeStationaryWrapperMoves(es *actions.EditScript, ms *engine.Mapping)
 	for _, a := range es.Actions() {
 		if a.Type == actions.Move && a.Node != nil {
 			dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
-			if dstNode != nil && a.Node.Parent != nil && dstNode.Parent != nil {
-				hasPos := (a.Node.EndByte > 0 || a.Node.StartRow > 0 || a.Node.EndRow > 0) &&
-					(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
-				if hasPos && a.Node.StartRow == dstNode.StartRow && a.Node.EndRow == dstNode.EndRow && a.Node.StartCol == dstNode.StartCol && a.Node.EndCol == dstNode.EndCol {
-					continue
-				}
-				srcParent := a.Node.Parent
-				dstParent := dstNode.Parent
-
-				// If direct parents match, the node moved within the same container (like swapped arguments).
-				if ms.Src()[srcParent] == dstParent {
-					result.Add(a)
-					continue
-				}
-
+			if dstNode != nil {
 				r := rules.Get(a.Node.GetLanguage())
-				if a.Node.IsKeyword || (r != nil && r.IsKeyword(a.Node.Type, a.Node.Label)) {
-					continue
-				}
-				if isStationaryExpressionMove(a.Node, dstNode, ms, r, nil) {
-					continue
-				}
-
-				sameLine := a.Node.StartRow == dstNode.StartRow
-
-				// Walk up past transparent wrappers to find the enclosing container.
-				srcBase := srcParent
-				srcChild := a.Node
-				dstBase := dstParent
-				dstChild := dstNode
-
-				canUnwrap := func(base, child *treesitter.ASTNode, isDst bool) bool {
-					if base == nil || base.Parent == nil {
-						return false
-					}
-					r := rules.Get(base.GetLanguage())
-					isCall := (r != nil && r.IsCall(base.Type)) || (r == nil && rules.IsCall(base.Type))
-					if isCall && child.ChildIndex() != 0 && !sameLine {
-						return false
-					}
-					if base.Parent != nil {
-						parentIsCall := (r != nil && r.IsCall(base.Parent.Type)) || (r == nil && rules.IsCall(base.Parent.Type))
-						if parentIsCall && base.ChildIndex() != 0 && !sameLine {
-							return false
-						}
-					}
-
-					if base.IsWrapper() {
-						return true
-					}
-					hasMapping := ms.Has(base)
-					if isDst {
-						hasMapping = ms.HasDst(base)
-					}
-					if !hasMapping && canUnwrapSubExpression(base) {
-						if isDst {
-							return base.ChildIndex() == 0 || ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
-						}
-						return base.ChildIndex() == 0 || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
-					}
-					if canUnwrapSubExpression(base) {
-						if isDst {
-							return ms.Dst()[base] != srcBase && ms.Dst()[base.Parent] == srcBase
-						}
-						return ms.Src()[base] != dstBase && ms.Src()[base.Parent] == dstBase
-					}
-					return false
-				}
-
-				for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil {
-					srcChild = srcBase
-					srcBase = srcBase.Parent
-				}
-
-				for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil {
-					dstChild = dstBase
-					dstBase = dstBase.Parent
-				}
-
-				isStationaryPos := srcChild.ChildIndex() == dstChild.ChildIndex() ||
-					(srcChild.ChildIndex() == len(srcBase.Children)-1 && dstChild.ChildIndex() == len(dstBase.Children)-1)
-				if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase && isStationaryPos {
+				if isStationaryMove(a.Node, dstNode, ms, r) {
 					continue
 				}
 			}
@@ -446,23 +574,6 @@ func isTokenNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 		r.IsType(n.Type) || r.IsIdentifier(n.Type)
 }
 
-// isPayloadLeaf reports whether d is a content-bearing leaf rather than syntax
-// glue. Jump keywords (return, break, continue) count as payload so bare jumps
-// still contribute to their enclosing block's retention.
-func isPayloadLeaf(d *treesitter.ASTNode, r *rules.Rules) bool {
-	if len(d.Children) > 0 {
-		return false
-	}
-	if (r != nil && (r.IsPunctuation(d.Type) || r.IsOperatorLiteral(d.Type))) ||
-		(r == nil && (rules.IsPunctuation(d.Type) || rules.IsOperatorLiteral(d.Type))) {
-		return false
-	}
-	if d.IsKeyword || (r != nil && r.IsKeyword(d.Type, d.Label)) || (r == nil && rules.IsKeyword(d.Type, d.Label)) {
-		return r != nil && d.Parent != nil && r.IsJumpStatement(d.Parent.Type)
-	}
-	return true
-}
-
 // moveStructuralScore scores how structurally significant a node is.
 //
 //	S = BaseSize + 2*Height + 3*LineSpan + RoleBonus - BoilerplatePenalty
@@ -484,7 +595,7 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 
 	// If most of a container was deleted, score it by its surviving nodes so a
 	// gutted block doesn't look like a real move.
-	if ms != nil && (r.IsBlock(node.Type) || r.IsWrapper(node.Type) || r.IsDelimitedContainer(node.Type) || (!r.IsDeclaration(node.Type) && findBodyBlock(node, r) != nil)) {
+	if ms != nil && (isDelimitedOrBlockContainer(node, r) || (!r.IsDeclaration(node.Type) && findBodyBlock(node, r) != nil)) {
 		surviving := 0
 		totalLeaves := 0
 		for _, d := range node.Descendants() {
@@ -522,8 +633,7 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 		score -= 20
 	}
 
-	score = max(score, 1)
-	return score
+	return max(score, 1)
 }
 
 // requiredMoveThreshold computes the dynamic threshold T for a Move action
@@ -770,21 +880,13 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	return result
 }
 
-// isDelimitedOrBlockContainer checks if a node is a wrapper, block, or delimited container.
-func isDelimitedOrBlockContainer(nodeType string, r *rules.Rules) bool {
-	if r != nil {
-		return r.IsWrapper(nodeType) || r.IsBlock(nodeType) || r.IsDelimitedContainer(nodeType)
-	}
-	return rules.IsWrapper(nodeType) || rules.IsBlock(nodeType) || rules.IsDelimitedContainer(nodeType)
-}
-
 // isSubtreeDemotion checks whether demoting this move replaces the entire subtree,
 // or just re-frames delimiters like () or {}.
 func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) (deleteSubtree, insertSubtree bool) {
 	if src == nil || dst == nil || ms == nil {
 		return false, false
 	}
-	isDelim := isDelimitedOrBlockContainer(src.Type, r)
+	isDelim := isDelimitedOrBlockContainer(src, r)
 
 	hasSurvivingOutside := false
 	for _, d := range src.Descendants() {
@@ -793,7 +895,7 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 			break
 		}
 	}
-	hasSurvivingInside := hasSurvivingMappedDescendants(src, dst, ms, evicted, r)
+	hasSurvivingInside := hasSurvivingMappedLeaves(src, dst, ms.Src(), evicted, r)
 	deleteSubtree = len(src.Children) > 0 && (!isDelim || !hasSurvivingInside) && !hasSurvivingOutside
 
 	hasSurvivingSrcOutside := false
@@ -803,89 +905,12 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 			break
 		}
 	}
-	isDstDelim := isDelimitedOrBlockContainer(dst.Type, r)
+	isDstDelim := isDelimitedOrBlockContainer(dst, r)
 
-	hasDstSurvivingInside := false
-	for _, d2 := range dst.Descendants() {
-		if !isPayloadLeaf(d2, r) {
-			continue
-		}
-		if d1, ok := ms.Dst()[d2]; ok && src.Contains(d1) {
-			if _, isEv := evicted[d1]; isEv {
-				continue
-			}
-			hasDstSurvivingInside = true
-			break
-		}
-	}
+	hasDstSurvivingInside := hasSurvivingMappedLeaves(dst, src, ms.Dst(), evicted, r)
 	insertSubtree = len(dst.Children) > 0 && (!isDstDelim || !hasDstSurvivingInside) && !hasSurvivingSrcOutside
 
 	return deleteSubtree, insertSubtree
-}
-
-// hasSurvivingMappedDescendants reports whether any real payload leaves in src mapped to dst without being evicted.
-func hasSurvivingMappedDescendants(src, dst *treesitter.ASTNode, ms *engine.Mapping, evicted map[*treesitter.ASTNode]struct{}, r *rules.Rules) bool {
-	if src == nil || dst == nil || ms == nil {
-		return false
-	}
-	for _, d1 := range src.Descendants() {
-		if _, isEvicted := evicted[d1]; isEvicted {
-			continue
-		}
-		if !isPayloadLeaf(d1, r) {
-			continue
-		}
-		if d2, ok := ms.Src()[d1]; ok {
-			if dst.Contains(d2) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// computeMoveRetention returns the fraction of payload leaves preserved between
-// src and dst in [0.0, 1.0], counting updated leaves at half weight.
-func computeMoveRetention(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evicted map[*treesitter.ASTNode]struct{}) float64 {
-	if src == nil || dst == nil || ms == nil {
-		return 1.0
-	}
-
-	nSrc := 0
-	mExact := 0
-	mUpdated := 0
-	for _, d1 := range src.Descendants() {
-		if !isPayloadLeaf(d1, r) {
-			continue
-		}
-		nSrc++
-		if _, isEv := evicted[d1]; isEv {
-			continue
-		}
-		if d2, ok := ms.Src()[d1]; ok && dst.Contains(d2) {
-			if d1.Label == d2.Label {
-				mExact++
-			} else {
-				mUpdated++
-			}
-		}
-	}
-
-	nDst := 0
-	for _, d2 := range dst.Descendants() {
-		if !isPayloadLeaf(d2, r) {
-			continue
-		}
-		nDst++
-	}
-
-	nMax := max(nSrc, nDst)
-	if nMax == 0 {
-		return 1.0
-	}
-
-	effectiveSurviving := float64(mExact) + 0.5*float64(mUpdated)
-	return effectiveSurviving / float64(nMax)
 }
 
 // shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert
@@ -914,15 +939,12 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
-	// Sibling relocation: src.Parent mapped to dst.Parent within the same enclosing declaration
-	// means the parent container is intact and the child was simply reordered within it.
+	// Sibling relocation: src.Parent mapped to dst.Parent within the same enclosing declaration.
 	if src.Parent != nil && dst.Parent != nil && ms.Src()[src.Parent] == dst.Parent && sameScopeDeclaration(src, dst, ms, r) {
 		return false
 	}
 
-	// One-hop container-preserving reparent: the value got wrapped in a brand-new
-	// node (e.g. a bare element promoted into a freshly-keyed field) but its
-	// structurally-matched container never actually changed.
+	// One-hop container reparent: a value was wrapped in a new node (like a key-value pair) under the same container.
 	if src.Parent != nil && dst.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
 		mappedSrcParent := ms.Src()[src.Parent]
 		if mappedSrcParent != nil && dst.Parent.Parent == mappedSrcParent &&
@@ -954,22 +976,26 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
-	isDelimContainer := isDelimitedOrBlockContainer(src.Type, r) || isDelimitedOrBlockContainer(dst.Type, r)
+	isDelimContainer := isDelimitedOrBlockContainer(src, r) || isDelimitedOrBlockContainer(dst, r)
 	isStructuralContainer := isDelimContainer || (!isDecl && (srcBody != nil || dstBody != nil))
 
-	retention := 1.0
-	if isStructuralContainer {
-		// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
-		if len(src.Children) > 0 && !hasSurvivingMappedDescendants(src, dst, ms, evicted, r) {
+	retention := -1.0
+
+	// Don't move an empty container (like () or {}) when none of its contents move with it into dst.
+	if isStructuralContainer && len(src.Children) > 0 {
+		if !hasSurvivingMappedLeaves(src, dst, ms.Src(), evicted, r) {
 			return true
 		}
 
-		retention = computeMoveRetention(src, dst, ms, r, evicted)
-
 		// Cross-scope container moves need at least 25% leaf retention so matching
 		// shells or boilerplate don't get paired across functions.
-		if isDelimContainer && len(src.Children) > 0 && !sameScopeDeclaration(src, dst, ms, r) && retention < 0.25 {
-			return true
+		if isDelimContainer && !sameScopeDeclaration(src, dst, ms, r) {
+			if retention < 0 {
+				retention = computeMoveRetention(src, dst, ms, r, evicted)
+			}
+			if retention < 0.25 {
+				return true
+			}
 		}
 	}
 
@@ -983,6 +1009,9 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 
 	// Scale container scores by leaf retention so heavily rewritten blocks don't clear the threshold.
 	if isStructuralContainer {
+		if retention < 0 {
+			retention = computeMoveRetention(src, dst, ms, r, evicted)
+		}
 		score = max(int(float64(score)*retention), 1)
 	}
 	return score < threshold
