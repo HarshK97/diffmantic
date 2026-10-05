@@ -2449,3 +2449,162 @@ func TestTSXSelfClosingTagConversion(t *testing.T) {
 		}
 	}
 }
+
+func TestIsPayloadLeaf(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("nil safety and non-leaf", func(t *testing.T) {
+		if isPayloadLeaf(nil, r) {
+			t.Errorf("expected nil node to not be payload leaf")
+		}
+		parent := mkNode("call_expression", "", mkNode("identifier", "foo"))
+		if isPayloadLeaf(parent, r) {
+			t.Errorf("expected node with children to not be payload leaf")
+		}
+	})
+
+	t.Run("punctuation and operators rejected", func(t *testing.T) {
+		punct := mkNode(";", ";")
+		if isPayloadLeaf(punct, r) {
+			t.Errorf("expected semicolon to not be payload leaf")
+		}
+		op := mkNode("arithmetic_operator_literal", "+")
+		if isPayloadLeaf(op, r) {
+			t.Errorf("expected operator to not be payload leaf")
+		}
+	})
+
+	t.Run("keywords filtering and jump statement exception", func(t *testing.T) {
+		funcKw := mkNode("func", "func")
+		funcKw.IsKeyword = true
+		if isPayloadLeaf(funcKw, r) {
+			t.Errorf("expected 'func' keyword to not be payload leaf")
+		}
+
+		retKwBare := mkNode("return", "return")
+		retKwBare.IsKeyword = true
+		if isPayloadLeaf(retKwBare, r) {
+			t.Errorf("expected bare 'return' without jump parent to not be payload leaf")
+		}
+
+		jumpStmt := mkNode("return_statement", "")
+		retKwUnderJump := mkNode("return", "return")
+		retKwUnderJump.IsKeyword = true
+		retKwUnderJump.Parent = jumpStmt
+		jumpStmt.Children = append(jumpStmt.Children, retKwUnderJump)
+
+		if !isPayloadLeaf(retKwUnderJump, r) {
+			t.Errorf("expected 'return' keyword inside return_statement to be payload leaf")
+		}
+	})
+
+	t.Run("content leaves accepted", func(t *testing.T) {
+		id := mkNode("identifier", "myVar")
+		if !isPayloadLeaf(id, r) {
+			t.Errorf("expected identifier to be payload leaf")
+		}
+		lit := mkNode("interpreted_string_literal", `"hello"`)
+		if !isPayloadLeaf(lit, r) {
+			t.Errorf("expected literal to be payload leaf")
+		}
+	})
+}
+
+func TestSurvivingAndSummarizeMappedLeaves(t *testing.T) {
+	r := rules.Get("go")
+
+	srcLeaf1 := mkNode("identifier", "foo")
+	srcLeaf2 := mkNode("identifier", "bar")
+	srcPunct := mkNode(",", ",")
+	srcBlock := mkNode("block", "", srcLeaf1, srcLeaf2, srcPunct)
+	srcLeaf1.Parent = srcBlock
+	srcLeaf2.Parent = srcBlock
+	srcPunct.Parent = srcBlock
+
+	dstLeaf1 := mkNode("identifier", "foo") // exact
+	dstLeaf2 := mkNode("identifier", "baz") // updated label
+	dstBlock := mkNode("block", "", dstLeaf1, dstLeaf2)
+	dstLeaf1.Parent = dstBlock
+	dstLeaf2.Parent = dstBlock
+
+	ms := engine.NewMapping()
+	ms.Add(srcLeaf1, dstLeaf1)
+	ms.Add(srcLeaf2, dstLeaf2)
+
+	t.Run("hasSurvivingMappedLeaves detects mapped payload", func(t *testing.T) {
+		if !hasSurvivingMappedLeaves(srcBlock, dstBlock, ms.Src(), nil, r) {
+			t.Fatalf("expected surviving mapped leaves")
+		}
+		// Bidirectional symmetry check
+		if !hasSurvivingMappedLeaves(dstBlock, srcBlock, ms.Dst(), nil, r) {
+			t.Fatalf("expected surviving mapped leaves in reverse mapping")
+		}
+	})
+
+	t.Run("hasSurvivingMappedLeaves respects eviction", func(t *testing.T) {
+		evicted := map[*treesitter.ASTNode]struct{}{
+			srcLeaf1: {},
+			srcLeaf2: {},
+		}
+		if hasSurvivingMappedLeaves(srcBlock, dstBlock, ms.Src(), evicted, r) {
+			t.Errorf("expected no surviving leaves when all payload leaves are evicted")
+		}
+		// In reverse direction, partner (source node) eviction is respected
+		if hasSurvivingMappedLeaves(dstBlock, srcBlock, ms.Dst(), evicted, r) {
+			t.Errorf("expected no surviving leaves in reverse when partners are evicted")
+		}
+	})
+
+	t.Run("summarizeMappedLeaves counts exact and updated leaves", func(t *testing.T) {
+		s := summarizeMappedLeaves(srcBlock, dstBlock, ms, r, nil)
+		if s.total != 2 {
+			t.Errorf("expected total=2 (ignoring comma), got %d", s.total)
+		}
+		if s.exact != 1 {
+			t.Errorf("expected exact=1 ('foo'), got %d", s.exact)
+		}
+		if s.updated != 1 {
+			t.Errorf("expected updated=1 ('bar' -> 'baz'), got %d", s.updated)
+		}
+
+		// Evicting one leaf adjusts exact count
+		sEvicted := summarizeMappedLeaves(srcBlock, dstBlock, ms, r, map[*treesitter.ASTNode]struct{}{srcLeaf1: {}})
+		if sEvicted.total != 2 {
+			t.Errorf("expected total=2, got %d", sEvicted.total)
+		}
+		if sEvicted.exact != 0 {
+			t.Errorf("expected exact=0 after evicting 'foo', got %d", sEvicted.exact)
+		}
+		if sEvicted.updated != 1 {
+			t.Errorf("expected updated=1 for 'bar' -> 'baz', got %d", sEvicted.updated)
+		}
+	})
+}
+
+func TestIsDelimitedOrBlockContainer(t *testing.T) {
+	r := rules.Get("go")
+
+	if isDelimitedOrBlockContainer(nil, r) {
+		t.Errorf("expected nil to return false")
+	}
+
+	blockNode := mkNode("block", "")
+	if !isDelimitedOrBlockContainer(blockNode, r) {
+		t.Errorf("expected block to return true")
+	}
+
+	argListNode := mkNode("argument_list", "")
+	if !isDelimitedOrBlockContainer(argListNode, r) {
+		t.Errorf("expected argument_list to return true")
+	}
+
+	identNode := mkNode("identifier", "x")
+	if isDelimitedOrBlockContainer(identNode, r) {
+		t.Errorf("expected identifier to return false")
+	}
+
+	// r == nil fallback
+	if !isDelimitedOrBlockContainer(blockNode, nil) {
+		t.Errorf("expected block with nil rules to return true")
+	}
+}
