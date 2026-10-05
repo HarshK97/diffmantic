@@ -249,7 +249,9 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	return result
 }
 
-// isActionMultiLine reports whether an action's node spans multiple lines on the given diff side.
+// isActionMultiLine reports whether an action's node spans multiple lines of code on the given diff side.
+// It ignores trailing whitespace and newlines so container headers ending at a newline or indent
+// (like "{\n\t\t") aren't treated as multi-line moves.
 func isActionMultiLine(act *Action, lineIndex []int, fileBytes []byte, side string) bool {
 	if act == nil || len(lineIndex) == 0 {
 		return false
