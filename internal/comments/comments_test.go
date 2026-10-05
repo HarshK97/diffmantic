@@ -2,6 +2,7 @@ package comments
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -568,5 +569,47 @@ func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
 		if act.Type == actions.Update {
 			t.Errorf("expected cross-block fuzzy match to be rejected, but got an Update action")
 		}
+	}
+}
+
+func TestDiffCommentsGlobalBestScorePreventsGreedyTheft(t *testing.T) {
+	// sc1 only shares a few generic words with dc (~45% similarity).
+	sc1 := CommentBlock{
+		Text:     "// means the parent container is intact and the child was simply reordered within it.",
+		StartRow: 10,
+		ScopeKey: "func_main",
+	}
+
+	// sc2 is clearly the right match (~75% similarity).
+	sc2 := CommentBlock{
+		Text:     "// Delimiter and structural containers (such as parentheses () and blocks {})\n// must never move if no surviving child moves with them into the destination container.",
+		StartRow: 25,
+		ScopeKey: "func_main",
+	}
+
+	dc := CommentBlock{
+		Text:     "// Delimiter and structural containers must never move if no surviving child moves with them.",
+		StartRow: 30,
+		ScopeKey: "func_main",
+	}
+
+	res := DiffComments([]CommentBlock{sc1, sc2}, []CommentBlock{dc}, nil)
+
+	// sc2 should take dc as an Update; sc1 gets left behind as a Delete.
+	sc1Deleted := false
+	sc2Updated := false
+	for _, act := range res.Actions {
+		if act.Type == actions.Update && strings.Contains(act.Node.Label, "Delimiter and structural") {
+			sc2Updated = true
+		}
+		if act.Type == actions.Delete && strings.Contains(act.Node.Label, "means the parent container is intact") {
+			sc1Deleted = true
+		}
+	}
+	if !sc2Updated {
+		t.Errorf("expected Update action between sc2 and dc, got actions: %+v", res.Actions)
+	}
+	if !sc1Deleted {
+		t.Errorf("expected Delete action for sc1, got actions: %+v", res.Actions)
 	}
 }

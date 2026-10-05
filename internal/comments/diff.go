@@ -1,7 +1,9 @@
 package comments
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -41,6 +43,15 @@ func canonicalScopeKey(c *CommentBlock, mappings *engine.Mapping, isSource bool)
 	}
 
 	return fmt.Sprintf("decl_%d:%s", c.EnclosingDecl.ID, c.RelativePath)
+}
+
+// commentCandidate scores an unmapped source/destination comment pair for fuzzy matching.
+type commentCandidate struct {
+	i           int
+	j           int
+	sim         float64
+	dist        int
+	exactAnchor bool
 }
 
 // DiffComments matches and diffs comments between source and destination files using AST mapping awareness.
@@ -168,14 +179,13 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 	}
 
 	// PASS 3: Fuzzy match edited comments in the same scope.
+	var candidates []commentCandidate
 	for i := range srcComments {
 		if srcMatched[i] {
 			continue
 		}
 		sc := &srcComments[i]
 		scKey := canonicalScopeKey(sc, mappings, true)
-		bestJ := -1
-		bestScore := 0.0
 
 		for j := range dstComments {
 			if dstMatched[j] {
@@ -188,8 +198,11 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 				continue
 			}
 
+			exactAnchor := false
 			if mappings != nil && mappings.Src() != nil && sc.AnchorNode != nil && dc.AnchorNode != nil {
-				if mappings.Src()[sc.AnchorNode] != dc.AnchorNode {
+				if mappings.Src()[sc.AnchorNode] == dc.AnchorNode {
+					exactAnchor = true
+				} else {
 					srcBlock := findEnclosingBlock(sc.AnchorNode, sc.EnclosingDecl)
 					dstBlock := findEnclosingBlock(dc.AnchorNode, dc.EnclosingDecl)
 					if srcBlock != nil && dstBlock != nil {
@@ -217,20 +230,50 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 				minThreshold = 0.20
 			}
 
-			if sim >= minThreshold && sim > bestScore {
+			if sim >= minThreshold {
 				dist := max(sc.StartRow, dc.StartRow) - min(sc.StartRow, dc.StartRow)
 				if dist <= 60 {
-					bestScore = sim
-					bestJ = j
+					candidates = append(candidates, commentCandidate{
+						i:           i,
+						j:           j,
+						sim:         sim,
+						dist:        dist,
+						exactAnchor: exactAnchor,
+					})
 				}
 			}
 		}
+	}
 
-		if bestJ >= 0 {
-			srcMatched[i] = true
-			dstMatched[bestJ] = true
-			dc := &dstComments[bestJ]
+	slices.SortFunc(candidates, func(a, b commentCandidate) int {
+		if a.exactAnchor != b.exactAnchor {
+			if a.exactAnchor {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Or(
+			cmp.Compare(b.sim, a.sim),   // higher similarity first
+			cmp.Compare(a.dist, b.dist), // closer line distance first
+			cmp.Compare(a.i, b.i),
+			cmp.Compare(a.j, b.j),
+		)
+	})
 
+	matchedDst := make(map[int]int, min(len(srcComments), len(dstComments)))
+	for _, cand := range candidates {
+		if srcMatched[cand.i] || dstMatched[cand.j] {
+			continue
+		}
+		srcMatched[cand.i] = true
+		dstMatched[cand.j] = true
+		matchedDst[cand.i] = cand.j
+	}
+
+	for i := range srcComments {
+		if j, ok := matchedDst[i]; ok {
+			sc := &srcComments[i]
+			dc := &dstComments[j]
 			diffCommentBlock(sc, dc, res)
 		}
 	}
