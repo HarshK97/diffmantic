@@ -773,3 +773,51 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.T) {
+	// Lines 0 and 2 hold the opening and closing braces.
+	srcBytes := []byte("{\n    foo()\n}\n")
+
+	// Block container action whose prologue was adjusted to [0, 2) ("{\n").
+	blockAct := Action{
+		Action:         "move",
+		MoveColorIndex: 1,
+		Node:           &NodeRef{Type: "block", StartByte: 0, EndByte: 2},
+		DestStartByte:  ptr(uint32(0)),
+		DestEndByte:    ptr(uint32(2)),
+	}
+
+	actions := []Action{blockAct}
+	closingDelimiter := DelimiterSpan{
+		StartByte: 12, // '}'
+		EndByte:   13,
+		Action:    "move",
+		ActionRef: &actions[0],
+	}
+
+	spans := BuildHighlightSpans(srcBytes, actions, "left", closingDelimiter)
+
+	var openSpan, closeSpan *HighlightSpan
+	for i := range spans {
+		if spans[i].Line == 0 && spans[i].Action == "move" {
+			openSpan = &spans[i]
+		}
+		if spans[i].Line == 2 && spans[i].Action == "move" {
+			closeSpan = &spans[i]
+		}
+	}
+
+	if openSpan == nil {
+		t.Fatalf("expected opening brace move span on line 0")
+	}
+	if openSpan.ColorIndex != 1 {
+		t.Errorf("expected opening delimiter to have ColorIndex 1 (Mauve), got %d", openSpan.ColorIndex)
+	}
+
+	if closeSpan == nil {
+		t.Fatalf("expected closing delimiter move span on line 2")
+	}
+	if closeSpan.ColorIndex != 1 {
+		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Mauve), got %d", closeSpan.ColorIndex)
+	}
+}
