@@ -509,6 +509,42 @@ func TestRulesIsOperatorLiteral(t *testing.T) {
 	}
 }
 
+func TestRulesIsAssignment(t *testing.T) {
+	r := &Rules{
+		Assignments: []string{"custom_assignment"},
+	}
+	r.CompileSets()
+
+	if !r.IsAssignment("custom_assignment") {
+		t.Errorf("r.IsAssignment(\"custom_assignment\") = false, want true")
+	}
+	if r.IsAssignment("other") {
+		t.Errorf("r.IsAssignment(\"other\") = true, want false")
+	}
+
+	// Uncompiled fallback path
+	uncompiled := &Rules{
+		Assignments: []string{"custom_assignment"},
+	}
+	if !uncompiled.IsAssignment("custom_assignment") {
+		t.Errorf("uncompiled.IsAssignment(\"custom_assignment\") = false, want true")
+	}
+
+	// Package-level registry lookup
+	if !IsAssignment("assignment_statement") { // from Go, Lua
+		t.Errorf("IsAssignment(\"assignment_statement\") = false, want true")
+	}
+	if !IsAssignment("assignment_expression") { // from C, C++, JS, TS, Rust, Java, Zig
+		t.Errorf("IsAssignment(\"assignment_expression\") = false, want true")
+	}
+	if !IsAssignment("augmented_assignment") { // from Python
+		t.Errorf("IsAssignment(\"augmented_assignment\") = false, want true")
+	}
+	if IsAssignment("non_existent_node") {
+		t.Errorf("IsAssignment(\"non_existent_node\") = true, want false")
+	}
+}
+
 func TestRulesIsExpression(t *testing.T) {
 	r := &Rules{
 		Calls:   []string{"custom_call"},

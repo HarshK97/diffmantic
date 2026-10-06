@@ -162,6 +162,9 @@ var zigRules = &Rules{
 	LocalVarDeclarations: []string{
 		"variable_declaration",
 	},
+	Assignments: []string{
+		"assignment_expression",
+	},
 	ContainerDeclarations: []string{
 		"function_declaration",
 		"struct_declaration",

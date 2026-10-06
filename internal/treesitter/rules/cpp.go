@@ -251,6 +251,9 @@ var cppRules = &Rules{
 		"alias_declaration",
 		"using_declaration",
 	},
+	Assignments: []string{
+		"assignment_expression",
+	},
 	ContainerDeclarations: []string{
 		"function_definition",
 		"type_definition",

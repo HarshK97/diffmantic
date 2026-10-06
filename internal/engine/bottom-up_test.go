@@ -846,6 +846,43 @@ func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing
 	}
 }
 
+func TestRollupMatchedContainers_SameTypeTargetVariableMismatch(t *testing.T) {
+	// Old: dstNode = ms.Src()[a.Node]
+	// New: toDemote[a.Node] = dstNode
+	// Even though both are assignments and share dstNode across sides (LHS in old, RHS in new),
+	// they shouldn't roll up since they assign to different target variables.
+	idDst1 := testutil.Node("identifier", "dstNode")
+	lhsList1 := testutil.Node("expression_list", "", idDst1)
+	opAssign1 := testutil.Node("assignment_operator_literal", "=")
+	idMs1 := testutil.Node("identifier", "ms")
+	rhsList1 := testutil.Node("expression_list", "", idMs1)
+	assignStmt1 := testutil.Node("assignment_statement", "", lhsList1, opAssign1, rhsList1)
+	assignStmt1.Language = "go"
+
+	idMap2 := testutil.Node("identifier", "toDemote")
+	lhsList2 := testutil.Node("expression_list", "", idMap2)
+	opAssign2 := testutil.Node("assignment_operator_literal", "=")
+	idDst2 := testutil.Node("identifier", "dstNode")
+	rhsList2 := testutil.Node("expression_list", "", idDst2)
+	assignStmt2 := testutil.Node("assignment_statement", "", lhsList2, opAssign2, rhsList2)
+	assignStmt2.Language = "go"
+
+	root1 := testutil.Node("block", "", assignStmt1)
+	root2 := testutil.Node("block", "", assignStmt2)
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(idDst1, idDst2)
+	m.Add(lhsList1, rhsList2)
+
+	RollupMatchedContainers(root1, root2, m)
+
+	if m.Get(assignStmt1) != nil {
+		t.Errorf("expected assignStmt1 NOT to roll up to assignStmt2 with disjoint target variables, got: %v", m.Get(assignStmt1))
+	}
+}
+
 func TestHasCallCalleeOrArgMatch_UnextinguishedPeer(t *testing.T) {
 	r := rules.Get("go")
 

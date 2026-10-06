@@ -241,6 +241,10 @@ var typescriptRules = &Rules{
 		"variable_declaration",
 		"lexical_declaration",
 	},
+	Assignments: []string{
+		"assignment_expression",
+		"augmented_assignment_expression",
+	},
 	ContainerDeclarations: []string{
 		"function_declaration",
 		"generator_function_declaration",

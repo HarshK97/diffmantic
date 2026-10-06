@@ -61,6 +61,7 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		checkField("Comments", r.Comments)
 		checkField("Calls", r.Calls)
 		checkField("LocalVarDeclarations", r.LocalVarDeclarations)
+		checkField("Assignments", r.Assignments)
 		checkField("ContainerDeclarations", r.ContainerDeclarations)
 		checkField("Closures", r.Closures)
 		checkField("Types", r.Types)

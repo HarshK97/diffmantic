@@ -203,6 +203,10 @@ var pythonRules = &Rules{
 		"global_statement",
 		"nonlocal_statement",
 	},
+	Assignments: []string{
+		"assignment",
+		"augmented_assignment",
+	},
 	ContainerDeclarations: []string{
 		"function_definition",
 		"class_definition",

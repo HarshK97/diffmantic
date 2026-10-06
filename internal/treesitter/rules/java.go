@@ -222,6 +222,9 @@ var javaRules = &Rules{
 	LocalVarDeclarations: []string{
 		"local_variable_declaration",
 	},
+	Assignments: []string{
+		"assignment_expression",
+	},
 	ContainerDeclarations: []string{
 		"class_declaration",
 		"interface_declaration",

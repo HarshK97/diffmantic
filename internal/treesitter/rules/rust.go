@@ -200,6 +200,10 @@ var rustRules = &Rules{
 	LocalVarDeclarations: []string{
 		"let_declaration",
 	},
+	Assignments: []string{
+		"assignment_expression",
+		"compound_assignment_expr",
+	},
 	ContainerDeclarations: []string{
 		"function_item",
 		"struct_item",
