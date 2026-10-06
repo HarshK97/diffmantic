@@ -710,6 +710,183 @@ func TestAlignLines_ExtractedClosureIntraMoveAlignment(t *testing.T) {
 	}
 }
 
+func alignedLeftToRight(alignment []LineAlignmentPair) map[int]int {
+	m := make(map[int]int, len(alignment))
+	for _, p := range alignment {
+		if p.LeftLine != -1 {
+			m[p.LeftLine] = p.RightLine
+		}
+	}
+	return m
+}
+
+func TestAlignLines_UnchangedControlFlowAndBracePrecedence(t *testing.T) {
+	src := `func test() {
+	for _, candidate := range list {
+		if candidate.Valid() {
+			if a > b {
+				doA()
+			} else if isBlock(candidate) {
+				doB()
+			}
+		} else {
+			if directKeyMatch(candidate) {
+				doC()
+			}
+		}
+		break
+	}
+}
+`
+	dst := `func test() {
+	for _, candidate := range list {
+		if candidate.Valid() {
+			if a > b || isBlock(candidate) {
+				doA()
+			}
+		} else {
+			candCommon := compute()
+			if candCommon > currCommon {
+				doC()
+			}
+		}
+		break
+	}
+}
+`
+	oldTree, err := treesitter.Parse([]byte(src), "old.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	newTree, err := treesitter.Parse([]byte(dst), "new.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(src), []byte(dst))
+	mr := engine.Match(oldTree, newTree, []byte(src), []byte(dst), part)
+	es := actions.GenerateEditScript(oldTree, newTree, mr.Mappings)
+	postprocess.Run(es, mr.Mappings, oldTree, newTree)
+
+	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
+	alignedMap := alignedLeftToRight(alignment)
+
+	// Line 8 on left (`\t\t} else {`) must align with line 6 on right (`\t\t} else {`).
+	if alignedMap[8] != 6 {
+		t.Errorf("expected left line 8 (} else {) to align with right line 6, got %d", alignedMap[8])
+	}
+	// Line 12 on left (`\t\t}`) must align with line 11 on right (`\t\t}`).
+	if alignedMap[12] != 11 {
+		t.Errorf("expected left line 12 (closing if) to align with right line 11, got %d", alignedMap[12])
+	}
+	// Line 13 on left (`\t\tbreak`) must align with line 12 on right (`\t\tbreak`).
+	if alignedMap[13] != 12 {
+		t.Errorf("expected left line 13 (break) to align with right line 12, got %d", alignedMap[13])
+	}
+	// Line 14 on left (`\t}`) must align with line 13 on right (`\t}`).
+	if alignedMap[14] != 13 {
+		t.Errorf("expected left line 14 (closing for loop) to align with right line 13, got %d", alignedMap[14])
+	}
+}
+
+func TestAlignLines_StationaryStatementPrecedenceOverMove(t *testing.T) {
+	src := `func test() {
+	primary := collectPrimary()
+	text := collectText()
+	anchors := mergeAnchors(primary, text)
+	inPlaceStatements := collectMappedStatements(fn)
+	use(anchors, inPlaceStatements)
+}
+`
+	dst := `func test() {
+	inPlaceStatements := collectMappedStatements(fn)
+	tier1 := collectTier1()
+	anchors := collectStationaryMoveAnchors(inPlaceStatements, tier1)
+	use(anchors, inPlaceStatements)
+}
+`
+	oldTree, err := treesitter.Parse([]byte(src), "old.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	newTree, err := treesitter.Parse([]byte(dst), "new.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(src), []byte(dst))
+	mr := engine.Match(oldTree, newTree, []byte(src), []byte(dst), part)
+	es := actions.GenerateEditScript(oldTree, newTree, mr.Mappings)
+	postprocess.Run(es, mr.Mappings, oldTree, newTree)
+
+	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
+	alignedMap := alignedLeftToRight(alignment)
+
+	// Line 3 on left (`\tanchors := mergeAnchors(primary, text)`) must align with
+	// line 3 on right (`\tanchors := collectStationaryMoveAnchors(inPlaceStatements, tier1)`).
+	if alignedMap[3] != 3 {
+		t.Errorf("expected left line 3 (anchors :=) to align with right line 3, got %d", alignedMap[3])
+	}
+	// Line 4 on left (`\tinPlaceStatements := ...`) moved above `anchors :=` on the right,
+	// so on the left it cannot align with line 1 on right without crossing `anchors :=`.
+	if alignedMap[4] == 1 {
+		t.Errorf("expected left line 4 (inPlaceStatements) not to cross anchors := and align with right line 1")
+	}
+}
+
+func TestAlignLines_StationaryElsePrecedenceOverInsertedClause(t *testing.T) {
+	src := `func render() {
+	if p < len(isPairChanged) && !isPairChanged[p] {
+		text := ""
+		if pair.RightLine < len(dstLines) {
+			text = dstLines[pair.RightLine]
+		}
+	} else {
+		for bEnd <= h.End {
+			bEnd++
+		}
+	}
+}
+`
+	dst := `func render() {
+	if p < len(isPairChanged) && !isPairChanged[p] {
+		text := ""
+		if pair.RightLine < len(dstLines) {
+			text = dstLines[pair.RightLine]
+		}
+	} else if pair.LeftLine == -1 && pair.RightLine >= 0 {
+		leftLineNum = -1
+	} else if pair.LeftLine >= 0 && pair.RightLine == -1 {
+		rightLineNum = -1
+	} else {
+		processOther()
+	}
+}
+`
+	oldTree, err := treesitter.Parse([]byte(src), "old.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	newTree, err := treesitter.Parse([]byte(dst), "new.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(src), []byte(dst))
+	mr := engine.Match(oldTree, newTree, []byte(src), []byte(dst), part)
+	es := actions.GenerateEditScript(oldTree, newTree, mr.Mappings)
+	postprocess.Run(es, mr.Mappings, oldTree, newTree)
+
+	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
+	alignedMap := alignedLeftToRight(alignment)
+
+	// Line 6 on left (`\t} else {`) must align with line 6 on right (`\t} else if pair.LeftLine == -1 ...`),
+	// not with line 10 on right (`\t} else {`).
+	if alignedMap[6] != 6 {
+		t.Errorf("expected left line 6 (} else {) to align with right line 6 (} else if), got %d (grid: %+v)", alignedMap[6], alignment)
+	}
+}
+
 func BenchmarkAlignLines(b *testing.B) {
 	b.Run("SmallGap", func(b *testing.B) {
 		src := []byte("func foo() {\n  a := 1\n  b := 2\n  return a + b\n}")
