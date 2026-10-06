@@ -35,6 +35,9 @@ type Rules struct {
 	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
 	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
 	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
+	OpeningDelimiters     []string // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
+	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
+	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
 
 	flattenedSet             map[string]struct{}
 	ignoredSet               map[string]struct{}
@@ -62,6 +65,9 @@ type Rules struct {
 	caseClausesSet           map[string]struct{}
 	tagsSet                  map[string]struct{}
 	sentinelsSet             map[string]struct{}
+	openingDelimitersSet     map[string]struct{}
+	closingDelimitersSet     map[string]struct{}
+	separatorsSet            map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -75,6 +81,20 @@ func sliceToSet[T comparable](items []T) map[T]struct{} {
 	}
 	return set
 }
+
+var (
+	defaultOpeningDelimitersSet = map[string]struct{}{
+		"{": {}, "(": {}, "[": {}, "<": {}, "|": {},
+	}
+
+	defaultClosingDelimitersSet = map[string]struct{}{
+		"}": {}, ")": {}, "]": {}, ">": {}, "|": {},
+	}
+
+	defaultSeparatorsSet = map[string]struct{}{
+		",": {}, ";": {}, ":": {}, "=>": {}, "->": {}, "::": {},
+	}
+)
 
 // CompileSets builds the internal lookup sets for fast querying.
 func (r *Rules) CompileSets() {
@@ -104,6 +124,21 @@ func (r *Rules) CompileSets() {
 	r.caseClausesSet = sliceToSet(r.CaseClauses)
 	r.tagsSet = sliceToSet(r.Tags)
 	r.sentinelsSet = sliceToSet(r.Sentinels)
+	if len(r.OpeningDelimiters) > 0 {
+		r.openingDelimitersSet = sliceToSet(r.OpeningDelimiters)
+	} else {
+		r.openingDelimitersSet = defaultOpeningDelimitersSet
+	}
+	if len(r.ClosingDelimiters) > 0 {
+		r.closingDelimitersSet = sliceToSet(r.ClosingDelimiters)
+	} else {
+		r.closingDelimitersSet = defaultClosingDelimitersSet
+	}
+	if len(r.Separators) > 0 {
+		r.separatorsSet = sliceToSet(r.Separators)
+	} else {
+		r.separatorsSet = defaultSeparatorsSet
+	}
 	if len(r.EquivalentTypes) > 0 {
 		r.equivGroups = make(map[string][]int)
 		for idx, group := range r.EquivalentTypes {
@@ -660,6 +695,126 @@ func IsPunctuation(token string) bool {
 // IsDelimiter reports whether nodeType or label is a delimiter token (semicolon or comma).
 func IsDelimiter(nodeType, label string) bool {
 	return label == ";" || label == "," || nodeType == "semicolon" || nodeType == "comma" || nodeType == "_automatic_semicolon"
+}
+
+// IsContainer reports whether nodeType wraps children (block, wrapper, unordered, or indexed).
+func (r *Rules) IsContainer(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	return r.IsWrapper(nodeType) || r.IsBlock(nodeType) || r.IsUnordered(nodeType) || r.IsIndexed(nodeType)
+}
+
+// IsContainer reports whether any registered language treats nodeType as a container.
+func IsContainer(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsContainer(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsOpeningDelimiter checks if token marks the start of a block, wrapper, or parameter list.
+func (r *Rules) IsOpeningDelimiter(token string) bool {
+	if token == "" {
+		return false
+	}
+	if r == nil {
+		_, ok := defaultOpeningDelimitersSet[token]
+		return ok
+	}
+	if len(r.openingDelimitersSet) > 0 {
+		_, ok := r.openingDelimitersSet[token]
+		return ok
+	}
+	if len(r.OpeningDelimiters) > 0 {
+		return slices.Contains(r.OpeningDelimiters, token)
+	}
+	_, ok := defaultOpeningDelimitersSet[token]
+	return ok
+}
+
+// IsOpeningDelimiter checks if token opens a container under any registered language rules.
+func IsOpeningDelimiter(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsOpeningDelimiter(token) {
+			return true
+		}
+	}
+	_, ok := defaultOpeningDelimitersSet[token]
+	return ok
+}
+
+// IsClosingDelimiter checks if token marks the end of an enclosed body or argument list.
+func (r *Rules) IsClosingDelimiter(token string) bool {
+	if token == "" {
+		return false
+	}
+	if r == nil {
+		_, ok := defaultClosingDelimitersSet[token]
+		return ok
+	}
+	if len(r.closingDelimitersSet) > 0 {
+		_, ok := r.closingDelimitersSet[token]
+		return ok
+	}
+	if len(r.ClosingDelimiters) > 0 {
+		return slices.Contains(r.ClosingDelimiters, token)
+	}
+	_, ok := defaultClosingDelimitersSet[token]
+	return ok
+}
+
+// IsClosingDelimiter checks if token closes a container under any registered language rules.
+func IsClosingDelimiter(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsClosingDelimiter(token) {
+			return true
+		}
+	}
+	_, ok := defaultClosingDelimitersSet[token]
+	return ok
+}
+
+// IsTrailingSeparator checks if token acts as a delimiter between sibling items in lists or match arms.
+func (r *Rules) IsTrailingSeparator(token string) bool {
+	if token == "" {
+		return false
+	}
+	if r == nil {
+		_, ok := defaultSeparatorsSet[token]
+		return ok
+	}
+	if len(r.separatorsSet) > 0 {
+		_, ok := r.separatorsSet[token]
+		return ok
+	}
+	if len(r.Separators) > 0 {
+		return slices.Contains(r.Separators, token)
+	}
+	_, ok := defaultSeparatorsSet[token]
+	return ok
+}
+
+// IsTrailingSeparator checks if token is an item separator in any registered language.
+func IsTrailingSeparator(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsTrailingSeparator(token) {
+			return true
+		}
+	}
+	_, ok := defaultSeparatorsSet[token]
+	return ok
 }
 
 // IsCall reports whether nodeType is configured as a call in any language rule set.

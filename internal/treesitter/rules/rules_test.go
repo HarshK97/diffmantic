@@ -430,6 +430,30 @@ func TestRulesHelperMethods(t *testing.T) {
 		if IsIndexed("nonexistent_indexed_xyz") {
 			t.Errorf("IsIndexed(nonexistent_indexed_xyz) = true, want false")
 		}
+		if !IsContainer("block") || !IsContainer("object") || !IsContainer("subscript_expression") {
+			t.Errorf("IsContainer failed for valid container types")
+		}
+		if IsContainer("nonexistent_container_xyz") {
+			t.Errorf("IsContainer(nonexistent_container_xyz) = true, want false")
+		}
+		if !IsOpeningDelimiter("{") || !IsOpeningDelimiter("(") || !IsOpeningDelimiter("[") {
+			t.Errorf("IsOpeningDelimiter failed for standard opening delimiters")
+		}
+		if IsOpeningDelimiter("}") || IsOpeningDelimiter(";") {
+			t.Errorf("IsOpeningDelimiter returned true for closing delimiter/separator")
+		}
+		if !IsClosingDelimiter("}") || !IsClosingDelimiter(")") || !IsClosingDelimiter("]") {
+			t.Errorf("IsClosingDelimiter failed for standard closing delimiters")
+		}
+		if IsClosingDelimiter("{") || IsClosingDelimiter(";") {
+			t.Errorf("IsClosingDelimiter returned true for opening delimiter/separator")
+		}
+		if !IsTrailingSeparator(",") || !IsTrailingSeparator(";") || !IsTrailingSeparator("=>") {
+			t.Errorf("IsTrailingSeparator failed for standard separators")
+		}
+		if IsTrailingSeparator("{") || IsTrailingSeparator("x") {
+			t.Errorf("IsTrailingSeparator returned true for non-separator")
+		}
 	})
 }
 
@@ -695,4 +719,96 @@ func TestRulesIsSentinel(t *testing.T) {
 	if nilR.IsSentinel("NULL") {
 		t.Errorf("nilR.IsSentinel = true, want false")
 	}
+}
+
+func TestRulesDelimitersAndSeparators(t *testing.T) {
+	t.Run("default fallbacks when unspecified", func(t *testing.T) {
+		r := &Rules{}
+		r.CompileSets()
+
+		if !r.IsOpeningDelimiter("{") || !r.IsOpeningDelimiter("(") || !r.IsOpeningDelimiter("<") {
+			t.Errorf("expected default opening delimiters")
+		}
+		if r.IsOpeningDelimiter("}") || r.IsOpeningDelimiter(";") {
+			t.Errorf("unexpected opening delimiter match")
+		}
+
+		if !r.IsClosingDelimiter("}") || !r.IsClosingDelimiter(")") || !r.IsClosingDelimiter(">") {
+			t.Errorf("expected default closing delimiters")
+		}
+		if r.IsClosingDelimiter("{") || r.IsClosingDelimiter(";") {
+			t.Errorf("unexpected closing delimiter match")
+		}
+
+		if !r.IsTrailingSeparator(",") || !r.IsTrailingSeparator(";") || !r.IsTrailingSeparator("=>") {
+			t.Errorf("expected default separators")
+		}
+		if r.IsTrailingSeparator("{") || r.IsTrailingSeparator("x") {
+			t.Errorf("unexpected separator match")
+		}
+	})
+
+	t.Run("custom compiled overrides", func(t *testing.T) {
+		r := &Rules{
+			OpeningDelimiters: []string{"begin", "do"},
+			ClosingDelimiters: []string{"end", "done"},
+			Separators:        []string{"|", "\\"},
+		}
+		r.CompileSets()
+
+		if !r.IsOpeningDelimiter("begin") || !r.IsOpeningDelimiter("do") {
+			t.Errorf("expected custom opening delimiter")
+		}
+		if r.IsOpeningDelimiter("{") {
+			t.Errorf("standard opening delimiter should be overridden")
+		}
+
+		if !r.IsClosingDelimiter("end") || !r.IsClosingDelimiter("done") {
+			t.Errorf("expected custom closing delimiter")
+		}
+		if r.IsClosingDelimiter("}") {
+			t.Errorf("standard closing delimiter should be overridden")
+		}
+
+		if !r.IsTrailingSeparator("|") || !r.IsTrailingSeparator("\\") {
+			t.Errorf("expected custom separator")
+		}
+		if r.IsTrailingSeparator(",") {
+			t.Errorf("standard separator should be overridden")
+		}
+	})
+
+	t.Run("uncompiled fallback with custom slices", func(t *testing.T) {
+		r := &Rules{
+			OpeningDelimiters: []string{"begin"},
+			ClosingDelimiters: []string{"end"},
+			Separators:        []string{"\\"},
+		}
+
+		if !r.IsOpeningDelimiter("begin") || r.IsOpeningDelimiter("{") {
+			t.Errorf("uncompiled custom opening delimiter failed")
+		}
+		if !r.IsClosingDelimiter("end") || r.IsClosingDelimiter("}") {
+			t.Errorf("uncompiled custom closing delimiter failed")
+		}
+		if !r.IsTrailingSeparator("\\") || r.IsTrailingSeparator(",") {
+			t.Errorf("uncompiled custom separator failed")
+		}
+	})
+
+	t.Run("nil receiver safe", func(t *testing.T) {
+		var r *Rules
+		if !r.IsOpeningDelimiter("{") || r.IsOpeningDelimiter("unknown") {
+			t.Errorf("nil receiver opening delimiter failed")
+		}
+		if !r.IsClosingDelimiter("}") || r.IsClosingDelimiter("unknown") {
+			t.Errorf("nil receiver closing delimiter failed")
+		}
+		if !r.IsTrailingSeparator(",") || r.IsTrailingSeparator("unknown") {
+			t.Errorf("nil receiver separator failed")
+		}
+		if r.IsOpeningDelimiter("") || r.IsClosingDelimiter("") || r.IsTrailingSeparator("") {
+			t.Errorf("empty string should return false")
+		}
+	})
 }

@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"cmp"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
@@ -31,19 +32,25 @@ func IngestFlatAST(nodes []FlatNode, symbols []string, src []byte, langName stri
 	}
 
 	flatToAST := make([]*ASTNode, len(nodes))
-	root := buildFromIndex(0, nodes, symbols, src, nil, r, srcLen, flatToAST)
+	flatTrivia := make([]SyntaxTriviaBlock, len(nodes))
+	root := buildFromIndex(0, nodes, symbols, src, nil, r, srcLen, flatToAST, flatTrivia)
 	if root != nil {
 		root.Language = langName
 		root.ParseErrorCount = errCount
 		root.HasError = errCount > 0
 		root.ComputeHashes()
-		EnsureIndex(root)
+		index := EnsureIndex(root)
+		for flatIdx, astNode := range flatToAST {
+			if astNode != nil && int(astNode.ID) < len(index.SyntaxTrivia) {
+				index.SyntaxTrivia[astNode.ID] = flatTrivia[flatIdx]
+			}
+		}
 		attachTrivia(root, nodes, symbols, src, langName, r, flatToAST)
 	}
 	return root
 }
 
-func buildFromIndex(idx uint32, nodes []FlatNode, symbols []string, src []byte, parent *ASTNode, r *rules.Rules, srcLen uint32, flatToAST []*ASTNode) *ASTNode {
+func buildFromIndex(idx uint32, nodes []FlatNode, symbols []string, src []byte, parent *ASTNode, r *rules.Rules, srcLen uint32, flatToAST []*ASTNode, flatTrivia []SyntaxTriviaBlock) *ASTNode {
 	if int(idx) >= len(nodes) {
 		return nil
 	}
@@ -62,9 +69,7 @@ func buildFromIndex(idx uint32, nodes []FlatNode, symbols []string, src []byte, 
 	var label string
 	if isLeaf {
 		start, end := min(fn.StartByte, srcLen), min(fn.EndByte, srcLen)
-		if start > end {
-			start = end
-		}
+		start = min(start, end)
 		label = strings.TrimSpace(string(src[start:end]))
 	}
 
@@ -103,12 +108,82 @@ func buildFromIndex(idx uint32, nodes []FlatNode, symbols []string, src []byte, 
 		}
 	}
 
+	isContainer := (r != nil && (r.IsContainer(node.Type) || r.IsContainer(rawType))) || (r == nil && (rules.IsContainer(node.Type) || rules.IsContainer(rawType)))
+	foundOpening := false
+
 	childIdx := fn.FirstChildIdx
 	for childIdx != FlatNodeNone && int(childIdx) < len(nodes) {
-		if child := buildFromIndex(childIdx, nodes, symbols, src, node, r, srcLen, flatToAST); child != nil {
-			node.Children = append(node.Children, child)
+		cfn := &nodes[childIdx]
+		cTerminal := cfn.ChildCount == 0
+		cAnonymous := (cfn.Flags & FlatNodeNamed) == 0
+		var cType string
+		if int(cfn.TypeID) < len(symbols) {
+			cType = symbols[cfn.TypeID]
 		}
-		childIdx = nodes[childIdx].NextSiblingIdx
+		var cText string
+		if cTerminal && cfn.StartByte < srcLen {
+			start, end := min(cfn.StartByte, srcLen), min(cfn.EndByte, srcLen)
+			if start <= end {
+				cText = string(src[start:end])
+			}
+		}
+
+		if isContainer && cTerminal && (cAnonymous || (r != nil && r.IsIgnored(cType, cText))) {
+			tok := cmp.Or(cText, cType)
+			isOpening := r.IsOpeningDelimiter(tok)
+			isClosing := r.IsClosingDelimiter(tok)
+
+			if !foundOpening && isOpening && cfn.EndByte > cfn.StartByte {
+				flatTrivia[idx].OpeningStart = cfn.StartByte
+				flatTrivia[idx].OpeningEnd = cfn.EndByte
+				foundOpening = true
+			} else if isClosing && cfn.EndByte > cfn.StartByte {
+				if tok != "|" || (foundOpening && cfn.StartByte >= flatTrivia[idx].OpeningEnd) {
+					flatTrivia[idx].ClosingStart = cfn.StartByte
+					flatTrivia[idx].ClosingEnd = cfn.EndByte
+				}
+			}
+		}
+
+		if child := buildFromIndex(childIdx, nodes, symbols, src, node, r, srcLen, flatToAST, flatTrivia); child != nil {
+			node.Children = append(node.Children, child)
+
+			nextIdx := cfn.NextSiblingIdx
+			for nextIdx != FlatNodeNone && int(nextIdx) < len(nodes) {
+				nfn := &nodes[nextIdx]
+				var nType string
+				if int(nfn.TypeID) < len(symbols) {
+					nType = symbols[nfn.TypeID]
+				}
+				isComment := (r != nil && r.IsComment(nType)) || (r == nil && rules.IsComment(nType))
+				if isComment || nType == "\n" {
+					nextIdx = nfn.NextSiblingIdx
+					continue
+				}
+				break
+			}
+			if nextIdx != FlatNodeNone && int(nextIdx) < len(nodes) {
+				pfn := &nodes[nextIdx]
+				var pType string
+				if int(pfn.TypeID) < len(symbols) {
+					pType = symbols[pfn.TypeID]
+				}
+				var pText string
+				if pfn.ChildCount == 0 && pfn.StartByte < srcLen {
+					pStart, pEnd := min(pfn.StartByte, srcLen), min(pfn.EndByte, srcLen)
+					if pStart <= pEnd {
+						pText = string(src[pStart:pEnd])
+					}
+				}
+				pTok := cmp.Or(pText, pType)
+				isSep := r.IsTrailingSeparator(pTok)
+				if pfn.ChildCount == 0 && pfn.EndByte > pfn.StartByte && isSep {
+					flatTrivia[childIdx].TrailingStart = pfn.StartByte
+					flatTrivia[childIdx].TrailingEnd = pfn.EndByte
+				}
+			}
+		}
+		childIdx = cfn.NextSiblingIdx
 	}
 
 	if r != nil && r.IsFlattened(rawType) {
@@ -166,9 +241,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 
 		start := min(fn.StartByte, srcLen)
 		end := min(fn.EndByte, srcLen)
-		if start > end {
-			start = end
-		}
+		start = min(start, end)
 		cb := &CommentBlock{
 			Type:      rawType,
 			Text:      string(src[start:end]),

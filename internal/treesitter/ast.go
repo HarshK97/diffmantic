@@ -404,3 +404,15 @@ func (n *ASTNode) EnclosingContainerDeclaration(r *rules.Rules) *ASTNode {
 	}
 	return nil
 }
+
+// SyntaxTrivia pulls this node's punctuation offsets from the index, returning nil if the node has no captured delimiters or the index isn't built.
+func (n *ASTNode) SyntaxTrivia() *SyntaxTriviaBlock {
+	if n == nil || n.Index == nil || n.ID < 0 || int(n.ID) >= len(n.Index.SyntaxTrivia) {
+		return nil
+	}
+	b := &n.Index.SyntaxTrivia[n.ID]
+	if *b == (SyntaxTriviaBlock{}) {
+		return nil
+	}
+	return b
+}

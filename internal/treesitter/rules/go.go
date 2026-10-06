@@ -242,4 +242,19 @@ var golangRules = &Rules{
 		"true",
 		"false",
 	},
+	OpeningDelimiters: []string{
+		"{",
+		"(",
+		"[",
+	},
+	ClosingDelimiters: []string{
+		"}",
+		")",
+		"]",
+	},
+	Separators: []string{
+		",",
+		";",
+		":",
+	},
 }

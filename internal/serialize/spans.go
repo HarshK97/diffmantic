@@ -69,13 +69,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		switch a.Action {
 		case "delete":
 			if side == "left" && a.Node != nil {
-				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent, a.ASTNode)
 				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, "delete", a)
 			}
 
 		case "insert":
 			if side == "right" && a.Node != nil {
-				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.Parent, a.ASTNode)
 				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, "insert", a)
 			}
 
@@ -93,15 +93,11 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 				continue
 			}
 			if side == "left" && a.Node != nil {
-				parent := a.OldParent
-				if parent == nil {
-					parent = a.Parent
-				}
-				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, parent)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.OldParent, a.ASTNode)
 				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, actType, a)
 			}
 			if side == "right" && a.DestStartByte != nil && a.DestEndByte != nil {
-				sb, eb := absorbSyntacticDelimiters(fileBytes, *a.DestStartByte, *a.DestEndByte, a.Parent)
+				sb, eb := absorbSyntacticDelimiters(fileBytes, *a.DestStartByte, *a.DestEndByte, a.Parent, a.DestASTNode)
 				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, actType, a)
 			}
 		}
@@ -157,14 +153,16 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 
 				canMerge := false
 				gap := next.startCol - curr.endCol
-				if gap <= 3 {
+				maxGap := 3
+				if gap <= maxGap {
 					onlyNonChars := true
 					if gap > 0 && line < len(lineIndex) {
 						lineStart := lineIndex[line]
 						gapStart := lineStart + curr.endCol
 						gapEnd := lineStart + next.startCol
 						if gapStart < len(fileBytes) && gapEnd <= len(fileBytes) {
-							onlyNonChars = isOnlyNonCharacters(fileBytes[gapStart:gapEnd])
+							gapBytes := fileBytes[gapStart:gapEnd]
+							onlyNonChars = isOnlyNonCharacters(gapBytes)
 						}
 					}
 
@@ -621,8 +619,11 @@ checkOverlap:
 
 // absorbSyntacticDelimiters expands a span to cover adjacent member connectors
 // (., ->, ::) or sequence commas so punctuation doesn't get left unhighlighted.
-func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, parent *NodeRef) (uint32, uint32) {
+func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, parent *NodeRef, node *treesitter.ASTNode) (uint32, uint32) {
 	if parent == nil || len(fileBytes) == 0 {
+		return startByte, endByte
+	}
+	if startByte > endByte {
 		return startByte, endByte
 	}
 	if startByte < parent.StartByte || endByte > parent.EndByte {
@@ -637,8 +638,39 @@ func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 		parentEnd = fileLen
 	}
 
-	// Member connectors (e.g. "gin.", "ptr->", "std::"):
-	if endByte < parentEnd {
+	absorbedTrailing := false
+	hasTrailingTrivia := false
+
+	// Prefer CST trivia so comments between code and punctuation don't get swallowed.
+	if node != nil {
+		if trivia := node.SyntaxTrivia(); trivia != nil && trivia.TrailingEnd > trivia.TrailingStart {
+			hasTrailingTrivia = true
+			tStart := min(trivia.TrailingStart, parentEnd)
+			tEnd := min(trivia.TrailingEnd, parentEnd)
+			if tEnd > tStart && tStart >= endByte {
+				isOnlyWS := true
+				for i := endByte; i < tStart; i++ {
+					b := fileBytes[i]
+					if b != ' ' && b != '\t' && b != '\r' && b != '\n' {
+						isOnlyWS = false
+						break
+					}
+				}
+				if isOnlyWS {
+					endByte = tEnd
+					absorbedTrailing = true
+					if rules.IsDelimitedContainer(parent.Type) {
+						for endByte < parentEnd && (fileBytes[endByte] == ' ' || fileBytes[endByte] == '\t') {
+							endByte++
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Fall back to scanning member operators (., ->, ::) so chained access doesn't leave dangling dots.
+	if !absorbedTrailing && endByte < parentEnd {
 		if endByte+2 <= parentEnd && fileBytes[endByte] == ':' && fileBytes[endByte+1] == ':' {
 			endByte += 2
 		} else if endByte+2 <= parentEnd && fileBytes[endByte] == '-' && fileBytes[endByte+1] == '>' {
@@ -666,12 +698,10 @@ func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 		}
 	}
 
-	// Commas inside delimited containers (argument lists, arrays, parameters):
+	// Delimited containers: grab adjacent commas so deleting an element cleans up its separator.
 	if rules.IsDelimitedContainer(parent.Type) {
-		absorbedTrailing := false
-
-		// Trailing comma (e.g. "a," in "foo(a, b)" or multiline entries):
-		if endByte < parentEnd {
+		// Trailing comma fallback: eat the comma after the item if CST trivia didn't already catch it.
+		if !absorbedTrailing && endByte < parentEnd {
 			idx := endByte
 			for idx < parentEnd && (fileBytes[idx] == ' ' || fileBytes[idx] == '\t') {
 				idx++
@@ -686,8 +716,8 @@ func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 			}
 		}
 
-		// Leading comma (e.g. ", c" in "foo(a, b, c)"):
-		if !absorbedTrailing && startByte > parent.StartByte {
+		// Leading comma: if this is the last element, absorb the preceding comma so we don't leave a trailing separator.
+		if !absorbedTrailing && !hasTrailingTrivia && startByte > parent.StartByte {
 			idx := startByte
 			for idx > parent.StartByte && (fileBytes[idx-1] == ' ' || fileBytes[idx-1] == '\t') {
 				idx--
@@ -695,6 +725,33 @@ func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 			if idx > parent.StartByte && fileBytes[idx-1] == ',' {
 				idx--
 				startByte = idx
+			}
+		}
+	}
+
+	// When a switch or match pattern changes, pull in the arrow or colon so it renders as a single edit.
+	if !absorbedTrailing && rules.IsCaseClause(parent.Type) {
+		if endByte < parentEnd {
+			idx := endByte
+			for idx < parentEnd && (fileBytes[idx] == ' ' || fileBytes[idx] == '\t') {
+				idx++
+			}
+			matched := false
+			if idx+2 <= parentEnd && fileBytes[idx] == '=' && fileBytes[idx+1] == '>' {
+				idx += 2
+				matched = true
+			} else if idx+2 <= parentEnd && fileBytes[idx] == '-' && fileBytes[idx+1] == '>' {
+				idx += 2
+				matched = true
+			} else if idx < parentEnd && fileBytes[idx] == ':' {
+				idx++
+				matched = true
+			}
+			if matched {
+				for idx < parentEnd && (fileBytes[idx] == ' ' || fileBytes[idx] == '\t') {
+					idx++
+				}
+				endByte = idx
 			}
 		}
 	}

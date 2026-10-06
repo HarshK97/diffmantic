@@ -2,6 +2,8 @@ package serialize
 
 import (
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestBuildHighlightSpansGapMerging(t *testing.T) {
@@ -820,4 +822,177 @@ func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.
 	if closeSpan.ColorIndex != 1 {
 		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Mauve), got %d", closeSpan.ColorIndex)
 	}
+}
+
+func TestCaseClauseDelimiterAbsorption(t *testing.T) {
+	t.Run("ZigSwitchCaseArrow", func(t *testing.T) {
+		fileBytes := []byte("        .explicit => |lib_name| try w.print();\n")
+		// .explicit: bytes 8..17
+		// =>: bytes 18..20
+		// |lib_name|: bytes 21..31
+		parent := &NodeRef{
+			Type:      "switch_case",
+			StartByte: 8,
+			EndByte:   46,
+		}
+
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "field_expression", StartByte: 8, EndByte: 17},
+				Parent: parent,
+			},
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "payload", StartByte: 21, EndByte: 31},
+				Parent: parent,
+			},
+		}
+
+		spans := BuildHighlightSpans(fileBytes, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 merged span for case pattern and payload, got %d: %+v", len(spans), spans)
+		}
+		if spans[0].StartCol != 8 || spans[0].EndCol != 31 {
+			t.Errorf("expected span cols 8..31, got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+		if spans[0].Action != "insert" {
+			t.Errorf("expected action 'insert', got %q", spans[0].Action)
+		}
+	})
+
+	t.Run("RustMatchArmArrow", func(t *testing.T) {
+		fileBytes := []byte("    Some(v) => foo();\n")
+		// Some(v): bytes 4..11
+		// =>: bytes 12..14
+		parent := &NodeRef{
+			Type:      "match_arm",
+			StartByte: 4,
+			EndByte:   22,
+		}
+
+		actions := []Action{
+			{
+				Action: "insert",
+				Node:   &NodeRef{Type: "match_pattern", StartByte: 4, EndByte: 11},
+				Parent: parent,
+			},
+		}
+
+		spans := BuildHighlightSpans(fileBytes, actions, "right")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// Some(v) => should be absorbed (without trailing space)
+		if spans[0].StartCol != 4 || spans[0].EndCol != 14 {
+			t.Errorf("expected span cols 4..14 (including '=>'), got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("JavaSwitchRuleArrow", func(t *testing.T) {
+		fileBytes := []byte("    case 1 -> foo();\n")
+		// case 1: bytes 4..10
+		// ->: bytes 11..13
+		parent := &NodeRef{
+			Type:      "switch_rule",
+			StartByte: 4,
+			EndByte:   21,
+		}
+
+		actions := []Action{
+			{
+				Action: "delete",
+				Node:   &NodeRef{Type: "switch_label", StartByte: 4, EndByte: 10},
+				Parent: parent,
+			},
+		}
+
+		spans := BuildHighlightSpans(fileBytes, actions, "left")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// case 1 -> should be absorbed (without trailing space)
+		if spans[0].StartCol != 4 || spans[0].EndCol != 13 {
+			t.Errorf("expected span cols 4..13 (including '->'), got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+}
+
+func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *testing.T) {
+	t.Run("TriviaAdjacentCommaAbsorbed", func(t *testing.T) {
+		fileBytes := []byte("foo(a, b);\n")
+		// a: bytes 4..5
+		// ,: bytes 5..6
+		astIndex := &treesitter.ASTIndex{
+			SyntaxTrivia: []treesitter.SyntaxTriviaBlock{
+				{
+					TrailingStart: 5,
+					TrailingEnd:   6,
+				},
+			},
+		}
+		astNode := &treesitter.ASTNode{
+			ID:        0,
+			StartByte: 4,
+			EndByte:   5,
+			Index:     astIndex,
+		}
+
+		actions := []Action{
+			{
+				Action:  "delete",
+				Node:    &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
+				ASTNode: astNode,
+				Parent:  &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9},
+			},
+		}
+
+		spans := BuildHighlightSpans(fileBytes, actions, "left")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// "a," should be absorbed (endCol at 6, exactly trivia.TrailingEnd)
+		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
+			t.Errorf("expected span cols 4..6, got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+
+	t.Run("TriviaInterveningCommentNotSwallowed", func(t *testing.T) {
+		fileBytes := []byte("foo(a /* comment */, b);\n")
+		// a: bytes 4..5
+		// /* comment */: bytes 6..19
+		// ,: bytes 19..20
+		astIndex := &treesitter.ASTIndex{
+			SyntaxTrivia: []treesitter.SyntaxTriviaBlock{
+				{
+					TrailingStart: 19,
+					TrailingEnd:   20,
+				},
+			},
+		}
+		astNode := &treesitter.ASTNode{
+			ID:        0,
+			StartByte: 4,
+			EndByte:   5,
+			Index:     astIndex,
+		}
+
+		actions := []Action{
+			{
+				Action:  "delete",
+				Node:    &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
+				ASTNode: astNode,
+				Parent:  &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 23},
+			},
+		}
+
+		spans := BuildHighlightSpans(fileBytes, actions, "left")
+		if len(spans) != 1 {
+			t.Fatalf("expected 1 span, got %d", len(spans))
+		}
+		// Keep the span at endCol 5 so it doesn't swallow the comment.
+		if spans[0].StartCol != 4 || spans[0].EndCol != 5 {
+			t.Errorf("expected span cols 4..5 (comment preserved untouched), got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
 }

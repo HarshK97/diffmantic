@@ -286,4 +286,26 @@ var rustRules = &Rules{
 	Sentinels: []string{
 		"None",
 	},
+	OpeningDelimiters: []string{
+		"{",
+		"(",
+		"[",
+		"<",
+		"|",
+	},
+	ClosingDelimiters: []string{
+		"}",
+		")",
+		"]",
+		">",
+		"|",
+	},
+	Separators: []string{
+		",",
+		";",
+		":",
+		"=>",
+		"->",
+		"::",
+	},
 }
