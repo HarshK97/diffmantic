@@ -2798,3 +2798,109 @@ func TestIsDelimitedOrBlockContainer(t *testing.T) {
 		t.Errorf("expected block with nil rules to return true")
 	}
 }
+
+func TestNormalizeStationaryMove_CrossScopeCoordinateCollision(t *testing.T) {
+	// When code is replaced across different enclosing declarations, statements
+	// that share identical line and column coordinates shouldn't be treated as
+	// stationary moves and dropped as context.
+	r := rules.Get("go")
+
+	t.Run("preserves move across unmapped functions with identical coordinates", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "oldFn")
+		srcFunc.Language = "go"
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+
+		srcStmt := mkNode("short_var_declaration", "x := 1")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcBody
+		srcBody.Children = []*treesitter.ASTNode{srcStmt}
+		srcStmt.StartRow, srcStmt.EndRow = 10, 10
+		srcStmt.StartCol, srcStmt.EndCol = 4, 10
+		srcStmt.EndByte = 100
+
+		dstFunc := mkNode("function_declaration", "newFn")
+		dstFunc.Language = "go"
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstBody}
+
+		dstStmt := mkNode("short_var_declaration", "x := 1")
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstBody
+		dstBody.Children = []*treesitter.ASTNode{dstStmt}
+		dstStmt.StartRow, dstStmt.EndRow = 10, 10
+		dstStmt.StartCol, dstStmt.EndCol = 4, 10
+		dstStmt.EndByte = 100
+
+		ms := engine.NewMapping()
+		ms.Add(srcStmt, dstStmt)
+		// srcFunc and dstFunc are intentionally unmapped.
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcStmt, DestNode: dstStmt})
+
+		// Identical coordinates across unmapped scopes shouldn't be treated as stationary.
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 1 {
+			t.Fatalf("expected Move action preserved across unmapped scopes, got %d actions", result.Size())
+		}
+
+		threshold := requiredMoveThreshold(srcStmt, dstStmt, ms, r)
+		if threshold < 50 {
+			t.Errorf("expected cross-scope threshold >= 50, got %d", threshold)
+		}
+	})
+
+	t.Run("drops move within mapped functions with identical coordinates", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "fn")
+		srcFunc.Language = "go"
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+
+		srcStmt := mkNode("short_var_declaration", "x := 1")
+		srcStmt.Language = "go"
+		srcStmt.Parent = srcBody
+		srcBody.Children = []*treesitter.ASTNode{srcStmt}
+		srcStmt.StartRow, srcStmt.EndRow = 10, 10
+		srcStmt.StartCol, srcStmt.EndCol = 4, 10
+		srcStmt.EndByte = 100
+
+		dstFunc := mkNode("function_declaration", "fn")
+		dstFunc.Language = "go"
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstBody}
+
+		dstStmt := mkNode("short_var_declaration", "x := 1")
+		dstStmt.Language = "go"
+		dstStmt.Parent = dstBody
+		dstBody.Children = []*treesitter.ASTNode{dstStmt}
+		dstStmt.StartRow, dstStmt.EndRow = 10, 10
+		dstStmt.StartCol, dstStmt.EndCol = 4, 10
+		dstStmt.EndByte = 100
+
+		ms := engine.NewMapping()
+		ms.Add(srcFunc, dstFunc)
+		ms.Add(srcStmt, dstStmt)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcStmt, DestNode: dstStmt})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 0 {
+			t.Fatalf("expected stationary move dropped within mapped scopes, got %d actions", result.Size())
+		}
+
+		threshold := requiredMoveThreshold(srcStmt, dstStmt, ms, r)
+		if threshold != 1 {
+			t.Errorf("expected same-line shift threshold 1 within same scope, got %d", threshold)
+		}
+	})
+}
