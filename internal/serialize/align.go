@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -80,14 +81,7 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 
 	moves, inPlaceNodes := collectMoveRanges(es, ms, srcLines, matched, stationaryStatements)
 
-	// Declarations and comments form invariant boundary anchors.
-	primary := collectDeclarationAndCommentAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings)
-
-	// Unmoved non-punctuation text matches form pivot anchors.
-	text := collectTextAnchors(srcLines, dstLines, moves, stationaryStatements, matched)
-	anchors := mergeAnchors(primary, text)
-
-	// In-place monotonic statements receive mapping prior bonus in Gotoh.
+	// In-place monotonic statements receive mapping prior bonus in Gotoh and act as Tier 3 candidates.
 	inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
 		if inPlaceNodes[n1] && inPlaceNodes[n2] {
 			return true
@@ -96,6 +90,15 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 		isBlock := (r != nil && r.IsBlock(n1.Type)) || (r == nil && rules.IsBlock(n1.Type))
 		return isBlock && !movedNodes[n1] && !movedNodes[n2]
 	})
+
+	// Tier 1: Unchanged lines (declarations, comments, and identical text).
+	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched)
+
+	// Tier 2: Stationary AST statements with surviving structural content.
+	tier2 := collectStationaryStatementAnchors(srcLines, dstLines, stationaryStatements, tier1)
+
+	// Tier 3: Stationary in-place moves that fit monotonically between Tier 1 & 2 anchors.
+	anchors := collectStationaryMoveAnchors(srcLines, dstLines, inPlaceStatements, tier2)
 
 	// Give statements inside the same moved block a Gotoh prior bonus so their interior lines align.
 	intraMoveStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
@@ -347,12 +350,12 @@ func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, al
 		}
 		var isIgnored bool
 		if r != nil {
-			isIgnored = r.IsKeyword(n1.Type, n1.Label) || r.IsDelimiter(n1.Type, n1.Label) ||
+			isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
 				r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
 				r.IsWrapper(n1.Type) || r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
 				r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
 		} else {
-			isIgnored = rules.IsKeyword(n1.Type, n1.Label) || rules.IsDelimiter(n1.Type, n1.Label) ||
+			isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
 				rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
 				rules.IsWrapper(n1.Type) || rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
 				rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
@@ -453,47 +456,179 @@ func nodeEndLine(line string, n *treesitter.ASTNode) string {
 	return strings.TrimSpace(line)
 }
 
-func collectTextAnchors(srcLines, dstLines []string, moves []moveRange, mappedStatements map[int]int, matched map[int]int) []anchor {
-	if matched == nil {
-		matched = engine.LineDiff(srcLines, dstLines)
-	}
-	if len(matched) == 0 {
-		return nil
+// collectUnchangedAnchors collects Tier 1 alignment anchors: lines that didn't
+// change between source and destination. This includes unmoved declarations,
+// unchanged comments, stationary statements with identical text, and clean LineDiff
+// matches that don't cross moves.
+func collectUnchangedAnchors(
+	srcLines, dstLines []string,
+	ms *engine.Mapping,
+	movedNodes map[*treesitter.ASTNode]bool,
+	moves []moveRange,
+	commentLineMappings []map[int]int,
+	stationaryStatements map[int]int,
+	matched map[int]int,
+) []anchor {
+	primary := collectDeclarationAndCommentAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings)
+	cands := make([]anchor, 0, len(primary)+len(stationaryStatements))
+
+	// 1. Declarations and unmoved comments
+	cands = append(cands, primary...)
+
+	// 2. Stationary AST statements and verified closing delimiters where text matches
+	for s, d := range stationaryStatements {
+		if s < 0 || s >= len(srcLines) || d < 0 || d >= len(dstLines) {
+			continue
+		}
+		sTrim := strings.TrimSpace(srcLines[s])
+		dTrim := strings.TrimSpace(dstLines[d])
+		if sTrim != "" && dTrim != "" && sTrim == dTrim {
+			cands = append(cands, anchor{src: s, dst: d})
+		}
 	}
 
-	var cands []anchor
-	lastDst := -1
-	for i := 0; i < len(srcLines); i++ {
-		j, ok := matched[i]
-		if !ok || j <= lastDst {
+	// 3. Exact LineDiff matches where text matches and does not cross stationary statements or cross-scope moves
+	for s := range len(srcLines) {
+		d, ok := matched[s]
+		if !ok || d < 0 || d >= len(dstLines) {
 			continue
 		}
-		if mappedStatements != nil {
-			if targetDst, hasMap := mappedStatements[i]; hasMap && targetDst != j {
-				continue
-			}
-			crosses := false
-			for sStmt, dStmt := range mappedStatements {
-				if (i < sStmt && j > dStmt) || (i > sStmt && j < dStmt) {
-					crosses = true
-					break
-				}
-			}
-			if crosses {
-				continue
-			}
-		}
-		sTrim := strings.TrimSpace(srcLines[i])
-		if sTrim == "" || rules.IsPunctuation(sTrim) {
+		// If already handled as a stationary statement, skip to avoid duplicate or conflicting candidates.
+		if _, isStationary := stationaryStatements[s]; isStationary {
 			continue
 		}
-		if isInsideMove(i, j, moves) {
+		sTrim := strings.TrimSpace(srcLines[s])
+		dTrim := strings.TrimSpace(dstLines[d])
+		if sTrim == "" || dTrim == "" || sTrim != dTrim {
 			continue
 		}
-		cands = append(cands, anchor{src: i, dst: j})
-		lastDst = j
+		// Skip bare delimiters (like a single closing brace) from LineDiff so LCS
+		// doesn't latch onto the wrong brace. Real delimiter pairs are already handled
+		// by AST mapping in step 2.
+		if rules.IsPunctuation(sTrim) {
+			continue
+		}
+		if isInsideMove(s, d, moves) {
+			continue
+		}
+		crosses := false
+		for sStmt, dStmt := range stationaryStatements {
+			if (s < sStmt && d > dStmt) || (s > sStmt && d < dStmt) {
+				crosses = true
+				break
+			}
+		}
+		if crosses {
+			continue
+		}
+		cands = append(cands, anchor{src: s, dst: d})
 	}
-	return cands
+
+	return filterMonotonic(cands)
+}
+
+// collectStationaryStatementAnchors collects Tier 2 alignment anchors: stationary
+// AST statements that share identifiers or keywords across the edit. These fill
+// gaps between Tier 1 anchors so stationary code won't get displaced by moves.
+func collectStationaryStatementAnchors(
+	srcLines, dstLines []string,
+	stationaryStatements map[int]int,
+	tier1Anchors []anchor,
+) []anchor {
+	if len(stationaryStatements) == 0 {
+		return tier1Anchors
+	}
+	var cands []anchor
+	for s, d := range stationaryStatements {
+		if s < 0 || s >= len(srcLines) || d < 0 || d >= len(dstLines) {
+			continue
+		}
+		sTrim := strings.TrimSpace(srcLines[s])
+		dTrim := strings.TrimSpace(dstLines[d])
+		if sTrim == "" || dTrim == "" || rules.IsPunctuation(sTrim) || rules.IsPunctuation(dTrim) {
+			continue
+		}
+		// Exact matches are already handled in Tier 1.
+		if sTrim == dTrim {
+			continue
+		}
+		if hasSharedWordTokens(sTrim, dTrim) {
+			cands = append(cands, anchor{src: s, dst: d})
+		}
+	}
+	if len(cands) == 0 {
+		return tier1Anchors
+	}
+	return mergeAnchors(tier1Anchors, filterMonotonic(cands))
+}
+
+func hasSharedWordTokens(s, d string) bool {
+	sTokens := extractWordTokens(s)
+	if len(sTokens) == 0 {
+		return false
+	}
+	return hasAnyMatchingToken(d, sTokens)
+}
+
+func extractWordTokens(s string) map[string]bool {
+	tokens := make(map[string]bool)
+	var cur strings.Builder
+	for _, ch := range s {
+		if unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' {
+			cur.WriteRune(ch)
+		} else {
+			if cur.Len() >= 2 {
+				tokens[cur.String()] = true
+			}
+			cur.Reset()
+		}
+	}
+	if cur.Len() >= 2 {
+		tokens[cur.String()] = true
+	}
+	return tokens
+}
+
+func hasAnyMatchingToken(s string, targetTokens map[string]bool) bool {
+	var cur strings.Builder
+	for _, ch := range s {
+		if unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' {
+			cur.WriteRune(ch)
+		} else {
+			if cur.Len() >= 2 && targetTokens[cur.String()] {
+				return true
+			}
+			cur.Reset()
+		}
+	}
+	return cur.Len() >= 2 && targetTokens[cur.String()]
+}
+
+// collectStationaryMoveAnchors collects Tier 3 alignment anchors: in-place statements
+// whose text still matches, fitting them between Tier 1 and Tier 2 anchors.
+func collectStationaryMoveAnchors(
+	srcLines, dstLines []string,
+	inPlaceStatements map[int]int,
+	tier1Anchors []anchor,
+) []anchor {
+	if len(inPlaceStatements) == 0 {
+		return tier1Anchors
+	}
+	var cands []anchor
+	for s, d := range inPlaceStatements {
+		if s < 0 || s >= len(srcLines) || d < 0 || d >= len(dstLines) {
+			continue
+		}
+		sTrim := strings.TrimSpace(srcLines[s])
+		dTrim := strings.TrimSpace(dstLines[d])
+		if sTrim != "" && dTrim != "" && sTrim == dTrim {
+			cands = append(cands, anchor{src: s, dst: d})
+		}
+	}
+	if len(cands) == 0 {
+		return tier1Anchors
+	}
+	return mergeAnchors(tier1Anchors, filterMonotonic(cands))
 }
 
 func mergeAnchors(primary, secondary []anchor) []anchor {
