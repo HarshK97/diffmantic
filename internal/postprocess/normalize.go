@@ -132,7 +132,9 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
 	if hasPos && node.StartRow == dstNode.StartRow && node.EndRow == dstNode.EndRow &&
 		node.StartCol == dstNode.StartCol && node.EndCol == dstNode.EndCol {
-		return true
+		if sameScopeDeclaration(node, dstNode, ms, r) {
+			return true
+		}
 	}
 
 	srcParent := node.Parent
@@ -538,7 +540,13 @@ func normalizeWrapperDelimiterChanges(es *actions.EditScript, ms *engine.Mapping
 // sameScopeDeclaration reports whether src and dst reside within corresponding
 // (mapped) enclosing container declarations (functions, methods, classes, structs).
 func sameScopeDeclaration(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
-	if src == nil || dst == nil || ms == nil || r == nil {
+	if src == nil || dst == nil || ms == nil {
+		return false
+	}
+	if r == nil {
+		r = rules.Get(src.GetLanguage())
+	}
+	if r == nil {
 		return false
 	}
 	srcDecl := src.EnclosingContainerDeclaration(r)
@@ -670,8 +678,8 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		lineDist = -lineDist
 	}
 
-	// Same-line shifts.
-	if lineDist == 0 {
+	// Same-line inline shifts within the same enclosing scope.
+	if lineDist == 0 && sameScopeDeclaration(src, dst, ms, r) {
 		if crossKey {
 			return 5
 		}
