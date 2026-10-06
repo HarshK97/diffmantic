@@ -55,27 +55,28 @@ type Envelope struct {
 	RightHighlights []HighlightSpan     `json:"right_highlights,omitempty"`
 }
 
-// Action represents a serialized edit-script action.
-// The absence of the "subtree" field always indicates false.
+// Action is a single AST edit operation. Omitting "subtree" on the wire implicitly means false.
 type Action struct {
-	Action            string   `json:"action"` // "insert", "delete", "update", "move"
-	Node              *NodeRef `json:"node"`
-	Parent            *NodeRef `json:"parent,omitempty"`
-	Position          *int     `json:"position,omitempty"`
-	OldParent         *NodeRef `json:"old_parent,omitempty"`
-	OldPosition       *int     `json:"old_position,omitempty"`
-	OldValue          string   `json:"old_value,omitempty"`
-	NewValue          string   `json:"new_value,omitempty"`
-	Subtree           *bool    `json:"subtree,omitempty"`
-	DestNode          *NodeRef `json:"dest_node,omitempty"`
-	DestStartByte     *uint32  `json:"dest_start_byte,omitempty"`
-	DestEndByte       *uint32  `json:"dest_end_byte,omitempty"`
-	GroupID           string   `json:"group_id,omitempty"`
-	MoveColorIndex    int      `json:"-"`
-	OrigStartByte     uint32   `json:"-"`
-	OrigEndByte       uint32   `json:"-"`
-	DestOrigStartByte uint32   `json:"-"`
-	DestOrigEndByte   uint32   `json:"-"`
+	Action            string              `json:"action"` // "insert", "delete", "update", "move"
+	Node              *NodeRef            `json:"node"`
+	Parent            *NodeRef            `json:"parent,omitempty"`
+	Position          *int                `json:"position,omitempty"`
+	OldParent         *NodeRef            `json:"old_parent,omitempty"`
+	OldPosition       *int                `json:"old_position,omitempty"`
+	OldValue          string              `json:"old_value,omitempty"`
+	NewValue          string              `json:"new_value,omitempty"`
+	Subtree           *bool               `json:"subtree,omitempty"`
+	DestNode          *NodeRef            `json:"dest_node,omitempty"`
+	DestStartByte     *uint32             `json:"dest_start_byte,omitempty"`
+	DestEndByte       *uint32             `json:"dest_end_byte,omitempty"`
+	GroupID           string              `json:"group_id,omitempty"`
+	MoveColorIndex    int                 `json:"-"`
+	OrigStartByte     uint32              `json:"-"`
+	OrigEndByte       uint32              `json:"-"`
+	DestOrigStartByte uint32              `json:"-"`
+	DestOrigEndByte   uint32              `json:"-"`
+	ASTNode           *treesitter.ASTNode `json:"-"`
+	DestASTNode       *treesitter.ASTNode `json:"-"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -173,7 +174,7 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 	return env
 }
 
-// BuildEnvelopeWithOptions packages the edit script, AST mappings, and UI metadata into an Envelope based on opts.
+// BuildEnvelopeWithOptions translates raw diff actions and line alignments into the finalized JSON payload.
 func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoot, dstRoot *treesitter.ASTNode, srcBytes, dstBytes []byte, opts EnvelopeOptions) (*Envelope, error) {
 	if es == nil {
 		return nil, fmt.Errorf("edit script is nil")
@@ -202,6 +203,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 			if a.Node != nil {
 				ja.OrigStartByte = a.Node.StartByte
 				ja.OrigEndByte = a.Node.EndByte
+				ja.ASTNode = a.Node
 			}
 
 			switch a.Type {
@@ -299,6 +301,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if destNodeDst != nil {
 					ja.DestOrigStartByte = destNodeDst.StartByte
 					ja.DestOrigEndByte = destNodeDst.EndByte
+					ja.DestASTNode = destNodeDst
 					destRef, err := makeNodeRef(destNodeDst, "after")
 					if err != nil {
 						return nil, fmt.Errorf("failed to build dest_node reference for update: %w", err)
@@ -392,6 +395,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if a.DestNode != nil {
 					ja.DestOrigStartByte = a.DestNode.StartByte
 					ja.DestOrigEndByte = a.DestNode.EndByte
+					ja.DestASTNode = a.DestNode
 					startByte := a.DestNode.StartByte
 					endByte := a.DestNode.EndByte
 					if !a.Subtree {
@@ -418,6 +422,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					if destNodeDst := ms.Src()[a.Node]; destNodeDst != nil {
 						ja.DestOrigStartByte = destNodeDst.StartByte
 						ja.DestOrigEndByte = destNodeDst.EndByte
+						ja.DestASTNode = destNodeDst
 						startByte := destNodeDst.StartByte
 						endByte := destNodeDst.EndByte
 						if !a.Subtree {
@@ -637,7 +642,7 @@ func makeNodeRef(n *treesitter.ASTNode, treeName string) (*NodeRef, error) {
 	}, nil
 }
 
-// adjustRangeForContainer limits the node to its opening header and reports any closing delimiter span (e.g. closing brace).
+// adjustRangeForContainer clips a container action to its header line and extracts its closing delimiter so multiline blocks don't highlight inner children.
 func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileBytes []byte) (hasFooter bool, footerStart, footerEnd uint32) {
 	if n == nil || start == nil || end == nil {
 		return false, 0, 0
@@ -649,6 +654,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			*end = block.StartByte
 			if len(block.LeadingTrivia) > 0 && block.LeadingTrivia[0].StartByte > *start && block.LeadingTrivia[0].StartByte < *end {
 				*end = block.LeadingTrivia[0].StartByte
+			}
+			if bt := block.SyntaxTrivia(); bt != nil && bt.ClosingEnd > bt.ClosingStart && !isIndentationConstruct(n, block) {
+				return true, bt.ClosingStart, bt.ClosingEnd
 			}
 			if block.EndByte < origEnd && !isIndentationConstruct(n, block) && isClosingDelimiter(fileBytes, block.EndByte, origEnd) {
 				return true, block.EndByte, origEnd
@@ -668,6 +676,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				if len(firstIndex.LeadingTrivia) > 0 && firstIndex.LeadingTrivia[0].StartByte > *start && firstIndex.LeadingTrivia[0].StartByte < *end {
 					*end = firstIndex.LeadingTrivia[0].StartByte
 				}
+				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
+					return true, trivia.ClosingStart, trivia.ClosingEnd
+				}
 				if lastIndex.EndByte > firstIndex.StartByte && lastIndex.EndByte < origEnd {
 					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastIndex.EndByte, origEnd) {
 						return true, lastIndex.EndByte, origEnd
@@ -684,6 +695,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				*end = firstChild.StartByte
 				if len(firstChild.LeadingTrivia) > 0 && firstChild.LeadingTrivia[0].StartByte > *start && firstChild.LeadingTrivia[0].StartByte < *end {
 					*end = firstChild.LeadingTrivia[0].StartByte
+				}
+				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
+					return true, trivia.ClosingStart, trivia.ClosingEnd
 				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstChild.StartByte && lastChild.EndByte < origEnd {
@@ -708,6 +722,9 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				*end = firstBodyChild.StartByte
 				if len(firstBodyChild.LeadingTrivia) > 0 && firstBodyChild.LeadingTrivia[0].StartByte > *start && firstBodyChild.LeadingTrivia[0].StartByte < *end {
 					*end = firstBodyChild.LeadingTrivia[0].StartByte
+				}
+				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
+					return true, trivia.ClosingStart, trivia.ClosingEnd
 				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {

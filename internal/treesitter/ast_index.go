@@ -1,12 +1,25 @@
 package treesitter
 
-import "sort"
+import "slices"
+
+// SyntaxTriviaBlock holds CST punctuation byte spans (brackets, braces, separators)
+// so diffing can absorb delimiters without adding synthetic nodes to the AST.
+// All byte offsets are 0-indexed in the source file buffer.
+type SyntaxTriviaBlock struct {
+	OpeningStart  uint32
+	OpeningEnd    uint32
+	ClosingStart  uint32
+	ClosingEnd    uint32
+	TrailingStart uint32
+	TrailingEnd   uint32
+}
 
 // ASTIndex holds pre-order and post-order arrays for fast subtree lookups.
 type ASTIndex struct {
-	Nodes      []*ASTNode
-	PostOrder  []*ASTNode
-	LabelIndex map[string][]int32
+	Nodes        []*ASTNode
+	PostOrder    []*ASTNode
+	LabelIndex   map[string][]int32
+	SyntaxTrivia []SyntaxTriviaBlock // Indexed by ASTNode.ID; kept out of ASTNode to protect its 240-byte cache footprint.
 }
 
 // EnsureIndex indexes the tree if it hasn't been indexed yet.
@@ -15,6 +28,9 @@ func EnsureIndex(root *ASTNode) *ASTIndex {
 		return nil
 	}
 	if root.Index != nil && root.PreSize > 0 {
+		if root.Index.SyntaxTrivia == nil {
+			root.Index.SyntaxTrivia = make([]SyntaxTriviaBlock, len(root.Index.Nodes))
+		}
 		return root.Index
 	}
 
@@ -38,6 +54,7 @@ func EnsureIndex(root *ASTNode) *ASTIndex {
 	}
 	walkPre(root)
 	idx.Nodes = preOrder
+	idx.SyntaxTrivia = make([]SyntaxTriviaBlock, len(preOrder))
 
 	// 2. Assign PostOrder
 	var postOrder []*ASTNode
@@ -90,8 +107,8 @@ func (n *ASTNode) FrequencyInSubtree(label string) int {
 		}
 		start := n.PostStart
 		end := start + n.PreSize
-		left := sort.Search(len(positions), func(i int) bool { return positions[i] >= start })
-		right := sort.Search(len(positions), func(i int) bool { return positions[i] >= end })
+		left, _ := slices.BinarySearch(positions, start)
+		right, _ := slices.BinarySearch(positions, end)
 		return right - left
 	}
 	if len(n.Children) == 0 {

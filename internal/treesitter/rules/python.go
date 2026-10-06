@@ -269,4 +269,20 @@ var pythonRules = &Rules{
 		"True",
 		"False",
 	},
+	OpeningDelimiters: []string{
+		"{",
+		"(",
+		"[",
+	},
+	ClosingDelimiters: []string{
+		"}",
+		")",
+		"]",
+	},
+	Separators: []string{
+		",",
+		";",
+		":",
+		"->",
+	},
 }
