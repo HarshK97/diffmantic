@@ -174,7 +174,7 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	// Don't pair a declaration with an assignment (like := vs +=) unless they touch
 	// the same variable, otherwise extracting an expression into a temp var steals
 	// the original statement.
-	if hasDisjointAssignmentTargets(t1, c, r) {
+	if t1.Type != c.Type && hasDisjointAssignmentTargets(t1, c, r) {
 		return -1.0
 	}
 
@@ -931,10 +931,10 @@ func hasForeignMappedDescendants(t1, candidate *treesitter.ASTNode, m *Mapping) 
 	return false
 }
 
+// hasDisjointAssignmentTargets reports whether t1 and c assign to completely disjoint
+// target variables. Returns false if either node isn't an assignment or declaration, or
+// if we couldn't resolve any target names.
 func hasDisjointAssignmentTargets(t1, c *treesitter.ASTNode, r *rules.Rules) bool {
-	if t1.Type == c.Type {
-		return false
-	}
 	names1 := getAssignmentTargetNames(t1, r)
 	names2 := getAssignmentTargetNames(c, r)
 	if len(names1) == 0 || len(names2) == 0 {
@@ -945,14 +945,27 @@ func hasDisjointAssignmentTargets(t1, c *treesitter.ASTNode, r *rules.Rules) boo
 	})
 }
 
+// getAssignmentTargetNames extracts variable names targeted on the LHS of an
+// assignment or declaration statement.
 func getAssignmentTargetNames(n *treesitter.ASTNode, r *rules.Rules) []string {
 	if n == nil {
+		return nil
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	isAssign := (r != nil && r.IsAssignment(n.Type)) || (r == nil && rules.IsAssignment(n.Type))
+	isDecl := (r != nil && r.IsLocalVarDeclaration(n.Type)) || (r == nil && rules.IsLocalVarDeclaration(n.Type))
+	if !isAssign && !isDecl {
 		return nil
 	}
 	opIdx := slices.IndexFunc(n.Children, func(child *treesitter.ASTNode) bool {
 		return isOperatorGlue(child, r)
 	})
-	limit := len(n.Children)
+	if opIdx < 0 && !isDecl {
+		return nil
+	}
+	limit := 0
 	if opIdx >= 0 {
 		limit = opIdx
 	} else if len(n.Children) > 0 {

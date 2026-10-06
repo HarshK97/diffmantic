@@ -136,6 +136,9 @@ var luaRules = &Rules{
 	LocalVarDeclarations: []string{
 		"variable_declaration",
 	},
+	Assignments: []string{
+		"assignment_statement",
+	},
 	ContainerDeclarations: []string{
 		"function_declaration",
 	},

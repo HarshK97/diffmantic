@@ -169,6 +169,9 @@ var golangRules = &Rules{
 		"const_declaration",
 		"short_var_declaration",
 	},
+	Assignments: []string{
+		"assignment_statement",
+	},
 	ContainerDeclarations: []string{
 		"function_declaration",
 		"method_declaration",

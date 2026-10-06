@@ -186,6 +186,9 @@ var cRules = &Rules{
 	LocalVarDeclarations: []string{
 		"declaration",
 	},
+	Assignments: []string{
+		"assignment_expression",
+	},
 	ContainerDeclarations: []string{
 		"function_definition",
 		"type_definition",

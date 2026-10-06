@@ -25,6 +25,7 @@ type Rules struct {
 	ScopedDeclarations    []string
 	Indexed               []string // Subscript nodes with prefix receivers (e.g. arr[i]).
 	LocalVarDeclarations  []string
+	Assignments           []string // Assignment expressions or statements (e.g. assignment_expression, assignment_statement).
 	ContainerDeclarations []string // Major declaration scope boundaries (functions, classes, structs, etc.).
 	Closures              []string // Anonymous functions, lambdas, and callbacks.
 	Types                 []string // Type annotations and type expressions.
@@ -55,6 +56,7 @@ type Rules struct {
 	scopedDeclarationsSet    map[string]struct{}
 	indexedSet               map[string]struct{}
 	localVarDeclarationsSet  map[string]struct{}
+	assignmentsSet           map[string]struct{}
 	containerDeclarationsSet map[string]struct{}
 	closuresSet              map[string]struct{}
 	typesSet                 map[string]struct{}
@@ -114,6 +116,7 @@ func (r *Rules) CompileSets() {
 	r.scopedDeclarationsSet = sliceToSet(r.ScopedDeclarations)
 	r.indexedSet = sliceToSet(r.Indexed)
 	r.localVarDeclarationsSet = sliceToSet(r.LocalVarDeclarations)
+	r.assignmentsSet = sliceToSet(r.Assignments)
 	r.containerDeclarationsSet = sliceToSet(r.ContainerDeclarations)
 	r.closuresSet = sliceToSet(r.Closures)
 	r.typesSet = sliceToSet(r.Types)
@@ -231,6 +234,18 @@ func (r *Rules) IsLocalVarDeclaration(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.LocalVarDeclarations, nodeType)
+}
+
+// IsAssignment reports whether nodeType is an assignment expression or statement.
+func (r *Rules) IsAssignment(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.assignmentsSet) > 0 {
+		_, ok := r.assignmentsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Assignments, nodeType)
 }
 
 // IsContainerDeclaration reports whether nodeType is a major container declaration
@@ -595,6 +610,16 @@ func IsDeclaration(nodeType string) bool {
 func IsLocalVarDeclaration(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsLocalVarDeclaration(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsAssignment reports whether nodeType is configured as an assignment in any language rule set.
+func IsAssignment(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsAssignment(nodeType) {
 			return true
 		}
 	}
