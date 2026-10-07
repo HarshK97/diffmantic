@@ -2904,3 +2904,218 @@ func TestNormalizeStationaryMove_CrossScopeCoordinateCollision(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildCohortProtected(t *testing.T) {
+	t.Run("cohort with anchor is protected", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "fnOld")
+		srcFunc.Language = "go"
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+
+		anchorSrc := mkNode("for_statement", "")
+		anchorSrc.Language = "go"
+		anchorSrc.StartRow, anchorSrc.EndRow = 10, 25
+		anchorSrc.Parent = srcBody
+		for i := range 20 {
+			child := mkNode("expression_statement", fmt.Sprintf("stmt%d", i))
+			child.Language = "go"
+			child.Parent = anchorSrc
+			anchorSrc.Children = append(anchorSrc.Children, child)
+		}
+
+		stmt1Src := mkNode("short_var_declaration", "x := 1")
+		stmt1Src.Language = "go"
+		stmt1Src.Parent = srcBody
+
+		stmt2Src := mkNode("short_var_declaration", "y := 2")
+		stmt2Src.Language = "go"
+		stmt2Src.Parent = srcBody
+
+		srcBody.Children = []*treesitter.ASTNode{anchorSrc, stmt1Src, stmt2Src}
+
+		dstFunc := mkNode("function_declaration", "fnNew")
+		dstFunc.Language = "go"
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstBody}
+
+		anchorDst := mkNode("for_statement", "")
+		anchorDst.Language = "go"
+		anchorDst.StartRow, anchorDst.EndRow = 10, 25
+		anchorDst.Parent = dstBody
+		for i := range 20 {
+			child := mkNode("expression_statement", fmt.Sprintf("stmt%d", i))
+			child.Language = "go"
+			child.Parent = anchorDst
+			anchorDst.Children = append(anchorDst.Children, child)
+		}
+
+		stmt1Dst := mkNode("short_var_declaration", "x := 1")
+		stmt1Dst.Language = "go"
+		stmt1Dst.Parent = dstBody
+
+		stmt2Dst := mkNode("short_var_declaration", "y := 2")
+		stmt2Dst.Language = "go"
+		stmt2Dst.Parent = dstBody
+
+		dstBody.Children = []*treesitter.ASTNode{anchorDst, stmt1Dst, stmt2Dst}
+
+		ms := engine.NewMapping()
+		ms.Add(anchorSrc, anchorDst)
+		for i := range anchorSrc.Children {
+			ms.Add(anchorSrc.Children[i], anchorDst.Children[i])
+		}
+		ms.Add(stmt1Src, stmt1Dst)
+		ms.Add(stmt2Src, stmt2Dst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: anchorSrc, DestNode: anchorDst})
+		es.Add(actions.Action{Type: actions.Move, Node: stmt1Src, DestNode: stmt1Dst})
+		es.Add(actions.Action{Type: actions.Move, Node: stmt2Src, DestNode: stmt2Dst})
+
+		protected := buildCohortProtected(es, ms)
+		if !protected[anchorSrc] || !protected[stmt1Src] || !protected[stmt2Src] {
+			t.Errorf("expected all 3 cohort moves to be protected, got: %+v", protected)
+		}
+
+		result := normalizeMovesByStructure(es, ms)
+		moveCount := 0
+		for _, a := range result.Actions() {
+			if a.Type == actions.Move {
+				moveCount++
+			}
+		}
+		if moveCount != 3 {
+			t.Errorf("expected 3 moves to survive in protected cohort, got %d", moveCount)
+		}
+	})
+
+	t.Run("cohort without qualifying anchor is not protected", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "fnOld")
+		srcFunc.Language = "go"
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+
+		stmt1Src := mkNode("short_var_declaration", "x := 1")
+		stmt1Src.Language = "go"
+		stmt1Src.Parent = srcBody
+
+		stmt2Src := mkNode("short_var_declaration", "y := 2")
+		stmt2Src.Language = "go"
+		stmt2Src.Parent = srcBody
+
+		stmt3Src := mkNode("short_var_declaration", "z := 3")
+		stmt3Src.Language = "go"
+		stmt3Src.Parent = srcBody
+		srcBody.Children = []*treesitter.ASTNode{stmt1Src, stmt2Src, stmt3Src}
+
+		dstFunc := mkNode("function_declaration", "fnNew")
+		dstFunc.Language = "go"
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstBody}
+
+		stmt1Dst := mkNode("short_var_declaration", "x := 1")
+		stmt1Dst.Language = "go"
+		stmt1Dst.Parent = dstBody
+
+		stmt2Dst := mkNode("short_var_declaration", "y := 2")
+		stmt2Dst.Language = "go"
+		stmt2Dst.Parent = dstBody
+
+		stmt3Dst := mkNode("short_var_declaration", "z := 3")
+		stmt3Dst.Language = "go"
+		stmt3Dst.Parent = dstBody
+		dstBody.Children = []*treesitter.ASTNode{stmt1Dst, stmt2Dst, stmt3Dst}
+
+		ms := engine.NewMapping()
+		ms.Add(stmt1Src, stmt1Dst)
+		ms.Add(stmt2Src, stmt2Dst)
+		ms.Add(stmt3Src, stmt3Dst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: stmt1Src, DestNode: stmt1Dst})
+		es.Add(actions.Action{Type: actions.Move, Node: stmt2Src, DestNode: stmt2Dst})
+		es.Add(actions.Action{Type: actions.Move, Node: stmt3Src, DestNode: stmt3Dst})
+
+		protected := buildCohortProtected(es, ms)
+		if len(protected) != 0 {
+			t.Errorf("expected 0 protected nodes when no anchor qualifies, got %d", len(protected))
+		}
+
+		result := normalizeMovesByStructure(es, ms)
+		for _, a := range result.Actions() {
+			if a.Type == actions.Move {
+				t.Errorf("expected small move without anchor to be demoted, but found Move for %v", a.Node.Label)
+			}
+		}
+	})
+
+	t.Run("cohort with fewer than 3 moves is not protected", func(t *testing.T) {
+		srcFunc := mkNode("function_declaration", "fnOld")
+		srcFunc.Language = "go"
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+
+		anchorSrc := mkNode("for_statement", "")
+		anchorSrc.Language = "go"
+		anchorSrc.Parent = srcBody
+		for i := range 20 {
+			child := mkNode("expression_statement", fmt.Sprintf("stmt%d", i))
+			child.Language = "go"
+			child.Parent = anchorSrc
+			anchorSrc.Children = append(anchorSrc.Children, child)
+		}
+
+		stmt1Src := mkNode("short_var_declaration", "x := 1")
+		stmt1Src.Language = "go"
+		stmt1Src.Parent = srcBody
+		srcBody.Children = []*treesitter.ASTNode{anchorSrc, stmt1Src}
+
+		dstFunc := mkNode("function_declaration", "fnNew")
+		dstFunc.Language = "go"
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstBody}
+
+		anchorDst := mkNode("for_statement", "")
+		anchorDst.Language = "go"
+		anchorDst.Parent = dstBody
+		for i := range 20 {
+			child := mkNode("expression_statement", fmt.Sprintf("stmt%d", i))
+			child.Language = "go"
+			child.Parent = anchorDst
+			anchorDst.Children = append(anchorDst.Children, child)
+		}
+
+		stmt1Dst := mkNode("short_var_declaration", "x := 1")
+		stmt1Dst.Language = "go"
+		stmt1Dst.Parent = dstBody
+		dstBody.Children = []*treesitter.ASTNode{anchorDst, stmt1Dst}
+
+		ms := engine.NewMapping()
+		ms.Add(anchorSrc, anchorDst)
+		for i := range anchorSrc.Children {
+			ms.Add(anchorSrc.Children[i], anchorDst.Children[i])
+		}
+		ms.Add(stmt1Src, stmt1Dst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: anchorSrc, DestNode: anchorDst})
+		es.Add(actions.Action{Type: actions.Move, Node: stmt1Src, DestNode: stmt1Dst})
+
+		protected := buildCohortProtected(es, ms)
+		if len(protected) != 0 {
+			t.Errorf("expected 0 protected nodes for cohort size < 3, got %d", len(protected))
+		}
+	})
+}

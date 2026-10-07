@@ -721,6 +721,65 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 	return 50 + lineDist/10
 }
 
+// cohortKey groups moves by source parent and destination container.
+type cohortKey struct {
+	srcParent    *treesitter.ASTNode
+	dstContainer *treesitter.ASTNode
+}
+
+// buildCohortProtected marks moves that shouldn't be demoted because they're
+// moving alongside an anchor. If several siblings move together to the same
+// destination and at least one qualifies on its own, we keep the whole group.
+func buildCohortProtected(es *actions.EditScript, ms *engine.Mapping) map[*treesitter.ASTNode]bool {
+	const minCohortSize = 3
+
+	groups := make(map[cohortKey][]*treesitter.ASTNode)
+	for _, a := range es.Actions() {
+		if a.Type != actions.Move || a.Node == nil || a.Node.Parent == nil {
+			continue
+		}
+		dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
+		if dstNode == nil {
+			continue
+		}
+		r := rules.Get(a.Node.GetLanguage())
+
+		dstContainer := cmp.Or(dstNode.EnclosingContainerDeclaration(r), dstNode.Parent)
+		if dstContainer == nil {
+			continue
+		}
+		key := cohortKey{srcParent: a.Node.Parent, dstContainer: dstContainer}
+		groups[key] = append(groups[key], a.Node)
+	}
+
+	protected := make(map[*treesitter.ASTNode]bool)
+	for _, nodes := range groups {
+		if len(nodes) < minCohortSize {
+			continue
+		}
+		// At least one sibling must qualify on its own so unrelated boilerplate
+		// doesn't drag the whole block along.
+		hasAnchor := false
+		for _, n := range nodes {
+			dst := ms.Src()[n]
+			r := rules.Get(n.GetLanguage())
+			score := moveStructuralScore(n, r, ms)
+			thresh := requiredMoveThreshold(n, dst, ms, r)
+			if score >= thresh {
+				hasAnchor = true
+				break
+			}
+		}
+		if !hasAnchor {
+			continue
+		}
+		for _, n := range nodes {
+			protected[n] = true
+		}
+	}
+	return protected
+}
+
 // normalizeMovesByStructure demotes Move actions whose structural score is below
 // their distance-based threshold into separate Delete + Insert actions, and drops
 // the demoted nodes from the mapping to stop spurious updates downstream.
@@ -751,6 +810,9 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 		}
 	}
 
+	// Protect small sibling moves travelling with a qualified anchor.
+	cohortProtected := buildCohortProtected(es, ms)
+
 	const maxDemotionRounds = 3
 	for range maxDemotionRounds {
 		changed := false
@@ -773,6 +835,9 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			}
 			r := rules.Get(a.Node.GetLanguage())
 			if r == nil {
+				continue
+			}
+			if cohortProtected[a.Node] {
 				continue
 			}
 			if !shouldDemoteMove(a.Node, dstNode, ms, r, evicted) {
