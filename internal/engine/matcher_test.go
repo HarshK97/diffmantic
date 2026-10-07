@@ -684,3 +684,188 @@ func TestMatchPairValues_HighSimilarityPreferred(t *testing.T) {
 		t.Errorf("attrOld2 should match attrNew via similarity, got %v", m.Src()[attrOld2])
 	}
 }
+
+func TestRecoverCohortSiblings(t *testing.T) {
+	t.Run("recovers unique unmatched sibling statement across declarations", func(t *testing.T) {
+		setupOld := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "targetLabels"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		anchorOld := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doHeavyWork"),
+		)
+		blockOld1 := testutil.Node("block", "", setupOld, anchorOld)
+		fnOld1 := testutil.Node("function_declaration", "fnOld1", blockOld1)
+
+		otherOld := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doOther"),
+		)
+		blockOld2 := testutil.Node("block", "", otherOld)
+		fnOld2 := testutil.Node("function_declaration", "fnOld2", blockOld2)
+
+		rootOld := testutil.Node("source_file", "", fnOld1, fnOld2)
+		rootOld.Language = "go"
+
+		otherNew := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doOther"),
+		)
+		setupNew := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "targetLabels"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		anchorNew := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doHeavyWork"),
+		)
+		blockNew := testutil.Node("block", "", otherNew, setupNew, anchorNew)
+		fnNew := testutil.Node("function_declaration", "fnOld2", blockNew)
+
+		rootNew := testutil.Node("source_file", "", fnNew)
+		rootNew.Language = "go"
+
+		m := NewMapping()
+		m.Add(fnOld2, fnNew)
+		m.Add(otherOld, otherNew)
+		m.Add(anchorOld, anchorNew)
+
+		RecoverCohortSiblings(rootOld, rootNew, m)
+
+		if !m.Has(setupOld) {
+			t.Fatalf("expected setupOld to be recovered into mapping")
+		}
+		if m.Src()[setupOld] != setupNew {
+			t.Errorf("expected setupOld to map to setupNew, got %v", m.Src()[setupOld])
+		}
+		// Verify descendant children were also paired.
+		for i := range setupOld.Children {
+			child := setupOld.Children[i]
+			if !m.Has(child) {
+				t.Errorf("expected child %v to be paired", child)
+			}
+		}
+	})
+
+	t.Run("skips ambiguous candidate in target block", func(t *testing.T) {
+		setupOld := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		anchorOld := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doHeavyWork"),
+		)
+		blockOld := testutil.Node("block", "", setupOld, anchorOld)
+		fnOld := testutil.Node("function_declaration", "fnOld", blockOld)
+		rootOld := testutil.Node("source_file", "", fnOld)
+		rootOld.Language = "go"
+
+		setupNew1 := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		setupNew2 := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		anchorNew := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doHeavyWork"),
+		)
+		blockNew := testutil.Node("block", "", setupNew1, setupNew2, anchorNew)
+		fnNew := testutil.Node("function_declaration", "fnNew", blockNew)
+		rootNew := testutil.Node("source_file", "", fnNew)
+		rootNew.Language = "go"
+
+		m := NewMapping()
+		m.Add(anchorOld, anchorNew)
+
+		RecoverCohortSiblings(rootOld, rootNew, m)
+
+		if m.Has(setupOld) {
+			t.Errorf("expected ambiguous candidate not to be paired, but was mapped to %v", m.Src()[setupOld])
+		}
+	})
+
+	t.Run("preserves bijectivity with multiple source candidates", func(t *testing.T) {
+		setupOld1 := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		setupOld2 := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		anchorOld := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doHeavyWork"),
+		)
+		blockOld := testutil.Node("block", "", setupOld1, setupOld2, anchorOld)
+		fnOld := testutil.Node("function_declaration", "fnOld", blockOld)
+		rootOld := testutil.Node("source_file", "", fnOld)
+		rootOld.Language = "go"
+
+		setupNew := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "x"),
+			testutil.Leaf(":=", ":="),
+			testutil.Leaf("int_literal", "1"),
+		)
+		anchorNew := testutil.Node("expression_statement", "",
+			testutil.Leaf("identifier", "doHeavyWork"),
+		)
+		blockNew := testutil.Node("block", "", setupNew, anchorNew)
+		fnNew := testutil.Node("function_declaration", "fnNew", blockNew)
+		rootNew := testutil.Node("source_file", "", fnNew)
+		rootNew.Language = "go"
+
+		m := NewMapping()
+		m.Add(anchorOld, anchorNew)
+
+		RecoverCohortSiblings(rootOld, rootNew, m)
+
+		// Once setupOld1 is mapped to setupNew, setupOld2 must not re-map setupNew or evict setupOld1.
+		mappedCount := 0
+		if m.Has(setupOld1) && m.Src()[setupOld1] == setupNew {
+			mappedCount++
+		}
+		if m.Has(setupOld2) && m.Src()[setupOld2] == setupNew {
+			mappedCount++
+		}
+		if mappedCount != 1 {
+			t.Errorf("expected exactly 1 source node mapped to setupNew, got %d", mappedCount)
+		}
+	})
+
+	t.Run("safely handles nil inputs and non-block containers", func(t *testing.T) {
+		// Should not panic on nils.
+		RecoverCohortSiblings(nil, nil, nil)
+
+		m := NewMapping()
+		RecoverCohortSiblings(nil, nil, m)
+
+		// Non-block parent: binary_expression.
+		leftOld := testutil.Leaf("identifier", "x")
+		rightOld := testutil.Leaf("identifier", "y")
+		binOld := testutil.Node("binary_expression", "", leftOld, rightOld)
+		fnOld := testutil.Node("function_declaration", "fn1", binOld)
+		rootOld := testutil.Node("source_file", "", fnOld)
+		rootOld.Language = "go"
+
+		leftNew := testutil.Leaf("identifier", "x")
+		rightNew := testutil.Leaf("identifier", "y")
+		binNew := testutil.Node("binary_expression", "", leftNew, rightNew)
+		fnNew := testutil.Node("function_declaration", "fn2", binNew)
+		rootNew := testutil.Node("source_file", "", fnNew)
+		rootNew.Language = "go"
+
+		m.Add(leftOld, leftNew)
+		RecoverCohortSiblings(rootOld, rootNew, m)
+
+		// rightOld shouldn't be paired because parent is binary_expression, not a statement block.
+		if m.Has(rightOld) {
+			t.Errorf("expected non-block child rightOld not to be paired by RecoverCohortSiblings")
+		}
+	})
+}

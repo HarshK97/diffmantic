@@ -42,6 +42,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
 	RollupMatchedContainers(t1, t2, mappings)
+	RecoverCohortSiblings(t1, t2, mappings)
 	MatchContainerKeywords(t1, t2, mappings)
 
 	if !mappings.Has(t1) && !mappings.HasDst(t2) {
@@ -206,6 +207,74 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			continue
 		}
 		m.Add(cand.t1, cand.t2)
+	}
+}
+
+// RecoverCohortSiblings pairs unmatched statements that moved alongside an anchor
+// into another block. Small statements like short variable declarations often get
+// missed by bottom-up matching; if an unmatched sibling matches an unmatched
+// statement in the target block uniquely and identically, we pair them.
+func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+	if t1Root == nil || t2Root == nil || m == nil {
+		return
+	}
+
+	pairs := slices.Clone(m.Pairs)
+	seenBlocks := make(map[[2]*treesitter.ASTNode]bool)
+
+	for _, p := range pairs {
+		src, dst := p.Src, p.Dst
+		if src == nil || dst == nil || src.Parent == nil || dst.Parent == nil {
+			continue
+		}
+
+		r := rulesFor(src)
+		srcDecl := src.EnclosingContainerDeclaration(r)
+		dstDecl := dst.EnclosingContainerDeclaration(r)
+		if srcDecl == nil || dstDecl == nil || m.Src()[srcDecl] == dstDecl {
+			continue
+		}
+
+		srcBlock := src.Parent
+		dstBlock := dst.Parent
+		if srcBlock == nil || dstBlock == nil || !isStatementBlock(srcBlock, r) || !isStatementBlock(dstBlock, r) {
+			continue
+		}
+
+		blockPair := [2]*treesitter.ASTNode{srcBlock, dstBlock}
+		if seenBlocks[blockPair] {
+			continue
+		}
+		seenBlocks[blockPair] = true
+
+		dstByType := make(map[string][]*treesitter.ASTNode)
+		for _, dc := range dstBlock.Children {
+			if !m.HasDst(dc) {
+				dstByType[dc.Type] = append(dstByType[dc.Type], dc)
+			}
+		}
+
+		for _, sc := range srcBlock.Children {
+			if m.Has(sc) {
+				continue
+			}
+			candidates := dstByType[sc.Type]
+			if len(candidates) == 0 {
+				continue
+			}
+
+			var matches []*treesitter.ASTNode
+			for _, dc := range candidates {
+				if !m.HasDst(dc) && Isomorphic(sc, dc) {
+					matches = append(matches, dc)
+				}
+			}
+			if len(matches) != 1 {
+				continue
+			}
+			m.Add(sc, matches[0])
+			addIsomorphicPairs(sc, matches[0], m)
+		}
 	}
 }
 
