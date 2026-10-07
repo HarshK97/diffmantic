@@ -834,6 +834,71 @@ func TestAlignLines_StationaryStatementPrecedenceOverMove(t *testing.T) {
 	}
 }
 
+func TestStationaryIndex_Crosses(t *testing.T) {
+	var nilIdx *stationaryIndex
+	if nilIdx.crosses(10, 20) {
+		t.Errorf("nil stationaryIndex should never cross")
+	}
+	emptyIdx := newStationaryIndex(nil)
+	if emptyIdx != nil {
+		t.Errorf("empty map should return nil stationaryIndex")
+	}
+
+	// Single statement: src=10 -> dst=20
+	stmts := map[int]int{10: 20}
+	idx := newStationaryIndex(stmts)
+	if idx == nil {
+		t.Fatalf("expected non-nil index")
+	}
+
+	singleTests := []struct {
+		name string
+		s, d int
+		want bool
+	}{
+		{"crosses earlier and lower", 5, 25, true},
+		{"crosses later and higher", 15, 15, true},
+		{"monotonic before", 5, 15, false},
+		{"monotonic after", 15, 25, false},
+		{"exact matching coordinate", 10, 20, false},
+	}
+	for _, tt := range singleTests {
+		t.Run("single/"+tt.name, func(t *testing.T) {
+			if got := idx.crosses(tt.s, tt.d); got != tt.want {
+				t.Errorf("crosses(%d, %d) = %v, want %v", tt.s, tt.d, got, tt.want)
+			}
+		})
+	}
+
+	// Multi-statement scenario: (10, 20), (30, 40), (50, 60)
+	multiStmts := map[int]int{
+		10: 20,
+		30: 40,
+		50: 60,
+	}
+	multiIdx := newStationaryIndex(multiStmts)
+
+	multiTests := []struct {
+		name string
+		s, d int
+		want bool
+	}{
+		{"inversion below first statement", 20, 15, true},
+		{"inversion above second statement", 20, 45, true},
+		{"monotonic between statements", 20, 30, false},
+		{"before all statements", 5, 10, false},
+		{"after all statements", 60, 70, false},
+		{"after all statements crossing last", 60, 30, true},
+	}
+	for _, tt := range multiTests {
+		t.Run("multi/"+tt.name, func(t *testing.T) {
+			if got := multiIdx.crosses(tt.s, tt.d); got != tt.want {
+				t.Errorf("crosses(%d, %d) = %v, want %v", tt.s, tt.d, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAlignLines_StationaryElsePrecedenceOverInsertedClause(t *testing.T) {
 	src := `func render() {
 	if p < len(isPairChanged) && !isPairChanged[p] {

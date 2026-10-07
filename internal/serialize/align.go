@@ -78,8 +78,9 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 	stationaryStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
 		return !movedNodes[n1] && !movedNodes[n2]
 	})
+	stmtIdx := newStationaryIndex(stationaryStatements)
 
-	moves, inPlaceNodes := collectMoveRanges(es, ms, srcLines, matched, stationaryStatements)
+	moves, inPlaceNodes := collectMoveRanges(es, ms, srcLines, matched, stmtIdx)
 
 	// In-place monotonic statements receive mapping prior bonus in Gotoh and act as Tier 3 candidates.
 	inPlaceStatements := collectMappedStatements(srcLines, dstLines, ms, func(n1, n2 *treesitter.ASTNode) bool {
@@ -92,7 +93,7 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 	})
 
 	// Tier 1: Unchanged lines (declarations, comments, and identical text).
-	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched)
+	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched, stmtIdx)
 
 	// Tier 2: Stationary AST statements with surviving structural content.
 	tier2 := collectStationaryStatementAnchors(srcLines, dstLines, stationaryStatements, tier1)
@@ -138,7 +139,7 @@ func collectMovedNodes(es *actions.EditScript, ms *engine.Mapping) map[*treesitt
 	return movedNodes
 }
 
-func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping, srcLines []string, matched map[int]int, stationaryStatements map[int]int) ([]moveRange, map[*treesitter.ASTNode]bool) {
+func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping, srcLines []string, matched map[int]int, stmtIdx *stationaryIndex) ([]moveRange, map[*treesitter.ASTNode]bool) {
 	inPlaceNodes := make(map[*treesitter.ASTNode]bool)
 	if es == nil {
 		return nil, inPlaceNodes
@@ -193,13 +194,9 @@ func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping, srcLines []st
 					break
 				}
 			}
-			if !inverts {
-				for sLine, dLine := range stationaryStatements {
-					if (sStart < sLine && dStart > dLine) || (sStart > sLine && dStart < dLine) ||
-						(sEnd < sLine && dEnd > dLine) || (sEnd > sLine && dEnd < dLine) {
-						inverts = true
-						break
-					}
+			if !inverts && stmtIdx != nil {
+				if stmtIdx.crosses(sStart, dStart) || stmtIdx.crosses(sEnd, dEnd) {
+					inverts = true
 				}
 			}
 		}
@@ -468,6 +465,7 @@ func collectUnchangedAnchors(
 	commentLineMappings []map[int]int,
 	stationaryStatements map[int]int,
 	matched map[int]int,
+	stmtIdx *stationaryIndex,
 ) []anchor {
 	primary := collectDeclarationAndCommentAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings)
 	cands := make([]anchor, 0, len(primary)+len(stationaryStatements))
@@ -511,20 +509,82 @@ func collectUnchangedAnchors(
 		if isInsideMove(s, d, moves) {
 			continue
 		}
-		crosses := false
-		for sStmt, dStmt := range stationaryStatements {
-			if (s < sStmt && d > dStmt) || (s > sStmt && d < dStmt) {
-				crosses = true
-				break
-			}
-		}
-		if crosses {
+		if stmtIdx != nil && stmtIdx.crosses(s, d) {
 			continue
 		}
 		cands = append(cands, anchor{src: s, dst: d})
 	}
 
 	return filterMonotonic(cands)
+}
+
+// stationaryIndex speeds up crossing checks against stationary statements.
+// By sorting anchors by source line and precomputing prefix-max and suffix-min
+// destination coordinates, crosses() runs in O(log N) via binary search.
+type stationaryIndex struct {
+	stmts      []anchor
+	prefixMaxD []int
+	suffixMinD []int
+}
+
+func newStationaryIndex(stationaryStatements map[int]int) *stationaryIndex {
+	if len(stationaryStatements) == 0 {
+		return nil
+	}
+	stmts := make([]anchor, 0, len(stationaryStatements))
+	for s, d := range stationaryStatements {
+		stmts = append(stmts, anchor{src: s, dst: d})
+	}
+	slices.SortFunc(stmts, func(a, b anchor) int {
+		return cmp.Compare(a.src, b.src)
+	})
+
+	n := len(stmts)
+	prefixMaxD := make([]int, n)
+	maxD := stmts[0].dst
+	for i := range n {
+		maxD = max(maxD, stmts[i].dst)
+		prefixMaxD[i] = maxD
+	}
+
+	suffixMinD := make([]int, n)
+	minD := stmts[n-1].dst
+	for i := n - 1; i >= 0; i-- {
+		minD = min(minD, stmts[i].dst)
+		suffixMinD[i] = minD
+	}
+
+	return &stationaryIndex{
+		stmts:      stmts,
+		prefixMaxD: prefixMaxD,
+		suffixMinD: suffixMinD,
+	}
+}
+
+func (idx *stationaryIndex) crosses(s, d int) bool {
+	if idx == nil || len(idx.stmts) == 0 {
+		return false
+	}
+	n := len(idx.stmts)
+	pos, _ := slices.BinarySearchFunc(idx.stmts, s, func(a anchor, target int) int {
+		return cmp.Compare(a.src, target)
+	})
+
+	// An earlier source statement that lands after d is an inversion.
+	if pos > 0 && idx.prefixMaxD[pos-1] > d {
+		return true
+	}
+
+	// A later source statement that lands before d is an inversion.
+	next := pos
+	if next < n && idx.stmts[next].src == s {
+		next++
+	}
+	if next < n && idx.suffixMinD[next] < d {
+		return true
+	}
+
+	return false
 }
 
 // collectStationaryStatementAnchors collects Tier 2 alignment anchors: stationary
