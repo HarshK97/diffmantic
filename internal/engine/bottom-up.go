@@ -207,8 +207,8 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		}
 	}
 
-	// Don't pair a condition or header if its enclosing body was already mapped to a different construct.
-	if hasForeignBodyOwner(t1, c, m, r) {
+	// Don't pair across constructs if either side's header or body already belongs to a different block.
+	if hasForeignBodyOwner(t1, c, m, r) || hasForeignHeaderOwner(t1, c, m, r) {
 		return -1.0
 	}
 
@@ -404,6 +404,65 @@ func hasHeaderMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool 
 	return false
 }
 
+// hasForeignHeaderOwner reports whether either construct has header or condition
+// tokens already mapped to a different construct. This stops outer blocks or
+// wrappers from stealing an inner construct whose header is already claimed.
+func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+
+	getConstruct := func(n *treesitter.ASTNode) *treesitter.ASTNode {
+		if n == nil {
+			return nil
+		}
+		if findBodyBlock(n, r) != nil {
+			return n
+		}
+		if n.Parent != nil && findBodyBlock(n.Parent, r) == n {
+			return n.Parent
+		}
+		return nil
+	}
+
+	constr1 := getConstruct(t1)
+	constr2 := getConstruct(c)
+
+	hasMismatch := func(constr, target *treesitter.ASTNode, mapped map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+		if constr == nil {
+			return false
+		}
+		body := findBodyBlock(constr, r)
+		for _, child := range constr.Children {
+			if child == body {
+				continue
+			}
+			if mappedNode, ok := mapped[child]; ok {
+				if target != nil && !target.Contains(mappedNode) && target != mappedNode {
+					return true
+				}
+			}
+			for _, d := range child.Descendants() {
+				if mappedNode, ok := mapped[d]; ok {
+					if target != nil && !target.Contains(mappedNode) && target != mappedNode {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+
+	if hasMismatch(constr2, cmp.Or(constr1, t1), m.Dst()) {
+		return true
+	}
+	if hasMismatch(constr1, cmp.Or(constr2, c), m.Src()) {
+		return true
+	}
+
+	return false
+}
+
 // candidate finds the best unmatched node in T2 to pair with t1 using unified affinity scoring.
 func candidate(
 	t1 *treesitter.ASTNode,
@@ -456,7 +515,8 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				c2.Parent != nil &&
 				!m.HasDst(c2.Parent) &&
 				TypesMatch(t1.Type, c2.Parent.Type, r) &&
-				!hasForeignBodyOwner(t1, c2.Parent, m, r) {
+				!hasForeignBodyOwner(t1, c2.Parent, m, r) &&
+				!hasForeignHeaderOwner(t1, c2.Parent, m, r) {
 				if hasDisjointAssignmentTargets(t1, c2.Parent, r) {
 					continue
 				}
@@ -489,6 +549,12 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 			if srcBody != nil && dstBody != nil {
+				if !isDecl && !hasHeaderMatch(t1, bestParent, m, r) && m.DiceSrc(t1, bestParent) < 0.30 {
+					continue
+				}
+				if !isDecl && !IsScopePreserved(m, t1, bestParent, r, r) && m.DiceSrc(t1, bestParent) < 0.60 {
+					continue
+				}
 				if m.Src()[srcBody] != dstBody && m.DiceSrc(srcBody, dstBody) == 0 {
 					if isDecl || lineDist >= 10 {
 						continue

@@ -477,7 +477,7 @@ func FindEnclosingScope(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNo
 	if n == nil {
 		return nil
 	}
-	if r == nil {
+	if r == nil && n.GetLanguage() != "" {
 		r = rules.Get(n.GetLanguage())
 	}
 	for curr := n.Parent; curr != nil; curr = curr.Parent {

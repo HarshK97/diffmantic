@@ -255,7 +255,7 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 
 		for _, sc := range srcBlock.Children {
-			if m.Has(sc) {
+			if m.Has(sc) || sc.IsKeyword || isGlueToken(sc, r) {
 				continue
 			}
 			candidates := dstByType[sc.Type]
