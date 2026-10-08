@@ -191,6 +191,18 @@ func (n *ASTNode) IsCaseClause() bool {
 	return rules.Get(n.GetLanguage()).IsCaseClause(n.Type)
 }
 
+// IsStatement reports whether the node represents a statement.
+func (n *ASTNode) IsStatement() bool {
+	if n == nil {
+		return false
+	}
+	r := rules.Get(n.GetLanguage())
+	if r != nil {
+		return r.IsStatement(n.Type)
+	}
+	return rules.IsStatement(n.Type)
+}
+
 // Descendants returns all child nodes under n in pre-order.
 func (n *ASTNode) Descendants() []*ASTNode {
 	size := n.Size()

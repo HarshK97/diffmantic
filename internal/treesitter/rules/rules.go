@@ -36,11 +36,13 @@ type Rules struct {
 	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
 	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
 	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
+	Statements            []string // Standalone statement and statement-level declaration node types.
 	OpeningDelimiters     []string // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
 	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
 	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
 
 	flattenedSet             map[string]struct{}
+	statementsSet            map[string]struct{}
 	ignoredSet               map[string]struct{}
 	labelIgnoredSet          map[string]struct{}
 	keywordsSet              map[string]struct{}
@@ -127,6 +129,7 @@ func (r *Rules) CompileSets() {
 	r.caseClausesSet = sliceToSet(r.CaseClauses)
 	r.tagsSet = sliceToSet(r.Tags)
 	r.sentinelsSet = sliceToSet(r.Sentinels)
+	r.statementsSet = sliceToSet(r.Statements)
 	if len(r.OpeningDelimiters) > 0 {
 		r.openingDelimitersSet = sliceToSet(r.OpeningDelimiters)
 	} else {
@@ -979,6 +982,43 @@ func (r *Rules) IsExpressionStatement(nodeType string) bool {
 // IsExpressionStatement reports whether nodeType represents an expression statement.
 func IsExpressionStatement(nodeType string) bool {
 	return nodeType == "expression_statement"
+}
+
+// IsStatement reports whether nodeType represents a statement or statement-level declaration.
+func (r *Rules) IsStatement(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	if r != nil {
+		if r.statementsSet != nil {
+			if _, ok := r.statementsSet[nodeType]; ok {
+				return true
+			}
+		} else if slices.Contains(r.Statements, nodeType) {
+			return true
+		}
+		if r.IsJumpStatement(nodeType) || r.IsAssignment(nodeType) || r.IsLocalVarDeclaration(nodeType) {
+			return true
+		}
+		return strings.HasSuffix(nodeType, "_statement") || nodeType == "statement"
+	}
+	return IsStatement(nodeType)
+}
+
+// IsStatement reports whether nodeType represents a statement in any language rule set.
+func IsStatement(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	if strings.HasSuffix(nodeType, "_statement") || nodeType == "statement" {
+		return true
+	}
+	for _, r := range registry {
+		if r.IsStatement(nodeType) {
+			return true
+		}
+	}
+	return defaultRules.IsStatement(nodeType)
 }
 
 var registry = map[string]*Rules{

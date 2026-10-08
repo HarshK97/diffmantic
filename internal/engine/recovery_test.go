@@ -341,3 +341,61 @@ func TestUniqueTypePairsDisparateJSXTags(t *testing.T) {
 		t.Errorf("uniqueTypePairs should NOT pair disparate JSX tags ('span' vs 'i'), got %d pairs", len(pairs))
 	}
 }
+
+func TestUniqueTypePairs_BlindSingletonTrapStatement(t *testing.T) {
+	// Two for_statements with completely different headers and zero mapped descendants.
+	// Source: for item := range list { ... }
+	forRange := testutil.Node("for_statement", "",
+		testutil.Leaf("for", "for"),
+		testutil.Leaf("identifier", "item"),
+		testutil.Leaf("identifier", "list"),
+		testutil.Node("block", "", testutil.Leaf("identifier", "oldBody")),
+	)
+	forRange.Language = "go"
+
+	// Destination: for i := 0; i < n; i++ { ... }
+	forThreeClause := testutil.Node("for_statement", "",
+		testutil.Leaf("for", "for"),
+		testutil.Leaf("identifier", "i"),
+		testutil.Leaf("int_literal", "0"),
+		testutil.Leaf("identifier", "n"),
+		testutil.Leaf("operator", "++"),
+		testutil.Node("block", "", testutil.Leaf("identifier", "newBody")),
+	)
+	forThreeClause.Language = "go"
+
+	m := NewMapping()
+	pairs := uniqueTypePairs([]*treesitter.ASTNode{forRange}, []*treesitter.ASTNode{forThreeClause}, m)
+	if len(pairs) != 0 {
+		t.Errorf("uniqueTypePairs should NOT pair disparate statements with 0 affinity, got %d pairs", len(pairs))
+	}
+
+	// Two for_statements with isomorphic headers should still pair even with an empty mapping.
+	for1 := testutil.Node("for_statement", "",
+		testutil.Leaf("for", "for"),
+		testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "i"),
+			testutil.Leaf("comparison_operator_literal", "<"),
+			testutil.Leaf("identifier", "n"),
+		),
+		testutil.Node("block", "", testutil.Leaf("identifier", "bodyA")),
+	)
+	for1.Language = "go"
+
+	for2 := testutil.Node("for_statement", "",
+		testutil.Leaf("for", "for"),
+		testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "i"),
+			testutil.Leaf("comparison_operator_literal", "<"),
+			testutil.Leaf("identifier", "n"),
+		),
+		testutil.Node("block", "", testutil.Leaf("identifier", "bodyB")),
+	)
+	for2.Language = "go"
+
+	m2 := NewMapping()
+	pairs2 := uniqueTypePairs([]*treesitter.ASTNode{for1}, []*treesitter.ASTNode{for2}, m2)
+	if len(pairs2) != 1 {
+		t.Errorf("uniqueTypePairs SHOULD pair statements with isomorphic headers, got %d pairs", len(pairs2))
+	}
+}

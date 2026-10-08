@@ -2,6 +2,7 @@ package postprocess
 
 import (
 	"cmp"
+	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -60,6 +61,12 @@ func Collapse(
 			updated[a.Node] = a
 		}
 	}
+
+	// Tier 3B: Hollow Block Move Suppression
+	suppressHollowBlockMoves(&actionPtrs, moved, inserted, deleted, suppressed, ms)
+
+	// Tier 3C: Near-Atomic Subtree Collapsing
+	collapseNearAtomicContainers(&actionPtrs, inserted, deleted, moved, suppressed, ms, srcRoot, dstRoot)
 
 	// Fold child inserts into parent subtree inserts when the whole branch is new.
 	for _, parent := range dstRoot.PostOrder() {
@@ -420,4 +427,339 @@ func promoteOrphanedChildren(
 		}
 	}
 	return actionPtrs
+}
+
+// isHollowBlockMove checks if a container block move is hollow, meaning the
+// surrounding statement header was rewritten or deleted, and fewer than 2
+// statements (or under 50% of the block) survived.
+func isHollowBlockMove(
+	act *actions.Action,
+	ms *engine.Mapping,
+	r *rules.Rules,
+	moved map[*treesitter.ASTNode]*actions.Action,
+) bool {
+	if act == nil || act.Node == nil || ms == nil {
+		return false
+	}
+	src := act.Node
+	isBlock := (r != nil && r.IsBlock(src.Type)) || (r == nil && rules.IsBlock(src.Type))
+	if !isBlock {
+		return false
+	}
+	dst := act.DestNode
+	if dst == nil {
+		dst = ms.Src()[src]
+	}
+	if dst == nil {
+		return false
+	}
+
+	if src.Parent == nil || dst.Parent == nil {
+		return false
+	}
+
+	isStmtOrDecl := func(n *treesitter.ASTNode) bool {
+		if n == nil {
+			return false
+		}
+		if r != nil {
+			return r.IsStatement(n.Type) || r.IsDeclaration(n.Type)
+		}
+		return rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type)
+	}
+
+	if !isStmtOrDecl(src.Parent) && !isStmtOrDecl(dst.Parent) {
+		return false
+	}
+
+	// 1. Did the parent statement/declaration move together with the block?
+	if parentAct, ok := moved[src.Parent]; ok {
+		pDst := parentAct.DestNode
+		if pDst == nil {
+			pDst = ms.Src()[src.Parent]
+		}
+		if pDst == dst.Parent {
+			return false // Co-moving parent statement: keep block move.
+		}
+	}
+
+	// 2. Body Statement Retention Threshold
+
+	var sSrc, sDst []*treesitter.ASTNode
+	for _, c := range src.Children {
+		if isStmtOrDecl(c) {
+			sSrc = append(sSrc, c)
+		}
+	}
+	for _, c := range dst.Children {
+		if isStmtOrDecl(c) {
+			sDst = append(sDst, c)
+		}
+	}
+
+	mCount := 0
+	for _, s := range sSrc {
+		if partner, ok := ms.Src()[s]; ok && slices.Contains(sDst, partner) {
+			mCount++
+		}
+	}
+
+	maxCount := max(len(sSrc), len(sDst))
+	var rRet float64
+	if maxCount > 0 {
+		rRet = float64(mCount) / float64(maxCount)
+	}
+
+	return mCount < 2 || rRet < 0.50
+}
+
+func suppressHollowBlockMoves(
+	actionPtrs *[]*actions.Action,
+	moved, inserted, deleted map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+	ms *engine.Mapping,
+) {
+	var toDemote []*actions.Action
+	for _, a := range *actionPtrs {
+		if a.Type != actions.Move || suppressed[a] || a.Node == nil {
+			continue
+		}
+		r := rules.Get(a.Node.GetLanguage())
+		if isHollowBlockMove(a, ms, r, moved) {
+			toDemote = append(toDemote, a)
+		}
+	}
+
+	for _, a := range toDemote {
+		dstNode := a.DestNode
+		if dstNode == nil && ms != nil {
+			dstNode = ms.Src()[a.Node]
+		}
+		if dstNode == nil {
+			continue
+		}
+
+		// Promote discrete child moves inside the block before demoting the container.
+		*actionPtrs = promoteOrphanedChildren(a.Node, dstNode, ms, moved, deleted, *actionPtrs)
+
+		suppressed[a] = true
+		delete(moved, a.Node)
+
+		if ms != nil {
+			ms.Remove(a.Node)
+		}
+
+		delAct := &actions.Action{
+			Type:    actions.Delete,
+			Node:    a.Node,
+			Parent:  a.Node.Parent,
+			Subtree: false,
+		}
+		*actionPtrs = append(*actionPtrs, delAct)
+		deleted[a.Node] = delAct
+
+		insAct := &actions.Action{
+			Type:     actions.Insert,
+			Node:     dstNode,
+			Parent:   dstNode.Parent,
+			Position: dstNode.ChildIndex(),
+			Subtree:  false,
+		}
+		*actionPtrs = append(*actionPtrs, insAct)
+		inserted[dstNode] = insAct
+	}
+}
+
+// isLowMassStatement checks if n is a small statement (size <= 4) with no nested blocks.
+func isLowMassStatement(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	isStmt := (r != nil && (r.IsStatement(n.Type) || r.IsDeclaration(n.Type))) || (r == nil && (rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type)))
+	if !isStmt {
+		return false
+	}
+	if n.Size() > 4 {
+		return false
+	}
+	for _, c := range n.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		if isBlock {
+			return false
+		}
+	}
+	return true
+}
+
+// collapseNearAtomicContainers collapses blocks with >= 75% churn into atomic subtree
+// delete/insert when the only surviving children are trivial low-mass statements (like return nil).
+func collapseNearAtomicContainers(
+	actionPtrs *[]*actions.Action,
+	inserted, deleted, moved map[*treesitter.ASTNode]*actions.Action,
+	suppressed map[*actions.Action]bool,
+	ms *engine.Mapping,
+	srcRoot, dstRoot *treesitter.ASTNode,
+) {
+	if ms == nil || srcRoot == nil || dstRoot == nil {
+		return
+	}
+
+	isStmtOrDecl := func(n *treesitter.ASTNode, r *rules.Rules) bool {
+		if n == nil {
+			return false
+		}
+		if r != nil {
+			return r.IsStatement(n.Type) || r.IsDeclaration(n.Type)
+		}
+		return rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type)
+	}
+
+	for _, parent := range srcRoot.PostOrder() {
+		delAct, ok := deleted[parent]
+		if !ok || suppressed[delAct] || len(parent.Children) == 0 {
+			continue
+		}
+		r := rules.Get(parent.GetLanguage())
+		isBlock := (r != nil && r.IsBlock(parent.Type)) || (r == nil && rules.IsBlock(parent.Type))
+		if !isBlock {
+			continue
+		}
+
+		var stmts []*treesitter.ASTNode
+		var surviving []*treesitter.ASTNode
+		for _, c := range parent.Children {
+			if isStmtOrDecl(c, r) {
+				stmts = append(stmts, c)
+				if childAct, isDel := deleted[c]; !isDel || suppressed[childAct] {
+					surviving = append(surviving, c)
+				}
+			}
+		}
+
+		if len(stmts) < 2 || len(surviving) == 0 {
+			continue
+		}
+
+		rRet := float64(len(surviving)) / float64(len(stmts))
+		if rRet > 0.25 {
+			continue
+		}
+
+		allLowMass := true
+		for _, s := range surviving {
+			if !isLowMassStatement(s, r) {
+				allLowMass = false
+				break
+			}
+		}
+		if !allLowMass {
+			continue
+		}
+
+		// Demote surviving low-mass matches into independent delete and insert.
+		for _, s := range surviving {
+			sDst := ms.Src()[s]
+			if sDst != nil {
+				for _, d := range s.Descendants() {
+					ms.Remove(d)
+				}
+				ms.Remove(s)
+				if mAct, isMoved := moved[s]; isMoved {
+					suppressed[mAct] = true
+					delete(moved, s)
+				}
+				sIns := &actions.Action{
+					Type:     actions.Insert,
+					Node:     sDst,
+					Parent:   sDst.Parent,
+					Position: sDst.ChildIndex(),
+					Subtree:  len(sDst.Children) > 0,
+				}
+				*actionPtrs = append(*actionPtrs, sIns)
+				inserted[sDst] = sIns
+			}
+			sDel := &actions.Action{
+				Type:    actions.Delete,
+				Node:    s,
+				Parent:  parent,
+				Subtree: len(s.Children) > 0,
+			}
+			*actionPtrs = append(*actionPtrs, sDel)
+			deleted[s] = sDel
+		}
+	}
+
+	for _, parent := range dstRoot.PostOrder() {
+		insAct, ok := inserted[parent]
+		if !ok || suppressed[insAct] || len(parent.Children) == 0 {
+			continue
+		}
+		r := rules.Get(parent.GetLanguage())
+		isBlock := (r != nil && r.IsBlock(parent.Type)) || (r == nil && rules.IsBlock(parent.Type))
+		if !isBlock {
+			continue
+		}
+
+		var stmts []*treesitter.ASTNode
+		var surviving []*treesitter.ASTNode
+		for _, c := range parent.Children {
+			if isStmtOrDecl(c, r) {
+				stmts = append(stmts, c)
+				if childAct, isIns := inserted[c]; !isIns || suppressed[childAct] {
+					surviving = append(surviving, c)
+				}
+			}
+		}
+
+		if len(stmts) < 2 || len(surviving) == 0 {
+			continue
+		}
+
+		rRet := float64(len(surviving)) / float64(len(stmts))
+		if rRet > 0.25 {
+			continue
+		}
+
+		allLowMass := true
+		for _, s := range surviving {
+			if !isLowMassStatement(s, r) {
+				allLowMass = false
+				break
+			}
+		}
+		if !allLowMass {
+			continue
+		}
+
+		for _, s := range surviving {
+			sSrc := ms.Dst()[s]
+			if sSrc != nil {
+				for _, d := range sSrc.Descendants() {
+					ms.Remove(d)
+				}
+				ms.Remove(sSrc)
+				if mAct, isMoved := moved[sSrc]; isMoved {
+					suppressed[mAct] = true
+					delete(moved, sSrc)
+				}
+				sDel := &actions.Action{
+					Type:    actions.Delete,
+					Node:    sSrc,
+					Parent:  sSrc.Parent,
+					Subtree: len(sSrc.Children) > 0,
+				}
+				*actionPtrs = append(*actionPtrs, sDel)
+				deleted[sSrc] = sDel
+			}
+			sIns := &actions.Action{
+				Type:     actions.Insert,
+				Node:     s,
+				Parent:   parent,
+				Position: s.ChildIndex(),
+				Subtree:  len(s.Children) > 0,
+			}
+			*actionPtrs = append(*actionPtrs, sIns)
+			inserted[s] = sIns
+		}
+	}
 }

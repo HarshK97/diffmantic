@@ -258,4 +258,17 @@ var zigRules = &Rules{
 		"=>",
 		"->",
 	},
+	Statements: []string{
+		"comptime_statement",
+		"defer_statement",
+		"errdefer_statement",
+		"expression_statement",
+		"for_statement",
+		"if_statement",
+		"labeled_statement",
+		"nosuspend_statement",
+		"suspend_statement",
+		"variable_declaration",
+		"while_statement",
+	},
 }

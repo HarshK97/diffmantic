@@ -5,6 +5,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -1012,4 +1013,356 @@ func TestPromoteOrphanedChildrenRecursiveNestedContainer(t *testing.T) {
 	if leafMove == nil || leafMove.Type != actions.Move || leafMove.DestNode != leafDst {
 		t.Errorf("expected leafSrc Move to leafDst, got %+v", leafMove)
 	}
+}
+
+func TestLeafMoveMobilityDemotion_Tier3A(t *testing.T) {
+	// Source: stmt1 deleted (contains isolated leaf "err")
+	leafErr1 := testutil.Leaf("identifier", "err")
+	stmt1 := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), leafErr1)
+	stmt1.Language = "go"
+	block1 := testutil.Node("block", "", stmt1)
+	block1.Language = "go"
+	root1 := testutil.Node("source_file", "", block1)
+	root1.Language = "go"
+
+	// Destination: stmt2 inserted (contains leaf "err")
+	leafErr2 := testutil.Leaf("identifier", "err")
+	stmt2 := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), leafErr2)
+	stmt2.Language = "go"
+	block2 := testutil.Node("block", "", stmt2)
+	block2.Language = "go"
+	root2 := testutil.Node("source_file", "", block2)
+	root2.Language = "go"
+
+	ms := engine.NewMapping()
+	ms.Add(root1, root2)
+	ms.Add(block1, block2)
+	ms.Add(leafErr1, leafErr2) // leaf mapped cross-statement while statements themselves are unmapped
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Delete, Node: stmt1})
+	es.Add(actions.Action{Type: actions.Insert, Node: stmt2})
+	es.Add(actions.Action{Type: actions.Move, Node: leafErr1, DestNode: leafErr2})
+
+	collapsed := Collapse(es, ms, root1, root2)
+
+	for _, act := range collapsed.Actions() {
+		if act.Type == actions.Move && act.Node == leafErr1 {
+			t.Errorf("expected isolated leaf Move on 'err' to be demoted to del+ins, but Move survived")
+		}
+	}
+}
+
+func TestHollowBlockMoveSuppression_Tier3B(t *testing.T) {
+	// Source: if_statement with 4 statements in its block.
+	// Only 1 statement (auth guard) moves; other 3 are deleted.
+	authGuardSrc := testutil.Node("expression_statement", "",
+		testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "checkAuth"),
+			testutil.Leaf("identifier", "user"),
+			testutil.Leaf("identifier", "token"),
+		),
+	)
+	authGuardSrc.Language = "go"
+	authGuardSrc.StartRow = 2
+	authGuardSrc.EndRow = 2
+	authGuardSrc.StartByte = 20
+	authGuardSrc.EndByte = 50
+
+	stmtS1 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "stmt1"))
+	stmtS1.Language = "go"
+	stmtS1.StartRow = 3
+	stmtS1.EndRow = 3
+
+	stmtS2 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "stmt2"))
+	stmtS2.Language = "go"
+	stmtS2.StartRow = 4
+	stmtS2.EndRow = 4
+
+	stmtS3 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "stmt3"))
+	stmtS3.Language = "go"
+	stmtS3.StartRow = 5
+	stmtS3.EndRow = 5
+
+	blockSrc := testutil.Node("block", "", authGuardSrc, stmtS1, stmtS2, stmtS3)
+	blockSrc.Language = "go"
+	blockSrc.StartRow = 1
+	blockSrc.EndRow = 6
+	blockSrc.StartByte = 15
+	blockSrc.EndByte = 90
+
+	ifSrc := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockSrc)
+	ifSrc.Language = "go"
+	ifSrc.StartRow = 1
+	ifSrc.EndRow = 6
+
+	// Destination: new if_statement with new condition and 4 statements in its block.
+	authGuardDst := testutil.Node("expression_statement", "",
+		testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "checkAuth"),
+			testutil.Leaf("identifier", "user"),
+			testutil.Leaf("identifier", "token"),
+		),
+	)
+	authGuardDst.Language = "go"
+	authGuardDst.StartRow = 12
+	authGuardDst.EndRow = 12
+	authGuardDst.StartByte = 120
+	authGuardDst.EndByte = 150
+
+	stmtD1 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newStmt1"))
+	stmtD1.Language = "go"
+	stmtD1.StartRow = 13
+	stmtD1.EndRow = 13
+
+	stmtD2 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newStmt2"))
+	stmtD2.Language = "go"
+	stmtD2.StartRow = 14
+	stmtD2.EndRow = 14
+
+	stmtD3 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newStmt3"))
+	stmtD3.Language = "go"
+	stmtD3.StartRow = 15
+	stmtD3.EndRow = 15
+
+	blockDst := testutil.Node("block", "", authGuardDst, stmtD1, stmtD2, stmtD3)
+	blockDst.Language = "go"
+	blockDst.StartRow = 11
+	blockDst.EndRow = 16
+	blockDst.StartByte = 115
+	blockDst.EndByte = 190
+
+	ifDst := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockDst)
+	ifDst.Language = "go"
+	ifDst.StartRow = 11
+	ifDst.EndRow = 16
+
+	ms := engine.NewMapping()
+	ms.Add(blockSrc, blockDst)
+	ms.Add(authGuardSrc, authGuardDst)
+	ms.Add(authGuardSrc.Children[0], authGuardDst.Children[0])
+	for i := range authGuardSrc.Children[0].Children {
+		ms.Add(authGuardSrc.Children[0].Children[i], authGuardDst.Children[0].Children[i])
+	}
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Delete, Node: ifSrc})
+	es.Add(actions.Action{Type: actions.Insert, Node: ifDst})
+	es.Add(actions.Action{Type: actions.Move, Node: blockSrc, DestNode: blockDst})
+	es.Add(actions.Action{Type: actions.Move, Node: authGuardSrc, DestNode: authGuardDst})
+
+	collapsed := Collapse(es, ms, ifSrc, ifDst)
+
+	blockMoveSurvives := false
+	authGuardMoveSurvives := false
+	blockDeleteExists := false
+	blockInsertExists := false
+
+	for _, act := range collapsed.Actions() {
+		if act.Node == blockSrc && act.Type == actions.Move {
+			blockMoveSurvives = true
+		}
+		if act.Node == authGuardSrc && act.Type == actions.Move {
+			authGuardMoveSurvives = true
+		}
+		if act.Node == blockSrc && act.Type == actions.Delete {
+			blockDeleteExists = true
+		}
+		if act.Node == blockDst && act.Type == actions.Insert {
+			blockInsertExists = true
+		}
+	}
+
+	if blockMoveSurvives {
+		t.Errorf("hollow block move should be suppressed on blockSrc")
+	}
+	if !authGuardMoveSurvives {
+		t.Errorf("discrete auth guard move should be preserved inside hollow block")
+	}
+	if !blockDeleteExists || !blockInsertExists {
+		t.Errorf("hollow block should demote to discrete Delete and Insert actions on delimiters")
+	}
+}
+
+func TestNearAtomicSubtreeCollapsing_Tier3C(t *testing.T) {
+	// Source container has 10 statements: 9 deleted, 1 low-mass "return nil" matched.
+	var srcChildren []*treesitter.ASTNode
+	for range 9 {
+		stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "work"))
+		stmt.Language = "go"
+		srcChildren = append(srcChildren, stmt)
+	}
+	retNilSrc := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
+	retNilSrc.Language = "go"
+	srcChildren = append(srcChildren, retNilSrc)
+
+	blockSrc := testutil.Node("block", "", srcChildren...)
+	blockSrc.Language = "go"
+
+	// Destination container has 10 statements: 9 new, 1 matched "return nil".
+	var dstChildren []*treesitter.ASTNode
+	for range 9 {
+		stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newWork"))
+		stmt.Language = "go"
+		dstChildren = append(dstChildren, stmt)
+	}
+	retNilDst := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
+	retNilDst.Language = "go"
+	dstChildren = append(dstChildren, retNilDst)
+
+	blockDst := testutil.Node("block", "", dstChildren...)
+	blockDst.Language = "go"
+
+	ms := engine.NewMapping()
+	ms.Add(retNilSrc, retNilDst)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Delete, Node: blockSrc})
+	for _, c := range srcChildren[:9] {
+		es.Add(actions.Action{Type: actions.Delete, Node: c, Subtree: true})
+	}
+	es.Add(actions.Action{Type: actions.Insert, Node: blockDst})
+	for _, c := range dstChildren[:9] {
+		es.Add(actions.Action{Type: actions.Insert, Node: c, Subtree: true})
+	}
+
+	collapsed := Collapse(es, ms, blockSrc, blockDst)
+
+	var blockSrcDelete, blockDstInsert *actions.Action
+	for _, act := range collapsed.Actions() {
+		a := act
+		if a.Node == blockSrc && a.Type == actions.Delete {
+			blockSrcDelete = &a
+		}
+		if a.Node == blockDst && a.Type == actions.Insert {
+			blockDstInsert = &a
+		}
+	}
+
+	if blockSrcDelete == nil || !blockSrcDelete.Subtree {
+		t.Errorf("expected blockSrc to collapse into Delete{Subtree: true}, got %+v", blockSrcDelete)
+	}
+	if blockDstInsert == nil || !blockDstInsert.Subtree {
+		t.Errorf("expected blockDst to collapse into Insert{Subtree: true}, got %+v", blockDstInsert)
+	}
+}
+
+func TestNearAtomicSubtreeCollapsing_Threshold75Percent(t *testing.T) {
+	t.Run("four-statements-one-survivor-75-percent-churn-collapses", func(t *testing.T) {
+		// 4 statements: 3 deleted, 1 low-mass return nil (retention 1/4 = 25%, churn 75%)
+		var srcChildren []*treesitter.ASTNode
+		for range 3 {
+			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "oldWork"))
+			stmt.Language = "go"
+			srcChildren = append(srcChildren, stmt)
+		}
+		retNilSrc := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
+		retNilSrc.Language = "go"
+		srcChildren = append(srcChildren, retNilSrc)
+
+		blockSrc := testutil.Node("block", "", srcChildren...)
+		blockSrc.Language = "go"
+
+		var dstChildren []*treesitter.ASTNode
+		for range 3 {
+			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newWork"))
+			stmt.Language = "go"
+			dstChildren = append(dstChildren, stmt)
+		}
+		retNilDst := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
+		retNilDst.Language = "go"
+		dstChildren = append(dstChildren, retNilDst)
+
+		blockDst := testutil.Node("block", "", dstChildren...)
+		blockDst.Language = "go"
+
+		ms := engine.NewMapping()
+		ms.Add(retNilSrc, retNilDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Delete, Node: blockSrc})
+		for _, c := range srcChildren[:3] {
+			es.Add(actions.Action{Type: actions.Delete, Node: c, Subtree: true})
+		}
+		es.Add(actions.Action{Type: actions.Insert, Node: blockDst})
+		for _, c := range dstChildren[:3] {
+			es.Add(actions.Action{Type: actions.Insert, Node: c, Subtree: true})
+		}
+
+		collapsed := Collapse(es, ms, blockSrc, blockDst)
+
+		var blockSrcDelete, blockDstInsert *actions.Action
+		for _, act := range collapsed.Actions() {
+			a := act
+			if a.Node == blockSrc && a.Type == actions.Delete {
+				blockSrcDelete = &a
+			}
+			if a.Node == blockDst && a.Type == actions.Insert {
+				blockDstInsert = &a
+			}
+		}
+
+		if blockSrcDelete == nil || !blockSrcDelete.Subtree {
+			t.Errorf("expected 4-statement blockSrc with 75%% churn to collapse into Delete{Subtree: true}")
+		}
+		if blockDstInsert == nil || !blockDstInsert.Subtree {
+			t.Errorf("expected 4-statement blockDst with 75%% churn to collapse into Insert{Subtree: true}")
+		}
+	})
+
+	t.Run("three-statements-one-survivor-below-threshold-preserved", func(t *testing.T) {
+		// 3 statements: 2 deleted, 1 return nil (retention 1/3 = 33.3%, churn 66.7% < 75%)
+		var srcChildren []*treesitter.ASTNode
+		for range 2 {
+			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "oldWork"))
+			stmt.Language = "go"
+			srcChildren = append(srcChildren, stmt)
+		}
+		retNilSrc := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
+		retNilSrc.Language = "go"
+		srcChildren = append(srcChildren, retNilSrc)
+
+		blockSrc := testutil.Node("block", "", srcChildren...)
+		blockSrc.Language = "go"
+
+		var dstChildren []*treesitter.ASTNode
+		for range 2 {
+			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newWork"))
+			stmt.Language = "go"
+			dstChildren = append(dstChildren, stmt)
+		}
+		retNilDst := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
+		retNilDst.Language = "go"
+		dstChildren = append(dstChildren, retNilDst)
+
+		blockDst := testutil.Node("block", "", dstChildren...)
+		blockDst.Language = "go"
+
+		ms := engine.NewMapping()
+		ms.Add(retNilSrc, retNilDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Delete, Node: blockSrc})
+		for _, c := range srcChildren[:2] {
+			es.Add(actions.Action{Type: actions.Delete, Node: c, Subtree: true})
+		}
+		es.Add(actions.Action{Type: actions.Insert, Node: blockDst})
+		for _, c := range dstChildren[:2] {
+			es.Add(actions.Action{Type: actions.Insert, Node: c, Subtree: true})
+		}
+
+		collapsed := Collapse(es, ms, blockSrc, blockDst)
+
+		var blockSrcDelete *actions.Action
+		for _, act := range collapsed.Actions() {
+			a := act
+			if a.Node == blockSrc && a.Type == actions.Delete {
+				blockSrcDelete = &a
+			}
+		}
+
+		if blockSrcDelete != nil && blockSrcDelete.Subtree {
+			t.Errorf("expected 3-statement blockSrc with 66.7%% churn NOT to collapse into Subtree: true")
+		}
+	})
 }

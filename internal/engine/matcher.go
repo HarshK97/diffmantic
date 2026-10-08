@@ -174,10 +174,34 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 				}
 			}
 
-			depth1 := effectiveDepthTo(t1, anc1, r)
-			depth2 := effectiveDepthTo(t2, anc2, r)
-			if !parentMatched && siblingScore == 0 && d < 0.25 && (depth1 > 2 || depth2 > 2) {
-				continue
+			// In block containers, don't let leaves bind across unrelated statements
+			// unless their enclosing statements share enough structural similarity.
+			isBlock := isBlockNode(anc1, r)
+			p1 := FindEnclosingStatement(t1, r)
+			p2 := FindEnclosingStatement(t2, r)
+			isStmt1 := isStatementNode(p1, r)
+			isStmt2 := isStatementNode(p2, r)
+			if isBlock && isStmt1 && isStmt2 {
+				stmtMatched := p1 == p2 || (m != nil && m.Src()[p1] == p2)
+				if !stmtMatched && !parentMatched && siblingScore == 0 {
+					var stmtDice float64
+					pair := parentPair{p1: p1, p2: p2}
+					if cached, ok := diceCache[pair]; ok {
+						stmtDice = cached
+					} else {
+						stmtDice = Dice(p1, p2, m.Src())
+						diceCache[pair] = stmtDice
+					}
+					if stmtDice < 0.30 {
+						continue
+					}
+				}
+			} else {
+				depth1 := effectiveDepthTo(t1, anc1, r)
+				depth2 := effectiveDepthTo(t2, anc2, r)
+				if !parentMatched && siblingScore == 0 && d < 0.25 && (depth1 > 2 || depth2 > 2) {
+					continue
+				}
 			}
 
 			candidatesList = append(candidatesList, leafCandidate{
@@ -672,6 +696,16 @@ func isBlockNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 		return r.IsBlock(n.Type)
 	}
 	return rules.IsBlock(n.Type)
+}
+
+func isStatementNode(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r != nil {
+		return r.IsStatement(n.Type)
+	}
+	return rules.IsStatement(n.Type)
 }
 
 func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {

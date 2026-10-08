@@ -312,4 +312,10 @@ var rustRules = &Rules{
 		"->",
 		"::",
 	},
+	Statements: []string{
+		"empty_statement",
+		"expression_statement",
+		"let_declaration",
+		"macro_invocation",
+	},
 }

@@ -869,3 +869,41 @@ func TestRecoverCohortSiblings(t *testing.T) {
 		}
 	})
 }
+
+func TestMatchUnmatchedLeaves_StatementBoundary_ShortVarDeclaration(t *testing.T) {
+	// Identical identifiers like "err" inside completely different short_var_declarations
+	// in the same block shouldn't bind across statements when Dice similarity is low.
+	idSrc := testutil.Leaf("identifier", "err")
+	wrapSrc := testutil.Node("expression_list", "", idSrc)
+	opSrc := testutil.Leaf("assignment_operator_literal", ":=")
+	valSrc := testutil.Node("call_expression", "", testutil.Leaf("identifier", "doDatabaseQuery"))
+	wrapValSrc := testutil.Node("expression_list", "", valSrc)
+	stmtSrc := testutil.Node("short_var_declaration", "", wrapSrc, opSrc, wrapValSrc)
+	stmtSrc.Language = "go"
+	blockSrc := testutil.Node("block", "", stmtSrc)
+	blockSrc.Language = "go"
+	rootSrc := testutil.Node("source_file", "", blockSrc)
+	rootSrc.Language = "go"
+
+	idDst := testutil.Leaf("identifier", "err")
+	wrapDst := testutil.Node("expression_list", "", idDst)
+	opDst := testutil.Leaf("assignment_operator_literal", ":=")
+	valDst := testutil.Node("call_expression", "", testutil.Leaf("identifier", "renderTemplateOutput"))
+	wrapValDst := testutil.Node("expression_list", "", valDst)
+	stmtDst := testutil.Node("short_var_declaration", "", wrapDst, opDst, wrapValDst)
+	stmtDst.Language = "go"
+	blockDst := testutil.Node("block", "", stmtDst)
+	blockDst.Language = "go"
+	rootDst := testutil.Node("source_file", "", blockDst)
+	rootDst.Language = "go"
+
+	m := NewMapping()
+	m.Add(rootSrc, rootDst)
+	m.Add(blockSrc, blockDst)
+
+	MatchUnmatchedLeaves(rootSrc, rootDst, m, nil)
+
+	if m.Has(idSrc) {
+		t.Errorf("expected 'err' across unrelated short_var_declarations to be rejected by statement boundary invariant, got mapped to %v", m.Src()[idSrc])
+	}
+}
