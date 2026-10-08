@@ -330,6 +330,33 @@ func TestAdjustRangeForContainerParenWrapper(t *testing.T) {
 	}
 }
 
+func TestAdjustRangeForContainerImplicitLengthArrayType(t *testing.T) {
+	dots := &treesitter.ASTNode{Type: "...", StartByte: 1, EndByte: 4, StartRow: 1, EndRow: 1}
+	typeIdent := &treesitter.ASTNode{Type: "type_identifier", StartByte: 4, EndByte: 10, StartRow: 1, EndRow: 1}
+	arr := &treesitter.ASTNode{
+		Type:      "implicit_length_array_type",
+		StartByte: 0,
+		EndByte:   10,
+		StartRow:  1,
+		EndRow:    1,
+		Children:  []*treesitter.ASTNode{dots, typeIdent},
+	}
+	arr.Language = "go"
+	dots.Parent = arr
+	typeIdent.Parent = arr
+
+	start := arr.StartByte
+	end := arr.EndByte
+
+	hasFooter, fStart, fEnd := adjustRangeForContainer(arr, &start, &end, []byte("[...]string"))
+	if hasFooter {
+		t.Errorf("expected no footer delimiter for implicit length array, got [%d, %d]", fStart, fEnd)
+	}
+	if start != 0 || end != 1 {
+		t.Errorf("expected container header range [0, 1] for '[', got [%d, %d]", start, end)
+	}
+}
+
 func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	// A block container with an inner statement and closing brace:
 	// line 0: {
