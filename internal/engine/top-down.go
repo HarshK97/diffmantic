@@ -124,6 +124,13 @@ func TopDown(
 		mismatched := name1 != "" && name2 != "" && name1 != name2
 
 		di := Dice(t1.Parent, t2.Parent, m.Src())
+		if di == 0 && nameMatched {
+			c1 := getEnclosingConstruct(t1, rulesFor(t1))
+			c2 := getEnclosingConstruct(t2, rulesFor(t2))
+			if c1 != nil && c2 != nil && (c1 != t1.Parent || c2 != t2.Parent) {
+				di = Dice(c1, c2, m.Src()) * 0.5
+			}
+		}
 		si := AncestorNameSimilarity(t1, t2)
 		li := parentLineageSimilarity(t1, t2)
 		scored = append(scored, scoredPair{
@@ -343,4 +350,28 @@ func hasIdentifier(n *treesitter.ASTNode, r *rules.Rules) bool {
 		}
 	}
 	return false
+}
+
+// getEnclosingConstruct finds the top-level statement directly under the enclosing
+// declaration's body block, stopping before it escapes into the declaration itself.
+func getEnclosingConstruct(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rulesFor(n))
+	curr := n
+	for curr.Parent != nil {
+		p := curr.Parent
+		if p.Parent == nil {
+			return curr
+		}
+		if (r != nil && r.IsDeclaration(p.Type)) || rules.IsDeclaration(p.Type) {
+			return curr
+		}
+		if (r != nil && r.IsDeclaration(p.Parent.Type)) || rules.IsDeclaration(p.Parent.Type) {
+			return curr
+		}
+		curr = p
+	}
+	return curr
 }

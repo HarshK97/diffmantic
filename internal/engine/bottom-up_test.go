@@ -1044,3 +1044,89 @@ func TestHasHeaderMatch(t *testing.T) {
 		t.Errorf("expected hasHeaderMatch to be true when header condition matches")
 	}
 }
+
+func TestHasForeignHeaderOwner(t *testing.T) {
+	r := rules.Get("go")
+
+	// Construct 1 in Old: if nilR.IsCaseClause("expression_case") { t.Errorf(...) }
+	cond1 := testutil.Node("call_expression", "nilR.IsCaseClause")
+	body1 := testutil.Node("block", "", testutil.Leaf("identifier", "t"))
+	if1 := testutil.Node("if_statement", "", cond1, body1)
+
+	// Construct 2 in Old: if !IsCaseClause("case_clause") { t.Errorf(...) }
+	cond2 := testutil.Node("call_expression", "IsCaseClause")
+	body2 := testutil.Node("block", "", testutil.Leaf("identifier", "t"))
+	if2 := testutil.Node("if_statement", "", cond2, body2)
+
+	// Construct in New: if nilR.IsCaseClause("expression_case") { t.Errorf(...) }
+	newCond := testutil.Node("call_expression", "nilR.IsCaseClause")
+	newBody := testutil.Node("block", "", testutil.Leaf("identifier", "t"))
+	newIf := testutil.Node("if_statement", "", newCond, newBody)
+
+	treesitter.EnsureIndex(if1)
+	treesitter.EnsureIndex(if2)
+	treesitter.EnsureIndex(newIf)
+
+	m := NewMapping()
+	// Map newIf's header to if1.
+	m.Add(cond1, newCond)
+
+	// if2 and its body shouldn't match against newIf because newIf's header belongs to if1.
+	if !hasForeignHeaderOwner(if2, newIf, m, r) {
+		t.Errorf("expected hasForeignHeaderOwner to be true for if2 against newIf whose header is mapped to if1")
+	}
+	if !hasForeignHeaderOwner(body2, newBody, m, r) {
+		t.Errorf("expected hasForeignHeaderOwner to be true for body2 against newBody whose parent header is mapped to if1")
+	}
+
+	// if1 is the rightful owner, so it shouldn't be flagged as foreign.
+	if hasForeignHeaderOwner(if1, newIf, m, r) {
+		t.Errorf("expected hasForeignHeaderOwner to be false for if1 against newIf")
+	}
+	if hasForeignHeaderOwner(body1, newBody, m, r) {
+		t.Errorf("expected hasForeignHeaderOwner to be false for body1 against newBody")
+	}
+}
+
+func TestRollupMatchedContainers_ScopePreservedGuard(t *testing.T) {
+	// Function block in Old with flat if statement:
+	// func test() {
+	//     if !r.IsCaseClause("foo") { t.Errorf() }
+	// }
+	idT1 := testutil.Leaf("identifier", "t")
+	body1 := testutil.Node("block", "", idT1)
+	cond1 := testutil.Node("unary_expression", "", testutil.Leaf("identifier", "r"))
+	if1 := testutil.Node("if_statement", "", cond1, body1)
+	fnBlock1 := testutil.Node("block", "", if1)
+	fn1 := testutil.Node("function_declaration", "", fnBlock1)
+
+	// Function block in New with a for loop containing an if statement:
+	// func test() {
+	//     for ... {
+	//         if got := r.IsCaseClause(...); got != tt.want { t.Errorf() }
+	//     }
+	// }
+	idT2 := testutil.Leaf("identifier", "t")
+	body2 := testutil.Node("block", "", idT2)
+	cond2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "got"))
+	if2 := testutil.Node("if_statement", "", cond2, body2)
+	forBlock := testutil.Node("block", "", if2)
+	forStmt := testutil.Node("for_statement", "", forBlock)
+	fnBlock2 := testutil.Node("block", "", forStmt)
+	fn2 := testutil.Node("function_declaration", "", fnBlock2)
+
+	treesitter.EnsureIndex(fn1)
+	treesitter.EnsureIndex(fn2)
+
+	m := NewMapping()
+	m.Add(fn1, fn2)
+	m.Add(fnBlock1, fnBlock2)
+	m.Add(idT1, idT2)
+
+	RollupMatchedContainers(fn1, fn2, m)
+
+	// if1 shouldn't roll up into if2 across an unmapped loop boundary when Dice is low.
+	if m.Get(if1) == if2 {
+		t.Errorf("expected if1 NOT to roll up to if2 across unmapped loop scope boundary")
+	}
+}
