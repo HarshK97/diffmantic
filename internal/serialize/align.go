@@ -210,8 +210,12 @@ func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping, srcLines []st
 		}
 
 		if !isInPlaceMonotonic && (!hasDst || sStart != dStart || sEnd-sStart != dEnd-dStart) {
-			isStructural := (r != nil && (r.IsDeclaration(a.Node.Type) || r.IsBlock(a.Node.Type))) || (a.Node.EndRow-a.Node.StartRow >= 2)
-			if isCrossScope || isStructural {
+			// Only let macro-structural moves drive line alignment. Micro-moves (like
+			// single identifiers or operators) shouldn't drag lines across the screen.
+			isMacroStructural := a.Node.Size() >= 4 ||
+				(r != nil && (r.IsStatement(a.Node.Type) || r.IsBlock(a.Node.Type) || r.IsDeclaration(a.Node.Type))) ||
+				(r == nil && (rules.IsStatement(a.Node.Type) || rules.IsBlock(a.Node.Type) || rules.IsDeclaration(a.Node.Type)))
+			if isMacroStructural {
 				moves = append(moves, moveRange{
 					sStart: sStart,
 					sEnd:   sEnd,

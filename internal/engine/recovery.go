@@ -106,10 +106,20 @@ func uniqueTypePairs(
 					n2 = cand2
 				}
 			}
+			isDecl := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
+			isStmt := ((r != nil && r.IsStatement(n1.Type)) || (r == nil && rules.IsStatement(n1.Type))) && !isDecl
+			diceSrc := 0.0
+			if m != nil {
+				diceSrc = m.DiceSrc(n1, n2)
+			}
+			// Don't pair singleton statements across disparate code if headers diverge and no descendants map.
+			if isStmt && !isomorphicHeader(n1, n2, r) && !labelIsomorphic(n1, n2) && diceSrc == 0.0 {
+				continue
+			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {
 				labels1 := n1.LeafLabels()
 				labels2 := n2.LeafLabels()
-				isDeclaration := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
+				isDeclaration := isDecl
 				isWrapper := ((r != nil && r.IsWrapper(n1.Type)) || (r == nil && rules.IsWrapper(n1.Type))) && !isDeclaration
 				if !isWrapper {
 					overlap := 0
@@ -315,4 +325,61 @@ func matchIntroducingKeywords(t1, t2 *treesitter.ASTNode, m *Mapping) {
 			m.Add(prev1, prev2)
 		}
 	}
+}
+
+// isomorphicHeader checks if two statements share matching headers or conditions,
+// ignoring their executable body blocks.
+func isomorphicHeader(n1, n2 *treesitter.ASTNode, rOpt ...*rules.Rules) bool {
+	if n1 == nil || n2 == nil {
+		return false
+	}
+	var r *rules.Rules
+	if len(rOpt) > 0 {
+		r = rOpt[0]
+	}
+	if r == nil {
+		r = rulesFor(n1)
+	}
+	body1 := findBodyBlock(n1, r)
+	body2 := findBodyBlock(n2, r)
+	if body1 == nil || body2 == nil {
+		return false
+	}
+	var h1, h2 []*treesitter.ASTNode
+	for _, c := range n1.Children {
+		if c != body1 && !isBlockNode(c, r) {
+			h1 = append(h1, c)
+		}
+	}
+	for _, c := range n2.Children {
+		if c != body2 && !isBlockNode(c, r) {
+			h2 = append(h2, c)
+		}
+	}
+	if len(h1) == 0 || len(h1) != len(h2) {
+		return false
+	}
+	hasSemantic := false
+	for i := range h1 {
+		if !Isomorphic(h1[i], h2[i]) {
+			return false
+		}
+		isPunct := (r != nil && (r.IsPunctuation(h1[i].Type) || r.IsOperatorLiteral(h1[i].Type))) ||
+			(r == nil && (rules.IsPunctuation(h1[i].Type) || rules.IsOperatorLiteral(h1[i].Type)))
+		if !h1[i].IsKeyword && !isPunct {
+			hasSemantic = true
+		}
+	}
+	return hasSemantic
+}
+
+// labelIsomorphic checks if two nodes share the same label or identical AST structure.
+func labelIsomorphic(n1, n2 *treesitter.ASTNode) bool {
+	if n1 == nil || n2 == nil {
+		return false
+	}
+	if n1.Label != "" && n2.Label != "" {
+		return n1.Label == n2.Label
+	}
+	return Isomorphic(n1, n2)
 }

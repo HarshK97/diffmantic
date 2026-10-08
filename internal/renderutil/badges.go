@@ -113,7 +113,7 @@ func BuildMoveBadges(
 		isDecl := r != nil && r.IsDeclaration(a.Node.Type)
 		isBlock := r != nil && r.IsBlock(a.Node.Type)
 		isMultiLine := sEnd > sStart || dEnd > dStart
-		isStatement := a.Node.Type == "statement" || strings.HasSuffix(a.Node.Type, "_statement") || (r != nil && r.IsCall(a.Node.Type))
+		isStatement := r.IsStatement(a.Node.Type) || (r != nil && r.IsCall(a.Node.Type))
 		if !isDecl && !isBlock && !isMultiLine && !isStatement {
 			continue
 		}

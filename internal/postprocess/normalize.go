@@ -837,6 +837,14 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			if r == nil {
 				continue
 			}
+			// Demote isolated leaf moves jumping across deleted/inserted statements.
+			// A lone leaf shouldn't show as a move when its enclosing statement was rewritten.
+			if isIsolatedLeafCrossStatementMove(a.Node, dstNode, ms, r) {
+				toDemote[a.Node] = dstNode
+				evicted[a.Node] = struct{}{}
+				changed = true
+				continue
+			}
 			if cohortProtected[a.Node] {
 				continue
 			}
@@ -995,6 +1003,42 @@ func isSubtreeDemotion(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rule
 	insertSubtree = len(dst.Children) > 0 && (!isDstDelim || !hasDstSurvivingInside) && !hasSurvivingSrcOutside
 
 	return deleteSubtree, insertSubtree
+}
+
+// isIsolatedLeafCrossStatementMove checks if src is a leaf whose surrounding
+// statement was rewritten, preventing misleading single-token moves.
+func isIsolatedLeafCrossStatementMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || ms == nil || len(src.Children) > 0 {
+		return false
+	}
+	if src.Parent != nil && dst.Parent != nil {
+		// Sibling reordering under the same mapped parent is legitimate.
+		if ms.Src()[src.Parent] == dst.Parent {
+			return false
+		}
+		// Preserve one-hop container unwraps and reparents.
+		if src.Parent.Parent != nil && ms.Src()[src.Parent.Parent] == dst.Parent {
+			return false
+		}
+		if dst.Parent.Parent != nil && ms.Src()[src.Parent] == dst.Parent.Parent {
+			return false
+		}
+	}
+	srcStmt := engine.FindEnclosingStatement(src, r)
+	dstStmt := engine.FindEnclosingStatement(dst, r)
+	if srcStmt == nil || dstStmt == nil || srcStmt == src || dstStmt == dst {
+		return false
+	}
+	isStmt1 := (r != nil && r.IsStatement(srcStmt.Type)) || (r == nil && rules.IsStatement(srcStmt.Type))
+	isStmt2 := (r != nil && r.IsStatement(dstStmt.Type)) || (r == nil && rules.IsStatement(dstStmt.Type))
+	if !isStmt1 || !isStmt2 {
+		return false
+	}
+	// If the enclosing statements are mapped to each other, the statement wasn't rewritten.
+	if ms.Src()[srcStmt] == dstStmt {
+		return false
+	}
+	return true
 }
 
 // shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert

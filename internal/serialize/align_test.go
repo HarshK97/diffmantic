@@ -952,6 +952,73 @@ func TestAlignLines_StationaryElsePrecedenceOverInsertedClause(t *testing.T) {
 	}
 }
 
+func TestCollectMoveRanges_MacroStructuralFilter_Tier4(t *testing.T) {
+	// Micro-move: sub-statement identifier (size 1), not a statement, block, or declaration.
+	microSrc := &treesitter.ASTNode{Type: "identifier", Label: "x", StartRow: 5, EndRow: 5, Language: "go"}
+	microDst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartRow: 50, EndRow: 50, Language: "go"}
+
+	// Macro-move 1: statement node (size 2).
+	stmtSrc := &treesitter.ASTNode{
+		Type:     "expression_statement",
+		StartRow: 10,
+		EndRow:   10,
+		Language: "go",
+		Children: []*treesitter.ASTNode{{Type: "identifier", Label: "foo", Language: "go"}},
+	}
+	stmtDst := &treesitter.ASTNode{
+		Type:     "expression_statement",
+		StartRow: 60,
+		EndRow:   60,
+		Language: "go",
+		Children: []*treesitter.ASTNode{{Type: "identifier", Label: "foo", Language: "go"}},
+	}
+
+	// Macro-move 2: non-statement node with Size() >= 4 (complex expression).
+	c1 := &treesitter.ASTNode{Type: "identifier", Label: "a", Language: "go"}
+	c2 := &treesitter.ASTNode{Type: "+", Label: "+", Language: "go"}
+	c3 := &treesitter.ASTNode{Type: "identifier", Label: "b", Language: "go"}
+	largeExprSrc := &treesitter.ASTNode{
+		Type:     "binary_expression",
+		StartRow: 20,
+		EndRow:   20,
+		Language: "go",
+		Children: []*treesitter.ASTNode{c1, c2, c3},
+	}
+	largeExprDst := &treesitter.ASTNode{
+		Type:     "binary_expression",
+		StartRow: 70,
+		EndRow:   70,
+		Language: "go",
+		Children: []*treesitter.ASTNode{c1, c2, c3},
+	}
+
+	ms := engine.NewMapping()
+	ms.Add(microSrc, microDst)
+	ms.Add(stmtSrc, stmtDst)
+	ms.Add(largeExprSrc, largeExprDst)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: microSrc, DestNode: microDst})
+	es.Add(actions.Action{Type: actions.Move, Node: stmtSrc, DestNode: stmtDst})
+	es.Add(actions.Action{Type: actions.Move, Node: largeExprSrc, DestNode: largeExprDst})
+
+	srcLines := make([]string, 100)
+	moves, _ := collectMoveRanges(es, ms, srcLines, nil, nil)
+
+	// Out of the 3 Move actions:
+	// microSrc (size 1) must be dropped from line alignment.
+	// stmtSrc (statement) and largeExprSrc (size 4) must be admitted.
+	if len(moves) != 2 {
+		t.Fatalf("expected exactly 2 macro-structural move ranges admitted, got %d", len(moves))
+	}
+
+	for _, m := range moves {
+		if m.sStart == 5 && m.dStart == 50 {
+			t.Errorf("micro-move on line 5->50 should be excluded from line alignment moveRange")
+		}
+	}
+}
+
 func BenchmarkAlignLines(b *testing.B) {
 	b.Run("SmallGap", func(b *testing.B) {
 		src := []byte("func foo() {\n  a := 1\n  b := 2\n  return a + b\n}")
