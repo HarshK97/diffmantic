@@ -133,6 +133,7 @@ var golangRules = &Rules{
 		"type_parameter_list",
 		"slice_type",
 		"array_type",
+		"implicit_length_array_type",
 		"index_expression",
 		"slice_expression",
 		"pointer_type",

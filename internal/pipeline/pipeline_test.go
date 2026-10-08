@@ -3,6 +3,8 @@ package pipeline
 import (
 	"strings"
 	"testing"
+
+	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
 func TestPipeline_LineLimitFallback(t *testing.T) {
@@ -108,5 +110,35 @@ func Bar() {
 				t.Errorf("spurious comment action %s on %q", act.Action, act.Node.Label)
 			}
 		}
+	}
+}
+
+func TestPipeline_GoImplicitLengthArrayWrapperTrimming(t *testing.T) {
+	src := []byte("package main\n\nvar x = []string{}\n")
+	dst := []byte("package main\n\nvar x = [...]string{}\n")
+
+	res, err := Run(src, dst, "a.go", "b.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Changing []string to [...]string should only diff the brackets and dots,
+	// leaving the inner type "string" untouched as unchanged context.
+	if len(res.Envelope.LeftHighlights) != 1 {
+		t.Fatalf("expected 1 left highlight, got %d: %+v", len(res.Envelope.LeftHighlights), res.Envelope.LeftHighlights)
+	}
+	hLeft := res.Envelope.LeftHighlights[0]
+	if hLeft.Line != 2 || hLeft.Action != "delete" || hLeft.StartCol != 8 || hLeft.EndCol != 10 {
+		t.Errorf("expected delete [8..10] on line 2, got: %+v", hLeft)
+	}
+
+	if len(res.Envelope.RightHighlights) != 1 {
+		t.Fatalf("expected 1 right highlight, got %d: %+v", len(res.Envelope.RightHighlights), res.Envelope.RightHighlights)
+	}
+	hRight := res.Envelope.RightHighlights[0]
+	if hRight.Line != 2 || hRight.Action != "insert" || hRight.StartCol != 8 || hRight.EndCol != 13 {
+		t.Errorf("expected insert [8..13] on line 2, got: %+v", hRight)
 	}
 }
