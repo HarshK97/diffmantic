@@ -19,21 +19,36 @@ func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
 // SimpleRecovery maps unmatched children inside container pair (t1, t2) using
 // positional anchors, label/structural LCS, and unique-type matching.
 func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	matchDirectKeywords(t1, t2, m)
 	reconcileDeclarationSignatures(t1, t2, m, rulesFor(t1))
 
-	// If an unmatched node is sandwiched between already-matched neighbors at the exact same index, pair it up.
+	r := rulesFor(t1)
+	// Pair up unmatched nodes sandwiched between matched neighbors at the same index, or trailing at the end.
 	for idx, c1 := range t1.Children {
-		if m.Has(c1) {
+		if m.Has(c1) || idx == 0 || idx >= len(t2.Children) {
 			continue
 		}
-		if idx > 0 && idx+1 < len(t1.Children) && idx+1 < len(t2.Children) {
-			c2 := t2.Children[idx]
-			if !m.HasDst(c2) && c1.Label != "" && Isomorphic(c1, c2) {
-				left1, left2 := t1.Children[idx-1], t2.Children[idx-1]
-				right1, right2 := t1.Children[idx+1], t2.Children[idx+1]
-				if m.Src()[left1] == left2 && m.Src()[right1] == right2 {
-					addIsomorphicPairs(c1, c2, m)
-				}
+		c2 := t2.Children[idx]
+		if m.HasDst(c2) || !TypesMatch(c1.Type, c2.Type, r) {
+			continue
+		}
+		left1, left2 := t1.Children[idx-1], t2.Children[idx-1]
+		leftMatched := m.Src()[left1] == left2
+
+		var rightMatched bool
+		if idx+1 < min(len(t1.Children), len(t2.Children)) {
+			right1, right2 := t1.Children[idx+1], t2.Children[idx+1]
+			rightMatched = m.Src()[right1] == right2
+		} else if idx == len(t1.Children)-1 && idx == len(t2.Children)-1 {
+			rightMatched = true
+		}
+
+		if leftMatched && rightMatched {
+			if c1.Label != "" && Isomorphic(c1, c2) {
+				addIsomorphicPairs(c1, c2, m)
+			} else if (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type)) {
+				m.Add(c1, c2)
+				Recover(c1, c2, m)
 			}
 		}
 	}
@@ -112,8 +127,9 @@ func uniqueTypePairs(
 			if m != nil {
 				diceSrc = m.DiceSrc(n1, n2)
 			}
-			// Don't pair singleton statements across disparate code if headers diverge and no descendants map.
-			if isStmt && !isomorphicHeader(n1, n2, r) && !labelIsomorphic(n1, n2) && diceSrc == 0.0 {
+			// Skip body-bearing statements (like if/for) when headers don't match and no children are mapped yet.
+			hasBodyBlock := findBodyBlock(n1, r) != nil && findBodyBlock(n2, r) != nil
+			if isStmt && hasBodyBlock && !isomorphicHeader(n1, n2, r) && !labelIsomorphic(n1, n2) && diceSrc == 0.0 {
 				continue
 			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {
