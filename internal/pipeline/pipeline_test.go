@@ -142,3 +142,58 @@ func TestPipeline_GoImplicitLengthArrayWrapperTrimming(t *testing.T) {
 		t.Errorf("expected insert [8..13] on line 2, got: %+v", hRight)
 	}
 }
+
+func TestPipeline_IfElseBlockArgumentAdditionRecovery(t *testing.T) {
+	src := []byte(`package main
+
+func f() {
+	if layout == HunkLayoutDualColumn {
+		renderSideBySideHunk(w, h, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
+	} else {
+		renderSingleColumnHunk(w, h, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx, layout)
+	}
+}
+`)
+	dst := []byte(`package main
+
+func f() {
+	if layout == HunkLayoutDualColumn {
+		renderSideBySideHunk(w, h, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, srcLineBadgeColors, dstLineBadgeColors, leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
+	} else {
+		renderSingleColumnHunk(w, h, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, srcLineBadgeColors, dstLineBadgeColors, leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx, layout)
+	}
+}
+`)
+
+	res, err := Run(src, dst, "main.go", "main.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only arguments were added, so nothing on the left should be deleted.
+	if len(res.Envelope.LeftHighlights) != 0 {
+		t.Errorf("expected 0 left highlights, got %d: %+v", len(res.Envelope.LeftHighlights), res.Envelope.LeftHighlights)
+	}
+
+	for _, a := range res.Envelope.Actions {
+		if a.Action != "insert" || a.Node.Type != "identifier" {
+			t.Errorf("expected only identifier insert actions, got: %+v", a)
+		}
+	}
+
+	// Expect insert highlights for the new arguments on lines 4 and 6.
+	if len(res.Envelope.RightHighlights) != 2 {
+		t.Fatalf("expected exactly 2 right highlights, got %d: %+v", len(res.Envelope.RightHighlights), res.Envelope.RightHighlights)
+	}
+	if res.Envelope.RightHighlights[0].Line != 4 || res.Envelope.RightHighlights[0].Action != "insert" {
+		t.Errorf("expected insert highlight on line 4, got: %+v", res.Envelope.RightHighlights[0])
+	}
+	if res.Envelope.RightHighlights[1].Line != 6 || res.Envelope.RightHighlights[1].Action != "insert" {
+		t.Errorf("expected insert highlight on line 6, got: %+v", res.Envelope.RightHighlights[1])
+	}
+}

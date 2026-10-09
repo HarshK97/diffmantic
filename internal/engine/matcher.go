@@ -359,20 +359,29 @@ func MatchContainerKeywords(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		if p2 == nil {
 			continue
 		}
-		for _, c1 := range p1.Children {
-			if !m.Has(c1) {
-				if c1.IsKeyword {
-					k2 := findMatchingKeywordChild(p1, p2, c1, m)
-					if k2 != nil {
-						m.Add(c1, k2)
-					}
-				} else if c1.IsScaffolding() && len(c1.Children) == 1 && c1.Children[0].IsKeyword {
-					k2 := findMatchingScaffoldKeywordChild(p1, p2, c1, m)
-					if k2 != nil {
-						m.Add(c1, k2)
-						m.Add(c1.Children[0], k2.Children[0])
-					}
-				}
+		matchDirectKeywords(p1, p2, m)
+	}
+}
+
+// matchDirectKeywords pairs unmapped keyword and scaffolding keyword children between p1 and p2.
+func matchDirectKeywords(p1, p2 *treesitter.ASTNode, m *Mapping) {
+	if p1 == nil || p2 == nil || m == nil {
+		return
+	}
+	for _, c1 := range p1.Children {
+		if m.Has(c1) {
+			continue
+		}
+		if c1.IsKeyword {
+			k2 := findMatchingKeywordChild(p1, p2, c1, m)
+			if k2 != nil {
+				m.Add(c1, k2)
+			}
+		} else if c1.IsScaffolding() && len(c1.Children) == 1 && c1.Children[0].IsKeyword {
+			k2 := findMatchingScaffoldKeywordChild(p1, p2, c1, m)
+			if k2 != nil {
+				m.Add(c1, k2)
+				m.Add(c1.Children[0], k2.Children[0])
 			}
 		}
 	}
