@@ -34,10 +34,11 @@ func (s *HighlightSpan) UnmarshalJSON(b []byte) error {
 }
 
 type internalSpan struct {
-	startCol int
-	endCol   int
-	action   string
-	actRef   *Action
+	startCol       int
+	endCol         int
+	action         string
+	actRef         *Action
+	moveColorIndex int
 }
 
 // DelimiterSpan tracks a closing delimiter (like a brace or bracket) for UI highlights.
@@ -229,7 +230,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 			lineMerged = append(lineMerged, curr)
 		}
 
-		lineMerged = partitionLineSpans(lineMerged, side)
+		lineMerged = partitionLineSpans(lineMerged, side, lineIndex, fileBytes)
 
 		slices.SortFunc(lineMerged, func(a, b internalSpan) int {
 			return cmp.Or(
@@ -240,20 +241,12 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		})
 
 		for _, mSpan := range lineMerged {
-			colorIdx := 0
-			if mSpan.actRef != nil {
-				if mSpan.action == "move" || mSpan.action == "move_update" {
-					if !isActionMultiLine(mSpan.actRef, lineIndex, fileBytes, side) {
-						colorIdx = mSpan.actRef.MoveColorIndex
-					}
-				}
-			}
 			result = append(result, HighlightSpan{
 				Line:       line,
 				StartCol:   mSpan.startCol,
 				EndCol:     mSpan.endCol,
 				Action:     mSpan.action,
-				ColorIndex: colorIdx,
+				ColorIndex: mSpan.moveColorIndex,
 				ActionRef:  mSpan.actRef,
 			})
 		}
@@ -538,8 +531,24 @@ func parseSpanActionPriority(act string) int {
 }
 
 // partitionLineSpans resolves cross-action overlaps for a single line's spans.
-func partitionLineSpans(spans []internalSpan, side string) []internalSpan {
-	if len(spans) <= 1 {
+func partitionLineSpans(spans []internalSpan, side string, lineIndex []int, fileBytes []byte) []internalSpan {
+	resolveMoveColor := func(act *Action) int {
+		if act == nil {
+			return 0
+		}
+		if len(lineIndex) > 0 && isActionMultiLine(act, lineIndex, fileBytes, side) {
+			return 0
+		}
+		return act.MoveColorIndex
+	}
+
+	if len(spans) == 0 {
+		return spans
+	}
+	if len(spans) == 1 {
+		if spans[0].action == "move" {
+			spans[0].moveColorIndex = resolveMoveColor(spans[0].actRef)
+		}
 		return spans
 	}
 
@@ -554,6 +563,11 @@ checkOverlap:
 		}
 	}
 	if !hasOverlap {
+		for i := range spans {
+			if spans[i].action == "move" {
+				spans[i].moveColorIndex = resolveMoveColor(spans[i].actRef)
+			}
+		}
 		return spans
 	}
 
@@ -573,14 +587,16 @@ checkOverlap:
 		}
 
 		var (
-			winner  *internalSpan
-			hasMove bool
+			winner   *internalSpan
+			moveSpan *internalSpan
 		)
 		for j := range spans {
 			sp := &spans[j]
 			if sp.startCol <= segStart && sp.endCol >= segEnd {
 				if sp.action == "move" {
-					hasMove = true
+					if moveSpan == nil || spanASTLength(*sp, side) < spanASTLength(*moveSpan, side) {
+						moveSpan = sp
+					}
 				}
 				if winner == nil {
 					winner = sp
@@ -599,14 +615,19 @@ checkOverlap:
 		}
 		if winner != nil {
 			action := winner.action
-			if action == "update" && hasMove {
+			colorIdx := 0
+			if action == "move" {
+				colorIdx = resolveMoveColor(winner.actRef)
+			} else if action == "update" && moveSpan != nil {
 				action = "move_update"
+				colorIdx = resolveMoveColor(moveSpan.actRef)
 			}
 			segments = append(segments, internalSpan{
-				startCol: segStart,
-				endCol:   segEnd,
-				action:   action,
-				actRef:   winner.actRef,
+				startCol:       segStart,
+				endCol:         segEnd,
+				action:         action,
+				actRef:         winner.actRef,
+				moveColorIndex: colorIdx,
 			})
 		}
 	}
@@ -619,9 +640,8 @@ checkOverlap:
 	for i := 1; i < len(segments); i++ {
 		canCoalesce := segments[i].action == cur.action && segments[i].startCol == cur.endCol
 		if canCoalesce && (cur.action == "move" || cur.action == "move_update") {
-			// Don't merge move segments from different actions, or an outer move
-			// would swallow an inner breakaway move's color.
-			if cur.actRef != segments[i].actRef {
+			// Don't merge move segments across different actions or color slots.
+			if cur.actRef != segments[i].actRef || cur.moveColorIndex != segments[i].moveColorIndex {
 				canCoalesce = false
 			}
 		}
