@@ -369,8 +369,24 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	return true
 }
 
-// canUnwrapSubExpression checks if n is a lightweight wrapper or sub-expression
-// that code can stay stationary across, rather than a distinct semantic container.
+// areChainedStatements reports whether base and parent belong to the same
+// statement chain (like an if-else-if ladder).
+func areChainedStatements(base, parent *treesitter.ASTNode, r *rules.Rules) bool {
+	if base == nil || parent == nil {
+		return false
+	}
+	isStmt := (r != nil && r.IsStatement(base.Type)) || (r == nil && rules.IsStatement(base.Type))
+	if !isStmt {
+		return false
+	}
+	if r != nil {
+		return r.AreTypesEquivalent(base.Type, parent.Type)
+	}
+	return base.Type == parent.Type
+}
+
+// canUnwrapSubExpression reports whether n is a lightweight wrapper (like parens
+// or an if-else chain) that code can stay stationary across.
 func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 	if n == nil || n.Parent == nil {
 		return false
@@ -382,6 +398,20 @@ func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 		}
 		if r.IsDeclaration(n.Type) && !r.IsWrapper(n.Type) {
 			return false
+		}
+		if r.IsStatement(n.Type) && !r.IsWrapper(n.Type) && !r.IsExpressionStatement(n.Type) {
+			if !areChainedStatements(n, n.Parent, r) {
+				return false
+			}
+		}
+	} else {
+		if rules.IsBlock(n.Type) {
+			return false
+		}
+		if rules.IsStatement(n.Type) && !rules.IsExpressionStatement(n.Type) {
+			if !areChainedStatements(n, n.Parent, nil) {
+				return false
+			}
 		}
 	}
 	return true
