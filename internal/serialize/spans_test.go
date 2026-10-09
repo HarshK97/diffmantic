@@ -734,7 +734,7 @@ func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
 		{startCol: 5, endCol: 35, action: "move", actRef: &act2},
 	}
 
-	partitioned := partitionLineSpans(spans, "left")
+	partitioned := partitionLineSpans(spans, "left", nil, nil)
 	foundColor1 := false
 	for _, p := range partitioned {
 		if p.actRef != nil && p.actRef.MoveColorIndex == 1 {
@@ -746,6 +746,36 @@ func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
 	}
 	if !foundColor1 {
 		t.Errorf("expected inner move with color 1 to survive partitioning without being swallowed by color 0")
+	}
+}
+
+func TestPartitionLineSpans_MoveUpdateInheritsEnclosingMoveColor(t *testing.T) {
+	// Edits inside a moved block should keep the surrounding move's color
+	// instead of falling back to default slot 0.
+	actMove := Action{
+		Action:         "move",
+		MoveColorIndex: 1,
+		Node:           &NodeRef{Type: "field_expression", StartByte: 0, EndByte: 20},
+	}
+	actUpdate := Action{
+		Action: "update",
+		Node:   &NodeRef{Type: "field_identifier", StartByte: 10, EndByte: 15},
+	}
+
+	spans := []internalSpan{
+		{startCol: 0, endCol: 20, action: "move", actRef: &actMove},
+		{startCol: 10, endCol: 15, action: "update", actRef: &actUpdate},
+	}
+
+	partitioned := partitionLineSpans(spans, "right", nil, nil)
+	if len(partitioned) != 3 {
+		t.Fatalf("expected 3 partitioned spans, got %d: %+v", len(partitioned), partitioned)
+	}
+	if partitioned[1].action != "move_update" {
+		t.Errorf("expected span 1 action to be move_update, got %s", partitioned[1].action)
+	}
+	if partitioned[1].moveColorIndex != 1 {
+		t.Errorf("expected span 1 moveColorIndex to be 1, got %d", partitioned[1].moveColorIndex)
 	}
 }
 
