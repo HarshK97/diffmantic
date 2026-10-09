@@ -342,35 +342,75 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		rightSrc := []byte("vals := []T{\n    {name: \"b\"},\n    {name: \"a\"},\n}\n")
 		// Left: {name: "a"}, at line 1, bytes 17..28, comma at 28..29
 		// Right: {name: "a"}, at line 2, bytes 34..45, comma at 45..46
-		destStart := uint32(34)
-		destEnd := uint32(45)
 		actions := []Action{
 			{
 				Action:        "move",
 				Node:          &NodeRef{Type: "literal_element", StartByte: 17, EndByte: 28},
 				OldParent:     &NodeRef{Type: "literal_value", StartByte: 12, EndByte: 49},
-				DestStartByte: &destStart,
-				DestEndByte:   &destEnd,
+				DestStartByte: ptr(uint32(34)),
+				DestEndByte:   ptr(uint32(45)),
 				Parent:        &NodeRef{Type: "literal_value", StartByte: 12, EndByte: 49},
 			},
 		}
 
 		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
-		if len(leftSpans) != 1 {
-			t.Fatalf("expected 1 left span, got %d", len(leftSpans))
+		if len(leftSpans) != 2 {
+			t.Fatalf("expected 2 left spans (move element + delete comma), got %d: %+v", len(leftSpans), leftSpans)
 		}
-		if leftSpans[0].Line != 1 || leftSpans[0].StartCol != 4 || leftSpans[0].EndCol != 16 {
-			t.Errorf("expected left span line 1 cols 4..16 covering '{name: \"a\"},', got line %d cols %d..%d",
-				leftSpans[0].Line, leftSpans[0].StartCol, leftSpans[0].EndCol)
+		if leftSpans[0].Line != 1 || leftSpans[0].StartCol != 4 || leftSpans[0].EndCol != 15 || leftSpans[0].Action != "move" {
+			t.Errorf("expected left span 0 covering '{name: \"a\"}' as move, got %+v", leftSpans[0])
+		}
+		if leftSpans[1].Line != 1 || leftSpans[1].StartCol != 15 || leftSpans[1].EndCol != 16 || leftSpans[1].Action != "delete" {
+			t.Errorf("expected left span 1 covering ',' as delete, got %+v", leftSpans[1])
 		}
 
 		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
-		if len(rightSpans) != 1 {
-			t.Fatalf("expected 1 right span, got %d", len(rightSpans))
+		if len(rightSpans) != 2 {
+			t.Fatalf("expected 2 right spans (move element + insert comma), got %d: %+v", len(rightSpans), rightSpans)
 		}
-		if rightSpans[0].Line != 2 || rightSpans[0].StartCol != 4 || rightSpans[0].EndCol != 16 {
-			t.Errorf("expected right span line 2 cols 4..16 covering '{name: \"a\"},', got line %d cols %d..%d",
-				rightSpans[0].Line, rightSpans[0].StartCol, rightSpans[0].EndCol)
+		if rightSpans[0].Line != 2 || rightSpans[0].StartCol != 4 || rightSpans[0].EndCol != 15 || rightSpans[0].Action != "move" {
+			t.Errorf("expected right span 0 covering '{name: \"a\"}' as move, got %+v", rightSpans[0])
+		}
+		if rightSpans[1].Line != 2 || rightSpans[1].StartCol != 15 || rightSpans[1].EndCol != 16 || rightSpans[1].Action != "insert" {
+			t.Errorf("expected right span 1 covering ',' as insert, got %+v", rightSpans[1])
+		}
+	})
+
+	t.Run("absorbs leading comma for moved last element on left and right", func(t *testing.T) {
+		leftSrc := []byte("foo(a, b)")
+		rightSrc := []byte("bar(x, b)")
+		// 'b' is at bytes 7..8, preceded by ", " at 5..7
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{Type: "identifier", StartByte: 7, EndByte: 8},
+				OldParent:     &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9},
+				DestStartByte: ptr(uint32(7)),
+				DestEndByte:   ptr(uint32(8)),
+				Parent:        &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9},
+			},
+		}
+
+		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
+		if len(leftSpans) != 2 {
+			t.Fatalf("expected 2 left spans (delete leading comma + move element), got %d: %+v", len(leftSpans), leftSpans)
+		}
+		if leftSpans[0].Line != 0 || leftSpans[0].StartCol != 5 || leftSpans[0].EndCol != 6 || leftSpans[0].Action != "delete" {
+			t.Errorf("expected left span 0 covering ',' as delete, got %+v", leftSpans[0])
+		}
+		if leftSpans[1].Line != 0 || leftSpans[1].StartCol != 7 || leftSpans[1].EndCol != 8 || leftSpans[1].Action != "move" {
+			t.Errorf("expected left span 1 covering 'b' as move, got %+v", leftSpans[1])
+		}
+
+		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
+		if len(rightSpans) != 2 {
+			t.Fatalf("expected 2 right spans (insert leading comma + move element), got %d: %+v", len(rightSpans), rightSpans)
+		}
+		if rightSpans[0].Line != 0 || rightSpans[0].StartCol != 5 || rightSpans[0].EndCol != 6 || rightSpans[0].Action != "insert" {
+			t.Errorf("expected right span 0 covering ',' as insert, got %+v", rightSpans[0])
+		}
+		if rightSpans[1].Line != 0 || rightSpans[1].StartCol != 7 || rightSpans[1].EndCol != 8 || rightSpans[1].Action != "move" {
+			t.Errorf("expected right span 1 covering 'b' as move, got %+v", rightSpans[1])
 		}
 	})
 
