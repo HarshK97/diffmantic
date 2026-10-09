@@ -253,6 +253,45 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves Move when variable declaration is hoisted out of if_statement", func(t *testing.T) {
+		oldBlock := mkNode("block", "")
+		oldBlock.Language = "go"
+		oldIf := mkNode("if_statement", "")
+		oldIf.Language = "go"
+		oldDecl := mkNode("short_var_declaration", "r := rulesFor(t1)")
+		oldDecl.Language = "go"
+		oldBlock.Children = []*treesitter.ASTNode{oldIf}
+		oldIf.Parent = oldBlock
+		oldIf.Children = []*treesitter.ASTNode{oldDecl}
+		oldDecl.Parent = oldIf
+
+		newBlock := mkNode("block", "")
+		newBlock.Language = "go"
+		newDecl := mkNode("short_var_declaration", "r := rulesFor(t1)")
+		newDecl.Language = "go"
+		newIf := mkNode("if_statement", "")
+		newIf.Language = "go"
+		newBlock.Children = []*treesitter.ASTNode{newDecl, newIf}
+		newDecl.Parent = newBlock
+		newIf.Parent = newBlock
+
+		ms := engine.NewMapping()
+		ms.Add(oldBlock, newBlock)
+		ms.Add(oldIf, newIf)
+		ms.Add(oldDecl, newDecl)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: oldDecl, DestNode: newDecl, Subtree: true})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 1 {
+			t.Fatalf("expected Move action on hoisted variable declaration to be preserved, got %d actions", result.Size())
+		}
+		if result.Actions()[0].Type != actions.Move || result.Actions()[0].Node != oldDecl {
+			t.Fatalf("expected Move(short_var_declaration) action to survive, got %+v", result.Actions()[0])
+		}
+	})
+
 	t.Run("preserves Move when expression is passed into a new function argument list", func(t *testing.T) {
 		oldCall := mkNode("call_expression", "")
 		oldCall.Language = "javascript"
@@ -3116,6 +3155,38 @@ func TestBuildCohortProtected(t *testing.T) {
 		protected := buildCohortProtected(es, ms)
 		if len(protected) != 0 {
 			t.Errorf("expected 0 protected nodes for cohort size < 3, got %d", len(protected))
+		}
+	})
+}
+
+func TestAreChainedStatements(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("returns true for matching chained if_statements", func(t *testing.T) {
+		base := mkNode("if_statement", "")
+		base.Language = "go"
+		parent := mkNode("if_statement", "")
+		parent.Language = "go"
+		if !areChainedStatements(base, parent, r) {
+			t.Errorf("expected areChainedStatements to return true for matching if_statements")
+		}
+	})
+
+	t.Run("returns false for non-statement nodes with identical types", func(t *testing.T) {
+		base := mkNode("identifier", "x")
+		base.Language = "go"
+		parent := mkNode("identifier", "y")
+		parent.Language = "go"
+		if areChainedStatements(base, parent, r) {
+			t.Errorf("expected areChainedStatements to return false for non-statement identifier nodes")
+		}
+	})
+
+	t.Run("returns false when base is nil or parent is nil", func(t *testing.T) {
+		base := mkNode("if_statement", "")
+		base.Language = "go"
+		if areChainedStatements(base, nil, r) || areChainedStatements(nil, base, r) {
+			t.Errorf("expected areChainedStatements to return false for nil nodes")
 		}
 	})
 }
