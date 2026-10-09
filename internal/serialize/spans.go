@@ -88,17 +88,32 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 			}
 
 		case "move":
-			actType := "move"
 			if skipNestedMove[i] {
 				continue
 			}
+			// Delimiters (like commas) around moved nodes aren't part of the move itself.
+			// Delete them on the left and insert them on the right so they don't get painted as moves.
 			if side == "left" && a.Node != nil {
 				sb, eb := absorbSyntacticDelimiters(fileBytes, a.Node.StartByte, a.Node.EndByte, a.OldParent, a.ASTNode)
-				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, actType, a)
+				if sb < a.Node.StartByte {
+					addSpan(spansByLine, lineIndex, fileBytes, sb, a.Node.StartByte, "delete", a)
+				}
+				addSpan(spansByLine, lineIndex, fileBytes, a.Node.StartByte, a.Node.EndByte, "move", a)
+				if eb > a.Node.EndByte {
+					addSpan(spansByLine, lineIndex, fileBytes, a.Node.EndByte, eb, "delete", a)
+				}
 			}
-			if side == "right" && a.DestStartByte != nil && a.DestEndByte != nil {
-				sb, eb := absorbSyntacticDelimiters(fileBytes, *a.DestStartByte, *a.DestEndByte, a.Parent, a.DestASTNode)
-				addSpan(spansByLine, lineIndex, fileBytes, sb, eb, actType, a)
+			if side == "right" {
+				if dStart, dEnd, ok := actionDestBytes(a); ok {
+					sb, eb := absorbSyntacticDelimiters(fileBytes, dStart, dEnd, a.Parent, a.DestASTNode)
+					if sb < dStart {
+						addSpan(spansByLine, lineIndex, fileBytes, sb, dStart, "insert", a)
+					}
+					addSpan(spansByLine, lineIndex, fileBytes, dStart, dEnd, "move", a)
+					if eb > dEnd {
+						addSpan(spansByLine, lineIndex, fileBytes, dEnd, eb, "insert", a)
+					}
+				}
 			}
 		}
 	}
@@ -371,13 +386,7 @@ func nestedMoveActions(actions []Action) map[int]bool {
 			if a.Node == nil || a.Node.EndByte <= a.Node.StartByte {
 				continue
 			}
-			var dStart, dEnd uint32
-			var hasDest bool
-			if a.DestStartByte != nil && a.DestEndByte != nil && *a.DestEndByte > *a.DestStartByte {
-				dStart, dEnd, hasDest = *a.DestStartByte, *a.DestEndByte, true
-			} else if a.DestNode != nil && a.DestNode.EndByte > a.DestNode.StartByte {
-				dStart, dEnd, hasDest = a.DestNode.StartByte, a.DestNode.EndByte, true
-			}
+			dStart, dEnd, hasDest := actionDestBytes(a)
 			moves = append(moves, moveRange{
 				idx:     i,
 				sStart:  a.Node.StartByte,
@@ -467,6 +476,19 @@ func sharesLineage(n1, n2 *NodeRef) bool {
 	return nodeRefsEqual(n1, n2) || isAncestorRef(n1, n2) || isAncestorRef(n2, n1)
 }
 
+func actionDestBytes(a *Action) (uint32, uint32, bool) {
+	if a == nil {
+		return 0, 0, false
+	}
+	if a.DestStartByte != nil && a.DestEndByte != nil && *a.DestEndByte > *a.DestStartByte {
+		return *a.DestStartByte, *a.DestEndByte, true
+	}
+	if a.DestNode != nil && a.DestNode.EndByte > a.DestNode.StartByte {
+		return a.DestNode.StartByte, a.DestNode.EndByte, true
+	}
+	return 0, 0, false
+}
+
 // nodeLen returns the AST byte range of an action on the specified side.
 func nodeLen(a *Action, side string) int {
 	if a == nil {
@@ -477,11 +499,8 @@ func nodeLen(a *Action, side string) int {
 			return int(a.Node.EndByte - a.Node.StartByte)
 		}
 	} else {
-		if a.DestStartByte != nil && a.DestEndByte != nil {
-			return int(*a.DestEndByte - *a.DestStartByte)
-		}
-		if a.DestNode != nil {
-			return int(a.DestNode.EndByte - a.DestNode.StartByte)
+		if dStart, dEnd, ok := actionDestBytes(a); ok {
+			return int(dEnd - dStart)
 		}
 		if a.Node != nil {
 			return int(a.Node.EndByte - a.Node.StartByte)
