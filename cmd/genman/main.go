@@ -19,7 +19,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	content := cmd.GenerateManPage(cmd.RootCmd(), "2026-10-02")
+	content := cmd.GenerateManPage(cmd.RootCmd(), "2026-10-09")
 
 	targets := []string{"diffm.1", "diffmantic.1"}
 	for _, target := range targets {

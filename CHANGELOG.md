@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-09
+
+### Changed
+- Trimmed the move palette down to two alternating colors (teal and mauve) so screens look less busy, leaving bold blue just for hunk headers.
+- Multiline moved blocks now default to teal, while swapped lines alternate colors so you can tell them apart.
+- Trailing commas, semicolons, and brackets now highlight along with surrounding code edits instead of getting left behind as plain unhighlighted characters.
+- Comments stay anchored to the statements they describe. Opening braces won't swallow leading comments anymore, and comments across separate branches or functions won't pair up as edits.
+
+### Fixed
+- Edits inside moved blocks now keep the block's move color, while nearby punctuation like commas or dots highlights cleanly as added or removed instead of picking up the move color.
+- Hoisted declarations and small statements moved into or out of blocks (or moved together across functions) now stay marked as moves instead of falling back to deletes and inserts.
+- Tightened statement boundaries across all supported languages so small tokens can't jump across unrelated statements during heavy refactors.
+- Stopped tiny moves from pulling lines apart into giant alignment gaps, and dropped phantom moves on hollow blocks.
+- Unchanged code now takes priority over moved blocks during line alignment so it doesn't get pushed into spacer rows.
+- Replacing a deleted function at the exact same line position no longer tricks Diffmantic into treating the replacement as unchanged code.
+- Wrapping or unwrapping code in loops and blocks now keeps the original statements matched, and changing function calls inside `if` and `else` branches won't break matching for the surrounding block.
+- Newly extracted helper calls won't steal matches from an existing call in the same scope.
+- Stopped intermediate assignments in moved blocks from pairing up unless they actually share variable names.
+- In Go, switching a slice to an array with implicit length (like `[]string` to `[...]string`) now highlights just the brackets and dots, leaving the unchanged type name alone.
+- In inline diff mode, lines where whitespace changed just to re-align columns (like struct fields or variable tables) stay as neutral context lines.
+- Passing multiline closures into function calls no longer paints untouched comments inside the closure green as additions.
+
+### Performance
+- Streamed Git blob lookups in batches, making Git diffs noticeably faster on commits touching lots of files.
+- Line alignment is roughly 30% faster on large files (50k+ lines) by looking up unchanged statements with binary search.
+
 ## [0.11.0] - 2026-10-02
 
 ### Changed
@@ -299,7 +325,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/HarshK97/diffmantic/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/HarshK97/diffmantic/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/HarshK97/diffmantic/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/HarshK97/diffmantic/compare/v0.8.0...v0.9.0
