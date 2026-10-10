@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+// TestMain clears pager env vars so host settings don't change test expectations.
+func TestMain(m *testing.M) {
+	for _, k := range []string{"DIFFM_NO_PAGER", "GIT_PAGER", "PAGER"} {
+		_ = os.Unsetenv(k)
+	}
+	os.Exit(m.Run())
+}
+
 func TestPager_Disabled(t *testing.T) {
 	p, w := Start(true)
 	if p != nil {

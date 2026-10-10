@@ -13,6 +13,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// TestMain clears user config and pager env vars so host settings don't break cmd tests.
+func TestMain(m *testing.M) {
+	for _, env := range os.Environ() {
+		if k, _, ok := strings.Cut(env, "="); ok {
+			if strings.HasPrefix(k, "DIFFM_") && !strings.HasPrefix(k, "DIFFM_TEST_") {
+				_ = os.Unsetenv(k)
+				continue
+			}
+			switch k {
+			case "PAGER", "GIT_PAGER", "COLUMNS", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE",
+				"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE":
+				_ = os.Unsetenv(k)
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
 func TestRootCmdFlags(t *testing.T) {
 	flags := []struct {
 		name      string
