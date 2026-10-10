@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+// TestMain clears Git pointer env vars so the host repo state doesn't leak into tests.
+func TestMain(m *testing.M) {
+	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} {
+		_ = os.Unsetenv(k)
+	}
+	os.Exit(m.Run())
+}
+
 func TestIsGitRepository(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {

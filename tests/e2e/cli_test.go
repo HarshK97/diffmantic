@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,7 +44,25 @@ func TestMain(m *testing.M) {
 		panic("failed to build diffm: " + string(out) + ": " + err.Error())
 	}
 
+	sanitizeTestEnv()
 	os.Exit(m.Run())
+}
+
+// sanitizeTestEnv strips user config and pager env vars so shell settings don't bleed into e2e runs.
+func sanitizeTestEnv() {
+	for _, env := range os.Environ() {
+		if k, _, ok := strings.Cut(env, "="); ok {
+			if strings.HasPrefix(k, "DIFFM_") && !strings.HasPrefix(k, "DIFFM_TEST_") {
+				_ = os.Unsetenv(k)
+				continue
+			}
+			switch k {
+			case "PAGER", "GIT_PAGER", "COLUMNS", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE",
+				"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE":
+				_ = os.Unsetenv(k)
+			}
+		}
+	}
 }
 
 // testdataDir returns the absolute path to tests/testdata/.
@@ -81,9 +100,27 @@ func fixtureFiles(t *testing.T, name string) (string, string) {
 	return oldPath, newPath
 }
 
-// runDiffm runs the diffm binary with the given args.
+// isolatedEnv strips Git repo pointers and blocks host git configs so subprocesses run clean.
+func isolatedEnv() []string {
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok {
+			return true
+		}
+		switch k {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM":
+			return true
+		default:
+			return false
+		}
+	})
+	return append(env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+}
+
+// runDiffm runs the diffm binary with the given args in an isolated environment.
 func runDiffm(args ...string) (stdout, stderr string, err error) {
 	cmd := exec.Command(binaryPath, args...)
+	cmd.Env = isolatedEnv()
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -533,6 +570,35 @@ func TestCLI_EnvVarDefaults(t *testing.T) {
 
 	if !strings.Contains(stdout, "Diffing") {
 		t.Errorf("expected actions output with 'Diffing' header from DIFFM_FORMAT, got: %s", stdout)
+	}
+}
+
+func TestCLI_SubprocessEnvironmentIsolation(t *testing.T) {
+	t.Setenv("GIT_DIR", "/invalid/git/dir")
+	t.Setenv("GIT_WORK_TREE", "/invalid/work/tree")
+	t.Setenv("GIT_INDEX_FILE", "/invalid/index/file")
+
+	env := isolatedEnv()
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "GIT_DIR" || k == "GIT_WORK_TREE" || k == "GIT_INDEX_FILE" {
+			t.Errorf("isolatedEnv leaked %s", k)
+		}
+	}
+	if !slices.Contains(env, "GIT_CONFIG_GLOBAL="+os.DevNull) {
+		t.Errorf("isolatedEnv missing GIT_CONFIG_GLOBAL=%s", os.DevNull)
+	}
+	if !slices.Contains(env, "GIT_CONFIG_NOSYSTEM=1") {
+		t.Error("isolatedEnv missing GIT_CONFIG_NOSYSTEM=1")
+	}
+
+	oldPath, newPath := fixtureFiles(t, sampleFixture(t))
+	stdout, stderr, err := runDiffm(oldPath, newPath)
+	if err != nil {
+		t.Fatalf("runDiffm failed under poisoned Git env: %v\nstderr: %s", err, stderr)
+	}
+	if stdout == "" {
+		t.Fatal("expected non-empty diff output under isolated env")
 	}
 }
 
