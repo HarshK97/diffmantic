@@ -3252,3 +3252,50 @@ func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
 		t.Errorf("expected binary_expression move to be demoted after descendants were evicted, but found an active Move")
 	}
 }
+
+func TestNormalizeStationaryMove_CrossContainerCoordinateCollisionPreservesMove(t *testing.T) {
+	// Don't drop a move as stationary if coordinates match only because an item moved
+	// into an adjacent container that landed on the item's old row and column.
+	src := []byte(`package rules
+
+var rules = &Rules{
+	TagElements: []string{
+		"jsx_element",
+	},
+	Tags: []string{
+		"jsx_opening_element",
+		"jsx_closing_element",
+	},
+}
+`)
+	dst := []byte(`package rules
+
+var rules = &Rules{
+	Tags: []string{
+		"jsx_element",
+		"jsx_opening_element",
+		"jsx_closing_element",
+	},
+}
+`)
+
+	srcAST, err := treesitter.Parse(src, "rules.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "rules.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+	hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+		return a.Type == actions.Move && a.Node != nil && (a.Node.Label == `"jsx_element"` || (len(a.Node.Children) > 0 && a.Node.Children[0].Label == `"jsx_element"`))
+	})
+	if !hasMove {
+		t.Errorf("expected Move action on \"jsx_element\" to be preserved across containers despite coordinate collision, but none found")
+	}
+}

@@ -122,21 +122,12 @@ func computeMoveRetention(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *r
 	return effectiveSurviving / float64(nMax)
 }
 
-// isStationaryMove reports whether a Move stayed in place across transparent
-// wrappers (such as template_declaration or friend_declaration) or expression shifts.
+// isStationaryMove reports whether a move stayed in place, accounting for transparent
+// wrappers, expression shifts, and container provenance.
 func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
 	if node == nil || dstNode == nil || node.Parent == nil || dstNode.Parent == nil {
 		return false
 	}
-	hasPos := (node.EndByte > 0 || node.StartRow > 0 || node.EndRow > 0) &&
-		(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
-	if hasPos && node.StartRow == dstNode.StartRow && node.EndRow == dstNode.EndRow &&
-		node.StartCol == dstNode.StartCol && node.EndCol == dstNode.EndCol {
-		if sameScopeDeclaration(node, dstNode, ms, r) {
-			return true
-		}
-	}
-
 	srcParent := node.Parent
 	dstParent := dstNode.Parent
 
@@ -147,6 +138,23 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	if isStationaryExpressionMove(node, dstNode, ms, r, nil) {
 		return true
+	}
+
+	hasPos := (node.EndByte > 0 || node.StartRow > 0 || node.EndRow > 0) &&
+		(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
+	if hasPos && node.StartRow == dstNode.StartRow && node.EndRow == dstNode.EndRow &&
+		node.StartCol == dstNode.StartCol && node.EndCol == dstNode.EndCol {
+		if sameScopeDeclaration(node, dstNode, ms, r) {
+			// Not stationary if moved across distinct containers, like when dstParent
+			// came from an old container that never held this node.
+			if mappedDstParent := ms.Dst()[dstParent]; mappedDstParent != nil && !mappedDstParent.Contains(node) {
+				return false
+			}
+			if mappedSrcParent := ms.Src()[srcParent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dstNode) {
+				return false
+			}
+			return true
+		}
 	}
 
 	sameLine := node.StartRow == dstNode.StartRow
