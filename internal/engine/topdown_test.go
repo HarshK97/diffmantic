@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -319,4 +320,89 @@ func TestTopDown_IdentifierlessScopeIsolation(t *testing.T) {
 			t.Errorf("expected subtree with identifier to match across funcA and funcB, got %v", m.Src()[srcSub])
 		}
 	})
+}
+
+func TestTopDown_DirectParentPrecedenceOverFallback(t *testing.T) {
+	// Candidate A has a direct parent match, while Candidate B only matches via
+	// a high-scoring outer loop. Make sure TopDown picks A over B.
+	srcLeafA := testutil.NodeAtRC("identifier", "sim", 10, 5)
+	srcExprA := testutil.Node("expression_list", "", srcLeafA)
+	srcExprA.StartRow = 10
+	srcExprA.StartCol = 5
+	srcParentA := testutil.Node("short_var_declaration", "", srcExprA)
+	srcParentA.StartRow = 10
+	srcParentA.StartCol = 1
+
+	srcLeafB := testutil.NodeAtRC("identifier", "sim", 20, 5)
+	srcExprB := testutil.Node("expression_list", "", srcLeafB)
+	srcExprB.StartRow = 20
+	srcExprB.StartCol = 5
+	srcParentB := testutil.Node("assignment_statement", "", srcExprB)
+	srcParentB.StartRow = 20
+	srcParentB.StartCol = 1
+
+	srcFnName := testutil.NodeAtRC("identifier", "myFunc", 1, 1)
+	srcForLoop := testutil.Node("for_statement", "", srcParentA, srcParentB)
+	srcBlock := testutil.Node("block", "", srcForLoop)
+	srcRoot := testutil.Node("function_declaration", "", srcFnName, srcBlock)
+	srcRoot.Language = "go"
+
+	dstLeaf := testutil.NodeAtRC("identifier", "sim", 10, 5)
+	dstExpr := testutil.Node("expression_list", "", dstLeaf)
+	dstExpr.StartRow = 10
+	dstExpr.StartCol = 5
+	dstParent := testutil.Node("short_var_declaration", "", dstExpr)
+	dstParent.StartRow = 10
+	dstParent.StartCol = 1
+
+	dstFnName := testutil.NodeAtRC("identifier", "myFunc", 1, 1)
+	dstForLoop := testutil.Node("for_statement", "", dstParent)
+	dstBlock := testutil.Node("block", "", dstForLoop)
+	dstRoot := testutil.Node("function_declaration", "", dstFnName, dstBlock)
+	dstRoot.Language = "go"
+
+	m := NewMapping()
+	m.Add(srcFnName, dstFnName)
+	// Give parentA and dstParent a shared mapped node so direct parent Dice is non-zero.
+	extraSrc := testutil.NodeAtRC("identifier", "common", 10, 20)
+	extraDst := testutil.NodeAtRC("identifier", "common", 10, 20)
+	srcParentA.Children = append(srcParentA.Children, extraSrc)
+	extraSrc.Parent = srcParentA
+	dstParent.Children = append(dstParent.Children, extraDst)
+	extraDst.Parent = dstParent
+	m.Add(extraSrc, extraDst)
+
+	// Pad parentA with unmapped nodes to keep its direct Dice low (~0.16).
+	for i := range 5 {
+		u1 := testutil.NodeAtRC("identifier", fmt.Sprintf("u1_%d", i), 10, uint32(30+i))
+		srcParentA.Children = append(srcParentA.Children, u1)
+		u1.Parent = srcParentA
+
+		u2 := testutil.NodeAtRC("identifier", fmt.Sprintf("u2_%d", i), 10, uint32(30+i))
+		dstParent.Children = append(dstParent.Children, u2)
+		u2.Parent = dstParent
+	}
+
+	// Stuff the loop with mapped children so the ancestor fallback (Dice * 0.5 ≈ 0.45) easily beats parentA's direct score.
+	for i := range 15 {
+		r1 := testutil.NodeAtRC("identifier", fmt.Sprintf("loop_%d", i), uint32(50+i), 1)
+		r2 := testutil.NodeAtRC("identifier", fmt.Sprintf("loop_%d", i), uint32(50+i), 1)
+		srcForLoop.Children = append(srcForLoop.Children, r1)
+		r1.Parent = srcForLoop
+		dstForLoop.Children = append(dstForLoop.Children, r2)
+		r2.Parent = dstForLoop
+		m.Add(r1, r2)
+	}
+
+	srcRoot.ComputeHashes()
+	dstRoot.ComputeHashes()
+
+	TopDown(srcRoot, dstRoot, 2, m, nil)
+
+	if m.Src()[srcExprA] != dstExpr {
+		t.Errorf("TopDown matched srcExprA to %v, want dstExpr", m.Src()[srcExprA])
+	}
+	if m.Src()[srcExprB] != nil {
+		t.Errorf("TopDown matched srcExprB to %v, want nil", m.Src()[srcExprB])
+	}
 }
