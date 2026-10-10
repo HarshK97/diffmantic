@@ -12,6 +12,7 @@ import (
 type scoredPair struct {
 	pair        [2]*treesitter.ASTNode
 	dice        float64
+	isFallback  bool
 	ancSim      int
 	lineageSim  int
 	nameMatched bool
@@ -124,11 +125,15 @@ func TopDown(
 		mismatched := name1 != "" && name2 != "" && name1 != name2
 
 		di := Dice(t1.Parent, t2.Parent, m.Src())
+		isFallback := false
 		if di == 0 && nameMatched {
 			c1 := getEnclosingConstruct(t1, rulesFor(t1))
 			c2 := getEnclosingConstruct(t2, rulesFor(t2))
 			if c1 != nil && c2 != nil && (c1 != t1.Parent || c2 != t2.Parent) {
-				di = Dice(c1, c2, m.Src()) * 0.5
+				if f := Dice(c1, c2, m.Src()) * 0.5; f > 0 {
+					di = f
+					isFallback = true
+				}
 			}
 		}
 		si := AncestorNameSimilarity(t1, t2)
@@ -136,6 +141,7 @@ func TopDown(
 		scored = append(scored, scoredPair{
 			pair:        pair,
 			dice:        di,
+			isFallback:  isFallback,
 			ancSim:      si,
 			lineageSim:  li,
 			nameMatched: nameMatched,
@@ -155,6 +161,15 @@ func TopDown(
 				return -1
 			}
 			return 1
+		}
+		// Direct parent matches always beat outer construct fallbacks.
+		if a.isFallback != b.isFallback {
+			if !a.isFallback && a.dice > 0 {
+				return -1
+			}
+			if !b.isFallback && b.dice > 0 {
+				return 1
+			}
 		}
 		return cmp.Or(
 			cmp.Compare(b.dice, a.dice),
