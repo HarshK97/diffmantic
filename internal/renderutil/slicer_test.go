@@ -368,3 +368,38 @@ func TestShouldStyleStandalone(t *testing.T) {
 		t.Errorf("expected unpaired line with blank identifier and 0 spans to NOT take standalone styling")
 	}
 }
+
+func TestSlicer_MoveUpdate_Styling(t *testing.T) {
+	slicer := &Slicer{}
+	lineText := "func Process(data []byte)"
+	cfg := SliceConfig{
+		TargetWidth:      50,
+		TabWidth:         4,
+		ColorMode:        true,
+		PadToTargetWidth: false,
+		Context:          LineContextAligned,
+	}
+
+	tests := []struct {
+		name       string
+		colorIndex int
+	}{
+		{name: "slot 0", colorIndex: 0},
+		{name: "slot 1", colorIndex: 1},
+	}
+
+	wantPrefix := color.Bold + color.Underline + color.UpdateFg
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spans := []serialize.HighlightSpan{
+				{StartCol: 5, EndCol: 12, Action: "move_update", ColorIndex: tc.colorIndex},
+			}
+			chunks := slicer.SliceLineToChunks(lineText, "", spans, cfg)
+			str := string(chunks[0])
+			if !strings.Contains(str, wantPrefix) {
+				t.Errorf("expected %s move_update to contain %q, got %q", tc.name, wantPrefix, str)
+			}
+		})
+	}
+}
