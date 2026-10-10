@@ -12,7 +12,6 @@ const (
 	ActionMove
 	ActionMoveUpdate
 	ActionMove1
-	ActionMoveUpdate1
 )
 
 // String returns the canonical name for an action kind.
@@ -28,7 +27,7 @@ func (k ActionKind) String() string {
 		return "update"
 	case ActionMove, ActionMove1:
 		return "move"
-	case ActionMoveUpdate, ActionMoveUpdate1:
+	case ActionMoveUpdate:
 		return "move_update"
 	default:
 		return "unknown"
@@ -37,14 +36,10 @@ func (k ActionKind) String() string {
 
 // MoveActionKindForSlot maps a slot index (0, 1) and update flag to an ActionKind.
 func MoveActionKindForSlot(slot int, isUpdate bool) ActionKind {
-	slot = max(0, slot) % 2
 	if isUpdate {
-		if slot == 1 {
-			return ActionMoveUpdate1
-		}
 		return ActionMoveUpdate
 	}
-	if slot == 1 {
+	if max(0, slot)%2 == 1 {
 		return ActionMove1
 	}
 	return ActionMove

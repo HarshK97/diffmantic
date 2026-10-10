@@ -96,7 +96,6 @@ func TestActionKind_String(t *testing.T) {
 		{ActionMove, "move"},
 		{ActionMoveUpdate, "move_update"},
 		{ActionMove1, "move"},
-		{ActionMoveUpdate1, "move_update"},
 		{ActionKind(-2), "unknown"},
 		{ActionKind(99), "unknown"},
 		{ActionKind(1000), "unknown"},
@@ -133,8 +132,11 @@ func TestMovePalette(t *testing.T) {
 	if MoveActionKindForSlot(2, false) != ActionMove {
 		t.Errorf("expected slot 2 move (wrapped) to be ActionMove")
 	}
-	if MoveActionKindForSlot(1, true) != ActionMoveUpdate1 {
-		t.Errorf("expected slot 1 update to be ActionMoveUpdate1")
+	if MoveActionKindForSlot(0, true) != ActionMoveUpdate {
+		t.Errorf("expected slot 0 update to be ActionMoveUpdate")
+	}
+	if MoveActionKindForSlot(1, true) != ActionMoveUpdate {
+		t.Errorf("expected slot 1 update to be ActionMoveUpdate")
 	}
 	if MoveActionKindForSlot(2, true) != ActionMoveUpdate {
 		t.Errorf("expected slot 2 update (wrapped) to be ActionMoveUpdate")

@@ -126,9 +126,7 @@ func appendTransition(b []byte, targetStyle, activeStyle color.ActionKind) []byt
 	case color.ActionMove1:
 		return append(b, color.Bold+color.Move1Fg...)
 	case color.ActionMoveUpdate:
-		return append(b, color.Bold+color.Underline+color.Move0Fg...)
-	case color.ActionMoveUpdate1:
-		return append(b, color.Bold+color.Underline+color.Move1Fg...)
+		return append(b, color.Bold+color.Underline+color.UpdateFg...)
 	default: // stylePlain
 		return append(b, color.TextFg...)
 	}
