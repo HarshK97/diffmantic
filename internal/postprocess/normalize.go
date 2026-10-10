@@ -1157,6 +1157,14 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
+	// When an enclosing demotion evicts every mapped token inside this expression,
+	// demote it too so we don't leave a hollow move shell behind.
+	if len(src.Children) > 0 && len(evicted) > 0 {
+		if !hasSurvivingMappedLeaves(src, dst, ms.Src(), evicted, r) && hasSurvivingMappedLeaves(src, dst, ms.Src(), nil, r) {
+			return true
+		}
+	}
+
 	score := moveStructuralScore(src, r, ms)
 	threshold := requiredMoveThreshold(src, dst, ms, r)
 	// When moving across functions or scopes, require the destination to have

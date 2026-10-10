@@ -3190,3 +3190,65 @@ func TestAreChainedStatements(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeMovesByStructure_DemotesHollowExpressionMoveWhenDescendantsEvicted(t *testing.T) {
+	src := []byte(`package test
+func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	enc := GetEnclosingDeclaration(n)
+	if enc == nil {
+		return false
+	}
+	body := findBodyBlock(enc, r)
+	if body != nil && (body == n || body.Contains(n)) {
+		return false
+	}
+	return true
+}
+`)
+
+	dst := []byte(`package test
+func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isContainer := (r != nil && r.IsContainerDeclaration(curr.Type)) ||
+			(r == nil && rules.IsContainerDeclaration(curr.Type))
+		if isContainer {
+			body := findBodyBlock(curr, r)
+			if body == nil {
+				return false
+			}
+			return body != n && !body.Contains(n)
+		}
+	}
+	return false
+}
+`)
+
+	srcAST, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+	hasHollowMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+		return a.Type == actions.Move && a.Node.Type == "binary_expression"
+	})
+	if hasHollowMove {
+		t.Errorf("expected binary_expression move to be demoted after descendants were evicted, but found an active Move")
+	}
+}
