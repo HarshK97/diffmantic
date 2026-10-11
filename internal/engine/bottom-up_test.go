@@ -1130,3 +1130,74 @@ func TestRollupMatchedContainers_ScopePreservedGuard(t *testing.T) {
 		t.Errorf("expected if1 NOT to roll up to if2 across unmapped loop scope boundary")
 	}
 }
+
+func TestBottomUp_BinaryChainLeadingOperandDeletion(t *testing.T) {
+	// Old: return A || B || C || D
+	// New: return B || C || D
+	// When deleting "A ||" from the front of a binary chain, inner bin3 (A || B)
+	// shouldn't steal bin2 (B || C) across the operator. bin2 ((A || B) || C) should
+	// match bin2 (B || C), and bin1 (((A || B) || C) || D) should match bin1 ((B || C) || D).
+	mkLeaf := func(typ, label string, startByte, endByte uint32) *treesitter.ASTNode {
+		n := testutil.Leaf(typ, label)
+		n.Language = "go"
+		n.StartByte, n.EndByte = startByte, endByte
+		return n
+	}
+	mkContainer := func(typ string, startByte, endByte uint32, children ...*treesitter.ASTNode) *treesitter.ASTNode {
+		n := testutil.Node(typ, "", children...)
+		n.Language = "go"
+		n.StartByte, n.EndByte = startByte, endByte
+		return n
+	}
+
+	oldA := mkContainer("call_expression", 10, 25, mkLeaf("identifier", "isOp", 10, 14), mkLeaf("identifier", "n", 15, 16))
+	oldOp1 := mkLeaf("logical_operator_literal", "||", 26, 28)
+	oldB := mkContainer("call_expression", 29, 45, mkLeaf("identifier", "isPunct", 29, 36), mkLeaf("identifier", "n", 37, 38))
+	oldBin3 := mkContainer("binary_expression", 10, 45, oldA, oldOp1, oldB)
+
+	oldOp2 := mkLeaf("logical_operator_literal", "||", 46, 48)
+	oldC := mkContainer("selector_expression", 49, 60, mkLeaf("identifier", "n", 49, 50), mkLeaf("field_identifier", "IsKeyword", 51, 60))
+	oldBin2 := mkContainer("binary_expression", 10, 60, oldBin3, oldOp2, oldC)
+
+	oldOp3 := mkLeaf("logical_operator_literal", "||", 61, 63)
+	oldD := mkContainer("call_expression", 64, 80, mkLeaf("identifier", "isKw", 64, 68), mkLeaf("identifier", "n", 69, 70))
+	oldBin1 := mkContainer("binary_expression", 10, 80, oldBin2, oldOp3, oldD)
+	oldRet := mkContainer("return_statement", 3, 80, mkLeaf("return", "return", 3, 9), oldBin1)
+
+	newB := mkContainer("call_expression", 10, 26, mkLeaf("identifier", "isPunct", 10, 17), mkLeaf("identifier", "n", 18, 19))
+	newOp2 := mkLeaf("logical_operator_literal", "||", 27, 29)
+	newC := mkContainer("selector_expression", 30, 41, mkLeaf("identifier", "n", 30, 31), mkLeaf("field_identifier", "IsKeyword", 32, 41))
+	newBin2 := mkContainer("binary_expression", 10, 41, newB, newOp2, newC)
+
+	newOp3 := mkLeaf("logical_operator_literal", "||", 42, 44)
+	newD := mkContainer("call_expression", 45, 61, mkLeaf("identifier", "isKw", 45, 49), mkLeaf("identifier", "n", 50, 51))
+	newBin1 := mkContainer("binary_expression", 10, 61, newBin2, newOp3, newD)
+	newRet := mkContainer("return_statement", 3, 61, mkLeaf("return", "return", 3, 9), newBin1)
+
+	treesitter.EnsureIndex(oldRet)
+	treesitter.EnsureIndex(newRet)
+
+	m := NewMapping()
+	// TopDown matches calls B and D. BottomUp recovers selector C.
+	m.Add(oldB, newB)
+	m.Add(oldB.Children[0], newB.Children[0])
+	m.Add(oldB.Children[1], newB.Children[1])
+	m.Add(oldD, newD)
+	m.Add(oldD.Children[0], newD.Children[0])
+	m.Add(oldD.Children[1], newD.Children[1])
+
+	BottomUp(oldRet, newRet, m, 0.30)
+
+	if m.Has(oldBin3) {
+		t.Errorf("expected inner oldBin3 (A || B) to remain unmapped, but mapped to %v", m.Get(oldBin3))
+	}
+	if m.Get(oldBin2) != newBin2 {
+		t.Errorf("expected oldBin2 ((A || B) || C) to match newBin2 (B || C), got %v", m.Get(oldBin2))
+	}
+	if m.Get(oldBin1) != newBin1 {
+		t.Errorf("expected oldBin1 to match newBin1, got %v", m.Get(oldBin1))
+	}
+	if m.Get(oldC) != newC {
+		t.Errorf("expected oldC (n.IsKeyword) to match newC, got %v", m.Get(oldC))
+	}
+}
