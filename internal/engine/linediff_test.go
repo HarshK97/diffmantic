@@ -221,3 +221,60 @@ func TestLineDiff_DiagonalTieBreaking(t *testing.T) {
 		t.Errorf("expected diagonal tie-breaking to match (1->1, 2->2), got (1->%d, 2->%d)", got[1], got[2])
 	}
 }
+
+func TestLineDiff_ReindentedSiblingBlocks(t *testing.T) {
+	linesA := []string{
+		"\t\tif body1 != nil && body2 != nil && m.Src()[body1] == body2 {", // 0
+		"\t\t\tm.Add(p1, p2)", // 1
+		"\t\t\tif isDecl {",   // 2
+		"\t\t\t\treconcileDeclarationSignatures(p1, p2, m, r)", // 3
+		"\t\t\t}",                  // 4
+		"\t\t\tRecover(p1, p2, m)", // 5
+		"\t\t\tcontinue",           // 6
+		"\t\t}",                    // 7
+		"\t\tif body1 != nil && body2 != nil && !m.Has(body1) {", // 8
+		"\t\t\tif c1 != body1 && c2 != body2 {",                  // 9
+		"\t\t\t\tif lineDist > 2 {",                              // 10
+		"\t\t\t\t\tcontinue",                                     // 11
+		"\t\t\t\t}",                                              // 12
+		"\t\t\t\tm.Add(p1, p2)",                                  // 13
+		"\t\t\t\tRecover(p1, p2, m)",                             // 14
+		"\t\t\t\tcontinue",                                       // 15
+		"\t\t\t}",                                                // 16
+		"\t\t}",                                                  // 17
+	}
+	linesB := []string{
+		"\t\tif body1 != nil && body2 != nil {",                  // 0
+		"\t\t\tif m.Src()[body1] == body2 {",                     // 1
+		"\t\t\t\tm.Add(p1, p2)",                                  // 2
+		"\t\t\t\tif isDecl {",                                    // 3
+		"\t\t\t\t\treconcileDeclarationSignatures(p1, p2, m, r)", // 4
+		"\t\t\t\t}",                               // 5
+		"\t\t\t\tRecover(p1, p2, m)",              // 6
+		"\t\t\t\tcontinue",                        // 7
+		"\t\t\t}",                                 // 8
+		"\t\t\tif !m.Has(body1) {",                // 9
+		"\t\t\t\tif c1 != body1 && c2 != body2 {", // 10
+		"\t\t\t\t\tif lineDist > 2 {",             // 11
+		"\t\t\t\t\t\tcontinue",                    // 12
+		"\t\t\t\t\t}",                             // 13
+		"\t\t\t\t\tm.Add(p1, p2)",                 // 14
+		"\t\t\t\t\tRecover(p1, p2, m)",            // 15
+		"\t\t\t\t\tcontinue",                      // 16
+		"\t\t\t\t}",                               // 17
+		"\t\t\t}",                                 // 18
+		"\t\t}",                                   // 19
+	}
+
+	got := LineDiff(linesA, linesB)
+
+	// Case 1 lines (1, 5) in A must align with Case 1 lines (2, 6) in B,
+	// and Case 2 lines (13, 14) in A must align with Case 2 lines (14, 15) in B,
+	// rather than cross-matching Case 2 in A (4 tabs) with Case 1 in B (4 tabs).
+	if got[1] != 2 || got[5] != 6 {
+		t.Errorf("expected Case 1 re-indented lines (1->2, 5->6), got (1->%d, 5->%d)", got[1], got[5])
+	}
+	if got[13] != 14 || got[14] != 15 {
+		t.Errorf("expected Case 2 re-indented lines (13->14, 14->15), got (13->%d, 14->%d)", got[13], got[14])
+	}
+}

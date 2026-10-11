@@ -92,4 +92,18 @@ func TestLinePartition(t *testing.T) {
 			t.Errorf("expected nil ASTNode to return (false, -1), got (%v, %d)", g1NilNode, startNilNode)
 		}
 	})
+
+	t.Run("Single substantive line adjacent only to bare brace stays in Group 2", func(t *testing.T) {
+		srcA := []byte("func f() {\n\tif oldCond {\n\t\toldCall()\n\t}\n\tm.Add(p1, p2)\n\tafterOld()\n}\n")
+		srcB := []byte("func f() {\n\tif newCond {\n\t\tnewCall()\n\t}\n\tm.Add(p1, p2)\n\tafterNew()\n}\n")
+
+		part := NewLinePartition(srcA, srcB)
+
+		// Line 4 (`m.Add(p1, p2)`) only has line 3 (`\t}`) as a contiguous matched neighbor;
+		// because `\t}` is trivial punctuation, line 4 alone should not be locked as Group 1.
+		n1 := &treesitter.ASTNode{StartRow: 4, EndRow: 4}
+		if isG1, _ := part.IsGroup1A(n1); isG1 {
+			t.Errorf("expected single substantive line with only a brace neighbor to remain Group 2, got isG1=%v", isG1)
+		}
+	})
 }

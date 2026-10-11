@@ -15,10 +15,12 @@ type groupResult struct {
 }
 
 type LinePartition struct {
-	matchedA map[int]int // rowA -> rowB
-	matchedB map[int]int // rowB -> rowA
-	cacheA   map[*treesitter.ASTNode]groupResult
-	cacheB   map[*treesitter.ASTNode]groupResult
+	matchedA     map[int]int // rowA -> rowB
+	matchedB     map[int]int // rowB -> rowA
+	substantiveA []bool
+	substantiveB []bool
+	cacheA       map[*treesitter.ASTNode]groupResult
+	cacheB       map[*treesitter.ASTNode]groupResult
 }
 
 func NewLinePartition(srcA, srcB []byte) *LinePartition {
@@ -29,11 +31,21 @@ func NewLinePartition(srcA, srcB []byte) *LinePartition {
 	for rA, rB := range mA {
 		mB[rB] = rA
 	}
+	subA := make([]bool, len(linesA))
+	for i, s := range linesA {
+		subA[i] = lineWeight(s) > trivialLineWeight
+	}
+	subB := make([]bool, len(linesB))
+	for j, s := range linesB {
+		subB[j] = lineWeight(s) > trivialLineWeight
+	}
 	return &LinePartition{
-		matchedA: mA,
-		matchedB: mB,
-		cacheA:   make(map[*treesitter.ASTNode]groupResult),
-		cacheB:   make(map[*treesitter.ASTNode]groupResult),
+		matchedA:     mA,
+		matchedB:     mB,
+		substantiveA: subA,
+		substantiveB: subB,
+		cacheA:       make(map[*treesitter.ASTNode]groupResult),
+		cacheB:       make(map[*treesitter.ASTNode]groupResult),
 	}
 }
 
@@ -42,7 +54,7 @@ func (p *LinePartition) IsGroup1A(n1 *treesitter.ASTNode) (bool, int) {
 	if p == nil {
 		return false, -1
 	}
-	return p.isGroup1Cached(n1, p.cacheA, p.matchedA)
+	return p.isGroup1Cached(n1, p.cacheA, p.matchedA, p.substantiveA)
 }
 
 // IsGroup1B returns true if all lines spanned by n2 in file B are non-edited lines.
@@ -50,22 +62,22 @@ func (p *LinePartition) IsGroup1B(n2 *treesitter.ASTNode) (bool, int) {
 	if p == nil {
 		return false, -1
 	}
-	return p.isGroup1Cached(n2, p.cacheB, p.matchedB)
+	return p.isGroup1Cached(n2, p.cacheB, p.matchedB, p.substantiveB)
 }
 
-func (p *LinePartition) isGroup1Cached(n *treesitter.ASTNode, cache map[*treesitter.ASTNode]groupResult, matched map[int]int) (bool, int) {
+func (p *LinePartition) isGroup1Cached(n *treesitter.ASTNode, cache map[*treesitter.ASTNode]groupResult, matched map[int]int, substantive []bool) (bool, int) {
 	if p == nil || n == nil {
 		return false, -1
 	}
 	if res, ok := cache[n]; ok {
 		return res.isG1, res.startOther
 	}
-	isG1, startOther := p.isGroup1(matched, n)
+	isG1, startOther := p.isGroup1(matched, substantive, n)
 	cache[n] = groupResult{isG1: isG1, startOther: startOther}
 	return isG1, startOther
 }
 
-func (p *LinePartition) isGroup1(matched map[int]int, n *treesitter.ASTNode) (bool, int) {
+func (p *LinePartition) isGroup1(matched map[int]int, substantive []bool, n *treesitter.ASTNode) (bool, int) {
 	if len(matched) == 0 || n == nil {
 		return false, -1
 	}
@@ -84,24 +96,44 @@ func (p *LinePartition) isGroup1(matched map[int]int, n *treesitter.ASTNode) (bo
 			return false, -1
 		}
 	}
-	// An isolated single line with no matching contiguous neighbors is an accidental
-	// textual collision in an edited region, not an untouched code block (Group 1).
+	// Single-line matches with only trivial neighbors (like braces) are usually accidental
+	// collisions in an edited region, so keep them in Group 2.
 	if startRow == endRow && len(matched) > 1 {
-		hasPrev := false
-		if startRow > 0 {
-			if prev, ok := matched[startRow-1]; ok && prev == startOther-1 {
-				hasPrev = true
-			}
-		}
-		hasNext := false
-		if next, ok := matched[startRow+1]; ok && next == startOther+1 {
-			hasNext = true
-		}
-		if !hasPrev && !hasNext {
+		if !hasSubstantiveNeighborInRun(matched, substantive, startRow, startOther) {
 			return false, -1
 		}
 	}
 	return true, startOther
+}
+
+// hasSubstantiveNeighborInRun reports whether the contiguous matched run containing
+// startRow includes at least one substantive line.
+func hasSubstantiveNeighborInRun(matched map[int]int, substantive []bool, startRow, startOther int) bool {
+	isSub := func(r int) bool {
+		if r < 0 || r >= len(substantive) {
+			return false
+		}
+		return substantive[r]
+	}
+	for r := startRow - 1; r >= 0; r-- {
+		m, ok := matched[r]
+		if !ok || m != startOther-(startRow-r) {
+			break
+		}
+		if isSub(r) {
+			return true
+		}
+	}
+	for r := startRow + 1; r < len(substantive); r++ {
+		m, ok := matched[r]
+		if !ok || m != startOther+(r-startRow) {
+			break
+		}
+		if isSub(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // CanMatch checks if two nodes are allowed to pair up:

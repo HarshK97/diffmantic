@@ -35,34 +35,85 @@ func LineDiff(linesA, linesB []string) map[int]int {
 	subB := linesB[start : endB+1]
 	lenA, lenB := len(subA), len(subB)
 
-	// Switch to Patience diff above 1M matrix cells so we don't blow up memory with a huge DP table.
 	if int64(lenA)*int64(lenB) > 1000000 {
 		lineDiffPatience(subA, subB, start, start, matchedA)
 		return compactLineDiff(linesA, linesB, matchedA)
 	}
 
-	stride := lenB + 1
-	dp := make([]int, (lenA+1)*stride)
-	for i := 1; i <= lenA; i++ {
-		w := lineWeight(subA[i-1])
-		for j := 1; j <= lenB; j++ {
-			if subA[i-1] == subB[j-1] {
-				dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + w
-			} else {
-				dp[i*stride+j] = max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
+	alignLineWindow(subA, subB, start, start, matchedA)
+	return compactLineDiff(linesA, linesB, matchedA)
+}
+
+const (
+	exactSubstantiveWeight      = 10
+	reindentedSubstantiveWeight = 8
+	trivialLineWeight           = 1
+)
+
+// lineWeight returns a matching weight for a line. Substantive code lines
+// are given higher weight than trivial punctuation or blank lines so that
+// meaningful statements act as anchors when statement order shifts.
+func lineWeight(s string) int {
+	trimmed := strings.TrimSpace(s)
+	if len(trimmed) == 0 {
+		return trivialLineWeight
+	}
+	if len(trimmed) <= 5 && rules.IsPunctuation(trimmed) {
+		return trivialLineWeight
+	}
+	return exactSubstantiveWeight
+}
+
+// alignLineWindow aligns winA and winB using weighted dynamic programming and records matches in matchedA.
+func alignLineWindow(winA, winB []string, wStartA, wStartB int, matchedA map[int]int) {
+	wN := len(winA)
+	wM := len(winB)
+	if wN == 0 || wM == 0 || int64(wN)*int64(wM) > 1000000 {
+		return
+	}
+
+	trimA := make([]string, wN)
+	weightA := make([]int, wN)
+	for idx, s := range winA {
+		trimA[idx] = strings.TrimSpace(s)
+		weightA[idx] = lineWeight(s)
+	}
+	trimB := make([]string, wM)
+	for idx, s := range winB {
+		trimB[idx] = strings.TrimSpace(s)
+	}
+
+	matchWeight := func(idxA, idxB int) int {
+		if winA[idxA] == winB[idxB] {
+			return weightA[idxA]
+		}
+		if weightA[idxA] > trivialLineWeight && trimA[idxA] == trimB[idxB] {
+			return reindentedSubstantiveWeight
+		}
+		return 0
+	}
+
+	stride := wM + 1
+	dp := make([]int, (wN+1)*stride)
+	for i := 1; i <= wN; i++ {
+		for j := 1; j <= wM; j++ {
+			best := max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
+			if mw := matchWeight(i-1, j-1); mw > 0 {
+				best = max(best, dp[(i-1)*stride+(j-1)]+mw)
 			}
+			dp[i*stride+j] = best
 		}
 	}
 
-	// Backtrack to find matching lines
-	i, j := lenA, lenB
+	i, j := wN, wM
 	for i > 0 && j > 0 {
-		w := lineWeight(subA[i-1])
-		if subA[i-1] == subB[j-1] && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+w {
+		mw := matchWeight(i-1, j-1)
+		if mw > 0 && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+mw {
 			bestJ := j
 			bestDist := max(i-j, j-i)
 			for k := j - 1; k >= 1; k-- {
-				if subA[i-1] == subB[k-1] && dp[(i-1)*stride+(k-1)]+w == dp[i*stride+j] {
+				kw := matchWeight(i-1, k-1)
+				if kw > 0 && dp[(i-1)*stride+(k-1)]+kw == dp[i*stride+j] {
 					dist := max(i-k, k-i)
 					if dist < bestDist {
 						bestDist = dist
@@ -70,7 +121,7 @@ func LineDiff(linesA, linesB []string) map[int]int {
 					}
 				}
 			}
-			matchedA[start+i-1] = start + bestJ - 1
+			matchedA[wStartA+i-1] = wStartB + bestJ - 1
 			i--
 			j = bestJ - 1
 		} else if dp[(i-1)*stride+j] >= dp[i*stride+(j-1)] {
@@ -79,22 +130,6 @@ func LineDiff(linesA, linesB []string) map[int]int {
 			j--
 		}
 	}
-
-	return compactLineDiff(linesA, linesB, matchedA)
-}
-
-// lineWeight returns a matching weight for a line. Substantive code lines
-// are given higher weight than trivial punctuation or blank lines so that
-// meaningful statements act as anchors when statement order shifts.
-func lineWeight(s string) int {
-	trimmed := strings.TrimSpace(s)
-	if len(trimmed) == 0 {
-		return 1
-	}
-	if len(trimmed) <= 5 && rules.IsPunctuation(trimmed) {
-		return 1
-	}
-	return 10
 }
 
 type linePair struct {
@@ -178,55 +213,10 @@ func lineDiffPatience(subA, subB []string, startA, startB int, matchedA map[int]
 
 	lastI, lastJ := 0, 0
 
-	alignWindow := func(winA, winB []string, wStartA, wStartB int) {
-		wN := len(winA)
-		wM := len(winB)
-		if wN == 0 || wM == 0 || int64(wN)*int64(wM) > 1000000 {
-			return
-		}
-
-		stride := wM + 1
-		dp := make([]int, (wN+1)*stride)
-		for i := 1; i <= wN; i++ {
-			w := lineWeight(winA[i-1])
-			for j := 1; j <= wM; j++ {
-				if winA[i-1] == winB[j-1] {
-					dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + w
-				} else {
-					dp[i*stride+j] = max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
-				}
-			}
-		}
-		i, j := wN, wM
-		for i > 0 && j > 0 {
-			w := lineWeight(winA[i-1])
-			if winA[i-1] == winB[j-1] && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+w {
-				bestJ := j
-				bestDist := max(i-j, j-i)
-				for k := j - 1; k >= 1; k-- {
-					if winA[i-1] == winB[k-1] && dp[(i-1)*stride+(k-1)]+w == dp[i*stride+j] {
-						dist := max(i-k, k-i)
-						if dist < bestDist {
-							bestDist = dist
-							bestJ = k
-						}
-					}
-				}
-				matchedA[wStartA+i-1] = wStartB + bestJ - 1
-				i--
-				j = bestJ - 1
-			} else if dp[(i-1)*stride+j] >= dp[i*stride+(j-1)] {
-				i--
-			} else {
-				j--
-			}
-		}
-	}
-
 	for _, anchor := range lis {
 		winA := subA[lastI:anchor.i]
 		winB := subB[lastJ:anchor.j]
-		alignWindow(winA, winB, startA+lastI, startB+lastJ)
+		alignLineWindow(winA, winB, startA+lastI, startB+lastJ, matchedA)
 
 		matchedA[startA+anchor.i] = startB + anchor.j
 
@@ -236,7 +226,7 @@ func lineDiffPatience(subA, subB []string, startA, startB int, matchedA map[int]
 
 	winA := subA[lastI:]
 	winB := subB[lastJ:]
-	alignWindow(winA, winB, startA+lastI, startB+lastJ)
+	alignLineWindow(winA, winB, startA+lastI, startB+lastJ, matchedA)
 }
 
 func compactLineDiff(linesA, linesB []string, matchedA map[int]int) map[int]int {
