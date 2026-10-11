@@ -122,8 +122,75 @@ func TestBuildMoveBadges_Tier2Promotion(t *testing.T) {
 	if badge, ok := sbsBadges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L6") {
 		t.Errorf("SBS mode expected SrcLineBadges[2] to contain '➔ L6', got %q", badge)
 	}
-	if badge, ok := sbsBadges.DstLineBadges[5]; !ok || !strings.Contains(badge, "⤹ L3") {
-		t.Errorf("SBS mode expected DstLineBadges[5] to contain '⤹ L3', got %q", badge)
+	if badge, ok := sbsBadges.DstLineBadges[5]; !ok || !strings.Contains(badge, "↳ L3") {
+		t.Errorf("SBS mode expected DstLineBadges[5] to contain '↳ L3', got %q", badge)
+	}
+}
+
+func TestBuildMoveBadges_SingleLineStatementMove(t *testing.T) {
+	goRules := rules.Get("go")
+
+	srcContent := "package main\n\nfunc Foo() {\n\tif true {\n\t\tabsorbed := false\n\t}\n}\n"
+	dstContent := "package main\n\nfunc Foo() {\n\tabsorbed := false\n\t// inserted big block\n\tprintln(\"1\")\n\tprintln(\"2\")\n\tif true {\n\t}\n}\n"
+
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	sStartByte := uint32(strings.Index(srcContent, "absorbed := false"))
+	sEndByte := sStartByte + uint32(len("absorbed := false"))
+	dStartByte := uint32(strings.Index(dstContent, "absorbed := false"))
+	dEndByte := dStartByte + uint32(len("absorbed := false"))
+
+	actions := []serialize.Action{
+		{
+			Action: "move",
+			Node: &serialize.NodeRef{
+				Type:      "short_var_declaration",
+				StartByte: sStartByte,
+				EndByte:   sEndByte,
+			},
+			DestStartByte: &dStartByte,
+			DestEndByte:   &dEndByte,
+		},
+	}
+
+	hunks := []Interval{
+		{Start: 0, End: 5},
+		{Start: 6, End: 12},
+	}
+
+	pairs := []serialize.LineAlignmentPair{
+		{LeftLine: 0, RightLine: 0},
+		{LeftLine: 1, RightLine: 1},
+		{LeftLine: 2, RightLine: 2},
+		{LeftLine: -1, RightLine: 3}, // dst line 3: absorbed := false
+		{LeftLine: -1, RightLine: 4},
+		{LeftLine: -1, RightLine: 5},
+		{LeftLine: -1, RightLine: 6},
+		{LeftLine: 3, RightLine: 7},
+		{LeftLine: 4, RightLine: -1}, // src line 4: absorbed := false
+		{LeftLine: 5, RightLine: 8},
+		{LeftLine: 6, RightLine: 9},
+	}
+
+	// Single-line statement moves get line badges in both unified and SBS mode, not hunk headers.
+	unifiedBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, true)
+	if badge, ok := unifiedBadges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "➔ L4") {
+		t.Errorf("unified mode expected SrcLineBadges[4] to contain '➔ L4', got %q", badge)
+	}
+	if badge, ok := unifiedBadges.DstLineBadges[3]; !ok || !strings.Contains(badge, "↳ L5") {
+		t.Errorf("unified mode expected DstLineBadges[3] to contain '↳ L5', got %q", badge)
+	}
+
+	sbsBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+	if badge, ok := sbsBadges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "➔ L4") {
+		t.Errorf("SBS mode expected SrcLineBadges[4] to contain '➔ L4', got %q", badge)
+	}
+	if badge, ok := sbsBadges.DstLineBadges[3]; !ok || !strings.Contains(badge, "↳ L5") {
+		t.Errorf("SBS mode expected DstLineBadges[3] to contain '↳ L5', got %q", badge)
 	}
 }
 
@@ -197,7 +264,7 @@ func TestBuildMoveBadges_SuppressedWhenOpeningIsDeletedOrInserted(t *testing.T) 
 	if badge, exists := badges.SrcLineBadges[2]; exists {
 		t.Errorf("expected no SrcLineBadges on line 2 when opening is deleted, got %q", badge)
 	}
-	// Since line 2's opening tag was inserted on dest, no '⤹ L3' should appear on line 2
+	// Since line 2's opening tag was inserted on dest, no '↳ L3' should appear on line 2
 	if badge, exists := badges.DstLineBadges[2]; exists {
 		t.Errorf("expected no DstLineBadges on line 2 when opening is inserted, got %q", badge)
 	}
@@ -343,8 +410,8 @@ func TestBuildMoveBadges_HierarchicalSuppression(t *testing.T) {
 	if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L11") {
 		t.Errorf("expected parent move badge on line 2 '➔ L11', got %q", badge)
 	}
-	if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "⤹ L3") {
-		t.Errorf("expected parent move badge on dest line 10 '⤹ L3', got %q", badge)
+	if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "↳ L3") {
+		t.Errorf("expected parent move badge on dest line 10 '↳ L3', got %q", badge)
 	}
 
 	// Co-moving child (for_statement on line 3) must be suppressed
@@ -367,7 +434,95 @@ func TestBuildMoveBadges_HierarchicalSuppression(t *testing.T) {
 	if badge, ok := badges.SrcLineBadges[5]; !ok || !strings.Contains(badge, "➔ L26") {
 		t.Errorf("expected extracted statement on line 5 to have '➔ L26', got %q", badge)
 	}
-	if badge, ok := badges.DstLineBadges[25]; !ok || !strings.Contains(badge, "⤹ L6") {
-		t.Errorf("expected extracted statement on dest line 25 to have '⤹ L6', got %q", badge)
+	if badge, ok := badges.DstLineBadges[25]; !ok || !strings.Contains(badge, "↳ L6") {
+		t.Errorf("expected extracted statement on dest line 25 to have '↳ L6', got %q", badge)
+	}
+}
+
+func TestBuildMoveBadges_AlignmentDistanceThreshold(t *testing.T) {
+	goRules := rules.Get("go")
+
+	srcLines := make([]string, 40)
+	for i := range srcLines {
+		srcLines[i] = fmt.Sprintf("src line %d", i)
+	}
+	dstLines := make([]string, 40)
+	for i := range dstLines {
+		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	}
+
+	srcOffsets := make([]int, len(srcLines)+1)
+	for i := range srcLines {
+		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	}
+	dstOffsets := make([]int, len(dstLines)+1)
+	for i := range dstLines {
+		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	}
+
+	// 1. Aligned on the same row (distance 0 <= 15), so suppress the badge.
+	nearSrcStart := uint32(srcOffsets[2])
+	nearSrcEnd := uint32(srcOffsets[5])
+	nearDstStart := uint32(dstOffsets[2])
+	nearDstEnd := uint32(dstOffsets[5])
+
+	// 2. Same hunk, but moves 24 alignment rows away (> 15 threshold), so keep the badge.
+	farSrcStart := uint32(srcOffsets[6])
+	farSrcEnd := uint32(srcOffsets[7] - 1)
+	farDstStart := uint32(dstOffsets[30])
+	farDstEnd := uint32(dstOffsets[31] - 1)
+
+	actions := []serialize.Action{
+		{
+			Action: "move",
+			Node: &serialize.NodeRef{
+				Type:      "if_statement",
+				StartByte: nearSrcStart,
+				EndByte:   nearSrcEnd,
+			},
+			DestStartByte:     &nearDstStart,
+			DestEndByte:       &nearDstEnd,
+			OrigStartByte:     nearSrcStart,
+			OrigEndByte:       nearSrcEnd,
+			DestOrigStartByte: nearDstStart,
+			DestOrigEndByte:   nearDstEnd,
+		},
+		{
+			Action: "move",
+			Node: &serialize.NodeRef{
+				Type:      "expression_statement",
+				StartByte: farSrcStart,
+				EndByte:   farSrcEnd,
+			},
+			DestStartByte:     &farDstStart,
+			DestEndByte:       &farDstEnd,
+			OrigStartByte:     farSrcStart,
+			OrigEndByte:       farSrcEnd,
+			DestOrigStartByte: farDstStart,
+			DestOrigEndByte:   farDstEnd,
+		},
+	}
+
+	pairs := make([]serialize.LineAlignmentPair, 40)
+	for i := range pairs {
+		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: i}
+	}
+	hunks := []Interval{
+		{Start: 0, End: 39},
+	}
+
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+
+	if badge, exists := badges.SrcLineBadges[2]; exists {
+		t.Errorf("expected aligned multi-line if_statement on src line 2 to suppress badge, got %q", badge)
+	}
+	if badge, exists := badges.DstLineBadges[2]; exists {
+		t.Errorf("expected aligned multi-line if_statement on dst line 2 to suppress badge, got %q", badge)
+	}
+	if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "➔ L31") {
+		t.Errorf("expected distant same-hunk one-liner on src line 6 (alignDist=24) to have '➔ L31', got %q", badge)
+	}
+	if badge, ok := badges.DstLineBadges[30]; !ok || !strings.Contains(badge, "↳ L7") {
+		t.Errorf("expected distant same-hunk one-liner on dst line 30 (alignDist=24) to have '↳ L7', got %q", badge)
 	}
 }

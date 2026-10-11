@@ -13,7 +13,7 @@ import (
 // MoveBadges contains line-level arrow annotations and hunk header descriptions for moves.
 type MoveBadges struct {
 	SrcLineBadges      map[int]string // Source line index -> " ➔ L{dst}"
-	DstLineBadges      map[int]string // Destination line index -> " ⤹ L{src}"
+	DstLineBadges      map[int]string // Destination line index -> " ↳ L{src}"
 	SrcLineBadgeColors map[int]int    // Source line index -> Color index (0: Teal, 1: Mauve, 2: Sapphire)
 	DstLineBadgeColors map[int]int    // Destination line index -> Color index (0: Teal, 1: Mauve, 2: Sapphire)
 	HunkHeaders        map[int]string // Hunk index -> " func Foo() (moved to L{dst})"
@@ -40,16 +40,22 @@ func BuildMoveBadges(
 		return meta
 	}
 
-	srcLineToHunk := make(map[int]int)
-	dstLineToHunk := make(map[int]int)
+	const maxSuppressAlignDist = 15
+
+	srcLineToHunk := make(map[int]int, len(pairs))
+	dstLineToHunk := make(map[int]int, len(pairs))
+	srcLineToPairIdx := make(map[int]int, len(pairs))
+	dstLineToPairIdx := make(map[int]int, len(pairs))
 	for hIdx, h := range hunks {
 		for p := h.Start; p <= h.End && p < len(pairs); p++ {
 			pair := pairs[p]
 			if pair.LeftLine >= 0 {
 				srcLineToHunk[pair.LeftLine] = hIdx
+				srcLineToPairIdx[pair.LeftLine] = p
 			}
 			if pair.RightLine >= 0 {
 				dstLineToHunk[pair.RightLine] = hIdx
+				dstLineToPairIdx[pair.RightLine] = p
 			}
 		}
 	}
@@ -80,6 +86,7 @@ func BuildMoveBadges(
 		hSrc, hDst     int
 		inSrc, inDst   bool
 		isDecl         bool
+		alignedNear    bool
 		hasSrcBadge    bool
 		hasDstBadge    bool
 	}
@@ -110,16 +117,20 @@ func BuildMoveBadges(
 		hSrc, inSrcHunk := srcLineToHunk[sStart]
 		hDst, inDstHunk := dstLineToHunk[dStart]
 
-		isDecl := r != nil && r.IsDeclaration(a.Node.Type)
-		isBlock := r != nil && r.IsBlock(a.Node.Type)
+		isDecl := (r != nil && r.IsDeclaration(a.Node.Type)) || (r == nil && rules.IsDeclaration(a.Node.Type))
+		isBlock := (r != nil && r.IsBlock(a.Node.Type)) || (r == nil && rules.IsBlock(a.Node.Type))
 		isMultiLine := sEnd > sStart || dEnd > dStart
-		isStatement := r.IsStatement(a.Node.Type) || (r != nil && r.IsCall(a.Node.Type))
+		isStatement := (r != nil && (r.IsStatement(a.Node.Type) || r.IsCall(a.Node.Type))) || (r == nil && (rules.IsStatement(a.Node.Type) || rules.IsCall(a.Node.Type)))
 		if !isDecl && !isBlock && !isMultiLine && !isStatement {
 			continue
 		}
-		// Same-hunk one-liners can see their destination on screen, so skip the badge.
-		if !isDecl && !isBlock && !isMultiLine && inSrcHunk && inDstHunk && hSrc == hDst {
-			continue
+		alignedNear := false
+		if inSrcHunk && inDstHunk && hSrc == hDst {
+			alignDist := srcLineToPairIdx[sStart] - dstLineToPairIdx[dStart]
+			if alignDist < 0 {
+				alignDist = -alignDist
+			}
+			alignedNear = alignDist <= maxSuppressAlignDist
 		}
 
 		sStartByte := a.OrigStartByte
@@ -157,6 +168,7 @@ func BuildMoveBadges(
 			inSrc:          inSrcHunk,
 			inDst:          inDstHunk,
 			isDecl:         isDecl,
+			alignedNear:    alignedNear,
 		})
 	}
 
@@ -170,10 +182,10 @@ func BuildMoveBadges(
 	})
 
 	for cIdx, c := range candidates {
-		suppressSrc := false
-		suppressDst := false
+		suppressSrc := c.alignedNear
+		suppressDst := c.alignedNear
 
-		// Don't badge children if their enclosing parent move already has a badge and they stayed inside it.
+		// Don't badge children if their enclosing parent move already has a badge (or is nearby) and they stayed inside it.
 		for _, p := range candidates[:cIdx] {
 			enclosesSrc := p.sStartByte <= c.sStartByte && c.sEndByte <= p.sEndByte &&
 				(p.sStartByte < c.sStartByte || c.sEndByte < p.sEndByte)
@@ -181,10 +193,10 @@ func BuildMoveBadges(
 				(p.dStartByte < c.dStartByte || c.dEndByte < p.dEndByte)
 
 			if enclosesSrc && enclosesDst {
-				if p.hasSrcBadge {
+				if p.hasSrcBadge || p.alignedNear {
 					suppressSrc = true
 				}
-				if p.hasDstBadge {
+				if p.hasDstBadge || p.alignedNear {
 					suppressDst = true
 				}
 				if suppressSrc && suppressDst {
@@ -226,7 +238,7 @@ func BuildMoveBadges(
 			}
 			if c.inDst && c.dStart >= 0 && c.dStart < len(dstLines) && !isInserted && !suppressDst {
 				if _, exists := meta.DstLineBadges[c.dStart]; !exists {
-					meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ⤹ L%d", c.sStart+1)
+					meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ↳ L%d", c.sStart+1)
 					meta.DstLineBadgeColors[c.dStart] = c.act.MoveColorIndex
 					c.hasDstBadge = true
 				}
