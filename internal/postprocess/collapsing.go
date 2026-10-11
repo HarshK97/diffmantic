@@ -539,15 +539,71 @@ func suppressHollowBlockMoves(
 			continue
 		}
 
-		// Promote discrete child moves inside the block before demoting the container.
-		*actionPtrs = promoteOrphanedChildren(a.Node, dstNode, ms, moved, deleted, *actionPtrs)
-
-		suppressed[a] = true
-		delete(moved, a.Node)
-
+		// Unmap the hollow container first. If its mapping lingers, shouldDemoteMove
+		// mistakes promoted children for stationary sibling relocations inside a
+		// matched parent and refuses to demote them.
 		if ms != nil {
 			ms.Remove(a.Node)
 		}
+
+		// Promote discrete child moves inside the block before demoting the container.
+		*actionPtrs = promoteOrphanedChildren(a.Node, dstNode, ms, moved, deleted, *actionPtrs)
+
+		// Promoted children were riding along inside the parent block. Now that the
+		// container is gone, each child has to justify its own Move. If a child falls
+		// below the move threshold on its own, turn it into Delete + Insert and wipe
+		// its nested mappings so it doesn't leave stray highlights behind.
+		r := rules.Get(a.Node.GetLanguage())
+		for _, childSrc := range a.Node.Children {
+			childAct := moved[childSrc]
+			if childAct == nil || suppressed[childAct] {
+				continue
+			}
+			childDst := childAct.DestNode
+			if childDst == nil && ms != nil {
+				childDst = ms.Src()[childSrc]
+			}
+			if childDst == nil || !shouldDemoteMove(childSrc, childDst, ms, r) {
+				continue
+			}
+			suppressed[childAct] = true
+			delete(moved, childSrc)
+			if ms != nil {
+				toRemove := make(map[*treesitter.ASTNode]struct{}, len(childSrc.Descendants())+1)
+				for _, d := range childSrc.Descendants() {
+					if dDst, ok := ms.Src()[d]; ok && childDst.Contains(dDst) {
+						if dAct, ok := moved[d]; ok {
+							suppressed[dAct] = true
+							delete(moved, d)
+						}
+						toRemove[d] = struct{}{}
+					}
+				}
+				toRemove[childSrc] = struct{}{}
+				ms.RemoveSet(toRemove)
+			}
+			cDel := &actions.Action{
+				Type:    actions.Delete,
+				Node:    childSrc,
+				Parent:  a.Node,
+				Subtree: childAct.Subtree && len(childSrc.Children) > 0,
+			}
+			*actionPtrs = append(*actionPtrs, cDel)
+			deleted[childSrc] = cDel
+
+			cIns := &actions.Action{
+				Type:     actions.Insert,
+				Node:     childDst,
+				Parent:   dstNode,
+				Position: childDst.ChildIndex(),
+				Subtree:  childAct.Subtree && len(childDst.Children) > 0,
+			}
+			*actionPtrs = append(*actionPtrs, cIns)
+			inserted[childDst] = cIns
+		}
+
+		suppressed[a] = true
+		delete(moved, a.Node)
 
 		delAct := &actions.Action{
 			Type:    actions.Delete,

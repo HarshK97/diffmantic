@@ -1,6 +1,7 @@
 package postprocess
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -1181,6 +1182,123 @@ func TestHollowBlockMoveSuppression_Tier3B(t *testing.T) {
 	}
 	if !blockDeleteExists || !blockInsertExists {
 		t.Errorf("hollow block should demote to discrete Delete and Insert actions on delimiters")
+	}
+}
+
+// When a hollow block is demoted, children promoted out of it shouldn't keep
+// their Move actions if they fall below the move threshold on their own (for
+// example, a 1-line call moving hundreds of lines away into another function).
+func TestHollowBlockMoveSuppression_DemotesUnderThresholdChild(t *testing.T) {
+	fn1 := testutil.Node("function_declaration", "RecoverGlueAnchors")
+	fn1.Language = "go"
+	fn2 := testutil.Node("function_declaration", "pairKeywordGlue")
+	fn2.Language = "go"
+
+	callSrc := testutil.Node("expression_statement", "",
+		testutil.Node("call_expression", "",
+			testutil.Node("selector_expression", "",
+				testutil.Leaf("identifier", "m"),
+				testutil.Leaf("field_identifier", "Add"),
+			),
+			testutil.Node("argument_list", "",
+				testutil.Leaf("identifier", "kw1"),
+				testutil.Leaf("identifier", "kw2"),
+			),
+		),
+	)
+	callSrc.Language = "go"
+	callSrc.StartRow = 53
+	callSrc.EndRow = 53
+	callSrc.StartByte = 1456
+	callSrc.EndByte = 1471
+
+	blockSrc := testutil.Node("block", "", callSrc)
+	blockSrc.Language = "go"
+	blockSrc.StartRow = 52
+	blockSrc.EndRow = 54
+	blockSrc.StartByte = 1450
+	blockSrc.EndByte = 1476
+
+	ifSrc := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockSrc)
+	ifSrc.Language = "go"
+	ifSrc.StartRow = 52
+	ifSrc.EndRow = 54
+	ifSrc.Parent = fn1
+	fn1.Children = append(fn1.Children, ifSrc)
+
+	callDst := testutil.Node("expression_statement", "",
+		testutil.Node("call_expression", "",
+			testutil.Node("selector_expression", "",
+				testutil.Leaf("identifier", "m"),
+				testutil.Leaf("field_identifier", "Add"),
+			),
+			testutil.Node("argument_list", "",
+				testutil.Leaf("identifier", "kw1"),
+				testutil.Leaf("identifier", "kw2"),
+			),
+		),
+	)
+	callDst.Language = "go"
+	callDst.StartRow = 325
+	callDst.EndRow = 325
+	callDst.StartByte = 8731
+	callDst.EndByte = 8746
+
+	blockDst := testutil.Node("block", "", callDst)
+	blockDst.Language = "go"
+	blockDst.StartRow = 324
+	blockDst.EndRow = 326
+	blockDst.StartByte = 8727
+	blockDst.EndByte = 8749
+
+	ifDst := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockDst)
+	ifDst.Language = "go"
+	ifDst.StartRow = 324
+	ifDst.EndRow = 326
+	ifDst.Parent = fn2
+	fn2.Children = append(fn2.Children, ifDst)
+
+	ms := engine.NewMapping()
+	srcNodes := blockSrc.PostOrder()
+	dstNodes := blockDst.PostOrder()
+	for i := range srcNodes {
+		srcNodes[i].Language = "go"
+		dstNodes[i].Language = "go"
+		ms.Add(srcNodes[i], dstNodes[i])
+	}
+
+	actionPtrs := []*actions.Action{
+		{Type: actions.Delete, Node: ifSrc},
+		{Type: actions.Insert, Node: ifDst},
+		{Type: actions.Move, Node: blockSrc, DestNode: blockDst, Subtree: true},
+	}
+	moved := map[*treesitter.ASTNode]*actions.Action{
+		blockSrc: actionPtrs[2],
+	}
+	inserted := map[*treesitter.ASTNode]*actions.Action{
+		ifDst: actionPtrs[1],
+	}
+	deleted := map[*treesitter.ASTNode]*actions.Action{
+		ifSrc: actionPtrs[0],
+	}
+	suppressed := make(map[*actions.Action]bool)
+
+	suppressHollowBlockMoves(&actionPtrs, moved, inserted, deleted, suppressed, ms)
+
+	hasActiveMove := slices.ContainsFunc(actionPtrs, func(a *actions.Action) bool {
+		return !suppressed[a] && a.Type == actions.Move && a.Node == callSrc
+	})
+	if hasActiveMove {
+		t.Errorf("expected under-threshold promoted child move on callSrc to be demoted, but Move survived")
+	}
+	if ms.Has(callSrc) {
+		t.Errorf("expected demoted child callSrc to be removed from mapping")
+	}
+	if deleted[callSrc] == nil || deleted[callSrc].Type != actions.Delete {
+		t.Errorf("expected replacement Delete action for callSrc, got nil or wrong type")
+	}
+	if inserted[callDst] == nil || inserted[callDst].Type != actions.Insert {
+		t.Errorf("expected replacement Insert action for callDst, got nil or wrong type")
 	}
 }
 
