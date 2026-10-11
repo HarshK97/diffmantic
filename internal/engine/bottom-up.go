@@ -192,6 +192,12 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Don't let an inner binary expression steal a match when its unmapped parent
+	// already has the shared operand on the same side.
+	if hasCrossSideOperatorMismatch(t1, c, m, r) {
+		return -1.0
+	}
+
 	// Call containers must share callee tokens or non-block arguments; do not pair calls purely based on trailing blocks or callbacks.
 	isCall := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))
 	if isCall && !hasCallCalleeOrArgMatch(t1, c, m, r) {
@@ -1047,4 +1053,60 @@ func getAssignmentTargetNames(n *treesitter.ASTNode, r *rules.Rules) []string {
 		}
 	}
 	return names
+}
+
+// hasCrossSideOperatorMismatch reports whether an inner binary expression
+// candidate crosses sides of its operator when an unmapped parent binary
+// expression has the same operator type and already places the shared operand on that side.
+func hasCrossSideOperatorMismatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	op1 := findOperatorGlue(t1, r)
+	op2 := findOperatorGlue(c, r)
+	if op1 == nil || op2 == nil {
+		return false
+	}
+	sameSide := 0
+	crossSide := 0
+	var crossLeftToRight, crossRightToLeft bool
+	for _, d1 := range t1.Descendants() {
+		if d1 == op1 {
+			continue
+		}
+		d2, ok := m.Src()[d1]
+		if !ok || d2 == op2 || !c.Contains(d2) {
+			continue
+		}
+		left1 := d1.StartByte < op1.StartByte
+		left2 := d2.StartByte < op2.StartByte
+		if left1 == left2 {
+			sameSide++
+		} else {
+			crossSide++
+			if left1 {
+				crossLeftToRight = true
+			} else {
+				crossRightToLeft = true
+			}
+		}
+	}
+	if sameSide > 0 || crossSide == 0 || (crossLeftToRight && crossRightToLeft) {
+		return false
+	}
+	if t1.Parent != nil && !m.Has(t1.Parent) && TypesMatch(t1.Type, t1.Parent.Type, r) {
+		if parentOp1 := findOperatorGlue(t1.Parent, r); parentOp1 != nil {
+			if (t1.StartByte < parentOp1.StartByte) == crossRightToLeft {
+				return true
+			}
+		}
+	}
+	if c.Parent != nil && !m.HasDst(c.Parent) && TypesMatch(c.Type, c.Parent.Type, r) {
+		if parentOp2 := findOperatorGlue(c.Parent, r); parentOp2 != nil {
+			if (c.StartByte < parentOp2.StartByte) == crossLeftToRight {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -275,12 +275,11 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 
 	srcStmt := engine.FindEnclosingStatement(src, r)
 	dstStmt := engine.FindEnclosingStatement(dst, r)
-	if srcStmt == nil || dstStmt == nil || ms.Src()[srcStmt] != dstStmt {
+	if !isStatementStationary(srcStmt, dstStmt, ms, r) {
 		return false
 	}
-	// An expression reorganization is only stationary if its enclosing statement
-	// stayed in the same scope and at the same line position.
-	if srcStmt.StartRow != dstStmt.StartRow || !sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
+	// An expression isn't stationary if it shifted to a different line inside the statement.
+	if int(src.StartRow)-int(srcStmt.StartRow) != int(dst.StartRow)-int(dstStmt.StartRow) {
 		return false
 	}
 
@@ -374,6 +373,42 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 		}
 	}
 
+	return true
+}
+
+// isStatementStationary reports whether a matched statement stayed in place
+// structurally within its enclosing scope (ignoring line drift from edits above it).
+func isStatementStationary(srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if srcStmt == nil || dstStmt == nil || ms == nil || ms.Src()[srcStmt] != dstStmt {
+		return false
+	}
+	if !sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
+		return false
+	}
+	srcDecl := srcStmt.EnclosingContainerDeclaration(r)
+	curSrc, curDst := srcStmt, dstStmt
+	for curSrc != nil && curDst != nil && curSrc != srcDecl {
+		srcParent := curSrc.Parent
+		dstParent := curDst.Parent
+		if srcParent == nil && dstParent == nil {
+			break
+		}
+		if srcParent == nil || dstParent == nil || ms.Src()[srcParent] != dstParent {
+			return false
+		}
+		for _, sib := range srcParent.Children {
+			if sib == curSrc {
+				continue
+			}
+			if sibDst := ms.Get(sib); sibDst != nil && sibDst.Parent == dstParent {
+				if (curSrc.StartByte < sib.StartByte) != (curDst.StartByte < sibDst.StartByte) {
+					return false
+				}
+			}
+		}
+		curSrc = srcParent
+		curDst = dstParent
+	}
 	return true
 }
 
@@ -740,6 +775,15 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		// threshold (T=20) so small helpers and field accesses don't show up as moves.
 		if (src != srcStmt || dst != dstStmt) && ms.Get(srcStmt) != dstStmt {
 			return 20
+		}
+		// If the statement itself didn't move, measure line drift relative to the
+		// statement so earlier edits in the file don't inflate the move threshold.
+		if src != srcStmt && dst != dstStmt && isStatementStationary(srcStmt, dstStmt, ms, r) {
+			stmtLineDist := (int(src.StartRow) - int(srcStmt.StartRow)) - (int(dst.StartRow) - int(dstStmt.StartRow))
+			if stmtLineDist < 0 {
+				stmtLineDist = -stmtLineDist
+			}
+			return 4 + stmtLineDist/5
 		}
 		// Statements or reorders inside the same statement use mild distance scaling.
 		// The floor of 4 lets small expressions like condition calls (S=4) still match.

@@ -2497,12 +2497,12 @@ func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T)
 	stmt2 := mkNode("expression_statement", "")
 	stmt2.Language = "go"
 	stmt2.Parent = outerBlock
-	stmt2.StartRow = 10
+	stmt2.StartRow = 50
 
 	call2 := mkNode("call_expression", "")
 	call2.Language = "go"
 	call2.Parent = stmt2
-	call2.StartRow = 10
+	call2.StartRow = 50
 
 	id1 := mkNode("identifier", "foo")
 	id1.Language = "go"
@@ -2529,9 +2529,12 @@ func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T)
 	result := normalizeMovesByStructure(es, ms)
 
 	if slices.ContainsFunc(result.Actions(), func(a actions.Action) bool {
-		return a.Node == call1 && a.Type == actions.Move
+		return a.Node == call1 && (a.Type == actions.Move || a.Type == actions.Delete)
 	}) {
 		t.Errorf("expected stationary expression Move to be dropped from edit script")
+	}
+	if !ms.Has(call1) {
+		t.Errorf("expected stationary expression call1 to remain in mapping")
 	}
 }
 
