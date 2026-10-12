@@ -10,13 +10,14 @@ import (
 )
 
 type scoredPair struct {
-	pair        [2]*treesitter.ASTNode
-	dice        float64
-	isFallback  bool
-	ancSim      int
-	lineageSim  int
-	nameMatched bool
-	mismatched  bool
+	pair          [2]*treesitter.ASTNode
+	dice          float64
+	parentLeafSim float64
+	ancSim        int
+	lineageSim    int
+	isFallback    bool
+	nameMatched   bool
+	mismatched    bool
 }
 
 // TopDown matches largest isomorphic subtrees top-down by height.
@@ -138,14 +139,16 @@ func TopDown(
 		}
 		si := AncestorNameSimilarity(t1, t2)
 		li := parentLineageSimilarity(t1, t2)
+		pls := LeafSimilarity(t1.Parent, t2.Parent)
 		scored = append(scored, scoredPair{
-			pair:        pair,
-			dice:        di,
-			isFallback:  isFallback,
-			ancSim:      si,
-			lineageSim:  li,
-			nameMatched: nameMatched,
-			mismatched:  mismatched,
+			pair:          pair,
+			dice:          di,
+			parentLeafSim: pls,
+			isFallback:    isFallback,
+			ancSim:        si,
+			lineageSim:    li,
+			nameMatched:   nameMatched,
+			mismatched:    mismatched,
 		})
 	}
 
@@ -175,6 +178,7 @@ func TopDown(
 			cmp.Compare(b.dice, a.dice),
 			cmp.Compare(b.ancSim, a.ancSim),
 			cmp.Compare(b.lineageSim, a.lineageSim),
+			cmp.Compare(b.parentLeafSim, a.parentLeafSim),
 		)
 	})
 
