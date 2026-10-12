@@ -399,3 +399,141 @@ func TestUniqueTypePairs_BlindSingletonTrapStatement(t *testing.T) {
 		t.Errorf("uniqueTypePairs SHOULD pair statements with isomorphic headers, got %d pairs", len(pairs2))
 	}
 }
+
+func TestRecover_ReclaimInParentIsomorphicChildren(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Both source blocks share an identical statement. TopDown paired block2's copy
+		// with dstBlock1. When block1 maps to dstBlock1, Recover should reclaim stmt2
+		// for block1's own statement.
+		stmt1A := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "shared"),
+			testutil.Leaf("assignment_operator_literal", ":="),
+			testutil.Node("call_expression", "",
+				testutil.Leaf("identifier", "calc"),
+			),
+		)
+		stmt1B := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "shared"),
+			testutil.Leaf("assignment_operator_literal", ":="),
+			testutil.Node("call_expression", "",
+				testutil.Leaf("identifier", "calc"),
+			),
+		)
+		stmt2 := testutil.Node("short_var_declaration", "",
+			testutil.Leaf("identifier", "shared"),
+			testutil.Leaf("assignment_operator_literal", ":="),
+			testutil.Node("call_expression", "",
+				testutil.Leaf("identifier", "calc"),
+			),
+		)
+
+		block1 := testutil.Node("block", "", stmt1A)
+		block2 := testutil.Node("block", "", stmt1B)
+		srcRoot := testutil.Node("block", "", block1, block2)
+		srcRoot.Language = "go"
+
+		dstBlock1 := testutil.Node("block", "", stmt2)
+		dstRoot := testutil.Node("block", "", dstBlock1)
+		dstRoot.Language = "go"
+
+		m := NewMapping()
+		// Premature cross-parent match: stmt1B -> stmt2.
+		addIsomorphicPairs(stmt1B, stmt2, m)
+		m.Add(block1, dstBlock1)
+
+		Recover(block1, dstBlock1, m)
+
+		if m.Src()[stmt1A] != stmt2 {
+			t.Errorf("expected Recover to reclaim stmt2 for in-parent child stmt1A, got %v", m.Src()[stmt1A])
+		}
+		if m.Has(stmt1B) {
+			t.Errorf("expected foreign duplicate stmt1B to be unmapped after reclaim")
+		}
+		if m.Has(stmt1B.Children[0]) {
+			t.Errorf("expected descendants of foreign duplicate stmt1B to be unmapped after reclaim")
+		}
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		src := `package main
+
+func Run(mode int) {
+	if mode == 1 {
+		runA("oldArg")
+		shared := calc()
+	}
+
+	if mode == 2 {
+		helper()
+		shared := calc()
+		finishB()
+	}
+}
+`
+		dst := `package main
+
+func Run(mode int) {
+	if mode == 1 {
+		helper()
+		shared := calc()
+		runA("newArg")
+	}
+
+	if mode == 2 {
+		finishB()
+	}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Line rows are 0-indexed in Tree-sitter:
+		// In src, row 5 (line 6) is "shared := calc()" inside "mode == 1".
+		// In src, row 10 (line 11) is "shared := calc()" inside "mode == 2".
+		// In dst, row 5 (line 6) is "shared := calc()" inside "mode == 1".
+		var srcShared1, srcShared2, dstShared *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "short_var_declaration" {
+				switch n.StartRow {
+				case 5:
+					srcShared1 = n
+				case 10:
+					srcShared2 = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "short_var_declaration" && n.StartRow == 5 {
+				dstShared = n
+			}
+		}
+
+		if srcShared1 == nil || srcShared2 == nil || dstShared == nil {
+			t.Fatalf("failed to find short_var_declaration nodes: srcShared1=%v, srcShared2=%v, dstShared=%v", srcShared1, srcShared2, dstShared)
+		}
+
+		// With reclaimInParentIsomorphicChildren, srcShared1 (inside mode == 1) maps in-place to dstShared.
+		// On main without the fix, TopDown paired foreign srcShared2 (mode == 2) with dstShared.
+		if mr.Mappings.Src()[srcShared1] != dstShared {
+			t.Errorf("expected in-parent statement (row 5) to map to dstShared, got %v", mr.Mappings.Src()[srcShared1])
+		}
+		if mr.Mappings.Has(srcShared2) {
+			t.Errorf("expected foreign duplicate (row 10) to remain unmapped, got %v", mr.Mappings.Src()[srcShared2])
+		}
+		if mr.Mappings.Has(srcShared2.Children[0]) {
+			t.Errorf("expected descendants of foreign duplicate (row 10) to remain unmapped")
+		}
+	})
+}
