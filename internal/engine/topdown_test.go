@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
 func TestTopDown(t *testing.T) {
@@ -405,4 +406,155 @@ func TestTopDown_DirectParentPrecedenceOverFallback(t *testing.T) {
 	if m.Src()[srcExprB] != nil {
 		t.Errorf("TopDown matched srcExprB to %v, want nil", m.Src()[srcExprB])
 	}
+}
+
+func TestTopDown_ParentLeafSimilarityTieBreaker(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Two if-statements under the same function share identical `{ continue }` bodies.
+		// With 0 mapped descendants and matching lineage, parent leaf similarity breaks
+		// the tie in favor of the modified condition over the newly inserted one.
+		srcCond := testutil.Node("unary_expression", "",
+			testutil.Node("call_expression", "",
+				testutil.Node("identifier", "shouldDemoteMove"),
+				testutil.Node("argument_list", "",
+					testutil.Node("identifier", "dstNode"),
+					testutil.Node("identifier", "ms"),
+					testutil.Node("identifier", "r"),
+				),
+			),
+		)
+		srcBody := testutil.Node("block", "",
+			testutil.Node("continue_statement", "", testutil.Node("continue", "continue")),
+		)
+		srcIf := testutil.Node("if_statement", "", testutil.Node("if", "if"), srcCond, srcBody)
+		srcIf.StartByte = 100
+		srcRoot := testutil.Node("function_declaration", "",
+			testutil.Node("identifier", "normalizeMovesByStructure"),
+			testutil.Node("block", "", srcIf),
+		)
+		srcRoot.Language = "go"
+
+		dstEarlyCond := testutil.Node("short_var_declaration", "",
+			testutil.Node("identifier", "already"),
+			testutil.Node("identifier", "toDemote"),
+		)
+		dstEarlyBody := testutil.Node("block", "",
+			testutil.Node("continue_statement", "", testutil.Node("continue", "continue")),
+		)
+		dstEarlyIf := testutil.Node("if_statement", "", testutil.Node("if", "if"), dstEarlyCond, dstEarlyBody)
+		dstEarlyIf.StartByte = 50
+
+		dstLateCond := testutil.Node("unary_expression", "",
+			testutil.Node("call_expression", "",
+				testutil.Node("identifier", "shouldDemoteMove"),
+				testutil.Node("argument_list", "",
+					testutil.Node("identifier", "dstNode"),
+					testutil.Node("identifier", "ms"),
+					testutil.Node("identifier", "r"),
+					testutil.Node("identifier", "evicted"),
+				),
+			),
+		)
+		dstLateBody := testutil.Node("block", "",
+			testutil.Node("continue_statement", "", testutil.Node("continue", "continue")),
+		)
+		dstLateIf := testutil.Node("if_statement", "", testutil.Node("if", "if"), dstLateCond, dstLateBody)
+		dstLateIf.StartByte = 150
+
+		dstRoot := testutil.Node("function_declaration", "",
+			testutil.Node("identifier", "normalizeMovesByStructure"),
+			testutil.Node("block", "", dstEarlyIf, dstLateIf),
+		)
+		dstRoot.Language = "go"
+
+		srcRoot.ComputeHashes()
+		dstRoot.ComputeHashes()
+
+		m := NewMapping()
+		TopDown(srcRoot, dstRoot, 2, m, nil)
+
+		if m.Src()[srcBody] != dstLateBody {
+			t.Fatalf("TopDown matched srcBody to %v, want dstLateBody (%v)", m.Src()[srcBody], dstLateBody)
+		}
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		src := `package main
+
+func process(items []int) {
+	for _, x := range items {
+		if shouldDemoteMove(x, dstNode, ms, r) {
+			continue
+		}
+	}
+}
+`
+		dst := `package main
+
+func process(items []int) {
+	for _, x := range items {
+		if already := toDemote[x]; already {
+			continue
+		}
+		if shouldDemoteMove(x, dstNode, ms, r, evicted) {
+			continue
+		}
+	}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcIf, srcBody *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "if_statement" {
+				srcIf = n
+				for _, c := range n.Children {
+					if c.Type == "block" {
+						srcBody = c
+					}
+				}
+			}
+		}
+
+		var dstEarlyIf, dstLateIf, dstLateBody *treesitter.ASTNode
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "if_statement" {
+				if dstEarlyIf == nil {
+					dstEarlyIf = n
+				} else {
+					dstLateIf = n
+					for _, c := range n.Children {
+						if c.Type == "block" {
+							dstLateBody = c
+						}
+					}
+				}
+			}
+		}
+
+		if srcIf == nil || srcBody == nil || dstEarlyIf == nil || dstLateIf == nil || dstLateBody == nil {
+			t.Fatalf("failed to locate AST nodes: srcIf=%v srcBody=%v dstEarlyIf=%v dstLateIf=%v dstLateBody=%v",
+				srcIf, srcBody, dstEarlyIf, dstLateIf, dstLateBody)
+		}
+
+		if matched := mr.Mappings.Src()[srcBody]; matched != dstLateBody {
+			t.Fatalf("expected srcBody to match dstLateBody (%v), got %v", dstLateBody, matched)
+		}
+		if matched := mr.Mappings.Src()[srcIf]; matched != dstLateIf {
+			t.Fatalf("expected srcIf to match dstLateIf (%v), got %v", dstLateIf, matched)
+		}
+	})
 }
