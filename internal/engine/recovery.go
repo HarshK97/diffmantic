@@ -9,10 +9,37 @@ import (
 // Uses Zhang-Shasha (1989) tree edit distance as a last-chance fallback on tiny
 // subtrees (< 20 nodes), and uses SimpleRecovery (Sibling LCS) on larger subtrees.
 func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	reclaimInParentIsomorphicChildren(t1, t2, m)
 	if t1.Size() < 20 && t2.Size() < 20 {
 		RunZSRecovery(t1, t2, m)
 	} else {
 		SimpleRecovery(t1, t2, m)
+	}
+}
+
+// reclaimInParentIsomorphicChildren steals back children of t2 that TopDown
+// paired with a duplicate from another block, keeping them in-place under t1.
+func reclaimInParentIsomorphicChildren(t1, t2 *treesitter.ASTNode, m *Mapping) {
+	if t1 == nil || t2 == nil || m == nil || m.Src()[t1] != t2 {
+		return
+	}
+	r := rulesFor(t1)
+	for _, c1 := range t1.Children {
+		if m.Has(c1) || c1.IsKeyword || isGlueToken(c1, r) {
+			continue
+		}
+		for _, c2 := range t2.Children {
+			if !Isomorphic(c1, c2) {
+				continue
+			}
+			other1 := m.Dst()[c2]
+			if other1 == nil || other1.Parent == t1 {
+				continue
+			}
+			revokeSubtreeMatchUnder(other1, c2, m)
+			addIsomorphicPairs(c1, c2, m)
+			break
+		}
 	}
 }
 
