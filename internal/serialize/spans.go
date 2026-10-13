@@ -178,27 +178,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 						gapEnd := lineStart + next.startCol
 						if gapStart < len(fileBytes) && gapEnd <= len(fileBytes) {
 							gapBytes := fileBytes[gapStart:gapEnd]
-							onlyNonChars = isOnlyNonCharacters(gapBytes)
+							onlyNonChars = isOnlyNonCharacters(gapBytes) &&
+								areGapDelimitersBalanced(line, curr, i, gSpans, actStr, lineIndex, fileBytes)
 						}
 					}
 
 					if onlyNonChars {
-						if actStr == "update" || actStr == "move" {
-							if curr.actRef != nil && next.actRef != nil {
-								if curr.actRef.MoveColorIndex != next.actRef.MoveColorIndex {
-									canMerge = false
-								} else if curr.actRef.GroupID != "" && curr.actRef.GroupID == next.actRef.GroupID {
-									canMerge = true
-								} else if actStr == "update" {
-									canMerge = sharesLineage(curr.actRef.Parent, next.actRef.Parent)
-								} else {
-									canMerge = sharesLineage(curr.actRef.Parent, next.actRef.Parent) &&
-										sharesLineage(curr.actRef.OldParent, next.actRef.OldParent)
-								}
-							}
-						} else {
-							canMerge = true
-						}
+						canMerge = canMergeActionSpans(actStr, curr, next)
 					}
 				}
 
@@ -798,6 +784,15 @@ func absorbSyntacticDelimiters(fileBytes []byte, startByte, endByte uint32, pare
 	return startByte, endByte
 }
 
+var (
+	parenOpenSeq    = []byte("(")
+	parenCloseSeq   = []byte(")")
+	bracketOpenSeq  = []byte("[")
+	bracketCloseSeq = []byte("]")
+	braceOpenSeq    = []byte("{")
+	braceCloseSeq   = []byte("}")
+)
+
 // closeTrailingDelimiter expands s to include matching closing brackets or parentheses
 // when s contains unclosed opening delimiters.
 func closeTrailingDelimiter(s *internalSpan, line int, lineIndex []int, fileBytes []byte) {
@@ -813,17 +808,165 @@ func closeTrailingDelimiter(s *internalSpan, line int, lineIndex []int, fileByte
 	for sByte < len(fileBytes) && eByte < len(fileBytes) {
 		sub := fileBytes[sByte:eByte]
 		nextChar := fileBytes[eByte]
-		if nextChar == ')' && bytes.Count(sub, []byte("(")) > bytes.Count(sub, []byte(")")) {
+		if nextChar == ')' && bytes.Count(sub, parenOpenSeq) > bytes.Count(sub, parenCloseSeq) {
 			s.endCol++
 			eByte++
-		} else if nextChar == ']' && bytes.Count(sub, []byte("[")) > bytes.Count(sub, []byte("]")) {
+		} else if nextChar == ']' && bytes.Count(sub, bracketOpenSeq) > bytes.Count(sub, bracketCloseSeq) {
 			s.endCol++
 			eByte++
-		} else if nextChar == '}' && bytes.Count(sub, []byte("{")) > bytes.Count(sub, []byte("}")) {
+		} else if nextChar == '}' && bytes.Count(sub, braceOpenSeq) > bytes.Count(sub, braceCloseSeq) {
 			s.endCol++
 			eByte++
 		} else {
 			break
 		}
 	}
+}
+
+// canMergeActionSpans checks whether two adjacent spans of the same action type can be merged.
+func canMergeActionSpans(actStr string, curr, next internalSpan) bool {
+	if actStr != "update" && actStr != "move" {
+		return true
+	}
+	if curr.actRef == nil || next.actRef == nil {
+		return false
+	}
+	if curr.actRef.MoveColorIndex != next.actRef.MoveColorIndex {
+		return false
+	}
+	if curr.actRef.GroupID != "" && curr.actRef.GroupID == next.actRef.GroupID {
+		return true
+	}
+	if actStr == "update" {
+		return sharesLineage(curr.actRef.Parent, next.actRef.Parent)
+	}
+	return sharesLineage(curr.actRef.Parent, next.actRef.Parent) &&
+		sharesLineage(curr.actRef.OldParent, next.actRef.OldParent)
+}
+
+// areGapDelimitersBalanced checks whether merging across the gap keeps brackets
+// balanced on the line.
+// We only bridge an opening bracket if the merge chain covers everything through
+// its matching closing bracket, and we only bridge a closing bracket if curr
+// already opened it.
+func areGapDelimitersBalanced(
+	line int,
+	curr internalSpan,
+	nextIdx int,
+	gSpans []internalSpan,
+	actStr string,
+	lineIndex []int,
+	fileBytes []byte,
+) bool {
+	if line >= len(lineIndex) || nextIdx >= len(gSpans) {
+		return true
+	}
+	lineStart := lineIndex[line]
+	lineEnd := len(fileBytes)
+	if line+1 < len(lineIndex) {
+		lineEnd = min(lineEnd, lineIndex[line+1])
+	}
+
+	next := gSpans[nextIdx]
+	gapStart := lineStart + curr.endCol
+	gapEnd := lineStart + next.startCol
+	if gapStart < 0 || gapEnd > lineEnd || gapStart >= gapEnd {
+		return true
+	}
+	gapBytes := fileBytes[gapStart:gapEnd]
+	if !bytes.ContainsAny(gapBytes, "()[]{}") {
+		return true
+	}
+
+	sByte := max(lineStart+curr.startCol, lineStart)
+	maxClosePos := -1
+
+	for pos := gapStart; pos < gapEnd; pos++ {
+		ch := fileBytes[pos]
+		switch ch {
+		case ')', ']', '}':
+			var openSeq, closeSeq []byte
+			switch ch {
+			case ')':
+				openSeq, closeSeq = parenOpenSeq, parenCloseSeq
+			case ']':
+				openSeq, closeSeq = bracketOpenSeq, bracketCloseSeq
+			case '}':
+				openSeq, closeSeq = braceOpenSeq, braceCloseSeq
+			}
+			sub := fileBytes[sByte:pos]
+			if bytes.Count(sub, openSeq) <= bytes.Count(sub, closeSeq) {
+				return false
+			}
+		case '(', '[', '{':
+			var closeChar byte
+			switch ch {
+			case '(':
+				closeChar = ')'
+			case '[':
+				closeChar = ']'
+			case '{':
+				closeChar = '}'
+			}
+			depth := 1
+			closePos := -1
+			for p := pos + 1; p < lineEnd; p++ {
+				if fileBytes[p] == ch {
+					depth++
+				} else if fileBytes[p] == closeChar {
+					depth--
+					if depth == 0 {
+						closePos = p
+						break
+					}
+				}
+			}
+			if closePos < 0 {
+				return false
+			}
+			maxClosePos = max(maxClosePos, closePos)
+		}
+	}
+
+	if maxClosePos < 0 {
+		return true
+	}
+
+	sim := internalSpan{
+		startCol: curr.startCol,
+		endCol:   max(curr.endCol, next.endCol),
+		action:   actStr,
+		actRef:   next.actRef,
+	}
+	closeTrailingDelimiter(&sim, line, lineIndex, fileBytes)
+
+	const maxGap = 3
+	for k := nextIdx + 1; k < len(gSpans); k++ {
+		if lineStart+sim.endCol > maxClosePos {
+			return true
+		}
+		cand := gSpans[k]
+		if cand.endCol <= sim.endCol {
+			continue
+		}
+		if cand.startCol > sim.endCol {
+			kGap := cand.startCol - sim.endCol
+			if kGap > maxGap {
+				break
+			}
+			kGapStart := lineStart + sim.endCol
+			kGapEnd := lineStart + cand.startCol
+			if kGapStart < 0 || kGapEnd > lineEnd {
+				break
+			}
+			if !isOnlyNonCharacters(fileBytes[kGapStart:kGapEnd]) || !canMergeActionSpans(actStr, sim, cand) {
+				break
+			}
+		}
+		sim.endCol = cand.endCol
+		sim.actRef = cand.actRef
+		closeTrailingDelimiter(&sim, line, lineIndex, fileBytes)
+	}
+
+	return lineStart+sim.endCol > maxClosePos
 }
