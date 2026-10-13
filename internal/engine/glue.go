@@ -134,13 +134,20 @@ func RevokeOrphanedGlue(m *Mapping) {
 				continue
 			}
 			isMoving := isMovingScope(srcParent, dstParent, m)
-			if !isJump && hasNonGlue && !hasPayload && isMoving {
-				revokeSubtreeMatchUnder(srcParent, dstParent, m)
-				continue
-			}
-			if isMoving && !hasMatchedDirectNonGlueChild(srcParent, dstParent, m, r) {
-				revokeSubtreeMatchUnder(srcParent, dstParent, m)
-				continue
+			if isMoving {
+				if !isJump && hasNonGlue && !hasPayload {
+					revokeSubtreeMatchUnder(srcParent, dstParent, m)
+					continue
+				}
+				if isJump && !hasNonGlue {
+					if srcParent.Parent == nil || m.Src()[srcParent.Parent] != dstParent.Parent {
+						revokeSubtreeMatchUnder(srcParent, dstParent, m)
+						continue
+					}
+				} else if !hasMatchedDirectNonGlueChild(srcParent, dstParent, m, r) {
+					revokeSubtreeMatchUnder(srcParent, dstParent, m)
+					continue
+				}
 			}
 			continue
 		}

@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -906,4 +907,147 @@ func TestMatchUnmatchedLeaves_StatementBoundary_ShortVarDeclaration(t *testing.T
 	if m.Has(idSrc) {
 		t.Errorf("expected 'err' across unrelated short_var_declarations to be rejected by statement boundary invariant, got mapped to %v", m.Src()[idSrc])
 	}
+}
+
+func TestRecoverCohortSiblings_RelocatedCohort(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Source function declaration with 4 statements in its body:
+		// s0: isDelim := ... (unmapped)
+		// s1: hasOutside := false (anchor 1, pre-mapped to d1)
+		// s2: deleteSubtree := ... (unmapped)
+		// s3: hasSrcOutside := false (anchor 2, pre-mapped to d3)
+		makeDecl := func(name string) *treesitter.ASTNode {
+			id := testutil.Leaf("identifier", name)
+			op := testutil.Leaf("assignment_operator_literal", ":=")
+			val := testutil.Leaf("identifier", "val")
+			stmt := testutil.Node("short_var_declaration", "", testutil.Node("expression_list", "", id), op, testutil.Node("expression_list", "", val))
+			stmt.Language = "go"
+			return stmt
+		}
+
+		s0 := makeDecl("isDelim")
+		s1 := makeDecl("hasOutside")
+		s2 := makeDecl("deleteSubtree")
+		s3 := makeDecl("hasSrcOutside")
+		srcBlock := testutil.Node("block", "", s0, s1, s2, s3)
+		srcBlock.Language = "go"
+		srcFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "Demote"), srcBlock)
+		srcRoot := testutil.Node("source_file", "", srcFn)
+		srcRoot.Language = "go"
+
+		d0 := makeDecl("isDelim")
+		d1 := makeDecl("hasOutside")
+		d2 := makeDecl("deleteSubtree")
+		d3 := makeDecl("hasSrcOutside")
+		dstBlock := testutil.Node("block", "", d0, d1, d2, d3)
+		dstBlock.Language = "go"
+		dstFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "isSubtreeDemotion"), dstBlock)
+		dstRoot := testutil.Node("source_file", "", dstFn)
+		dstRoot.Language = "go"
+
+		m := NewMapping()
+		// Keep srcFn and dstFn unmapped so they count as separate scopes.
+		m.Add(srcRoot, dstRoot)
+		// Anchor two statements cross-scope.
+		m.Add(s1, d1)
+		m.Add(s3, d3)
+
+		RecoverCohortSiblings(srcRoot, dstRoot, m)
+
+		if !m.Has(s0) || m.Src()[s0] != d0 {
+			t.Errorf("expected s0 (isDelim) to be recovered to d0, got %v", m.Src()[s0])
+		}
+		if !m.Has(s2) || m.Src()[s2] != d2 {
+			t.Errorf("expected s2 (deleteSubtree) to be recovered to d2, got %v", m.Src()[s2])
+		}
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		src := `package main
+
+func OldLogic() {
+	isDelim := check(10)
+	hasOutside := false
+	for _, item := range items {
+		if item < 0 {
+			break
+		}
+		handle(item)
+	}
+	deleteSubtree := compute(true)
+	hasSrcOutside := false
+	process(isDelim, hasOutside, deleteSubtree, hasSrcOutside)
+}
+
+func OtherCaller() {
+	println("hello")
+}
+`
+		dst := `package main
+
+func OldLogic() {
+	println("hello")
+}
+
+func ExtractedHelper() {
+	isDelim := check(20)
+	hasOutside := false
+	for _, item := range items {
+		if item < 0 {
+			break
+		}
+		handle(item)
+	}
+	deleteSubtree := compute(false)
+	hasSrcOutside := false
+	process(isDelim, hasOutside, deleteSubtree, hasSrcOutside)
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var s0, s2, d0, d2 *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "short_var_declaration" {
+				names := getAssignmentTargetNames(n, rulesFor(n))
+				if slices.Contains(names, "isDelim") {
+					s0 = n
+				} else if slices.Contains(names, "deleteSubtree") {
+					s2 = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "short_var_declaration" {
+				names := getAssignmentTargetNames(n, rulesFor(n))
+				if slices.Contains(names, "isDelim") {
+					d0 = n
+				} else if slices.Contains(names, "deleteSubtree") {
+					d2 = n
+				}
+			}
+		}
+
+		if s0 == nil || s2 == nil || d0 == nil || d2 == nil {
+			t.Fatalf("missing nodes: s0=%v, s2=%v, d0=%v, d2=%v", s0, s2, d0, d2)
+		}
+		if mr.Mappings.Src()[s0] != d0 {
+			t.Errorf("expected s0 (isDelim) to map to d0, got %v", mr.Mappings.Src()[s0])
+		}
+		if mr.Mappings.Src()[s2] != d2 {
+			t.Errorf("expected s2 (deleteSubtree) to map to d2, got %v", mr.Mappings.Src()[s2])
+		}
+	})
 }

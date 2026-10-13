@@ -235,9 +235,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 }
 
 // RecoverCohortSiblings pairs unmatched statements that moved alongside an anchor
-// into another block. Small statements like short variable declarations often get
-// missed by bottom-up matching; if an unmatched sibling matches an unmatched
-// statement in the target block uniquely and identically, we pair them.
+// into another block. Pass 1 handles exact isomorphic siblings.
+// Pass 2 pairs relocated statements (like in extracted functions) that share
+// assigned variable names or structural similarity, keeping relative order.
 func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	if t1Root == nil || t2Root == nil || m == nil {
 		return
@@ -246,6 +246,7 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	pairs := slices.Clone(m.Pairs)
 	seenBlocks := make(map[[2]*treesitter.ASTNode]bool)
 
+	// Pass 1: Exact unique isomorphic sibling recovery.
 	for _, p := range pairs {
 		src, dst := p.Src, p.Dst
 		if src == nil || dst == nil || src.Parent == nil || dst.Parent == nil {
@@ -300,6 +301,168 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			addIsomorphicPairs(sc, matches[0], m)
 		}
 	}
+
+	// Pass 2: Pair statements moved cross-scope alongside existing anchors.
+	// When at least two statements moved from srcParent to dstParent, find
+	// any leftover siblings between them by matching assigned variables or
+	// structural shape.
+	type cohortGroupKey struct {
+		srcParent *treesitter.ASTNode
+		dstParent *treesitter.ASTNode
+	}
+
+	var groupOrder []cohortGroupKey
+	groups := make(map[cohortGroupKey][][2]*treesitter.ASTNode)
+	for _, p := range m.Pairs {
+		src, dst := p.Src, p.Dst
+		if src == nil || dst == nil || src.Parent == nil || dst.Parent == nil {
+			continue
+		}
+		r := rulesFor(src)
+		if !isStatementOrDecl(src, r) {
+			continue
+		}
+		srcDecl := src.EnclosingContainerDeclaration(r)
+		dstDecl := dst.EnclosingContainerDeclaration(r)
+		if srcDecl == nil || dstDecl == nil || m.Src()[srcDecl] == dstDecl {
+			continue
+		}
+		if !isStatementContainer(src.Parent, r) || !isStatementContainer(dst.Parent, r) {
+			continue
+		}
+		key := cohortGroupKey{srcParent: src.Parent, dstParent: dst.Parent}
+		if _, exists := groups[key]; !exists {
+			groupOrder = append(groupOrder, key)
+		}
+		groups[key] = append(groups[key], [2]*treesitter.ASTNode{src, dst})
+	}
+
+	for _, key := range groupOrder {
+		anchors := groups[key]
+		if len(anchors) < 2 {
+			continue
+		}
+
+		srcParent := key.srcParent
+		dstParent := key.dstParent
+		r := rulesFor(srcParent)
+
+		for _, anchor := range anchors {
+			recoverUnmappedDescendantBlocks(anchor[0], anchor[1], m, r)
+		}
+
+		var unmappedSrc []*treesitter.ASTNode
+		for _, sc := range srcParent.Children {
+			if !m.Has(sc) && isStatementOrDecl(sc, r) {
+				unmappedSrc = append(unmappedSrc, sc)
+			}
+		}
+
+		var unmappedDst []*treesitter.ASTNode
+		for _, dc := range dstParent.Children {
+			if !m.HasDst(dc) && isStatementOrDecl(dc, r) {
+				unmappedDst = append(unmappedDst, dc)
+			}
+		}
+
+		if len(unmappedSrc) == 0 || len(unmappedDst) == 0 {
+			continue
+		}
+
+		dstIdx := 0
+		for _, sc := range unmappedSrc {
+			names1 := getAssignmentTargetNames(sc, r)
+			var bestDst *treesitter.ASTNode
+			bestDstIdx := -1
+
+			for j := dstIdx; j < len(unmappedDst); j++ {
+				dc := unmappedDst[j]
+				if m.HasDst(dc) {
+					continue
+				}
+				if !TypesMatch(sc.Type, dc.Type, r) {
+					continue
+				}
+
+				names2 := getAssignmentTargetNames(dc, r)
+				if len(names1) > 0 && len(names2) > 0 {
+					if slices.ContainsFunc(names1, func(n1 string) bool { return slices.Contains(names2, n1) }) {
+						bestDst = dc
+						bestDstIdx = j
+						break
+					}
+				} else if len(names1) == 0 && len(names2) == 0 {
+					sim := LeafSimilarity(sc, dc)
+					if sim >= 0.40 {
+						bestDst = dc
+						bestDstIdx = j
+						break
+					}
+				}
+			}
+
+			if bestDst != nil {
+				// Drop existing matches for any children paired outside this statement pair.
+				for _, d := range sc.Descendants() {
+					if partner, ok := m.Src()[d]; ok {
+						if !bestDst.Contains(partner) && partner != bestDst {
+							m.Remove(d)
+						}
+					}
+				}
+				for _, d := range bestDst.Descendants() {
+					if partner, ok := m.Dst()[d]; ok {
+						if !sc.Contains(partner) && partner != sc {
+							m.Remove(partner)
+						}
+					}
+				}
+
+				m.Add(sc, bestDst)
+				Recover(sc, bestDst, m)
+				recoverUnmappedDescendantBlocks(sc, bestDst, m, r)
+				dstIdx = bestDstIdx + 1
+			}
+		}
+	}
+}
+
+// recoverUnmappedDescendantBlocks runs Recover on any mapped child blocks inside t1 and t2
+// that still have unmapped nodes.
+func recoverUnmappedDescendantBlocks(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	for _, d1 := range t1.Descendants() {
+		if (r != nil && r.IsBlock(d1.Type)) || (r == nil && rules.IsBlock(d1.Type)) {
+			if d2, ok := m.Src()[d1]; ok && t2.Contains(d2) {
+				if hasUnmappedChild(d1, m.Has) && hasUnmappedChild(d2, m.HasDst) {
+					Recover(d1, d2, m)
+				}
+			}
+		}
+	}
+}
+
+// isStatementContainer reports whether n is a block or contains statements or declarations.
+func isStatementContainer(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if (r != nil && r.IsBlock(n.Type)) || (r == nil && rules.IsBlock(n.Type)) {
+		return true
+	}
+	for _, c := range n.Children {
+		if isStatementOrDecl(c, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isStatementOrDecl reports whether n is a statement or declaration node.
+func isStatementOrDecl(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	return n.IsStatement() || (r != nil && r.IsDeclaration(n.Type)) || (r == nil && rules.IsDeclaration(n.Type))
 }
 
 // effectiveDepthTo measures the structural depth from node up to anc,
