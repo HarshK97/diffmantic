@@ -675,3 +675,121 @@ func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *tes
 		t.Fatal("if keyword of adjacent if_statement should be preserved")
 	}
 }
+
+func TestRevokeOrphanedGlue_BareJumpPreservedInMovingBlock(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Construct a bare break statement inside a loop/if block that relocated across functions.
+		kwOld := testutil.Leaf("break", "break")
+		kwOld.IsKeyword = true
+		srcBreak := testutil.Node("break_statement", "", kwOld)
+		srcBreak.Language = "go"
+		srcBlock := testutil.Node("block", "", srcBreak)
+		srcBlock.Language = "go"
+		srcFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "fnA"), srcBlock)
+		srcFn.Language = "go"
+
+		kwNew := testutil.Leaf("break", "break")
+		kwNew.IsKeyword = true
+		dstBreak := testutil.Node("break_statement", "", kwNew)
+		dstBreak.Language = "go"
+		dstBlock := testutil.Node("block", "", dstBreak)
+		dstBlock.Language = "go"
+		dstFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "fnB"), dstBlock)
+		dstFn.Language = "go"
+
+		// 1. Keep the jump when its enclosing block moved together across scopes.
+		m := NewMapping()
+		m.Add(srcBlock, dstBlock)
+		m.Add(srcBreak, dstBreak)
+		m.Add(kwOld, kwNew)
+
+		RevokeOrphanedGlue(m)
+
+		if !m.Has(srcBreak) {
+			t.Fatal("bare break statement inside moving matched block should be preserved")
+		}
+		if !m.Has(kwOld) {
+			t.Fatal("break keyword of preserved break statement should remain mapped")
+		}
+
+		// 2. Drop the jump if it moved on its own without its enclosing block.
+		m2 := NewMapping()
+		m2.Add(srcBreak, dstBreak)
+		m2.Add(kwOld, kwNew)
+
+		RevokeOrphanedGlue(m2)
+
+		if m2.Has(srcBreak) {
+			t.Fatal("unmoored break statement moving across unmapped blocks must be revoked")
+		}
+		if m2.Has(kwOld) {
+			t.Fatal("break keyword of unmoored break statement must be revoked")
+		}
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		src := `package main
+
+func processOld(items []int) {
+	for _, item := range items {
+		if item < 0 {
+			break
+		}
+		handle(item)
+	}
+}
+
+func otherCaller() {
+	println("hello")
+}
+`
+		dst := `package main
+
+func processOld(items []int) {
+	println("hello")
+}
+
+func helperExtracted(items []int) {
+	for _, item := range items {
+		if item < 0 {
+			break
+		}
+		handle(item)
+	}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcBreak, dstBreak *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "break_statement" {
+				srcBreak = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "break_statement" {
+				dstBreak = n
+			}
+		}
+
+		if srcBreak == nil || dstBreak == nil {
+			t.Fatalf("failed to locate break_statement: src=%v, dst=%v", srcBreak, dstBreak)
+		}
+		if mr.Mappings.Src()[srcBreak] != dstBreak {
+			t.Errorf("expected break_statement inside moved loop block to be preserved and mapped to dstBreak, got %v", mr.Mappings.Src()[srcBreak])
+		}
+	})
+}
