@@ -3,6 +3,8 @@ package serialize
 import (
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/actions"
+	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -1063,6 +1065,195 @@ func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *tes
 		// Keep the span at endCol 5 so it doesn't swallow the comment.
 		if spans[0].StartCol != 4 || spans[0].EndCol != 5 {
 			t.Errorf("expected span cols 4..5 (comment preserved untouched), got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		}
+	})
+}
+
+func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		t.Run("DoesNotBridgeOpeningParenWhenInteriorPartiallyPreserved", func(t *testing.T) {
+			// "demoteMoveToDelIns(result, ms, a.Node, dstNode)\n"
+			//  012345678901234567890123456789012345678901234567
+			//  demoteMoveToDelIns: 0..18
+			//  (: 18..19
+			//  result: 19..25
+			//  ms: 27..29
+			//  a.Node: 31..37 (preserved)
+			//  dstNode: 39..46
+			//  ): 46..47
+			fileBytes := []byte("demoteMoveToDelIns(result, ms, a.Node, dstNode)\n")
+			argListParent := &NodeRef{Type: "argument_list", StartByte: 18, EndByte: 47}
+			callParent := &NodeRef{Type: "call_expression", StartByte: 0, EndByte: 47}
+
+			actions := []Action{
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 0, EndByte: 18},
+					Parent: callParent,
+				},
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 19, EndByte: 25},
+					Parent: argListParent,
+				},
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 27, EndByte: 29},
+					Parent: argListParent,
+				},
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 39, EndByte: 46},
+					Parent: argListParent,
+				},
+			}
+
+			spans := BuildHighlightSpans(fileBytes, actions, "left")
+			if len(spans) != 3 {
+				t.Fatalf("expected 3 separate delete spans (callee, leading args, trailing arg), got %d: %+v", len(spans), spans)
+			}
+			if spans[0].StartCol != 0 || spans[0].EndCol != 18 {
+				t.Errorf("expected callee span [0..18] without '(', got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
+			}
+			if spans[1].StartCol != 19 || spans[1].EndCol != 30 {
+				t.Errorf("expected leading args span [19..30] ('result, ms,'), got [%d..%d]", spans[1].StartCol, spans[1].EndCol)
+			}
+			if spans[2].StartCol != 37 || spans[2].EndCol != 46 {
+				t.Errorf("expected trailing arg span [37..46] (', dstNode') without ')', got [%d..%d]", spans[2].StartCol, spans[2].EndCol)
+			}
+		})
+
+		t.Run("BridgesOpeningParenAndClosesTrailingParenWhenEntireCallInteriorDeleted", func(t *testing.T) {
+			// "foo(a, b)\n"
+			//  foo: 0..3, (: 3..4, a: 4..5, b: 7..8, ): 8..9
+			fileBytes := []byte("foo(a, b)\n")
+			argListParent := &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9}
+			callParent := &NodeRef{Type: "call_expression", StartByte: 0, EndByte: 9}
+
+			actions := []Action{
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 0, EndByte: 3},
+					Parent: callParent,
+				},
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
+					Parent: argListParent,
+				},
+				{
+					Action: "delete",
+					Node:   &NodeRef{Type: "identifier", StartByte: 7, EndByte: 8},
+					Parent: argListParent,
+				},
+			}
+
+			spans := BuildHighlightSpans(fileBytes, actions, "left")
+			if len(spans) != 1 {
+				t.Fatalf("expected 1 merged span covering 'foo(a, b)', got %d: %+v", len(spans), spans)
+			}
+			if spans[0].StartCol != 0 || spans[0].EndCol != 9 {
+				t.Errorf("expected balanced span [0..9] covering 'foo(a, b)', got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
+			}
+		})
+
+		t.Run("DoesNotBridgeUnmatchedClosingBraceInGap", func(t *testing.T) {
+			// "return .{ .name = val };\n"
+			//  val: 18..21, " }": 21..23, ";": 23..24
+			fileBytes := []byte("return .{ .name = val };\n")
+			actions := []Action{
+				{
+					Action: "insert",
+					Node:   &NodeRef{Type: "identifier", StartByte: 18, EndByte: 21},
+				},
+				{
+					Action: "insert",
+					Node:   &NodeRef{Type: ";", StartByte: 23, EndByte: 24},
+				},
+			}
+
+			spans := BuildHighlightSpans(fileBytes, actions, "right")
+			if len(spans) != 2 {
+				t.Fatalf("expected 2 separate insert spans without swallowing '}', got %d: %+v", len(spans), spans)
+			}
+			if spans[0].StartCol != 18 || spans[0].EndCol != 21 {
+				t.Errorf("expected span 0 [18..21], got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
+			}
+			if spans[1].StartCol != 23 || spans[1].EndCol != 24 {
+				t.Errorf("expected span 1 [23..24], got [%d..%d]", spans[1].StartCol, spans[1].EndCol)
+			}
+		})
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		oldSrc := `package main
+
+func process(target string) {
+	oldHelper("first", target)
+}
+`
+		newSrc := `package main
+
+func process(target string) {
+	newHelper("second", target)
+}
+`
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+			IncludeHighlights: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// On left line 3 (`\toldHelper("first", target)`):
+		// oldHelper (1..10) is updated, "first", (11..18) is updated,
+		// and '(' at column 10 must NOT be swallowed into an update span.
+		var leftLine3 []HighlightSpan
+		for _, h := range env.LeftHighlights {
+			if h.Line == 3 {
+				leftLine3 = append(leftLine3, h)
+			}
+		}
+		if len(leftLine3) != 2 {
+			t.Fatalf("expected 2 separate update spans on left line 3, got %d: %+v", len(leftLine3), leftLine3)
+		}
+		if leftLine3[0].StartCol != 1 || leftLine3[0].EndCol != 10 {
+			t.Errorf("expected left callee span [1..10], got [%d..%d]", leftLine3[0].StartCol, leftLine3[0].EndCol)
+		}
+		if leftLine3[1].StartCol != 11 || leftLine3[1].EndCol != 18 {
+			t.Errorf("expected left arg span [11..18], got [%d..%d]", leftLine3[1].StartCol, leftLine3[1].EndCol)
+		}
+
+		// On right line 3 (`\tnewHelper("second", target)`):
+		// newHelper (1..10) is updated, "second", (11..19) is updated,
+		// and '(' at column 10 must remain unhighlighted context.
+		var rightLine3 []HighlightSpan
+		for _, h := range env.RightHighlights {
+			if h.Line == 3 {
+				rightLine3 = append(rightLine3, h)
+			}
+		}
+		if len(rightLine3) != 2 {
+			t.Fatalf("expected 2 separate update spans on right line 3, got %d: %+v", len(rightLine3), rightLine3)
+		}
+		if rightLine3[0].StartCol != 1 || rightLine3[0].EndCol != 10 {
+			t.Errorf("expected right callee span [1..10], got [%d..%d]", rightLine3[0].StartCol, rightLine3[0].EndCol)
+		}
+		if rightLine3[1].StartCol != 11 || rightLine3[1].EndCol != 19 {
+			t.Errorf("expected right arg span [11..19], got [%d..%d]", rightLine3[1].StartCol, rightLine3[1].EndCol)
 		}
 	})
 }
