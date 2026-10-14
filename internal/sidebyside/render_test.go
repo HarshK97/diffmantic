@@ -167,7 +167,7 @@ func TestSliceLineToColumn_MoveBadge_MultiColor(t *testing.T) {
 	scratch := &RenderScratch{}
 	var buf bytes.Buffer
 
-	// Slot 0 (Teal): color.Move0Fg
+	// Slot 0 (Cyan): color.Move0Fg
 	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, renderutil.LineContextAligned, true, true, &buf, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -178,7 +178,7 @@ func TestSliceLineToColumn_MoveBadge_MultiColor(t *testing.T) {
 		t.Errorf("expected badge with Move0Fg, got %q", got)
 	}
 
-	// Slot 1 (Mauve): color.Move1Fg
+	// Slot 1 (Magenta): color.Move1Fg
 	buf.Reset()
 	err = scratch.SliceLineToColumn("func Bar()", " ➔ L50", nil, 20, renderutil.LineContextAligned, true, true, &buf, 1)
 	if err != nil {

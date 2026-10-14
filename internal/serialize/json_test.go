@@ -7,6 +7,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -529,7 +530,7 @@ func TestAssignMoveColors(t *testing.T) {
 			t.Errorf("expected move 0 to have MoveColorIndex 0, got %d", actions[0].MoveColorIndex)
 		}
 		if actions[1].MoveColorIndex != 1 {
-			t.Errorf("expected move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
+			t.Errorf("expected move 1 to have MoveColorIndex 1 (Magenta), got %d", actions[1].MoveColorIndex)
 		}
 		if actions[2].MoveColorIndex != 0 {
 			t.Errorf("expected move 2 to wrap to MoveColorIndex 0 (modulo 2), got %d", actions[2].MoveColorIndex)
@@ -553,10 +554,10 @@ func TestAssignMoveColors(t *testing.T) {
 		}
 		AssignMoveColors(actions, srcOffsets, dstOffsets)
 		if actions[0].MoveColorIndex != 0 {
-			t.Errorf("expected swap move 0 to have MoveColorIndex 0 (Teal), got %d", actions[0].MoveColorIndex)
+			t.Errorf("expected swap move 0 to have MoveColorIndex 0 (Cyan), got %d", actions[0].MoveColorIndex)
 		}
 		if actions[1].MoveColorIndex != 1 {
-			t.Errorf("expected swap move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
+			t.Errorf("expected swap move 1 to have MoveColorIndex 1 (Magenta), got %d", actions[1].MoveColorIndex)
 		}
 	})
 
@@ -599,6 +600,224 @@ func TestAssignMoveColors(t *testing.T) {
 		AssignMoveColors(actions, srcOffsets, dstOffsets)
 		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 0 {
 			t.Errorf("expected hierarchical co-movers to share MoveColorIndex 0, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
+
+	t.Run("diverging moves from nearby source to distant destinations", func(t *testing.T) {
+		// Move 0: src line 0 (bytes 0-10) -> dst line 0 (bytes 0-10)
+		// Move 1: src line 1 (bytes 20-30) -> dst line 5 (bytes 100-110)
+		// Starts within 2 lines in the source, but lands far apart in the destination.
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(0)),
+				DestEndByte:   ptr(uint32(10)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 20, EndByte: 30},
+				DestStartByte: ptr(uint32(100)),
+				DestEndByte:   ptr(uint32(110)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 1 {
+			t.Errorf("expected diverging moves to get distinct colors 0 and 1, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
+
+	t.Run("converging moves from distant sources to nearby destination", func(t *testing.T) {
+		// Move 0: src line 0 (bytes 0-10) -> dst line 3 (bytes 60-70)
+		// Move 1: src line 5 (bytes 100-110) -> dst line 5 (bytes 100-110)
+		// Starts far apart in the source, but lands within 2 lines in the destination.
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(60)),
+				DestEndByte:   ptr(uint32(70)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 100, EndByte: 110},
+				DestStartByte: ptr(uint32(100)),
+				DestEndByte:   ptr(uint32(110)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 1 {
+			t.Errorf("expected converging moves landing within 2 lines to get distinct colors 0 and 1, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
+
+	t.Run("grouped co-movers share color despite proximity", func(t *testing.T) {
+		// Grouped moves should share a color even if they land next to each other.
+		actions := []Action{
+			{
+				Action:        "move",
+				GroupID:       "group-1",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(60)),
+				DestEndByte:   ptr(uint32(70)),
+			},
+			{
+				Action:        "move",
+				GroupID:       "group-1",
+				Node:          &NodeRef{StartByte: 20, EndByte: 30},
+				DestStartByte: ptr(uint32(80)),
+				DestEndByte:   ptr(uint32(90)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 0 {
+			t.Errorf("expected grouped moves to share MoveColorIndex 0, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
+}
+
+func TestAssignMoveColors_EndToEnd(t *testing.T) {
+	runPipeline := func(t *testing.T, oldSrc, newSrc string) *Envelope {
+		t.Helper()
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+			IncludeActions: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+		return env
+	}
+
+	collectMoves := func(env *Envelope) []Action {
+		var moves []Action
+		for _, a := range env.Actions {
+			if a.Action == "move" || a.Action == "move_update" {
+				moves = append(moves, a)
+			}
+		}
+		return moves
+	}
+
+	t.Run("grouped co-movers share color despite proximity", func(t *testing.T) {
+		oldSrc := `package main
+
+func process() {
+	keep1()
+	moveA()
+	moveB()
+	keep2()
+}
+`
+		newSrc := `package main
+
+func process() {
+	keep1()
+	keep2()
+	if true {
+		moveA()
+		moveB()
+	}
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+		moves := collectMoves(env)
+		if len(moves) != 2 {
+			t.Fatalf("expected 2 moves, got %d: %+v", len(moves), moves)
+		}
+		if moves[0].GroupID == "" || moves[0].GroupID != moves[1].GroupID {
+			t.Errorf("expected moves to share a non-empty GroupID, got %q and %q", moves[0].GroupID, moves[1].GroupID)
+		}
+		if moves[0].MoveColorIndex != 0 || moves[1].MoveColorIndex != 0 {
+			t.Errorf("expected grouped co-movers to share MoveColorIndex 0, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
+		}
+	})
+
+	t.Run("diverging moves from nearby source get distinct colors", func(t *testing.T) {
+		oldSrc := `package main
+
+func process() {
+	moveA()
+	moveB()
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+}
+`
+		newSrc := `package main
+
+func process() {
+	keep1()
+	if cond1 {
+		moveA()
+	}
+	keep2()
+	keep3()
+	keep4()
+	if cond2 {
+		moveB()
+	}
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+		moves := collectMoves(env)
+		if len(moves) != 2 {
+			t.Fatalf("expected 2 moves, got %d: %+v", len(moves), moves)
+		}
+		if moves[0].MoveColorIndex != 0 || moves[1].MoveColorIndex != 1 {
+			t.Errorf("expected diverging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
+		}
+	})
+
+	t.Run("converging moves to nearby destination get distinct colors", func(t *testing.T) {
+		oldSrc := `package main
+
+func process() {
+	if cond1 {
+		moveA()
+	}
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+	if cond2 {
+		moveB()
+	}
+}
+`
+		newSrc := `package main
+
+func process() {
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+	if condTarget {
+		moveA()
+	}
+	moveB()
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+		moves := collectMoves(env)
+		if len(moves) != 2 {
+			t.Fatalf("expected 2 moves, got %d: %+v", len(moves), moves)
+		}
+		if moves[0].MoveColorIndex != 0 || moves[1].MoveColorIndex != 1 {
+			t.Errorf("expected converging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 	})
 }
