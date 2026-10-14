@@ -217,15 +217,16 @@ func getEnclosingScopeDeclaration(n *treesitter.ASTNode, r *rules.Rules) *treesi
 // enough non-glue code to treat the container as moved.
 //
 // A container qualifies if it shares a compound child (effective height >= 2),
-// or is a standalone statement whose non-glue payload is either isomorphic or
-// fully matched.
+// or is a standalone statement or sub-expression within a matched parent whose
+// non-glue payload is either isomorphic or fully matched.
 func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
 	if srcParent == nil || dstParent == nil || m == nil {
 		return false
 	}
 	r = cmp.Or(r, rulesFor(srcParent), rulesFor(dstParent))
 	isStmt := FindEnclosingStatement(srcParent, r) == srcParent && FindEnclosingStatement(dstParent, r) == dstParent
-	if isStmt && hasNonGlueChildren(srcParent, r) && Isomorphic(srcParent, dstParent) {
+	parentMatched := isEnclosingContainerMatched(srcParent, dstParent, m, r)
+	if (isStmt || parentMatched) && hasNonGlueChildren(srcParent, r) && Isomorphic(srcParent, dstParent) {
 		return true
 	}
 	var nonGlueTotal, nonGlueMatched int
@@ -241,7 +242,7 @@ func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *M
 			nonGlueMatched++
 		}
 	}
-	if !isStmt {
+	if !isStmt && !parentMatched {
 		return false
 	}
 	var dstNonGlueTotal int
@@ -251,6 +252,20 @@ func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *M
 		}
 	}
 	return nonGlueTotal > 0 && nonGlueMatched == nonGlueTotal && dstNonGlueTotal == nonGlueTotal
+}
+
+// isEnclosingContainerMatched reports whether src and dst have effective parents
+// that map to each other, unwrapping single-child wrappers.
+func isEnclosingContainerMatched(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || m == nil {
+		return false
+	}
+	p1 := getEffectiveParent(src, r)
+	p2 := getEffectiveParent(dst, r)
+	if p1 == nil || p2 == nil {
+		return false
+	}
+	return m.Src()[p1] == p2
 }
 
 func isDirectOrWrappedChild(node, parent *treesitter.ASTNode, r *rules.Rules) bool {
