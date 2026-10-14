@@ -494,8 +494,11 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	return &env, nil
 }
 
-// AssignMoveColors picks a color (0: Teal, 1: Mauve) for each move,
-// making sure overlapping or adjacent moves don't share the same color.
+// AssignMoveColors assigns a color (0: Teal, 1: Mauve) to each move:
+//   - Grouped moves (siblings moving together between the same parents) share one color.
+//   - Children moving along inside a moving container inherit their parent's color.
+//   - Moves within 2 lines of each other get different colors so they don't blend together,
+//     whether they start close and diverge, or converge near the same destination lines.
 func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 	type moveInterval struct {
 		actIdx int
