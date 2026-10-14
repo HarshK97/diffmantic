@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,19 @@ const (
 func isTerminal(f *os.File) bool {
 	fi, err := f.Stat()
 	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
+}
+
+// isAllZeros reports whether s is non-empty and consists entirely of '0' characters (e.g. a Git null OID).
+func isAllZeros(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for i := range len(s) {
+		if s[i] != '0' {
+			return false
+		}
+	}
+	return true
 }
 
 var rootCmd = &cobra.Command{
@@ -131,7 +145,18 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 		if len(args) == 7 {
 			path := args[0]
 			oldFile := args[1]
+			oldHex := args[2]
 			newFile := args[4]
+			newHex := args[5]
+
+			normFormat = cmp.Or(normFormat, "side-by-side")
+
+			// Skip diffing when Git reports identical hashes (e.g. chmod without content changes),
+			// unless JSON output was requested.
+			if oldHex != "" && oldHex != "." && !isAllZeros(oldHex) && oldHex == newHex && normFormat != "json" {
+				return
+			}
+
 			if !isFileOrDevNull(oldFile) {
 				fmt.Fprintf(os.Stderr, "Error: invalid old-file for external diff driver: %s\n", oldFile)
 				os.Exit(1)
@@ -142,9 +167,6 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			}
 			if !cmd.Flags().Changed("no-pager") {
 				noPager = true
-			}
-			if normFormat == "" {
-				normFormat = "side-by-side"
 			}
 			runFileDiff(cmd, oldFile, newFile, path, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 			return
@@ -969,6 +991,10 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format st
 	var srcBytes, dstBytes []byte
 	var err error
 
+	if fileA == fileB && format != "json" {
+		return
+	}
+
 	if fileA == os.DevNull || fileA == "/dev/null" {
 		srcBytes = []byte{}
 	} else {
@@ -987,6 +1013,10 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format st
 			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", fileB, err)
 			os.Exit(1)
 		}
+	}
+
+	if bytes.Equal(srcBytes, dstBytes) && format != "json" {
+		return
 	}
 
 	dr, err := pipeline.Run(srcBytes, dstBytes, displayA, displayB, pipeline.DiffOptions{

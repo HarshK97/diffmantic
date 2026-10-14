@@ -11,6 +11,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // TestMain clears user config and pager env vars so host settings don't break cmd tests.
@@ -29,6 +30,15 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(m.Run())
+}
+
+// resetRootCmdFlags resets rootCmd args and returns all registered flags to their default values and clean Changed state.
+func resetRootCmdFlags() {
+	rootCmd.SetArgs(nil)
+	rootCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		_ = f.Value.Set(f.DefValue)
+		f.Changed = false
+	})
 }
 
 func TestRootCmdFlags(t *testing.T) {
@@ -320,7 +330,7 @@ func TestGitExternal7ArgsProtocol(t *testing.T) {
 	newMode := "100644"
 
 	cmd := rootCmd
-	defer cmd.SetArgs(nil)
+	defer resetRootCmdFlags()
 	cmd.SetArgs([]string{"-f", "json", displayPath, fileA, oldHex, oldMode, fileB, newHex, newMode})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("7-arg diff.external execution failed: %v", err)
@@ -343,6 +353,39 @@ func TestGitExternal7ArgsFailFast(t *testing.T) {
 	want := "Error: invalid old-file for external diff driver: nonexistent_file_a"
 	if !strings.Contains(string(out), want) {
 		t.Errorf("output = %q, want substring %q", string(out), want)
+	}
+}
+
+func TestGitExternal7ArgsIdenticalBlobHashFastPath(t *testing.T) {
+	// Git invokes diff.external on mode-only changes with identical hashes; make sure
+	// we exit 0 immediately without touching disk.
+	defer resetRootCmdFlags()
+	hex := "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+	rootCmd.SetArgs([]string{"sample.go", "nonexistent_a", hex, "100644", "nonexistent_b", hex, "100755"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected 7-arg identical blob hash fast-path to succeed, got: %v", err)
+	}
+}
+
+func TestRunFileDiffIdenticalBytesFastPath(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.go")
+	fileB := filepath.Join(dir, "b.go")
+
+	content := []byte("package main\n\nfunc main() {}\n")
+	_ = os.WriteFile(fileA, content, 0o644)
+	_ = os.WriteFile(fileB, content, 0o644)
+
+	defer resetRootCmdFlags()
+
+	rootCmd.SetArgs([]string{"--no-pager", fileA, fileB})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected identical files diff to succeed, got: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"--no-pager", fileA, fileA})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected same file diff to succeed, got: %v", err)
 	}
 }
 
