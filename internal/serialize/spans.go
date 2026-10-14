@@ -65,6 +65,20 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	// ones would paint the same color twice.
 	skipNestedMove := nestedMoveActions(actions)
 
+	// If any move in a group spans multiple lines, the whole group collapses to
+	// Cyan so siblings don't end up with mismatched colors.
+	var multiLineGroups map[string]bool
+	for i := range actions {
+		a := &actions[i]
+		if a.GroupID != "" && (a.Action == "move" || a.Action == "move_update") &&
+			isActionMultiLine(a, lineIndex, fileBytes, side) {
+			if multiLineGroups == nil {
+				multiLineGroups = make(map[string]bool)
+			}
+			multiLineGroups[a.GroupID] = true
+		}
+	}
+
 	for i := range actions {
 		a := &actions[i]
 		switch a.Action {
@@ -216,7 +230,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 			lineMerged = append(lineMerged, curr)
 		}
 
-		lineMerged = partitionLineSpans(lineMerged, side, lineIndex, fileBytes)
+		lineMerged = partitionLineSpans(lineMerged, side, lineIndex, fileBytes, multiLineGroups)
 
 		slices.SortFunc(lineMerged, func(a, b internalSpan) int {
 			return cmp.Or(
@@ -517,12 +531,12 @@ func parseSpanActionPriority(act string) int {
 }
 
 // partitionLineSpans resolves cross-action overlaps for a single line's spans.
-func partitionLineSpans(spans []internalSpan, side string, lineIndex []int, fileBytes []byte) []internalSpan {
+func partitionLineSpans(spans []internalSpan, side string, lineIndex []int, fileBytes []byte, multiLineGroups map[string]bool) []internalSpan {
 	resolveMoveColor := func(act *Action) int {
 		if act == nil {
 			return 0
 		}
-		if len(lineIndex) > 0 && isActionMultiLine(act, lineIndex, fileBytes, side) {
+		if len(lineIndex) > 0 && (isActionMultiLine(act, lineIndex, fileBytes, side) || (act.GroupID != "" && multiLineGroups[act.GroupID])) {
 			return 0
 		}
 		return act.MoveColorIndex
