@@ -5,6 +5,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -736,7 +737,7 @@ func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
 		{startCol: 5, endCol: 35, action: "move", actRef: &act2},
 	}
 
-	partitioned := partitionLineSpans(spans, "left", nil, nil)
+	partitioned := partitionLineSpans(spans, "left", nil, nil, nil)
 	foundColor1 := false
 	for _, p := range partitioned {
 		if p.actRef != nil && p.actRef.MoveColorIndex == 1 {
@@ -769,7 +770,7 @@ func TestPartitionLineSpans_MoveUpdateInheritsEnclosingMoveColor(t *testing.T) {
 		{startCol: 10, endCol: 15, action: "update", actRef: &actUpdate},
 	}
 
-	partitioned := partitionLineSpans(spans, "right", nil, nil)
+	partitioned := partitionLineSpans(spans, "right", nil, nil, nil)
 	if len(partitioned) != 3 {
 		t.Fatalf("expected 3 partitioned spans, got %d: %+v", len(partitioned), partitioned)
 	}
@@ -782,9 +783,10 @@ func TestPartitionLineSpans_MoveUpdateInheritsEnclosingMoveColor(t *testing.T) {
 }
 
 func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
-	// Single-line token moves retain their slot color (Magenta), while multiline
-	// block moves collapse to uniform Cyan to reduce visual clutter.
-	fileBytes := []byte("foo(a, b)\nfunc MultiLine() {\n    return 42\n}\n")
+	// Single-line moves keep their slot color (Magenta), while multiline moves
+	// collapse to Cyan. If a group mixes both, the whole group takes Cyan so
+	// siblings stay the same color.
+	fileBytes := []byte("foo(a, b)\nfunc MultiLine() {\n    return 42\n}\nms.Remove(d)\n")
 
 	singleLineAct := Action{
 		Action:         "move",
@@ -796,22 +798,35 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 
 	multiLineAct := Action{
 		Action:         "move",
+		GroupID:        "group-1",
 		MoveColorIndex: 1,
 		Node:           &NodeRef{Type: "function_declaration", StartByte: 10, EndByte: 44},
 		DestStartByte:  ptr(uint32(200)),
 		DestEndByte:    ptr(uint32(300)),
 	}
 
-	actions := []Action{singleLineAct, multiLineAct}
+	groupedSingleLineAct := Action{
+		Action:         "move",
+		GroupID:        "group-1",
+		MoveColorIndex: 1,
+		Node:           &NodeRef{Type: "expression_statement", StartByte: 45, EndByte: 57},
+		DestStartByte:  ptr(uint32(305)),
+		DestEndByte:    ptr(uint32(317)),
+	}
+
+	actions := []Action{singleLineAct, multiLineAct, groupedSingleLineAct}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
 
-	var singleSpan, multiSpan *HighlightSpan
+	var singleSpan, multiSpan, groupedSingleSpan *HighlightSpan
 	for i := range spans {
 		if spans[i].Line == 0 && spans[i].Action == "move" {
 			singleSpan = &spans[i]
 		}
 		if spans[i].Line == 1 && spans[i].Action == "move" {
 			multiSpan = &spans[i]
+		}
+		if spans[i].Line == 4 && spans[i].Action == "move" {
+			groupedSingleSpan = &spans[i]
 		}
 	}
 
@@ -827,6 +842,13 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 	}
 	if multiSpan.ColorIndex != 0 {
 		t.Errorf("expected multiline move to have adaptive ColorIndex 0 (Cyan), got %d", multiSpan.ColorIndex)
+	}
+
+	if groupedSingleSpan == nil {
+		t.Fatalf("expected grouped single-line move span on line 4")
+	}
+	if groupedSingleSpan.ColorIndex != 0 {
+		t.Errorf("expected single-line move in multiline GroupID to share ColorIndex 0 (Cyan), got %d", groupedSingleSpan.ColorIndex)
 	}
 
 	t.Run("single line with trailing newline", func(t *testing.T) {
@@ -846,6 +868,73 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 			t.Errorf("expected statement with trailing newline to retain ColorIndex 1, got %d", stmtSpans[0].ColorIndex)
 		}
 	})
+}
+
+func TestBuildHighlightSpans_AdaptiveMoveColor_EndToEnd(t *testing.T) {
+	// An isolated move takes color slot 0 (Cyan). An adjacent move group
+	// containing both a multiline if-statement and a single-line call gets
+	// assigned color slot 1 (Magenta). BuildHighlightSpans must collapse the
+	// single-line sibling to Cyan so the entire group stays visually unified.
+	oldSrc := `package main
+
+func process() {
+	isolatedMove()
+	stationaryA()
+	stationaryB()
+	if check() {
+		doWork()
+	}
+	finish()
+}
+`
+	newSrc := `package main
+
+func process() {
+	stationaryA()
+	stationaryB()
+	isolatedMove()
+	if wrapper() {
+		if check() {
+			doWork()
+		}
+		finish()
+	}
+}
+`
+	oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+	if err != nil {
+		t.Fatalf("parse oldSrc: %v", err)
+	}
+	newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+	if err != nil {
+		t.Fatalf("parse newSrc: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+	mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+	es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+	es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+	env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeHighlights: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// finish() on left line 9 and right line 11 is single-line, but grouped with
+	// multiline if check(). Verify both sides collapse finish() to ColorIndex 0.
+	for _, h := range env.LeftHighlights {
+		if h.Line == 9 && h.Action == "move" && h.ColorIndex != 0 {
+			t.Errorf("expected left finish() move highlight to have ColorIndex 0, got %d", h.ColorIndex)
+		}
+	}
+	for _, h := range env.RightHighlights {
+		if h.Line == 11 && h.Action == "move" && h.ColorIndex != 0 {
+			t.Errorf("expected right finish() move highlight to have ColorIndex 0, got %d", h.ColorIndex)
+		}
+	}
 }
 
 func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.T) {
