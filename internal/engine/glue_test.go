@@ -793,3 +793,140 @@ func helperExtracted(items []int) {
 		}
 	})
 }
+
+func TestRevokeOrphanedGlue_MovingScalarSubExpressionPreserved(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		srcBlock := testutil.Node("block", "")
+		dstBlock := testutil.Node("block", "")
+
+		// An inner expression like (r != nil) only has leaf operands (height 1),
+		// but since its enclosing expression moved and matched, keep the inner match too.
+		srcSubLHS := testutil.Leaf("identifier", "r")
+		srcSubOp := testutil.Leaf("comparison_operator_literal", "!=")
+		srcSubRHS := testutil.Leaf("nil", "nil")
+		srcSubExpr := testutil.Node("binary_expression", "", srcSubLHS, srcSubOp, srcSubRHS)
+
+		srcParentExpr := testutil.Node("binary_expression", "",
+			srcSubExpr,
+			testutil.Leaf("logical_operator_literal", "&&"),
+			testutil.Leaf("identifier", "other"),
+		)
+		srcParentExpr.Parent = srcBlock
+
+		dstSubLHS := testutil.Leaf("identifier", "r")
+		dstSubOp := testutil.Leaf("comparison_operator_literal", "!=")
+		dstSubRHS := testutil.Leaf("nil", "nil")
+		dstSubExpr := testutil.Node("binary_expression", "", dstSubLHS, dstSubOp, dstSubRHS)
+
+		dstParentExpr := testutil.Node("binary_expression", "",
+			dstSubExpr,
+			testutil.Leaf("logical_operator_literal", "&&"),
+			testutil.Leaf("identifier", "other"),
+		)
+		dstParentExpr.Parent = dstBlock
+
+		mSubExpr := NewMapping()
+		mSubExpr.Add(srcParentExpr, dstParentExpr)
+		mSubExpr.Add(srcSubExpr, dstSubExpr)
+		mSubExpr.Add(srcSubLHS, dstSubLHS)
+		mSubExpr.Add(srcSubOp, dstSubOp)
+		mSubExpr.Add(srcSubRHS, dstSubRHS)
+		RevokeOrphanedGlue(mSubExpr)
+		if !mSubExpr.Has(srcSubExpr) {
+			t.Fatal("moving scalar sub-expression with matched parent should be preserved")
+		}
+		if !mSubExpr.Has(srcSubOp) {
+			t.Fatal("glue inside moving scalar sub-expression with matched parent should be preserved")
+		}
+
+		// If the parent didn't move together with it, drop the inner expression so
+		// it doesn't get stolen across unrelated statements.
+		srcIsoUnmapped := testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "r"),
+			testutil.Leaf("comparison_operator_literal", "!="),
+			testutil.Leaf("nil", "nil"),
+		)
+		srcIsoUnmapped.Parent = testutil.Node("statement_a", "")
+		srcIsoUnmapped.Parent.Parent = srcBlock
+
+		dstIsoUnmapped := testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "r"),
+			testutil.Leaf("comparison_operator_literal", "!="),
+			testutil.Leaf("nil", "nil"),
+		)
+		dstIsoUnmapped.Parent = testutil.Node("statement_b", "")
+		dstIsoUnmapped.Parent.Parent = dstBlock
+
+		mUnmappedParent := NewMapping()
+		mUnmappedParent.Add(srcIsoUnmapped, dstIsoUnmapped)
+		mUnmappedParent.Add(srcIsoUnmapped.Children[0], dstIsoUnmapped.Children[0])
+		mUnmappedParent.Add(srcIsoUnmapped.Children[1], dstIsoUnmapped.Children[1])
+		mUnmappedParent.Add(srcIsoUnmapped.Children[2], dstIsoUnmapped.Children[2])
+		RevokeOrphanedGlue(mUnmappedParent)
+		if mUnmappedParent.Has(srcIsoUnmapped) {
+			t.Fatal("isolated moving scalar sub-expression without matched parent should be revoked")
+		}
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		src := `package main
+
+func Process(x any) {
+	if x != nil && validate(x) {
+		println("valid")
+	}
+}
+
+func Helper(x any) bool {
+	return false
+}
+`
+		dst := `package main
+
+func Process(x any) {
+	if Helper(x) {
+		println("valid")
+	}
+}
+
+func Helper(x any) bool {
+	return x != nil && validate(x)
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcBinary, dstBinary *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "binary_expression" && len(n.Children) == 3 && n.Children[1].Label == "!=" {
+				srcBinary = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "binary_expression" && len(n.Children) == 3 && n.Children[1].Label == "!=" {
+				dstBinary = n
+				break
+			}
+		}
+
+		if srcBinary == nil || dstBinary == nil {
+			t.Fatalf("failed to locate binary_expression: src=%v, dst=%v", srcBinary, dstBinary)
+		}
+		if mr.Mappings.Src()[srcBinary] != dstBinary {
+			t.Errorf("expected moving scalar binary expression (x != nil) to remain mapped, got %v", mr.Mappings.Src()[srcBinary])
+		}
+	})
+}
