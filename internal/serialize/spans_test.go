@@ -782,8 +782,8 @@ func TestPartitionLineSpans_MoveUpdateInheritsEnclosingMoveColor(t *testing.T) {
 }
 
 func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
-	// Single-line token moves retain their slot color (Mauve), while multiline
-	// block moves collapse to uniform Teal to reduce visual clutter.
+	// Single-line token moves retain their slot color (Magenta), while multiline
+	// block moves collapse to uniform Cyan to reduce visual clutter.
 	fileBytes := []byte("foo(a, b)\nfunc MultiLine() {\n    return 42\n}\n")
 
 	singleLineAct := Action{
@@ -819,14 +819,14 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 		t.Fatalf("expected move span on line 0")
 	}
 	if singleSpan.ColorIndex != 1 {
-		t.Errorf("expected single-line move to retain ColorIndex 1 (Mauve), got %d", singleSpan.ColorIndex)
+		t.Errorf("expected single-line move to retain ColorIndex 1 (Magenta), got %d", singleSpan.ColorIndex)
 	}
 
 	if multiSpan == nil {
 		t.Fatalf("expected move span on line 1")
 	}
 	if multiSpan.ColorIndex != 0 {
-		t.Errorf("expected multiline move to have adaptive ColorIndex 0 (Teal), got %d", multiSpan.ColorIndex)
+		t.Errorf("expected multiline move to have adaptive ColorIndex 0 (Cyan), got %d", multiSpan.ColorIndex)
 	}
 
 	t.Run("single line with trailing newline", func(t *testing.T) {
@@ -885,14 +885,14 @@ func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.
 		t.Fatalf("expected opening brace move span on line 0")
 	}
 	if openSpan.ColorIndex != 1 {
-		t.Errorf("expected opening delimiter to have ColorIndex 1 (Mauve), got %d", openSpan.ColorIndex)
+		t.Errorf("expected opening delimiter to have ColorIndex 1 (Magenta), got %d", openSpan.ColorIndex)
 	}
 
 	if closeSpan == nil {
 		t.Fatalf("expected closing delimiter move span on line 2")
 	}
 	if closeSpan.ColorIndex != 1 {
-		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Mauve), got %d", closeSpan.ColorIndex)
+		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Magenta), got %d", closeSpan.ColorIndex)
 	}
 }
 

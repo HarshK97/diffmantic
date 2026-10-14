@@ -530,7 +530,7 @@ func TestAssignMoveColors(t *testing.T) {
 			t.Errorf("expected move 0 to have MoveColorIndex 0, got %d", actions[0].MoveColorIndex)
 		}
 		if actions[1].MoveColorIndex != 1 {
-			t.Errorf("expected move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
+			t.Errorf("expected move 1 to have MoveColorIndex 1 (Magenta), got %d", actions[1].MoveColorIndex)
 		}
 		if actions[2].MoveColorIndex != 0 {
 			t.Errorf("expected move 2 to wrap to MoveColorIndex 0 (modulo 2), got %d", actions[2].MoveColorIndex)
@@ -554,10 +554,10 @@ func TestAssignMoveColors(t *testing.T) {
 		}
 		AssignMoveColors(actions, srcOffsets, dstOffsets)
 		if actions[0].MoveColorIndex != 0 {
-			t.Errorf("expected swap move 0 to have MoveColorIndex 0 (Teal), got %d", actions[0].MoveColorIndex)
+			t.Errorf("expected swap move 0 to have MoveColorIndex 0 (Cyan), got %d", actions[0].MoveColorIndex)
 		}
 		if actions[1].MoveColorIndex != 1 {
-			t.Errorf("expected swap move 1 to have MoveColorIndex 1 (Mauve), got %d", actions[1].MoveColorIndex)
+			t.Errorf("expected swap move 1 to have MoveColorIndex 1 (Magenta), got %d", actions[1].MoveColorIndex)
 		}
 	})
 

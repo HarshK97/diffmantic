@@ -494,7 +494,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	return &env, nil
 }
 
-// AssignMoveColors assigns a color (0: Teal, 1: Mauve) to each move:
+// AssignMoveColors assigns a color (0: Cyan, 1: Magenta) to each move:
 //   - Grouped moves (siblings moving together between the same parents) share one color.
 //   - Children moving along inside a moving container inherit their parent's color.
 //   - Moves within 2 lines of each other get different colors so they don't blend together,

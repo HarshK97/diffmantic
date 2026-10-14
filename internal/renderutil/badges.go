@@ -14,8 +14,8 @@ import (
 type MoveBadges struct {
 	SrcLineBadges      map[int]string // Source line index -> " ➔ L{dst}"
 	DstLineBadges      map[int]string // Destination line index -> " ↳ L{src}"
-	SrcLineBadgeColors map[int]int    // Source line index -> Color index (0: Teal, 1: Mauve, 2: Sapphire)
-	DstLineBadgeColors map[int]int    // Destination line index -> Color index (0: Teal, 1: Mauve, 2: Sapphire)
+	SrcLineBadgeColors map[int]int    // Source line index -> Color index (0: Cyan, 1: Magenta)
+	DstLineBadgeColors map[int]int    // Destination line index -> Color index (0: Cyan, 1: Magenta)
 	HunkHeaders        map[int]string // Hunk index -> " func Foo() (moved to L{dst})"
 }
 

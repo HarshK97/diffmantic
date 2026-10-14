@@ -59,8 +59,8 @@ const (
 	InsertFg  = "\x1b[32m"
 	DeleteFg  = "\x1b[31m"
 	MoveFg    = "\x1b[36m"
-	Move0Fg   = "\x1b[36m" // Slot 0: Cyan / Teal
-	Move1Fg   = "\x1b[35m" // Slot 1: Magenta / Mauve
+	Move0Fg   = "\x1b[36m" // Slot 0: Cyan
+	Move1Fg   = "\x1b[35m" // Slot 1: Magenta
 	UpdateFg  = "\x1b[33m"
 	HeaderFg  = "\x1b[1;94m" // Bold Bright Blue
 	OverlayFg = "\x1b[90m"

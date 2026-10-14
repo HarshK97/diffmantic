@@ -62,7 +62,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	spansByLine := make(map[int][]internalSpan)
 
 	// Only the outermost move of a relocated block gets spans. The nested
-	// ones would paint the same teal twice.
+	// ones would paint the same color twice.
 	skipNestedMove := nestedMoveActions(actions)
 
 	for i := range actions {
