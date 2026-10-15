@@ -1202,3 +1202,199 @@ func TestAdjustRangeForContainer_EndToEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectMappedTrailingDelimiters(t *testing.T) {
+	t.Run("binary expression refactored to call highlights new comma between stationary args", func(t *testing.T) {
+		srcBytes := []byte("package p\nfunc f() bool {\n\treturn a.Type == b.Type\n}\n")
+		dstBytes := []byte("package p\nfunc f() bool {\n\treturn TypesMatch(a.Type, b.Type, r)\n}\n")
+
+		srcRoot, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstRoot, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		var srcA, dstA *treesitter.ASTNode
+		for _, n := range srcRoot.PreOrder() {
+			if n.Type == "selector_expression" && string(srcBytes[n.StartByte:n.EndByte]) == "a.Type" {
+				srcA = n
+				break
+			}
+		}
+		for _, n := range dstRoot.PreOrder() {
+			if n.Type == "selector_expression" && string(dstBytes[n.StartByte:n.EndByte]) == "a.Type" {
+				dstA = n
+				break
+			}
+		}
+		if srcA == nil || dstA == nil {
+			t.Fatalf("failed to locate a.Type selector_expression nodes")
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcA, dstA)
+
+		left, right := collectMappedTrailingDelimiters(ms, srcRoot, srcBytes, dstBytes)
+		if len(left) != 0 {
+			t.Errorf("expected 0 left delimiter spans, got %+v", left)
+		}
+		if len(right) != 1 {
+			t.Fatalf("expected 1 right delimiter span for inserted comma after a.Type, got %+v", right)
+		}
+		got := string(dstBytes[right[0].StartByte:right[0].EndByte])
+		if right[0].Action != "insert" || got != ", " {
+			t.Errorf("expected right delimiter span action='insert' text=', ', got action=%q text=%q", right[0].Action, got)
+		}
+
+		// Reverse direction: call refactored back to binary expression highlights deleted comma.
+		msRev := engine.NewMapping()
+		msRev.Add(dstA, srcA)
+		leftRev, rightRev := collectMappedTrailingDelimiters(msRev, dstRoot, dstBytes, srcBytes)
+		if len(rightRev) != 0 {
+			t.Errorf("expected 0 right delimiter spans in reverse, got %+v", rightRev)
+		}
+		if len(leftRev) != 1 {
+			t.Fatalf("expected 1 left delimiter span in reverse, got %+v", leftRev)
+		}
+		// In the reversed call, dstBytes acts as the source (left) side.
+		gotRev := string(dstBytes[leftRev[0].StartByte:leftRev[0].EndByte])
+		if leftRev[0].Action != "delete" || gotRev != ", " {
+			t.Errorf("expected left delimiter span action='delete' text=', ', got action=%q text=%q", leftRev[0].Action, gotRev)
+		}
+	})
+
+	t.Run("unwrapping expression inside mapped argument_list preserves existing comma", func(t *testing.T) {
+		srcBytes := []byte("package p\nfunc f() {\n\tfoo(a + b, c)\n}\n")
+		dstBytes := []byte("package p\nfunc f() {\n\tfoo(a, c)\n}\n")
+
+		srcRoot, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstRoot, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		var srcArgs, dstArgs, srcA, dstA *treesitter.ASTNode
+		for _, n := range srcRoot.PreOrder() {
+			if n.Type == "argument_list" {
+				srcArgs = n
+			} else if n.Type == "identifier" && n.Label == "a" {
+				srcA = n
+			}
+		}
+		for _, n := range dstRoot.PreOrder() {
+			if n.Type == "argument_list" {
+				dstArgs = n
+			} else if n.Type == "identifier" && n.Label == "a" {
+				dstA = n
+			}
+		}
+		if srcArgs == nil || dstArgs == nil || srcA == nil || dstA == nil {
+			t.Fatalf("failed to find expected AST nodes")
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcArgs, dstArgs)
+		ms.Add(srcA, dstA)
+
+		left, right := collectMappedTrailingDelimiters(ms, srcRoot, srcBytes, dstBytes)
+		if len(left) != 0 || len(right) != 0 {
+			t.Errorf("expected 0 delimiter spans when comma was inherited from enclosing slot, got left=%+v right=%+v", left, right)
+		}
+	})
+}
+
+func TestCollectMappedTrailingDelimiters_EndToEnd(t *testing.T) {
+	t.Run("multiline item gaining trailing comma emits insert highlight without action churn", func(t *testing.T) {
+		oldSrc := "package p\n\nvar x = []int{\n\t1,\n\t2\n}\n"
+		newSrc := "package p\n\nvar x = []int{\n\t1,\n\t2,\n}\n"
+
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// 1. Verify 1:1 action purity: no synthetic actions emitted for the trailing comma.
+		if len(env.Actions) != 0 {
+			t.Errorf("expected 0 AST actions for stationary elements, got %d", len(env.Actions))
+		}
+
+		// 2. Verify right highlights contain the inserted comma on line 4 (0-indexed).
+		var commaSpan *HighlightSpan
+		for i := range env.RightHighlights {
+			h := &env.RightHighlights[i]
+			if h.Line == 4 && h.Action == "insert" {
+				commaSpan = h
+				break
+			}
+		}
+		if commaSpan == nil {
+			t.Fatalf("expected insert highlight span for added trailing comma on line 4, got %+v", env.RightHighlights)
+		}
+		if commaSpan.StartCol != 2 || commaSpan.EndCol != 3 {
+			t.Errorf("expected comma highlight at cols 2..3, got %d..%d", commaSpan.StartCol, commaSpan.EndCol)
+		}
+	})
+
+	t.Run("binary expression refactored to call highlights inserted comma between stationary args", func(t *testing.T) {
+		oldSrc := "package p\n\nfunc f() bool {\n\treturn a.Type == b.Type\n}\n"
+		newSrc := "package p\n\nfunc f() bool {\n\treturn TypesMatch(a.Type, b.Type, r)\n}\n"
+
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Verify line 3 has an insert highlight covering the comma after a.Type (cols 25..26).
+		var commaSpan *HighlightSpan
+		for i := range env.RightHighlights {
+			h := &env.RightHighlights[i]
+			if h.Line == 3 && h.Action == "insert" && h.StartCol == 25 && h.EndCol == 26 {
+				commaSpan = h
+				break
+			}
+		}
+		if commaSpan == nil {
+			t.Fatalf("expected insert highlight span for comma after a.Type at cols 25..26 on line 3, got %+v", env.RightHighlights)
+		}
+	})
+}
