@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -472,6 +473,11 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 			}
 		}
 	}
+	if opts.IncludeHighlights && ms != nil {
+		extraLeft, extraRight := collectMappedTrailingDelimiters(ms, srcRoot, srcBytes, dstBytes)
+		leftDelims = append(leftDelims, extraLeft...)
+		rightDelims = append(rightDelims, extraRight...)
+	}
 
 	hasMoves := slices.ContainsFunc(actionsList, func(a Action) bool {
 		return a.Action == "move" || a.Action == "move_update"
@@ -841,6 +847,134 @@ func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
 	tok := bytes.Trim(trimmed, ",; \t\r\n")
 	return bytes.Equal(tok, []byte("}")) || bytes.Equal(tok, []byte("]")) ||
 		bytes.Equal(tok, []byte(")")) || bytes.Equal(tok, []byte("end"))
+}
+
+// collectMappedTrailingDelimiters compares syntax trivia trailing separators across
+// mapped AST pairs and emits delete or insert delimiter spans when a stationary node
+// gains or loses a comma or semicolon.
+func collectMappedTrailingDelimiters(
+	ms *engine.Mapping,
+	srcRoot *treesitter.ASTNode,
+	srcBytes, dstBytes []byte,
+) (left, right []DelimiterSpan) {
+	if ms == nil || (len(srcBytes) == 0 && len(dstBytes) == 0) {
+		return nil, nil
+	}
+
+	visitPair := func(srcNode, dstNode *treesitter.ASTNode) {
+		if srcNode == nil || dstNode == nil {
+			return
+		}
+		srcTok, sStart, sEnd, srcOk := ownTrailingSeparator(srcNode, srcBytes)
+		dstTok, dStart, dEnd, dstOk := ownTrailingSeparator(dstNode, dstBytes)
+
+		if srcOk && (!dstOk || dstTok != srcTok) && !hasMatchingTrailingSeparator(srcNode, dstNode, srcTok, ms.Src(), dstBytes) {
+			left = append(left, DelimiterSpan{
+				StartByte: sStart,
+				EndByte:   sEnd,
+				Action:    "delete",
+			})
+		}
+		if dstOk && (!srcOk || srcTok != dstTok) && !hasMatchingTrailingSeparator(dstNode, srcNode, dstTok, ms.Dst(), srcBytes) {
+			right = append(right, DelimiterSpan{
+				StartByte: dStart,
+				EndByte:   dEnd,
+				Action:    "insert",
+			})
+		}
+	}
+
+	if srcRoot != nil {
+		for _, srcNode := range srcRoot.PreOrder() {
+			if dstNode := ms.Src()[srcNode]; dstNode != nil {
+				visitPair(srcNode, dstNode)
+			}
+		}
+	} else if len(ms.Pairs) > 0 {
+		for _, p := range ms.Pairs {
+			visitPair(p.Src, p.Dst)
+		}
+	} else {
+		for srcNode, dstNode := range ms.Src() {
+			visitPair(srcNode, dstNode)
+		}
+	}
+
+	slices.SortFunc(left, func(a, b DelimiterSpan) int {
+		return cmp.Or(
+			cmp.Compare(a.StartByte, b.StartByte),
+			cmp.Compare(a.EndByte, b.EndByte),
+		)
+	})
+	slices.SortFunc(right, func(a, b DelimiterSpan) int {
+		return cmp.Or(
+			cmp.Compare(a.StartByte, b.StartByte),
+			cmp.Compare(a.EndByte, b.EndByte),
+		)
+	})
+	return left, right
+}
+
+// ownTrailingSeparator returns the syntax trivia trailing separator token (such as a comma)
+// and byte range directly attached to n, absorbing trailing horizontal whitespace when inside
+// a delimited container.
+func ownTrailingSeparator(n *treesitter.ASTNode, fileBytes []byte) (tok string, start, end uint32, ok bool) {
+	if n == nil || len(fileBytes) == 0 {
+		return "", 0, 0, false
+	}
+	trivia := n.SyntaxTrivia()
+	if trivia == nil || trivia.TrailingEnd <= trivia.TrailingStart {
+		return "", 0, 0, false
+	}
+	fileLen := uint32(len(fileBytes))
+	parentEnd := fileLen
+	if n.Parent != nil && n.Parent.EndByte < parentEnd {
+		parentEnd = n.Parent.EndByte
+	}
+	tStart := min(trivia.TrailingStart, parentEnd)
+	tEnd := min(trivia.TrailingEnd, parentEnd)
+	if tEnd <= tStart || tStart < n.EndByte {
+		return "", 0, 0, false
+	}
+	tok = string(fileBytes[tStart:tEnd])
+	if n.Parent != nil && rules.IsDelimitedContainer(n.Parent.Type) {
+		for tEnd < parentEnd && (fileBytes[tEnd] == ' ' || fileBytes[tEnd] == '\t') {
+			tEnd++
+		}
+	}
+	return tok, tStart, tEnd, true
+}
+
+// hasMatchingTrailingSeparator checks whether partner already owns the separator through
+// an ancestor wrapper or enclosing container slot, avoiding false comma diffs when expressions
+// are wrapped or unwrapped inside the same container.
+func hasMatchingTrailingSeparator(
+	node, partner *treesitter.ASTNode,
+	tok string,
+	parentMap map[*treesitter.ASTNode]*treesitter.ASTNode,
+	partnerBytes []byte,
+) bool {
+	if node == nil || partner == nil || tok == "" {
+		return false
+	}
+	for anc := partner.Parent; anc != nil && anc.EndByte == partner.EndByte; anc = anc.Parent {
+		if ancTok, _, _, ok := ownTrailingSeparator(anc, partnerBytes); ok && ancTok == tok {
+			return true
+		}
+	}
+	if node.Parent != nil && parentMap != nil {
+		if mappedParent := parentMap[node.Parent]; mappedParent != nil && mappedParent.Contains(partner) {
+			for anc := partner; anc != nil && anc != mappedParent; anc = anc.Parent {
+				if anc.Parent == mappedParent {
+					if ancTok, _, _, ok := ownTrailingSeparator(anc, partnerBytes); ok && ancTok == tok {
+						return true
+					}
+					break
+				}
+			}
+		}
+	}
+	return false
 }
 
 // ptr returns a pointer to v. It exists because tree-sitter-go does not yet support Go's new(value)
