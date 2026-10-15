@@ -688,6 +688,96 @@ func TestInlineParentSuppression(t *testing.T) {
 			t.Error("expected child Move action to survive")
 		}
 	})
+
+	// (k) Drop multi-child container inserts when all direct children are mapped.
+	// For example, in a scoped identifier with a stationary prefix and a moved name,
+	// keeping the container insert would falsely highlight the prefix as added.
+	t.Run("all-mapped-multi-child-container-suppressed-on-move", func(t *testing.T) {
+		srcPrefix := &treesitter.ASTNode{Type: "scoped_identifier", StartByte: 181, EndByte: 202, StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 25}
+		srcHunk := &treesitter.ASTNode{Type: "identifier", Label: "Hunk", StartByte: 220, EndByte: 224, StartRow: 6, StartCol: 43, EndRow: 6, EndCol: 47}
+		srcUseList := &treesitter.ASTNode{
+			Type:      "use_list",
+			StartByte: 204, EndByte: 225,
+			StartRow: 6, StartCol: 27, EndRow: 6, EndCol: 48,
+			Children: []*treesitter.ASTNode{srcHunk},
+		}
+		srcScopedUseList := &treesitter.ASTNode{
+			Type:      "scoped_use_list",
+			StartByte: 181, EndByte: 225,
+			StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 48,
+			Children: []*treesitter.ASTNode{srcPrefix, srcUseList},
+		}
+		srcScopedUseList.Language = "rust"
+		srcPrefix.Parent = srcScopedUseList
+		srcUseList.Parent = srcScopedUseList
+		srcHunk.Parent = srcUseList
+
+		dstPrefix := &treesitter.ASTNode{Type: "scoped_identifier", StartByte: 181, EndByte: 202, StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 25}
+		dstHunk := &treesitter.ASTNode{Type: "identifier", Label: "Hunk", StartByte: 204, EndByte: 208, StartRow: 6, StartCol: 27, EndRow: 6, EndCol: 31}
+		dstOuter := &treesitter.ASTNode{
+			Type:      "scoped_identifier",
+			StartByte: 181, EndByte: 208,
+			StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 31,
+			Children: []*treesitter.ASTNode{dstPrefix, dstHunk},
+		}
+		dstOuter.Language = "rust"
+		dstPrefix.Parent = dstOuter
+		dstHunk.Parent = dstOuter
+
+		ms := engine.NewMapping()
+		ms.Add(srcPrefix, dstPrefix)
+		ms.Add(srcHunk, dstHunk)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Insert, Node: dstOuter})
+		es.Add(actions.Action{Type: actions.Move, Node: srcHunk, DestNode: dstHunk, Parent: dstOuter, Position: 1})
+
+		collapsed := Collapse(es, ms, srcScopedUseList, dstOuter)
+
+		outerSurvives := false
+		moveSurvives := false
+		for _, a := range collapsed.Actions() {
+			if a.Node == dstOuter && a.Type == actions.Insert {
+				outerSurvives = true
+			}
+			if a.Node == srcHunk && a.Type == actions.Move {
+				moveSurvives = true
+			}
+		}
+		if outerSurvives {
+			t.Error("expected outer scoped_identifier Insert to be suppressed when all children are mapped")
+		}
+		if !moveSurvives {
+			t.Error("expected child Hunk Move action to survive")
+		}
+	})
+
+	t.Run("all-mapped-multi-child-container-suppressed-on-move-end-to-end", func(t *testing.T) {
+		oldSrc := "use foo::bar::{Hunk};\n"
+		newSrc := "use foo::bar::Hunk;\n"
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		collapsed := Collapse(es, mr.Mappings, oldAST, newAST)
+
+		for _, a := range collapsed.Actions() {
+			if a.Type == actions.Insert && a.Node.Type == "scoped_identifier" {
+				t.Errorf("expected outer scoped_identifier Insert to be suppressed, but found: %+v", a)
+			}
+		}
+	})
 }
 
 func TestParentMoveWithDeletedDescendant(t *testing.T) {

@@ -140,8 +140,8 @@ func Collapse(
 		}
 	}
 
-	suppressSurvivingContainers(deleted, ms.Src(), suppressed)
-	suppressSurvivingContainers(inserted, ms.Dst(), suppressed)
+	suppressSurvivingContainers(deleted, moved, updated, ms.Src(), true /* isSrc */, suppressed)
+	suppressSurvivingContainers(inserted, moved, updated, ms.Dst(), false /* isSrc */, suppressed)
 
 	suppressInlineParentRedundancy(actionPtrs, ms, inserted, deleted, suppressed)
 
@@ -326,13 +326,32 @@ func isReceiverMapped(n *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitt
 }
 
 // suppressSurvivingContainers drops container delete/insert actions when direct children survived
-// and modified tokens already have their own actions, or if it's a 1:1 wrapper. Delimited containers
-// and declarations are kept so delimiters and keywords stay highlighted.
+// and modified tokens already have their own actions, when all direct children are mapped with
+// moving/updated descendants, or when it's a 1:1 wrapper. Delimited containers and declarations
+// stay intact so delimiters and keywords remain highlighted.
 func suppressSurvivingContainers(
-	actionMap map[*treesitter.ASTNode]*actions.Action,
+	actionMap, moved, updated map[*treesitter.ASTNode]*actions.Action,
 	targetMap map[*treesitter.ASTNode]*treesitter.ASTNode,
+	isSrc bool,
 	suppressed map[*actions.Action]bool,
 ) {
+	hasMoveOrUpdate := func(d *treesitter.ASTNode) bool {
+		srcNode := d
+		if !isSrc {
+			srcNode = targetMap[d]
+		}
+		if srcNode == nil {
+			return false
+		}
+		if moveAct, ok := moved[srcNode]; ok && !suppressed[moveAct] {
+			return true
+		}
+		if updAct, ok := updated[srcNode]; ok && !suppressed[updAct] {
+			return true
+		}
+		return false
+	}
+
 	for parent, act := range actionMap {
 		r := rules.Get(parent.GetLanguage())
 		if len(parent.Children) == 0 || isDelimitedContainer(parent) || (r != nil && r.IsDeclaration(parent.Type) && !r.IsWrapper(parent.Type)) {
@@ -344,13 +363,11 @@ func suppressSurvivingContainers(
 			continue
 		}
 		hasMapped := hasMappedChildOrWrapper(parent, targetMap, r) || isReceiverMapped(parent, targetMap)
-		hasDescAction := false
-		for _, d := range parent.Descendants() {
-			if childAct, ok := actionMap[d]; ok && !suppressed[childAct] {
-				hasDescAction = true
-				break
-			}
-		}
+		desc := parent.Descendants()
+		hasDescAction := slices.ContainsFunc(desc, func(d *treesitter.ASTNode) bool {
+			childAct, ok := actionMap[d]
+			return ok && !suppressed[childAct]
+		})
 		allChildrenMapped := true
 		for _, child := range parent.Children {
 			if _, ok := targetMap[child]; !ok {
@@ -363,7 +380,7 @@ func suppressSurvivingContainers(
 			parent.EndByte == parent.Children[0].EndByte &&
 			parent.IsWrapper()))
 
-		if (hasMapped && hasDescAction) || transparentWrapper {
+		if (hasMapped && hasDescAction) || transparentWrapper || (allChildrenMapped && slices.ContainsFunc(desc, hasMoveOrUpdate)) {
 			suppressed[act] = true
 		}
 	}
