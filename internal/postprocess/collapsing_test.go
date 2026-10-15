@@ -1574,3 +1574,85 @@ func TestNearAtomicSubtreeCollapsing_Threshold75Percent(t *testing.T) {
 		}
 	})
 }
+
+func TestPromoteOrphanedChildren_SkipsHollowUndelimitedWrapper(t *testing.T) {
+	// Source: opDeleted = true (assignment_statement)
+	lhsIdentSrc := &treesitter.ASTNode{Type: "identifier", Label: "opDeleted", StartByte: 0, EndByte: 9, Language: "go"}
+	lhsListSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 0, EndByte: 9, Children: []*treesitter.ASTNode{lhsIdentSrc}, Language: "go"}
+	lhsIdentSrc.Parent = lhsListSrc
+
+	eqSrc := &treesitter.ASTNode{Type: "=", Label: "=", StartByte: 10, EndByte: 11, Language: "go"}
+
+	trueLitSrc := &treesitter.ASTNode{Type: "true", Label: "true", StartByte: 12, EndByte: 16, Language: "go"}
+	rhsListSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 12, EndByte: 16, Children: []*treesitter.ASTNode{trueLitSrc}, Language: "go"}
+	trueLitSrc.Parent = rhsListSrc
+
+	assignSrc := &treesitter.ASTNode{
+		Type:      "assignment_statement",
+		StartByte: 0,
+		EndByte:   16,
+		Children:  []*treesitter.ASTNode{lhsListSrc, eqSrc, rhsListSrc},
+		Language:  "go",
+	}
+	lhsListSrc.Parent = assignSrc
+	eqSrc.Parent = assignSrc
+	rhsListSrc.Parent = assignSrc
+
+	// Destination: opDeleted := slices.ContainsFunc(...) (short_var_declaration)
+	lhsIdentDst := &treesitter.ASTNode{Type: "identifier", Label: "opDeleted", StartByte: 100, EndByte: 109, Language: "go"}
+	lhsListDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 100, EndByte: 109, Children: []*treesitter.ASTNode{lhsIdentDst}, Language: "go"}
+	lhsIdentDst.Parent = lhsListDst
+
+	colonEqDst := &treesitter.ASTNode{Type: ":=", Label: ":=", StartByte: 110, EndByte: 112, Language: "go"}
+
+	condSrc := &treesitter.ASTNode{Type: "binary_expression", StartByte: 50, EndByte: 70, Language: "go"}
+	condDst := &treesitter.ASTNode{Type: "binary_expression", StartByte: 130, EndByte: 150, Language: "go"}
+	callDst := &treesitter.ASTNode{Type: "call_expression", StartByte: 113, EndByte: 180, Children: []*treesitter.ASTNode{condDst}, Language: "go"}
+	condDst.Parent = callDst
+	rhsListDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 113, EndByte: 180, Children: []*treesitter.ASTNode{callDst}, Language: "go"}
+	callDst.Parent = rhsListDst
+
+	shortVarDst := &treesitter.ASTNode{
+		Type:      "short_var_declaration",
+		StartByte: 100,
+		EndByte:   180,
+		Children:  []*treesitter.ASTNode{lhsListDst, colonEqDst, rhsListDst},
+		Language:  "go",
+	}
+	lhsListDst.Parent = shortVarDst
+	colonEqDst.Parent = shortVarDst
+	rhsListDst.Parent = shortVarDst
+
+	ms := engine.NewMapping()
+	ms.Add(assignSrc, shortVarDst)
+	ms.Add(lhsListSrc, lhsListDst)
+	ms.Add(lhsIdentSrc, lhsIdentDst)
+	ms.Add(eqSrc, colonEqDst)
+	ms.Add(condSrc, condDst) // cross-mapped into callDst from outside assignSrc, triggering Subtree demotion
+	// rhsListSrc only holds 'true' and rhsListDst only holds 'callDst'.
+	// Neither child is mapped to the other, so the wrapper is hollow.
+	ms.Add(rhsListSrc, rhsListDst)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{
+		Type:     actions.Move,
+		Node:     assignSrc,
+		DestNode: shortVarDst,
+		Parent:   shortVarDst,
+		Subtree:  true,
+	})
+	es.Add(actions.Action{Type: actions.Update, Node: eqSrc, DestNode: colonEqDst})
+	es.Add(actions.Action{Type: actions.Delete, Node: trueLitSrc})
+	es.Add(actions.Action{Type: actions.Insert, Node: callDst, Subtree: true})
+
+	collapsed := Collapse(es, ms, assignSrc, shortVarDst)
+
+	for _, act := range collapsed.Actions() {
+		if act.Type == actions.Move && act.Node == rhsListSrc {
+			t.Errorf("expected hollow undelimited wrapper rhsListSrc NOT to be promoted to Move, got %+v", act)
+		}
+	}
+	if ms.Has(rhsListSrc) {
+		t.Errorf("expected hollow undelimited wrapper rhsListSrc to be removed from mapping")
+	}
+}

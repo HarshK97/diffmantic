@@ -674,6 +674,52 @@ func TestAssignMoveColors(t *testing.T) {
 			t.Errorf("expected grouped moves to share MoveColorIndex 0, got %d and %d", actions[0].MoveColorIndex, actions[1].MoveColorIndex)
 		}
 	})
+
+	t.Run("child co-mover under equivalent parent type inherits parent color", func(t *testing.T) {
+		parentSrc := &treesitter.ASTNode{Type: "assignment_statement", StartByte: 20, EndByte: 35, Language: "go"}
+		childSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 20, EndByte: 29, Parent: parentSrc, Language: "go"}
+		parentSrc.Children = []*treesitter.ASTNode{childSrc}
+
+		parentDst := &treesitter.ASTNode{Type: "short_var_declaration", StartByte: 80, EndByte: 95, Language: "go"}
+		childDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 80, EndByte: 89, Parent: parentDst, Language: "go"}
+		parentDst.Children = []*treesitter.ASTNode{childDst}
+
+		// Move 0 and Move 1 conflict on adjacent lines, so Move 1 gets color 1.
+		// Move 2 is a child of Move 1 (with only DestStartByte set, relying on EquivalentTypes matching),
+		// so it should inherit Move 1's color.
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(0)),
+				DestEndByte:   ptr(uint32(10)),
+			},
+			{
+				Action:        "move",
+				ASTNode:       parentSrc,
+				Node:          &NodeRef{Type: "assignment_statement", StartByte: 20, EndByte: 35},
+				DestStartByte: ptr(uint32(80)),
+				DestEndByte:   ptr(uint32(95)),
+			},
+			{
+				Action:        "move",
+				ASTNode:       childSrc,
+				DestASTNode:   childDst,
+				Node:          &NodeRef{Type: "expression_list", StartByte: 20, EndByte: 29},
+				OldParent:     &NodeRef{Type: "assignment_statement", StartByte: 20, EndByte: 35},
+				Parent:        &NodeRef{Type: "short_var_declaration", StartByte: 80, EndByte: 95},
+				DestStartByte: ptr(uint32(80)),
+				DestEndByte:   ptr(uint32(89)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[1].MoveColorIndex != 1 {
+			t.Fatalf("expected parent move to get color 1, got %d", actions[1].MoveColorIndex)
+		}
+		if actions[2].MoveColorIndex != actions[1].MoveColorIndex {
+			t.Errorf("expected child co-mover across EquivalentTypes to inherit parent color %d, got %d", actions[1].MoveColorIndex, actions[2].MoveColorIndex)
+		}
+	})
 }
 
 func TestAssignMoveColors_EndToEnd(t *testing.T) {
@@ -965,4 +1011,194 @@ func TestAdjustRangeForContainer_MultilineWrapperWithBlock(t *testing.T) {
 			t.Errorf("expected callExpr footer [27, 28], got [%d, %d]", fStart, fEnd)
 		}
 	})
+}
+
+func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T) {
+	fileBytes := []byte("opDeleted := slices.ContainsFunc(result.Actions(), func() {\n\treturn\n})")
+	shortVar := &treesitter.ASTNode{
+		Type:      "short_var_declaration",
+		Language:  "go",
+		StartByte: 0,
+		EndByte:   uint32(len(fileBytes)),
+		StartRow:  0,
+		EndRow:    2,
+	}
+	lhsList := &treesitter.ASTNode{
+		Type:      "expression_list",
+		Language:  "go",
+		StartByte: 0,
+		EndByte:   9,
+		StartRow:  0,
+		EndRow:    0,
+		Parent:    shortVar,
+	}
+	colonEq := &treesitter.ASTNode{
+		Type:      ":=",
+		Language:  "go",
+		StartByte: 10,
+		EndByte:   12,
+		StartRow:  0,
+		EndRow:    0,
+		Parent:    shortVar,
+	}
+	rhsList := &treesitter.ASTNode{
+		Type:      "expression_list",
+		Language:  "go",
+		StartByte: 13,
+		EndByte:   uint32(len(fileBytes)),
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    shortVar,
+	}
+	shortVar.Children = []*treesitter.ASTNode{lhsList, colonEq, rhsList}
+
+	callExpr := &treesitter.ASTNode{
+		Type:      "call_expression",
+		Language:  "go",
+		StartByte: 13,
+		EndByte:   uint32(len(fileBytes)),
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    rhsList,
+	}
+	rhsList.Children = []*treesitter.ASTNode{callExpr}
+
+	argList := &treesitter.ASTNode{
+		Type:      "argument_list",
+		Language:  "go",
+		StartByte: 32,
+		EndByte:   uint32(len(fileBytes)),
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    callExpr,
+	}
+	callExpr.Children = []*treesitter.ASTNode{
+		{Type: "selector_expression", Language: "go", StartByte: 13, EndByte: 32, StartRow: 0, EndRow: 0, Parent: callExpr},
+		argList,
+	}
+
+	firstArgCall := &treesitter.ASTNode{
+		Type:      "call_expression",
+		Language:  "go",
+		StartByte: 33,
+		EndByte:   49,
+		StartRow:  0,
+		EndRow:    0,
+		Parent:    argList,
+	}
+	funcLit := &treesitter.ASTNode{
+		Type:      "func_literal",
+		Language:  "go",
+		StartByte: 51,
+		EndByte:   uint32(len(fileBytes) - 1),
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    argList,
+	}
+	argList.Children = []*treesitter.ASTNode{firstArgCall, funcLit}
+
+	block := &treesitter.ASTNode{
+		Type:      "block",
+		Language:  "go",
+		StartByte: 58,
+		EndByte:   uint32(len(fileBytes) - 1),
+		StartRow:  0,
+		EndRow:    2,
+		Parent:    funcLit,
+	}
+	funcLit.Children = []*treesitter.ASTNode{block}
+	retStmt := &treesitter.ASTNode{
+		Type:      "return_statement",
+		Language:  "go",
+		StartByte: 61,
+		EndByte:   67,
+		StartRow:  1,
+		EndRow:    1,
+		Parent:    block,
+	}
+	block.Children = []*treesitter.ASTNode{retStmt}
+
+	// Make sure the var declaration header clamps before the multiline RHS (byte 13) and doesn't claim a closing delimiter.
+	start := uint32(0)
+	end := uint32(len(fileBytes))
+	hasFooter, _, _ := adjustRangeForContainer(shortVar, &start, &end, fileBytes)
+	if end != 13 {
+		t.Errorf("expected short_var_declaration prologue end to clamp to 13, got %d", end)
+	}
+	if hasFooter {
+		t.Errorf("expected short_var_declaration not to claim a closing footer")
+	}
+
+	// The argument list still needs its closing ')' even though its first child is a call expression.
+	argStart := argList.StartByte
+	argEnd := argList.EndByte
+	argHasFooter, argFStart, argFEnd := adjustRangeForContainer(argList, &argStart, &argEnd, fileBytes)
+	if !argHasFooter {
+		t.Fatalf("expected 2-arg argument_list to preserve its closing ')' footer")
+	}
+	if argFStart != uint32(len(fileBytes)-1) || argFEnd != uint32(len(fileBytes)) {
+		t.Errorf("expected argument_list footer [%d, %d], got [%d, %d]", len(fileBytes)-1, len(fileBytes), argFStart, argFEnd)
+	}
+}
+
+func TestAdjustRangeForContainer_EndToEnd(t *testing.T) {
+	oldSrc := `fn f() void {
+    a();
+    b();
+    c();
+}
+`
+	newSrc := `fn f() void {
+    if (cond) {
+        x();
+    } else {
+        a();
+        b();
+        c();
+    }
+}
+`
+	oldAST, err := treesitter.Parse([]byte(oldSrc), "test.zig")
+	if err != nil {
+		t.Fatalf("parse oldSrc: %v", err)
+	}
+	newAST, err := treesitter.Parse([]byte(newSrc), "test.zig")
+	if err != nil {
+		t.Fatalf("parse newSrc: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+	mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+	es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+	es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+	env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeHighlights: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// 1. Verify else_clause clamps to the prologue keyword rather than spanning the entire block.
+	var elseAct *Action
+	for i := range env.Actions {
+		if env.Actions[i].Node != nil && env.Actions[i].Node.Type == "else_clause" {
+			elseAct = &env.Actions[i]
+			break
+		}
+	}
+	if elseAct == nil {
+		t.Fatalf("expected insert action for else_clause, found none")
+	}
+	if elseAct.Node.EndByte != 54 {
+		t.Errorf("expected else_clause prologue to clamp to byte 54, got %d", elseAct.Node.EndByte)
+	}
+
+	// 2. Verify right highlights on moved lines inside else block have no phantom insert spans.
+	for _, h := range env.RightHighlights {
+		if h.Line >= 4 && h.Line <= 6 && h.Action == "insert" && h.StartCol == 0 {
+			t.Errorf("found spurious insert highlight on moved line %d: %+v", h.Line, h)
+		}
+	}
 }

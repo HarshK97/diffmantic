@@ -426,7 +426,18 @@ func promoteOrphanedChildren(
 			continue
 		}
 
-		subtree := len(childSrc.Children) > 0 && canMoveAsSubtree(childSrc, childDst, ms)
+		subtree := len(childSrc.Children) > 0
+		if subtree {
+			r := rules.Get(childSrc.GetLanguage())
+			// Drop hollow wrappers (like an expression_list whose children were completely replaced).
+			// Without real mapped leaves, promoting them just creates phantom moves.
+			if !isDelimitedContainer(childSrc) && !isDelimitedContainer(childDst) &&
+				!hasSurvivingMappedLeaves(childSrc, childDst, ms.Src(), nil, r) {
+				ms.Remove(childSrc)
+				continue
+			}
+			subtree = canMoveAsSubtree(childSrc, childDst, ms)
+		}
 
 		newAct := &actions.Action{
 			Type:     actions.Move,

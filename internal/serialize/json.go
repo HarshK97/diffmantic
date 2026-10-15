@@ -614,11 +614,21 @@ func isChildCoMover(child, parent *Action) bool {
 	if child.Parent == nil {
 		return false
 	}
+	if parent.DestASTNode != nil {
+		return child.Parent.StartByte == parent.DestASTNode.StartByte && child.Parent.Type == parent.DestASTNode.Type
+	}
 	if parent.DestNode != nil {
 		return child.Parent.StartByte == parent.DestNode.StartByte && child.Parent.Type == parent.DestNode.Type
 	}
 	if parent.DestStartByte != nil {
-		return child.Parent.StartByte == *parent.DestStartByte && child.Parent.Type == parent.Node.Type
+		if child.Parent.StartByte != *parent.DestStartByte {
+			return false
+		}
+		var r *rules.Rules
+		if parent.ASTNode != nil {
+			r = rules.Get(parent.ASTNode.GetLanguage())
+		}
+		return engine.TypesMatch(child.Parent.Type, parent.Node.Type, r)
 	}
 	return false
 }
@@ -720,6 +730,15 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 					break
 				}
 			}
+			if firstBodyChild == nil {
+				for _, child := range n.Children {
+					if child.EndRow > n.StartRow && child.StartByte > *start && child.StartByte < *end &&
+						findDirectOrEnclosedBlock(child, r) != nil {
+						firstBodyChild = child
+						break
+					}
+				}
+			}
 			if firstBodyChild != nil {
 				origEnd := *end
 				*end = firstBodyChild.StartByte
@@ -779,7 +798,13 @@ func isCallOrCallStatement(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if r.IsCall(n.Type) {
 		return true
 	}
-	return (len(n.Children) == 1 || len(n.Children) == 2) && r.IsCall(n.Children[0].Type)
+	if len(n.Children) == 1 {
+		return r.IsCall(n.Children[0].Type)
+	}
+	if len(n.Children) == 2 {
+		return r.IsCall(n.Children[0].Type) && n.Children[0].EndRow == n.EndRow
+	}
+	return false
 }
 
 func isIndentationConstruct(n, child *treesitter.ASTNode) bool {
@@ -818,6 +843,9 @@ func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
 		bytes.Equal(tok, []byte(")")) || bytes.Equal(tok, []byte("end"))
 }
 
+// ptr returns a pointer to v. It exists because tree-sitter-go does not yet support Go's new(value)
+// syntax, so ptr() lets us take the address of literals and expressions inline without temporary
+// variables or tripping upstream Tree-sitter grammar errors.
 func ptr[T any](v T) *T {
 	return &v
 }
