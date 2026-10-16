@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestSimpleRecoveryLabelMatch(t *testing.T) {
@@ -536,4 +538,188 @@ func Run(mode int) {
 			t.Errorf("expected descendants of foreign duplicate (row 10) to remain unmapped")
 		}
 	})
+}
+
+func TestFindBestExpressionMatch_StopsAtClosureAndBlockBoundary(t *testing.T) {
+	// Outer call `sort.SliceStable(scored, func() { return dice })` vs
+	// `slices.SortStableFunc(scored, func() { return cmp.Or(dice) })`.
+	// Expression unwrapping must NOT tunnel through `func_literal` -> `block` -> `return_statement`
+	// to hijack the outer call onto the inner `cmp.Or(dice)` call.
+	outerCall1 := testutil.Node("call_expression", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "sort"),
+			testutil.Leaf("field_identifier", "SliceStable"),
+		),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("identifier", "scored"),
+			testutil.Node("func_literal", "",
+				testutil.Node("block", "",
+					testutil.Node("return_statement", "",
+						testutil.Leaf("field_identifier", "dice"),
+					),
+				),
+			),
+		),
+	)
+	outerCall1.Language = "go"
+
+	innerCmpCall := testutil.Node("call_expression", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "cmp"),
+			testutil.Leaf("field_identifier", "Or"),
+		),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("field_identifier", "dice"),
+		),
+	)
+	innerCmpCall.Language = "go"
+
+	outerCall2 := testutil.Node("call_expression", "",
+		testutil.Node("selector_expression", "",
+			testutil.Leaf("identifier", "slices"),
+			testutil.Leaf("field_identifier", "SortStableFunc"),
+		),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("identifier", "scored"),
+			testutil.Node("func_literal", "",
+				testutil.Node("block", "",
+					testutil.Node("return_statement", "",
+						innerCmpCall,
+					),
+				),
+			),
+		),
+	)
+	outerCall2.Language = "go"
+
+	r := rules.Get("go")
+	m := NewMapping()
+	cand := findUnwrappedDstExpressionCandidate(outerCall1, outerCall2, m, r)
+	if cand == innerCmpCall {
+		t.Errorf("findUnwrappedDstExpressionCandidate should not cross closure/block/statement boundary to return innerCmpCall")
+	}
+}
+
+func TestUniqueTypePairs_ClosureCallUsesContainerThreshold(t *testing.T) {
+	// Calls that wrap a closure contain a nested block inside their argument list.
+	// uniqueTypePairs should treat them as containers (needing >= 0.50 Dice)
+	// instead of flat expressions (0.25 overlap).
+	call1 := testutil.Node("call_expression", "",
+		testutil.Leaf("identifier", "sortSlice"),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("identifier", "scored"),
+			testutil.Node("func_literal", "",
+				testutil.Node("block", "",
+					testutil.Leaf("identifier", "a1"),
+					testutil.Leaf("identifier", "a2"),
+					testutil.Leaf("identifier", "a3"),
+					testutil.Leaf("identifier", "a4"),
+				),
+			),
+		),
+	)
+	call1.Language = "go"
+
+	call2 := testutil.Node("call_expression", "",
+		testutil.Leaf("identifier", "sortStableFunc"),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("identifier", "scored"),
+			testutil.Node("func_literal", "",
+				testutil.Node("block", "",
+					testutil.Leaf("identifier", "a1"),
+					testutil.Leaf("identifier", "b2"),
+					testutil.Leaf("identifier", "b3"),
+					testutil.Leaf("identifier", "b4"),
+					testutil.Leaf("identifier", "b5"),
+					testutil.Leaf("identifier", "b6"),
+				),
+			),
+		),
+	)
+	call2.Language = "go"
+
+	m := NewMapping()
+	pairs := uniqueTypePairs([]*treesitter.ASTNode{call1}, []*treesitter.ASTNode{call2}, m)
+	if len(pairs) != 0 {
+		t.Errorf("expected closure-wrapping calls with < 0.50 container Dice to be rejected by uniqueTypePairs, got %d pairs", len(pairs))
+	}
+
+	pairsRev := uniqueTypePairs([]*treesitter.ASTNode{call2}, []*treesitter.ASTNode{call1}, m)
+	if len(pairsRev) != 0 {
+		t.Errorf("expected reverse closure-wrapping call pair to be rejected by uniqueTypePairs, got %d pairs", len(pairsRev))
+	}
+}
+
+func TestRecovery_ClosureCallExpressionUnwrapping_EndToEnd(t *testing.T) {
+	// Replacing sortSliceStable with sortStableFunc returning cmpOr.
+	// Recovery and uniqueTypePairs must not tunnel through the closure boundary to pair
+	// the outer sortSliceStable call onto the inner cmpOr call.
+	src := `package main
+
+func sortItems(scored any) {
+	sortSliceStable(scored, func(i, j int) bool {
+		if a != b {
+			return a > b
+		}
+		return dice > ancSim
+	})
+}
+`
+	dst := `package main
+
+func sortItems(scored any) {
+	sortStableFunc(scored, func(a, b any) int {
+		return cmpOr(
+			compare(dice),
+			compare(ancSim),
+		)
+	})
+}
+`
+	srcBytes := []byte(src)
+	dstBytes := []byte(dst)
+
+	srcAST, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+
+	part := NewLinePartition(srcBytes, dstBytes)
+	mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+
+	var srcOuterCall *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "call_expression" && strings.HasPrefix(string(srcBytes[n.StartByte:n.EndByte]), "sortSliceStable") {
+			srcOuterCall = n
+			break
+		}
+	}
+
+	var dstInnerCmpCall *treesitter.ASTNode
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "call_expression" && strings.HasPrefix(string(dstBytes[n.StartByte:n.EndByte]), "cmpOr") {
+			dstInnerCmpCall = n
+			break
+		}
+	}
+
+	if srcOuterCall == nil || dstInnerCmpCall == nil {
+		t.Fatalf("failed to locate target calls: srcOuterCall=%v, dstInnerCmpCall=%v", srcOuterCall, dstInnerCmpCall)
+	}
+
+	// On main without the boundary guard and container Dice threshold,
+	// uniqueTypePairs and findBestExpressionMatch mapped srcOuterCall to dstInnerCmpCall.
+	if mapped := mr.Mappings.Src()[srcOuterCall]; mapped == dstInnerCmpCall {
+		t.Errorf("outer sortSliceStable call was erroneously mapped to inner cmpOr call across closure boundary")
+	}
+	if mr.Mappings.Dst()[dstInnerCmpCall] != nil {
+		t.Errorf("inner cmpOr call should remain unmapped, got %v", mr.Mappings.Dst()[dstInnerCmpCall])
+	}
 }
