@@ -39,57 +39,95 @@ func TestIsGitRepository(t *testing.T) {
 }
 
 func TestGetStatus(t *testing.T) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current working directory: %v", err)
+	tempDir := t.TempDir()
+	if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init"); err != nil {
+		t.Fatalf("initial commit failed: %v", err)
 	}
 
-	files, err := GetStatus(cwd, "")
+	// Clean repo
+	clean, err := GetStatus(tempDir, "")
 	if err != nil {
-		t.Fatalf("failed to get git status: %v", err)
+		t.Fatalf("GetStatus on clean repo failed: %v", err)
+	}
+	if len(clean) != 0 {
+		t.Errorf("expected 0 files in clean repo, got %d", len(clean))
 	}
 
-	if len(files) == 0 {
-		t.Log("Warning: Git status returned 0 files. This is fine if working directory is clean.")
-	} else {
-		for _, f := range files {
-			if f.Path == "" {
-				t.Error("expected non-empty path for Git status file")
-			}
-			t.Logf("File: %s, Status: %s, Staged: %t, Unstaged: %t", f.Path, f.Status, f.Staged, f.Unstaged)
-		}
+	// Staged file
+	testFile := filepath.Join(tempDir, "hello.go")
+	if err := os.WriteFile(testFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "add", "hello.go"); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+
+	files, err := GetStatus(tempDir, "")
+	if err != nil {
+		t.Fatalf("GetStatus after staging failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if files[0].Path != "hello.go" {
+		t.Errorf("expected path 'hello.go', got %q", files[0].Path)
+	}
+	if !files[0].Staged {
+		t.Error("expected Staged=true for newly added file")
+	}
+
+	// Path filter
+	filtered, err := GetStatus(tempDir, "nonexistent.go")
+	if err != nil {
+		t.Fatalf("GetStatus with pathFilter failed: %v", err)
+	}
+	if len(filtered) != 0 {
+		t.Errorf("expected 0 files with non-matching filter, got %d", len(filtered))
 	}
 }
 
 func TestGetChangedFiles(t *testing.T) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current working directory: %v", err)
+	tempDir := t.TempDir()
+	if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init"); err != nil {
+		t.Fatalf("initial commit failed: %v", err)
 	}
 
-	// Test Status mode (no refs)
-	files, err := GetChangedFiles(cwd, "", "", "")
-	if err != nil {
-		t.Fatalf("failed to get changed files (status mode): %v", err)
+	filePath := filepath.Join(tempDir, "hello.go")
+	if err := os.WriteFile(filePath, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write file failed: %v", err)
 	}
-	t.Logf("Changed files (status mode): %d", len(files))
+	if _, err := RunGit(tempDir, "add", "hello.go"); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "add hello"); err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
 
-	// Test Ref mode (HEAD~1 vs HEAD)
-	// We check if HEAD~1 is valid first
-	_, err = RunGit(cwd, "rev-parse", "HEAD~1")
-	if err == nil {
-		refFiles, err := GetChangedFiles(cwd, "HEAD~1", "HEAD", "")
-		if err != nil {
-			t.Fatalf("failed to get changed files (HEAD~1 vs HEAD): %v", err)
-		}
-		t.Logf("Changed files (HEAD~1 vs HEAD): %d", len(refFiles))
-		for _, f := range refFiles {
-			if f.Path == "" {
-				t.Error("expected non-empty path for Git changed file")
-			}
-		}
-	} else {
-		t.Log("Skipping ref mode test because HEAD~1 is not available (e.g. shallow clone or initial commit)")
+	// Status mode on clean repo
+	statusFiles, err := GetChangedFiles(tempDir, "", "", "")
+	if err != nil {
+		t.Fatalf("GetChangedFiles (status mode) failed: %v", err)
+	}
+	if len(statusFiles) != 0 {
+		t.Errorf("expected 0 changed files in clean repo, got %d", len(statusFiles))
+	}
+
+	// Ref mode (HEAD~1 vs HEAD)
+	refFiles, err := GetChangedFiles(tempDir, "HEAD~1", "HEAD", "")
+	if err != nil {
+		t.Fatalf("GetChangedFiles (HEAD~1 vs HEAD) failed: %v", err)
+	}
+	if len(refFiles) != 1 {
+		t.Fatalf("expected 1 changed file between HEAD~1 and HEAD, got %d", len(refFiles))
+	}
+	if refFiles[0].Path != "hello.go" {
+		t.Errorf("expected changed file 'hello.go', got %q", refFiles[0].Path)
 	}
 }
 

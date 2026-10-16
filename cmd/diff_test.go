@@ -335,6 +335,19 @@ func TestGitExternal7ArgsProtocol(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("7-arg diff.external execution failed: %v", err)
 	}
+
+	// Verify the underlying pipeline produces a real diff with actions.
+	opts := serialize.EnvelopeOptions{IncludeActions: true}
+	res, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{EnvelopeOpts: opts})
+	if err != nil {
+		t.Fatalf("pipeline.RunFiles failed: %v", err)
+	}
+	if res == nil || res.Envelope == nil {
+		t.Fatal("expected non-nil diff result and envelope")
+	}
+	if len(res.Envelope.Actions) == 0 {
+		t.Error("expected at least 1 action in diff between old.go and new.go, got 0")
+	}
 }
 
 func TestGitExternal7ArgsFailFast(t *testing.T) {
@@ -386,6 +399,19 @@ func TestRunFileDiffIdenticalBytesFastPath(t *testing.T) {
 	rootCmd.SetArgs([]string{"--no-pager", fileA, fileA})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("expected same file diff to succeed, got: %v", err)
+	}
+
+	// Verify via pipeline that identical files produce no diff actions.
+	opts := serialize.EnvelopeOptions{IncludeActions: true}
+	res, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{EnvelopeOpts: opts})
+	if err != nil {
+		t.Fatalf("pipeline.RunFiles failed: %v", err)
+	}
+	if res == nil || res.Envelope == nil {
+		t.Fatal("expected non-nil diff result and envelope")
+	}
+	if len(res.Envelope.Actions) != 0 {
+		t.Errorf("expected 0 actions for identical files, got %d", len(res.Envelope.Actions))
 	}
 }
 
