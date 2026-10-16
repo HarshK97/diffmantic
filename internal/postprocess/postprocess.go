@@ -1,3 +1,5 @@
+// Package postprocess refines Chawathe AST edit scripts through structural move scoring,
+// stationary normalization, subtree collapsing, and syntactic move grouping.
 package postprocess
 
 import (
