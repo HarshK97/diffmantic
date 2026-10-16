@@ -3,6 +3,7 @@ package postprocess
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -3300,5 +3301,116 @@ var rules = &Rules{
 	})
 	if !hasMove {
 		t.Errorf("expected Move action on \"jsx_element\" to be preserved across containers despite coordinate collision, but none found")
+	}
+}
+
+func TestNormalizeMoves_DemotesHollowCallAndArgumentList(t *testing.T) {
+	// When sort.SliceStable(...) falsely matches cmp.Or(...) and only their empty
+	// argument lists get mapped, drop both moves so we don't leave an empty "()" move behind.
+	srcArgList := mkNode("argument_list", "",
+		mkNode("identifier", "scored"),
+		mkNode("func_literal", "",
+			mkNode("block", "",
+				mkNode("return_statement", "", mkNode("identifier", "a")),
+			),
+		),
+	)
+	srcCall := mkNode("call_expression", "",
+		mkNode("selector_expression", "",
+			mkNode("identifier", "sort"),
+			mkNode("field_identifier", "SliceStable"),
+		),
+		srcArgList,
+	)
+	srcStmt := mkNode("expression_statement", "", srcCall)
+	srcRoot := mkNode("block", "", srcStmt)
+	setLanguageRecursive(srcRoot, "go")
+
+	dstArgList := mkNode("argument_list", "",
+		mkNode("identifier", "x"),
+		mkNode("identifier", "y"),
+	)
+	dstCall := mkNode("call_expression", "",
+		mkNode("selector_expression", "",
+			mkNode("identifier", "cmp"),
+			mkNode("field_identifier", "Or"),
+		),
+		dstArgList,
+	)
+	dstRet := mkNode("return_statement", "", dstCall)
+	dstRoot := mkNode("block", "", dstRet)
+	setLanguageRecursive(dstRoot, "go")
+
+	ms := engine.NewMapping()
+	ms.Add(srcRoot, dstRoot)
+	ms.Add(srcCall, dstCall)
+	ms.Add(srcArgList, dstArgList)
+
+	script := actions.GenerateEditScript(srcRoot, dstRoot, ms)
+	normalized := Run(script, ms, srcRoot, dstRoot)
+
+	for _, a := range normalized.Actions() {
+		if a.Type == actions.Move && (a.Node == srcCall || a.Node == srcArgList) {
+			t.Errorf("expected hollow %s move to be demoted, but Move survived", a.Node.Type)
+		}
+	}
+	if ms.Has(srcCall) || ms.Has(srcArgList) {
+		t.Errorf("expected hollow call_expression and argument_list to be evicted from mapping")
+	}
+}
+
+func TestNormalizeMoves_ClosureCallAndArgumentList_EndToEnd(t *testing.T) {
+	// Full pipeline: migrating from sortSliceStable to sortStableFunc returning cmpOr.
+	// Postprocess must not emit a Move action on the outer call or argument list.
+	src := `package main
+
+func sortItems(scored any) {
+	sortSliceStable(scored, func(i, j int) bool {
+		if a != b {
+			return a > b
+		}
+		return dice > ancSim
+	})
+}
+`
+	dst := `package main
+
+func sortItems(scored any) {
+	sortStableFunc(scored, func(a, b any) int {
+		return cmpOr(
+			compare(dice),
+			compare(ancSim),
+		)
+	})
+}
+`
+	srcBytes := []byte(src)
+	dstBytes := []byte(dst)
+
+	srcAST, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition(srcBytes, dstBytes)
+	mr := engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+
+	script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+	normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+	for _, a := range normalized.Actions() {
+		if a.Type == actions.Move {
+			nodeText := string(srcBytes[a.Node.StartByte:a.Node.EndByte])
+			if strings.HasPrefix(nodeText, "sortSliceStable") || a.Node.Type == "argument_list" {
+				t.Errorf("expected no move action on %s, but found: %v", a.Node.Type, a)
+			}
+		}
 	}
 }

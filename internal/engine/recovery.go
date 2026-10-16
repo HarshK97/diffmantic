@@ -185,15 +185,7 @@ func uniqueTypePairs(
 					for _, v2 := range labels2 {
 						total2 += v2
 					}
-					isContainer := isDeclaration || (r != nil && r.IsBlock(n1.Type)) || (r == nil && rules.IsBlock(n1.Type))
-					if !isContainer {
-						for _, child := range n1.Children {
-							if (r != nil && r.IsBlock(child.Type)) || (r == nil && rules.IsBlock(child.Type)) {
-								isContainer = true
-								break
-							}
-						}
-					}
+					isContainer := isDeclaration || hasBlockDescendant(n1, r) || hasBlockDescendant(n2, r)
 
 					minRatio := 0.25
 					var ratio float64
@@ -228,6 +220,45 @@ func uniqueTypePairs(
 		}
 	}
 	return pairs
+}
+
+// hasBlockDescendant reports whether n or any descendant in its subtree is a block node.
+func hasBlockDescendant(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if isBlockNode(n, r) {
+		return true
+	}
+	if n.Index != nil && n.PreSize > 0 {
+		for _, d := range n.Index.Nodes[n.ID+1 : n.ID+n.PreSize] {
+			if isBlockNode(d, r) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range n.Children {
+		if hasBlockDescendant(c, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isExpressionUnwrapBoundary reports whether c is a block, closure, statement, or
+// declaration boundary that expression unwrapping must not descend into.
+func isExpressionUnwrapBoundary(c *treesitter.ASTNode, r *rules.Rules) bool {
+	if c == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(c)
+	}
+	if r != nil {
+		return r.IsBlock(c.Type) || r.IsClosure(c.Type) || r.IsStatement(c.Type) || r.IsDeclaration(c.Type)
+	}
+	return rules.IsBlock(c.Type) || rules.IsClosure(c.Type) || rules.IsStatement(c.Type) || rules.IsDeclaration(c.Type)
 }
 
 // findUnwrappedExpressionCandidate searches compound for an inner expression
@@ -287,43 +318,40 @@ func findBestExpressionMatch(
 	var bestCandidate *treesitter.ASTNode
 	bestScore := 0.0
 
-	for _, d := range compound.Descendants() {
-		if d == compound || hasFn(d) {
-			continue
-		}
-		if !typesMatchFn(d) {
-			continue
-		}
-		dOp := getOperatorNode(d, r)
-		if targetOp != nil {
-			if dOp == nil || dOp.Label != targetOp.Label {
+	var search func(curr *treesitter.ASTNode)
+	search = func(curr *treesitter.ASTNode) {
+		for _, d := range curr.Children {
+			if isExpressionUnwrapBoundary(d, r) {
 				continue
 			}
-		}
-
-		dLabels := d.LeafLabels()
-		overlap := 0
-		totalD := 0
-		for k, vD := range dLabels {
-			totalD += vD
-			if vT, ok := targetLabels[k]; ok {
-				overlap += min(vD, vT)
+			if !hasFn(d) && typesMatchFn(d) {
+				dOp := getOperatorNode(d, r)
+				if targetOp == nil || (dOp != nil && dOp.Label == targetOp.Label) {
+					dLabels := d.LeafLabels()
+					overlap := 0
+					totalD := 0
+					for k, vD := range dLabels {
+						totalD += vD
+						if vT, ok := targetLabels[k]; ok {
+							overlap += min(vD, vT)
+						}
+					}
+					if overlap > 0 {
+						score := float64(overlap) / float64(max(totalD, len(targetLabels)))
+						if commonFn(d) {
+							score += 10.0
+						}
+						if score > bestScore {
+							bestScore = score
+							bestCandidate = d
+						}
+					}
+				}
 			}
-		}
-		if overlap == 0 {
-			continue
-		}
-
-		score := float64(overlap) / float64(max(totalD, len(targetLabels)))
-		if commonFn(d) {
-			score += 10.0
-		}
-
-		if score > bestScore {
-			bestScore = score
-			bestCandidate = d
+			search(d)
 		}
 	}
+	search(compound)
 
 	return bestCandidate
 }

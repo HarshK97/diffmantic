@@ -82,7 +82,11 @@ func hasSurvivingMappedLeaves(from, to *treesitter.ASTNode, mapping map[*treesit
 	if from == nil || to == nil || mapping == nil {
 		return false
 	}
-	for _, d := range from.Descendants() {
+	nodes := from.Descendants()
+	if from.Index != nil && from.PreSize > 0 {
+		nodes = from.Index.Nodes[from.ID+1 : from.ID+from.PreSize]
+	}
+	for _, d := range nodes {
 		if !isPayloadLeaf(d, r) {
 			continue
 		}
@@ -93,6 +97,41 @@ func hasSurvivingMappedLeaves(from, to *treesitter.ASTNode, mapping map[*treesit
 			if _, isEv := evicted[partner]; isEv {
 				continue
 			}
+			return true
+		}
+	}
+	return false
+}
+
+// hasPayloadLeaves reports whether n has at least one payload leaf in its subtree.
+func hasPayloadLeaves(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	nodes := n.Descendants()
+	if n.Index != nil && n.PreSize > 0 {
+		nodes = n.Index.Nodes[n.ID+1 : n.ID+n.PreSize]
+	}
+	for _, d := range nodes {
+		if isPayloadLeaf(d, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasMappedDescendantIn reports whether any descendant of src is mapped inside dst.
+func hasMappedDescendantIn(src, dst *treesitter.ASTNode, ms *engine.Mapping) bool {
+	if src == nil || dst == nil || ms == nil {
+		return false
+	}
+	mapping := ms.Src()
+	nodes := src.Descendants()
+	if src.Index != nil && src.PreSize > 0 {
+		nodes = src.Index.Nodes[src.ID+1 : src.ID+src.PreSize]
+	}
+	for _, d := range nodes {
+		if partner, ok := mapping[d]; ok && dst.Contains(partner) {
 			return true
 		}
 	}
@@ -460,7 +499,8 @@ func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 	return true
 }
 
-// findBodyBlock returns the primary consequence/body block of a control-flow statement.
+// findBodyBlock returns the primary consequence/body block of a control-flow statement
+// or an enclosed callback block inside a call expression.
 func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
 		return nil
@@ -469,6 +509,26 @@ func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
 		if isBlock {
 			return c
+		}
+	}
+	if r != nil && !r.IsDeclaration(n.Type) && !r.IsBlock(n.Type) && r.IsCall(n.Type) {
+		for _, child := range n.Children {
+			if r.IsClosure(child.Type) {
+				for _, body := range child.Children {
+					if r.IsBlock(body.Type) {
+						return body
+					}
+				}
+			}
+			for _, sub := range child.Children {
+				if r.IsClosure(sub.Type) {
+					for _, body := range sub.Children {
+						if r.IsBlock(body.Type) {
+							return body
+						}
+					}
+				}
+			}
 		}
 	}
 	return nil
@@ -1209,10 +1269,11 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		}
 	}
 
-	// When an enclosing demotion evicts every mapped token inside this expression,
-	// demote it too so we don't leave a hollow move shell behind.
-	if len(src.Children) > 0 && len(evicted) > 0 {
-		if !hasSurvivingMappedLeaves(src, dst, ms.Src(), evicted, r) && hasSurvivingMappedLeaves(src, dst, ms.Src(), nil, r) {
+	// If an enclosing demotion evicted all mapped tokens here, or if this expression
+	// only mapped hollow wrappers with no surviving payload leaves, drop it so we
+	// don't leave an empty move shell behind.
+	if !isDecl && len(src.Children) > 0 && hasPayloadLeaves(src, r) && hasMappedDescendantIn(src, dst, ms) {
+		if !hasSurvivingMappedLeaves(src, dst, ms.Src(), evicted, r) {
 			return true
 		}
 	}
