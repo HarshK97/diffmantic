@@ -130,10 +130,19 @@ func TestInsertChildDefensive(t *testing.T) {
 func TestDeleteChildDefensive(t *testing.T) {
 	t.Run("nil safety", func(t *testing.T) {
 		deleteChild(nil, nil)
+
 		parent := &cnode{nodeType: "block"}
 		child := &cnode{nodeType: "stmt"}
+
 		deleteChild(parent, nil)
+		if len(parent.children) != 0 {
+			t.Errorf("expected 0 children after deleteChild(parent, nil), got %d", len(parent.children))
+		}
+
 		deleteChild(nil, child)
+		if child.parent != nil {
+			t.Errorf("expected child.parent to remain nil after deleteChild(nil, child), got %v", child.parent)
+		}
 	})
 
 	t.Run("unlinked child", func(t *testing.T) {

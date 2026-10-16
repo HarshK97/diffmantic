@@ -116,10 +116,28 @@ func TestMappingRemove(t *testing.T) {
 	}
 }
 
-func TestMappingRemoveNonexistent(_ *testing.T) {
-	// Removing missing keys won't panic.
+func TestMappingRemoveNonexistent(t *testing.T) {
 	m := NewMapping()
-	m.Remove(testutil.Leaf("id", "x"))
+	node := testutil.Leaf("id", "x")
+
+	// Removing from an empty mapping should not panic or add state.
+	m.Remove(node)
+	if m.Has(node) || len(m.Pairs) != 0 || len(m.Src()) != 0 || len(m.Dst()) != 0 {
+		t.Error("expected mapping to remain empty after removing non-existent key")
+	}
+
+	// Removing an unmapped node from a populated mapping must leave existing pairs intact.
+	existingSrc := testutil.Leaf("id", "a")
+	existingDst := testutil.Leaf("id", "b")
+	m.Add(existingSrc, existingDst)
+
+	m.Remove(node)
+	if !m.Has(existingSrc) || m.Get(existingSrc) != existingDst {
+		t.Error("existing mapping corrupted after removing non-existent key")
+	}
+	if len(m.Pairs) != 1 {
+		t.Errorf("expected 1 pair remaining, got %d", len(m.Pairs))
+	}
 }
 
 func TestMappingClone(t *testing.T) {
