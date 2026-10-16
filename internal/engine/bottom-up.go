@@ -410,9 +410,9 @@ func hasHeaderMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool 
 	return false
 }
 
-// hasForeignHeaderOwner reports whether either construct has header or condition
-// tokens already mapped to a different construct. This stops outer blocks or
-// wrappers from stealing an inner construct whose header is already claimed.
+// hasForeignHeaderOwner reports whether either construct has condition or header
+// tokens predominantly claimed by a foreign construct. A minority stray subexpression
+// won't veto the pairing as long as it's outnumbered by tokens shared with the target construct.
 func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
 	if t1 == nil || c == nil || m == nil {
 		return false
@@ -435,28 +435,32 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 	constr2 := getConstruct(c)
 
 	hasMismatch := func(constr, target *treesitter.ASTNode, mapped map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
-		if constr == nil {
+		if constr == nil || target == nil {
 			return false
 		}
 		body := findBodyBlock(constr, r)
+		shared, foreign := 0, 0
+
+		checkNode := func(n *treesitter.ASTNode) {
+			if mappedNode, ok := mapped[n]; ok {
+				if target.Contains(mappedNode) || target == mappedNode {
+					shared++
+				} else {
+					foreign++
+				}
+			}
+		}
+
 		for _, child := range constr.Children {
 			if child == body {
 				continue
 			}
-			if mappedNode, ok := mapped[child]; ok {
-				if target != nil && !target.Contains(mappedNode) && target != mappedNode {
-					return true
-				}
-			}
+			checkNode(child)
 			for _, d := range child.Descendants() {
-				if mappedNode, ok := mapped[d]; ok {
-					if target != nil && !target.Contains(mappedNode) && target != mappedNode {
-						return true
-					}
-				}
+				checkNode(d)
 			}
 		}
-		return false
+		return foreign > 0 && foreign >= shared
 	}
 
 	if hasMismatch(constr2, cmp.Or(constr1, t1), m.Dst()) {

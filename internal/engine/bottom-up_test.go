@@ -1088,6 +1088,140 @@ func TestHasForeignHeaderOwner(t *testing.T) {
 	}
 }
 
+func TestHasForeignHeaderOwner_MinorityStraySubexpression(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("go")
+
+		// When if1 drops "|| r == nil" and newIf2 adds it, TopDown can cross-match
+		// that small nil guard across the two if-statements. The primary conditions
+		// still match in place, so hasForeignHeaderOwner shouldn't veto either one.
+		mainCond1 := testutil.Node("binary_expression", "",
+			testutil.Node("binary_expression", "", testutil.Leaf("identifier", "src"), testutil.Leaf("comparison_operator_literal", "=="), testutil.Leaf("nil", "nil")),
+			testutil.Leaf("logical_operator_literal", "||"),
+			testutil.Node("binary_expression", "", testutil.Leaf("identifier", "dst"), testutil.Leaf("comparison_operator_literal", "=="), testutil.Leaf("nil", "nil")),
+		)
+		strayRNil1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "r"), testutil.Leaf("comparison_operator_literal", "=="), testutil.Leaf("nil", "nil"))
+		compoundCond1 := testutil.Node("binary_expression", "", mainCond1, testutil.Leaf("logical_operator_literal", "||"), strayRNil1)
+		compBody1 := testutil.Node("block", "", testutil.Leaf("return", "return"))
+		compIf1 := testutil.Node("if_statement", "", compoundCond1, compBody1)
+
+		newMainCond1 := testutil.Node("binary_expression", "",
+			testutil.Node("binary_expression", "", testutil.Leaf("identifier", "src"), testutil.Leaf("comparison_operator_literal", "=="), testutil.Leaf("nil", "nil")),
+			testutil.Leaf("logical_operator_literal", "||"),
+			testutil.Node("binary_expression", "", testutil.Leaf("identifier", "dst"), testutil.Leaf("comparison_operator_literal", "=="), testutil.Leaf("nil", "nil")),
+		)
+		newCompBody1 := testutil.Node("block", "", testutil.Leaf("return", "return"))
+		newCompIf1 := testutil.Node("if_statement", "", newMainCond1, newCompBody1)
+
+		mainCond2 := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "sameScopeDeclaration"),
+			testutil.Node("argument_list", "", testutil.Leaf("identifier", "src"), testutil.Leaf("identifier", "dst"), testutil.Leaf("identifier", "ms"), testutil.Leaf("identifier", "r")),
+		)
+		compBody2 := testutil.Node("block", "", testutil.Leaf("identifier", "score"))
+		compIf2 := testutil.Node("if_statement", "", mainCond2, compBody2)
+
+		newMainCond2 := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "sameScopeDeclaration"),
+			testutil.Node("argument_list", "", testutil.Leaf("identifier", "src"), testutil.Leaf("identifier", "dst"), testutil.Leaf("identifier", "ms"), testutil.Leaf("identifier", "r")),
+		)
+		strayRNil2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "r"), testutil.Leaf("comparison_operator_literal", "=="), testutil.Leaf("nil", "nil"))
+		newCompoundCond2 := testutil.Node("binary_expression", "", newMainCond2, testutil.Leaf("logical_operator_literal", "&&"), strayRNil2)
+		newCompBody2 := testutil.Node("block", "", testutil.Leaf("identifier", "score"))
+		newCompIf2 := testutil.Node("if_statement", "", newCompoundCond2, newCompBody2)
+
+		root1 := testutil.Node("block", "", compIf1, compIf2)
+		root2 := testutil.Node("block", "", newCompIf1, newCompIf2)
+		treesitter.EnsureIndex(root1)
+		treesitter.EnsureIndex(root2)
+
+		m2 := NewMapping()
+		addIsomorphicPairs(mainCond1, newMainCond1, m2)
+		addIsomorphicPairs(mainCond2, newMainCond2, m2)
+		addIsomorphicPairs(strayRNil1, strayRNil2, m2)
+		addIsomorphicPairs(compBody1, newCompBody1, m2)
+		addIsomorphicPairs(compBody2, newCompBody2, m2)
+
+		if hasForeignHeaderOwner(compIf1, newCompIf1, m2, r) {
+			t.Errorf("expected minority foreign header match (r == nil) not to veto compIf1 <-> newCompIf1")
+		}
+		if hasForeignHeaderOwner(compIf2, newCompIf2, m2, r) {
+			t.Errorf("expected minority foreign header match (r == nil) not to veto compIf2 <-> newCompIf2")
+		}
+
+		BottomUp(root1, root2, m2, 0.50)
+
+		if m2.Get(compIf1) != newCompIf1 {
+			t.Errorf("expected BottomUp to pair compIf1 with newCompIf1, got %v", m2.Get(compIf1))
+		}
+		if m2.Get(compIf2) != newCompIf2 {
+			t.Errorf("expected BottomUp to pair compIf2 with newCompIf2, got %v", m2.Get(compIf2))
+		}
+	})
+
+	t.Run("EndToEnd", func(t *testing.T) {
+		src := `package main
+
+func f(src, dst, r *int) {
+	if src == nil || dst == nil || r == nil {
+		foo("old")
+	}
+	if bar(src, dst) {
+		baz(1)
+	}
+}
+`
+		dst := `package main
+
+func f(src, dst, r *int) {
+	if src == nil || dst == nil {
+		foo("new")
+	}
+	if bar(src, dst) && r == nil {
+		baz(2)
+	}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcIfs []*treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "if_statement" {
+				srcIfs = append(srcIfs, n)
+			}
+		}
+		var dstIfs []*treesitter.ASTNode
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "if_statement" {
+				dstIfs = append(dstIfs, n)
+			}
+		}
+
+		if len(srcIfs) != 2 || len(dstIfs) != 2 {
+			t.Fatalf("expected 2 if_statements in src and dst, got src=%d dst=%d", len(srcIfs), len(dstIfs))
+		}
+
+		if matched := mr.Mappings.Src()[srcIfs[0]]; matched != dstIfs[0] {
+			t.Errorf("expected src if #1 to match dst if #1 in place, got %v", matched)
+		}
+		if matched := mr.Mappings.Src()[srcIfs[1]]; matched != dstIfs[1] {
+			t.Errorf("expected src if #2 to match dst if #2 in place, got %v", matched)
+		}
+	})
+}
+
 func TestRollupMatchedContainers_ScopePreservedGuard(t *testing.T) {
 	// Function block in Old with flat if statement:
 	// func test() {
