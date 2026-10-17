@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -195,5 +196,51 @@ func f() {
 	}
 	if res.Envelope.RightHighlights[1].Line != 6 || res.Envelope.RightHighlights[1].Action != "insert" {
 		t.Errorf("expected insert highlight on line 6, got: %+v", res.Envelope.RightHighlights[1])
+	}
+}
+
+func TestPipeline_VarDeclToShortVarDeclInPlace(t *testing.T) {
+	src := []byte(`package main
+
+func f() {
+	var candidates []*moveCandidate
+	for i := range actions {
+		_ = i
+	}
+}
+`)
+	dst := []byte(`package main
+
+func f() {
+	candidates := make([]*moveCandidate, 0, len(actions))
+	for i := range actions {
+		_ = i
+	}
+}
+`)
+
+	res, err := Run(src, dst, "main.go", "main.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Don't blow away the whole var declaration as a monolithic delete/insert subtree.
+	for _, a := range res.Envelope.Actions {
+		if a.Action == "delete" && a.Node.Type == "var_declaration" && a.Subtree != nil && *a.Subtree {
+			t.Errorf("expected var_declaration to not be deleted as an entire subtree, got: %+v", a)
+		}
+	}
+
+	// Delete just the "var" keyword; keep the identifier and type slice matched in place.
+	foundVarDel := slices.ContainsFunc(res.Envelope.LeftHighlights, func(h serialize.HighlightSpan) bool {
+		return h.Line == 3 && h.Action == "delete" && h.StartCol == 1 && h.EndCol == 4
+	})
+	if !foundVarDel {
+		t.Errorf("expected 'var' to be deleted on line 3, left highlights: %+v", res.Envelope.LeftHighlights)
 	}
 }

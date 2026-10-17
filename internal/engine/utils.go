@@ -290,7 +290,8 @@ func SharedMatchedAncestor(t1, t2 *treesitter.ASTNode, m *Mapping) (*treesitter.
 	return nil, nil
 }
 
-// GetEnclosingDeclaration traverses up from n to find the nearest ancestor registered in rules.Declarations.
+// GetEnclosingDeclaration traverses up from n to find the nearest ancestor registered
+// in rules.Declarations or rules.LocalVarDeclarations.
 func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {
 	if n == nil {
 		return nil
@@ -301,7 +302,7 @@ func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {
 		return nil
 	}
 	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		if r.IsDeclaration(curr.Type) {
+		if r.IsDeclaration(curr.Type) || r.IsLocalVarDeclaration(curr.Type) {
 			return curr
 		}
 	}
