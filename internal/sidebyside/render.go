@@ -721,21 +721,19 @@ func renderEOFNewlineWarning(w io.Writer, leftWarn, rightWarn bool, numWidth, co
 
 // RenderFileBanner prints a header with the file path and change stats.
 func RenderFileBanner(path string, insertions, deletions, updates int, colorMode bool, w io.Writer) error {
-	var stats string
-	if insertions == 0 && deletions == 0 && updates == 0 {
-		stats = "[Binary files differ]"
-	} else if updates == 0 {
-		stats = fmt.Sprintf("[+%d -%d]", insertions, deletions)
-	} else {
-		stats = fmt.Sprintf("[+%d -%d ~%d]", insertions, deletions, updates)
-	}
-
 	if !colorMode {
-		_, err := fmt.Fprintf(w, "━━━ %s ━━━ %s ━━━\n", path, stats)
+		var stats string
+		if insertions == 0 && deletions == 0 && updates == 0 {
+			stats = "[Binary files differ]"
+		} else if updates == 0 {
+			stats = fmt.Sprintf("[+%d -%d]", insertions, deletions)
+		} else {
+			stats = fmt.Sprintf("[+%d -%d ~%d]", insertions, deletions, updates)
+		}
+		_, err := fmt.Fprintf(w, "%s  %s\n", path, stats)
 		return err
 	}
 
-	bar := color.SurfaceFg + "━━━" + color.Reset
 	title := color.Bold + color.HeaderFg + path + color.Reset
 
 	var statStr string
@@ -754,6 +752,6 @@ func RenderFileBanner(path string, insertions, deletions, updates int, colorMode
 		)
 	}
 
-	_, err := fmt.Fprintf(w, "%s %s %s %s %s\x1b[0m\n", bar, title, bar, statStr, bar)
+	_, err := fmt.Fprintf(w, "%s  %s%s\n", title, statStr, color.Reset)
 	return err
 }

@@ -263,27 +263,61 @@ func TestRender_NarrowWidthFallback(t *testing.T) {
 }
 
 func TestRenderFileBanner(t *testing.T) {
-	var buf bytes.Buffer
+	tests := []struct {
+		name       string
+		path       string
+		insertions int
+		deletions  int
+		updates    int
+		colorMode  bool
+		want       string
+	}{
+		{
+			name:       "with updates",
+			path:       "pkg/auth/token.go",
+			insertions: 12,
+			deletions:  4,
+			updates:    3,
+			want:       "pkg/auth/token.go  [+12 -4 ~3]\n",
+		},
+		{
+			name:       "without updates",
+			path:       "pkg/auth/token.go",
+			insertions: 28,
+			deletions:  0,
+			updates:    0,
+			want:       "pkg/auth/token.go  [+28 -0]\n",
+		},
+		{
+			name:       "binary files differ",
+			path:       "pkg/auth/token.go",
+			insertions: 0,
+			deletions:  0,
+			updates:    0,
+			want:       "pkg/auth/token.go  [Binary files differ]\n",
+		},
+		{
+			name:       "color mode",
+			path:       "pkg/auth/token.go",
+			insertions: 1,
+			deletions:  2,
+			updates:    0,
+			colorMode:  true,
+			want:       "\x1b[1m\x1b[1;94mpkg/auth/token.go\x1b[0m  [\x1b[32m+1\x1b[0m \x1b[31m-2\x1b[0m]\x1b[0m\n",
+		},
+	}
 
-	// 1. With in-place updates: [+12 -4 ~3]
-	err := RenderFileBanner("pkg/auth/token.go", 12, 4, 3, false, &buf)
-	if err != nil {
-		t.Fatalf("RenderFileBanner failed: %v", err)
-	}
-	want := "━━━ pkg/auth/token.go ━━━ [+12 -4 ~3] ━━━\n"
-	if buf.String() != want {
-		t.Errorf("RenderFileBanner with updates: got %q, want %q", buf.String(), want)
-	}
-
-	// 2. Without in-place updates: [+28 -0]
-	buf.Reset()
-	err = RenderFileBanner("pkg/auth/token.go", 28, 0, 0, false, &buf)
-	if err != nil {
-		t.Fatalf("RenderFileBanner failed: %v", err)
-	}
-	wantZeroUpd := "━━━ pkg/auth/token.go ━━━ [+28 -0] ━━━\n"
-	if buf.String() != wantZeroUpd {
-		t.Errorf("RenderFileBanner zero updates: got %q, want %q", buf.String(), wantZeroUpd)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := RenderFileBanner(tt.path, tt.insertions, tt.deletions, tt.updates, tt.colorMode, &buf)
+			if err != nil {
+				t.Fatalf("RenderFileBanner() error = %v", err)
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("RenderFileBanner() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
