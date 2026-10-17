@@ -322,9 +322,7 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 	if t1 == nil || c == nil {
 		return false
 	}
-	if r == nil {
-		r = rulesFor(t1)
-	}
+	r = cmp.Or(r, rulesFor(t1))
 
 	isBlock := func(n *treesitter.ASTNode) bool {
 		if n == nil {
@@ -336,9 +334,21 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 		return rules.IsBlock(n.Type)
 	}
 
+	// Allow control-flow init statements (local declarations and assignments) to decouple
+	// from their enclosing construct's body block when matched against an unnested statement.
+	isInitOrVarAssignStmt := func(n *treesitter.ASTNode) bool {
+		if n == nil {
+			return false
+		}
+		if r != nil {
+			return r.IsLocalVarDeclaration(n.Type) || r.IsAssignment(n.Type)
+		}
+		return rules.IsLocalVarDeclaration(n.Type) || rules.IsAssignment(n.Type)
+	}
+
 	// Check if c's enclosing body is mapped to a source construct that doesn't contain t1.
 	for curr := c; curr != nil && curr.Parent != nil; curr = curr.Parent {
-		if isBlock(curr) {
+		if isBlock(curr) || isInitOrVarAssignStmt(curr) {
 			continue
 		}
 		p := curr.Parent
@@ -359,7 +369,7 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 
 	// Same check in reverse: ensure t1's enclosing body doesn't point outside c.
 	for curr := t1; curr != nil && curr.Parent != nil; curr = curr.Parent {
-		if isBlock(curr) {
+		if isBlock(curr) || isInitOrVarAssignStmt(curr) {
 			continue
 		}
 		p := curr.Parent
