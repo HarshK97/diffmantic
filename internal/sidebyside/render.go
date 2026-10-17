@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/color"
-	"github.com/HarshK97/diffmantic/internal/inline"
 	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
+	"github.com/HarshK97/diffmantic/internal/unified"
 	"golang.org/x/term"
 )
 
@@ -127,13 +127,13 @@ func Render(
 	codeWidth := availableWidth / 2
 
 	if !opts.ForceSideBySide && (termWidth < 80 || codeWidth < 30) {
-		inlineOpts := inline.RenderOptions{
+		unifiedOpts := unified.RenderOptions{
 			Color:              opts.Color,
 			ContextLines:       opts.ContextLines,
 			LineNumbers:        opts.LineNumbers,
 			DisableAnnotations: opts.DisableAnnotations,
 		}
-		output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, env, inlineOpts)
+		output := unified.Render(srcFile, dstFile, srcBytes, dstBytes, env, unifiedOpts)
 		_, err := io.WriteString(w, output)
 		return err
 	}

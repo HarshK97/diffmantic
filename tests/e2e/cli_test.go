@@ -192,7 +192,7 @@ func TestCLI_NonInteractive_DefaultsToSideBySide(t *testing.T) {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
 	if strings.Contains(stdout, "--- a/") || strings.Contains(stdout, "+++ b/") {
-		t.Fatalf("expected side-by-side output by default, got inline file headers:\n%s", stdout)
+		t.Fatalf("expected side-by-side output by default, got unified file headers:\n%s", stdout)
 	}
 	if len(stdout) == 0 {
 		t.Fatal("expected non-empty side-by-side output")
@@ -322,14 +322,14 @@ func TestCLI_DirectoryDiff_ModifiedFile(t *testing.T) {
 		t.Errorf("expected old and new values in sbs output, got:\n%s", stdoutSBS)
 	}
 
-	stdoutInline, stderrInline, err := runDiffm(dirA, dirB, "-f", "inline", "--no-pager")
+	stdoutUnified, stderrUnified, err := runDiffm(dirA, dirB, "-f", "unified", "--no-pager")
 	if err != nil {
-		t.Fatalf("diffm directory inline failed: %v\nstderr: %s", err, stderrInline)
+		t.Fatalf("diffm directory unified failed: %v\nstderr: %s", err, stderrUnified)
 	}
 	expectedPathA := filepath.ToSlash(filepath.Join(dirA, "main.go"))
 	expectedPathB := filepath.ToSlash(filepath.Join(dirB, "main.go"))
-	if !strings.Contains(stdoutInline, expectedPathA) || !strings.Contains(stdoutInline, expectedPathB) {
-		t.Errorf("expected directory-prefixed paths %q and %q in inline output, got:\n%s", expectedPathA, expectedPathB, stdoutInline)
+	if !strings.Contains(stdoutUnified, expectedPathA) || !strings.Contains(stdoutUnified, expectedPathB) {
+		t.Errorf("expected directory-prefixed paths %q and %q in unified output, got:\n%s", expectedPathA, expectedPathB, stdoutUnified)
 	}
 }
 
@@ -342,7 +342,7 @@ func TestCLI_DirectoryDiff_AddedAndDeletedFiles(t *testing.T) {
 	writeTestFile(t, filepath.Join(dirA, "unchanged.go"), "package main\n\nfunc untouchedHelper() {}\n")
 	writeTestFile(t, filepath.Join(dirB, "unchanged.go"), "package main\n\nfunc untouchedHelper() {}\n")
 
-	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "inline", "--no-pager")
+	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "unified", "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm failed on added/deleted files: %v\nstderr: %s", err, stderr)
 	}
@@ -366,7 +366,7 @@ func TestCLI_DirectoryDiff_NestedAndGitIgnore(t *testing.T) {
 	writeTestFile(t, filepath.Join(dirA, ".git", "HEAD"), "ref: refs/heads/old-branch\n")
 	writeTestFile(t, filepath.Join(dirB, ".git", "HEAD"), "ref: refs/heads/new-branch\n")
 
-	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "inline", "--no-pager")
+	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "unified", "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm failed on nested dirs: %v\nstderr: %s", err, stderr)
 	}
@@ -629,7 +629,7 @@ func TestCLI_GitMode_HeadlessSingleFileJSON(t *testing.T) {
 	}
 }
 
-func TestCLI_InlineFormat(t *testing.T) {
+func TestCLI_UnifiedFormat(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "old.go")
 	newPath := filepath.Join(dir, "new.go")
@@ -644,24 +644,33 @@ func TestCLI_InlineFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. Basic inline diff
-	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "inline")
+	// 1. Basic unified diff
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-f", "unified")
 	if err != nil {
 		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
 	}
 
 	if !strings.Contains(stdout, "--- a/") || !strings.Contains(stdout, "+++ b/") {
-		t.Errorf("missing standard file headers in inline diff:\n%s", stdout)
+		t.Errorf("missing standard file headers in unified diff:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "println(\"old code\")") {
-		t.Errorf("missing deleted line in inline diff:\n%s", stdout)
+		t.Errorf("missing deleted line in unified diff:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "println(\"new code\")") {
-		t.Errorf("missing inserted line in inline diff:\n%s", stdout)
+		t.Errorf("missing inserted line in unified diff:\n%s", stdout)
+	}
+
+	// 1b. Shorthand flag -u matches -f unified
+	stdoutU, stderrU, err := runDiffm(oldPath, newPath, "-u")
+	if err != nil {
+		t.Fatalf("diffm -u failed: %v\nstderr: %s", err, stderrU)
+	}
+	if stdoutU != stdout {
+		t.Errorf("expected -u output to match -f unified exactly, got diff:\n%s vs\n%s", stdoutU, stdout)
 	}
 
 	// 2. Color = always
-	stdoutColor, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--color", "always")
+	stdoutColor, stderr, err := runDiffm(oldPath, newPath, "-f", "unified", "--color", "always")
 	if err != nil {
 		t.Fatalf("diffm --color=always failed: %v\nstderr: %s", err, stderr)
 	}
@@ -670,7 +679,7 @@ func TestCLI_InlineFormat(t *testing.T) {
 	}
 
 	// 3. Color = never
-	stdoutNoColor, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--color", "never")
+	stdoutNoColor, stderr, err := runDiffm(oldPath, newPath, "-f", "unified", "--color", "never")
 	if err != nil {
 		t.Fatalf("diffm --color=never failed: %v\nstderr: %s", err, stderr)
 	}
@@ -679,7 +688,7 @@ func TestCLI_InlineFormat(t *testing.T) {
 	}
 
 	// 4. Custom context lines: -U1
-	stdoutU1, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "-U", "1")
+	stdoutU1, stderr, err := runDiffm(oldPath, newPath, "-f", "unified", "-U", "1")
 	if err != nil {
 		t.Fatalf("diffm -U1 failed: %v\nstderr: %s", err, stderr)
 	}
@@ -688,7 +697,7 @@ func TestCLI_InlineFormat(t *testing.T) {
 	}
 
 	// 5. Line numbers disabled: --line-numbers=false
-	stdoutNoNumbers, stderr, err := runDiffm(oldPath, newPath, "-f", "inline", "--line-numbers=false")
+	stdoutNoNumbers, stderr, err := runDiffm(oldPath, newPath, "-f", "unified", "--line-numbers=false")
 	if err != nil {
 		t.Fatalf("diffm --line-numbers=false failed: %v\nstderr: %s", err, stderr)
 	}
@@ -699,7 +708,7 @@ func TestCLI_InlineFormat(t *testing.T) {
 		t.Errorf("expected standard minus prefix with --line-numbers=false:\n%s", stdoutNoNumbers)
 	}
 
-	// 6. Ignore comments with inline diff
+	// 6. Ignore comments with unified diff
 	commentOld := filepath.Join(dir, "comment_old.go")
 	commentNew := filepath.Join(dir, "comment_new.go")
 	if err := os.WriteFile(commentOld, []byte("package main\n\n// old comment\nfunc main() {}\n"), 0o644); err != nil {
@@ -709,17 +718,17 @@ func TestCLI_InlineFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stdoutWithComments, _, err := runDiffm(commentOld, commentNew, "-f", "inline", "--no-pager")
+	stdoutWithComments, _, err := runDiffm(commentOld, commentNew, "-f", "unified", "--no-pager")
 	if err != nil {
-		t.Fatalf("diffm inline with comments failed: %v", err)
+		t.Fatalf("diffm unified with comments failed: %v", err)
 	}
 	if !strings.Contains(stdoutWithComments, "comment") {
-		t.Errorf("expected comment change in inline diff without -C, got: %s", stdoutWithComments)
+		t.Errorf("expected comment change in unified diff without -C, got: %s", stdoutWithComments)
 	}
 
 	// 7. Annotations disabled: --annotations=false
 	moveOld, moveNew := fixtureFiles(t, "go_gin_prevent_flush")
-	stdoutAnnotOff, stderr, err := runDiffm(moveOld, moveNew, "-f", "inline", "--annotations=false", "--no-pager")
+	stdoutAnnotOff, stderr, err := runDiffm(moveOld, moveNew, "-f", "unified", "--annotations=false", "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm --annotations=false failed: %v\nstderr: %s", err, stderr)
 	}
@@ -752,18 +761,18 @@ func TestCLI_InlineFormat(t *testing.T) {
 	}
 }
 
-func TestCLI_GitInlineFormat(t *testing.T) {
-	// Running inside diffmantic repo with -f inline and --no-pager
-	stdout, stderr, err := runDiffm("-f", "inline", "--no-pager")
+func TestCLI_GitUnifiedFormat(t *testing.T) {
+	// Running inside diffmantic repo with -f unified and --no-pager
+	stdout, stderr, err := runDiffm("-f", "unified", "--no-pager")
 	if err != nil {
-		t.Fatalf("diffm -f inline in git repo failed: %v\nstderr: %s", err, stderr)
+		t.Fatalf("diffm -f unified in git repo failed: %v\nstderr: %s", err, stderr)
 	}
 
 	if len(stdout) > 0 {
 		hasHeaders := strings.Contains(stdout, "--- a/") && strings.Contains(stdout, "+++ b/")
 		hasBinary := strings.Contains(stdout, "Binary files")
 		if !hasHeaders && !hasBinary {
-			t.Errorf("expected git inline diff output with standard headers or binary notices, got:\n%s", stdout)
+			t.Errorf("expected git unified diff output with standard headers or binary notices, got:\n%s", stdout)
 		}
 	}
 }
@@ -819,13 +828,13 @@ func TestCLI_BinaryDiff(t *testing.T) {
 		t.Errorf("expected binary differ message in sbs, got:\n%s", stdoutSBS)
 	}
 
-	// 2. Inline on binary files
-	stdoutInline, _, err := runDiffm(oldBin, newBin, "-f", "inline", "--no-pager")
+	// 2. Unified on binary files
+	stdoutUnified, _, err := runDiffm(oldBin, newBin, "-f", "unified", "--no-pager")
 	if err != nil {
-		t.Fatalf("diffm binary inline failed: %v", err)
+		t.Fatalf("diffm binary unified failed: %v", err)
 	}
-	if !strings.Contains(stdoutInline, "Binary files") || !strings.Contains(stdoutInline, "differ") {
-		t.Errorf("expected binary differ message in inline, got:\n%s", stdoutInline)
+	if !strings.Contains(stdoutUnified, "Binary files") || !strings.Contains(stdoutUnified, "differ") {
+		t.Errorf("expected binary differ message in unified, got:\n%s", stdoutUnified)
 	}
 
 	// 3. JSON on binary files

@@ -256,9 +256,9 @@ func TestRender_NarrowWidthFallback(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Narrow fallback emits inline diff with @@ headers
+	// Narrow fallback emits unified diff with @@ headers
 	if !strings.Contains(out, "@@") {
-		t.Errorf("expected inline diff header '@@' on narrow fallback, got:\n%s", out)
+		t.Errorf("expected unified diff header '@@' on narrow fallback, got:\n%s", out)
 	}
 }
 

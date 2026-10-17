@@ -156,10 +156,10 @@ func TestSlicer_BadgeOverflow_WrapsToDedicatedRow(t *testing.T) {
 	}
 }
 
-func TestSlicer_Inline_LastRowBadge(t *testing.T) {
+func TestSlicer_Unified_LastRowBadge(t *testing.T) {
 	slicer := &Slicer{}
 
-	lineText := "very long line that wraps across multiple visual rows in inline diff format"
+	lineText := "very long line that wraps across multiple visual rows in unified diff format"
 	badgeText := " ➔ L99"
 
 	cfg := SliceConfig{
@@ -177,12 +177,12 @@ func TestSlicer_Inline_LastRowBadge(t *testing.T) {
 
 	chunk0Str := string(chunks[0])
 	if strings.Contains(chunk0Str, "➔ L99") {
-		t.Errorf("inline mode: chunk 0 should NOT contain badge: %q", chunk0Str)
+		t.Errorf("unified mode: chunk 0 should NOT contain badge: %q", chunk0Str)
 	}
 
 	lastChunkStr := string(chunks[len(chunks)-1])
 	if !strings.Contains(lastChunkStr, "➔ L99") {
-		t.Errorf("inline mode: last chunk should contain badge: %q", lastChunkStr)
+		t.Errorf("unified mode: last chunk should contain badge: %q", lastChunkStr)
 	}
 	if !strings.HasSuffix(lastChunkStr, color.MoveFg+badgeText+color.Reset) {
 		t.Errorf("expected last chunk to end with styled badge, got: %q", lastChunkStr)

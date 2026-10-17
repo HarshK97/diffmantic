@@ -1,5 +1,5 @@
-// Package inline renders AST-aware inline diffs.
-package inline
+// Package unified renders AST-aware unified diffs.
+package unified
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ type hunkLine struct {
 	text           string
 }
 
-// Render formats the diff envelope as an inline diff with AST highlights and move markers.
+// Render formats the diff envelope as a unified diff with AST highlights and move markers.
 func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.Envelope, opts RenderOptions) string {
 	if env == nil {
 		return ""

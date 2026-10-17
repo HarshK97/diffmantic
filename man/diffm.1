@@ -61,12 +61,12 @@ AST
 .TP
 \fB\-\-force\-sbs\fR
 .br
-Force strict 50/50 side-by-side rendering without adaptive hybrid inline
-switching
+Force strict 50/50 side-by-side rendering without adaptive hybrid
+unified switching
 .TP
 \fB\-f\fR, \fB\-\-format\fR=\fIFORMAT\fR
 .br
-Output format: side-by-side, inline, json, actions (default:
+Output format: side-by-side, unified (or -u), json, actions (default:
 side-by-side)
 .TP
 \fB\-\-full\fR
@@ -124,13 +124,17 @@ files
 .br
 Include line alignment and highlight spans in JSON output
 .TP
+\fB\-u\fR, \fB\-\-unified\fR
+.br
+Generate unified diff output (equivalent to -f unified)
+.TP
 \fB\-v\fR, \fB\-\-version\fR
 .br
 version for diffm
 .TP
 \fB\-\-wrap\fR
 .br
-Wrap long lines to terminal width in inline diff
+Wrap long lines to terminal width in unified diff
 .TP
 \fB\-\-wrap\-width\fR=\fICOLS\fR
 .br
@@ -185,7 +189,7 @@ Command-line flags always take precedence over environment variables.
 .TP
 .B DIFFM_FORMAT
 .br
-Default diff output format (\fIside-by-side\fR, \fIinline\fR, \fIjson\fR,
+Default diff output format (\fIside-by-side\fR, \fIunified\fR, \fIjson\fR,
 \fIactions\fR).
 .TP
 .B DIFFM_TAB_WIDTH
@@ -258,13 +262,13 @@ Compare two local Go files side-by-side with an interactive pager:
 diffm old.go new.go
 .RE
 .PP
-Print an AST-aware inline diff:
+Print an AST-aware unified diff:
 .PP
 .RS
-diffm -f inline old.rs new.rs
+diffm -u old.rs new.rs
 .RE
 .PP
-Generate an inline patch suitable for patch tools:
+Generate a unified patch suitable for patch tools:
 .PP
 .RS
 diffm -p old.py new.py

@@ -1,4 +1,4 @@
-package inline
+package unified
 
 import (
 	"strings"
@@ -597,8 +597,8 @@ func TestRender_SubBlockGrouping(t *testing.T) {
 }
 
 func TestRender_LineWrapping_ContinuationGutter(t *testing.T) {
-	src := []byte("package main\n\nfunc main() {\n\tif format != \"\" && !slices.Contains([]string{\"json\", \"actions\", \"inline\"}, format) {\n\t\tprintln(format)\n\t}\n}\n")
-	dst := []byte("package main\n\nfunc main() {\n\tif format != \"\" && !slices.Contains([]string{\"json\", \"actions\", \"tui\", \"inline\"}, format) {\n\t\tprintln(format)\n\t}\n}\n")
+	src := []byte("package main\n\nfunc main() {\n\tif format != \"\" && !slices.Contains([]string{\"json\", \"actions\", \"unified\"}, format) {\n\t\tprintln(format)\n\t}\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tif format != \"\" && !slices.Contains([]string{\"json\", \"actions\", \"tui\", \"unified\"}, format) {\n\t\tprintln(format)\n\t}\n}\n")
 
 	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
 		ParseErrorLimit: 0,
@@ -795,10 +795,10 @@ func TestRender_BoldLineNumbers_ColorMode(t *testing.T) {
 	expectedBoldDelete := color.Bold + color.DeleteFg
 	expectedBoldInsert := color.Bold + color.InsertFg
 	if !strings.Contains(got, expectedBoldDelete) {
-		t.Errorf("expected bold delete line number in inline output, got:\n%s", got)
+		t.Errorf("expected bold delete line number in unified output, got:\n%s", got)
 	}
 	if !strings.Contains(got, expectedBoldInsert) {
-		t.Errorf("expected bold insert line number in inline output, got:\n%s", got)
+		t.Errorf("expected bold insert line number in unified output, got:\n%s", got)
 	}
 }
 
