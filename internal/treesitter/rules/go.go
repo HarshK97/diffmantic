@@ -150,7 +150,7 @@ var golangRules = &Rules{
 	},
 	EquivalentTypes: [][]string{
 		{"function_declaration", "method_declaration"},
-		{"short_var_declaration", "assignment_statement", "var_spec"},
+		{"short_var_declaration", "assignment_statement", "var_spec", "var_declaration"},
 	},
 	Comments: []string{
 		"comment",

@@ -930,7 +930,8 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 		return ""
 	}
 	r := rulesFor(n)
-	isDec := (r != nil && r.IsDeclaration(n.Type)) || (r == nil && rules.IsDeclaration(n.Type))
+	isDec := (r != nil && (r.IsDeclaration(n.Type) || r.IsLocalVarDeclaration(n.Type))) ||
+		(r == nil && (rules.IsDeclaration(n.Type) || rules.IsLocalVarDeclaration(n.Type)))
 	if !isDec {
 		return ""
 	}
