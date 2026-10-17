@@ -99,19 +99,19 @@ func TestBuildMoveBadges_Tier2Promotion(t *testing.T) {
 		{LeftLine: -1, RightLine: 7},
 	}
 
-	// 1. promoteDeclarations = true (Inline format: Tier 2 hunk headers, no line badges)
-	inlineBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, true)
-	if len(inlineBadges.SrcLineBadges) != 0 {
-		t.Errorf("inline mode expected 0 SrcLineBadges for declaration move, got %v", inlineBadges.SrcLineBadges)
+	// 1. promoteDeclarations = true (Unified format: Tier 2 hunk headers, no line badges)
+	unifiedBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, true)
+	if len(unifiedBadges.SrcLineBadges) != 0 {
+		t.Errorf("unified mode expected 0 SrcLineBadges for declaration move, got %v", unifiedBadges.SrcLineBadges)
 	}
-	if len(inlineBadges.DstLineBadges) != 0 {
-		t.Errorf("inline mode expected 0 DstLineBadges for declaration move, got %v", inlineBadges.DstLineBadges)
+	if len(unifiedBadges.DstLineBadges) != 0 {
+		t.Errorf("unified mode expected 0 DstLineBadges for declaration move, got %v", unifiedBadges.DstLineBadges)
 	}
-	if len(inlineBadges.HunkHeaders) == 0 {
-		t.Fatalf("inline mode expected HunkHeaders to be populated")
+	if len(unifiedBadges.HunkHeaders) == 0 {
+		t.Fatalf("unified mode expected HunkHeaders to be populated")
 	}
-	if !strings.Contains(inlineBadges.HunkHeaders[0], "func OldFunc()") {
-		t.Errorf("expected hunk 0 header to mention 'func OldFunc()', got: %q", inlineBadges.HunkHeaders[0])
+	if !strings.Contains(unifiedBadges.HunkHeaders[0], "func OldFunc()") {
+		t.Errorf("expected hunk 0 header to mention 'func OldFunc()', got: %q", unifiedBadges.HunkHeaders[0])
 	}
 
 	// 2. promoteDeclarations = false (Side-by-Side format: Tier 3 line badges, no hunk headers)

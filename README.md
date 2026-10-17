@@ -14,7 +14,7 @@
 ---
 
 <p align="center">
-  <img src="assets/demo.png" alt="diffmantic inline diff demo" width="800">
+  <img src="assets/demo.png" alt="diffmantic unified diff demo" width="800">
 </p>
 
 ---
@@ -36,7 +36,7 @@ It works as a standalone CLI, a drop-in for `git diff`, or a backend for editor 
 
 - **Move Detection.** When you move a function or a block, diffmantic tracks it as a Move. Not a delete + re-add. Moved functions, blocks, and statements are all first-class, with distinct colors for swapped or concurrent moves.
 - **Update & Rename Detection.** Shows exactly what changed inside a syntax node. A variable rename, a string literal swap, a type change, you see the precise edit, not a wall of red and green.
-- **Side-by-Side & Inline Views.** Fast side-by-side view by default, streaming directly through your pager. Uses full-width hybrid hunks for pure additions and deletions so you never get stuck in cramped columns. Also supports standard inline view (`-f inline`), line wrapping (`--wrap`), and `git apply` patches (`-p`).
+- **Side-by-Side & Unified Views.** Fast side-by-side view by default, streaming directly through your pager. Uses full-width hybrid hunks for pure additions and deletions so you never get stuck in cramped columns. Also supports standard unified view (`-f unified`, `-u`), line wrapping (`--wrap`), and `git apply` patches (`-p`).
 - **Directory Diffing.** Run `diffm dir_a dir_b` to diff entire directory trees recursively, streaming changed files through a single pager session.
 - **Git Integration.** Run `diffm` in any Git repo to stream a pager-backed diff of unstaged changes, staged changes with `--cached`, or any two revisions.
 - **JSON Output.** Stable schema with AST actions, line alignment, and character-level highlight spans. Includes selective `--ui` and `--full` modes for editor plugins and frontends.
@@ -154,11 +154,11 @@ diffm dir-a/ dir-b/
 # Side-by-side diff with pager (default when a terminal is attached)
 diffm before.go after.go
 
-# Inline diff with pager
-diffm before.go after.go -f inline
+# Unified diff with pager
+diffm before.go after.go -u
 
-# Wrap long lines to terminal width in inline mode
-diffm before.go after.go -f inline --wrap
+# Wrap long lines to terminal width in unified mode
+diffm before.go after.go -u --wrap
 
 # Force strict 50/50 side-by-side columns (disables hybrid full-width expansion)
 diffm before.go after.go --force-sbs
@@ -185,7 +185,7 @@ diffm before.go after.go -f actions
 
 | Variable | Default | Description |
 |:---|:---|:---|
-| `DIFFM_FORMAT` | `side-by-side` | Default diff output format (`side-by-side`, `inline`, `json`, `actions`) |
+| `DIFFM_FORMAT` | `side-by-side` | Default diff output format (`side-by-side`, `unified`, `json`, `actions`) |
 | `DIFFM_TAB_WIDTH` | `4` | Number of spaces per tab stop |
 | `DIFFM_IGNORE_COMMENTS` | `0` | Ignore comments during AST diffing (`1`, `true`, `yes`) |
 | `DIFFM_PARSE_ERROR_LIMIT` | `0` | Maximum parse errors permitted before falling back to line diffing |

@@ -15,12 +15,12 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/git"
-	"github.com/HarshK97/diffmantic/internal/inline"
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/sidebyside"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/unified"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -62,11 +62,12 @@ were inserted, deleted, updated, moved, or renamed.
 Works as a standalone file diff tool, a git difftool, or a backend engine for
 editor plugins (Neovim, VS Code) via JSON output.`,
 	Example: `  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
-  diffm before.go after.go -f inline           Print AST-aware inline diff with pager
+  diffm before.go after.go -f unified          Print AST-aware unified diff with pager
+  diffm before.go after.go -u                  Shorthand for unified diff
   diffm before.go after.go -f json             JSON output for editor plugins
   diffm before.go after.go -f actions          Print structural actions list
   diffm                                        Git mode on unstaged changes
-  diffm -f inline                              Git mode inline diff with pager
+  diffm -u                                     Git mode unified diff with pager
   diffm --cached                               Git staged changes diff
   diffm HEAD~1 HEAD                            Git revision comparison`,
 	Args: cobra.ArbitraryArgs,
@@ -91,25 +92,23 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 		noPager, _ := cmd.Flags().GetBool("no-pager")
 		patchMode, _ := cmd.Flags().GetBool("patch")
+		unifiedFlag, _ := cmd.Flags().GetBool("unified")
 		if patchMode && !cmd.Flags().Changed("no-pager") {
 			noPager = true
 		}
 
 		format, _ := cmd.Flags().GetString("format")
-		if patchMode && !cmd.Flags().Changed("format") {
-			format = "inline"
-		} else if !cmd.Flags().Changed("format") {
-			if envFmt := getEnvString("DIFFM_FORMAT", ""); envFmt != "" {
-				format = envFmt
+		if !cmd.Flags().Changed("format") {
+			if patchMode || unifiedFlag {
+				format = "unified"
+			} else {
+				format = cmp.Or(getEnvString("DIFFM_FORMAT", ""), "side-by-side")
 			}
-		}
-		if format == "" {
-			format = "side-by-side"
 		}
 
 		normFormat := normalizeFormat(format)
-		if format != "" && !slices.Contains([]string{"json", "actions", "inline", "side-by-side"}, normFormat) {
-			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: side-by-side, inline, json, actions\n", format)
+		if format != "" && !slices.Contains([]string{"json", "actions", "unified", "side-by-side"}, normFormat) {
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: side-by-side, unified, json, actions\n", format)
 			os.Exit(1)
 		}
 
@@ -268,8 +267,8 @@ func normalizeFormat(f string) string {
 	switch strings.ToLower(strings.TrimSpace(f)) {
 	case "sbs", "sidebyside", "side-by-side", "tui":
 		return "side-by-side"
-	case "inline":
-		return "inline"
+	case "unified", "uni":
+		return "unified"
 	case "json":
 		return "json"
 	case "actions":
@@ -352,11 +351,11 @@ func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 
 // renderConfig groups settings needed to render a diff.
 type renderConfig struct {
-	format     string
-	showBanner bool
-	writer     io.Writer
-	inlineOpts inline.RenderOptions
-	sbsOpts    sidebyside.RenderOptions
+	format      string
+	showBanner  bool
+	writer      io.Writer
+	unifiedOpts unified.RenderOptions
+	sbsOpts     sidebyside.RenderOptions
 }
 
 // renderDiffResult writes a single diff result to writer in the requested format.
@@ -378,8 +377,8 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 		if err != nil {
 			return err
 		}
-	case "inline":
-		output := inline.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.inlineOpts)
+	case "unified":
+		output := unified.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.unifiedOpts)
 		if output != "" {
 			if _, err := io.WriteString(rc.writer, output); err != nil {
 				return err
@@ -429,7 +428,7 @@ func renderBinaryDiff(srcFile, dstFile string, rc renderConfig) {
 			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, rc.sbsOpts.Color, rc.writer)
 		}
 		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
-	case "inline":
+	case "unified":
 		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
 	case "json":
 		env := &serialize.Envelope{
@@ -488,20 +487,20 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
-	includeUI := format == "inline" || format == "side-by-side" || uiMode || fullMode
+	includeUI := format == "unified" || format == "side-by-side" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format == "inline" || format == "side-by-side" || (!uiMode) || fullMode,
+		IncludeActions:    format == "unified" || format == "side-by-side" || (!uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
 
-	inlineOpts := resolveRenderOptions(cmd)
+	unifiedOpts := resolveUnifiedOptions(cmd)
 	sbsOpts := resolveSideBySideOptions(cmd)
 
 	var p *pager.Pager
 	var writer io.Writer = os.Stdout
 
-	if format == "inline" || format == "side-by-side" || format == "actions" {
+	if format == "unified" || format == "side-by-side" || format == "actions" {
 		p, writer = pager.Start(noPager)
 		defer p.Close()
 	}
@@ -531,11 +530,11 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 
 		filesRendered++
 		return renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
-			format:     format,
-			showBanner: showBanner,
-			writer:     writer,
-			inlineOpts: inlineOpts,
-			sbsOpts:    sbsOpts,
+			format:      format,
+			showBanner:  showBanner,
+			writer:      writer,
+			unifiedOpts: unifiedOpts,
+			sbsOpts:     sbsOpts,
 		})
 	}
 
@@ -640,11 +639,11 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			if f.IsBinary && !textconv {
 				filesRendered++
 				renderBinaryDiff(srcFile, dstFile, renderConfig{
-					format:     format,
-					showBanner: showBanner,
-					writer:     writer,
-					inlineOpts: inlineOpts,
-					sbsOpts:    sbsOpts,
+					format:      format,
+					showBanner:  showBanner,
+					writer:      writer,
+					unifiedOpts: unifiedOpts,
+					sbsOpts:     sbsOpts,
 				})
 				continue
 			}
@@ -721,11 +720,11 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			if f.IsBinary && !textconv {
 				filesRendered++
 				renderBinaryDiff(srcFile, dstFile, renderConfig{
-					format:     format,
-					showBanner: showBanner,
-					writer:     writer,
-					inlineOpts: inlineOpts,
-					sbsOpts:    sbsOpts,
+					format:      format,
+					showBanner:  showBanner,
+					writer:      writer,
+					unifiedOpts: unifiedOpts,
+					sbsOpts:     sbsOpts,
 				})
 				continue
 			}
@@ -810,7 +809,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	}
 }
 
-func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
+func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 	patchMode, _ := cmd.Flags().GetBool("patch")
 
 	colorFlag, _ := cmd.Flags().GetString("color")
@@ -876,7 +875,7 @@ func resolveRenderOptions(cmd *cobra.Command) inline.RenderOptions {
 
 	tabWidth := resolveTabWidth(cmd)
 
-	return inline.RenderOptions{
+	return unified.RenderOptions{
 		Color:              useColor,
 		ContextLines:       contextLines,
 		LineNumbers:        lineNumbers,
@@ -977,13 +976,11 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format st
 		displayA, displayB = displayPath, displayPath
 	}
 
-	if format == "" {
-		format = "side-by-side"
-	}
+	format = cmp.Or(format, "side-by-side")
 
-	includeUI := format == "side-by-side" || format == "inline" || uiMode || fullMode
+	includeUI := format == "side-by-side" || format == "unified" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format == "inline" || format == "side-by-side" || fullMode,
+		IncludeActions:    format == "unified" || format == "side-by-side" || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
@@ -1043,12 +1040,12 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format st
 		if err != nil && pager.IsBrokenPipe(err) {
 			return
 		}
-	case "inline":
+	case "unified":
 		p, writer := pager.Start(noPager)
 		defer p.Close()
 
-		renderOpts := resolveRenderOptions(cmd)
-		output := inline.Render(displayA, displayB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts)
+		renderOpts := resolveUnifiedOptions(cmd)
+		output := unified.Render(displayA, displayB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts)
 		if output != "" {
 			if _, err := io.WriteString(writer, output); err != nil {
 				if pager.IsBrokenPipe(err) {
@@ -1177,7 +1174,8 @@ func RootCmd() *cobra.Command {
 }
 
 func init() {
-	rootCmd.Flags().StringP("format", "f", "", "Output format: side-by-side, inline, json, actions (default: side-by-side)")
+	rootCmd.Flags().StringP("format", "f", "", "Output format: side-by-side, unified (or -u), json, actions (default: side-by-side)")
+	rootCmd.Flags().BoolP("unified", "u", false, "Generate unified diff output (equivalent to -f unified)")
 	rootCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
 	rootCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
 	rootCmd.Flags().Int("size-limit", 1024, "Maximum file size in KB for AST parsing before falling back to line diff (0 to disable limit)")
@@ -1190,9 +1188,9 @@ func init() {
 	rootCmd.Flags().BoolP("line-numbers", "n", true, "Show line numbers in diff output")
 	rootCmd.Flags().Bool("annotations", true, "Include AST move annotations in diff")
 	rootCmd.Flags().BoolP("patch", "p", false, "Generate a standard patch suitable for git apply / patch tools")
-	rootCmd.Flags().Bool("force-sbs", false, "Force strict 50/50 side-by-side rendering without adaptive hybrid inline switching")
+	rootCmd.Flags().Bool("force-sbs", false, "Force strict 50/50 side-by-side rendering without adaptive hybrid unified switching")
 	rootCmd.Flags().Bool("no-pager", false, "Do not pipe output into a pager")
-	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in inline diff")
+	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in unified diff")
 	rootCmd.Flags().Int("wrap-width", 0, "Explicit column width for line wrapping (0 to auto-detect terminal width)")
 	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in diff output")
 	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
@@ -1200,7 +1198,7 @@ func init() {
 	rootCmd.Flags().Bool("textconv", false, "Allow external text conversion filters to be run when comparing binary files")
 
 	_ = rootCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"side-by-side", "inline", "json", "actions"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"side-by-side", "unified", "json", "actions"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	_ = rootCmd.RegisterFlagCompletionFunc("color", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"always", "never", "auto"}, cobra.ShellCompDirectiveNoFileComp

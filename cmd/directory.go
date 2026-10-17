@@ -44,14 +44,14 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
-	includeUI := format == "inline" || format == "side-by-side" || uiMode || fullMode
+	includeUI := format == "unified" || format == "side-by-side" || uiMode || fullMode
 	opts := serialize.EnvelopeOptions{
-		IncludeActions:    format == "inline" || format == "side-by-side" || (!uiMode) || fullMode,
+		IncludeActions:    format == "unified" || format == "side-by-side" || (!uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
 	}
 
-	inlineOpts := resolveRenderOptions(cmd)
+	unifiedOpts := resolveUnifiedOptions(cmd)
 	sbsOpts := resolveSideBySideOptions(cmd)
 
 	hadErrors := false
@@ -127,7 +127,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	// Only launch the pager when there are diffs to display.
 	var p *pager.Pager
 	var writer io.Writer = os.Stdout
-	if format == "inline" || format == "side-by-side" || format == "actions" {
+	if format == "unified" || format == "side-by-side" || format == "actions" {
 		p, writer = pager.Start(noPager)
 		defer p.Close()
 	}
@@ -178,11 +178,11 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 		displayA := filepath.Join(dirA, cf.relPath)
 		displayB := filepath.Join(dirB, cf.relPath)
 		if err := renderDiffResult(displayA, displayB, srcBytes, dstBytes, dr, renderConfig{
-			format:     format,
-			showBanner: showBanner,
-			writer:     writer,
-			inlineOpts: inlineOpts,
-			sbsOpts:    sbsOpts,
+			format:      format,
+			showBanner:  showBanner,
+			writer:      writer,
+			unifiedOpts: unifiedOpts,
+			sbsOpts:     sbsOpts,
 		}); err != nil {
 			if pager.IsBrokenPipe(err) {
 				return
