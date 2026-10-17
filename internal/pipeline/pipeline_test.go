@@ -244,3 +244,58 @@ func f() {
 		t.Errorf("expected 'var' to be deleted on line 3, left highlights: %+v", res.Envelope.LeftHighlights)
 	}
 }
+
+func TestPipeline_IfInitStatementMoveOut(t *testing.T) {
+	src := []byte(`package main
+
+func f() {
+	if body := findBodyBlock(node, r); body != nil && isTrivialJumpBody(body, r) {
+		score -= 20
+	}
+}
+`)
+	dst := []byte(`package main
+
+func f() {
+	body := node
+	if !r.IsBlock(node.Type) {
+		body = findBodyBlock(node, r)
+	}
+	if body != nil && isTrivialJumpBody(body, r) {
+		score -= 20
+	}
+}
+`)
+
+	res, err := Run(src, dst, "main.go", "main.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Initializer statement moves out with := updated to =.
+	foundMove := slices.ContainsFunc(res.Envelope.Actions, func(a serialize.Action) bool {
+		return a.Action == "move" && a.Node.Type == "short_var_declaration"
+	})
+	foundUpdate := slices.ContainsFunc(res.Envelope.Actions, func(a serialize.Action) bool {
+		return a.Action == "update" && a.Node.Type == "assignment_operator_literal"
+	})
+	if !foundMove {
+		t.Error("expected move action on short_var_declaration when moving out of if statement")
+	}
+	if !foundUpdate {
+		t.Error("expected update action on assignment operator (:= -> =)")
+	}
+
+	// The now-redundant semicolon in the if header should be highlighted as deleted.
+	foundSemicolonDel := slices.ContainsFunc(res.Envelope.LeftHighlights, func(h serialize.HighlightSpan) bool {
+		return h.Line == 3 && h.StartCol == 34 && h.EndCol == 35 && h.Action == "delete"
+	})
+	if !foundSemicolonDel {
+		t.Errorf("expected trailing semicolon on line 3 to be deleted, highlights: %+v", res.Envelope.LeftHighlights)
+	}
+}

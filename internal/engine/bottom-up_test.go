@@ -625,6 +625,36 @@ func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
 	}
 }
 
+func TestHasForeignBodyOwner_InitializerStatementPermitted(t *testing.T) {
+	init1 := testutil.Node("short_var_declaration", "")
+	cond1 := testutil.Node("binary_expression", "")
+	body1 := testutil.Node("block", "")
+	ifStmt1 := testutil.Node("if_statement", "", init1, cond1, body1)
+	ifStmt1.Language = "go"
+
+	assign2 := testutil.Node("assignment_statement", "")
+	cond2 := testutil.Node("binary_expression", "")
+	body2 := testutil.Node("block", "")
+	ifStmt2 := testutil.Node("if_statement", "", cond2, body2)
+	ifStmt2.Language = "go"
+
+	m := NewMapping()
+	m.Add(body1, body2)
+
+	// Moving an init statement outside an if statement shouldn't be blocked by foreign body checks.
+	if hasForeignBodyOwner(init1, assign2, m, nil) {
+		t.Errorf("expected hasForeignBodyOwner to permit initializer statement init1 vs assign2")
+	}
+
+	// But condition expressions tested against an unrelated construct must still be rejected.
+	otherBody := testutil.Node("block", "")
+	otherCond := testutil.Node("binary_expression", "")
+	testutil.Node("if_statement", "", otherCond, otherBody)
+	if !hasForeignBodyOwner(cond1, otherCond, m, nil) {
+		t.Errorf("expected hasForeignBodyOwner to reject cond1 vs otherCond across foreign construct")
+	}
+}
+
 func TestComputeAffinity_BodyBlockConsistency(t *testing.T) {
 	body1 := testutil.Node("block", "")
 	cond1 := testutil.Node("identifier", "cond")

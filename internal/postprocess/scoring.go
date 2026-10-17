@@ -409,6 +409,27 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 	srcStmt := engine.FindEnclosingStatement(src, r)
 	dstStmt := engine.FindEnclosingStatement(dst, r)
 
+	// Treat control-flow init statements as independent statement boundaries so
+	// moving an init statement out of an if/for/switch header doesn't get treated
+	// as an expression extraction/inlining with a prohibitive T=20 threshold.
+	isInitStmt := func(n *treesitter.ASTNode) bool {
+		if n == nil || n.Parent == nil {
+			return false
+		}
+		p := n.Parent
+		body := findBodyBlock(p, r)
+		if body == n || (body != nil && body.Contains(n)) {
+			return false
+		}
+		return r.IsLocalVarDeclaration(n.Type) || r.IsAssignment(n.Type)
+	}
+	if isInitStmt(src) {
+		srcStmt = src
+	}
+	if isInitStmt(dst) {
+		dstStmt = dst
+	}
+
 	// Moves within the same function or declaration.
 	if sameScopeDeclaration(src, dst, ms, r) {
 		// Moving an expression across statements (like inlining a variable) needs a higher

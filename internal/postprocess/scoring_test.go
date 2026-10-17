@@ -321,6 +321,54 @@ func TestRequiredMoveThreshold(t *testing.T) {
 			t.Errorf("expected threshold >= 50 for 200-line distant statement across scopes, got %d", threshold)
 		}
 	})
+
+	t.Run("initializer statement moving out of if gets statement threshold", func(t *testing.T) {
+		rootSrc := mkNode("source_file", "")
+		rootSrc.Language = "go"
+		srcFunc := mkNode("function_declaration", "foo")
+		srcFunc.Language = "go"
+		srcFunc.Parent = rootSrc
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcIfBody := mkNode("block", "")
+		srcIfBody.Language = "go"
+		srcInit := mkNode("short_var_declaration", "")
+		srcInit.Language = "go"
+		srcInit.StartRow = 10
+		srcIf := mkNode("if_statement", "", srcInit, srcIfBody)
+		srcIf.Language = "go"
+		srcIf.StartRow = 10
+		srcIf.Parent = srcBody
+		srcInit.Parent = srcIf
+		srcIfBody.Parent = srcIf
+
+		rootDst := mkNode("source_file", "")
+		rootDst.Language = "go"
+		dstFunc := mkNode("function_declaration", "foo")
+		dstFunc.Language = "go"
+		dstFunc.Parent = rootDst
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstAssign := mkNode("assignment_statement", "")
+		dstAssign.Language = "go"
+		dstAssign.StartRow = 15
+		dstAssign.Parent = dstBody
+
+		ms := engine.NewMapping()
+		ms.Add(srcFunc, dstFunc)
+		ms.Add(srcBody, dstBody)
+
+		threshold := requiredMoveThreshold(srcInit, dstAssign, ms, r)
+		// Distance is 5 lines (10 to 15). With 4 + lineDist/5, threshold should be 5, not 20.
+		if threshold >= 20 {
+			t.Errorf("expected threshold < 20 for moving initializer statement, got %d", threshold)
+		}
+		if threshold != 5 {
+			t.Errorf("expected threshold = 5 for moving initializer statement (4 + 5/5), got %d", threshold)
+		}
+	})
 }
 
 func TestIsFillerCallStatement(t *testing.T) {
