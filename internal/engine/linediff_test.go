@@ -249,11 +249,11 @@ func TestLineDiff_ReindentedSiblingBlocks(t *testing.T) {
 		"\t\t\t\tm.Add(p1, p2)",                                  // 2
 		"\t\t\t\tif isDecl {",                                    // 3
 		"\t\t\t\t\treconcileDeclarationSignatures(p1, p2, m, r)", // 4
-		"\t\t\t\t}",                               // 5
-		"\t\t\t\tRecover(p1, p2, m)",              // 6
-		"\t\t\t\tcontinue",                        // 7
-		"\t\t\t}",                                 // 8
-		"\t\t\tif !m.Has(body1) {",                // 9
+		"\t\t\t\t}",                  // 5
+		"\t\t\t\tRecover(p1, p2, m)", // 6
+		"\t\t\t\tcontinue",           // 7
+		"\t\t\t}",                    // 8
+		"\t\t\tif !m.Has(body1) {",   // 9
 		"\t\t\t\tif c1 != body1 && c2 != body2 {", // 10
 		"\t\t\t\t\tif lineDist > 2 {",             // 11
 		"\t\t\t\t\t\tcontinue",                    // 12

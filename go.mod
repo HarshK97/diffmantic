@@ -1,6 +1,8 @@
 module github.com/HarshK97/diffmantic
 
-go 1.26.5
+go 1.25.0
+
+toolchain go1.27.2
 
 require (
 	github.com/mattn/go-runewidth v0.0.19
