@@ -613,3 +613,220 @@ func TestDiffCommentsGlobalBestScorePreventsGreedyTheft(t *testing.T) {
 		t.Errorf("expected Delete action for sc1, got actions: %+v", res.Actions)
 	}
 }
+
+func TestDiffCommentsAnchorFirstPrecedenceOverUnanchoredExactMatch(t *testing.T) {
+	// Make sure an edited comment on a mapped statement isn't stolen by an
+	// unmapped deleted statement that happens to share identical text.
+	stmtSrc1 := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 5, Language: "go"}
+	stmtDst1 := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 5, Language: "go"}
+	stmtSrcDeleted := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 10, Language: "go"}
+
+	mappings := engine.NewMapping()
+	mappings.Add(stmtSrc1, stmtDst1)
+
+	sc1 := CommentBlock{
+		Text:       "//   doB()",
+		StartRow:   5,
+		ScopeKey:   "func_main",
+		AnchorNode: stmtSrc1,
+	}
+	scDeleted := CommentBlock{
+		Text:       "// doB()",
+		StartRow:   10,
+		ScopeKey:   "func_main",
+		AnchorNode: stmtSrcDeleted,
+	}
+	dc1 := CommentBlock{
+		Text:       "// doB()",
+		StartRow:   5,
+		ScopeKey:   "func_main",
+		AnchorNode: stmtDst1,
+	}
+
+	res := DiffComments([]CommentBlock{sc1, scDeleted}, []CommentBlock{dc1}, mappings)
+
+	var sc1Updated, scDeletedDeleted bool
+	for _, act := range res.Actions {
+		if act.Type == actions.Update && act.Node != nil && act.Node.Label == "//   doB()" && act.Value == "// doB()" {
+			sc1Updated = true
+		}
+		if act.Type == actions.Delete && act.Node != nil && act.Node.Label == "// doB()" {
+			scDeletedDeleted = true
+		}
+	}
+
+	if !sc1Updated {
+		t.Errorf("expected sc1 to update to dc1 on mapped anchor, got actions: %+v", res.Actions)
+	}
+	if !scDeletedDeleted {
+		t.Errorf("expected scDeleted to be deleted, got actions: %+v", res.Actions)
+	}
+}
+
+func TestDiffCommentsAnchorFirstGlobalBestScorePreventsGreedyTheft(t *testing.T) {
+	// When multiple comments share the same mapped anchor, the pair with
+	// higher similarity should match first, even if the lower similarity
+	// comment appears earlier in document order.
+	stmtSrc := &treesitter.ASTNode{Type: "function_declaration", StartRow: 10, Language: "go"}
+	stmtDst := &treesitter.ASTNode{Type: "function_declaration", StartRow: 10, Language: "go"}
+
+	mappings := engine.NewMapping()
+	mappings.Add(stmtSrc, stmtDst)
+
+	// sc1 appears first but only has ~45% similarity to dc.
+	sc1 := CommentBlock{
+		Text:       "// Process incoming request buffer and return formatted output.",
+		StartRow:   8,
+		ScopeKey:   "func_main",
+		AnchorNode: stmtSrc,
+	}
+	// sc2 appears second but has ~90% similarity to dc.
+	sc2 := CommentBlock{
+		Text:       "// Handle incoming user request and return formatted output string.",
+		StartRow:   9,
+		ScopeKey:   "func_main",
+		AnchorNode: stmtSrc,
+	}
+
+	dc := CommentBlock{
+		Text:       "// Handle incoming user request and return formatted output text.",
+		StartRow:   9,
+		ScopeKey:   "func_main",
+		AnchorNode: stmtDst,
+	}
+
+	res := DiffComments([]CommentBlock{sc1, sc2}, []CommentBlock{dc}, mappings)
+
+	var sc2Updated, sc1Deleted bool
+	for _, act := range res.Actions {
+		if act.Type == actions.Update && act.Node != nil && act.Node.Label == sc2.Text && act.Value == dc.Text {
+			sc2Updated = true
+		}
+		if act.Type == actions.Delete && act.Node != nil && act.Node.Label == sc1.Text {
+			sc1Deleted = true
+		}
+	}
+
+	if !sc2Updated {
+		t.Errorf("expected sc2 to update to dc due to higher similarity, got actions: %+v", res.Actions)
+	}
+	if !sc1Deleted {
+		t.Errorf("expected sc1 to be deleted, got actions: %+v", res.Actions)
+	}
+}
+
+func TestDiffCommentsAnchorFirst_FullEngine(t *testing.T) {
+	t.Run("TrailingDelimiterAttachment", func(t *testing.T) {
+		oldSrc := `package main
+
+func main() {
+	_ = []int{
+		1, //   step
+	}
+	doDeleted() // step
+}
+`
+		newSrc := `package main
+
+func main() {
+	_ = []int{
+		1, // step
+	}
+}
+`
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+
+		srcComments := ExtractComments(oldAST)
+		dstComments := ExtractComments(newAST)
+
+		// Verify trailing comma was skipped during trivia attachment so "//   step" has an AnchorNode.
+		var foundTrailingWithAnchor bool
+		for _, c := range srcComments {
+			if strings.Contains(c.Text, "step") && c.AnchorNode != nil {
+				foundTrailingWithAnchor = true
+				break
+			}
+		}
+		if !foundTrailingWithAnchor {
+			t.Fatalf("expected trailing comment on line ending with comma to attach to an AnchorNode, got %+v", srcComments)
+		}
+
+		res := DiffComments(srcComments, dstComments, mr.Mappings)
+
+		var stepUpdated, doDeletedDeleted bool
+		for _, act := range res.Actions {
+			if act.Type == actions.Update && strings.Contains(act.Node.Label, "step") && act.Value == "// step" {
+				stepUpdated = true
+			}
+			if act.Type == actions.Delete && strings.Contains(act.Node.Label, "step") && strings.TrimSpace(act.Node.Label) == "// step" {
+				doDeletedDeleted = true
+			}
+		}
+
+		if !stepUpdated {
+			t.Errorf("expected '//   step' to update to '// step' on mapped anchor, got actions: %+v", res.Actions)
+		}
+		if !doDeletedDeleted {
+			t.Errorf("expected doDeleted's '// step' to be deleted, got actions: %+v", res.Actions)
+		}
+	})
+
+	t.Run("StatementAnchorPrecedenceOverUnanchoredExactMatch", func(t *testing.T) {
+		oldSrc := `package main
+
+func main() {
+	x := 1      //   step
+	doDeleted() // step
+}
+`
+		newSrc := `package main
+
+func main() {
+	x := 1 // step
+}
+`
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+
+		srcComments := ExtractComments(oldAST)
+		dstComments := ExtractComments(newAST)
+
+		res := DiffComments(srcComments, dstComments, mr.Mappings)
+
+		var stepUpdated, doDeletedDeleted bool
+		for _, act := range res.Actions {
+			if act.Type == actions.Update && strings.Contains(act.Node.Label, "step") && act.Value == "// step" {
+				stepUpdated = true
+			}
+			if act.Type == actions.Delete && strings.Contains(act.Node.Label, "step") && strings.TrimSpace(act.Node.Label) == "// step" {
+				doDeletedDeleted = true
+			}
+		}
+
+		if !stepUpdated {
+			t.Errorf("expected 'x := 1' comment to update in-place on mapped anchor, got actions: %+v", res.Actions)
+		}
+		if !doDeletedDeleted {
+			t.Errorf("expected doDeleted's comment to be deleted, got actions: %+v", res.Actions)
+		}
+	})
+}

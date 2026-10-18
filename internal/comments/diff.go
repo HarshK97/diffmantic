@@ -66,14 +66,123 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 	srcMatched := make([]bool, len(srcComments))
 	dstMatched := make([]bool, len(dstComments))
 
+	// Pass 0: Pair comments attached to mapped statements before running scope-wide LCS.
+	if mappings != nil && mappings.Src() != nil {
+		dstByAnchor := make(map[*treesitter.ASTNode][]int)
+		for j := range dstComments {
+			if dstComments[j].AnchorNode != nil {
+				dstByAnchor[dstComments[j].AnchorNode] = append(dstByAnchor[dstComments[j].AnchorNode], j)
+			}
+		}
+
+		// Lock in exact text matches on the same anchor first.
+		for i := range srcComments {
+			if srcMatched[i] || srcComments[i].AnchorNode == nil {
+				continue
+			}
+			dstAnchor := mappings.Src()[srcComments[i].AnchorNode]
+			if dstAnchor == nil {
+				continue
+			}
+			sc := &srcComments[i]
+			for _, j := range dstByAnchor[dstAnchor] {
+				if dstMatched[j] {
+					continue
+				}
+				dc := &dstComments[j]
+				if sc.Text == dc.Text {
+					srcMatched[i] = true
+					dstMatched[j] = true
+					nLines := min(commentLineCount(sc), commentLineCount(dc))
+					for k := range nLines {
+						res.LineMappings[sc.StartRow+k] = dc.StartRow + k
+					}
+					break
+				}
+			}
+		}
+
+		// Next, fuzzy-match any remaining comments on the same anchor.
+		// Sort candidates by similarity so a closer match takes precedence over an earlier one.
+		var anchorCandidates []commentCandidate
+		for i := range srcComments {
+			if srcMatched[i] || srcComments[i].AnchorNode == nil {
+				continue
+			}
+			dstAnchor := mappings.Src()[srcComments[i].AnchorNode]
+			if dstAnchor == nil {
+				continue
+			}
+			sc := &srcComments[i]
+			srcIsMulti := strings.Contains(strings.TrimRight(sc.Text, "\r\n"), "\n")
+
+			for _, j := range dstByAnchor[dstAnchor] {
+				if dstMatched[j] {
+					continue
+				}
+				dc := &dstComments[j]
+				dstIsMulti := strings.Contains(strings.TrimRight(dc.Text, "\r\n"), "\n")
+				minThresh := 0.40
+				if srcIsMulti && dstIsMulti {
+					minThresh = 0.20
+				}
+
+				sim := stringSimilarity(sc.Text, dc.Text)
+				if sim >= minThresh {
+					dist := max(sc.StartRow, dc.StartRow) - min(sc.StartRow, dc.StartRow)
+					anchorCandidates = append(anchorCandidates, commentCandidate{
+						i:           i,
+						j:           j,
+						sim:         sim,
+						dist:        dist,
+						exactAnchor: true,
+					})
+				}
+			}
+		}
+
+		slices.SortFunc(anchorCandidates, func(a, b commentCandidate) int {
+			return cmp.Or(
+				cmp.Compare(b.sim, a.sim),   // higher similarity first
+				cmp.Compare(a.dist, b.dist), // closer line distance first
+				cmp.Compare(a.i, b.i),
+				cmp.Compare(a.j, b.j),
+			)
+		})
+
+		matchedDst := make(map[int]int, len(srcComments))
+		for _, cand := range anchorCandidates {
+			if srcMatched[cand.i] || dstMatched[cand.j] {
+				continue
+			}
+			srcMatched[cand.i] = true
+			dstMatched[cand.j] = true
+			matchedDst[cand.i] = cand.j
+		}
+
+		for i := range srcComments {
+			if j, ok := matchedDst[i]; ok {
+				sc := &srcComments[i]
+				dc := &dstComments[j]
+				diffCommentBlock(sc, dc, res)
+			}
+		}
+	}
+
 	// Match identical comments within each canonical mapped scope using LCS so repeated comments don't cross over.
 	scopeSrcMap := make(map[string][]int)
 	scopeDstMap := make(map[string][]int)
 	for i := range srcComments {
+		if srcMatched[i] {
+			continue
+		}
 		key := canonicalScopeKey(&srcComments[i], mappings, true)
 		scopeSrcMap[key] = append(scopeSrcMap[key], i)
 	}
 	for j := range dstComments {
+		if dstMatched[j] {
+			continue
+		}
 		key := canonicalScopeKey(&dstComments[j], mappings, false)
 		scopeDstMap[key] = append(scopeDstMap[key], j)
 	}
