@@ -274,7 +274,9 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 					sType = symbols[nodes[sIdx].TypeID]
 				}
 				if !isComment(sType) && sType != "\n" {
-					lastPrevIdx = sIdx
+					if r == nil || (!r.IsDelimiter(sType, sType) && !r.IsPunctuation(sType)) {
+						lastPrevIdx = sIdx
+					}
 				}
 				sIdx = nodes[sIdx].NextSiblingIdx
 			}
