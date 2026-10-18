@@ -432,10 +432,22 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	// Moves within the same function or declaration.
 	if sameScopeDeclaration(src, dst, ms, r) {
-		// Moving an expression across statements (like inlining a variable) needs a higher
-		// threshold (T=20) so small helpers and field accesses don't show up as moves.
-		if (src != srcStmt || dst != dstStmt) && ms.Get(srcStmt) != dstStmt {
-			return 20
+		// Moving an expression across statements (like inlining a variable) or between
+		// containers in the same statement (like pulling a field into another struct)
+		// needs a higher threshold (T=20). That keeps small tokens from getting stolen
+		// out of deleted elements.
+		if src != srcStmt || dst != dstStmt {
+			if ms.Get(srcStmt) != dstStmt {
+				return 20
+			}
+			if src.Parent != nil && dst.Parent != nil {
+				if mappedDstParent := ms.Dst()[dst.Parent]; mappedDstParent != nil && !mappedDstParent.Contains(src) {
+					return 20
+				}
+				if mappedSrcParent := ms.Src()[src.Parent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dst) {
+					return 20
+				}
+			}
 		}
 		// If the statement itself didn't move, measure line drift relative to the
 		// statement so earlier edits in the file don't inflate the move threshold.
