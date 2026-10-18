@@ -456,7 +456,7 @@ func TestRecover_ReclaimInParentIsomorphicChildren(t *testing.T) {
 		}
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
 func Run(mode int) {
@@ -536,6 +536,67 @@ func Run(mode int) {
 		}
 		if mr.Mappings.Has(srcShared2.Children[0]) {
 			t.Errorf("expected descendants of foreign duplicate (row 10) to remain unmapped")
+		}
+
+		// Whole-snippet verification: func Run, both if blocks, and finishB map in place
+		var srcRun, dstRun, srcIf1, dstIf1, srcIf2, dstIf2 *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "function_declaration" {
+				srcRun = n
+			}
+			if n.Type == "if_statement" {
+				switch n.StartRow {
+				case 3:
+					srcIf1 = n
+				case 8:
+					srcIf2 = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "function_declaration" {
+				dstRun = n
+			}
+			if n.Type == "if_statement" {
+				switch n.StartRow {
+				case 3:
+					dstIf1 = n
+				case 9:
+					dstIf2 = n
+				}
+			}
+		}
+		if srcRun == nil || dstRun == nil || srcIf1 == nil || dstIf1 == nil || srcIf2 == nil || dstIf2 == nil {
+			t.Fatalf("missing control structures: srcRun=%v, dstRun=%v, srcIf1=%v, dstIf1=%v, srcIf2=%v, dstIf2=%v",
+				srcRun, dstRun, srcIf1, dstIf1, srcIf2, dstIf2)
+		}
+		if mr.Mappings.Src()[srcRun] != dstRun {
+			t.Errorf("expected func Run to map in place, got %v", mr.Mappings.Src()[srcRun])
+		}
+		if mr.Mappings.Src()[srcIf1] != dstIf1 {
+			t.Errorf("expected if mode == 1 to map in place, got %v", mr.Mappings.Src()[srcIf1])
+		}
+		if mr.Mappings.Src()[srcIf2] != dstIf2 {
+			t.Errorf("expected if mode == 2 to map in place, got %v", mr.Mappings.Src()[srcIf2])
+		}
+
+		// Verify finishB statement in mode == 2 maps in place
+		var srcFinishB, dstFinishB *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "expression_statement" && strings.Contains(string([]byte(src)[n.StartByte:n.EndByte]), "finishB") {
+				srcFinishB = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "expression_statement" && strings.Contains(string([]byte(dst)[n.StartByte:n.EndByte]), "finishB") {
+				dstFinishB = n
+			}
+		}
+		if srcFinishB == nil || dstFinishB == nil {
+			t.Fatalf("missing finishB statements: srcFinishB=%v, dstFinishB=%v", srcFinishB, dstFinishB)
+		}
+		if mr.Mappings.Src()[srcFinishB] != dstFinishB {
+			t.Errorf("expected finishB statement to map to dstFinishB, got %v", mr.Mappings.Src()[srcFinishB])
 		}
 	})
 }
@@ -650,7 +711,7 @@ func TestUniqueTypePairs_ClosureCallUsesContainerThreshold(t *testing.T) {
 	}
 }
 
-func TestRecovery_ClosureCallExpressionUnwrapping_EndToEnd(t *testing.T) {
+func TestRecovery_ClosureCallExpressionUnwrapping_FullEngine(t *testing.T) {
 	// Replacing sortSliceStable with sortStableFunc returning cmpOr.
 	// Recovery and uniqueTypePairs must not tunnel through the closure boundary to pair
 	// the outer sortSliceStable call onto the inner cmpOr call.
@@ -721,5 +782,42 @@ func sortItems(scored any) {
 	}
 	if mr.Mappings.Dst()[dstInnerCmpCall] != nil {
 		t.Errorf("inner cmpOr call should remain unmapped, got %v", mr.Mappings.Dst()[dstInnerCmpCall])
+	}
+
+	// Whole-snippet verification: func sortItems, expression statement, and closure function literal map in place
+	var srcFunc, dstFunc, srcExprStmt, dstExprStmt, srcClosure, dstClosure *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		switch n.Type {
+		case "function_declaration":
+			srcFunc = n
+		case "expression_statement":
+			srcExprStmt = n
+		case "func_literal":
+			srcClosure = n
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		switch n.Type {
+		case "function_declaration":
+			dstFunc = n
+		case "expression_statement":
+			dstExprStmt = n
+		case "func_literal":
+			dstClosure = n
+		}
+	}
+
+	if srcFunc == nil || dstFunc == nil || srcExprStmt == nil || dstExprStmt == nil || srcClosure == nil || dstClosure == nil {
+		t.Fatalf("missing nodes: srcFunc=%v, dstFunc=%v, srcExprStmt=%v, dstExprStmt=%v, srcClosure=%v, dstClosure=%v",
+			srcFunc, dstFunc, srcExprStmt, dstExprStmt, srcClosure, dstClosure)
+	}
+	if mr.Mappings.Src()[srcFunc] != dstFunc {
+		t.Errorf("expected func sortItems to map in place, got %v", mr.Mappings.Src()[srcFunc])
+	}
+	if mr.Mappings.Src()[srcExprStmt] != dstExprStmt {
+		t.Errorf("expected expression statement to map in place, got %v", mr.Mappings.Src()[srcExprStmt])
+	}
+	if mr.Mappings.Src()[srcClosure] != dstClosure {
+		t.Errorf("expected closure function literal to map in place, got %v", mr.Mappings.Src()[srcClosure])
 	}
 }

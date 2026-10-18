@@ -478,7 +478,7 @@ func TestTopDown_ParentLeafSimilarityTieBreaker(t *testing.T) {
 		}
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
 func process(items []int) {
@@ -555,6 +555,59 @@ func process(items []int) {
 		}
 		if matched := mr.Mappings.Src()[srcIf]; matched != dstLateIf {
 			t.Fatalf("expected srcIf to match dstLateIf (%v), got %v", dstLateIf, matched)
+		}
+
+		// Whole-snippet verification: func process and for loop map in place, early if is cleanly unmapped
+		var srcFunc, dstFunc, srcFor, dstFor *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			switch n.Type {
+			case "function_declaration":
+				srcFunc = n
+			case "for_statement":
+				srcFor = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			switch n.Type {
+			case "function_declaration":
+				dstFunc = n
+			case "for_statement":
+				dstFor = n
+			}
+		}
+
+		if srcFunc == nil || dstFunc == nil || srcFor == nil || dstFor == nil {
+			t.Fatalf("missing nodes: srcFunc=%v, dstFunc=%v, srcFor=%v, dstFor=%v", srcFunc, dstFunc, srcFor, dstFor)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected func process to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+		if mr.Mappings.Src()[srcFor] != dstFor {
+			t.Errorf("expected for_statement to map in place, got %v", mr.Mappings.Src()[srcFor])
+		}
+		if mr.Mappings.Dst()[dstEarlyIf] != nil {
+			t.Errorf("expected newly inserted early if to remain unmapped, got %v", mr.Mappings.Dst()[dstEarlyIf])
+		}
+
+		// Verify continue statement in srcIf maps to continue in dstLateIf
+		var srcCont, dstCont *treesitter.ASTNode
+		for _, n := range srcIf.Descendants() {
+			if n.Type == "continue_statement" {
+				srcCont = n
+				break
+			}
+		}
+		for _, n := range dstLateIf.Descendants() {
+			if n.Type == "continue_statement" {
+				dstCont = n
+				break
+			}
+		}
+		if srcCont == nil || dstCont == nil {
+			t.Fatalf("missing continue statements: srcCont=%v, dstCont=%v", srcCont, dstCont)
+		}
+		if mr.Mappings.Src()[srcCont] != dstCont {
+			t.Errorf("expected continue statement to map in place, got %v", mr.Mappings.Src()[srcCont])
 		}
 	})
 }

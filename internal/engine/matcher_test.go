@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -962,7 +963,7 @@ func TestRecoverCohortSiblings_RelocatedCohort(t *testing.T) {
 		}
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
 func OldLogic() {
@@ -1048,6 +1049,80 @@ func ExtractedHelper() {
 		}
 		if mr.Mappings.Src()[s2] != d2 {
 			t.Errorf("expected s2 (deleteSubtree) to map to d2, got %v", mr.Mappings.Src()[s2])
+		}
+
+		// Whole-snippet verification: all 6 intermediate statements in ExtractedHelper are mapped
+		var sHasOutside, dHasOutside, sFor, dFor, sHasSrcOutside, dHasSrcOutside, sProcess, dProcess *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			switch n.Type {
+			case "short_var_declaration":
+				names := getAssignmentTargetNames(n, rulesFor(n))
+				if slices.Contains(names, "hasOutside") {
+					sHasOutside = n
+				} else if slices.Contains(names, "hasSrcOutside") {
+					sHasSrcOutside = n
+				}
+			case "for_statement":
+				sFor = n
+			case "expression_statement":
+				if strings.Contains(src[n.StartByte:n.EndByte], "process") {
+					sProcess = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			switch n.Type {
+			case "short_var_declaration":
+				names := getAssignmentTargetNames(n, rulesFor(n))
+				if slices.Contains(names, "hasOutside") {
+					dHasOutside = n
+				} else if slices.Contains(names, "hasSrcOutside") {
+					dHasSrcOutside = n
+				}
+			case "for_statement":
+				dFor = n
+			case "expression_statement":
+				if strings.Contains(dst[n.StartByte:n.EndByte], "process") {
+					dProcess = n
+				}
+			}
+		}
+
+		if sHasOutside == nil || dHasOutside == nil || sFor == nil || dFor == nil ||
+			sHasSrcOutside == nil || dHasSrcOutside == nil || sProcess == nil || dProcess == nil {
+			t.Fatalf("missing extracted statements: sHasOutside=%v, dHasOutside=%v, sFor=%v, dFor=%v, sHasSrcOutside=%v, dHasSrcOutside=%v, sProcess=%v, dProcess=%v",
+				sHasOutside, dHasOutside, sFor, dFor, sHasSrcOutside, dHasSrcOutside, sProcess, dProcess)
+		}
+		if mr.Mappings.Src()[sHasOutside] != dHasOutside {
+			t.Errorf("expected hasOutside to map to dHasOutside, got %v", mr.Mappings.Src()[sHasOutside])
+		}
+		if mr.Mappings.Src()[sFor] != dFor {
+			t.Errorf("expected for_statement to map to dFor, got %v", mr.Mappings.Src()[sFor])
+		}
+		if mr.Mappings.Src()[sHasSrcOutside] != dHasSrcOutside {
+			t.Errorf("expected hasSrcOutside to map to dHasSrcOutside, got %v", mr.Mappings.Src()[sHasSrcOutside])
+		}
+		if mr.Mappings.Src()[sProcess] != dProcess {
+			t.Errorf("expected process call to map to dProcess, got %v", mr.Mappings.Src()[sProcess])
+		}
+
+		// Verify println("hello") moved from OtherCaller to OldLogic
+		var sPrintln, dPrintln *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "expression_statement" && strings.Contains(src[n.StartByte:n.EndByte], "println") {
+				sPrintln = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "expression_statement" && strings.Contains(dst[n.StartByte:n.EndByte], "println") {
+				dPrintln = n
+			}
+		}
+		if sPrintln == nil || dPrintln == nil {
+			t.Fatalf("missing println statement: sPrintln=%v, dPrintln=%v", sPrintln, dPrintln)
+		}
+		if mr.Mappings.Src()[sPrintln] != dPrintln {
+			t.Errorf("expected println('hello') to map to dPrintln in OldLogic, got %v", mr.Mappings.Src()[sPrintln])
 		}
 	})
 }

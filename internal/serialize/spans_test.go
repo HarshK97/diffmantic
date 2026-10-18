@@ -870,7 +870,7 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 	})
 }
 
-func TestBuildHighlightSpans_AdaptiveMoveColor_EndToEnd(t *testing.T) {
+func TestBuildHighlightSpans_AdaptiveMoveColor_FullEngine(t *testing.T) {
 	// An isolated move takes color slot 0 (Cyan). An adjacent move group
 	// containing both a multiline if-statement and a single-line call gets
 	// assigned color slot 1 (Magenta). BuildHighlightSpans must collapse the
@@ -935,6 +935,10 @@ func process() {
 			t.Errorf("expected right finish() move highlight to have ColorIndex 0, got %d", h.ColorIndex)
 		}
 	}
+
+	// Whole-snippet context line purity: unchanged lines must have zero highlights
+	assertContextLinesPure(t, env.LeftHighlights, []int{3, 6, 7, 8, 9})
+	assertContextLinesPure(t, env.RightHighlights, []int{5, 6, 7, 8, 9, 10, 11})
 }
 
 func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.T) {
@@ -1274,7 +1278,7 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 		})
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		oldSrc := `package main
 
 func process(target string) {
@@ -1344,5 +1348,24 @@ func process(target string) {
 		if rightLine3[1].StartCol != 11 || rightLine3[1].EndCol != 19 {
 			t.Errorf("expected right arg span [11..19], got [%d..%d]", rightLine3[1].StartCol, rightLine3[1].EndCol)
 		}
+
+		// Whole-snippet context line purity: unchanged lines (0, 1, 2, 4) must have zero highlights
+		assertContextLinesPure(t, env.LeftHighlights, []int{3})
+		assertContextLinesPure(t, env.RightHighlights, []int{3})
 	})
+}
+
+// assertContextLinesPure verifies that lines outside of allowedLines have zero highlight spans.
+func assertContextLinesPure(t *testing.T, spans []HighlightSpan, allowedLines []int) {
+	t.Helper()
+	allowed := make(map[int]bool, len(allowedLines))
+	for _, l := range allowedLines {
+		allowed[l] = true
+	}
+	for _, s := range spans {
+		if !allowed[s.Line] {
+			t.Errorf("line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+				s.Line, s.Action, s.StartCol, s.EndCol)
+		}
+	}
 }
