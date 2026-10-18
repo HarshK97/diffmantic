@@ -1207,3 +1207,135 @@ func TestAreChainedStatements(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeMoves_CrossCollectionElementMoveDemoted(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Moving into a container whose mapped source never held this node can't be
+		// stationary, even when row/column coordinates match.
+		oldStmt := mkNode("var_declaration", "")
+		oldStmt.Language = "go"
+		oldContA := mkNode("literal_value", "")
+		oldContA.Language = "go"
+		oldElem := mkNode("keyed_element", "RightLine: 1")
+		oldElem.Language = "go"
+		oldElem.StartRow, oldElem.EndRow = 5, 5
+		oldElem.StartCol, oldElem.EndCol = 2, 14
+		oldElem.EndByte = 12
+
+		oldStmt.Children = []*treesitter.ASTNode{oldContA}
+		oldContA.Parent = oldStmt
+		oldContA.Children = []*treesitter.ASTNode{oldElem}
+		oldElem.Parent = oldContA
+
+		oldContB := mkNode("literal_value", "")
+		oldContB.Language = "go"
+
+		newStmt := mkNode("var_declaration", "")
+		newStmt.Language = "go"
+		newContB := mkNode("literal_value", "")
+		newContB.Language = "go"
+		newElem := mkNode("keyed_element", "RightLine: 1")
+		newElem.Language = "go"
+		newElem.StartRow, newElem.EndRow = 5, 5
+		newElem.StartCol, newElem.EndCol = 2, 14
+		newElem.EndByte = 12
+
+		newStmt.Children = []*treesitter.ASTNode{newContB}
+		newContB.Parent = newStmt
+		newContB.Children = []*treesitter.ASTNode{newElem}
+		newElem.Parent = newContB
+
+		ms := engine.NewMapping()
+		ms.Add(oldStmt, newStmt)
+		ms.Add(oldContB, newContB)
+		ms.Add(oldElem, newElem)
+
+		r := rules.Get("go")
+		// 1. isStationaryMove returns false even when coordinates collide.
+		if isStationaryMove(oldElem, newElem, ms, r) {
+			t.Errorf("expected isStationaryMove to return false for cross-container move into foreign container")
+		}
+
+		// 2. requiredMoveThreshold returns 20 when moved across containers within the statement.
+		oldElem.StartRow, oldElem.EndRow = 5, 5
+		newElem.StartRow, newElem.EndRow = 3, 3
+		threshold := requiredMoveThreshold(oldElem, newElem, ms, r)
+		if threshold != 20 {
+			t.Errorf("expected requiredMoveThreshold 20 for cross-container move within statement, got %d", threshold)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		// If a field like RightLine: 1 gets pulled from a deleted element into an updated
+		// one, don't treat it as stationary or let it pass as a move. It should demote to
+		// delete + insert.
+		src := []byte(`package test
+
+var pairs = []LineAlignmentPair{
+	{LeftLine: 2, RightLine: -1},
+	{LeftLine: 4, RightLine: -1},
+	{LeftLine: -1, RightLine: 1},
+}
+`)
+		dst := []byte(`package test
+
+var pairs = []LineAlignmentPair{
+	{LeftLine: 2, RightLine: 1},
+	{LeftLine: 4, RightLine: -1},
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Zero move actions anywhere in the snippet
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move {
+				t.Errorf("expected zero move actions across entire snippet, but found move on %s: %v", a.Node.Type, a)
+			}
+			// 2. Package and var declaration headers must remain untouched context
+			if a.Node != nil && (a.Node.Type == "package_clause" || a.Node.Type == "var_declaration") {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 3. Entire deleted collection element must be deleted
+		hasElementDelete := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Delete && a.Node != nil && string(src[a.Node.StartByte:a.Node.EndByte]) == "{LeftLine: -1, RightLine: 1}"
+		})
+		if !hasElementDelete {
+			t.Error("expected entire deleted collection element to be deleted")
+		}
+
+		// 4. Whole-snippet verification: untouched second element {LeftLine: 4, RightLine: -1} maps in place
+		var srcUntouchedElem, dstUntouchedElem *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "literal_value" && string(src[n.StartByte:n.EndByte]) == "{LeftLine: 4, RightLine: -1}" {
+				srcUntouchedElem = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "literal_value" && string(dst[n.StartByte:n.EndByte]) == "{LeftLine: 4, RightLine: -1}" {
+				dstUntouchedElem = n
+				break
+			}
+		}
+		if srcUntouchedElem == nil || dstUntouchedElem == nil {
+			t.Fatalf("missing untouched literal_value: src=%v, dst=%v", srcUntouchedElem, dstUntouchedElem)
+		}
+		if matchResult.Mappings.Src()[srcUntouchedElem] != dstUntouchedElem {
+			t.Errorf("expected untouched element {LeftLine: 4, RightLine: -1} to map in place, got %v", matchResult.Mappings.Src()[srcUntouchedElem])
+		}
+	})
+}

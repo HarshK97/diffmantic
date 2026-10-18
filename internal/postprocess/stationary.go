@@ -27,19 +27,20 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		return true
 	}
 
+	// Can't be stationary if it hopped containers, like when dstParent mapped to an
+	// old container that never held this node.
+	if mappedDstParent := ms.Dst()[dstParent]; mappedDstParent != nil && !mappedDstParent.Contains(node) {
+		return false
+	}
+	if mappedSrcParent := ms.Src()[srcParent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dstNode) {
+		return false
+	}
+
 	hasPos := (node.EndByte > 0 || node.StartRow > 0 || node.EndRow > 0) &&
 		(dstNode.EndByte > 0 || dstNode.StartRow > 0 || dstNode.EndRow > 0)
 	if hasPos && node.StartRow == dstNode.StartRow && node.EndRow == dstNode.EndRow &&
 		node.StartCol == dstNode.StartCol && node.EndCol == dstNode.EndCol {
 		if sameScopeDeclaration(node, dstNode, ms, r) {
-			// Not stationary if moved across distinct containers, like when dstParent
-			// came from an old container that never held this node.
-			if mappedDstParent := ms.Dst()[dstParent]; mappedDstParent != nil && !mappedDstParent.Contains(node) {
-				return false
-			}
-			if mappedSrcParent := ms.Src()[srcParent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dstNode) {
-				return false
-			}
 			return true
 		}
 	}
