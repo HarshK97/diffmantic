@@ -1188,7 +1188,7 @@ func TestHasForeignHeaderOwner_MinorityStraySubexpression(t *testing.T) {
 		}
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
 func f(src, dst, r *int) {
@@ -1248,6 +1248,49 @@ func f(src, dst, r *int) {
 		}
 		if matched := mr.Mappings.Src()[srcIfs[1]]; matched != dstIfs[1] {
 			t.Errorf("expected src if #2 to match dst if #2 in place, got %v", matched)
+		}
+
+		// Whole-snippet verification: ensure all other statements and declarations remain mapped
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "function_declaration" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "function_declaration" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil {
+			t.Fatalf("missing function_declaration: src=%v, dst=%v", srcFunc, dstFunc)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected func f to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+
+		// Body statements inside both if blocks must remain mapped
+		var srcCalls, dstCalls []*treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "expression_statement" {
+				srcCalls = append(srcCalls, n)
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "expression_statement" {
+				dstCalls = append(dstCalls, n)
+			}
+		}
+		if len(srcCalls) != 2 || len(dstCalls) != 2 {
+			t.Fatalf("expected 2 expression_statements in src and dst, got src=%d, dst=%d", len(srcCalls), len(dstCalls))
+		}
+		if mr.Mappings.Src()[srcCalls[0]] != dstCalls[0] {
+			t.Errorf("expected foo call to map in place, got %v", mr.Mappings.Src()[srcCalls[0]])
+		}
+		if mr.Mappings.Src()[srcCalls[1]] != dstCalls[1] {
+			t.Errorf("expected baz call to map in place, got %v", mr.Mappings.Src()[srcCalls[1]])
 		}
 	})
 }

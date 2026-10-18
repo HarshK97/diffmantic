@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -727,7 +728,7 @@ func TestRevokeOrphanedGlue_BareJumpPreservedInMovingBlock(t *testing.T) {
 		}
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
 func processOld(items []int) {
@@ -790,6 +791,103 @@ func helperExtracted(items []int) {
 		}
 		if mr.Mappings.Src()[srcBreak] != dstBreak {
 			t.Errorf("expected break_statement inside moved loop block to be preserved and mapped to dstBreak, got %v", mr.Mappings.Src()[srcBreak])
+		}
+
+		// Whole-snippet verification: all loop statements and outer functions accounted for
+		var srcProcOld, dstProcOld, srcOtherCaller, dstHelperExtracted *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "function_declaration" {
+				for _, c := range n.Children {
+					if c.Type == "identifier" {
+						switch c.Label {
+						case "processOld":
+							srcProcOld = n
+						case "otherCaller":
+							srcOtherCaller = n
+						}
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "function_declaration" {
+				for _, c := range n.Children {
+					if c.Type == "identifier" {
+						switch c.Label {
+						case "processOld":
+							dstProcOld = n
+						case "helperExtracted":
+							dstHelperExtracted = n
+						}
+					}
+				}
+			}
+		}
+
+		if srcProcOld == nil || dstProcOld == nil || srcOtherCaller == nil || dstHelperExtracted == nil {
+			t.Fatalf("missing function declarations: srcProcOld=%v, dstProcOld=%v, srcOtherCaller=%v, dstHelperExtracted=%v",
+				srcProcOld, dstProcOld, srcOtherCaller, dstHelperExtracted)
+		}
+		if mr.Mappings.Src()[srcProcOld] != dstProcOld {
+			t.Errorf("expected processOld to map in place, got %v", mr.Mappings.Src()[srcProcOld])
+		}
+		if mr.Mappings.Has(srcOtherCaller) {
+			t.Errorf("expected deleted otherCaller to remain unmapped, got %v", mr.Mappings.Src()[srcOtherCaller])
+		}
+		if mr.Mappings.Dst()[dstHelperExtracted] != nil {
+			t.Errorf("expected inserted helperExtracted to remain unmapped, got %v", mr.Mappings.Dst()[dstHelperExtracted])
+		}
+
+		// Verify loop and its sibling/child statements
+		var srcFor, dstFor *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "for_statement" {
+				srcFor = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "for_statement" {
+				dstFor = n
+			}
+		}
+		if srcFor == nil || dstFor == nil {
+			t.Fatalf("missing for_statement: src=%v, dst=%v", srcFor, dstFor)
+		}
+		if mr.Mappings.Src()[srcFor] != dstFor {
+			t.Errorf("expected for_statement to map to extracted helper, got %v", mr.Mappings.Src()[srcFor])
+		}
+
+		// Verify handle(item) and println("hello") statements are mapped
+		var srcHandle, dstHandle, srcPrintln, dstPrintln *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "expression_statement" {
+				text := src[n.StartByte:n.EndByte]
+				if strings.Contains(text, "handle") {
+					srcHandle = n
+				} else if strings.Contains(text, "println") {
+					srcPrintln = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "expression_statement" {
+				text := dst[n.StartByte:n.EndByte]
+				if strings.Contains(text, "handle") {
+					dstHandle = n
+				} else if strings.Contains(text, "println") {
+					dstPrintln = n
+				}
+			}
+		}
+		if srcHandle == nil || dstHandle == nil || srcPrintln == nil || dstPrintln == nil {
+			t.Fatalf("missing call statements: srcHandle=%v, dstHandle=%v, srcPrintln=%v, dstPrintln=%v",
+				srcHandle, dstHandle, srcPrintln, dstPrintln)
+		}
+		if mr.Mappings.Src()[srcHandle] != dstHandle {
+			t.Errorf("expected handle(item) to remain mapped, got %v", mr.Mappings.Src()[srcHandle])
+		}
+		if mr.Mappings.Src()[srcPrintln] != dstPrintln {
+			t.Errorf("expected println('hello') to map to moved caller, got %v", mr.Mappings.Src()[srcPrintln])
 		}
 	})
 }
@@ -868,7 +966,7 @@ func TestRevokeOrphanedGlue_MovingScalarSubExpressionPreserved(t *testing.T) {
 		}
 	})
 
-	t.Run("EndToEnd", func(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
 func Process(x any) {
@@ -927,6 +1025,86 @@ func Helper(x any) bool {
 		}
 		if mr.Mappings.Src()[srcBinary] != dstBinary {
 			t.Errorf("expected moving scalar binary expression (x != nil) to remain mapped, got %v", mr.Mappings.Src()[srcBinary])
+		}
+
+		// Whole-snippet verification: both functions and their statements map in place
+		var srcProcess, dstProcess, srcHelper, dstHelper *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "function_declaration" {
+				for _, c := range n.Children {
+					if c.Type == "identifier" {
+						switch c.Label {
+						case "Process":
+							srcProcess = n
+						case "Helper":
+							srcHelper = n
+						}
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "function_declaration" {
+				for _, c := range n.Children {
+					if c.Type == "identifier" {
+						switch c.Label {
+						case "Process":
+							dstProcess = n
+						case "Helper":
+							dstHelper = n
+						}
+					}
+				}
+			}
+		}
+
+		if srcProcess == nil || dstProcess == nil || srcHelper == nil || dstHelper == nil {
+			t.Fatalf("missing function declarations: srcProcess=%v, dstProcess=%v, srcHelper=%v, dstHelper=%v",
+				srcProcess, dstProcess, srcHelper, dstHelper)
+		}
+		if mr.Mappings.Src()[srcProcess] != dstProcess {
+			t.Errorf("expected Process to map in place, got %v", mr.Mappings.Src()[srcProcess])
+		}
+		if mr.Mappings.Src()[srcHelper] != dstHelper {
+			t.Errorf("expected Helper to map in place, got %v", mr.Mappings.Src()[srcHelper])
+		}
+
+		// Verify println("valid") stays stationary
+		var srcPrintln, dstPrintln *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "expression_statement" && strings.Contains(src[n.StartByte:n.EndByte], "println") {
+				srcPrintln = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "expression_statement" && strings.Contains(dst[n.StartByte:n.EndByte], "println") {
+				dstPrintln = n
+			}
+		}
+		if srcPrintln == nil || dstPrintln == nil {
+			t.Fatalf("missing println statements: src=%v, dst=%v", srcPrintln, dstPrintln)
+		}
+		if mr.Mappings.Src()[srcPrintln] != dstPrintln {
+			t.Errorf("expected println('valid') to map in place, got %v", mr.Mappings.Src()[srcPrintln])
+		}
+
+		// Verify return statement in Helper maps
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "return_statement" {
+				srcReturn = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "return_statement" {
+				dstReturn = n
+			}
+		}
+		if srcReturn == nil || dstReturn == nil {
+			t.Fatalf("missing return statements: src=%v, dst=%v", srcReturn, dstReturn)
+		}
+		if mr.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected return statement to map in place, got %v", mr.Mappings.Src()[srcReturn])
 		}
 	})
 }

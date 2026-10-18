@@ -722,7 +722,7 @@ func TestAssignMoveColors(t *testing.T) {
 	})
 }
 
-func TestAssignMoveColors_EndToEnd(t *testing.T) {
+func TestAssignMoveColors_FullEngine(t *testing.T) {
 	runPipeline := func(t *testing.T, oldSrc, newSrc string) *Envelope {
 		t.Helper()
 		oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
@@ -739,7 +739,8 @@ func TestAssignMoveColors_EndToEnd(t *testing.T) {
 		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
 
 		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
-			IncludeActions: true,
+			IncludeActions:    true,
+			IncludeHighlights: true,
 		})
 		if err != nil {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
@@ -789,6 +790,10 @@ func process() {
 		if moves[0].MoveColorIndex != 0 || moves[1].MoveColorIndex != 0 {
 			t.Errorf("expected grouped co-movers to share MoveColorIndex 0, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
+
+		// Whole-snippet context line purity
+		assertContextLinesPure(t, env.LeftHighlights, []int{4, 5})
+		assertContextLinesPure(t, env.RightHighlights, []int{5, 6, 7, 8})
 	})
 
 	t.Run("diverging moves from nearby source get distinct colors", func(t *testing.T) {
@@ -826,6 +831,10 @@ func process() {
 		if moves[0].MoveColorIndex != 0 || moves[1].MoveColorIndex != 1 {
 			t.Errorf("expected diverging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
+
+		// Whole-snippet context line purity
+		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4})
+		assertContextLinesPure(t, env.RightHighlights, []int{4, 5, 6, 10, 11, 12})
 	})
 
 	t.Run("converging moves to nearby destination get distinct colors", func(t *testing.T) {
@@ -865,6 +874,10 @@ func process() {
 		if moves[0].MoveColorIndex != 0 || moves[1].MoveColorIndex != 1 {
 			t.Errorf("expected converging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
+
+		// Whole-snippet context line purity
+		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 10, 11, 12})
+		assertContextLinesPure(t, env.RightHighlights, []int{7, 8, 9, 10})
 	})
 }
 
@@ -1141,7 +1154,7 @@ func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T)
 	}
 }
 
-func TestAdjustRangeForContainer_EndToEnd(t *testing.T) {
+func TestAdjustRangeForContainer_FullEngine(t *testing.T) {
 	oldSrc := `fn f() void {
     a();
     b();
@@ -1201,6 +1214,10 @@ func TestAdjustRangeForContainer_EndToEnd(t *testing.T) {
 			t.Errorf("found spurious insert highlight on moved line %d: %+v", h.Line, h)
 		}
 	}
+
+	// 3. Whole-snippet context line purity: fn f() void { and closing } must have zero highlights
+	assertContextLinesPure(t, env.LeftHighlights, []int{1, 2, 3})
+	assertContextLinesPure(t, env.RightHighlights, []int{1, 2, 3, 4, 5, 6, 7})
 }
 
 func TestCollectMappedTrailingDelimiters(t *testing.T) {
@@ -1309,7 +1326,7 @@ func TestCollectMappedTrailingDelimiters(t *testing.T) {
 	})
 }
 
-func TestCollectMappedTrailingDelimiters_EndToEnd(t *testing.T) {
+func TestCollectMappedTrailingDelimiters_FullEngine(t *testing.T) {
 	t.Run("multiline item gaining trailing comma emits insert highlight without action churn", func(t *testing.T) {
 		oldSrc := "package p\n\nvar x = []int{\n\t1,\n\t2\n}\n"
 		newSrc := "package p\n\nvar x = []int{\n\t1,\n\t2,\n}\n"
@@ -1356,6 +1373,10 @@ func TestCollectMappedTrailingDelimiters_EndToEnd(t *testing.T) {
 		if commaSpan.StartCol != 2 || commaSpan.EndCol != 3 {
 			t.Errorf("expected comma highlight at cols 2..3, got %d..%d", commaSpan.StartCol, commaSpan.EndCol)
 		}
+
+		// Whole-snippet context line purity: line 4 is the only edited line
+		assertContextLinesPure(t, env.LeftHighlights, nil)
+		assertContextLinesPure(t, env.RightHighlights, []int{4})
 	})
 
 	t.Run("binary expression refactored to call highlights inserted comma between stationary args", func(t *testing.T) {
@@ -1396,5 +1417,9 @@ func TestCollectMappedTrailingDelimiters_EndToEnd(t *testing.T) {
 		if commaSpan == nil {
 			t.Fatalf("expected insert highlight span for comma after a.Type at cols 25..26 on line 3, got %+v", env.RightHighlights)
 		}
+
+		// Whole-snippet context line purity: only line 3 has highlights
+		assertContextLinesPure(t, env.LeftHighlights, []int{3})
+		assertContextLinesPure(t, env.RightHighlights, []int{3})
 	})
 }

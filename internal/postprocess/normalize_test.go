@@ -3,7 +3,6 @@ package postprocess
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -1425,7 +1424,7 @@ func TestNormalizeMoves_DemotesHollowCallAndArgumentList(t *testing.T) {
 	}
 }
 
-func TestNormalizeMoves_ClosureCallAndArgumentList_EndToEnd(t *testing.T) {
+func TestNormalizeMoves_ClosureCallAndArgumentList_FullEngine(t *testing.T) {
 	// Full pipeline: migrating from sortSliceStable to sortStableFunc returning cmpOr.
 	// Postprocess must not emit a Move action on the outer call or argument list.
 	src := `package main
@@ -1472,11 +1471,13 @@ func sortItems(scored any) {
 	normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 	for _, a := range normalized.Actions() {
+		// 1. Zero move actions anywhere in the snippet
 		if a.Type == actions.Move {
-			nodeText := string(srcBytes[a.Node.StartByte:a.Node.EndByte])
-			if strings.HasPrefix(nodeText, "sortSliceStable") || a.Node.Type == "argument_list" {
-				t.Errorf("expected no move action on %s, but found: %v", a.Node.Type, a)
-			}
+			t.Errorf("expected zero move actions across entire snippet, but found move on %s: %v", a.Node.Type, a)
+		}
+		// 2. Package and function declaration headers must remain untouched context
+		if a.Node != nil && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+			t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 		}
 	}
 }
