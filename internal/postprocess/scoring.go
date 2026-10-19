@@ -432,20 +432,26 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	// Moves within the same function or declaration.
 	if sameScopeDeclaration(src, dst, ms, r) {
-		// Moving an expression across statements (like inlining a variable) or between
-		// containers in the same statement (like pulling a field into another struct)
-		// needs a higher threshold (T=20). That keeps small tokens from getting stolen
-		// out of deleted elements.
+		// Moving an expression across statements or between containers in the same statement
+		// (like pulling a field into another struct) needs a higher threshold (T=20) so small
+		// tokens don't get stolen from deleted elements.
+		//
+		// Only real containers (blocks, literals) trigger the penalty. Non-containers like
+		// calls or binary operators don't count, so unnested expressions can still move.
 		if src != srcStmt || dst != dstStmt {
 			if ms.Get(srcStmt) != dstStmt {
 				return 20
 			}
 			if src.Parent != nil && dst.Parent != nil {
-				if mappedDstParent := ms.Dst()[dst.Parent]; mappedDstParent != nil && !mappedDstParent.Contains(src) {
-					return 20
+				if isDelimitedOrBlockContainer(dst.Parent, r) {
+					if mapped := ms.Dst()[dst.Parent]; mapped != nil && !mapped.Contains(src) {
+						return 20
+					}
 				}
-				if mappedSrcParent := ms.Src()[src.Parent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dst) {
-					return 20
+				if isDelimitedOrBlockContainer(src.Parent, r) {
+					if mapped := ms.Src()[src.Parent]; mapped != nil && !mapped.Contains(dst) {
+						return 20
+					}
 				}
 			}
 		}
