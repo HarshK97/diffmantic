@@ -104,6 +104,9 @@ func TopDown(
 						if ambiguous {
 							A = append(A, [2]*treesitter.ASTNode{t1, t2})
 						} else {
+							if hasDelimitedContainerConflict(t1, t2, m, r) {
+								continue
+							}
 							addIsomorphicPairs(t1, t2, m)
 						}
 					}
@@ -192,6 +195,9 @@ func TopDown(
 			continue
 		}
 		if sp.mismatched && (Height(t1) <= 2 || isDeclarationHeader(t1, rulesFor(t1)) || !hasIdentifier(t1, rulesFor(t1))) {
+			continue
+		}
+		if hasDelimitedContainerConflict(t1, t2, m, rulesFor(t1)) {
 			continue
 		}
 

@@ -611,3 +611,231 @@ func process(items []int) {
 		}
 	})
 }
+
+func TestTopDown_DelimitedContainerBoundaryGuard(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Source collection has two structs: S1 ("staging", SSL: true) and S2 ("backup", SSL: false).
+		s1Host := testutil.Node("keyed_element", "",
+			testutil.Node("identifier", "Host"),
+			testutil.Node("interpreted_string_literal", `"staging.internal"`),
+		)
+		s1SSL := testutil.Node("keyed_element", "",
+			testutil.Node("identifier", "SSL"),
+			testutil.Node("true", "true"),
+		)
+		s1Elem := testutil.Node("literal_value", "", s1Host, s1SSL)
+
+		s2Host := testutil.Node("keyed_element", "",
+			testutil.Node("identifier", "Host"),
+			testutil.Node("interpreted_string_literal", `"backup.internal"`),
+		)
+		s2SSL := testutil.Node("keyed_element", "",
+			testutil.Node("identifier", "SSL"),
+			testutil.Node("false", "false"),
+		)
+		s2Elem := testutil.Node("literal_value", "", s2Host, s2SSL)
+
+		outer1 := testutil.Node("literal_value", "", s1Elem, s2Elem)
+
+		// Destination collection has only D1 ("backup", SSL: true).
+		d1Host := testutil.Node("keyed_element", "",
+			testutil.Node("identifier", "Host"),
+			testutil.Node("interpreted_string_literal", `"backup.internal"`),
+		)
+		d1SSL := testutil.Node("keyed_element", "",
+			testutil.Node("identifier", "SSL"),
+			testutil.Node("true", "true"),
+		)
+		d1Elem := testutil.Node("literal_value", "", d1Host, d1SSL)
+
+		outer2 := testutil.Node("literal_value", "", d1Elem)
+
+		root1 := testutil.Node("source_file", "", outer1)
+		root1.Language = "go"
+		root2 := testutil.Node("source_file", "", outer2)
+		root2.Language = "go"
+
+		r := rulesFor(root1)
+
+		m := NewMapping()
+
+		if s1Pairs := collectContainerPairs(s1Elem, r, nil); len(s1Pairs) != 2 {
+			t.Errorf("expected 2 pairs for s1Elem, got %d", len(s1Pairs))
+		}
+
+		// S1's SSL: true matches D1's SSL: true, but S2 shares the "backup.internal" Host key with D1.
+		// S1 must not greedily steal D1 when S2 is a superior match.
+		if !hasDelimitedContainerConflict(s1SSL, d1SSL, m, r) {
+			t.Errorf("expected conflict between s1 (staging) and d1 (backup) due to unextinguished peer s2 (backup)")
+		}
+
+		// S2's SSL: false should still be allowed to match D1 because they share the Host key.
+		if hasDelimitedContainerConflict(s2SSL, d1SSL, m, r) {
+			t.Errorf("expected no conflict between s2 (backup) and d1 (backup)")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		runCase := func(t *testing.T, name string, src, dst []byte, stagingRow, backupRowSrc, backupRowDst uint32) {
+			t.Run(name, func(t *testing.T) {
+				oldTree, err := treesitter.Parse(src, "old.go")
+				if err != nil {
+					t.Fatal(err)
+				}
+				newTree, err := treesitter.Parse(dst, "new.go")
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := rulesFor(oldTree)
+
+				part := NewLinePartition(src, dst)
+				mr := Match(oldTree, newTree, src, dst, part)
+				m := mr.Mappings
+
+				// Enclosing declarations must stay anchored in place.
+				var oldServerDecl, newServerDecl *treesitter.ASTNode
+				var oldVarDecl, newVarDecl *treesitter.ASTNode
+				for _, n := range oldTree.PreOrder() {
+					if r.IsDeclaration(n.Type) {
+						switch n.StartRow {
+						case 2:
+							oldServerDecl = n
+						case 8:
+							oldVarDecl = n
+						}
+					}
+				}
+				for _, n := range newTree.PreOrder() {
+					if r.IsDeclaration(n.Type) {
+						switch n.StartRow {
+						case 2:
+							newServerDecl = n
+						case 8:
+							newVarDecl = n
+						}
+					}
+				}
+				if oldServerDecl == nil || newServerDecl == nil || m.Src()[oldServerDecl] != newServerDecl {
+					t.Errorf("expected Server struct declaration to map in place, got %v", m.Src()[oldServerDecl])
+				}
+				if oldVarDecl == nil || newVarDecl == nil || m.Src()[oldVarDecl] != newVarDecl {
+					t.Errorf("expected var servers declaration to map in place, got %v", m.Src()[oldVarDecl])
+				}
+
+				// Unchanged earlier elements must stay mapped in place.
+				var oldPrimary, newPrimary *treesitter.ASTNode
+				for _, n := range oldTree.PreOrder() {
+					if r.IsPair(n.Type) && n.StartRow == 9 && len(n.Children) >= 2 && getKeyLabel(n) == "Host" {
+						oldPrimary = n
+						break
+					}
+				}
+				for _, n := range newTree.PreOrder() {
+					if r.IsPair(n.Type) && n.StartRow == 9 && len(n.Children) >= 2 && getKeyLabel(n) == "Host" {
+						newPrimary = n
+						break
+					}
+				}
+				if oldPrimary == nil || newPrimary == nil || m.Src()[oldPrimary] != newPrimary {
+					t.Errorf("expected primary.internal to map in place, got %v", m.Src()[oldPrimary])
+				}
+
+				// Staging was deleted; it must not map into the updated backup element.
+				for n1, n2 := range m.Src() {
+					if n1.StartRow == stagingRow && n2.StartRow == backupRowDst {
+						t.Errorf("expected deleted staging element at row %d to not map to new backup element at row %d (node %s -> %s)",
+							n1.StartRow, n2.StartRow, n1.Type, n2.Type)
+					}
+				}
+
+				// Stationary fields inside the updated element should map in place.
+				var oldBackupHost, newBackupHost *treesitter.ASTNode
+				var oldBackupPort, newBackupPort *treesitter.ASTNode
+				for _, n := range oldTree.PreOrder() {
+					if r.IsPair(n.Type) && n.StartRow == backupRowSrc && len(n.Children) >= 2 {
+						if getKeyLabel(n) == "Host" {
+							oldBackupHost = n
+						} else if getKeyLabel(n) == "Port" {
+							oldBackupPort = n
+						}
+					}
+				}
+				for _, n := range newTree.PreOrder() {
+					if r.IsPair(n.Type) && n.StartRow == backupRowDst && len(n.Children) >= 2 {
+						if getKeyLabel(n) == "Host" {
+							newBackupHost = n
+						} else if getKeyLabel(n) == "Port" {
+							newBackupPort = n
+						}
+					}
+				}
+				if oldBackupHost == nil || newBackupHost == nil || m.Src()[oldBackupHost] != newBackupHost {
+					t.Errorf("expected backup Host pair to map in place, got %v", m.Src()[oldBackupHost])
+				}
+				if oldBackupPort == nil || newBackupPort == nil || m.Src()[oldBackupPort] != newBackupPort {
+					t.Errorf("expected backup Port pair to map in place, got %v", m.Src()[oldBackupPort])
+				}
+			})
+		}
+
+		// Case 1: Updated element appears before deleted element in source.
+		srcStd := []byte(`package config
+
+type Server struct {
+	Host string
+	Port int
+	SSL  bool
+}
+
+var servers = []Server{
+	{Host: "primary.internal", Port: 8080, SSL: true},
+	{Host: "backup.internal", Port: 8080, SSL: false},
+	{Host: "staging.internal", Port: 9090, SSL: true},
+}
+`)
+		dstStd := []byte(`package config
+
+type Server struct {
+	Host string
+	Port int
+	SSL  bool
+}
+
+var servers = []Server{
+	{Host: "primary.internal", Port: 8080, SSL: true},
+	{Host: "backup.internal", Port: 8080, SSL: true},
+}
+`)
+		runCase(t, "StandardOrder_DeletedAfterUpdated", srcStd, dstStd, 11, 10, 10)
+
+		// Case 2: Deleted element appears first; top-down matching must not greedily claim the updated element.
+		srcInv := []byte(`package config
+
+type Server struct {
+	Host string
+	Port int
+	SSL  bool
+}
+
+var servers = []Server{
+	{Host: "primary.internal", Port: 8080, SSL: true},
+	{Host: "staging.internal", Port: 9090, SSL: true},
+	{Host: "backup.internal", Port: 8080, SSL: false},
+}
+`)
+		dstInv := []byte(`package config
+
+type Server struct {
+	Host string
+	Port int
+	SSL  bool
+}
+
+var servers = []Server{
+	{Host: "primary.internal", Port: 8080, SSL: true},
+	{Host: "backup.internal", Port: 8080, SSL: true},
+}
+`)
+		runCase(t, "InvertedOrder_DeletedBeforeUpdated", srcInv, dstInv, 10, 11, 10)
+	})
+}

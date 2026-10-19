@@ -1055,6 +1055,9 @@ func matchPairValues(t1, t2 *treesitter.ASTNode, m *Mapping) {
 				if tag1 != "" && tag2 != "" && tag1 != tag2 {
 					continue
 				}
+				if hasDelimitedContainerConflict(n1, cand, m, r) {
+					continue
+				}
 
 				// If the parent or grandparent containers already matched, pair them directly.
 				if n1.Parent != nil && cand.Parent != nil && m.Src()[n1.Parent] == cand.Parent {
