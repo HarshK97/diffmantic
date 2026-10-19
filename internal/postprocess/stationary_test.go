@@ -2,6 +2,7 @@ package postprocess
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -1336,6 +1337,187 @@ var pairs = []LineAlignmentPair{
 		}
 		if matchResult.Mappings.Src()[srcUntouchedElem] != dstUntouchedElem {
 			t.Errorf("expected untouched element {LeftLine: 4, RightLine: -1} to map in place, got %v", matchResult.Mappings.Src()[srcUntouchedElem])
+		}
+	})
+}
+
+func TestNormalizeMoves_PreservesSubExpressionMoveWhenParentIsNotContainer(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Non-container parents (like binary expressions or calls) shouldn't trigger
+		// the T=20 container penalty when an expression is unnested or re-parented.
+		oldBlock := mkNode("block", "")
+		oldBlock.Language = "go"
+		oldStmt := mkNode("expression_statement", "")
+		oldStmt.Language = "go"
+		oldStmt.StartRow, oldStmt.EndRow = 3, 3
+		oldOp := mkNode("binary_expression", "")
+		oldOp.Language = "go"
+		oldExpr := mkNode("call_expression", "make(...)")
+		oldExpr.Language = "go"
+		oldExpr.StartRow, oldExpr.EndRow = 3, 3
+
+		oldBlock.Children = []*treesitter.ASTNode{oldStmt}
+		oldStmt.Parent = oldBlock
+		oldStmt.Children = []*treesitter.ASTNode{oldOp}
+		oldOp.Parent = oldStmt
+		oldOp.Children = []*treesitter.ASTNode{oldExpr}
+		oldExpr.Parent = oldOp
+
+		foreignOp := mkNode("binary_expression", "")
+		foreignOp.Language = "go"
+
+		newBlock := mkNode("block", "")
+		newBlock.Language = "go"
+		newStmt := mkNode("short_var_declaration", "")
+		newStmt.Language = "go"
+		newStmt.StartRow, newStmt.EndRow = 5, 5
+		newOp := mkNode("binary_expression", "")
+		newOp.Language = "go"
+		newExpr := mkNode("call_expression", "make(...)")
+		newExpr.Language = "go"
+		newExpr.StartRow, newExpr.EndRow = 5, 5
+
+		newBlock.Children = []*treesitter.ASTNode{newStmt}
+		newStmt.Parent = newBlock
+		newStmt.Children = []*treesitter.ASTNode{newOp}
+		newOp.Parent = newStmt
+		newOp.Children = []*treesitter.ASTNode{newExpr}
+		newExpr.Parent = newOp
+
+		ms := engine.NewMapping()
+		ms.Add(oldStmt, newStmt)
+		// Map newOp to a foreign parent that doesn't contain oldExpr.
+		ms.Add(foreignOp, newOp)
+		ms.Add(oldExpr, newExpr)
+
+		r := rules.Get("go")
+		threshold := requiredMoveThreshold(oldExpr, newExpr, ms, r)
+		if threshold != 4 {
+			t.Errorf("expected requiredMoveThreshold to be 4 for expression move, got %d", threshold)
+		}
+
+		// Real containers (like literal_value) should still hit the T=20 penalty.
+		oldCont := mkNode("literal_value", "")
+		oldCont.Language = "go"
+		newCont := mkNode("literal_value", "")
+		newCont.Language = "go"
+		foreignCont := mkNode("literal_value", "")
+		foreignCont.Language = "go"
+
+		oldStmt.Children = []*treesitter.ASTNode{oldCont}
+		oldCont.Parent = oldStmt
+		oldCont.Children = []*treesitter.ASTNode{oldExpr}
+		oldExpr.Parent = oldCont
+
+		newStmt.Children = []*treesitter.ASTNode{newCont}
+		newCont.Parent = newStmt
+		newCont.Children = []*treesitter.ASTNode{newExpr}
+		newExpr.Parent = newCont
+
+		msCont := engine.NewMapping()
+		msCont.Add(oldStmt, newStmt)
+		msCont.Add(foreignCont, newCont)
+		msCont.Add(oldExpr, newExpr)
+
+		contThreshold := requiredMoveThreshold(oldExpr, newExpr, msCont, r)
+		if contThreshold != 20 {
+			t.Errorf("expected requiredMoveThreshold to return 20 for container parent, got %d", contThreshold)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		// Arguments moving between chained method calls shouldn't get penalized
+		// with T=20: it's a valid move, not a stolen container element.
+		src := []byte(`package test
+
+func f() {
+	builder.Call(
+		longArg(),
+	)
+}
+`)
+		dst := []byte(`package test
+
+func f() {
+	builder.Call(
+		other(),
+	).Call(
+		longArg(),
+	)
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Context declarations (package, func) should stay untouched
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+				t.Errorf("expected context node %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 2. Exactly one move for the argument_list
+		var moveActions []actions.Action
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move {
+				moveActions = append(moveActions, a)
+			}
+		}
+		if len(moveActions) != 1 {
+			t.Fatalf("expected exactly 1 move action across entire snippet, got %d: %v", len(moveActions), moveActions)
+		}
+		move := moveActions[0]
+		if move.Node == nil || move.Node.Type != "argument_list" {
+			t.Errorf("expected moved node to be argument_list, got %v", move.Node)
+		}
+		moveContent := strings.TrimSpace(string(src[move.Node.StartByte:move.Node.EndByte]))
+		if !strings.Contains(moveContent, "longArg()") {
+			t.Errorf("expected moved argument_list to contain longArg(), got %q", moveContent)
+		}
+
+		// 3. The other() call arguments should be recorded as an insert
+		hasOtherInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Insert && a.Node != nil && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "other()")
+		})
+		if !hasOtherInsert {
+			t.Error("expected chained call argument_list with other() to be inserted")
+		}
+
+		// 4. Package and function headers still map in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "function_declaration" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "function_declaration" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing function_declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function_declaration to map in place, got %v", matchResult.Mappings.Src()[srcFn])
 		}
 	})
 }
