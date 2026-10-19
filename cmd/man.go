@@ -13,14 +13,14 @@ import (
 // GenerateManPage renders a Unix roff man page from the CLI command tree and flag definitions.
 func GenerateManPage(cmd *cobra.Command, releaseDate string) string {
 	if releaseDate == "" {
-		releaseDate = "2026-10-09"
+		releaseDate = "2026-10-19"
 	}
 
 	var buf bytes.Buffer
 
 	version := cmd.Version
 	if version == "" {
-		version = "0.12.0"
+		version = "0.13.0"
 	}
 	fmt.Fprintf(&buf, ".TH DIFFM 1 %q %q \"Diffmantic Manual\"\n", releaseDate, "Diffmantic "+version)
 
