@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-19
+
+### Added
+- Added `-u` shorthand flag for unified diffs (`-f unified`).
+
+### Changed
+- Renamed inline diffs to unified (`-f unified`) across the CLI and engine to match standard diff conventions.
+- Swapped the destination move badge arrow from `⤹` to `↳` so fonts that lack the curved arrow don't render a tofu box.
+- Hid move badges when the source and destination sit within 15 lines of each other. You can already see both on screen side by side, so the extra badge just added clutter.
+- Edits inside moved blocks now show up in bold underlined amber instead of matching the move color, making changes inside moved code stand out right away.
+- Cleaned up side-by-side file banners by dropping the heavy `━━━` box bars in favor of a clean path and diff stats header.
+
+### Fixed
+- Fields inside struct literals and dictionary entries won't cross-match across different collections or steal fields from deleted siblings.
+- Nested calls with the same name (like `max(foo(a), max(0, b))`) won't flip identities and scramble argument matches.
+- Function calls that wrap callbacks (like `sort.Slice` or `slices.SortStableFunc`) won't match outer calls against inner helper bodies or leave behind stranded `()` moves.
+- Moving an init statement (like `if x := ...; cond`) out of a header into an outer block now stays marked as a move instead of falling back to a delete and insert.
+- In Go, changing `var x T` to a short variable declaration (`x := ...`) now matches in place instead of showing up as a deleted and re-inserted statement.
+- Added or removed trailing commas and semicolons on otherwise untouched lines now highlight as edits instead of getting ignored.
+- Highlight spans no longer swallow unmatched `(` or `}` delimiters when merging gaps across edited names.
+- Outer containers whose children are all accounted for (like replacing a Rust use list with a path qualifier) won't paint untouched path prefixes or semicolons as edits.
+- Trailing comments on lines ending with commas or semicolons now stick to their statement instead of dropping down to the next line.
+- Comments anchored to surviving statements now pair up before unanchored text matching runs, so deleted code can't steal comments from surviving blocks.
+- Tightened move thresholds for expressions moving between different containers in the same statement, so updated items don't steal pieces from deleted neighbors.
+- When a hollow block falls back to a delete and insert, its surviving child statements now get checked against move thresholds individually instead of riding along as ghost moves.
+- Swapped or grouped moves that mix multiline and single-line statements now keep the same color across the whole group instead of splitting across teal and mauve.
+- Dropping an operand from a chained expression like `(A || B) || C` won't shift inner operators off by one level.
+- Duplicate statements in neighboring blocks won't grab matches in the wrong block during early tree matching.
+- Statements moved together into a helper function now pair up by assigned variable names, and bare jump statements (`break`, `continue`) in moved loop bodies stay matched.
+- Top-down tree matching now prioritizes direct parent similarity over outer loop fallbacks, stopping outer blocks from stealing matches from modified direct parents.
+- Re-indented statements match reliably during early line diffing, and single-line statements won't lock into unchanged blocks just because they sit next to a closing brace.
+
+### Performance
+- Skipped AST parsing entirely when Git passes identical blob hashes (mode-only changes) or when comparing identical files.
+
 ## [0.12.0] - 2026-10-09
 
 ### Changed
@@ -325,7 +360,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/HarshK97/diffmantic/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/HarshK97/diffmantic/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/HarshK97/diffmantic/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/HarshK97/diffmantic/compare/v0.9.0...v0.10.0

@@ -51,7 +51,7 @@ func isAllZeros(s string) bool {
 
 var rootCmd = &cobra.Command{
 	Use:     "diffm [refA] [refB]",
-	Version: "0.12.0",
+	Version: "0.13.0",
 	Short:   "Semantic diff engine powered by Tree-sitter",
 	Long: `diffmantic is a structural source code diff engine.
 
