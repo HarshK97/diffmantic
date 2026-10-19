@@ -191,6 +191,11 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	if hasEnclosingConstructAncestor(t1, c, r) {
 		return -1.0
 	}
+	// Don't let an inner construct steal an outer container when candidate c has
+	// descendants that belong to an unmapped outer ancestor (or vice versa).
+	if hasEnclosingConstructWithMappedDescendant(t1, c, m, r) {
+		return -1.0
+	}
 
 	// Don't let an inner binary expression steal a match when its unmapped parent
 	// already has the shared operand on the same side.
@@ -889,6 +894,86 @@ func hasEnclosingConstructAncestor(t1, c *treesitter.ASTNode, r *rules.Rules) bo
 			}
 		}
 	}
+	return false
+}
+
+// hasEnclosingConstructWithMappedDescendant checks whether matching t1 to c would let an inner
+// construct steal an outer container during post-order traversal. This happens when candidate c
+// already holds mapped children belonging to an unmapped ancestor of t1 (or vice versa).
+func hasEnclosingConstructWithMappedDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+
+	isCall := func(t string) bool {
+		return (r != nil && r.IsCall(t)) || (r == nil && rules.IsCall(t))
+	}
+	isDelimited := func(t string) bool {
+		return (r != nil && r.IsDelimitedContainer(t)) || (r == nil && rules.IsDelimitedContainer(t))
+	}
+	isBlock := func(t string) bool {
+		return (r != nil && r.IsBlock(t)) || (r == nil && rules.IsBlock(t))
+	}
+	isDecl := func(t string) bool {
+		return (r != nil && r.IsDeclaration(t)) || (r == nil && rules.IsDeclaration(t))
+	}
+
+	areConstructsCompatible := func(outer, target *treesitter.ASTNode) bool {
+		if !TypesMatch(outer.Type, target.Type, r) {
+			return false
+		}
+		if isCall(outer.Type) {
+			c1 := extractCalleeLabel(outer, r)
+			c2 := extractCalleeLabel(target, r)
+			return c1 != "" && c2 != "" && calleesCompatible(c1, c2)
+		}
+		if isDelimited(outer.Type) {
+			p1, p2 := outer.Parent, target.Parent
+			if p1 != nil && p2 != nil && isCall(p1.Type) && isCall(p2.Type) {
+				c1 := extractCalleeLabel(p1, r)
+				c2 := extractCalleeLabel(p2, r)
+				return c1 != "" && c2 != "" && calleesCompatible(c1, c2)
+			}
+			return true
+		}
+		if isDecl(outer.Type) {
+			n1 := getDeclarationName(outer)
+			n2 := getDeclarationName(target)
+			return n1 != "" && n2 != "" && n1 == n2
+		}
+		return isBlock(outer.Type)
+	}
+
+	inSubtree := func(root, n *treesitter.ASTNode) bool {
+		return root == n || root.Contains(n)
+	}
+
+	// Reject if candidate c holds children whose partners belong to an unmapped outer ancestor of t1.
+	for _, d2 := range c.Descendants() {
+		if d1, ok := m.Dst()[d2]; ok {
+			if !inSubtree(t1, d1) {
+				for a1 := t1.Parent; a1 != nil; a1 = a1.Parent {
+					if !m.Has(a1) && a1.Contains(d1) && areConstructsCompatible(a1, c) {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	// Symmetrically reject if t1 holds children whose partners belong to an unmapped outer ancestor of c.
+	for _, d1 := range t1.Descendants() {
+		if d2, ok := m.Src()[d1]; ok {
+			if !inSubtree(c, d2) {
+				for a2 := c.Parent; a2 != nil; a2 = a2.Parent {
+					if !m.HasDst(a2) && a2.Contains(d2) && areConstructsCompatible(a2, t1) {
+						return true
+					}
+				}
+			}
+		}
+	}
+
 	return false
 }
 

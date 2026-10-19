@@ -1408,3 +1408,287 @@ func TestBottomUp_BinaryChainLeadingOperandDeletion(t *testing.T) {
 		t.Errorf("expected oldC (n.IsKeyword) to match newC, got %v", m.Get(oldC))
 	}
 }
+
+func TestBottomUp_NestedCallFlattening_EnclosingConstructGuard(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("go")
+
+		// Source tree:
+		// outerMax(foo(a), innerMax(0, diff))
+		firstArg := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Node("argument_list", "", testutil.Leaf("identifier", "a")),
+		)
+		innerZero := testutil.Leaf("int_literal", "0")
+		innerDiff := testutil.Leaf("identifier", "diff")
+		innerMax := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "max"),
+			testutil.Node("argument_list", "", innerZero, innerDiff),
+		)
+		outerMax := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "max"),
+			testutil.Node("argument_list", "", firstArg, innerMax),
+		)
+
+		// Destination tree (flattened):
+		// newMax(foo(a), 0, diff)
+		newFirstArg := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "foo"),
+			testutil.Node("argument_list", "", testutil.Leaf("identifier", "a")),
+		)
+		newZero := testutil.Leaf("int_literal", "0")
+		newDiff := testutil.Leaf("identifier", "diff")
+		newMax := testutil.Node("call_expression", "",
+			testutil.Leaf("identifier", "max"),
+			testutil.Node("argument_list", "", newFirstArg, newZero, newDiff),
+		)
+
+		treesitter.EnsureIndex(outerMax)
+		treesitter.EnsureIndex(newMax)
+
+		m := NewMapping()
+		// Map foo(a) <-> foo(a), which sits in outerMax outside innerMax.
+		addIsomorphicPairs(firstArg, newFirstArg, m)
+		// Map 0 <-> 0 and diff <-> diff inside innerMax.
+		m.Add(innerZero, newZero)
+		m.Add(innerDiff, newDiff)
+
+		// innerMax should NOT be allowed to steal newMax because newMax contains newFirstArg,
+		// whose source partner firstArg belongs to outerMax (an unmapped ancestor of innerMax).
+		if !hasEnclosingConstructWithMappedDescendant(innerMax, newMax, m, r) {
+			t.Errorf("expected innerMax <-> newMax candidate to be rejected by enclosing construct guard")
+		}
+
+		// outerMax, however, IS the enclosing construct, so it should not be blocked from newMax.
+		if hasEnclosingConstructWithMappedDescendant(outerMax, newMax, m, r) {
+			t.Errorf("expected outerMax <-> newMax candidate to be allowed")
+		}
+
+		// Symmetrically in reverse: reject if source container has descendants whose partners
+		// belong to an unmapped outer ancestor of the candidate.
+		revM := NewMapping()
+		addIsomorphicPairs(newFirstArg, firstArg, revM)
+		revM.Add(newZero, innerZero)
+		revM.Add(newDiff, innerDiff)
+
+		if !hasEnclosingConstructWithMappedDescendant(newMax, innerMax, revM, r) {
+			t.Errorf("expected symmetric candidate newMax <-> innerMax to be rejected")
+		}
+	})
+
+	t.Run("TopDownBottomUp", func(t *testing.T) {
+		oldSrc := []byte(`package main
+func f() {
+	_ = max(foo(a), max(0, n-m))
+}
+`)
+		newSrc := []byte(`package main
+func f() {
+	_ = max(foo(a), 0, n-m)
+}
+`)
+
+		t1, err := treesitter.Parse(oldSrc, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t2, err := treesitter.Parse(newSrc, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		m := NewMapping()
+
+		TopDown(t1, t2, 2, m, part)
+		BottomUp(t1, t2, m, 0.5)
+
+		r1 := rulesFor(t1)
+		r2 := rulesFor(t2)
+
+		var oldOuterMax, oldInnerMax, newMax *treesitter.ASTNode
+		for _, n := range t1.PostOrder() {
+			if r1.IsCall(n.Type) && extractCalleeLabel(n, r1) == "max" {
+				if oldInnerMax == nil {
+					oldInnerMax = n
+				} else {
+					oldOuterMax = n
+				}
+			}
+		}
+		for _, n := range t2.PostOrder() {
+			if r2.IsCall(n.Type) && extractCalleeLabel(n, r2) == "max" {
+				newMax = n
+			}
+		}
+
+		if oldOuterMax == nil || oldInnerMax == nil || newMax == nil {
+			t.Fatalf("failed to locate call nodes: outer=%v inner=%v new=%v", oldOuterMax, oldInnerMax, newMax)
+		}
+
+		if m.Get(oldInnerMax) == newMax {
+			t.Errorf("inner max(0, n-m) stole newMax container; expected inner max to remain unmapped")
+		}
+		if m.Get(oldOuterMax) != newMax {
+			t.Errorf("expected outer max(foo(a), ...) to match newMax, got %v", m.Get(oldOuterMax))
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package main
+
+func f() {
+	ts := setup()
+	_ = http.Get(fmt.Sprintf("%s/test", ts.URL))
+	ts.Close()
+}
+`
+		dst := `package main
+
+func f() {
+	ts := setup()
+	_ = http.Get(ts.URL + "/test")
+	ts.Close()
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+
+		// 1. Target call expression & argument_list container verification
+		var srcHttpGet, srcSprintf, dstHttpGet *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) {
+				callee := extractCalleeLabel(n, r)
+				switch callee {
+				case "http":
+					srcHttpGet = n
+				case "fmt":
+					srcSprintf = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "http" {
+				dstHttpGet = n
+			}
+		}
+
+		if srcHttpGet == nil || srcSprintf == nil || dstHttpGet == nil {
+			t.Fatalf("failed to locate call nodes: srcHttpGet=%v srcSprintf=%v dstHttpGet=%v",
+				srcHttpGet, srcSprintf, dstHttpGet)
+		}
+
+		if matched := mr.Mappings.Src()[srcHttpGet]; matched != dstHttpGet {
+			t.Errorf("expected outer http.Get to match dstHttpGet, got %v", matched)
+		}
+		if matched := mr.Mappings.Src()[srcSprintf]; matched != nil {
+			t.Errorf("inner fmt.Sprintf must remain unmapped, got %v", matched)
+		}
+
+		// Verify outer argument_list matches dstHttpGet argument_list, and inner argument_list is deleted
+		var srcOuterArgs, srcInnerArgs, dstArgs *treesitter.ASTNode
+		for _, c := range srcHttpGet.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				srcOuterArgs = c
+			}
+		}
+		for _, c := range srcSprintf.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				srcInnerArgs = c
+			}
+		}
+		for _, c := range dstHttpGet.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				dstArgs = c
+			}
+		}
+
+		if srcOuterArgs == nil || srcInnerArgs == nil || dstArgs == nil {
+			t.Fatalf("failed to locate argument_list containers: srcOuterArgs=%v srcInnerArgs=%v dstArgs=%v",
+				srcOuterArgs, srcInnerArgs, dstArgs)
+		}
+		// In call flattening, the inner argument_list holding surviving arguments (ts.URL)
+		// maps to dstArgs, while the outer wrapper argument_list is deleted.
+		if matched := mr.Mappings.Src()[srcInnerArgs]; matched != dstArgs {
+			t.Errorf("expected inner fmt.Sprintf argument_list to match dstArgs, got %v", matched)
+		}
+		if matched := mr.Mappings.Src()[srcOuterArgs]; matched != nil {
+			t.Errorf("outer http.Get argument_list must remain unmapped, got %v", matched)
+		}
+
+		// 2. Whole-snippet verification: enclosing function declaration maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil {
+			t.Fatalf("missing function_declaration: src=%v, dst=%v", srcFunc, dstFunc)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected func f to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+
+		// Verify all 3 sequential statements in func body map in place
+		var srcStmts, dstStmts []*treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && n.Parent != nil && r.IsBlock(n.Parent.Type) {
+				srcStmts = append(srcStmts, n)
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && n.Parent != nil && r.IsBlock(n.Parent.Type) {
+				dstStmts = append(dstStmts, n)
+			}
+		}
+		if len(srcStmts) != 3 || len(dstStmts) != 3 {
+			t.Fatalf("expected 3 body statements in src and dst, got src=%d, dst=%d", len(srcStmts), len(dstStmts))
+		}
+		for i := range srcStmts {
+			if matched := mr.Mappings.Src()[srcStmts[i]]; matched != dstStmts[i] {
+				t.Errorf("expected body statement #%d to map in place, got %v", i, matched)
+			}
+		}
+
+		// 3. Stationary Operands: ts.URL selector expression maps in place
+		var srcTsURL, dstTsURL *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "selector_expression" && len(n.Children) >= 2 && n.Children[1].Label == "URL" {
+				srcTsURL = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "selector_expression" && len(n.Children) >= 2 && n.Children[1].Label == "URL" {
+				dstTsURL = n
+			}
+		}
+		if srcTsURL == nil || dstTsURL == nil {
+			t.Fatalf("missing ts.URL selector_expression: src=%v dst=%v", srcTsURL, dstTsURL)
+		}
+		if matched := mr.Mappings.Src()[srcTsURL]; matched != dstTsURL {
+			t.Errorf("expected ts.URL to map in place, got %v", matched)
+		}
+	})
+}
