@@ -103,3 +103,23 @@ func TestPager_IsActive(t *testing.T) {
 		t.Error("expected pager with closed doneChan to not be active")
 	}
 }
+
+func TestPager_Done(t *testing.T) {
+	var nilPager *Pager
+	if nilPager.Done() != nil {
+		t.Error("expected nil pager Done() to be nil channel")
+	}
+
+	doneChan := make(chan struct{})
+	activePager := &Pager{doneChan: doneChan}
+	if activePager.Done() != doneChan {
+		t.Error("expected active pager Done() to return doneChan")
+	}
+	close(doneChan)
+	select {
+	case <-activePager.Done():
+		// ok
+	default:
+		t.Error("expected closed doneChan to be receivable")
+	}
+}

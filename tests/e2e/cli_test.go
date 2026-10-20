@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
@@ -848,5 +849,88 @@ func TestCLI_BinaryDiff(t *testing.T) {
 	}
 	if !env.IsBinary {
 		t.Error("expected is_binary: true in JSON output")
+	}
+}
+
+func TestCLI_DirectoryDiff_ConcurrentFileOrdering(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	const numFiles = 12
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("mod_%02d.go", i)
+		src := fmt.Sprintf("package p\nfunc F%02d() int { return %d }\n", i, i)
+		dst := fmt.Sprintf("package p\nfunc F%02d() int { return %d }\n", i, i+100)
+
+		writeTestFile(t, filepath.Join(dirA, name), src)
+		writeTestFile(t, filepath.Join(dirB, name), dst)
+	}
+
+	stdout, stderr, err := runDiffm(dirA, dirB, "-f", "unified", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm multi-file directory failed: %v\nstderr: %s", err, stderr)
+	}
+
+	lastPos := -1
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("mod_%02d.go", i)
+		pos := strings.Index(stdout, name)
+		if pos == -1 {
+			t.Fatalf("expected output to contain %q, but was missing:\n%s", name, stdout)
+		}
+		if pos < lastPos {
+			t.Fatalf("file %q was out of order: pos %d < lastPos %d", name, pos, lastPos)
+		}
+		lastPos = pos
+	}
+}
+
+// When the downstream pipe closes early (e.g. diffm | head -n 1), diffm should stop background workers and exit promptly without hanging.
+func TestCLI_DirectoryDiff_BrokenPipeEarlyExit(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	const numFiles = 15
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("chunk_%02d.go", i)
+		src := fmt.Sprintf("package p\nfunc F%02d() int { return %d }\n", i, i)
+		dst := fmt.Sprintf("package p\nfunc F%02d() int { return %d }\n", i, i*2)
+		writeTestFile(t, filepath.Join(dirA, name), src)
+		writeTestFile(t, filepath.Join(dirB, name), dst)
+	}
+
+	cmd := exec.CommandContext(t.Context(), binaryPath, dirA, dirB, "-f", "unified", "--no-pager")
+	cmd.Env = isolatedEnv()
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting cmd: %v", err)
+	}
+
+	// Read first chunk, then immediately close the pipe to trigger broken pipe (EPIPE)
+	buf := make([]byte, 64)
+	_, _ = stdoutPipe.Read(buf)
+	_ = stdoutPipe.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case <-time.After(2 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("process hung after broken pipe, exceeding 2 second timeout")
+	case cmdErr := <-done:
+		_ = cmdErr // Process may exit with non-zero or SIGPIPE when pipe breaks
+		elapsed := time.Since(start)
+		if elapsed > 1500*time.Millisecond {
+			t.Errorf("broken pipe exit took too long: %v (expected sub-second teardown)", elapsed)
+		}
 	}
 }

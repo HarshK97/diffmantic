@@ -102,6 +102,16 @@ func (p *Pager) IsActive() bool {
 	}
 }
 
+// Done returns a channel that is closed when the pager subprocess exits.
+// If p is nil, Done returns nil so it never fires in select statements.
+// If the pager subprocess has already exited, the returned channel is closed and unblocks immediately.
+func (p *Pager) Done() <-chan struct{} {
+	if p == nil {
+		return nil
+	}
+	return p.doneChan
+}
+
 func resolvePagerPreference() string {
 	if val := strings.TrimSpace(os.Getenv("GIT_PAGER")); val != "" {
 		return val

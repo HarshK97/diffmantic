@@ -182,7 +182,9 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 					fmt.Fprintf(os.Stderr, "Error: when comparing directories, both arguments must be directories\n")
 					os.Exit(1)
 				}
-				runDirectoryDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+				if runDirectoryDiff(cmd, argA, argB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+					os.Exit(1)
+				}
 				return
 			}
 

@@ -3,12 +3,15 @@ package cmd
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"fmt"
 	"io"
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"sync"
 
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
@@ -16,17 +19,43 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// changedFile tracks a detected file change between two directory trees.
+type changedFile struct {
+	relPath string
+	pathA   string
+	pathB   string
+}
+
+// diffJob represents an in-flight file diff operation processed by a worker.
+type diffJob struct {
+	cf       changedFile
+	srcBytes []byte
+	dstBytes []byte
+	dr       *pipeline.DiffResult
+	err      error
+	done     chan struct{}
+}
+
 // runDirectoryDiff recursively diffs two directories, streaming all changed files through a single pager session.
-func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
+func runDirectoryDiff(
+	cmd *cobra.Command,
+	dirA, dirB string,
+	format string,
+	ignoreComments bool,
+	parseErrorLimit int,
+	sizeLimitKB int,
+	lineLimitLines int,
+	noPager bool,
+) (hadErrors bool) {
 	filesA, err := listDirectoryFiles(dirA)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: walking directory %s: %v\n", dirA, err)
-		os.Exit(1)
+		return true
 	}
 	filesB, err := listDirectoryFiles(dirB)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: walking directory %s: %v\n", dirB, err)
-		os.Exit(1)
+		return true
 	}
 
 	allPaths := make(map[string]struct{}, len(filesA)+len(filesB))
@@ -54,14 +83,7 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	unifiedOpts := resolveUnifiedOptions(cmd)
 	sbsOpts := resolveSideBySideOptions(cmd)
 
-	hadErrors := false
-
 	// Find which files changed before starting the pager.
-	type changedFile struct {
-		relPath string
-		pathA   string
-		pathB   string
-	}
 	var changedFiles []changedFile
 
 	for _, relPath := range relPaths {
@@ -118,85 +140,186 @@ func runDirectoryDiff(cmd *cobra.Command, dirA, dirB string, format string, igno
 	}
 
 	if len(changedFiles) == 0 {
-		if hadErrors {
-			os.Exit(1)
-		}
-		return
+		return hadErrors
 	}
 
-	// Only launch the pager when there are diffs to display.
 	var p *pager.Pager
 	var writer io.Writer = os.Stdout
 	if format == "unified" || format == "side-by-side" || format == "actions" {
 		p, writer = pager.Start(noPager)
-		defer p.Close()
 	}
 
-	// Second pass: stream diffs file by file so memory stays flat.
+	// Stop workers, close the pager to unblock readers, then wait for goroutines to exit.
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		if p != nil {
+			p.Close()
+		}
+		wg.Wait()
+	}()
+
+	// Cancel background workers if the user exits the pager early.
+	if p != nil {
+		wg.Go(func() {
+			select {
+			case <-ctx.Done():
+			case <-p.Done():
+				cancel()
+			}
+		})
+	}
+
+	// Diff files concurrently across workers while streaming output in order.
 	showBanner := len(changedFiles) > 1
 
-	for _, cf := range changedFiles {
+	jobs := make([]diffJob, len(changedFiles))
+	for i := range jobs {
+		jobs[i].cf = changedFiles[i]
+		jobs[i].done = make(chan struct{})
+	}
+
+	numWorkers := min(len(changedFiles), max(1, runtime.GOMAXPROCS(0)))
+	maxInFlight := min(len(changedFiles), max(numWorkers*4, 64))
+
+	workQueue := make(chan int, maxInFlight)
+	sem := make(chan struct{}, maxInFlight)
+	for range maxInFlight {
+		sem <- struct{}{}
+	}
+
+	// Feed jobs to workers only as semaphore permits allow, keeping in-flight memory bounded.
+	wg.Go(func() {
+		for idx := range jobs {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sem:
+				select {
+				case <-ctx.Done():
+					return
+				case workQueue <- idx:
+				}
+			}
+		}
+	})
+
+	for range numWorkers {
+		wg.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case idx := <-workQueue:
+					processDirectoryJob(ctx, &jobs[idx], format, parseErrorLimit, sizeLimitKB, lineLimitLines, ignoreComments, opts)
+				}
+			}
+		})
+	}
+
+	for i := range jobs {
+		select {
+		case <-ctx.Done():
+			return hadErrors
+		case <-jobs[i].done:
+		}
+
+		if ctx.Err() != nil {
+			return hadErrors
+		}
+
 		if p != nil && !p.IsActive() {
 			break
 		}
 
-		var srcBytes, dstBytes []byte
-		var err error
-
-		if cf.pathA != "" {
-			srcBytes, err = os.ReadFile(cf.pathA)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathA, err)
-				hadErrors = true
-				continue
-			}
-		}
-		if cf.pathB != "" {
-			dstBytes, err = os.ReadFile(cf.pathB)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", cf.pathB, err)
-				hadErrors = true
-				continue
-			}
-		}
-
-		dr, err := pipeline.Run(srcBytes, dstBytes, cf.relPath, cf.relPath, pipeline.DiffOptions{
-			ParseErrorLimit:  parseErrorLimit,
-			IgnoreComments:   ignoreComments,
-			DisableSizeLimit: sizeLimitKB <= 0,
-			MaxASTFileSize:   sizeLimitKB * 1024,
-			DisableLineLimit: lineLimitLines <= 0,
-			MaxASTFileLines:  lineLimitLines,
-			EnvelopeOpts:     opts,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: diffing %s: %v\n", cf.relPath, err)
+		j := &jobs[i]
+		if j.err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", j.err)
 			hadErrors = true
-			continue
+		} else if j.dr != nil {
+			displayA := filepath.Join(dirA, j.cf.relPath)
+			displayB := filepath.Join(dirB, j.cf.relPath)
+			if err := renderDiffResult(displayA, displayB, j.srcBytes, j.dstBytes, j.dr, renderConfig{
+				format:      format,
+				showBanner:  showBanner,
+				writer:      writer,
+				unifiedOpts: unifiedOpts,
+				sbsOpts:     sbsOpts,
+			}); err != nil {
+				if pager.IsBrokenPipe(err) {
+					return hadErrors
+				}
+				fmt.Fprintf(os.Stderr, "Error: rendering %s: %v\n", j.cf.relPath, err)
+				hadErrors = true
+			}
 		}
 
-		displayA := filepath.Join(dirA, cf.relPath)
-		displayB := filepath.Join(dirB, cf.relPath)
-		if err := renderDiffResult(displayA, displayB, srcBytes, dstBytes, dr, renderConfig{
-			format:      format,
-			showBanner:  showBanner,
-			writer:      writer,
-			unifiedOpts: unifiedOpts,
-			sbsOpts:     sbsOpts,
-		}); err != nil {
-			if pager.IsBrokenPipe(err) {
-				return
-			}
-			fmt.Fprintf(os.Stderr, "Error: rendering %s: %v\n", cf.relPath, err)
-			hadErrors = true
+		// Clear heavy buffers so the GC can reclaim them while remaining files finish.
+		j.dr = nil
+		j.srcBytes = nil
+		j.dstBytes = nil
+
+		select {
+		case sem <- struct{}{}:
+		default:
 		}
 	}
 
-	if hadErrors {
-		if p != nil {
-			p.Close()
+	return hadErrors
+}
+
+// processDirectoryJob reads the files for a job and executes the diff pipeline.
+func processDirectoryJob(ctx context.Context, j *diffJob, format string, parseErrorLimit, sizeLimitKB, lineLimitLines int, ignoreComments bool, opts serialize.EnvelopeOptions) {
+	defer close(j.done)
+
+	if err := ctx.Err(); err != nil {
+		j.err = err
+		return
+	}
+
+	var err error
+	if j.cf.pathA != "" {
+		j.srcBytes, err = os.ReadFile(j.cf.pathA)
+		if err != nil {
+			j.err = fmt.Errorf("reading %s: %w", j.cf.pathA, err)
+			return
 		}
-		os.Exit(1)
+	}
+	if j.cf.pathB != "" {
+		j.dstBytes, err = os.ReadFile(j.cf.pathB)
+		if err != nil {
+			j.err = fmt.Errorf("reading %s: %w", j.cf.pathB, err)
+			return
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		j.err = err
+		return
+	}
+
+	j.dr, err = pipeline.Run(j.srcBytes, j.dstBytes, j.cf.relPath, j.cf.relPath, pipeline.DiffOptions{
+		ParseErrorLimit:  parseErrorLimit,
+		IgnoreComments:   ignoreComments,
+		DisableSizeLimit: sizeLimitKB <= 0,
+		MaxASTFileSize:   sizeLimitKB * 1024,
+		DisableLineLimit: lineLimitLines <= 0,
+		MaxASTFileLines:  lineLimitLines,
+		EnvelopeOpts:     opts,
+	})
+	if err != nil {
+		j.err = fmt.Errorf("diffing %s: %w", j.cf.relPath, err)
+		return
+	}
+
+	// The renderer only needs actions, alignment, and the envelope (unless printing raw actions), so drop the syntax trees and match tables to keep memory low.
+	if j.dr != nil {
+		j.dr.SrcAST = nil
+		j.dr.DstAST = nil
+		if format != "actions" {
+			j.dr.MatchResult = nil
+		}
 	}
 }
 
