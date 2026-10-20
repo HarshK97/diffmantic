@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := build
 
-.PHONY: build test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short grammars-native clean man install uninstall
+.PHONY: build test test-unit test-integration test-e2e lint fmt coverage test-update bench bench-short grammars-native clean install uninstall
 
 ifeq ($(OS),Windows_NT)
     EXE_EXT := .exe
@@ -13,7 +13,6 @@ else
 endif
 
 BINDIR ?= $(PREFIX)/bin
-MANDIR ?= $(PREFIX)/share/man/man1
 
 GRAMMAR_SRCS := native/bridge/grammars.json native/bridge/build_grammars.go $(wildcard native/bridge/src/*.c) $(wildcard native/bridge/include/*.h)
 
@@ -32,19 +31,12 @@ native/bridge/lib/libdiffmantic_grammars.a: $(GRAMMAR_SRCS)
 grammars-native: ## Fetch and compile 11 native Tree-sitter grammars
 	go run ./native/bridge/build_grammars.go
 
-man: ## Generate Unix man pages in man/
-	go run ./cmd/genman
-
-install: build man ## Install binary and man pages (defaults to ~/.local)
-	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(MANDIR)
+install: build ## Install binary (defaults to ~/.local/bin)
+	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 diffm$(EXE_EXT) $(DESTDIR)$(BINDIR)/diffm$(EXE_EXT)
-	install -m 644 man/diffm.1 $(DESTDIR)$(MANDIR)/diffm.1
-	install -m 644 man/diffmantic.1 $(DESTDIR)$(MANDIR)/diffmantic.1
 
-uninstall: ## Remove installed binary and man pages
+uninstall: ## Remove installed binary
 	rm -f $(DESTDIR)$(BINDIR)/diffm$(EXE_EXT)
-	rm -f $(DESTDIR)$(MANDIR)/diffm.1
-	rm -f $(DESTDIR)$(MANDIR)/diffmantic.1
 
 clean: ## Remove built binaries and coverage files
 	rm -rf diffm diffm$(EXE_EXT) dist coverage.out coverage.html

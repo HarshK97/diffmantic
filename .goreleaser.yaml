@@ -50,8 +50,6 @@ archives:
     files:
       - LICENSE
       - README.md
-      - man/diffm.1
-      - man/diffmantic.1
 
 checksum:
   name_template: "checksums.txt"
@@ -74,8 +72,6 @@ brews:
     license: "MIT"
     install: |
       bin.install "diffm"
-      man1.install "man/diffm.1"
-      man1.install "man/diffmantic.1"
     test: |
       system "#{bin}/diffm --version"
 
