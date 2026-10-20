@@ -423,3 +423,63 @@ func TestMetadataCaching(t *testing.T) {
 
 	ClearCache()
 }
+
+func TestIsNullOID(t *testing.T) {
+	if !IsNullOID("0000000000000000000000000000000000000000") {
+		t.Errorf("expected 40-zero string to be null OID")
+	}
+	if !IsNullOID("0000000000000000000000000000000000000000000000000000000000000000") {
+		t.Errorf("expected 64-zero string to be null OID")
+	}
+	if IsNullOID("") {
+		t.Errorf("expected empty string not to be null OID")
+	}
+	if IsNullOID("0000000000000000000000000000000000000001") {
+		t.Errorf("expected non-zero string not to be null OID")
+	}
+	if IsNullOID("main") {
+		t.Errorf("expected branch name not to be null OID")
+	}
+}
+
+func TestIsValidRevision(t *testing.T) {
+	ClearCache()
+	defer ClearCache()
+
+	tempDir := t.TempDir()
+	if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	testFile := filepath.Join(tempDir, "hello.txt")
+	if err := os.WriteFile(testFile, []byte("hello world\n"), 0o644); err != nil {
+		t.Fatalf("write test file failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "add", "hello.txt"); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if _, err := RunGit(tempDir, "-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "init"); err != nil {
+		t.Fatalf("initial commit failed: %v", err)
+	}
+
+	if !IsValidRevision(tempDir, "HEAD") {
+		t.Errorf("expected HEAD to be valid revision")
+	}
+	if !IsValidRevision(tempDir, "main") {
+		t.Errorf("expected main to be valid revision")
+	}
+	if !IsValidRevision(tempDir, "HEAD:hello.txt") {
+		t.Errorf("expected HEAD:hello.txt blob ref to be valid revision")
+	}
+	if IsValidRevision(tempDir, "HEAD:nonexistent.txt") {
+		t.Errorf("expected HEAD:nonexistent.txt to not be valid revision")
+	}
+	if IsValidRevision(tempDir, "") {
+		t.Errorf("expected empty string to not be valid revision")
+	}
+	if IsValidRevision(tempDir, "0000000000000000000000000000000000000000") {
+		t.Errorf("expected 40-zero null hash to not be valid revision")
+	}
+	if IsValidRevision(tempDir, "nonexistent-branch-xyz") {
+		t.Errorf("expected nonexistent branch to not be valid revision")
+	}
+}

@@ -114,9 +114,22 @@ func IsGitRepository(cwd string) bool {
 	return isRepo
 }
 
+// IsNullOID reports whether s is non-empty and consists entirely of '0' characters (a Git null OID).
+func IsNullOID(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for i := range len(s) {
+		if s[i] != '0' {
+			return false
+		}
+	}
+	return true
+}
+
 // IsValidRevision checks if a string is a valid Git revision.
 func IsValidRevision(cwd, ref string) bool {
-	if ref == "" {
+	if ref == "" || IsNullOID(ref) {
 		return false
 	}
 	cleanKey := filepath.Clean(cwd) + "\x00" + ref
@@ -127,7 +140,11 @@ func IsValidRevision(cwd, ref string) bool {
 		return val
 	}
 
-	_, err := RunGit(cwd, "rev-parse", "--verify", ref)
+	verifyArg := ref
+	if !strings.Contains(ref, ":") {
+		verifyArg = ref + "^{object}"
+	}
+	_, err := RunGit(cwd, "rev-parse", "--verify", verifyArg)
 	isValid := (err == nil)
 
 	cacheMu.Lock()

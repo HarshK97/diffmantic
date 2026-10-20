@@ -380,6 +380,51 @@ func TestGitExternal7ArgsIdenticalBlobHashFastPath(t *testing.T) {
 	}
 }
 
+func TestGitExternal8And9Args(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "old.go")
+	fileB := filepath.Join(dir, "new.go")
+
+	if err := os.WriteFile(fileA, []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"), 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", fileA, err)
+	}
+	if err := os.WriteFile(fileB, []byte("package main\n\nfunc main() {\n\tprintln(\"world\")\n}\n"), 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", fileB, err)
+	}
+
+	oldHex := "1234567890123456789012345678901234567890"
+	newHex := "0987654321098765432109876543210987654321"
+	oldMode := "100644"
+	newMode := "100644"
+
+	cmd := rootCmd
+	defer resetRootCmdFlags()
+
+	// 8-arg protocol (e.g. rename without xfrm_msg)
+	cmd.SetArgs([]string{"-f", "json", "old.go", fileA, oldHex, oldMode, fileB, newHex, newMode, "new.go"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("8-arg diff.external execution failed: %v", err)
+	}
+
+	// 9-arg protocol (e.g. Lazygit diffing an untracked file against /dev/null with --no-index)
+	cmd.SetArgs([]string{"-f", "json", "/dev/null", "/dev/null", ".", ".", fileB, "0000000000000000000000000000000000000000", "100644", "new.go", "index 000000000..d8cead7bb\n"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("9-arg diff.external execution (untracked /dev/null) failed: %v", err)
+	}
+
+	// Added file (/dev/null source)
+	cmd.SetArgs([]string{"-f", "json", "new.go", "/dev/null", ".", ".", fileB, newHex, newMode})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("7-arg diff.external execution (added file) failed: %v", err)
+	}
+
+	// Deleted file (/dev/null destination)
+	cmd.SetArgs([]string{"-f", "json", "old.go", fileA, oldHex, oldMode, "/dev/null", ".", "."})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("7-arg diff.external execution (deleted file) failed: %v", err)
+	}
+}
+
 func TestRunFileDiffIdenticalBytesFastPath(t *testing.T) {
 	dir := t.TempDir()
 	fileA := filepath.Join(dir, "a.go")

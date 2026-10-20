@@ -36,19 +36,6 @@ func isTerminal(f *os.File) bool {
 	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }
 
-// isAllZeros reports whether s is non-empty and consists entirely of '0' characters (e.g. a Git null OID).
-func isAllZeros(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for i := range len(s) {
-		if s[i] != '0' {
-			return false
-		}
-	}
-	return true
-}
-
 var rootCmd = &cobra.Command{
 	Use:     "diffm [refA] [refB]",
 	Version: "0.13.0",
@@ -147,20 +134,25 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			return
 		}
 
-		// Seven args: Git diff.external driver protocol signature
-		// Usage: diffm <path> <old-file> <old-hex> <old-mode> <new-file> <new-hex> <new-mode>
-		if len(args) == 7 {
-			path := args[0]
+		// Git diff.external driver protocol signature (7, 8, or 9 arguments)
+		// Usage: diffm <path> <old-file> <old-hex> <old-mode> <new-file> <new-hex> <new-mode> [other-path] [xfrm-msg]
+		if len(args) >= 7 && len(args) <= 9 {
+			pathA := args[0]
 			oldFile := args[1]
 			oldHex := args[2]
 			newFile := args[4]
 			newHex := args[5]
 
+			pathB := pathA
+			if len(args) >= 8 && args[7] != "" {
+				pathB = args[7]
+			}
+
 			normFormat = cmp.Or(normFormat, "side-by-side")
 
 			// Skip diffing when Git reports identical hashes (e.g. chmod without content changes),
 			// unless JSON output was requested.
-			if oldHex != "" && oldHex != "." && !isAllZeros(oldHex) && oldHex == newHex && normFormat != "json" {
+			if oldHex != "" && oldHex != "." && !git.IsNullOID(oldHex) && oldHex == newHex && normFormat != "json" {
 				return
 			}
 
@@ -175,7 +167,7 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			if !cmd.Flags().Changed("no-pager") {
 				noPager = true
 			}
-			runFileDiff(cmd, oldFile, newFile, path, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+			runFileDiff(cmd, oldFile, newFile, pathA, pathB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 			return
 		}
 
@@ -196,7 +188,7 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 			// Case 1: Both exist on disk as files or /dev/null
 			if isFileOrDevNull(argA) && isFileOrDevNull(argB) {
-				runFileDiff(cmd, argA, argB, "", normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+				runFileDiff(cmd, argA, argB, "", "", normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
 				return
 			}
 
@@ -975,13 +967,22 @@ func validateNoMisplacedFlags(args []string) error {
 	return nil
 }
 
-func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPath string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
+// runFileDiff runs the diff pipeline for two files, supporting separate display paths for git external diff.
+func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
 	displayA, displayB := fileA, fileB
-	if displayPath != "" {
-		displayA, displayB = displayPath, displayPath
+	if fileA == os.DevNull || fileA == "/dev/null" {
+		displayA = "/dev/null"
+	} else if displayPathA != "" {
+		displayA = displayPathA
+	}
+
+	if fileB == os.DevNull || fileB == "/dev/null" {
+		displayB = "/dev/null"
+	} else if displayPathB != "" {
+		displayB = displayPathB
 	}
 
 	format = cmp.Or(format, "side-by-side")
