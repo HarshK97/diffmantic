@@ -62,6 +62,7 @@ were inserted, deleted, updated, moved, or renamed.
 Works as a standalone file diff tool, a git difftool, or a backend engine for
 editor plugins (Neovim, VS Code) via JSON output.`,
 	Example: `  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
+  diffm dir_a dir_b                            Recursive directory diff
   diffm before.go after.go -f unified          Print AST-aware unified diff with pager
   diffm before.go after.go -u                  Shorthand for unified diff
   diffm before.go after.go -f json             JSON output for editor plugins
@@ -88,6 +89,13 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 		if err := validateNoMisplacedFlags(args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
+		}
+
+		if len(args) == 1 && args[0] == "help" && !isFileOrDevNull("help") {
+			if helpFunc := cmd.HelpFunc(); helpFunc != nil {
+				helpFunc(cmd, args)
+			}
+			return
 		}
 
 		noPager, _ := cmd.Flags().GetBool("no-pager")
@@ -1196,6 +1204,11 @@ func init() {
 	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
 	rootCmd.Flags().Bool("cst", false, "Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic AST")
 	rootCmd.Flags().Bool("textconv", false, "Allow external text conversion filters to be run when comparing binary files")
+
+	rootCmd.SetHelpFunc(HelpHandler)
+	rootCmd.SetUsageFunc(UsageHandler)
+	rootCmd.Flags().BoolP("help", "h", false, "Print help (-h for summary, --help for full manual)")
+	rootCmd.Flags().BoolP("version", "v", false, "Print version")
 
 	_ = rootCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"side-by-side", "unified", "json", "actions"}, cobra.ShellCompDirectiveNoFileComp
