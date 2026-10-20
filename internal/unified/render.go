@@ -3,6 +3,9 @@ package unified
 
 import (
 	"bytes"
+	"cmp"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +19,29 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
+
+func isDevNull(path string) bool {
+	return path == "" || path == "/dev/null" || path == os.DevNull
+}
+
+// computeBlobOID returns Git's 7-character abbreviated hash for a blob.
+func computeBlobOID(data []byte) string {
+	h := sha1.New()
+	_, _ = h.Write([]byte("blob "))
+	_, _ = h.Write([]byte(strconv.Itoa(len(data))))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write(data)
+	return hex.EncodeToString(h.Sum(nil))[:7]
+}
+
+// cleanGitPath normalizes a file path for git diff headers, mapping empty or null paths to /dev/null.
+func cleanGitPath(path string) string {
+	if isDevNull(path) {
+		return "/dev/null"
+	}
+	clean := filepath.ToSlash(filepath.Clean(path))
+	return strings.TrimPrefix(clean, "/")
+}
 
 type lineKind int
 
@@ -199,6 +225,64 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 	srcHeaderPath := formatFilePath(srcFile, "a/")
 	dstHeaderPath := formatFilePath(dstFile, "b/")
+
+	if opts.GitDiff {
+		srcGitPath := cleanGitPath(srcFile)
+		dstGitPath := cleanGitPath(dstFile)
+		if srcGitPath == "/dev/null" {
+			srcGitPath = dstGitPath
+		}
+		if dstGitPath == "/dev/null" {
+			dstGitPath = srcGitPath
+		}
+		if restSrc, okSrc := strings.CutPrefix(srcGitPath, "a/"); okSrc {
+			if restDst, okDst := strings.CutPrefix(dstGitPath, "b/"); okDst && restSrc == restDst {
+				srcGitPath = restSrc
+				dstGitPath = restDst
+			}
+		}
+		out.WriteString("diff --git a/" + srcGitPath + " b/" + dstGitPath + "\n")
+
+		mode := cmp.Or(opts.FileMode, "100644")
+		srcOID := opts.GitSrcOID
+		if srcOID == "" {
+			if isDevNull(srcFile) {
+				srcOID = "0000000"
+			} else {
+				srcOID = computeBlobOID(srcBytes)
+			}
+		}
+		dstOID := opts.GitDstOID
+		if dstOID == "" {
+			if isDevNull(dstFile) {
+				dstOID = "0000000"
+			} else {
+				dstOID = computeBlobOID(dstBytes)
+			}
+		}
+
+		isNew := isDevNull(srcFile)
+		isDeleted := isDevNull(dstFile)
+
+		if isNew {
+			out.WriteString("new file mode " + mode + "\n")
+			srcHeaderPath = "/dev/null"
+			dstHeaderPath = "b/" + dstGitPath
+		} else if isDeleted {
+			out.WriteString("deleted file mode " + mode + "\n")
+			srcHeaderPath = "a/" + srcGitPath
+			dstHeaderPath = "/dev/null"
+		} else {
+			srcHeaderPath = "a/" + srcGitPath
+			dstHeaderPath = "b/" + dstGitPath
+		}
+
+		if isNew || isDeleted {
+			out.WriteString("index " + srcOID + ".." + dstOID + "\n")
+		} else {
+			out.WriteString("index " + srcOID + ".." + dstOID + " " + mode + "\n")
+		}
+	}
 
 	if opts.Color {
 		out.WriteString(color.Bold + color.TextFg + "--- " + srcHeaderPath + color.Reset + "\n")
@@ -430,12 +514,12 @@ func formatContinuationGutter(numWidth int) string {
 
 // formatFilePath builds standard diff headers like "a/foo.go" or "/dev/null".
 func formatFilePath(path, prefix string) string {
-	if path == os.DevNull || path == "/dev/null" || path == "" {
+	if isDevNull(path) {
 		return "/dev/null"
 	}
 	clean := filepath.ToSlash(filepath.Clean(path))
-	if strings.HasPrefix(clean, "a/") || strings.HasPrefix(clean, "b/") {
+	if strings.HasPrefix(clean, prefix) {
 		return clean
 	}
-	return prefix + clean
+	return prefix + strings.TrimPrefix(clean, "/")
 }

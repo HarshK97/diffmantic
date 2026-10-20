@@ -511,6 +511,14 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	textconv, _ := cmd.Flags().GetBool("textconv")
 
 	processFile := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
+		if srcBytes == nil {
+			srcFile = "/dev/null"
+			srcBytes = []byte{}
+		}
+		if dstBytes == nil {
+			dstFile = "/dev/null"
+			dstBytes = []byte{}
+		}
 		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
 			return nil
 		}
@@ -883,6 +891,7 @@ func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 		Wrap:               wrapFlag,
 		TerminalWidth:      termWidth,
 		TabWidth:           tabWidth,
+		GitDiff:            patchMode,
 	}
 }
 
