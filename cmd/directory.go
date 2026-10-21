@@ -3,15 +3,12 @@ package cmd
 import (
 	"bytes"
 	"cmp"
-	"context"
 	"fmt"
 	"io"
 	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
-	"sync"
 
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
@@ -26,17 +23,8 @@ type changedFile struct {
 	pathB   string
 }
 
-// diffJob represents an in-flight file diff operation processed by a worker.
-type diffJob struct {
-	cf       changedFile
-	srcBytes []byte
-	dstBytes []byte
-	dr       *pipeline.DiffResult
-	err      error
-	done     chan struct{}
-}
-
-// runDirectoryDiff recursively diffs two directories, streaming all changed files through a single pager session.
+// runDirectoryDiff recursively diffs two directories, streaming all changed files
+// through a single pager session. It returns hadErrors=true if any diff job failed.
 func runDirectoryDiff(
 	cmd *cobra.Command,
 	dirA, dirB string,
@@ -149,157 +137,44 @@ func runDirectoryDiff(
 		p, writer = pager.Start(noPager)
 	}
 
-	// Stop workers, close the pager to unblock readers, then wait for goroutines to exit.
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-	defer func() {
-		cancel()
-		if p != nil {
-			p.Close()
-		}
-		wg.Wait()
-	}()
-
-	// Cancel background workers if the user exits the pager early.
-	if p != nil {
-		wg.Go(func() {
-			select {
-			case <-ctx.Done():
-			case <-p.Done():
-				cancel()
-			}
-		})
-	}
-
-	// Diff files concurrently across workers while streaming output in order.
 	showBanner := len(changedFiles) > 1
 
 	jobs := make([]diffJob, len(changedFiles))
-	for i := range jobs {
-		jobs[i].cf = changedFiles[i]
-		jobs[i].done = make(chan struct{})
-	}
-
-	numWorkers := min(len(changedFiles), max(1, runtime.GOMAXPROCS(0)))
-	maxInFlight := min(len(changedFiles), max(numWorkers*4, 64))
-
-	workQueue := make(chan int, maxInFlight)
-	sem := make(chan struct{}, maxInFlight)
-	for range maxInFlight {
-		sem <- struct{}{}
-	}
-
-	// Feed jobs to workers only as semaphore permits allow, keeping in-flight memory bounded.
-	wg.Go(func() {
-		for idx := range jobs {
-			select {
-			case <-ctx.Done():
-				return
-			case <-sem:
-				select {
-				case <-ctx.Done():
-					return
-				case workQueue <- idx:
+	for i, cf := range changedFiles {
+		jobs[i] = diffJob{
+			displayA: filepath.Join(dirA, cf.relPath),
+			displayB: filepath.Join(dirB, cf.relPath),
+			relPathA: cf.relPath,
+			relPathB: cf.relPath,
+			load: func() ([]byte, []byte, error) {
+				var srcBytes, dstBytes []byte
+				var err error
+				if cf.pathA != "" {
+					srcBytes, err = os.ReadFile(cf.pathA)
+					if err != nil {
+						return nil, nil, fmt.Errorf("reading %s: %w", cf.pathA, err)
+					}
 				}
-			}
-		}
-	})
-
-	for range numWorkers {
-		wg.Go(func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case idx := <-workQueue:
-					processDirectoryJob(ctx, &jobs[idx], format, parseErrorLimit, sizeLimitKB, lineLimitLines, ignoreComments, opts)
+				if cf.pathB != "" {
+					dstBytes, err = os.ReadFile(cf.pathB)
+					if err != nil {
+						return nil, nil, fmt.Errorf("reading %s: %w", cf.pathB, err)
+					}
 				}
-			}
-		})
-	}
-
-	for i := range jobs {
-		select {
-		case <-ctx.Done():
-			return hadErrors
-		case <-jobs[i].done:
-		}
-
-		if ctx.Err() != nil {
-			return hadErrors
-		}
-
-		if p != nil && !p.IsActive() {
-			break
-		}
-
-		j := &jobs[i]
-		if j.err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", j.err)
-			hadErrors = true
-		} else if j.dr != nil {
-			displayA := filepath.Join(dirA, j.cf.relPath)
-			displayB := filepath.Join(dirB, j.cf.relPath)
-			if err := renderDiffResult(displayA, displayB, j.srcBytes, j.dstBytes, j.dr, renderConfig{
-				format:      format,
-				showBanner:  showBanner,
-				writer:      writer,
-				unifiedOpts: unifiedOpts,
-				sbsOpts:     sbsOpts,
-			}); err != nil {
-				if pager.IsBrokenPipe(err) {
-					return hadErrors
-				}
-				fmt.Fprintf(os.Stderr, "Error: rendering %s: %v\n", j.cf.relPath, err)
-				hadErrors = true
-			}
-		}
-
-		// Clear heavy buffers so the GC can reclaim them while remaining files finish.
-		j.dr = nil
-		j.srcBytes = nil
-		j.dstBytes = nil
-
-		select {
-		case sem <- struct{}{}:
-		default:
+				return srcBytes, dstBytes, nil
+			},
 		}
 	}
 
-	return hadErrors
-}
-
-// processDirectoryJob reads the files for a job and executes the diff pipeline.
-func processDirectoryJob(ctx context.Context, j *diffJob, format string, parseErrorLimit, sizeLimitKB, lineLimitLines int, ignoreComments bool, opts serialize.EnvelopeOptions) {
-	defer close(j.done)
-
-	if err := ctx.Err(); err != nil {
-		j.err = err
-		return
+	rc := renderConfig{
+		format:      format,
+		showBanner:  showBanner,
+		writer:      writer,
+		unifiedOpts: unifiedOpts,
+		sbsOpts:     sbsOpts,
 	}
 
-	var err error
-	if j.cf.pathA != "" {
-		j.srcBytes, err = os.ReadFile(j.cf.pathA)
-		if err != nil {
-			j.err = fmt.Errorf("reading %s: %w", j.cf.pathA, err)
-			return
-		}
-	}
-	if j.cf.pathB != "" {
-		j.dstBytes, err = os.ReadFile(j.cf.pathB)
-		if err != nil {
-			j.err = fmt.Errorf("reading %s: %w", j.cf.pathB, err)
-			return
-		}
-	}
-
-	if err := ctx.Err(); err != nil {
-		j.err = err
-		return
-	}
-
-	j.dr, err = pipeline.Run(j.srcBytes, j.dstBytes, j.cf.relPath, j.cf.relPath, pipeline.DiffOptions{
+	diffOpts := pipeline.DiffOptions{
 		ParseErrorLimit:  parseErrorLimit,
 		IgnoreComments:   ignoreComments,
 		DisableSizeLimit: sizeLimitKB <= 0,
@@ -307,20 +182,14 @@ func processDirectoryJob(ctx context.Context, j *diffJob, format string, parseEr
 		DisableLineLimit: lineLimitLines <= 0,
 		MaxASTFileLines:  lineLimitLines,
 		EnvelopeOpts:     opts,
-	})
-	if err != nil {
-		j.err = fmt.Errorf("diffing %s: %w", j.cf.relPath, err)
-		return
 	}
 
-	// The renderer only needs actions, alignment, and the envelope (unless printing raw actions), so drop the syntax trees and match tables to keep memory low.
-	if j.dr != nil {
-		j.dr.SrcAST = nil
-		j.dr.DstAST = nil
-		if format != "actions" {
-			j.dr.MatchResult = nil
-		}
+	diffErrors, _ := runConcurrentDiffJobs(jobs, p, rc, diffOpts)
+	if diffErrors {
+		hadErrors = true
 	}
+
+	return hadErrors
 }
 
 func listDirectoryFiles(root string) (map[string]string, error) {

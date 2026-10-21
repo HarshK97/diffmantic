@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
@@ -27,34 +28,42 @@ func TestProcessDirectoryJob(t *testing.T) {
 	}
 
 	job := diffJob{
-		cf: changedFile{
-			relPath: "calc.go",
-			pathA:   fileA,
-			pathB:   fileB,
+		displayA: fileA,
+		displayB: fileB,
+		relPathA: "calc.go",
+		relPathB: "calc.go",
+		load: func() ([]byte, []byte, error) {
+			s, err := os.ReadFile(fileA)
+			if err != nil {
+				return nil, nil, err
+			}
+			d, err := os.ReadFile(fileB)
+			if err != nil {
+				return nil, nil, err
+			}
+			return s, d, nil
 		},
 		done: make(chan struct{}),
 	}
 
 	ctx := t.Context()
-	opts := serialize.EnvelopeOptions{IncludeActions: true, IncludeAlignment: true, IncludeHighlights: true}
-	processDirectoryJob(ctx, &job, "side-by-side" /* parseErrorLimit */, 0 /* sizeLimitKB */, 1024 /* lineLimitLines */, 10000 /* ignoreComments */, false, opts)
+	diffOpts := pipeline.DiffOptions{
+		DisableSizeLimit: true,
+		DisableLineLimit: true,
+		EnvelopeOpts:     serialize.EnvelopeOptions{IncludeActions: true, IncludeAlignment: true, IncludeHighlights: true},
+	}
+	processDiffJob(ctx, &job, diffOpts, renderConfig{format: "unified"})
 
 	<-job.done
 
 	if job.err != nil {
 		t.Fatalf("unexpected job error: %v", job.err)
 	}
-	if job.dr == nil {
-		t.Fatal("expected non-nil DiffResult")
+	if !job.rendered || len(job.out) == 0 {
+		t.Fatal("expected rendered diff output")
 	}
-	if job.dr.SrcAST != nil || job.dr.DstAST != nil {
-		t.Error("expected SrcAST and DstAST to be pruned to nil")
-	}
-	if job.dr.MatchResult != nil {
-		t.Error("expected MatchResult to be pruned to nil for non-actions format")
-	}
-	if len(job.srcBytes) == 0 || len(job.dstBytes) == 0 {
-		t.Error("expected non-empty srcBytes and dstBytes")
+	if job.srcBytes != nil || job.dstBytes != nil {
+		t.Error("expected worker to release srcBytes and dstBytes after rendering")
 	}
 }
 
@@ -69,21 +78,26 @@ func TestProcessDirectoryJob_CanceledContext(t *testing.T) {
 	cancel()
 
 	job := diffJob{
-		cf: changedFile{
-			relPath: "a.go",
-			pathA:   fileA,
-			pathB:   fileA,
+		displayA: fileA,
+		displayB: fileA,
+		relPathA: "a.go",
+		relPathB: "a.go",
+		load: func() ([]byte, []byte, error) {
+			s, err := os.ReadFile(fileA)
+			return s, s, err
 		},
 		done: make(chan struct{}),
 	}
 
-	opts := serialize.EnvelopeOptions{IncludeActions: true}
-	processDirectoryJob(ctx, &job, "unified" /* parseErrorLimit */, 0 /* sizeLimitKB */, 1024 /* lineLimitLines */, 10000 /* ignoreComments */, false, opts)
+	diffOpts := pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeActions: true},
+	}
+	processDiffJob(ctx, &job, diffOpts, renderConfig{format: "unified"})
 
 	<-job.done
 
-	if job.dr != nil {
-		t.Error("expected DiffResult to be nil when context is canceled")
+	if job.rendered || job.out != nil {
+		t.Error("expected no rendered output when context is canceled")
 	}
 }
 

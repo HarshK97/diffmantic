@@ -934,3 +934,170 @@ func TestCLI_DirectoryDiff_BrokenPipeEarlyExit(t *testing.T) {
 		}
 	}
 }
+
+func TestCLI_GitMode_ConcurrentFileOrdering(t *testing.T) {
+	repoDir := t.TempDir()
+
+	execGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\noutput: %s", args, err, string(out))
+		}
+	}
+
+	execGit("init", "-b", "main")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init")
+
+	const numFiles = 12
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("file_%02d.go", i)
+		src := fmt.Sprintf("package main\n\nfunc Calc%02d() int { return %d }\n", i, i)
+		writeTestFile(t, filepath.Join(repoDir, name), src)
+	}
+
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "commit1")
+
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("file_%02d.go", i)
+		dst := fmt.Sprintf("package main\n\nfunc Calc%02d() int { return %d }\n", i, i*100)
+		writeTestFile(t, filepath.Join(repoDir, name), dst)
+	}
+
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "commit2")
+
+	cmd := exec.CommandContext(t.Context(), binaryPath, "HEAD~1", "HEAD", "-f", "unified", "--no-pager")
+	cmd.Dir = repoDir
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("diffm git mode failed: %v\nstderr: %s", err, stderrBuf.String())
+	}
+
+	stdout := stdoutBuf.String()
+	lastPos := -1
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("file_%02d.go", i)
+		pos := strings.Index(stdout, name)
+		if pos == -1 {
+			t.Fatalf("expected output to contain %q, but was missing:\n%s", name, stdout)
+		}
+		if pos < lastPos {
+			t.Fatalf("file %q was out of order: pos %d < lastPos %d", name, pos, lastPos)
+		}
+		lastPos = pos
+	}
+}
+
+func TestCLI_GitMode_BrokenPipeEarlyExit(t *testing.T) {
+	repoDir := t.TempDir()
+
+	execGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\noutput: %s", args, err, string(out))
+		}
+	}
+
+	execGit("init", "-b", "main")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init")
+
+	const numFiles = 15
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("file_%02d.go", i)
+		src := fmt.Sprintf("package main\n\nfunc Calc%02d() int { return %d }\n", i, i)
+		writeTestFile(t, filepath.Join(repoDir, name), src)
+	}
+
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "commit1")
+
+	for i := 1; i <= numFiles; i++ {
+		name := fmt.Sprintf("file_%02d.go", i)
+		dst := fmt.Sprintf("package main\n\nfunc Calc%02d() int { return %d }\n", i, i*100)
+		writeTestFile(t, filepath.Join(repoDir, name), dst)
+	}
+
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "commit2")
+
+	cmd := exec.CommandContext(t.Context(), binaryPath, "HEAD~1", "HEAD", "-f", "unified", "--no-pager")
+	cmd.Dir = repoDir
+	cmd.Env = isolatedEnv()
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting cmd: %v", err)
+	}
+
+	// Read first chunk, then immediately close the pipe to trigger broken pipe (EPIPE)
+	buf := make([]byte, 64)
+	_, _ = stdoutPipe.Read(buf)
+	_ = stdoutPipe.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case <-time.After(2 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("git mode diff hung after broken pipe, exceeding 2 second timeout")
+	case cmdErr := <-done:
+		_ = cmdErr // Process may exit with non-zero or SIGPIPE when pipe breaks
+		elapsed := time.Since(start)
+		if elapsed > 1500*time.Millisecond {
+			t.Errorf("broken pipe exit took too long: %v (expected sub-second teardown)", elapsed)
+		}
+	}
+}
+
+func TestCLI_GitMode_NonZeroExitOnError(t *testing.T) {
+	repoDir := t.TempDir()
+
+	execGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\noutput: %s", args, err, string(out))
+		}
+	}
+
+	execGit("init", "-b", "main")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init")
+	execGit("config", "diff.broken.textconv", "false")
+
+	writeTestFile(t, filepath.Join(repoDir, ".gitattributes"), "*.bin diff=broken\n")
+	writeTestFile(t, filepath.Join(repoDir, "test.bin"), "hello")
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "commit1")
+
+	writeTestFile(t, filepath.Join(repoDir, "test.bin"), "world")
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "commit2")
+
+	cmd := exec.CommandContext(t.Context(), binaryPath, "HEAD~1", "HEAD", "-f", "unified", "--textconv", "--no-pager")
+	cmd.Dir = repoDir
+	cmd.Env = isolatedEnv()
+
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	cmdErr := cmd.Run()
+	if cmdErr == nil {
+		t.Fatalf("expected diffm in git mode to exit with non-zero code on textconv error, but succeeded.\nstdout: %s\nstderr: %s", stdoutBuf.String(), stderrBuf.String())
+	}
+}

@@ -83,6 +83,7 @@ func (p *Pager) Close() {
 	}
 	if p.writer != nil {
 		_ = p.writer.Close()
+		p.writer = nil
 	}
 	if p.doneChan != nil {
 		<-p.doneChan
