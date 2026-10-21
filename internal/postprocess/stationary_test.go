@@ -937,6 +937,140 @@ func TestSameScopeDeclaration(t *testing.T) {
 			t.Error("expected false when only one node is inside a container")
 		}
 	})
+
+	t.Run("Unit/distinct closures in same outer function returns false", func(t *testing.T) {
+		outerFunc := mkNode("function_declaration", "outer")
+		outerFunc.Language = "go"
+
+		c1 := mkNode("func_literal", "")
+		c1.Language = "go"
+		c1.Parent = outerFunc
+
+		c2 := mkNode("func_literal", "")
+		c2.Language = "go"
+		c2.Parent = outerFunc
+
+		stmt1 := mkNode("expression_statement", "")
+		stmt1.Language = "go"
+		stmt1.Parent = c1
+		c1.Children = []*treesitter.ASTNode{stmt1}
+
+		stmt2 := mkNode("expression_statement", "")
+		stmt2.Language = "go"
+		stmt2.Parent = c2
+		c2.Children = []*treesitter.ASTNode{stmt2}
+
+		ms := engine.NewMapping()
+		// c1 and c2 are in the same outer function, but are distinct unmapped closures.
+		if sameScopeDeclaration(stmt1, stmt2, ms, r) {
+			t.Error("expected false for nodes inside distinct unmapped closures")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		// When a closure is deleted, statements inside it must not match as cross-scope
+		// moves into an updated sibling closure inside the same outer function.
+		src := []byte(`package main
+
+func execute() {
+	validate := func() error {
+		if check() {
+			return nil
+		}
+		return ErrInvalid
+	}
+
+	cleanup := func() {
+		stop()
+	}
+
+	_ = validate
+	cleanup()
+}
+`)
+		dst := []byte(`package main
+
+func execute() {
+	cleanup := func() error {
+		stop()
+		return nil
+	}
+
+	cleanup()
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "main.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "main.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Context declarations: outer package and func execute() stay untouched without edit actions.
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && (r.IsDeclaration(a.Node.Type) && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration")) {
+				t.Errorf("expected context node %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 2. Zero move actions across the entire snippet (no cross-closure token moves).
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move {
+				t.Errorf("expected zero move actions across entire snippet, but found move on %s: %v", a.Node.Type, a)
+			}
+		}
+
+		// 3. Whole-snippet verification: cleanup closure and stop() statement map in place.
+		var srcStop, dstStop *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "stop") {
+				srcStop = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "stop") {
+				dstStop = n
+				break
+			}
+		}
+		if srcStop == nil || dstStop == nil {
+			t.Fatal("expected to find stop() call expressions in src and dst")
+		}
+		if matchResult.Mappings.Get(srcStop) != dstStop {
+			t.Errorf("expected stationary stop() to map in place, got %v", matchResult.Mappings.Get(srcStop))
+		}
+
+		// 4. return nil in dst must be recorded as an Insert, not a Move.
+		hasReturnNilInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Insert && a.Node != nil && r.IsJumpStatement(a.Node.Type) &&
+				strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "return nil")
+		})
+		if !hasReturnNilInsert {
+			t.Error("expected return nil in cleanup to be recorded as an Insert")
+		}
+
+		// 5. Entire deleted validate closure must be recorded as a Delete.
+		hasValidateDelete := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Delete && a.Node != nil && r.IsLocalVarDeclaration(a.Node.Type) &&
+				strings.Contains(string(src[a.Node.StartByte:a.Node.EndByte]), "validate :=")
+		})
+		if !hasValidateDelete {
+			t.Error("expected deleted validate closure to be recorded as a Delete")
+		}
+	})
 }
 
 func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T) {

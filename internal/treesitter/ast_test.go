@@ -281,3 +281,38 @@ func TestCalleePath(t *testing.T) {
 		})
 	}
 }
+
+func TestEnclosingContainerDeclaration_Closures(t *testing.T) {
+	goSrc := []byte(`
+package main
+
+func outer() {
+	fn := func() {
+		x := 42
+		_ = x
+	}
+	_ = fn
+}
+`)
+	ast, err := Parse(goSrc, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+
+	desc := ast.Descendants()
+	idx := slices.IndexFunc(desc, func(n *ASTNode) bool {
+		return n.Type == "int_literal"
+	})
+	if idx == -1 {
+		t.Fatal("int_literal not found")
+	}
+	numLit := desc[idx]
+
+	enclosing := numLit.EnclosingContainerDeclaration(nil)
+	if enclosing == nil {
+		t.Fatal("expected enclosing container declaration, got nil")
+	}
+	if enclosing.Type != "func_literal" {
+		t.Errorf("expected enclosing container declaration to be func_literal, got %q", enclosing.Type)
+	}
+}
