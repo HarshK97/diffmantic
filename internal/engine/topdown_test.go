@@ -839,3 +839,163 @@ var servers = []Server{
 		runCase(t, "InvertedOrder_DeletedBeforeUpdated", srcInv, dstInv, 10, 11, 10)
 	})
 }
+
+// Sibling statements and functions with similar shapes shouldn't invert their matches
+// across container declarations or steal statements from sibling scopes.
+func TestTopDown_SiblingStatementMonotonicity(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`fn f1() void {}
+
+fn f2() void {
+    x += 1;
+}
+`)
+		newSrc := []byte(`fn f1() void {
+    foo();
+    x += 1;
+}
+
+fn f2() void {
+    foo();
+    x += 1;
+}
+`)
+
+		oldTree, err := treesitter.Parse(oldSrc, "old.zig")
+		if err != nil {
+			t.Fatalf("parse old.zig: %v", err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "new.zig")
+		if err != nil {
+			t.Fatalf("parse new.zig: %v", err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		r := rulesFor(oldTree)
+		if r == nil {
+			t.Fatal("rulesFor(oldTree) returned nil")
+		}
+
+		// Locate function declarations and blocks in both trees.
+		var oldF1, oldF2, oldF1Block, oldF2Block, oldXStmt *treesitter.ASTNode
+		for _, n := range oldTree.Children {
+			if r.IsContainerDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "identifier" && c.Label == "f1" {
+						oldF1 = n
+						for _, bc := range n.Children {
+							if r.IsBlock(bc.Type) {
+								oldF1Block = bc
+							}
+						}
+					}
+					if c.Type == "identifier" && c.Label == "f2" {
+						oldF2 = n
+						for _, bc := range n.Children {
+							if r.IsBlock(bc.Type) {
+								oldF2Block = bc
+								for _, stmt := range bc.Children {
+									if r.IsStatement(stmt.Type) {
+										oldXStmt = stmt
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		var newF1, newF2, newF1Block, newF2Block *treesitter.ASTNode
+		var newFoo1, newX1, newFoo2, newX2 *treesitter.ASTNode
+		for _, n := range newTree.Children {
+			if r.IsContainerDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "identifier" && c.Label == "f1" {
+						newF1 = n
+						for _, bc := range n.Children {
+							if r.IsBlock(bc.Type) {
+								newF1Block = bc
+								for _, stmt := range bc.Children {
+									if r.IsStatement(stmt.Type) {
+										if newFoo1 == nil {
+											newFoo1 = stmt
+										} else {
+											newX1 = stmt
+										}
+									}
+								}
+							}
+						}
+					}
+					if c.Type == "identifier" && c.Label == "f2" {
+						newF2 = n
+						for _, bc := range n.Children {
+							if r.IsBlock(bc.Type) {
+								newF2Block = bc
+								for _, stmt := range bc.Children {
+									if r.IsStatement(stmt.Type) {
+										if newFoo2 == nil {
+											newFoo2 = stmt
+										} else {
+											newX2 = stmt
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if oldF1 == nil || oldF2 == nil || oldXStmt == nil {
+			t.Fatalf("failed to locate old AST nodes: f1=%v, f2=%v, xStmt=%v", oldF1, oldF2, oldXStmt)
+		}
+		if newF1 == nil || newF2 == nil || newFoo1 == nil || newX1 == nil || newFoo2 == nil || newX2 == nil {
+			t.Fatalf("failed to locate new AST nodes: f1=%v, f2=%v, foo1=%v, x1=%v, foo2=%v, x2=%v",
+				newF1, newF2, newFoo1, newX1, newFoo2, newX2)
+		}
+
+		// 1. Enclosing context: functions map in place
+		if got := mr.Mappings.Src()[oldF1]; got != newF1 {
+			t.Errorf("expected old f1 to map to new f1, got %v", got)
+		}
+		if got := mr.Mappings.Src()[oldF2]; got != newF2 {
+			t.Errorf("expected old f2 to map to new f2, got %v", got)
+		}
+
+		// 2. Surrounding sequence: blocks map in place
+		if oldF1Block != nil && newF1Block != nil {
+			if got := mr.Mappings.Src()[oldF1Block]; got != newF1Block {
+				t.Errorf("expected old f1 block to map to new f1 block, got %v", got)
+			}
+		}
+		if oldF2Block != nil && newF2Block != nil {
+			if got := mr.Mappings.Src()[oldF2Block]; got != newF2Block {
+				t.Errorf("expected old f2 block to map to new f2 block, got %v", got)
+			}
+		}
+
+		// 3. Stationary target: x += 1 inside f2 maps monotonically in place to f2
+		if got := mr.Mappings.Src()[oldXStmt]; got != newX2 {
+			t.Errorf("expected old f2 statement to map in place to new f2 statement (%v), got %v", newX2, got)
+		}
+
+		// 4. Non-theft assertion: newly inserted statements in f1 are unmapped
+		if got := mr.Mappings.Dst()[newX1]; got != nil {
+			t.Errorf("expected new f1 statement to be unmapped (not stolen from f2), got %v", got)
+		}
+		if got := mr.Mappings.Dst()[newFoo1]; got != nil {
+			t.Errorf("expected new f1 foo call to be unmapped, got %v", got)
+		}
+		if got := mr.Mappings.Dst()[newFoo2]; got != nil {
+			t.Errorf("expected new f2 foo call to be unmapped, got %v", got)
+		}
+	})
+}

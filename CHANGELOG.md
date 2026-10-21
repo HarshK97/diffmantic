@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Directory and Git diffs now process files in parallel while keeping output in the original order, roughly 2–3x faster on multi-file diffs with a modest memory increase.
 ### Fixed
 - Stopped expressions and local variables from matching as moves across unrelated closures and lambdas.
+- Fixed sibling statements with similar structure (like repeated error handling or dispatch branches) inverting their matches and showing as false moves when earlier lines shifted.
 
 ## [0.13.0] - 2026-10-19
 

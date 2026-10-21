@@ -309,22 +309,29 @@ func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {
 	return nil
 }
 
-// AncestorNameSimilarity calculates the number of matching identifier labels
-// among the ancestors of t1 and t2. This helps break ties in top-down matching
-// by preferring pairs located in similarly named functions or classes.
+func isIdentifier(r *rules.Rules, typ string) bool {
+	if r != nil {
+		return r.IsIdentifier(typ)
+	}
+	return rules.IsIdentifier(typ)
+}
+
+func isContainerDeclaration(r *rules.Rules, typ string) bool {
+	if r != nil {
+		return r.IsContainerDeclaration(typ)
+	}
+	return rules.IsContainerDeclaration(typ)
+}
+
+// AncestorNameSimilarity counts matching ancestor identifiers to break ties
+// in top-down matching. Stops at the nearest container declaration so file-level
+// globals don't leak into local scope comparisons.
 func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 	if t1 == nil || t2 == nil {
 		return 0
 	}
 	r1 := rulesFor(t1)
 	r2 := rulesFor(t2)
-
-	isID := func(r *rules.Rules, typ string) bool {
-		if r != nil {
-			return r.IsIdentifier(typ)
-		}
-		return rules.IsIdentifier(typ)
-	}
 
 	collectLabels := func(t *treesitter.ASTNode, r *rules.Rules) map[string]bool {
 		labels := make(map[string]bool, 8)
@@ -337,12 +344,12 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 				labels[key] = true
 			}
 			for _, child := range curr.Children {
-				if child.Label != "" && isID(r, child.Type) {
+				if child.Label != "" && isIdentifier(r, child.Type) {
 					labels[child.Label] = true
 				}
 				if child.IsScaffolding() {
 					for _, sub := range child.Children {
-						if sub.Label != "" && isID(r, sub.Type) {
+						if sub.Label != "" && isIdentifier(r, sub.Type) {
 							labels[sub.Label] = true
 						}
 						if key := getKeyLabel(sub); key != "" {
@@ -350,6 +357,9 @@ func AncestorNameSimilarity(t1, t2 *treesitter.ASTNode) int {
 						}
 					}
 				}
+			}
+			if isContainerDeclaration(r, curr.Type) {
+				break
 			}
 			curr = curr.Parent
 		}
@@ -433,6 +443,16 @@ func hasWordChar(s string) bool {
 	return false
 }
 
+// isQuotedLiteral keeps punctuation-only string literals like "" or ":" from
+// getting dropped by word-character filters.
+func isQuotedLiteral(s string) bool {
+	if len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		return first == last && (first == '"' || first == '\'' || first == '`')
+	}
+	return false
+}
+
 // LeafSimilarity returns the Dice coefficient of non-trivial leaf labels between subtrees a and b.
 func LeafSimilarity(a, b *treesitter.ASTNode) float64 {
 	if a == nil || b == nil {
@@ -441,7 +461,7 @@ func LeafSimilarity(a, b *treesitter.ASTNode) float64 {
 	l1, l2 := a.LeafLabels(), b.LeafLabels()
 	intersection, total1, total2 := 0, 0, 0
 	for label, count1 := range l1 {
-		if !hasWordChar(label) {
+		if !hasWordChar(label) && !isQuotedLiteral(label) {
 			continue
 		}
 		total1 += count1
@@ -450,7 +470,7 @@ func LeafSimilarity(a, b *treesitter.ASTNode) float64 {
 		}
 	}
 	for label, count2 := range l2 {
-		if hasWordChar(label) {
+		if hasWordChar(label) || isQuotedLiteral(label) {
 			total2 += count2
 		}
 	}
