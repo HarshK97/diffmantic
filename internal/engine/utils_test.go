@@ -486,3 +486,110 @@ func TestFindEnclosingStatement_CaseClause(t *testing.T) {
 		t.Errorf("FindEnclosingStatement(inner identifier) = %v (%s), want enclosing stmt %v (%s)", gotInner, gotInner.Type, stmt, stmt.Type)
 	}
 }
+
+func TestIsQuotedLiteral(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{`""`, true},
+		{`":"`, true},
+		{`"hello world"`, true},
+		{`''`, true},
+		{`'a'`, true},
+		{"``", true},
+		{"`raw string`", true},
+		{"", false},
+		{`"`, false},
+		{`'`, false},
+		{"`", false},
+		{`"mismatched'`, false},
+		{"identifier", false},
+		{":", false},
+		{",", false},
+		{";", false},
+		{`"unclosed`, false},
+		{`unopened"`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isQuotedLiteral(tt.input); got != tt.want {
+				t.Errorf("isQuotedLiteral(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLeafSimilarity_QuotedLiterals(t *testing.T) {
+	call1 := testutil.Node("call_expression", "",
+		testutil.Leaf("identifier", "getContent"),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("identifier", "dstFile"),
+			testutil.Leaf(",", ","),
+			testutil.Leaf("interpreted_string_literal", `":"`),
+		),
+	)
+	call2 := testutil.Node("call_expression", "",
+		testutil.Leaf("identifier", "getContent"),
+		testutil.Node("argument_list", "",
+			testutil.Leaf("identifier", "dstFile"),
+			testutil.Leaf(",", ","),
+			testutil.Leaf("interpreted_string_literal", `""`),
+		),
+	)
+
+	if sim := LeafSimilarity(call1, call1); sim != 1.0 {
+		t.Errorf("LeafSimilarity(call1, call1) = %f, want 1.0", sim)
+	}
+	if sim := LeafSimilarity(call2, call2); sim != 1.0 {
+		t.Errorf("LeafSimilarity(call2, call2) = %f, want 1.0", sim)
+	}
+
+	simDiff := LeafSimilarity(call1, call2)
+	if simDiff >= 1.0 || simDiff == 0.0 {
+		t.Errorf("LeafSimilarity(call1, call2) = %f, want between 0 and 1.0", simDiff)
+	}
+	if simDiff > 0.8 {
+		t.Errorf("LeafSimilarity(call1, call2) = %f, expected < 0.8 due to distinct quoted literals", simDiff)
+	}
+
+	punct1 := testutil.Node("args", "", testutil.Leaf(",", ","), testutil.Leaf(";", ";"))
+	punct2 := testutil.Node("args", "", testutil.Leaf(",", ","), testutil.Leaf(";", ";"))
+	if simPunct := LeafSimilarity(punct1, punct2); simPunct != 0.0 {
+		t.Errorf("LeafSimilarity for pure punctuation = %f, want 0.0", simPunct)
+	}
+}
+
+func TestAncestorNameSimilarity_ScopeBounded(t *testing.T) {
+	file1 := testutil.Node("source_file", "",
+		testutil.Leaf("identifier", "fileLevelGlobal"),
+		testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "doWork"),
+			testutil.Node("block", "",
+				testutil.Leaf("identifier", "x"),
+			),
+		),
+	)
+	file1.Language = "go"
+	file1.Children[1].Language = "go"
+
+	file2 := testutil.Node("source_file", "",
+		testutil.Leaf("identifier", "fileLevelGlobal"),
+		testutil.Node("function_declaration", "",
+			testutil.Leaf("identifier", "doWork"),
+			testutil.Node("block", "",
+				testutil.Leaf("identifier", "y"),
+			),
+		),
+	)
+	file2.Language = "go"
+	file2.Children[1].Language = "go"
+
+	x := file1.Children[1].Children[1].Children[0]
+	y := file2.Children[1].Children[1].Children[0]
+
+	sim := AncestorNameSimilarity(x, y)
+	if sim != 1 {
+		t.Errorf("AncestorNameSimilarity(x, y) = %d, want 1 (only doWork, bounded at function_declaration)", sim)
+	}
+}
