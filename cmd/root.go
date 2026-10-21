@@ -201,7 +201,9 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 				// Case 2: Two Git revisions (e.g. diffm main feature-branch)
 				if isRevA && isRevB {
-					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+					if runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+						os.Exit(1)
+					}
 					return
 				}
 				isTrackedOrFileA := isFileOrDevNull(argA) || git.IsTrackedFile(".", argA)
@@ -209,11 +211,15 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 				// Case 3: One revision and one tracked/existing file path (e.g. diffm main internal/git/git.go)
 				if isRevA && isTrackedOrFileB {
-					runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+					if runGitMode(cmd, []string{argA, argB}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+						os.Exit(1)
+					}
 					return
 				}
 				if isRevB && isTrackedOrFileA {
-					runGitMode(cmd, []string{argB, argA}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+					if runGitMode(cmd, []string{argB, argA}, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+						os.Exit(1)
+					}
 					return
 				}
 
@@ -252,7 +258,9 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 		// In a git repo, launch git mode (optionally filtered by ref or path)
 		if git.IsGitRepository(".") {
-			runGitMode(cmd, args, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+			if runGitMode(cmd, args, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+				os.Exit(1)
+			}
 			return
 		}
 
@@ -371,7 +379,11 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 	case "side-by-side":
 		if rc.showBanner {
 			numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
-			if err := sidebyside.RenderFileBanner(dstFile, numIns, numDel, numUpd, rc.sbsOpts.Color, rc.writer); err != nil {
+			bannerPath := dstFile
+			if bannerPath == "/dev/null" || bannerPath == "" {
+				bannerPath = srcFile
+			}
+			if err := sidebyside.RenderFileBanner(bannerPath, numIns, numDel, numUpd, rc.sbsOpts.Color, rc.writer); err != nil {
 				return err
 			}
 		}
@@ -453,7 +465,8 @@ func renderBinaryDiff(srcFile, dstFile string, rc renderConfig) {
 	}
 }
 
-func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
+// runGitMode diffs Git revisions or working tree changes, returning true if any file had errors.
+func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) (hadErrors bool) {
 	stagedOnly, _ := cmd.Flags().GetBool("cached")
 
 	var refs, paths []string
@@ -483,7 +496,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 	files, err := git.GetChangedFiles(".", refA, refB, pathFilter)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: retrieving git status: %v\n", err)
-		os.Exit(1)
+		return true
 	}
 
 	uiMode, _ := cmd.Flags().GetBool("ui")
@@ -504,6 +517,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 
 	if format == "unified" || format == "side-by-side" || format == "actions" {
 		p, writer = pager.Start(noPager)
+		// Pager.Close is idempotent; this catches early error exits before we reach runConcurrentDiffJobs.
 		defer p.Close()
 	}
 
@@ -512,40 +526,22 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 
 	textconv, _ := cmd.Flags().GetBool("textconv")
 
-	processFile := func(srcFile, dstFile string, srcBytes, dstBytes []byte) error {
-		if srcBytes == nil {
-			srcFile = "/dev/null"
-			srcBytes = []byte{}
-		}
-		if dstBytes == nil {
-			dstFile = "/dev/null"
-			dstBytes = []byte{}
-		}
-		if bytes.Equal(srcBytes, dstBytes) && format != "json" {
-			return nil
-		}
+	rc := renderConfig{
+		format:      format,
+		showBanner:  showBanner,
+		writer:      writer,
+		unifiedOpts: unifiedOpts,
+		sbsOpts:     sbsOpts,
+	}
 
-		dr, err := pipeline.Run(srcBytes, dstBytes, srcFile, dstFile, pipeline.DiffOptions{
-			ParseErrorLimit:  parseErrorLimit,
-			IgnoreComments:   ignoreComments,
-			DisableSizeLimit: sizeLimitKB <= 0,
-			MaxASTFileSize:   sizeLimitKB * 1024,
-			DisableLineLimit: lineLimitLines <= 0,
-			MaxASTFileLines:  lineLimitLines,
-			EnvelopeOpts:     opts,
-		})
-		if err != nil {
-			return fmt.Errorf("diffing %s: %w", dstFile, err)
-		}
-
-		filesRendered++
-		return renderDiffResult(srcFile, dstFile, srcBytes, dstBytes, dr, renderConfig{
-			format:      format,
-			showBanner:  showBanner,
-			writer:      writer,
-			unifiedOpts: unifiedOpts,
-			sbsOpts:     sbsOpts,
-		})
+	diffOpts := pipeline.DiffOptions{
+		ParseErrorLimit:  parseErrorLimit,
+		IgnoreComments:   ignoreComments,
+		DisableSizeLimit: sizeLimitKB <= 0,
+		MaxASTFileSize:   sizeLimitKB * 1024,
+		DisableLineLimit: lineLimitLines <= 0,
+		MaxASTFileLines:  lineLimitLines,
+		EnvelopeOpts:     opts,
 	}
 
 	var batchMap map[git.BlobRequest][]byte
@@ -559,10 +555,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				if f.IsBinary {
 					continue
 				}
-				srcFile := f.Path
-				if f.OldPath != "" {
-					srcFile = f.OldPath
-				}
+				srcFile := cmp.Or(f.OldPath, f.Path)
 				dstFile := f.Path
 
 				if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
@@ -590,10 +583,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				if f.IsBinary {
 					continue
 				}
-				srcFile := f.Path
-				if f.OldPath != "" {
-					srcFile = f.OldPath
-				}
+				srcFile := cmp.Or(f.OldPath, f.Path)
 				dstFile := f.Path
 
 				if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
@@ -613,30 +603,48 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		}
 	}
 
-	getContent := func(path, rev string) ([]byte, error) {
-		if !textconv && batchMap != nil {
-			req := git.BlobRequest{Path: path, Revision: rev}
-			if data, ok := batchMap[req]; ok {
-				return data, nil
-			}
+	// Give each job its prefetched blobs directly so we can drop the batch map
+	// before the worker pool starts. That lets us free blob buffers file-by-file
+	// as diffs finish, instead of holding everything in memory for the whole run.
+	// Anything not in the batch is loaded on demand by the worker.
+	newContentJob := func(srcFile, dstFile, srcRev, dstRev string) diffJob {
+		job := diffJob{
+			displayA: srcFile,
+			displayB: dstFile,
+			relPathA: srcFile,
+			relPathB: dstFile,
 		}
-		return git.GetContent(".", path, rev, textconv)
+		srcData, srcOK := batchMap[git.BlobRequest{Path: srcFile, Revision: srcRev}]
+		dstData, dstOK := batchMap[git.BlobRequest{Path: dstFile, Revision: dstRev}]
+		if srcOK && dstOK {
+			job.srcBytes, job.dstBytes = srcData, dstData
+			return job
+		}
+		job.load = func() ([]byte, []byte, error) {
+			var err error
+			if !srcOK {
+				if srcData, err = git.GetContent(".", srcFile, srcRev, textconv); err != nil {
+					return nil, nil, fmt.Errorf("reading %s: %w", srcFile, err)
+				}
+			}
+			if !dstOK {
+				if dstData, err = git.GetContent(".", dstFile, dstRev, textconv); err != nil {
+					return nil, nil, fmt.Errorf("reading %s: %w", dstFile, err)
+				}
+			}
+			return srcData, dstData, nil
+		}
+		return job
 	}
 
+	var jobs []diffJob
 	if refA == "" {
 		for _, f := range files {
-			if p != nil && !p.IsActive() {
-				return
-			}
-
 			if stagedOnly && !f.Staged {
 				continue
 			}
 
-			srcFile := f.Path
-			if f.OldPath != "" {
-				srcFile = f.OldPath
-			}
+			srcFile := cmp.Or(f.OldPath, f.Path)
 			dstFile := f.Path
 
 			if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
@@ -647,38 +655,16 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				filesRendered++
-				renderBinaryDiff(srcFile, dstFile, renderConfig{
-					format:      format,
-					showBanner:  showBanner,
-					writer:      writer,
-					unifiedOpts: unifiedOpts,
-					sbsOpts:     sbsOpts,
+				jobs = append(jobs, diffJob{
+					displayA: srcFile,
+					displayB: dstFile,
+					isBinary: true,
 				})
 				continue
 			}
 
 			if f.Staged {
-				srcBytes, err := getContent(srcFile, "HEAD")
-				if err != nil {
-					if !pager.IsBrokenPipe(err) {
-						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
-					}
-					return
-				}
-				dstBytes, err := getContent(dstFile, ":")
-				if err != nil {
-					if !pager.IsBrokenPipe(err) {
-						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
-					}
-					return
-				}
-				if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
-					if !pager.IsBrokenPipe(err) {
-						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					}
-					return
-				}
+				jobs = append(jobs, newContentJob(srcFile, dstFile, "HEAD", ":"))
 			}
 
 			if f.Unstaged && !stagedOnly {
@@ -686,38 +672,12 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				if !f.Staged {
 					revA = "HEAD"
 				}
-				srcBytes, err := getContent(srcFile, revA)
-				if err != nil {
-					if !pager.IsBrokenPipe(err) {
-						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
-					}
-					return
-				}
-				dstBytes, err := getContent(dstFile, "")
-				if err != nil {
-					if !pager.IsBrokenPipe(err) {
-						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
-					}
-					return
-				}
-				if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
-					if !pager.IsBrokenPipe(err) {
-						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					}
-					return
-				}
+				jobs = append(jobs, newContentJob(srcFile, dstFile, revA, ""))
 			}
 		}
 	} else {
 		for _, f := range files {
-			if p != nil && !p.IsActive() {
-				return
-			}
-
-			srcFile := f.Path
-			if f.OldPath != "" {
-				srcFile = f.OldPath
-			}
+			srcFile := cmp.Or(f.OldPath, f.Path)
 			dstFile := f.Path
 
 			if strings.HasSuffix(dstFile, "/") || strings.HasSuffix(srcFile, "/") {
@@ -728,40 +688,24 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 			}
 
 			if f.IsBinary && !textconv {
-				filesRendered++
-				renderBinaryDiff(srcFile, dstFile, renderConfig{
-					format:      format,
-					showBanner:  showBanner,
-					writer:      writer,
-					unifiedOpts: unifiedOpts,
-					sbsOpts:     sbsOpts,
+				jobs = append(jobs, diffJob{
+					displayA: srcFile,
+					displayB: dstFile,
+					isBinary: true,
 				})
 				continue
 			}
 
-			srcBytes, err := getContent(srcFile, refA)
-			if err != nil {
-				if !pager.IsBrokenPipe(err) {
-					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", srcFile, err)
-				}
-				return
-			}
-			dstBytes, err := getContent(dstFile, refB)
-			if err != nil {
-				if !pager.IsBrokenPipe(err) {
-					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", dstFile, err)
-				}
-				return
-			}
-
-			if err := processFile(srcFile, dstFile, srcBytes, dstBytes); err != nil {
-				if !pager.IsBrokenPipe(err) {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				}
-				return
-			}
+			jobs = append(jobs, newContentJob(srcFile, dstFile, refA, refB))
 		}
 	}
+	batchMap = nil
+
+	diffErrors, count := runConcurrentDiffJobs(jobs, p, rc, diffOpts)
+	if diffErrors {
+		hadErrors = true
+	}
+	filesRendered += count
 
 	if filesRendered == 0 && pathFilter != "" && (isFileOrDevNull(pathFilter) || git.IsTrackedFile(".", pathFilter)) {
 		var srcBytes, dstBytes []byte
@@ -771,52 +715,60 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 				srcBytes, err = git.GetContent(".", pathFilter, "HEAD", textconv)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-					return
+					return true
 				}
 				dstBytes, err = git.GetContent(".", pathFilter, ":", textconv)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-					return
+					return true
 				}
 			} else {
 				srcBytes, err = git.GetContent(".", pathFilter, ":", textconv)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-					return
+					return true
 				}
 				if len(srcBytes) == 0 {
 					srcBytes, err = git.GetContent(".", pathFilter, "HEAD", textconv)
 					if err != nil {
 						fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-						return
+						return true
 					}
 				}
 				dstBytes, err = git.GetContent(".", pathFilter, "", textconv)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-					return
+					return true
 				}
 			}
 		} else {
 			srcBytes, err = git.GetContent(".", pathFilter, refA, textconv)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-				return
+				return true
 			}
 			dstBytes, err = git.GetContent(".", pathFilter, refB, textconv)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", pathFilter, err)
-				return
+				return true
 			}
 		}
 
-		if err := processFile(pathFilter, pathFilter, srcBytes, dstBytes); err != nil {
-			if !pager.IsBrokenPipe(err) {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			}
-			return
+		fallbackJob := []diffJob{{
+			displayA: pathFilter,
+			displayB: pathFilter,
+			relPathA: pathFilter,
+			relPathB: pathFilter,
+			srcBytes: srcBytes,
+			dstBytes: dstBytes,
+		}}
+		fallbackErrors, _ := runConcurrentDiffJobs(fallbackJob, p, rc, diffOpts)
+		if fallbackErrors {
+			hadErrors = true
 		}
 	}
+
+	return hadErrors
 }
 
 func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {

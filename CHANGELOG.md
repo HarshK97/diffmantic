@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- Directory and Git diffs now process files in parallel while keeping output in the original order, roughly 2–3x faster on multi-file diffs with a modest memory increase.
+
 ## [0.13.0] - 2026-10-19
 
 ### Added
