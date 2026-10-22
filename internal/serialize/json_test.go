@@ -9,6 +9,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // setParentAndRange links a node to its parent and sets its byte range.
@@ -878,6 +879,128 @@ func process() {
 		// Whole-snippet context line purity
 		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 10, 11, 12})
 		assertContextLinesPure(t, env.RightHighlights, []int{7, 8, 9, 10})
+	})
+
+	t.Run("dominant cohort gets slot 0 and reordered outlier gets slot 1", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func run() {
+	if err != nil {
+		return
+	}
+	step1()
+	step2()
+	step3()
+	step4()
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+	step12()
+	step13()
+	step14()
+	step15()
+}
+`
+		newSrc := `package main
+
+func run() {
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+	step12()
+	step13()
+	step14()
+	step15()
+	step1()
+	step2()
+	step3()
+	step4()
+	if err != nil {
+		return
+	}
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+		moves := collectMoves(env)
+		if len(moves) != 5 {
+			t.Fatalf("expected 5 moves (4 cohort + 1 sunk guard), got %d: %+v", len(moves), moves)
+		}
+
+		// 1. Dominant cohort (step1..step4) stays in order and shares group-1 in slot 0 (Cyan)
+		statementColors := make(map[string]int)
+		statementGroups := make(map[string]string)
+		for _, m := range moves {
+			if m.ASTNode != nil {
+				text := strings.TrimSpace(string([]byte(oldSrc)[m.ASTNode.StartByte:m.ASTNode.EndByte]))
+				statementColors[text] = m.MoveColorIndex
+				statementGroups[text] = m.GroupID
+			}
+		}
+
+		cohortGroup := statementGroups["step1()"]
+		if cohortGroup == "" {
+			t.Fatalf("expected cohort move to have a non-empty GroupID, got empty")
+		}
+		for _, stmt := range []string{"step1()", "step2()", "step3()", "step4()"} {
+			if gid, ok := statementGroups[stmt]; !ok || gid != cohortGroup {
+				t.Errorf("expected cohort statement %s to share GroupID %q, got %q", stmt, cohortGroup, gid)
+			}
+			if color, ok := statementColors[stmt]; !ok || color != 0 {
+				t.Errorf("expected cohort statement %s to get MoveColorIndex 0 (Cyan), got %d", stmt, color)
+			}
+		}
+
+		// 2. Out-of-order outlier (sunk if err != nil guard) stays ungrouped in slot 1 (Magenta)
+		guardText := "if err != nil {\n\t\treturn\n\t}"
+		if gid, ok := statementGroups[guardText]; !ok || gid != "" {
+			t.Errorf("expected sunk guard to have empty GroupID, got %q", gid)
+		}
+		if color, ok := statementColors[guardText]; !ok || color != 1 {
+			t.Errorf("expected sunk guard to get MoveColorIndex 1 (Magenta), got %d", color)
+		}
+
+		// 3. Highlight spans reflect their assigned color slots
+		for _, h := range env.RightHighlights {
+			if h.Action != "move" {
+				continue
+			}
+			// Lines 14..17 are step1..step4 (cohort -> slot 0 / Cyan)
+			if h.Line >= 14 && h.Line <= 17 {
+				if h.ColorIndex != 0 {
+					t.Errorf("expected cohort highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
+				}
+			}
+			// Lines 18..20 are the sunk guard (outlier -> slot 1 / Magenta)
+			if h.Line >= 18 && h.Line <= 20 {
+				if h.ColorIndex != 1 {
+					t.Errorf("expected outlier guard highlight on line %d to have ColorIndex 1, got %d", h.Line+1, h.ColorIndex)
+				}
+			}
+		}
+
+		// 4. Whole-snippet verification: enclosing package and func declarations have no edit actions
+		for _, a := range env.Actions {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 5. Whole-snippet context line purity: stationary statements step5..step15 remain unhighlighted
+		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9})
+		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17, 18, 19, 20})
 	})
 }
 

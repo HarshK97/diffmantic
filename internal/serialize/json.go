@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -545,32 +546,108 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 		return
 	}
 
+	type groupInfo struct {
+		id          string
+		moves       []moveInterval
+		totalSpan   int
+		minSrcStart int
+	}
+
+	groupMap := make(map[string]*groupInfo)
+	for _, m := range moves {
+		curAct := &actions[m.actIdx]
+		if curAct.GroupID == "" {
+			continue
+		}
+		gi, exists := groupMap[curAct.GroupID]
+		if !exists {
+			gi = &groupInfo{
+				id:          curAct.GroupID,
+				minSrcStart: m.sStart,
+			}
+			groupMap[curAct.GroupID] = gi
+		}
+		gi.moves = append(gi.moves, m)
+		span := 0
+		if curAct.Node != nil {
+			span = int(curAct.Node.EndByte - curAct.Node.StartByte)
+		}
+		gi.totalSpan += span
+		gi.minSrcStart = min(gi.minSrcStart, m.sStart)
+	}
+
+	groups := slices.Collect(maps.Values(groupMap))
+	slices.SortFunc(groups, func(a, b *groupInfo) int {
+		return cmp.Or(
+			cmp.Compare(len(b.moves), len(a.moves)),
+			cmp.Compare(b.totalSpan, a.totalSpan),
+			cmp.Compare(a.minSrcStart, b.minSrcStart),
+			cmp.Compare(a.id, b.id),
+		)
+	})
+
+	isColored := make([]bool, len(actions))
 	groupColors := make(map[string]int)
 
-	for i, cur := range moves {
-		curAct := &actions[cur.actIdx]
-
-		if curAct.GroupID != "" {
-			if c, ok := groupColors[curAct.GroupID]; ok {
-				curAct.MoveColorIndex = c
-				continue
+	// Pass 1: Color dominant groups first so the main block gets slot 0 (Cyan).
+	for _, g := range groups {
+		var used [2]bool
+		for _, m := range g.moves {
+			curAct := &actions[m.actIdx]
+			for _, otherG := range groups {
+				otherColor, scheduled := groupColors[otherG.id]
+				if !scheduled || otherG.id == g.id {
+					continue
+				}
+				for _, otherM := range otherG.moves {
+					otherAct := &actions[otherM.actIdx]
+					if isHierarchicalCoMover(curAct, otherAct) {
+						continue
+					}
+					sOverlap := max(m.sStart, otherM.sStart) <= min(m.sEnd, otherM.sEnd)+2
+					dOverlap := max(m.dStart, otherM.dStart) <= min(m.dEnd, otherM.dEnd)+2
+					if sOverlap || dOverlap {
+						if otherColor < len(used) {
+							used[otherColor] = true
+						}
+					}
+				}
 			}
 		}
 
-		// Inherit the parent move's color if this child moved along with it.
-		if pIdx := slices.IndexFunc(moves[:i], func(prev moveInterval) bool {
-			return isChildCoMover(curAct, &actions[prev.actIdx])
+		slot := slices.Index(used[:], false)
+		if slot < 0 {
+			slot = 0
+		}
+		groupColors[g.id] = slot
+		for _, m := range g.moves {
+			actions[m.actIdx].MoveColorIndex = slot
+			isColored[m.actIdx] = true
+		}
+	}
+
+	// Pass 2: Color leftover outliers and ungrouped moves, picking whatever slot doesn't clash nearby.
+	for _, cur := range moves {
+		curAct := &actions[cur.actIdx]
+		if isColored[cur.actIdx] {
+			continue
+		}
+
+		// If a child node moved inside an already-moved parent, keep their colors matched.
+		if pIdx := slices.IndexFunc(moves, func(prev moveInterval) bool {
+			return isColored[prev.actIdx] && isChildCoMover(curAct, &actions[prev.actIdx])
 		}); pIdx >= 0 {
 			c := actions[moves[pIdx].actIdx].MoveColorIndex
 			curAct.MoveColorIndex = c
-			if curAct.GroupID != "" {
-				groupColors[curAct.GroupID] = c
-			}
+			isColored[cur.actIdx] = true
 			continue
 		}
 
 		var used [2]bool
-		for _, prev := range moves[:i] {
+		for _, prev := range moves {
+			if !isColored[prev.actIdx] {
+				continue
+			}
 			prevAct := &actions[prev.actIdx]
 			if curAct.GroupID != "" && curAct.GroupID == prevAct.GroupID {
 				continue
@@ -590,17 +667,12 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			}
 		}
 
-		slot := 0
-		for slot < len(used) && used[slot] {
-			slot++
-		}
-		if slot == len(used) {
+		slot := slices.Index(used[:], false)
+		if slot < 0 {
 			slot = 0
 		}
 		curAct.MoveColorIndex = slot
-		if curAct.GroupID != "" {
-			groupColors[curAct.GroupID] = slot
-		}
+		isColored[cur.actIdx] = true
 	}
 }
 
