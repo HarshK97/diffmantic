@@ -363,3 +363,43 @@ func bar() {
 		}
 	})
 }
+
+func TestGroupMoves_LIS_SunkStatementUngrouped(t *testing.T) {
+	oldParent := &treesitter.ASTNode{Type: "block"}
+	newParent := &treesitter.ASTNode{Type: "block"}
+
+	// Statement 1 was moved to the end:
+	// src: 1(10..20), 2(30..40), 3(50..60)
+	// dst: 2(10..20), 3(30..40), 1(50..60)
+	src1 := &treesitter.ASTNode{Type: "expression_statement"}
+	setParentAndRange(src1, oldParent, 10, 20)
+	dst1 := &treesitter.ASTNode{Type: "expression_statement"}
+	setParentAndRange(dst1, newParent, 50, 60)
+
+	src2 := &treesitter.ASTNode{Type: "expression_statement"}
+	setParentAndRange(src2, oldParent, 30, 40)
+	dst2 := &treesitter.ASTNode{Type: "expression_statement"}
+	setParentAndRange(dst2, newParent, 10, 20)
+
+	src3 := &treesitter.ASTNode{Type: "expression_statement"}
+	setParentAndRange(src3, oldParent, 50, 60)
+	dst3 := &treesitter.ASTNode{Type: "expression_statement"}
+	setParentAndRange(dst3, newParent, 30, 40)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: src1, DestNode: dst1, Parent: newParent})
+	es.Add(actions.Action{Type: actions.Move, Node: src2, DestNode: dst2, Parent: newParent})
+	es.Add(actions.Action{Type: actions.Move, Node: src3, DestNode: dst3, Parent: newParent})
+
+	grouped := GroupMoves(es, nil)
+	acts := grouped.Actions()
+
+	// 2 and 3 stay in relative order, so they form the group.
+	if acts[1].GroupID != "group-1" || acts[2].GroupID != "group-1" {
+		t.Errorf("expected cohort 2, 3 to have group-1, got %q, %q", acts[1].GroupID, acts[2].GroupID)
+	}
+	// 1 moved out of order to the end, so it stays ungrouped.
+	if acts[0].GroupID != "" {
+		t.Errorf("expected sunk statement 1 to have empty GroupID, got %q", acts[0].GroupID)
+	}
+}

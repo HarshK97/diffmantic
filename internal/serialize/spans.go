@@ -71,7 +71,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	for i := range actions {
 		a := &actions[i]
 		if a.GroupID != "" && (a.Action == "move" || a.Action == "move_update") &&
-			isActionMultiLine(a, lineIndex, fileBytes, side) {
+			actionLineCount(a, lineIndex, fileBytes, side) > 1 {
 			if multiLineGroups == nil {
 				multiLineGroups = make(map[string]bool)
 			}
@@ -255,18 +255,17 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	return result
 }
 
-// isActionMultiLine reports whether an action's node spans multiple lines of code on the given diff side.
-// It ignores trailing whitespace and newlines so container headers ending at a newline or indent
-// (like "{\n\t\t") aren't treated as multi-line moves.
-func isActionMultiLine(act *Action, lineIndex []int, fileBytes []byte, side string) bool {
+// actionLineCount counts physical lines spanned by an action, trimming trailing whitespace
+// so opening braces like "{\n\t" don't count as multiline.
+func actionLineCount(act *Action, lineIndex []int, fileBytes []byte, side string) int {
 	if act == nil || len(lineIndex) == 0 {
-		return false
+		return 0
 	}
 	var startByte, endByte uint32
 	switch side {
 	case "left":
 		if act.Node == nil {
-			return false
+			return 0
 		}
 		startByte = act.Node.StartByte
 		endByte = act.Node.EndByte
@@ -278,10 +277,10 @@ func isActionMultiLine(act *Action, lineIndex []int, fileBytes []byte, side stri
 			startByte = act.DestNode.StartByte
 			endByte = act.DestNode.EndByte
 		} else {
-			return false
+			return 0
 		}
 	default:
-		return false
+		return 0
 	}
 
 	for endByte > startByte && int(endByte) <= len(fileBytes) && endByte > 0 {
@@ -298,7 +297,10 @@ func isActionMultiLine(act *Action, lineIndex []int, fileBytes []byte, side stri
 	if endCol == 0 && sEnd > sStart {
 		sEnd--
 	}
-	return sEnd > sStart
+	if sEnd < sStart {
+		return 0
+	}
+	return sEnd - sStart + 1
 }
 
 func addSpan(spans map[int][]internalSpan, lineIndex []int, fileBytes []byte, startByte, endByte uint32, actStr string, action *Action) {
@@ -530,13 +532,24 @@ func parseSpanActionPriority(act string) int {
 	}
 }
 
-// ResolveMoveColor picks the color slot for a move. Multiline moves and groups
-// collapse to Cyan (slot 0) so large blocks stay calm and don't clash with single-line moves.
-func ResolveMoveColor(act *Action, isMultiLine bool, groupIsMultiLine bool) int {
+// MaxUngroupedHighlightLines is how many lines a standalone move can span before
+// dropping its contrasting color (slot 1 / Magenta) and falling back to Cyan (slot 0).
+const MaxUngroupedHighlightLines = 3
+
+// ResolveMoveColor picks the color slot for a move. Standalone moves keep slot 1
+// (Magenta) up to 3 lines. Anything larger or inside a multiline group collapses
+// to slot 0 (Cyan) so big blocks don't overwhelm the screen.
+func ResolveMoveColor(act *Action, lineCount int, groupIsMultiLine bool) int {
 	if act == nil {
 		return 0
 	}
-	if isMultiLine || (act.GroupID != "" && groupIsMultiLine) {
+	if act.GroupID == "" {
+		if lineCount <= MaxUngroupedHighlightLines {
+			return act.MoveColorIndex
+		}
+		return 0
+	}
+	if lineCount > 1 || groupIsMultiLine {
 		return 0
 	}
 	return act.MoveColorIndex
@@ -545,9 +558,12 @@ func ResolveMoveColor(act *Action, isMultiLine bool, groupIsMultiLine bool) int 
 // partitionLineSpans resolves cross-action overlaps for a single line's spans.
 func partitionLineSpans(spans []internalSpan, side string, lineIndex []int, fileBytes []byte, multiLineGroups map[string]bool) []internalSpan {
 	resolveMoveColor := func(act *Action) int {
-		isMulti := len(lineIndex) > 0 && isActionMultiLine(act, lineIndex, fileBytes, side)
+		lineCount := 0
+		if len(lineIndex) > 0 {
+			lineCount = actionLineCount(act, lineIndex, fileBytes, side)
+		}
 		isGroupMulti := act != nil && act.GroupID != "" && multiLineGroups[act.GroupID]
-		return ResolveMoveColor(act, isMulti, isGroupMulti)
+		return ResolveMoveColor(act, lineCount, isGroupMulti)
 	}
 
 	if len(spans) == 0 {

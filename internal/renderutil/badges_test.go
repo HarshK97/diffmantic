@@ -659,3 +659,107 @@ func TestBuildMoveBadges_ColorSynchronization(t *testing.T) {
 		t.Errorf("expected single-line move in multiline group to collapse src badge color to 0, got %d", color)
 	}
 }
+
+func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T) {
+	goRules := rules.Get("go")
+
+	srcLines := make([]string, 30)
+	for i := range srcLines {
+		srcLines[i] = fmt.Sprintf("src line %d", i)
+	}
+	dstLines := make([]string, 30)
+	for i := range dstLines {
+		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	}
+
+	srcOffsets := make([]int, len(srcLines)+1)
+	for i := range srcLines {
+		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	}
+	dstOffsets := make([]int, len(dstLines)+1)
+	for i := range dstLines {
+		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	}
+
+	// 1. 3-line reordered move (outlier <= 3 lines, keeps slot 1 / Magenta)
+	reordered3SrcStart := uint32(srcOffsets[2])
+	reordered3SrcEnd := uint32(srcOffsets[5] - 1) // lines 2, 3, 4 (3 lines)
+	reordered3DstStart := uint32(dstOffsets[20])
+	reordered3DstEnd := uint32(dstOffsets[23] - 1)
+
+	// 2. 4-line reordered move (outlier > 3 lines, collapses to slot 0 / Cyan)
+	reordered4SrcStart := uint32(srcOffsets[7])
+	reordered4SrcEnd := uint32(srcOffsets[11] - 1) // lines 7, 8, 9, 10 (4 lines)
+	reordered4DstStart := uint32(dstOffsets[24])
+	reordered4DstEnd := uint32(dstOffsets[28] - 1)
+
+	actions := []serialize.Action{
+		{
+			Action:         "move",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      "if_statement",
+				StartByte: reordered3SrcStart,
+				EndByte:   reordered3SrcEnd,
+			},
+			DestStartByte:     &reordered3DstStart,
+			DestEndByte:       &reordered3DstEnd,
+			OrigStartByte:     reordered3SrcStart,
+			OrigEndByte:       reordered3SrcEnd,
+			DestOrigStartByte: reordered3DstStart,
+			DestOrigEndByte:   reordered3DstEnd,
+		},
+		{
+			Action:         "move",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      "if_statement",
+				StartByte: reordered4SrcStart,
+				EndByte:   reordered4SrcEnd,
+			},
+			DestStartByte:     &reordered4DstStart,
+			DestEndByte:       &reordered4DstEnd,
+			OrigStartByte:     reordered4SrcStart,
+			OrigEndByte:       reordered4SrcEnd,
+			DestOrigStartByte: reordered4DstStart,
+			DestOrigEndByte:   reordered4DstEnd,
+		},
+	}
+
+	hunks := []Interval{
+		{Start: 0, End: 29},
+	}
+	pairs := make([]serialize.LineAlignmentPair, 30)
+	for i := range pairs {
+		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
+	}
+
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+
+	// 1. 3-line reordered move keeps slot 1 (Magenta)
+	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
+		t.Errorf("expected 3-line reordered move badge color to be 1 (Magenta), got %d", color)
+	}
+
+	// 2. 4-line reordered move collapses to slot 0 (Cyan)
+	if color, ok := badges.SrcLineBadgeColors[7]; !ok || color != 0 {
+		t.Errorf("expected 4-line reordered move badge color to collapse to 0 (Cyan), got %d", color)
+	}
+
+	// 3. Badges should stay purely numerical without labels like "(hoisted)" or "(sunk)"
+	for line, badge := range badges.SrcLineBadges {
+		if strings.Contains(badge, "hoisted") || strings.Contains(badge, "sunk") {
+			t.Errorf("badge on line %d contains unexpected label: %q", line, badge)
+		}
+	}
+	for line, badge := range badges.DstLineBadges {
+		if strings.Contains(badge, "hoisted") || strings.Contains(badge, "sunk") {
+			t.Errorf("dst badge on line %d contains unexpected label: %q", line, badge)
+		}
+	}
+	for hIdx, header := range badges.HunkHeaders {
+		if strings.Contains(header, "hoisted") || strings.Contains(header, "sunk") {
+			t.Errorf("hunk header %d contains unexpected label: %q", hIdx, header)
+		}
+	}
+}

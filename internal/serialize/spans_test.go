@@ -1371,7 +1371,7 @@ func assertContextLinesPure(t *testing.T, spans []HighlightSpan, allowedLines []
 }
 
 func TestResolveMoveColor(t *testing.T) {
-	if got := ResolveMoveColor(nil, false, false); got != 0 {
+	if got := ResolveMoveColor(nil, 0, false); got != 0 {
 		t.Errorf("expected nil action to return color 0, got %d", got)
 	}
 
@@ -1380,11 +1380,11 @@ func TestResolveMoveColor(t *testing.T) {
 		MoveColorIndex: 1,
 	}
 
-	if got := ResolveMoveColor(act, false, false); got != 1 {
+	if got := ResolveMoveColor(act, 1, false); got != 1 {
 		t.Errorf("expected single-line ungrouped move to keep color 1, got %d", got)
 	}
 
-	if got := ResolveMoveColor(act, true, false); got != 0 {
+	if got := ResolveMoveColor(act, 5, false); got != 0 {
 		t.Errorf("expected multi-line move to collapse to 0, got %d", got)
 	}
 
@@ -1393,11 +1393,32 @@ func TestResolveMoveColor(t *testing.T) {
 		GroupID:        "group-1",
 		MoveColorIndex: 1,
 	}
-	if got := ResolveMoveColor(actInGroup, false, true); got != 0 {
+	if got := ResolveMoveColor(actInGroup, 1, true); got != 0 {
 		t.Errorf("expected single-line move in multi-line group to collapse to 0, got %d", got)
 	}
 
-	if got := ResolveMoveColor(actInGroup, false, false); got != 1 {
+	if got := ResolveMoveColor(actInGroup, 1, false); got != 1 {
 		t.Errorf("expected single-line move in single-line group to keep color 1, got %d", got)
+	}
+
+	// Standalone outlier moves:
+	ungroupedAct := &Action{
+		Action:         "move",
+		MoveColorIndex: 1,
+	}
+
+	// Standalone move with lineCount <= MaxUngroupedHighlightLines (3) keeps slot 1 (Magenta).
+	for lines := 1; lines <= MaxUngroupedHighlightLines; lines++ {
+		if got := ResolveMoveColor(ungroupedAct, lines, false); got != 1 {
+			t.Errorf("expected ungrouped move with %d lines to retain color 1, got %d", lines, got)
+		}
+	}
+
+	// Standalone move with lineCount > MaxUngroupedHighlightLines (e.g. 4 lines) collapses to slot 0 (Cyan).
+	if got := ResolveMoveColor(ungroupedAct, 4, false); got != 0 {
+		t.Errorf("expected ungrouped move with 4 lines to collapse to 0, got %d", got)
+	}
+	if got := ResolveMoveColor(ungroupedAct, 10, false); got != 0 {
+		t.Errorf("expected ungrouped move with 10 lines to collapse to 0, got %d", got)
 	}
 }
