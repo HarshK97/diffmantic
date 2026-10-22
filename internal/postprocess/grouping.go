@@ -1,6 +1,7 @@
 package postprocess
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 
@@ -56,6 +57,15 @@ func groupingNewParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 	return n
 }
 
+type moveItem struct {
+	index    int
+	srcStart uint32
+	srcEnd   uint32
+	dstStart uint32
+	dstEnd   uint32
+	hasDst   bool
+}
+
 // GroupMoves groups Move actions that share the same source and destination parents.
 // Swapped moves and parent-child moves get separate group IDs (and colors)
 // instead of sharing one.
@@ -67,15 +77,6 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 	actionsSlice := es.Actions()
 	if len(actionsSlice) == 0 {
 		return es
-	}
-
-	type moveItem struct {
-		index    int
-		srcStart uint32
-		srcEnd   uint32
-		dstStart uint32
-		dstEnd   uint32
-		hasDst   bool
 	}
 
 	groups := make(map[groupKey][]moveItem)
@@ -150,35 +151,56 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 			continue
 		}
 
-		// 2. Exclude swapped nodes, items in a group must preserve relative order.
-		swapped := make(map[int]struct{})
-		for i := 0; i < len(nonContainers); i++ {
-			for j := i + 1; j < len(nonContainers); j++ {
-				a := nonContainers[i]
-				b := nonContainers[j]
-				if a.hasDst && b.hasDst {
-					if (a.srcStart < b.srcStart && a.dstStart > b.dstStart) ||
-						(a.srcStart > b.srcStart && a.dstStart < b.dstStart) {
-						swapped[a.index] = struct{}{}
-						swapped[b.index] = struct{}{}
-					}
+		// 2. Keep statements that moved in order grouped together (LIS) instead of dropping the whole group if one got reordered.
+		hasAnyDst := slices.ContainsFunc(nonContainers, func(item moveItem) bool {
+			return item.hasDst
+		})
+		if !hasAnyDst {
+			if len(nonContainers) >= 2 {
+				gid := fmt.Sprintf("group-%d", groupCounter)
+				groupCounter++
+				for _, item := range nonContainers {
+					groupIDMap[item.index] = gid
 				}
 			}
+			continue
 		}
 
-		var valid []int
+		resolved := make([]moveItem, 0, len(nonContainers))
 		for _, item := range nonContainers {
-			if _, isSwapped := swapped[item.index]; !isSwapped {
-				valid = append(valid, item.index)
+			if item.hasDst {
+				resolved = append(resolved, item)
 			}
 		}
+		if len(resolved) < 2 {
+			continue
+		}
 
-		if len(valid) >= 2 {
+		slices.SortFunc(resolved, func(a, b moveItem) int {
+			return cmp.Or(
+				cmp.Compare(a.srcStart, b.srcStart),
+				cmp.Compare(a.dstStart, b.dstStart),
+				cmp.Compare(a.index, b.index),
+			)
+		})
+
+		pool := slices.Clone(resolved)
+		for len(pool) >= 2 {
+			best := extractLIS(pool)
+			if len(best) < 2 {
+				break
+			}
 			gid := fmt.Sprintf("group-%d", groupCounter)
 			groupCounter++
-			for _, idx := range valid {
-				groupIDMap[idx] = gid
+			bestIndices := make(map[int]struct{}, len(best))
+			for _, item := range best {
+				groupIDMap[item.index] = gid
+				bestIndices[item.index] = struct{}{}
 			}
+			pool = slices.DeleteFunc(pool, func(item moveItem) bool {
+				_, ok := bestIndices[item.index]
+				return ok
+			})
 		}
 	}
 
@@ -208,4 +230,43 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 	}
 
 	return result
+}
+
+// extractLIS finds the longest chain of moves that kept their relative order in the destination.
+func extractLIS(pool []moveItem) []moveItem {
+	n := len(pool)
+	if n == 0 {
+		return nil
+	}
+	length := make([]int, n)
+	prev := make([]int, n)
+	bestLen := 0
+	bestIdx := -1
+
+	for i := range n {
+		length[i] = 1
+		prev[i] = -1
+		for j := range i {
+			if pool[j].srcStart < pool[i].srcStart && pool[j].dstStart < pool[i].dstStart {
+				if length[j]+1 > length[i] {
+					length[i] = length[j] + 1
+					prev[i] = j
+				}
+			}
+		}
+		if length[i] > bestLen {
+			bestLen = length[i]
+			bestIdx = i
+		}
+	}
+
+	if bestLen == 0 {
+		return nil
+	}
+	best := make([]moveItem, bestLen)
+	for curr, k := bestIdx, bestLen-1; curr != -1; curr = prev[curr] {
+		best[k] = pool[curr]
+		k--
+	}
+	return best
 }
