@@ -66,7 +66,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	skipNestedMove := nestedMoveActions(actions)
 
 	// If any move in a group spans multiple lines, the whole group collapses to
-	// Cyan so siblings don't end up with mismatched colors.
+	// Cyan (slot 0) so siblings don't end up with mismatched colors.
 	var multiLineGroups map[string]bool
 	for i := range actions {
 		a := &actions[i]
@@ -530,16 +530,24 @@ func parseSpanActionPriority(act string) int {
 	}
 }
 
+// ResolveMoveColor picks the color slot for a move. Multiline moves and groups
+// collapse to Cyan (slot 0) so large blocks stay calm and don't clash with single-line moves.
+func ResolveMoveColor(act *Action, isMultiLine bool, groupIsMultiLine bool) int {
+	if act == nil {
+		return 0
+	}
+	if isMultiLine || (act.GroupID != "" && groupIsMultiLine) {
+		return 0
+	}
+	return act.MoveColorIndex
+}
+
 // partitionLineSpans resolves cross-action overlaps for a single line's spans.
 func partitionLineSpans(spans []internalSpan, side string, lineIndex []int, fileBytes []byte, multiLineGroups map[string]bool) []internalSpan {
 	resolveMoveColor := func(act *Action) int {
-		if act == nil {
-			return 0
-		}
-		if len(lineIndex) > 0 && (isActionMultiLine(act, lineIndex, fileBytes, side) || (act.GroupID != "" && multiLineGroups[act.GroupID])) {
-			return 0
-		}
-		return act.MoveColorIndex
+		isMulti := len(lineIndex) > 0 && isActionMultiLine(act, lineIndex, fileBytes, side)
+		isGroupMulti := act != nil && act.GroupID != "" && multiLineGroups[act.GroupID]
+		return ResolveMoveColor(act, isMulti, isGroupMulti)
 	}
 
 	if len(spans) == 0 {

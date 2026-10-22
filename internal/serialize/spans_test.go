@@ -1369,3 +1369,35 @@ func assertContextLinesPure(t *testing.T, spans []HighlightSpan, allowedLines []
 		}
 	}
 }
+
+func TestResolveMoveColor(t *testing.T) {
+	if got := ResolveMoveColor(nil, false, false); got != 0 {
+		t.Errorf("expected nil action to return color 0, got %d", got)
+	}
+
+	act := &Action{
+		Action:         "move",
+		MoveColorIndex: 1,
+	}
+
+	if got := ResolveMoveColor(act, false, false); got != 1 {
+		t.Errorf("expected single-line ungrouped move to keep color 1, got %d", got)
+	}
+
+	if got := ResolveMoveColor(act, true, false); got != 0 {
+		t.Errorf("expected multi-line move to collapse to 0, got %d", got)
+	}
+
+	actInGroup := &Action{
+		Action:         "move",
+		GroupID:        "group-1",
+		MoveColorIndex: 1,
+	}
+	if got := ResolveMoveColor(actInGroup, false, true); got != 0 {
+		t.Errorf("expected single-line move in multi-line group to collapse to 0, got %d", got)
+	}
+
+	if got := ResolveMoveColor(actInGroup, false, false); got != 1 {
+		t.Errorf("expected single-line move in single-line group to keep color 1, got %d", got)
+	}
+}

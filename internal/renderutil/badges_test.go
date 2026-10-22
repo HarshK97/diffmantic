@@ -526,3 +526,136 @@ func TestBuildMoveBadges_AlignmentDistanceThreshold(t *testing.T) {
 		t.Errorf("expected distant same-hunk one-liner on dst line 30 (alignDist=24) to have '↳ L7', got %q", badge)
 	}
 }
+
+func TestBuildMoveBadges_ColorSynchronization(t *testing.T) {
+	goRules := rules.Get("go")
+
+	srcLines := make([]string, 30)
+	for i := range srcLines {
+		srcLines[i] = fmt.Sprintf("src line %d", i)
+	}
+	dstLines := make([]string, 30)
+	for i := range dstLines {
+		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	}
+
+	srcOffsets := make([]int, len(srcLines)+1)
+	for i := range srcLines {
+		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	}
+	dstOffsets := make([]int, len(dstLines)+1)
+	for i := range dstLines {
+		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	}
+
+	// 1. Single-line move with MoveColorIndex: 1 (outlier)
+	outlierSrcStart := uint32(srcOffsets[2])
+	outlierSrcEnd := uint32(srcOffsets[3] - 1)
+	outlierDstStart := uint32(dstOffsets[20])
+	outlierDstEnd := uint32(dstOffsets[21] - 1)
+
+	// 2. Multiline move with MoveColorIndex: 1
+	mlSrcStart := uint32(srcOffsets[5])
+	mlSrcEnd := uint32(srcOffsets[8])
+	mlDstStart := uint32(dstOffsets[23])
+	mlDstEnd := uint32(dstOffsets[26])
+
+	// 3. Single-line move that belongs to a multiline group "group-ml"
+	grpSlSrcStart := uint32(srcOffsets[10])
+	grpSlSrcEnd := uint32(srcOffsets[11] - 1)
+	grpSlDstStart := uint32(dstOffsets[15])
+	grpSlDstEnd := uint32(dstOffsets[16] - 1)
+
+	// Co-member of "group-ml" that is multiline
+	grpMlSrcStart := uint32(srcOffsets[12])
+	grpMlSrcEnd := uint32(srcOffsets[14])
+	grpMlDstStart := uint32(dstOffsets[17])
+	grpMlDstEnd := uint32(dstOffsets[19])
+
+	actions := []serialize.Action{
+		{
+			Action:         "move",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      "expression_statement",
+				StartByte: outlierSrcStart,
+				EndByte:   outlierSrcEnd,
+			},
+			DestStartByte:     &outlierDstStart,
+			DestEndByte:       &outlierDstEnd,
+			OrigStartByte:     outlierSrcStart,
+			OrigEndByte:       outlierSrcEnd,
+			DestOrigStartByte: outlierDstStart,
+			DestOrigEndByte:   outlierDstEnd,
+		},
+		{
+			Action:         "move",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      "if_statement",
+				StartByte: mlSrcStart,
+				EndByte:   mlSrcEnd,
+			},
+			DestStartByte:     &mlDstStart,
+			DestEndByte:       &mlDstEnd,
+			OrigStartByte:     mlSrcStart,
+			OrigEndByte:       mlSrcEnd,
+			DestOrigStartByte: mlDstStart,
+			DestOrigEndByte:   mlDstEnd,
+		},
+		{
+			Action:         "move",
+			GroupID:        "group-ml",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      "expression_statement",
+				StartByte: grpSlSrcStart,
+				EndByte:   grpSlSrcEnd,
+			},
+			DestStartByte:     &grpSlDstStart,
+			DestEndByte:       &grpSlDstEnd,
+			OrigStartByte:     grpSlSrcStart,
+			OrigEndByte:       grpSlSrcEnd,
+			DestOrigStartByte: grpSlDstStart,
+			DestOrigEndByte:   grpSlDstEnd,
+		},
+		{
+			Action:         "move",
+			GroupID:        "group-ml",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      "for_statement",
+				StartByte: grpMlSrcStart,
+				EndByte:   grpMlSrcEnd,
+			},
+			DestStartByte:     &grpMlDstStart,
+			DestEndByte:       &grpMlDstEnd,
+			OrigStartByte:     grpMlSrcStart,
+			OrigEndByte:       grpMlSrcEnd,
+			DestOrigStartByte: grpMlDstStart,
+			DestOrigEndByte:   grpMlDstEnd,
+		},
+	}
+
+	hunks := []Interval{
+		{Start: 0, End: 29},
+	}
+	pairs := make([]serialize.LineAlignmentPair, 30)
+	for i := range pairs {
+		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
+	}
+
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+
+	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
+		t.Errorf("expected single-line ungrouped outlier src badge color to be 1, got %d", color)
+	}
+
+	if color, ok := badges.SrcLineBadgeColors[5]; !ok || color != 0 {
+		t.Errorf("expected multiline move src badge color to collapse to 0, got %d", color)
+	}
+
+	if color, ok := badges.SrcLineBadgeColors[10]; !ok || color != 0 {
+		t.Errorf("expected single-line move in multiline group to collapse src badge color to 0, got %d", color)
+	}
+}

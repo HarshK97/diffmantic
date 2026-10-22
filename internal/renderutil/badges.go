@@ -181,6 +181,20 @@ func BuildMoveBadges(
 		)
 	})
 
+	// If any move in a group spans multiple lines, collapse all member badges to Cyan (slot 0) so they match how the spans render.
+	multiLineGroupsSrc := make(map[string]bool)
+	multiLineGroupsDst := make(map[string]bool)
+	for _, c := range candidates {
+		if c.act.GroupID != "" {
+			if c.sEnd > c.sStart {
+				multiLineGroupsSrc[c.act.GroupID] = true
+			}
+			if c.dEnd > c.dStart {
+				multiLineGroupsDst[c.act.GroupID] = true
+			}
+		}
+	}
+
 	for cIdx, c := range candidates {
 		suppressSrc := c.alignedNear
 		suppressDst := c.alignedNear
@@ -232,14 +246,14 @@ func BuildMoveBadges(
 			if c.inSrc && c.sStart >= 0 && c.sStart < len(srcLines) && !isDeleted && !suppressSrc {
 				if _, exists := meta.SrcLineBadges[c.sStart]; !exists {
 					meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" ➔ L%d", c.dStart+1)
-					meta.SrcLineBadgeColors[c.sStart] = c.act.MoveColorIndex
+					meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, c.sEnd > c.sStart, multiLineGroupsSrc[c.act.GroupID])
 					c.hasSrcBadge = true
 				}
 			}
 			if c.inDst && c.dStart >= 0 && c.dStart < len(dstLines) && !isInserted && !suppressDst {
 				if _, exists := meta.DstLineBadges[c.dStart]; !exists {
 					meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ↳ L%d", c.sStart+1)
-					meta.DstLineBadgeColors[c.dStart] = c.act.MoveColorIndex
+					meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, c.dEnd > c.dStart, multiLineGroupsDst[c.act.GroupID])
 					c.hasDstBadge = true
 				}
 			}
