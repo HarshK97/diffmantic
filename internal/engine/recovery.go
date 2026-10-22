@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"slices"
+
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -140,6 +142,7 @@ func uniqueTypePairs(
 		nodes2 := count2[typ]
 		if len(nodes1) == 1 && len(nodes2) == 1 && CompatiblePairRoles(nodes1[0], nodes2[0]) {
 			n1, n2 := nodes1[0], nodes2[0]
+			p1, p2 := n1.Parent, n2.Parent
 			r := rulesFor(n1)
 			if (r != nil && r.IsExpression(n1.Type)) || (r == nil && rules.IsExpression(n1.Type)) {
 				if cand1 := findUnwrappedExpressionCandidate(n1, n2, m, r); cand1 != nil {
@@ -148,6 +151,22 @@ func uniqueTypePairs(
 					n2 = cand2
 				}
 			}
+
+			hasSiblingConflict := m != nil && p1 != nil && !isBlockLikeContainer(p1) &&
+				slices.ContainsFunc(n2.Descendants(), func(d2 *treesitter.ASTNode) bool {
+					src := m.Dst()[d2]
+					return src != nil && p1.Contains(src) && !nodes1[0].Contains(src) && src != nodes1[0]
+				})
+			if !hasSiblingConflict && m != nil && p2 != nil && !isBlockLikeContainer(p2) {
+				hasSiblingConflict = slices.ContainsFunc(n1.Descendants(), func(d1 *treesitter.ASTNode) bool {
+					dst := m.Src()[d1]
+					return dst != nil && p2.Contains(dst) && !nodes2[0].Contains(dst) && dst != nodes2[0]
+				})
+			}
+			if hasSiblingConflict {
+				continue
+			}
+
 			isDecl := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
 			isStmt := ((r != nil && r.IsStatement(n1.Type)) || (r == nil && rules.IsStatement(n1.Type))) && !isDecl
 			diceSrc := 0.0
@@ -259,6 +278,19 @@ func isExpressionUnwrapBoundary(c *treesitter.ASTNode, r *rules.Rules) bool {
 		return r.IsBlock(c.Type) || r.IsClosure(c.Type) || r.IsStatement(c.Type) || r.IsDeclaration(c.Type)
 	}
 	return rules.IsBlock(c.Type) || rules.IsClosure(c.Type) || rules.IsStatement(c.Type) || rules.IsDeclaration(c.Type)
+}
+
+// isBlockLikeContainer reports whether p is a block, declaration, or file root
+// where multiple sibling constructs naturally coexist without sibling absorption conflicts.
+func isBlockLikeContainer(p *treesitter.ASTNode) bool {
+	if p == nil {
+		return false
+	}
+	pr := rulesFor(p)
+	if pr != nil {
+		return pr.IsBlock(p.Type) || pr.IsDeclaration(p.Type) || p.Type == pr.DefaultRootType()
+	}
+	return rules.IsBlock(p.Type) || rules.IsDeclaration(p.Type)
 }
 
 // findUnwrappedExpressionCandidate searches compound for an inner expression

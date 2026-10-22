@@ -821,3 +821,222 @@ func sortItems(scored any) {
 		t.Errorf("expected closure function literal to map in place, got %v", mr.Mappings.Src()[srcClosure])
 	}
 }
+
+func TestUniqueTypePairs_RejectsSiblingAbsorptionInExpressions(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// When an operand in (A && B) already matched inside an outer (A && Y), make sure
+		// uniqueTypePairs doesn't pair the surviving sibling B to that outer expression
+		// just because they're both binary expressions.
+		opA := testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "len"),
+			testutil.Leaf(">", ">"),
+			testutil.Leaf("int", "0"),
+		)
+		opA.Language = "go"
+
+		opB := testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "len"),
+			testutil.Leaf(">", ">"),
+			testutil.Leaf("int", "0"),
+		)
+		opB.Language = "go"
+
+		t1 := testutil.Node("binary_expression", "",
+			opA,
+			testutil.Leaf("&&", "&&"),
+			opB,
+		)
+		t1.Language = "go"
+
+		opAPrime := testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "len"),
+			testutil.Leaf(">", ">"),
+			testutil.Leaf("int", "0"),
+		)
+		opAPrime.Language = "go"
+
+		innerC := testutil.Node("binary_expression", "",
+			opAPrime,
+			testutil.Leaf("&&", "&&"),
+			testutil.Leaf("identifier", "hasPayload"),
+		)
+		innerC.Language = "go"
+
+		t2 := testutil.Node("binary_expression", "",
+			innerC,
+			testutil.Leaf("&&", "&&"),
+			testutil.Leaf("identifier", "hasMapped"),
+		)
+		t2.Language = "go"
+
+		m := NewMapping()
+		m.Add(t1, t2)
+		m.Add(opA, opAPrime)
+
+		pairs := uniqueTypePairs([]*treesitter.ASTNode{opB}, []*treesitter.ASTNode{innerC}, m)
+		if len(pairs) != 0 {
+			t.Errorf("expected opB not to pair with innerC (sibling absorption conflict), got %d pairs", len(pairs))
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		// When a duplicate/chained binary expression operand is deleted and the surviving sibling
+		// is absorbed into an intermediate wrapper, uniqueTypePairs must not pair the deleted
+		// operand with the intermediate wrapper.
+		src := `package main
+
+type Item struct {
+	Payload []byte
+}
+
+func check(item Item, hasPayload, hasMapped bool) bool {
+	if len(item.Payload) > 0 && len(item.Payload) > 0 {
+		return true
+	}
+	return false
+}
+`
+		dst := `package main
+
+type Item struct {
+	Payload []byte
+}
+
+func check(item Item, hasPayload, hasMapped bool) bool {
+	if len(item.Payload) > 0 && hasPayload && hasMapped {
+		return true
+	}
+	return false
+}
+`
+		srcBytes := []byte(src)
+		dstBytes := []byte(dst)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		// Locate if_statements and conditions
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil {
+			t.Fatalf("missing if_statement: srcIf=%v, dstIf=%v", srcIf, dstIf)
+		}
+
+		// Condition of srcIf is `len(item.Payload) > 0 && len(item.Payload) > 0`
+		// Condition of dstIf is `(len(item.Payload) > 0 && hasPayload) && hasMapped`
+		srcCond := srcIf.Children[1]
+		dstCond := dstIf.Children[1]
+		if !r.IsExpression(srcCond.Type) || !r.IsExpression(dstCond.Type) {
+			t.Fatalf("expected expression conditions: src=%v, dst=%v", srcCond.Type, dstCond.Type)
+		}
+
+		srcFirstOp := srcCond.Children[0]  // len(item.Payload) > 0 (left)
+		srcSecondOp := srcCond.Children[2] // len(item.Payload) > 0 (right)
+
+		dstInnerWrapper := dstCond.Children[0]    // len(item.Payload) > 0 && hasPayload
+		dstFirstOp := dstInnerWrapper.Children[0] // len(item.Payload) > 0
+
+		// Target assertion: the stationary first operand must map in place
+		if mr.Mappings.Src()[srcFirstOp] != dstFirstOp {
+			t.Errorf("expected stationary first operand to map in place, got %v", mr.Mappings.Src()[srcFirstOp])
+		}
+
+		// Defect assertion: on main without sibling absorption rejection, uniqueTypePairs
+		// erroneously paired the deleted second operand (srcSecondOp) to dstInnerWrapper.
+		if mapped := mr.Mappings.Src()[srcSecondOp]; mapped == dstInnerWrapper {
+			t.Errorf("deleted second operand was erroneously mapped to intermediate wrapper dstInnerWrapper")
+		}
+		if mr.Mappings.Has(srcSecondOp) {
+			t.Errorf("expected deleted second operand to remain unmapped, got %v", mr.Mappings.Src()[srcSecondOp])
+		}
+		if mr.Mappings.Dst()[dstInnerWrapper] != nil {
+			t.Errorf("expected intermediate wrapper dstInnerWrapper to remain unmapped, got %v", mr.Mappings.Dst()[dstInnerWrapper])
+		}
+
+		// Whole-snippet verification: enclosing type and function declarations, surrounding statements, and returns map in place
+		var srcTypeDecl, dstTypeDecl, srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				switch n.Type {
+				case "type_declaration":
+					srcTypeDecl = n
+				case "function_declaration":
+					srcFunc = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				switch n.Type {
+				case "type_declaration":
+					dstTypeDecl = n
+				case "function_declaration":
+					dstFunc = n
+				}
+			}
+		}
+		if srcTypeDecl == nil || dstTypeDecl == nil || srcFunc == nil || dstFunc == nil {
+			t.Fatalf("missing declarations: srcTypeDecl=%v, dstTypeDecl=%v, srcFunc=%v, dstFunc=%v",
+				srcTypeDecl, dstTypeDecl, srcFunc, dstFunc)
+		}
+		if mr.Mappings.Src()[srcTypeDecl] != dstTypeDecl {
+			t.Errorf("expected type Item to map in place, got %v", mr.Mappings.Src()[srcTypeDecl])
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected func check to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+		if mr.Mappings.Src()[srcIf] != dstIf {
+			t.Errorf("expected if_statement to map in place, got %v", mr.Mappings.Src()[srcIf])
+		}
+
+		// Both return statements must map in place
+		var srcReturns, dstReturns []*treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsJumpStatement(n.Type) {
+				srcReturns = append(srcReturns, n)
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsJumpStatement(n.Type) {
+				dstReturns = append(dstReturns, n)
+			}
+		}
+		if len(srcReturns) != 2 || len(dstReturns) != 2 {
+			t.Fatalf("expected 2 return_statements in src and dst, got src=%d, dst=%d", len(srcReturns), len(dstReturns))
+		}
+		if mr.Mappings.Src()[srcReturns[0]] != dstReturns[0] {
+			t.Errorf("expected return true to map in place, got %v", mr.Mappings.Src()[srcReturns[0]])
+		}
+		if mr.Mappings.Src()[srcReturns[1]] != dstReturns[1] {
+			t.Errorf("expected return false to map in place, got %v", mr.Mappings.Src()[srcReturns[1]])
+		}
+	})
+}
