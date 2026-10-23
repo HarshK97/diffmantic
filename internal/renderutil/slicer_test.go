@@ -407,3 +407,49 @@ func TestSlicer_MoveUpdate_Styling(t *testing.T) {
 		})
 	}
 }
+
+func TestSliceLineToChunks_TabWidth(t *testing.T) {
+	lineText := "\treturn x"
+
+	tests := []struct {
+		name string
+		cfg  SliceConfig
+		want string
+	}{
+		{
+			name: "ExpandToTwoSpaces",
+			cfg: SliceConfig{
+				TargetWidth: 0,
+				TabWidth:    2,
+			},
+			want: "  return x",
+		},
+		{
+			name: "ExpandToEightSpaces",
+			cfg: SliceConfig{
+				TargetWidth: 0,
+				TabWidth:    8,
+			},
+			want: "        return x",
+		},
+		{
+			name: "PreserveRawTabs",
+			cfg: SliceConfig{
+				TargetWidth: 0,
+				TabWidth:    4,
+				RawTabs:     true,
+			},
+			want: "\treturn x",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var slicer Slicer
+			chunks := slicer.SliceLineToChunks(lineText, "", nil, tc.cfg)
+			if len(chunks) != 1 || string(chunks[0]) != tc.want {
+				t.Fatalf("expected single chunk %q, got %q", tc.want, chunks)
+			}
+		})
+	}
+}

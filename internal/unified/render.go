@@ -215,8 +215,8 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			targetWidth = 20
 		}
 	}
-	tabWidth := opts.TabWidth
-	if tabWidth <= 0 {
+	tabWidth := cmp.Or(opts.TabWidth, 4)
+	if tabWidth < 0 {
 		tabWidth = 4
 	}
 
@@ -414,6 +414,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				TabWidth:         tabWidth,
 				ColorMode:        opts.Color,
 				PadToTargetWidth: false,
+				RawTabs:          opts.GitDiff,
 				BadgeColor:       badgeColor,
 				Context:          lineCtx,
 			}

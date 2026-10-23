@@ -603,6 +603,33 @@ func TestCLI_SubprocessEnvironmentIsolation(t *testing.T) {
 	}
 }
 
+func TestCLI_EnvVarTabWidth(t *testing.T) {
+	t.Setenv("DIFFM_TAB_WIDTH", "8")
+
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.go")
+	newPath := filepath.Join(dir, "new.go")
+
+	oldContent := "package main\n\nfunc main() {\n\treturn 1\n}\n"
+	newContent := "package main\n\nfunc main() {\n\treturn 2\n}\n"
+
+	if err := os.WriteFile(oldPath, []byte(oldContent), 0o644); err != nil {
+		t.Fatalf("failed to write old file: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(newContent), 0o644); err != nil {
+		t.Fatalf("failed to write new file: %v", err)
+	}
+
+	// Without an explicit --tab-width flag, unified diff should fall back to DIFFM_TAB_WIDTH.
+	stdout, stderr, err := runDiffm(oldPath, newPath, "-u", "--no-pager")
+	if err != nil {
+		t.Fatalf("diffm failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "-        return 1") {
+		t.Errorf("expected 8 spaces from DIFFM_TAB_WIDTH=8, got:\n%s", stdout)
+	}
+}
+
 func TestCLI_GitMode_TypoFailFast(t *testing.T) {
 	// In the current git repo, diffm with a typo file should fail fast
 	_, stderr, err := runDiffm("HEAD", "nonexistent_typo_file_12345.go")
@@ -705,7 +732,7 @@ func TestCLI_UnifiedFormat(t *testing.T) {
 	if strings.Contains(stdoutNoNumbers, "│") {
 		t.Errorf("did not expect line number separator with --line-numbers=false:\n%s", stdoutNoNumbers)
 	}
-	if !strings.Contains(stdoutNoNumbers, "-\tprintln(\"old code\")") {
+	if !strings.Contains(stdoutNoNumbers, "-    println(\"old code\")") {
 		t.Errorf("expected standard minus prefix with --line-numbers=false:\n%s", stdoutNoNumbers)
 	}
 
@@ -756,9 +783,12 @@ func TestCLI_UnifiedFormat(t *testing.T) {
 	}
 
 	// 10. Tab width option: --tab-width
-	_, stderrTab, err := runDiffm(moveOld, moveNew, "--tab-width=8", "--no-pager")
+	stdoutTab, stderrTab, err := runDiffm(moveOld, moveNew, "-f", "unified", "--tab-width=8", "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm --tab-width failed: %v\nstderr: %s", err, stderrTab)
+	}
+	if !strings.Contains(stdoutTab, "-        w.ResponseWriter") {
+		t.Errorf("expected 8 spaces indent with --tab-width=8, got:\n%s", stdoutTab)
 	}
 }
 
