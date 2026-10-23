@@ -440,6 +440,9 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		// calls or binary operators don't count, so unnested expressions can still move.
 		if src != srcStmt || dst != dstStmt {
 			if ms.Get(srcStmt) != dstStmt {
+				if isLocalVariableExtraction(src, dst, srcStmt, dstStmt, ms, r) {
+					return 1
+				}
 				return 20
 			}
 			if src.Parent != nil && dst.Parent != nil {
@@ -533,4 +536,99 @@ func buildCohortProtected(es *actions.EditScript, ms *engine.Mapping) map[*trees
 		}
 	}
 	return protected
+}
+
+// isLocalVariableExtraction checks whether an expression was extracted into a
+// nearby local variable that replaces it in the original statement.
+func isLocalVariableExtraction(src, dst, srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || srcStmt == nil || dstStmt == nil || ms == nil || r == nil {
+		return false
+	}
+	srcBlock := srcStmt.Parent
+	dstBlock := dstStmt.Parent
+	if srcBlock == nil || dstBlock == nil || ms.Src()[srcBlock] != dstBlock {
+		return false
+	}
+	if !sameScopeDeclaration(src, dst, ms, r) {
+		return false
+	}
+
+	// Skip small expressions and boilerplate (like err != nil or len(s)) that shouldn't move.
+	if moveStructuralScore(src, r, ms) < 6 {
+		return false
+	}
+
+	// The target statement must be a local variable declaration or assignment.
+	if !r.IsLocalVarDeclaration(dstStmt.Type) && !r.IsAssignment(dstStmt.Type) {
+		return false
+	}
+
+	// The original statement that contained the expression must still exist in the new code.
+	dstConsumerStmt := ms.Src()[srcStmt]
+	if dstConsumerStmt == nil || dstConsumerStmt.Parent != dstBlock {
+		return false
+	}
+
+	// The new declaration must appear right before the consumer statement (within two statements).
+	idxDecl := dstStmt.ChildIndex()
+	idxConsumer := dstConsumerStmt.ChildIndex()
+	if idxDecl >= idxConsumer || idxConsumer-idxDecl > 2 {
+		return false
+	}
+	if int(dstConsumerStmt.StartRow) < int(dstStmt.StartRow) || int(dstConsumerStmt.StartRow)-int(dstStmt.EndRow) > 2 {
+		return false
+	}
+
+	// Collect variable names declared on the left-hand side of the new statement.
+	var declaredNames []string
+	for _, d := range dstStmt.Descendants() {
+		if d.EndByte <= dst.StartByte && (r.IsIdentifier(d.Type) || (len(d.Children) == 0 && d.Label != "")) {
+			if r.IsKeyword(d.Type, d.Label) || r.IsOperatorLiteral(d.Type) || r.IsPunctuation(d.Type) || r.IsType(d.Type) {
+				continue
+			}
+			if d.Label != "" {
+				declaredNames = append(declaredNames, d.Label)
+			}
+		}
+	}
+	if len(declaredNames) == 0 {
+		return false
+	}
+
+	// Verify that the consumer statement uses one of the newly declared variables.
+	matchedVar := slices.ContainsFunc(dstConsumerStmt.Descendants(), func(d *treesitter.ASTNode) bool {
+		if (r.IsIdentifier(d.Type) || (len(d.Children) == 0 && d.Label != "")) && slices.Contains(declaredNames, d.Label) {
+			_, mapped := ms.Dst()[d]
+			return !mapped
+		}
+		return false
+	})
+	if !matchedVar {
+		return false
+	}
+
+	// Only allow the move if this exact expression appears once in both old and new blocks.
+	srcCount := 0
+	for _, desc := range srcBlock.Descendants() {
+		if desc.Type == src.Type && desc.Hash == src.Hash {
+			srcCount++
+			if srcCount > 1 {
+				return false
+			}
+		}
+	}
+	if srcCount != 1 {
+		return false
+	}
+
+	dstCount := 0
+	for _, desc := range dstBlock.Descendants() {
+		if desc.Type == dst.Type && desc.Hash == dst.Hash {
+			dstCount++
+			if dstCount > 1 {
+				return false
+			}
+		}
+	}
+	return dstCount == 1
 }
