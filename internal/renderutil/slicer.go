@@ -316,8 +316,9 @@ func (s *Slicer) SliceLineToChunks(
 			activeStyle = styleUnset
 		}
 
+		// Dim italics keeps badges subtle so they don't look like code or clash with underlined move-updates.
 		if cfg.ColorMode {
-			curChunk = append(curChunk, color.MoveFgForSlot(cfg.BadgeColor)+badgeText+color.Reset...)
+			curChunk = append(curChunk, color.Dim+color.Italic+color.MoveFgForSlot(cfg.BadgeColor)+badgeText+color.Reset...)
 		} else {
 			curChunk = append(curChunk, badgeText...)
 		}
