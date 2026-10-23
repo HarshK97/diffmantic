@@ -48,8 +48,8 @@ func TestRender_BasicDiffs(t *testing.T) {
 			wantContains: []string{
 				"--- a/old.go\n",
 				"+++ b/new.go\n",
-				"-\tprintln(\"hello\")\n",
-				"+\tprintln(\"world\")\n",
+				"-    println(\"hello\")\n",
+				"+    println(\"world\")\n",
 				"@@ ",
 			},
 		},
@@ -138,10 +138,10 @@ func TestRender_LineNumbersGutter(t *testing.T) {
 
 	got := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
-	if !strings.Contains(got, "  4      -\tprintln(\"hello\")") {
+	if !strings.Contains(got, "  4      -    println(\"hello\")") {
 		t.Errorf("expected source line number 4 with '-' prefix in gutter, got:\n%s", got)
 	}
-	if !strings.Contains(got, "      4  +\tprintln(\"world\")") {
+	if !strings.Contains(got, "      4  +    println(\"world\")") {
 		t.Errorf("expected destination line number 4 with '+' prefix in gutter, got:\n%s", got)
 	}
 	if !strings.Contains(got, "  1   1   package main") {
@@ -590,7 +590,7 @@ func TestRender_SubBlockGrouping(t *testing.T) {
 	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
 	// In a 2-block diff, all deletions must come before insertions.
-	expectedBlock := "-\ta := 1\n-\tb := filter(\n-\t\tx,\n-\t\ty,\n-\t)\n-\tc := 3\n+\ta := 10\n+\tb := reduce(x, y)\n+\tc := 30\n"
+	expectedBlock := "-    a := 1\n-    b := filter(\n-        x,\n-        y,\n-    )\n-    c := 3\n+    a := 10\n+    b := reduce(x, y)\n+    c := 30\n"
 	if !strings.Contains(got, expectedBlock) {
 		t.Errorf("expected contiguous 2-block deletions before insertions:\nExpected block:\n%s\nGot:\n%s", expectedBlock, got)
 	}
@@ -864,13 +864,13 @@ func TestRender_WhitespaceRealignedStructFields_PreservedAsContext(t *testing.T)
 
 	// Realigned struct fields without AST changes should stay as context
 	// instead of flashing a red/green line replacement.
-	if strings.Contains(rendered, "-	Action string") {
+	if strings.Contains(rendered, "-    Action string") {
 		t.Errorf("expected whitespace-aligned Action field not to be deleted, got:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "+	Action          string") {
+	if strings.Contains(rendered, "+    Action          string") {
 		t.Errorf("expected whitespace-aligned Action field not to be inserted, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "+	SourceStartByte *uint32") {
+	if !strings.Contains(rendered, "+    SourceStartByte *uint32") {
 		t.Errorf("expected inserted SourceStartByte field to be marked as insert (+), got:\n%s", rendered)
 	}
 }
@@ -1077,4 +1077,57 @@ func TestRender_GitDiffHeaders_DirectoryA(t *testing.T) {
 	if !strings.Contains(rendered, "--- a/a/foo.go\n") || !strings.Contains(rendered, "+++ b/a/foo.go\n") {
 		t.Errorf("expected --- a/a/foo.go and +++ b/a/foo.go, got:\n%s", rendered)
 	}
+}
+
+func TestRender_CustomTabWidth(t *testing.T) {
+	src := []byte("package main\n\nfunc Run() {\n\treturn 1\n}\n")
+	dst := []byte("package main\n\nfunc Run() {\n\treturn 2\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	t.Run("TabWidth2", func(t *testing.T) {
+		opts := RenderOptions{
+			Color:        false,
+			ContextLines: 3,
+			LineNumbers:  false,
+			TabWidth:     2,
+		}
+		out := Render("main.go", "main.go", src, dst, dr.Envelope, opts)
+		if !strings.Contains(out, "-  return 1") || !strings.Contains(out, "+  return 2") {
+			t.Errorf("expected 2 spaces indent with TabWidth=2, got:\n%s", out)
+		}
+	})
+
+	t.Run("TabWidth8", func(t *testing.T) {
+		opts := RenderOptions{
+			Color:        false,
+			ContextLines: 3,
+			LineNumbers:  false,
+			TabWidth:     8,
+		}
+		out := Render("main.go", "main.go", src, dst, dr.Envelope, opts)
+		if !strings.Contains(out, "-        return 1") || !strings.Contains(out, "+        return 2") {
+			t.Errorf("expected 8 spaces indent with TabWidth=8, got:\n%s", out)
+		}
+	})
+
+	t.Run("GitDiffPatchModePreservesLiteralTabs", func(t *testing.T) {
+		// Patch mode has to keep literal tabs so git apply doesn't choke on altered whitespace.
+		opts := RenderOptions{
+			Color:        false,
+			ContextLines: 3,
+			LineNumbers:  false,
+			TabWidth:     2,
+			GitDiff:      true,
+		}
+		out := Render("main.go", "main.go", src, dst, dr.Envelope, opts)
+		if !strings.Contains(out, "-\treturn 1") || !strings.Contains(out, "+\treturn 2") {
+			t.Errorf("expected literal tabs in patch mode, got:\n%s", out)
+		}
+	})
 }

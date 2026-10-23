@@ -42,8 +42,10 @@ type SliceConfig struct {
 	TabWidth         int
 	ColorMode        bool
 	PadToTargetWidth bool
-	BadgeColor       int
-	Context          LineContext
+	// RawTabs preserves literal tab characters instead of expanding them to column tab stops (e.g. in git patch mode).
+	RawTabs    bool
+	BadgeColor int
+	Context    LineContext
 }
 
 // Slicer formats and slices lines into display chunks with syntax and action highlighting.
@@ -222,7 +224,7 @@ func (s *Slicer) SliceLineToChunks(
 
 		// Expand tabs to the next tab stop using the current column offset.
 		if tok.isSpace && lineText[byteOffset] == '\t' {
-			if targetWidth <= 0 {
+			if cfg.RawTabs {
 				targetStyle := resolveStyle(byteOffset, firstNonWS, &cursor)
 				if cfg.ColorMode && targetStyle != activeStyle {
 					curChunk = appendTransition(curChunk, targetStyle, activeStyle)

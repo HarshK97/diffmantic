@@ -132,6 +132,7 @@ func Render(
 			ContextLines:       opts.ContextLines,
 			LineNumbers:        opts.LineNumbers,
 			DisableAnnotations: opts.DisableAnnotations,
+			TabWidth:           opts.TabWidth,
 		}
 		output := unified.Render(srcFile, dstFile, srcBytes, dstBytes, env, unifiedOpts)
 		_, err := io.WriteString(w, output)
