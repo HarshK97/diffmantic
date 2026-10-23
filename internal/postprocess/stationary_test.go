@@ -1970,3 +1970,359 @@ func process(root *Node) {
 		})
 	})
 }
+
+func TestLocalVariableExtraction(t *testing.T) {
+	r := rules.Get("go")
+	if r == nil {
+		t.Fatal("rules for go not found")
+	}
+
+	t.Run("Unit", func(t *testing.T) {
+		// Test that isLocalVariableExtraction correctly validates structural mass,
+		// adjacent statement proximity, and variable usage on synthetic AST nodes.
+		srcBlock := mkNode("block", "")
+		srcBlock.Language = "go"
+		dstBlock := mkNode("block", "")
+		dstBlock.Language = "go"
+
+		srcStmt := mkNode("assignment_statement", "")
+		srcStmt.Language = "go"
+		srcStmt.StartRow, srcStmt.EndRow = 4, 4
+		srcStmt.Parent = srcBlock
+
+		srcSlice := mkNode("slice_expression", "")
+		srcSlice.Language = "go"
+		srcSlice.StartByte, srcSlice.EndByte = 40, 70
+		srcSlice.StartRow, srcSlice.EndRow = 4, 4
+		srcSlice.Parent = srcStmt
+		srcSlice.Children = []*treesitter.ASTNode{
+			mkNode("identifier", "fileBytes"),
+			mkNode("identifier", "gapStart"),
+			mkNode("identifier", "gapEnd"),
+		}
+		for _, c := range srcSlice.Children {
+			c.Parent = srcSlice
+			c.Language = "go"
+		}
+		srcStmt.Children = []*treesitter.ASTNode{srcSlice}
+		srcBlock.Children = []*treesitter.ASTNode{srcStmt}
+
+		dstDecl := mkNode("short_var_declaration", "")
+		dstDecl.Language = "go"
+		dstDecl.StartRow, dstDecl.EndRow = 4, 4
+		dstDecl.Parent = dstBlock
+
+		dstVar := mkNode("identifier", "gapBytes")
+		dstVar.Language = "go"
+		dstVar.StartByte, dstVar.EndByte = 2, 10
+		dstVar.Parent = dstDecl
+
+		dstSlice := mkNode("slice_expression", "")
+		dstSlice.Language = "go"
+		dstSlice.StartByte, dstSlice.EndByte = 14, 44
+		dstSlice.StartRow, dstSlice.EndRow = 4, 4
+		dstSlice.Parent = dstDecl
+		dstSlice.Children = []*treesitter.ASTNode{
+			mkNode("identifier", "fileBytes"),
+			mkNode("identifier", "gapStart"),
+			mkNode("identifier", "gapEnd"),
+		}
+		for _, c := range dstSlice.Children {
+			c.Parent = dstSlice
+			c.Language = "go"
+		}
+		dstDecl.Children = []*treesitter.ASTNode{dstVar, dstSlice}
+
+		dstConsumer := mkNode("assignment_statement", "")
+		dstConsumer.Language = "go"
+		dstConsumer.StartRow, dstConsumer.EndRow = 5, 5
+		dstConsumer.Parent = dstBlock
+		consumerVar := mkNode("identifier", "gapBytes")
+		consumerVar.Language = "go"
+		consumerVar.Parent = dstConsumer
+		dstConsumer.Children = []*treesitter.ASTNode{consumerVar}
+
+		dstBlock.Children = []*treesitter.ASTNode{dstDecl, dstConsumer}
+
+		ms := engine.NewMapping()
+		ms.Add(srcBlock, dstBlock)
+		ms.Add(srcStmt, dstConsumer)
+		ms.Add(srcSlice, dstSlice)
+		for i := range srcSlice.Children {
+			ms.Add(srcSlice.Children[i], dstSlice.Children[i])
+		}
+
+		if !isLocalVariableExtraction(srcSlice, dstSlice, srcStmt, dstDecl, ms, r) {
+			t.Errorf("expected isLocalVariableExtraction to return true for valid synthetic extraction")
+		}
+
+		threshold := requiredMoveThreshold(srcSlice, dstSlice, ms, r)
+		if threshold != 1 {
+			t.Errorf("expected requiredMoveThreshold to be 1, got %d", threshold)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("AdjacentExtractionPreserved", func(t *testing.T) {
+			src := []byte(`package test
+
+func process() {
+	setup()
+	onlyNonChars = isOnlyNonCharacters(
+		fileBytes[gapStart:gapEnd],
+	)
+	cleanup()
+}
+`)
+			dst := []byte(`package test
+
+func process() {
+	setup()
+	gapBytes := fileBytes[gapStart:gapEnd]
+	onlyNonChars = isOnlyNonCharacters(
+		gapBytes,
+	)
+	cleanup()
+}
+`)
+
+			srcAST, err := treesitter.Parse(src, "test.go")
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.go")
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+			if matchResult == nil || matchResult.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: outer package and func process() stay untouched without edit actions.
+			for _, a := range normalized.Actions() {
+				if a.Node != nil && r.IsDeclaration(a.Node.Type) && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+					t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+				}
+			}
+
+			// 2. Surrounding sequence: setup() and cleanup() must map in place without disruption.
+			var srcSetup, dstSetup *treesitter.ASTNode
+			var srcCleanup, dstCleanup *treesitter.ASTNode
+			var srcSlice, dstSlice *treesitter.ASTNode
+			var srcFileBytes, dstFileBytes *treesitter.ASTNode
+			var srcGapStart, dstGapStart *treesitter.ASTNode
+			var srcGapEnd, dstGapEnd *treesitter.ASTNode
+
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) {
+					switch string(src[n.StartByte:n.EndByte]) {
+					case "setup()":
+						srcSetup = n
+					case "cleanup()":
+						srcCleanup = n
+					}
+				}
+				if r.IsIndexed(n.Type) && string(src[n.StartByte:n.EndByte]) == "fileBytes[gapStart:gapEnd]" {
+					srcSlice = n
+					for _, c := range n.Children {
+						if r.IsIdentifier(c.Type) {
+							switch string(src[c.StartByte:c.EndByte]) {
+							case "fileBytes":
+								srcFileBytes = c
+							case "gapStart":
+								srcGapStart = c
+							case "gapEnd":
+								srcGapEnd = c
+							}
+						}
+					}
+				}
+			}
+
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) {
+					switch string(dst[n.StartByte:n.EndByte]) {
+					case "setup()":
+						dstSetup = n
+					case "cleanup()":
+						dstCleanup = n
+					}
+				}
+				if r.IsIndexed(n.Type) && string(dst[n.StartByte:n.EndByte]) == "fileBytes[gapStart:gapEnd]" {
+					dstSlice = n
+					for _, c := range n.Children {
+						if r.IsIdentifier(c.Type) {
+							switch string(dst[c.StartByte:c.EndByte]) {
+							case "fileBytes":
+								dstFileBytes = c
+							case "gapStart":
+								dstGapStart = c
+							case "gapEnd":
+								dstGapEnd = c
+							}
+						}
+					}
+				}
+			}
+
+			if srcSetup == nil || dstSetup == nil || matchResult.Mappings.Src()[srcSetup] != dstSetup {
+				t.Errorf("expected setup() to map in place, got %v", matchResult.Mappings.Src()[srcSetup])
+			}
+			if srcCleanup == nil || dstCleanup == nil || matchResult.Mappings.Src()[srcCleanup] != dstCleanup {
+				t.Errorf("expected cleanup() to map in place, got %v", matchResult.Mappings.Src()[srcCleanup])
+			}
+
+			// 3. Target construct: extracted slice must be mapped and preserved as Move.
+			if srcSlice == nil || dstSlice == nil || matchResult.Mappings.Src()[srcSlice] != dstSlice {
+				t.Fatalf("expected slice_expression to map, got %v", matchResult.Mappings.Src()[srcSlice])
+			}
+
+			// 4. Stationary operands: identifiers inside slice must map in place without corruption.
+			if srcFileBytes == nil || dstFileBytes == nil || matchResult.Mappings.Src()[srcFileBytes] != dstFileBytes {
+				t.Errorf("expected fileBytes to map, got %v", matchResult.Mappings.Src()[srcFileBytes])
+			}
+			if srcGapStart == nil || dstGapStart == nil || matchResult.Mappings.Src()[srcGapStart] != dstGapStart {
+				t.Errorf("expected gapStart to map, got %v", matchResult.Mappings.Src()[srcGapStart])
+			}
+			if srcGapEnd == nil || dstGapEnd == nil || matchResult.Mappings.Src()[srcGapEnd] != dstGapEnd {
+				t.Errorf("expected gapEnd to map, got %v", matchResult.Mappings.Src()[srcGapEnd])
+			}
+
+			// 5. Action verification: exactly one Move action for the extracted slice expression.
+			var moveActions []actions.Action
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					moveActions = append(moveActions, a)
+				}
+			}
+			if len(moveActions) != 1 {
+				t.Fatalf("expected exactly 1 move action for extracted slice, got %d: %v", len(moveActions), moveActions)
+			}
+			if moveActions[0].Node != srcSlice {
+				t.Errorf("expected move action on slice_expression, got node: %v", moveActions[0].Node)
+			}
+		})
+
+		t.Run("MultilineExtractionPreserved", func(t *testing.T) {
+			src := []byte(`package test
+
+func process() {
+	setup()
+	onlyNonChars = isOnlyNonCharacters(fileBytes[gapStart:gapEnd])
+	cleanup()
+}
+`)
+			dst := []byte(`package test
+
+func process() {
+	setup()
+	gapBytes := fileBytes[
+		gapStart:gapEnd
+	]
+	onlyNonChars = isOnlyNonCharacters(gapBytes)
+	cleanup()
+}
+`)
+
+			srcAST, err := treesitter.Parse(src, "test.go")
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.go")
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+			if matchResult == nil || matchResult.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context stays untouched
+			for _, a := range normalized.Actions() {
+				if a.Node != nil && r.IsDeclaration(a.Node.Type) && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+					t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+				}
+			}
+
+			// 2. Extracted multiline slice must be preserved as Move
+			var hasSliceMove bool
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move && a.Node != nil && r.IsIndexed(a.Node.Type) && string(src[a.Node.StartByte:a.Node.EndByte]) == "fileBytes[gapStart:gapEnd]" {
+					hasSliceMove = true
+					break
+				}
+			}
+			if !hasSliceMove {
+				t.Error("expected multiline extracted slice expression to be preserved as Move, got demoted")
+			}
+		})
+
+		t.Run("BoilerplateDemoted", func(t *testing.T) {
+			// Small boilerplate like "err != nil" (score < 6) must be demoted under T=20
+			src := []byte(`package test
+
+func process() {
+	setup()
+	if err != nil {
+		cleanup()
+		return
+	}
+}
+`)
+			dst := []byte(`package test
+
+func process() {
+	setup()
+	isErr := err != nil
+	if isErr {
+		cleanup()
+		return
+	}
+}
+`)
+
+			srcAST, err := treesitter.Parse(src, "test.go")
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.go")
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+			if matchResult == nil || matchResult.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context stays untouched
+			for _, a := range normalized.Actions() {
+				if a.Node != nil && r.IsDeclaration(a.Node.Type) && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+					t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+				}
+			}
+
+			// 2. Zero Move actions across entire snippet: boilerplate err != nil is demoted to delete+insert
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Errorf("expected zero Move actions for boilerplate extraction, found move on %s: %v", a.Node.Type, a)
+				}
+			}
+		})
+	})
+}
