@@ -163,11 +163,17 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 
 	srcStmt := engine.FindEnclosingStatement(src, r)
 	dstStmt := engine.FindEnclosingStatement(dst, r)
-	if !isStatementStationary(srcStmt, dstStmt, ms, r) {
+	isStatStmt := isStatementStationary(srcStmt, dstStmt, ms, r)
+	isSlotEq := !isStatStmt && isStatementSlotEquivalent(srcStmt, dstStmt, src, dst, ms, r)
+	if !isStatStmt && !isSlotEq {
 		return false
 	}
 	// An expression isn't stationary if it shifted to a different line inside the statement.
-	if int(src.StartRow)-int(srcStmt.StartRow) != int(dst.StartRow)-int(dstStmt.StartRow) {
+	srcRel := int(src.StartRow) - int(srcStmt.StartRow)
+	dstRel := int(dst.StartRow) - int(dstStmt.StartRow)
+	rowDiff := max(srcRel-dstRel, dstRel-srcRel)
+	// For slot-equivalent statements, allow minor multi-line formatting shift (<= 2 lines).
+	if (!isSlotEq && rowDiff != 0) || (isSlotEq && rowDiff > 2) {
 		return false
 	}
 
@@ -298,6 +304,161 @@ func isStatementStationary(srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapp
 		curDst = dstParent
 	}
 	return true
+}
+
+// isStatementSlotEquivalent reports whether srcStmt and dstStmt occupy equivalent
+// execution slots within the same mapped container (such as an expression_statement
+// evolving in-place into a variable assignment, or vice versa) without moving.
+func isStatementSlotEquivalent(srcStmt, dstStmt, src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if srcStmt == nil || dstStmt == nil || ms == nil || r == nil {
+		return false
+	}
+	srcParent := srcStmt.Parent
+	dstParent := dstStmt.Parent
+	if srcParent == nil || dstParent == nil || ms.Src()[srcParent] != dstParent {
+		return false
+	}
+	if !sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
+		return false
+	}
+
+	// If either statement is already mapped elsewhere, they're not evolving in place.
+	if mappedDst, ok := ms.Src()[srcStmt]; ok && mappedDst != dstStmt {
+		return false
+	}
+	if mappedSrc, ok := ms.Dst()[dstStmt]; ok && mappedSrc != srcStmt {
+		return false
+	}
+
+	srcIsExprStmt := r.IsExpressionStatement(srcStmt.Type)
+	dstIsExprStmt := r.IsExpressionStatement(dstStmt.Type)
+	srcIsAssignOrDecl := r.IsLocalVarDeclaration(srcStmt.Type) || r.IsAssignment(srcStmt.Type)
+	dstIsAssignOrDecl := r.IsLocalVarDeclaration(dstStmt.Type) || r.IsAssignment(dstStmt.Type)
+
+	if (!srcIsExprStmt || !dstIsAssignOrDecl) && (!dstIsExprStmt || !srcIsAssignOrDecl) {
+		return false
+	}
+
+	var exprStmt, assignStmt *treesitter.ASTNode
+	var exprNode, assignNode *treesitter.ASTNode
+	if srcIsExprStmt && dstIsAssignOrDecl {
+		exprStmt, exprNode = srcStmt, src
+		assignStmt, assignNode = dstStmt, dst
+	} else {
+		exprStmt, exprNode = dstStmt, dst
+		assignStmt, assignNode = srcStmt, src
+	}
+
+	primaryExpr := primaryStatementExpression(exprStmt, r)
+	primaryAssign := primaryAssignedExpression(assignStmt, r)
+	if primaryExpr == nil || primaryAssign == nil {
+		return false
+	}
+	if primaryExpr != exprNode || primaryAssign != assignNode {
+		return false
+	}
+
+	for _, sib := range srcParent.Children {
+		if sib == srcStmt {
+			continue
+		}
+		if sibDst, ok := ms.Src()[sib]; ok && sibDst.Parent == dstParent {
+			if (srcStmt.StartByte < sib.StartByte) != (dstStmt.StartByte < sibDst.StartByte) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// primaryStatementExpression resolves the single evaluated expression of an
+// expression statement, unwrapping single-child wrappers.
+func primaryStatementExpression(stmt *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if stmt == nil || r == nil || !r.IsExpressionStatement(stmt.Type) {
+		return nil
+	}
+	var exprCandidates []*treesitter.ASTNode
+	for _, child := range stmt.Children {
+		if child == nil || r.IsPunctuation(child.Type) || r.IsIgnored(child.Type, child.Label) {
+			continue
+		}
+		exprCandidates = append(exprCandidates, child)
+	}
+	if len(exprCandidates) != 1 {
+		return nil
+	}
+	return unwrapSingleChildWrapper(exprCandidates[0], r)
+}
+
+// primaryAssignedExpression locates the assignment operator in an assignment or local
+// variable declaration and resolves its single RHS evaluated expression.
+func primaryAssignedExpression(stmt *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if stmt == nil || r == nil {
+		return nil
+	}
+	assignContext := findAssignmentOperatorContext(stmt, r)
+	if assignContext == nil {
+		return nil
+	}
+	opIdx := -1
+	for i, child := range assignContext.Children {
+		if r.IsOperatorLiteral(child.Type) || r.IsTrailingSeparator(child.Type) {
+			opIdx = i
+			break
+		}
+	}
+	if opIdx == -1 {
+		return nil
+	}
+	var rhsCandidates []*treesitter.ASTNode
+	for _, child := range assignContext.Children[opIdx+1:] {
+		if child == nil || r.IsPunctuation(child.Type) || r.IsIgnored(child.Type, child.Label) {
+			continue
+		}
+		rhsCandidates = append(rhsCandidates, child)
+	}
+	if len(rhsCandidates) != 1 {
+		return nil
+	}
+	return unwrapSingleChildWrapper(rhsCandidates[0], r)
+}
+
+// findAssignmentOperatorContext finds the AST node directly containing the assignment operator
+// (either stmt itself, or a declarator child).
+func findAssignmentOperatorContext(stmt *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	for _, child := range stmt.Children {
+		if r.IsOperatorLiteral(child.Type) || r.IsTrailingSeparator(child.Type) {
+			return stmt
+		}
+	}
+	for _, child := range stmt.Children {
+		for _, grandChild := range child.Children {
+			if r.IsOperatorLiteral(grandChild.Type) || r.IsTrailingSeparator(grandChild.Type) {
+				return child
+			}
+		}
+	}
+	return nil
+}
+
+// unwrapSingleChildWrapper unwraps wrapper nodes (such as expression lists or parenthesized
+// expressions) as long as they hold exactly one meaningful non-punctuation child.
+func unwrapSingleChildWrapper(node *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	curr := node
+	for curr != nil && r.IsWrapper(curr.Type) {
+		var meaningful []*treesitter.ASTNode
+		for _, child := range curr.Children {
+			if child != nil && !r.IsPunctuation(child.Type) && !r.IsIgnored(child.Type, child.Label) {
+				meaningful = append(meaningful, child)
+			}
+		}
+		if len(meaningful) == 1 {
+			curr = meaningful[0]
+		} else {
+			break
+		}
+	}
+	return curr
 }
 
 // areChainedStatements reports whether base and parent belong to the same

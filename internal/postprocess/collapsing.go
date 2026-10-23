@@ -228,6 +228,23 @@ func suppressInlineParentRedundancy(
 			}
 		}
 	}
+
+	// Drop single-line wrappers around in-place statements (like an expression
+	// statement turning into a := assignment).
+	if ms != nil && (len(deleted) > 0 || len(inserted) > 0) {
+		checkSrc := len(deleted) > 0
+		checkDst := len(inserted) > 0
+		for _, p := range ms.Pairs {
+			if p.Src != nil && p.Dst != nil {
+				if checkSrc && p.Src.StartRow == p.Src.EndRow {
+					suppressCoextensiveWrappers(p.Src, deleted, suppressed)
+				}
+				if checkDst && p.Dst.StartRow == p.Dst.EndRow {
+					suppressCoextensiveWrappers(p.Dst, inserted, suppressed)
+				}
+			}
+		}
+	}
 }
 
 // suppressCoextensiveWrappers walks single-line parents and drops wrapper actions

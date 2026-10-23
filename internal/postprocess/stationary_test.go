@@ -7,6 +7,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -1653,5 +1654,319 @@ func f() {
 		if matchResult.Mappings.Src()[srcFn] != dstFn {
 			t.Errorf("expected function_declaration to map in place, got %v", matchResult.Mappings.Src()[srcFn])
 		}
+	})
+}
+
+func TestStatementSlotEquivalent(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("Unit", func(t *testing.T) {
+		t.Run("ExpressionStatementToAssignment", func(t *testing.T) {
+			ms := engine.NewMapping()
+			srcParent := testutil.Node("block", "")
+			dstParent := testutil.Node("block", "")
+			ms.Add(srcParent, dstParent)
+
+			srcCall := testutil.Node("call_expression", "")
+			srcStmt := testutil.Node("expression_statement", "", srcCall)
+			srcParent.Children = append(srcParent.Children, srcStmt)
+			srcStmt.Parent = srcParent
+
+			dstCall := testutil.Node("call_expression", "")
+			dstLHS := testutil.Node("expression_list", "", testutil.Leaf("identifier", "index"))
+			dstOp := testutil.Leaf("assignment_operator_literal", ":=")
+			dstRHS := testutil.Node("expression_list", "", dstCall)
+			dstStmt := testutil.Node("short_var_declaration", "", dstLHS, dstOp, dstRHS)
+			dstParent.Children = append(dstParent.Children, dstStmt)
+			dstStmt.Parent = dstParent
+
+			ms.Add(srcCall, dstCall)
+
+			if !isStatementSlotEquivalent(srcStmt, dstStmt, srcCall, dstCall, ms, r) {
+				t.Errorf("expected isStatementSlotEquivalent to return true for in-place statement slot evolution")
+			}
+		})
+
+		t.Run("AssignmentToExpressionStatement", func(t *testing.T) {
+			ms := engine.NewMapping()
+			srcParent := testutil.Node("block", "")
+			dstParent := testutil.Node("block", "")
+			ms.Add(srcParent, dstParent)
+
+			srcCall := testutil.Node("call_expression", "")
+			srcLHS := testutil.Node("expression_list", "", testutil.Leaf("identifier", "index"))
+			srcOp := testutil.Leaf("assignment_operator_literal", ":=")
+			srcRHS := testutil.Node("expression_list", "", srcCall)
+			srcStmt := testutil.Node("short_var_declaration", "", srcLHS, srcOp, srcRHS)
+			srcParent.Children = append(srcParent.Children, srcStmt)
+			srcStmt.Parent = srcParent
+
+			dstCall := testutil.Node("call_expression", "")
+			dstStmt := testutil.Node("expression_statement", "", dstCall)
+			dstParent.Children = append(dstParent.Children, dstStmt)
+			dstStmt.Parent = dstParent
+
+			ms.Add(srcCall, dstCall)
+
+			if !isStatementSlotEquivalent(srcStmt, dstStmt, srcCall, dstCall, ms, r) {
+				t.Errorf("expected isStatementSlotEquivalent to return true for reverse assignment to expression statement")
+			}
+		})
+
+		t.Run("RejectNonPrimaryNestedExpression", func(t *testing.T) {
+			ms := engine.NewMapping()
+			srcParent := testutil.Node("block", "")
+			dstParent := testutil.Node("block", "")
+			ms.Add(srcParent, dstParent)
+
+			// src is a standalone expression statement
+			srcCall := testutil.Node("call_expression", "")
+			srcStmt := testutil.Node("expression_statement", "", srcCall)
+			srcParent.Children = append(srcParent.Children, srcStmt)
+			srcStmt.Parent = srcParent
+
+			// dst is an assignment where dstCall is NOT the primary RHS expression,
+			// but an inner argument of an outer call: compute(dstCall)
+			dstCall := testutil.Node("call_expression", "")
+			outerCall := testutil.Node("call_expression", "", dstCall)
+			dstLHS := testutil.Node("expression_list", "", testutil.Leaf("identifier", "res"))
+			dstOp := testutil.Leaf("assignment_operator_literal", ":=")
+			dstRHS := testutil.Node("expression_list", "", outerCall)
+			dstStmt := testutil.Node("short_var_declaration", "", dstLHS, dstOp, dstRHS)
+			dstParent.Children = append(dstParent.Children, dstStmt)
+			dstStmt.Parent = dstParent
+
+			ms.Add(srcCall, dstCall)
+
+			if isStatementSlotEquivalent(srcStmt, dstStmt, srcCall, dstCall, ms, r) {
+				t.Errorf("expected isStatementSlotEquivalent to reject nested non-primary expression")
+			}
+		})
+
+		t.Run("RejectParallelAssignment", func(t *testing.T) {
+			ms := engine.NewMapping()
+			srcParent := testutil.Node("block", "")
+			dstParent := testutil.Node("block", "")
+			ms.Add(srcParent, dstParent)
+
+			srcCall := testutil.Node("call_expression", "")
+			srcStmt := testutil.Node("expression_statement", "", srcCall)
+			srcParent.Children = append(srcParent.Children, srcStmt)
+			srcStmt.Parent = srcParent
+
+			// dst has multiple RHS expressions: a, b := foo(), dstCall()
+			dstCall := testutil.Node("call_expression", "")
+			otherCall := testutil.Node("call_expression", "")
+			dstLHS := testutil.Node("expression_list", "", testutil.Leaf("identifier", "a"), testutil.Leaf("identifier", "b"))
+			dstOp := testutil.Leaf("assignment_operator_literal", ":=")
+			dstRHS := testutil.Node("expression_list", "", otherCall, dstCall)
+			dstStmt := testutil.Node("short_var_declaration", "", dstLHS, dstOp, dstRHS)
+			dstParent.Children = append(dstParent.Children, dstStmt)
+			dstStmt.Parent = dstParent
+
+			ms.Add(srcCall, dstCall)
+
+			if isStatementSlotEquivalent(srcStmt, dstStmt, srcCall, dstCall, ms, r) {
+				t.Errorf("expected isStatementSlotEquivalent to reject multi-value parallel assignment")
+			}
+		})
+
+		t.Run("RejectAlreadyMappedStatement", func(t *testing.T) {
+			ms := engine.NewMapping()
+			srcParent := testutil.Node("block", "")
+			dstParent := testutil.Node("block", "")
+			ms.Add(srcParent, dstParent)
+
+			srcCall := testutil.Node("call_expression", "")
+			srcStmt := testutil.Node("expression_statement", "", srcCall)
+			srcParent.Children = append(srcParent.Children, srcStmt)
+			srcStmt.Parent = srcParent
+
+			dstCall := testutil.Node("call_expression", "")
+			dstLHS := testutil.Node("expression_list", "", testutil.Leaf("identifier", "index"))
+			dstOp := testutil.Leaf("assignment_operator_literal", ":=")
+			dstRHS := testutil.Node("expression_list", "", dstCall)
+			dstStmt := testutil.Node("short_var_declaration", "", dstLHS, dstOp, dstRHS)
+			dstParent.Children = append(dstParent.Children, dstStmt)
+			dstStmt.Parent = dstParent
+
+			otherStmt := testutil.Node("expression_statement", "")
+			ms.Add(srcStmt, otherStmt) // Map srcStmt elsewhere to test collision
+			ms.Add(srcCall, dstCall)
+
+			if isStatementSlotEquivalent(srcStmt, dstStmt, srcCall, dstCall, ms, r) {
+				t.Errorf("expected isStatementSlotEquivalent to return false when statement is already mapped elsewhere")
+			}
+		})
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("ExpressionStatementToAssignment", func(t *testing.T) {
+			src := []byte(`package main
+
+func process(root *Node) {
+	setup()
+	EnsureIndex(root)
+	cleanup()
+}
+`)
+			dst := []byte(`package main
+
+func process(root *Node) {
+	setup()
+	index := EnsureIndex(root)
+	cleanup()
+}
+`)
+
+			srcAST, err := treesitter.Parse(src, "main.go")
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dst, "main.go")
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+			if matchResult == nil || matchResult.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: outer package and func process() stay untouched without edit actions.
+			for _, a := range normalized.Actions() {
+				if a.Node != nil && r.IsDeclaration(a.Node.Type) && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+					t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+				}
+			}
+
+			// 2. Surrounding sequence: setup() and cleanup() must map in place without disruption.
+			var srcSetup, dstSetup *treesitter.ASTNode
+			var srcCleanup, dstCleanup *treesitter.ASTNode
+			var srcCall, dstCall *treesitter.ASTNode
+			var srcArgList, dstArgList *treesitter.ASTNode
+			var srcArg, dstArg *treesitter.ASTNode
+
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) {
+					switch string(src[n.StartByte:n.EndByte]) {
+					case "setup()":
+						srcSetup = n
+					case "cleanup()":
+						srcCleanup = n
+					case "EnsureIndex(root)":
+						srcCall = n
+						for _, child := range n.Children {
+							if r.IsDelimitedContainer(child.Type) {
+								srcArgList = child
+								for _, arg := range child.Children {
+									if r.IsIdentifier(arg.Type) && string(src[arg.StartByte:arg.EndByte]) == "root" {
+										srcArg = arg
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) {
+					switch string(dst[n.StartByte:n.EndByte]) {
+					case "setup()":
+						dstSetup = n
+					case "cleanup()":
+						dstCleanup = n
+					case "EnsureIndex(root)":
+						dstCall = n
+						for _, child := range n.Children {
+							if r.IsDelimitedContainer(child.Type) {
+								dstArgList = child
+								for _, arg := range child.Children {
+									if r.IsIdentifier(arg.Type) && string(dst[arg.StartByte:arg.EndByte]) == "root" {
+										dstArg = arg
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if srcSetup == nil || dstSetup == nil || matchResult.Mappings.Src()[srcSetup] != dstSetup {
+				t.Errorf("expected setup() to map in place, got %v", matchResult.Mappings.Src()[srcSetup])
+			}
+			if srcCleanup == nil || dstCleanup == nil || matchResult.Mappings.Src()[srcCleanup] != dstCleanup {
+				t.Errorf("expected cleanup() to map in place, got %v", matchResult.Mappings.Src()[srcCleanup])
+			}
+
+			// 3. Target construct: EnsureIndex(root) must map in place, and its argument list must map in place.
+			if srcCall == nil || dstCall == nil || matchResult.Mappings.Src()[srcCall] != dstCall {
+				t.Fatalf("expected EnsureIndex(root) to map in place, got %v", matchResult.Mappings.Src()[srcCall])
+			}
+			if srcArgList == nil || dstArgList == nil || matchResult.Mappings.Src()[srcArgList] != dstArgList {
+				t.Errorf("expected argument_list to map in place, got %v", matchResult.Mappings.Src()[srcArgList])
+			}
+
+			// 4. Stationary operand: root identifier inside argument list must map in place.
+			if srcArg == nil || dstArg == nil || matchResult.Mappings.Src()[srcArg] != dstArg {
+				t.Errorf("expected argument root to map in place, got %v", matchResult.Mappings.Src()[srcArg])
+			}
+
+			// 5. Zero Move actions anywhere in the snippet: EnsureIndex(root) stays stationary context.
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Errorf("expected zero Move actions across snippet, found move on %s: %v", a.Node.Type, a)
+				}
+			}
+		})
+
+		t.Run("AssignmentToExpressionStatement", func(t *testing.T) {
+			src := []byte(`package main
+
+func process(root *Node) {
+	setup()
+	index := EnsureIndex(root)
+	cleanup()
+}
+`)
+			dst := []byte(`package main
+
+func process(root *Node) {
+	setup()
+	EnsureIndex(root)
+	cleanup()
+}
+`)
+
+			srcAST, err := treesitter.Parse(src, "main.go")
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dst, "main.go")
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+			if matchResult == nil || matchResult.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+			// Zero Move actions: unassigning EnsureIndex(root) keeps it stationary in place.
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Errorf("expected zero Move actions in reverse direction, found move on %s: %v", a.Node.Type, a)
+				}
+			}
+		})
 	})
 }
