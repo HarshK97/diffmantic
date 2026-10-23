@@ -151,6 +151,10 @@ func TestSlicer_BadgeOverflow_WrapsToDedicatedRow(t *testing.T) {
 	if !strings.Contains(chunk1Str, "➔ L205") {
 		t.Errorf("expected chunk 1 to contain move badge, got: %q", chunk1Str)
 	}
+	wantStyledBadge := color.Dim + color.Italic + color.MoveFg + badgeText + color.Reset
+	if !strings.Contains(chunk1Str, wantStyledBadge) {
+		t.Errorf("expected chunk 1 to contain styled move badge %q, got: %q", wantStyledBadge, chunk1Str)
+	}
 	if runewidth.StringWidth(stripANSI(chunk1Str)) != targetWidth {
 		t.Errorf("chunk 1 display width = %d, want %d", runewidth.StringWidth(stripANSI(chunk1Str)), targetWidth)
 	}
@@ -184,7 +188,7 @@ func TestSlicer_Unified_LastRowBadge(t *testing.T) {
 	if !strings.Contains(lastChunkStr, "➔ L99") {
 		t.Errorf("unified mode: last chunk should contain badge: %q", lastChunkStr)
 	}
-	if !strings.HasSuffix(lastChunkStr, color.MoveFg+badgeText+color.Reset) {
+	if !strings.HasSuffix(lastChunkStr, color.Dim+color.Italic+color.MoveFg+badgeText+color.Reset) {
 		t.Errorf("expected last chunk to end with styled badge, got: %q", lastChunkStr)
 	}
 }
