@@ -483,3 +483,49 @@ func TestIsValidRevision(t *testing.T) {
 		t.Errorf("expected nonexistent branch to not be valid revision")
 	}
 }
+
+func TestFindRepoRoot(t *testing.T) {
+	tempDir := t.TempDir()
+	if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+
+	// 1. Root directory itself
+	got := FindRepoRoot(tempDir)
+	// Resolve symlinks if any on macOS (/var vs /private/var)
+	evalTemp, _ := filepath.EvalSymlinks(tempDir)
+	evalGot, _ := filepath.EvalSymlinks(got)
+	if evalGot != evalTemp {
+		t.Errorf("FindRepoRoot(%q) = %q, want %q", tempDir, evalGot, evalTemp)
+	}
+
+	// 2. Nested subdirectories
+	deepDir := filepath.Join(tempDir, "a", "b", "c")
+	if err := os.MkdirAll(deepDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gotDeep := FindRepoRoot(deepDir)
+	evalGotDeep, _ := filepath.EvalSymlinks(gotDeep)
+	if evalGotDeep != evalTemp {
+		t.Errorf("FindRepoRoot(%q) = %q, want %q", deepDir, evalGotDeep, evalTemp)
+	}
+
+	// 3. Worktree / submodule simulated with a .git file
+	wtDir := t.TempDir()
+	gitFile := filepath.Join(wtDir, ".git")
+	if err := os.WriteFile(gitFile, []byte("gitdir: /path/to/somewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gotWt := FindRepoRoot(wtDir)
+	evalWt, _ := filepath.EvalSymlinks(wtDir)
+	evalGotWt, _ := filepath.EvalSymlinks(gotWt)
+	if evalGotWt != evalWt {
+		t.Errorf("FindRepoRoot(.git file) = %q, want %q", evalGotWt, evalWt)
+	}
+
+	// 4. Non-git directory
+	notGit := t.TempDir()
+	if got := FindRepoRoot(notGit); got != "" {
+		t.Errorf("FindRepoRoot(notGit) = %q, want empty string", got)
+	}
+}

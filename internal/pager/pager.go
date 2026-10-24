@@ -2,6 +2,7 @@
 package pager
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"os"
@@ -32,7 +33,7 @@ func IsBrokenPipe(err error) bool {
 	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "closed pipe")
 }
 
-// Start launches a pager (evaluating $GIT_PAGER -> core.pager -> $PAGER -> less -RFX)
+// Start launches a pager (evaluating $DIFFM_PAGER -> $GIT_PAGER -> core.pager -> $PAGER -> less -RFX)
 // when stdout is a terminal and disabled is false.
 // Returns a Pager handle (or nil if no pager was started) and the io.Writer to write to.
 func Start(disabled bool) (*Pager, io.Writer) {
@@ -113,19 +114,46 @@ func (p *Pager) Done() <-chan struct{} {
 	return p.doneChan
 }
 
-func resolvePagerPreference() string {
-	if val := strings.TrimSpace(os.Getenv("GIT_PAGER")); val != "" {
-		return val
+func isSelfPager(val string) bool {
+	parts := splitArgs(val)
+	if len(parts) == 0 {
+		return false
 	}
-	if out, err := git.RunGit(".", "config", "core.pager"); err == nil {
-		if val := strings.TrimSpace(string(out)); val != "" {
+	raw := parts[0]
+	if idx := strings.LastIndexAny(raw, `/\`); idx != -1 {
+		raw = raw[idx+1:]
+	}
+	base := strings.TrimSuffix(raw, ".exe")
+
+	var self string
+	if len(os.Args) > 0 {
+		rawSelf := os.Args[0]
+		if idx := strings.LastIndexAny(rawSelf, `/\`); idx != -1 {
+			rawSelf = rawSelf[idx+1:]
+		}
+		self = strings.TrimSuffix(rawSelf, ".exe")
+	}
+	return base == "diffm" || base == "diffmantic" || (self != "" && base == self)
+}
+
+func resolvePagerPreference() string {
+	candidate := func(raw string) string {
+		val := strings.TrimSpace(raw)
+		if val != "" && !isSelfPager(val) {
 			return val
 		}
+		return ""
 	}
-	if val := strings.TrimSpace(os.Getenv("PAGER")); val != "" {
-		return val
+
+	if p := cmp.Or(candidate(os.Getenv("DIFFM_PAGER")), candidate(os.Getenv("GIT_PAGER"))); p != "" {
+		return p
 	}
-	return "less -RFX"
+	if out, err := git.RunGit(".", "config", "core.pager"); err == nil {
+		if p := candidate(string(out)); p != "" {
+			return p
+		}
+	}
+	return cmp.Or(candidate(os.Getenv("PAGER")), "less -RFX")
 }
 
 func resolvePagerCmd(pagerEnv string) (string, []string) {
@@ -149,17 +177,20 @@ func splitArgs(s string) []string {
 	var current strings.Builder
 	inSingle := false
 	inDouble := false
-	escaped := false
 
-	for _, r := range s {
-		if escaped {
-			current.WriteRune(r)
-			escaped = false
-			continue
-		}
-
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		if r == '\\' && !inSingle {
-			escaped = true
+			if i+1 < len(runes) {
+				next := runes[i+1]
+				if next == ' ' || next == '\t' || next == '"' || next == '\'' || next == '\\' {
+					current.WriteRune(next)
+					i++
+					continue
+				}
+			}
+			current.WriteRune(r)
 			continue
 		}
 

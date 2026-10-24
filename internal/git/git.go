@@ -377,6 +377,30 @@ func GetRepoPrefix(cwd string) (string, error) {
 	return prefix, nil
 }
 
+// FindRepoRoot walks up from cwd looking for a .git directory or file
+// (for worktrees and submodules). Returns an empty string if not in a git repo.
+func FindRepoRoot(cwd string) string {
+	dir := filepath.Clean(cwd)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+
+	for {
+		gitPath := filepath.Join(dir, ".git")
+		if _, err := os.Stat(gitPath); err == nil {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return ""
+}
+
 var (
 	textconvCacheMu sync.RWMutex
 	textconvCache   = make(map[string]string) // cacheKey (cleanCwd + "\x00" + driver) -> cmdStr
