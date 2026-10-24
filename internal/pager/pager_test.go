@@ -11,7 +11,7 @@ import (
 
 // TestMain clears pager env vars so host settings don't change test expectations.
 func TestMain(m *testing.M) {
-	for _, k := range []string{"DIFFM_NO_PAGER", "GIT_PAGER", "PAGER"} {
+	for _, k := range []string{"DIFFM_NO_PAGER", "DIFFM_PAGER", "GIT_PAGER", "PAGER"} {
 		_ = os.Unsetenv(k)
 	}
 	os.Exit(m.Run())
@@ -121,5 +121,65 @@ func TestPager_Done(t *testing.T) {
 		// ok
 	default:
 		t.Error("expected closed doneChan to be receivable")
+	}
+}
+
+func TestResolvePagerPreference_Hierarchy(t *testing.T) {
+	// Isolate host git config so core.pager from ~/.gitconfig doesn't leak into tests
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	// 1. DIFFM_PAGER takes highest precedence
+	t.Setenv("DIFFM_PAGER", "diffm_custom")
+	t.Setenv("GIT_PAGER", "git_custom")
+	t.Setenv("PAGER", "pager_custom")
+	if pref := resolvePagerPreference(); pref != "diffm_custom" {
+		t.Errorf("Expected DIFFM_PAGER to win, got: %s", pref)
+	}
+
+	// 2. If DIFFM_PAGER is self-pager, falls back to GIT_PAGER
+	t.Setenv("DIFFM_PAGER", "diffm")
+	if pref := resolvePagerPreference(); pref != "git_custom" {
+		t.Errorf("Expected self DIFFM_PAGER to fall back to GIT_PAGER, got: %s", pref)
+	}
+
+	// 3. If GIT_PAGER is self-pager, falls back past it
+	t.Setenv("GIT_PAGER", "diffmantic")
+	if pref := resolvePagerPreference(); pref != "pager_custom" {
+		t.Errorf("Expected self GIT_PAGER to fall back to PAGER, got: %s", pref)
+	}
+
+	// 4. Default fallback when no env vars set
+	t.Setenv("DIFFM_PAGER", "")
+	t.Setenv("GIT_PAGER", "")
+	t.Setenv("PAGER", "")
+	if pref := resolvePagerPreference(); pref != "less -RFX" {
+		t.Errorf("Expected default less -RFX, got: %s", pref)
+	}
+}
+
+func TestIsSelfPager(t *testing.T) {
+	tests := []struct {
+		val  string
+		want bool
+	}{
+		{"", false},
+		{"less -RFX", false},
+		{"bat --plain", false},
+		{"diffm", true},
+		{"diffmantic", true},
+		{"diffm -f side-by-side", true},
+		{"diffm.exe", true},
+		{"diffmantic.exe", true},
+		{"/usr/local/bin/diffm", true},
+		{`C:\bin\diffm.exe`, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.val, func(t *testing.T) {
+			if got := isSelfPager(tt.val); got != tt.want {
+				t.Errorf("isSelfPager(%q) = %v, want %v", tt.val, got, tt.want)
+			}
+		})
 	}
 }
