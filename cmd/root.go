@@ -19,6 +19,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/sidebyside"
+	"github.com/HarshK97/diffmantic/internal/streamdiff"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/unified"
 	"github.com/spf13/cobra"
@@ -36,6 +37,14 @@ func isTerminal(f *os.File) bool {
 	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }
 
+func isPipedInput(f *os.File) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode()&os.ModeNamedPipe) != 0 || fi.Mode().IsRegular()
+}
+
 var rootCmd = &cobra.Command{
 	Use:     "diffm [refA] [refB]",
 	Version: "0.13.0",
@@ -50,12 +59,12 @@ Works as a standalone file diff tool, a git difftool, or a backend engine for
 editor plugins (Neovim, VS Code) via JSON output.`,
 	Example: `  diffm before.go after.go                     Side-by-side diff with pager (default in TTY)
   diffm dir_a dir_b                            Recursive directory diff
-  diffm before.go after.go -f unified          Print AST-aware unified diff with pager
-  diffm before.go after.go -u                  Shorthand for unified diff
+  diffm -u before.go after.go                  AST-aware unified diff
+  git diff | diffm                             Stream Git diff with AST highlighting
+  git log -p | diffm                           Stream Git commit log with AST highlighting
   diffm before.go after.go -f json             JSON output for editor plugins
   diffm before.go after.go -f actions          Print structural actions list
   diffm                                        Git mode on unstaged changes
-  diffm -u                                     Git mode unified diff with pager
   diffm --cached                               Git staged changes diff
   diffm HEAD~1 HEAD                            Git revision comparison`,
 	Args: cobra.ArbitraryArgs,
@@ -256,6 +265,14 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			}
 		}
 
+		// Stream mode kicks in when diffm is piped (git diff | diffm) or invoked as a Git pager.
+		pagerFlag, _ := cmd.Flags().GetBool("pager")
+		if len(args) == 0 && (isPipedInput(os.Stdin) || pagerFlag) {
+			if runStreamMode(cmd, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+				os.Exit(1)
+			}
+			return
+		}
 		// In a git repo, launch git mode (optionally filtered by ref or path)
 		if git.IsGitRepository(".") {
 			if runGitMode(cmd, args, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
@@ -288,77 +305,6 @@ func normalizeFormat(f string) string {
 	}
 }
 
-func countLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, int, int) {
-	if env == nil || len(env.LineAlignment) == 0 {
-		return 0, 0, 0
-	}
-
-	srcLines := strings.Split(string(srcBytes), "\n")
-	dstLines := strings.Split(string(dstBytes), "\n")
-
-	srcEndsWithNL := len(srcBytes) > 0 && srcBytes[len(srcBytes)-1] == '\n'
-	dstEndsWithNL := len(dstBytes) > 0 && dstBytes[len(dstBytes)-1] == '\n'
-
-	lastSrcLineIdx := len(srcLines) - 1
-	if srcEndsWithNL && lastSrcLineIdx >= 0 && srcLines[lastSrcLineIdx] == "" {
-		lastSrcLineIdx--
-	}
-	lastDstLineIdx := len(dstLines) - 1
-	if dstEndsWithNL && lastDstLineIdx >= 0 && dstLines[lastDstLineIdx] == "" {
-		lastDstLineIdx--
-	}
-
-	srcEOFLine := -1
-	if srcEndsWithNL && len(srcLines) > 0 && srcLines[len(srcLines)-1] == "" {
-		srcEOFLine = len(srcLines) - 1
-	}
-	dstEOFLine := -1
-	if dstEndsWithNL && len(dstLines) > 0 && dstLines[len(dstLines)-1] == "" {
-		dstEOFLine = len(dstLines) - 1
-	}
-
-	ins, del, upd := 0, 0, 0
-
-	for _, pair := range env.LineAlignment {
-		left := pair.LeftLine
-		right := pair.RightLine
-
-		if srcEOFLine != -1 && left == srcEOFLine {
-			if right == dstEOFLine || right == -1 {
-				continue
-			}
-			left = -1
-		}
-		if dstEOFLine != -1 && right == dstEOFLine {
-			if left == srcEOFLine || left == -1 {
-				continue
-			}
-			right = -1
-		}
-
-		if left == -1 && right >= 0 {
-			ins++
-		} else if left >= 0 && right == -1 {
-			del++
-		} else if left >= 0 && right >= 0 {
-			sText := ""
-			if left < len(srcLines) {
-				sText = srcLines[left]
-			}
-			dText := ""
-			if right < len(dstLines) {
-				dText = dstLines[right]
-			}
-			isEOFLine := (left == lastSrcLineIdx && right == lastDstLineIdx)
-			if sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL) {
-				upd++
-			}
-		}
-	}
-
-	return ins, del, upd
-}
-
 // renderConfig groups settings needed to render a diff.
 type renderConfig struct {
 	format      string
@@ -378,7 +324,7 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 	switch rc.format {
 	case "side-by-side":
 		if rc.showBanner {
-			numIns, numDel, numUpd := countLineStats(srcBytes, dstBytes, dr.Envelope)
+			numIns, numDel, numUpd := sidebyside.CountLineStats(srcBytes, dstBytes, dr.Envelope)
 			bannerPath := dstFile
 			if bannerPath == "/dev/null" || bannerPath == "" {
 				bannerPath = srcFile
@@ -1057,6 +1003,64 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 	}
 }
 
+func runStreamMode(
+	cmd *cobra.Command,
+	format string,
+	ignoreComments bool,
+	parseErrorLimit int,
+	sizeLimitKB int,
+	lineLimitLines int,
+	noPager bool,
+) bool {
+	format = cmp.Or(format, "side-by-side")
+
+	uiMode, _ := cmd.Flags().GetBool("ui")
+	fullMode, _ := cmd.Flags().GetBool("full")
+
+	includeUI := format == "unified" || format == "side-by-side" || uiMode || fullMode
+	opts := serialize.EnvelopeOptions{
+		IncludeActions:    format == "unified" || format == "side-by-side" || (!uiMode) || fullMode,
+		IncludeAlignment:  includeUI,
+		IncludeHighlights: includeUI,
+	}
+
+	diffOpts := pipeline.DiffOptions{
+		ParseErrorLimit:  parseErrorLimit,
+		IgnoreComments:   ignoreComments,
+		DisableSizeLimit: sizeLimitKB <= 0,
+		MaxASTFileSize:   sizeLimitKB * 1024,
+		DisableLineLimit: lineLimitLines <= 0,
+		MaxASTFileLines:  lineLimitLines,
+		EnvelopeOpts:     opts,
+	}
+
+	unifiedOpts := resolveUnifiedOptions(cmd)
+	sbsOpts := resolveSideBySideOptions(cmd)
+
+	var p *pager.Pager
+	var writer io.Writer = os.Stdout
+
+	if (format == "unified" || format == "side-by-side") && isTerminal(os.Stdout) && !noPager {
+		p, writer = pager.Start(noPager)
+	}
+	defer p.Close()
+
+	cfg := streamdiff.StreamConfig{
+		Format:         format,
+		DiffOpts:       diffOpts,
+		UnifiedOpts:    unifiedOpts,
+		SideBySideOpts: sbsOpts,
+	}
+
+	repoRoot := cmp.Or(git.FindRepoRoot("."), ".")
+
+	if err := streamdiff.Process(os.Stdin, writer, repoRoot, cfg); err != nil && !pager.IsBrokenPipe(err) {
+		fmt.Fprintf(os.Stderr, "Error: processing diff stream: %v\n", err)
+		return true
+	}
+	return false
+}
+
 func runParseTree(cmd *cobra.Command, args []string, noPager bool, isCST bool) {
 	if len(args) == 0 {
 		flagName := "--parse-tree"
@@ -1168,6 +1172,7 @@ func init() {
 	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
 	rootCmd.Flags().Bool("cst", false, "Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic AST")
 	rootCmd.Flags().Bool("textconv", false, "Allow external text conversion filters to be run when comparing binary files")
+	rootCmd.Flags().Bool("pager", false, "Process incoming Git diff stream from standard input")
 
 	rootCmd.SetHelpFunc(HelpHandler)
 	rootCmd.SetUsageFunc(UsageHandler)

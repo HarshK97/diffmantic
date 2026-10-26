@@ -720,6 +720,78 @@ func renderEOFNewlineWarning(w io.Writer, leftWarn, rightWarn bool, numWidth, co
 	_, _ = io.WriteString(w, "\n")
 }
 
+// CountLineStats returns the inserted, deleted, and updated line counts for the diff banner.
+func CountLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, int, int) {
+	if env == nil || len(env.LineAlignment) == 0 {
+		return 0, 0, 0
+	}
+
+	srcLines := strings.Split(string(srcBytes), "\n")
+	dstLines := strings.Split(string(dstBytes), "\n")
+
+	srcEndsWithNL := len(srcBytes) > 0 && srcBytes[len(srcBytes)-1] == '\n'
+	dstEndsWithNL := len(dstBytes) > 0 && dstBytes[len(dstBytes)-1] == '\n'
+
+	lastSrcLineIdx := len(srcLines) - 1
+	if srcEndsWithNL && lastSrcLineIdx >= 0 && srcLines[lastSrcLineIdx] == "" {
+		lastSrcLineIdx--
+	}
+	lastDstLineIdx := len(dstLines) - 1
+	if dstEndsWithNL && lastDstLineIdx >= 0 && dstLines[lastDstLineIdx] == "" {
+		lastDstLineIdx--
+	}
+
+	srcEOFLine := -1
+	if srcEndsWithNL && len(srcLines) > 0 && srcLines[len(srcLines)-1] == "" {
+		srcEOFLine = len(srcLines) - 1
+	}
+	dstEOFLine := -1
+	if dstEndsWithNL && len(dstLines) > 0 && dstLines[len(dstLines)-1] == "" {
+		dstEOFLine = len(dstLines) - 1
+	}
+
+	ins, del, upd := 0, 0, 0
+
+	for _, pair := range env.LineAlignment {
+		left := pair.LeftLine
+		right := pair.RightLine
+
+		if srcEOFLine != -1 && left == srcEOFLine {
+			if right == dstEOFLine || right == -1 {
+				continue
+			}
+			left = -1
+		}
+		if dstEOFLine != -1 && right == dstEOFLine {
+			if left == srcEOFLine || left == -1 {
+				continue
+			}
+			right = -1
+		}
+
+		if left == -1 && right >= 0 {
+			ins++
+		} else if left >= 0 && right == -1 {
+			del++
+		} else if left >= 0 && right >= 0 {
+			sText := ""
+			if left < len(srcLines) {
+				sText = srcLines[left]
+			}
+			dText := ""
+			if right < len(dstLines) {
+				dText = dstLines[right]
+			}
+			isEOFLine := (left == lastSrcLineIdx && right == lastDstLineIdx)
+			if sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL) {
+				upd++
+			}
+		}
+	}
+
+	return ins, del, upd
+}
+
 // RenderFileBanner prints a header with the file path and change stats.
 func RenderFileBanner(path string, insertions, deletions, updates int, colorMode bool, w io.Writer) error {
 	if !colorMode {
