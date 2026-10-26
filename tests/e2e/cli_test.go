@@ -8,6 +8,7 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1129,5 +1130,316 @@ func TestCLI_GitMode_NonZeroExitOnError(t *testing.T) {
 	cmdErr := cmd.Run()
 	if cmdErr == nil {
 		t.Fatalf("expected diffm in git mode to exit with non-zero code on textconv error, but succeeded.\nstdout: %s\nstderr: %s", stdoutBuf.String(), stderrBuf.String())
+	}
+}
+
+func TestE2E_StreamMode_PipeGitDiff(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	srcContent := "package main\n\nfunc calculate(x int) int {\n\treturn x * 2\n}\n"
+	dstContent := "package main\n\nfunc calculate(x int) int {\n\tmultiplier := 2\n\treturn x * multiplier\n}\n"
+
+	filePath := filepath.Join(repoDir, "calc.go")
+	writeTestFile(t, filePath, srcContent)
+	execGit("add", "calc.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "initial")
+
+	// Create unstaged modifications on disk
+	writeTestFile(t, filePath, dstContent)
+
+	// Run git diff
+	gitDiffCmd := exec.Command("git", "diff")
+	gitDiffCmd.Dir = repoDir
+	diffBytes, err := gitDiffCmd.Output()
+	if err != nil {
+		t.Fatalf("git diff failed: %v", err)
+	}
+
+	// Pipe git diff into diffm -u --no-pager
+	diffmCmd := exec.Command(binaryPath, "-u", "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(diffBytes)
+	outBytes, err := diffmCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diffm stream failed: %v\nOutput: %s", err, string(outBytes))
+	}
+
+	outStr := string(outBytes)
+	if !strings.Contains(outStr, "calc.go") {
+		t.Errorf("Expected output to contain calc.go, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "multiplier := 2") {
+		t.Errorf("Expected output to contain new code, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "--- a/calc.go") || !strings.Contains(outStr, "+++ b/calc.go") {
+		t.Errorf("Expected diffm header in output, got:\n%s", outStr)
+	}
+}
+
+func TestE2E_StreamMode_PipeGitLogP(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	filePath := filepath.Join(repoDir, "app.go")
+	writeTestFile(t, filePath, "package main\n\nfunc main() {}\n")
+	execGit("add", "app.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "init commit")
+
+	writeTestFile(t, filePath, "package main\n\nfunc main() {\n\tprintln(\"v2\")\n}\n")
+	execGit("add", "app.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "second commit")
+
+	// Pipe git log -p into diffm -u --no-pager
+	gitLogCmd := exec.Command("git", "log", "-p", "-n", "2")
+	gitLogCmd.Dir = repoDir
+	logBytes, err := gitLogCmd.Output()
+	if err != nil {
+		t.Fatalf("git log -p failed: %v", err)
+	}
+
+	diffmCmd := exec.Command(binaryPath, "-u", "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(logBytes)
+	outBytes, err := diffmCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diffm stream failed: %v\nOutput: %s", err, string(outBytes))
+	}
+
+	outStr := string(outBytes)
+	if !strings.Contains(outStr, "second commit") || !strings.Contains(outStr, "init commit") {
+		t.Errorf("Expected both commit messages to survive, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "app.go") {
+		t.Errorf("Expected app.go diff, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, `println("v2")`) {
+		t.Errorf("Expected new code in AST diff, got:\n%s", outStr)
+	}
+}
+
+func TestE2E_StreamMode_PipeGitShow(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	filePath := filepath.Join(repoDir, "tool.go")
+	writeTestFile(t, filePath, "package main\n\nfunc Run() bool { return false }\n")
+	execGit("add", "tool.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "first")
+
+	writeTestFile(t, filePath, "package main\n\nfunc Run() bool { return true }\n")
+	execGit("add", "tool.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "second")
+
+	gitShowCmd := exec.Command("git", "show", "HEAD")
+	gitShowCmd.Dir = repoDir
+	showBytes, err := gitShowCmd.Output()
+	if err != nil {
+		t.Fatalf("git show failed: %v", err)
+	}
+
+	diffmCmd := exec.Command(binaryPath, "-u", "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(showBytes)
+	outBytes, err := diffmCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diffm stream failed: %v\nOutput: %s", err, string(outBytes))
+	}
+
+	outStr := string(outBytes)
+	if !strings.Contains(outStr, "second") {
+		t.Errorf("Expected commit message 'second', got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "tool.go") {
+		t.Errorf("Expected tool.go diff, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "return true") {
+		t.Errorf("Expected modified code, got:\n%s", outStr)
+	}
+}
+
+func TestE2E_StreamMode_JsonOutput(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	filePath := filepath.Join(repoDir, "hello.go")
+	writeTestFile(t, filePath, "package main\n\nfunc hello() {}\n")
+	execGit("add", "hello.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "first")
+
+	writeTestFile(t, filePath, "package main\n\nfunc hello() { println(1) }\n")
+
+	gitDiffCmd := exec.Command("git", "diff")
+	gitDiffCmd.Dir = repoDir
+	diffBytes, err := gitDiffCmd.Output()
+	if err != nil {
+		t.Fatalf("git diff failed: %v", err)
+	}
+
+	diffmCmd := exec.Command(binaryPath, "-f", "json", "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(diffBytes)
+	outBytes, err := diffmCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diffm stream json failed: %v\nOutput: %s", err, string(outBytes))
+	}
+
+	var env serialize.Envelope
+	if err := json.Unmarshal(outBytes, &env); err != nil {
+		t.Fatalf("failed to unmarshal JSON output: %v\nOutput:\n%s", err, string(outBytes))
+	}
+	if len(env.Actions) == 0 {
+		t.Errorf("Expected non-empty actions in JSON output, got 0")
+	}
+}
+
+func TestE2E_StreamMode_PipeGitDiffSBS(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	filePath := filepath.Join(repoDir, "calc.go")
+	writeTestFile(t, filePath, "package main\n\nfunc Add(a, b int) int {\n\treturn a + b\n}\n")
+	execGit("add", "calc.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "initial calc")
+
+	writeTestFile(t, filePath, "package main\n\nfunc Add(a, b int) int {\n\tmultiplier := 2\n\treturn (a + b) * multiplier\n}\n")
+
+	gitDiffCmd := exec.Command("git", "diff")
+	gitDiffCmd.Dir = repoDir
+	diffBytes, err := gitDiffCmd.Output()
+	if err != nil {
+		t.Fatalf("git diff failed: %v", err)
+	}
+
+	// Pipe git diff into diffm --no-pager (default SBS mode)
+	diffmCmd := exec.Command(binaryPath, "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(diffBytes)
+	outBytes, err := diffmCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diffm stream failed: %v\nOutput: %s", err, string(outBytes))
+	}
+
+	outStr := string(outBytes)
+	if !strings.Contains(outStr, "calc.go") {
+		t.Errorf("Expected SBS stream output to contain file name banner 'calc.go', got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "[+") {
+		t.Errorf("Expected SBS stream output to contain change stats [+...], got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "multiplier := 2") {
+		t.Errorf("Expected SBS stream output to contain diff lines, got:\n%s", outStr)
+	}
+}
+
+func TestE2E_StreamMode_PipeGitLogGraphP(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	filePath := filepath.Join(repoDir, "app.go")
+	writeTestFile(t, filePath, "package main\n\nfunc main() {}\n")
+	execGit("add", "app.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "init commit")
+
+	writeTestFile(t, filePath, "package main\n\nfunc main() {\n\tprintln(\"graph v2\")\n}\n")
+	execGit("add", "app.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "second commit")
+
+	// Run git log --graph -p
+	gitLogCmd := exec.Command("git", "log", "--graph", "-p", "-n", "2")
+	gitLogCmd.Dir = repoDir
+	logBytes, err := gitLogCmd.Output()
+	if err != nil {
+		t.Fatalf("git log --graph -p failed: %v", err)
+	}
+
+	// Pipe git log --graph -p into diffm -u --no-pager
+	diffmCmd := exec.Command(binaryPath, "-u", "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(logBytes)
+	outBytes, err := diffmCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diffm stream with graph lines failed: %v\nOutput: %s", err, string(outBytes))
+	}
+
+	outStr := string(outBytes)
+	// Graph symbols and commit messages must survive verbatim per Delta precedent
+	if !strings.Contains(outStr, "*") {
+		t.Errorf("Expected graph marker '*' to survive, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "second commit") {
+		t.Errorf("Expected commit message to survive, got:\n%s", outStr)
 	}
 }

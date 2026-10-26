@@ -321,6 +321,33 @@ func TestRenderFileBanner(t *testing.T) {
 	}
 }
 
+func TestCountLineStats(t *testing.T) {
+	src := "package main\n\nfunc A() int {\n\treturn 1\n}\n"
+	dst := "package main\n\nfunc A() int {\n\treturn 2\n}\n\nfunc B() {}\n"
+
+	dr, err := pipeline.Run([]byte(src), []byte(dst), "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	ins, del, upd := CountLineStats([]byte(src), []byte(dst), dr.Envelope)
+	if ins == 0 && upd == 0 {
+		t.Errorf("CountLineStats expected insertions and updates, got ins=%d, del=%d, upd=%d", ins, del, upd)
+	}
+
+	// Nil envelope safety
+	ins0, del0, upd0 := CountLineStats(nil, nil, nil)
+	if ins0 != 0 || del0 != 0 || upd0 != 0 {
+		t.Errorf("CountLineStats on nil: got (%d, %d, %d), want (0, 0, 0)", ins0, del0, upd0)
+	}
+}
+
 func TestRender_WrappingAndContinuationGutter(t *testing.T) {
 	src := "package main\n\n// VeryLongOldCommentThatExceedsTheColumnWidthAndMustWrapCleanly\nfunc A() {}\n"
 	dst := "package main\n\n// VeryLongNewCommentThatExceedsTheColumnWidthAndMustWrapCleanlyAcrossMultipleRows\nfunc A() {}\n"

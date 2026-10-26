@@ -66,7 +66,7 @@ func TestRenderLongHelp(t *testing.T) {
 	}
 
 	gitSnippets := []string{
-		"Inside a Git Repo (Recommended)",
+		"Git Pager Integration (Recommended)",
 		"git config --global diff.external diffm",
 		"*.go diff=diffmantic",
 		"7-argument external diff driver protocol",
