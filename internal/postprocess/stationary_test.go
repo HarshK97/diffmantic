@@ -2326,3 +2326,155 @@ func process() {
 		})
 	})
 }
+
+func TestNormalizeStationaryMove_CrossStatementCoordinateCollisionPreservesMove(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("Unit", func(t *testing.T) {
+		// An expression that moved into a newly inserted statement at the same
+		// coordinates isn't stationary.
+		fnSrc := mkNode("function_declaration", "TestFoo")
+		fnSrc.Language = "go"
+		bodySrc := mkNode("block", "")
+		bodySrc.Language = "go"
+		bodySrc.Parent = fnSrc
+		fnSrc.Children = []*treesitter.ASTNode{bodySrc}
+
+		oldIf := mkNode("if_statement", "")
+		oldIf.Language = "go"
+		oldIf.StartRow, oldIf.EndRow = 10, 12
+		oldIf.StartCol, oldIf.EndCol = 4, 2
+		oldIf.Parent = bodySrc
+		bodySrc.Children = []*treesitter.ASTNode{oldIf}
+
+		oldCond := mkNode("binary_expression", "res.Envelope == nil")
+		oldCond.Language = "go"
+		oldCond.StartRow, oldCond.EndRow = 10, 10
+		oldCond.StartCol, oldCond.EndCol = 7, 26
+		oldCond.EndByte = 26
+		oldCond.Parent = oldIf
+		oldIf.Children = []*treesitter.ASTNode{oldCond}
+
+		fnDst := mkNode("function_declaration", "TestFoo")
+		fnDst.Language = "go"
+		bodyDst := mkNode("block", "")
+		bodyDst.Language = "go"
+		bodyDst.Parent = fnDst
+		fnDst.Children = []*treesitter.ASTNode{bodyDst}
+
+		newGuardIf := mkNode("if_statement", "")
+		newGuardIf.Language = "go"
+		newGuardIf.StartRow, newGuardIf.EndRow = 10, 12
+		newGuardIf.StartCol, newGuardIf.EndCol = 4, 2
+		newGuardIf.Parent = bodyDst
+
+		newGuardCond := mkNode("binary_expression", "res.Envelope == nil")
+		newGuardCond.Language = "go"
+		newGuardCond.StartRow, newGuardCond.EndRow = 10, 10
+		newGuardCond.StartCol, newGuardCond.EndCol = 7, 26
+		newGuardCond.EndByte = 26
+		newGuardCond.Parent = newGuardIf
+		newGuardIf.Children = []*treesitter.ASTNode{newGuardCond}
+
+		newShiftedIf := mkNode("if_statement", "")
+		newShiftedIf.Language = "go"
+		newShiftedIf.StartRow, newShiftedIf.EndRow = 13, 15
+		newShiftedIf.StartCol, newShiftedIf.EndCol = 4, 2
+		newShiftedIf.Parent = bodyDst
+		bodyDst.Children = []*treesitter.ASTNode{newGuardIf, newShiftedIf}
+
+		ms := engine.NewMapping()
+		ms.Add(fnSrc, fnDst)
+		ms.Add(bodySrc, bodyDst)
+		ms.Add(oldIf, newShiftedIf)
+		ms.Add(oldCond, newGuardCond)
+
+		if isStationaryMove(oldCond, newGuardCond, ms, r) {
+			t.Errorf("expected isStationaryMove to return false when expression hopped into a new statement despite coordinate collision")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package test
+
+func TestProcess(t *testing.T) {
+	res := getResult()
+	if res.Envelope == nil || res.FallbackReason != "" {
+		t.Errorf("fallback error: %v", res.FallbackReason)
+	}
+	res.Cleanup()
+}
+`)
+		dst := []byte(`package test
+
+func TestProcess(t *testing.T) {
+	res := getResult()
+	if res.Envelope == nil {
+		t.Fatal("expected non-nil envelope")
+	}
+	if res.FallbackReason != "" {
+		t.Errorf("fallback error: %v", res.FallbackReason)
+	}
+	res.Cleanup()
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: package_clause and function TestProcess remain untouched
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) && (a.Node.Type == "package_clause" || a.Node.Type == "function_declaration") {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 2. Surrounding sequence: res := getResult() and res.Cleanup() map in place
+		var srcPre, dstPre, srcPost, dstPost *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "res := getResult()" {
+				srcPre = n
+			}
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "res.Cleanup()" {
+				srcPost = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "res := getResult()" {
+				dstPre = n
+			}
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "res.Cleanup()" {
+				dstPost = n
+			}
+		}
+		if srcPre == nil || dstPre == nil || matchResult.Mappings.Src()[srcPre] != dstPre {
+			t.Errorf("expected preceding statement res := getResult() to map in place")
+		}
+		if srcPost == nil || dstPost == nil || matchResult.Mappings.Src()[srcPost] != dstPost {
+			t.Errorf("expected succeeding statement res.Cleanup() to map in place")
+		}
+
+		// 3. Move action: res.Envelope == nil moves into the new guard if
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && a.Node != nil && string(src[a.Node.StartByte:a.Node.EndByte]) == "res.Envelope == nil"
+		})
+		if !hasMove {
+			t.Errorf("expected Move action on res.Envelope == nil to be preserved into new guard if statement, but none found: %v", normalized.Actions())
+		}
+	})
+}
