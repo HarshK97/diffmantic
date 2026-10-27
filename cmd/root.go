@@ -1100,6 +1100,9 @@ func runStreamMode(
 		DiffOpts:       diffOpts,
 		UnifiedOpts:    unifiedOpts,
 		SideBySideOpts: sbsOpts,
+		IsActive: func() bool {
+			return p == nil || p.IsActive()
+		},
 	}
 
 	repoRoot := cmp.Or(git.FindRepoRoot("."), ".")

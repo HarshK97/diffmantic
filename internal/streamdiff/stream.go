@@ -5,6 +5,7 @@ package streamdiff
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -28,6 +29,9 @@ type StreamConfig struct {
 	DiffOpts       pipeline.DiffOptions
 	UnifiedOpts    unified.RenderOptions
 	SideBySideOpts sidebyside.RenderOptions
+	// IsActive reports whether the output receiver is still alive and accepting data.
+	// If nil, processing continues until EOF.
+	IsActive func() bool
 }
 
 // fileHunk buffers raw lines and tracks object IDs for a single file in the stream.
@@ -55,6 +59,9 @@ func Process(in io.Reader, out io.Writer, cwd string, cfg StreamConfig) error {
 	}()
 
 	flushCurrent := func() error {
+		if cfg.IsActive != nil && !cfg.IsActive() {
+			return nil
+		}
 		if current == nil {
 			return nil
 		}
@@ -84,9 +91,13 @@ func Process(in io.Reader, out io.Writer, cwd string, cfg StreamConfig) error {
 	}
 
 	for {
+		if cfg.IsActive != nil && !cfg.IsActive() {
+			return nil
+		}
+
 		line, err := reader.ReadString('\n')
 		if err != nil && len(line) == 0 {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return err
@@ -211,7 +222,7 @@ func Process(in io.Reader, out io.Writer, cwd string, cfg StreamConfig) error {
 			return wErr
 		}
 
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 	}

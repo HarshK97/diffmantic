@@ -743,3 +743,42 @@ func TestStreamLargeHunkFallback(t *testing.T) {
 		t.Errorf("Expected large hunk to be completely passed through verbatim. Got length %d, want %d", out.Len(), sb.Len())
 	}
 }
+
+func TestProcessEarlyTerminationWhenInactive(t *testing.T) {
+	input := `commit 1482c9cdd9d9cf878191d1b04f81422ccd02967e
+Author: Developer <dev@example.com>
+Date:   Tue Oct 6 09:24:01 2026 +0530
+
+    feat: commit 1
+
+commit 2482c9cdd9d9cf878191d1b04f81422ccd02967e
+Author: Developer <dev@example.com>
+Date:   Tue Oct 6 09:25:01 2026 +0530
+
+    feat: commit 2
+`
+	var out bytes.Buffer
+	calls := 0
+	cfg := StreamConfig{
+		Format: "unified",
+		IsActive: func() bool {
+			calls++
+			return calls <= 2
+		},
+	}
+	err := Process(strings.NewReader(input), &out, t.TempDir(), cfg)
+	if err != nil {
+		t.Fatalf("Process returned unexpected error: %v", err)
+	}
+
+	outStr := out.String()
+	if !strings.Contains(outStr, "commit 1") {
+		t.Errorf("expected output to contain first commit before termination, got %q", outStr)
+	}
+	if strings.Contains(outStr, "commit 2") {
+		t.Errorf("expected early termination before second commit, but got %q", outStr)
+	}
+	if calls == 0 {
+		t.Errorf("expected IsActive callback to be invoked, got %d calls", calls)
+	}
+}

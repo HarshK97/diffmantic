@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1442,5 +1443,78 @@ func TestE2E_StreamMode_PipeGitLogGraphP(t *testing.T) {
 	}
 	if !strings.Contains(outStr, "second commit") {
 		t.Errorf("Expected commit message to survive, got:\n%s", outStr)
+	}
+}
+
+func TestE2E_StreamMode_EarlyExitPipe(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return string(out)
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	filePath := filepath.Join(repoDir, "app.go")
+	writeTestFile(t, filePath, "package main\n\nfunc main() {}\n")
+	execGit("add", "app.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "init commit")
+
+	writeTestFile(t, filePath, "package main\n\nfunc main() {\n\tprintln(\"v2\")\n}\n")
+	execGit("add", "app.go")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "second commit")
+
+	gitLogCmd := exec.Command("git", "log", "-p", "-n", "2")
+	gitLogCmd.Dir = repoDir
+	logBytes, err := gitLogCmd.Output()
+	if err != nil {
+		t.Fatalf("git log -p failed: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+
+	diffmCmd := exec.Command(binaryPath, "-u", "--no-pager")
+	diffmCmd.Dir = repoDir
+	diffmCmd.Stdin = bytes.NewReader(logBytes)
+	diffmCmd.Stdout = w
+	var stderr bytes.Buffer
+	diffmCmd.Stderr = &stderr
+
+	if err := diffmCmd.Start(); err != nil {
+		t.Fatalf("diffmCmd.Start failed: %v", err)
+	}
+	_ = w.Close()
+
+	// Consumer reads a tiny chunk and closes the pipe immediately, simulating early exit
+	buf := make([]byte, 16)
+	_, _ = r.Read(buf)
+	_ = r.Close()
+
+	waitErr := diffmCmd.Wait()
+	if stderr.Len() > 0 && strings.Contains(stderr.String(), "Error: processing diff stream") {
+		t.Errorf("expected no fatal diff stream error on early pipe closure, got stderr:\n%s", stderr.String())
+	}
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			// On Unix, writing to a closed stdout pipe triggers SIGPIPE (exit status -1).
+			// On Windows, it returns ERROR_BROKEN_PIPE, exiting 0.
+			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() && status.Signal() == syscall.SIGPIPE {
+				// Standard Unix SIGPIPE exit
+			} else if exitErr.ExitCode() != 0 {
+				t.Errorf("expected clean exit or SIGPIPE on broken pipe, got: %v", waitErr)
+			}
+		} else {
+			t.Errorf("unexpected wait error: %v", waitErr)
+		}
 	}
 }
