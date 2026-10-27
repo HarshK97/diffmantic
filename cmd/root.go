@@ -96,23 +96,15 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 		noPager, _ := cmd.Flags().GetBool("no-pager")
 		patchMode, _ := cmd.Flags().GetBool("patch")
-		unifiedFlag, _ := cmd.Flags().GetBool("unified")
 		if patchMode && !cmd.Flags().Changed("no-pager") {
 			noPager = true
 		}
 
-		format, _ := cmd.Flags().GetString("format")
-		if !cmd.Flags().Changed("format") {
-			if patchMode || unifiedFlag {
-				format = "unified"
-			} else {
-				format = cmp.Or(getEnvString("DIFFM_FORMAT", ""), "side-by-side")
-			}
-		}
-
-		normFormat := normalizeFormat(format)
-		if format != "" && !slices.Contains([]string{"json", "actions", "unified", "side-by-side"}, normFormat) {
-			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: side-by-side, unified, json, actions\n", format)
+		normFormat := resolveFormat(cmd)
+		if !slices.Contains(validFormats, normFormat) {
+			rawFormat, _ := cmd.Flags().GetString("format")
+			rawFormat = cmp.Or(rawFormat, getEnvString("DIFFM_FORMAT", ""))
+			fmt.Fprintf(os.Stderr, "Error: Unsupported output format %q. Supported formats: side-by-side, unified, json, actions, auto\n", rawFormat)
 			os.Exit(1)
 		}
 
@@ -290,12 +282,20 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 	},
 }
 
+var (
+	validFormats  = []string{"side-by-side", "unified", "json", "actions"}
+	termFdWidthFn = defaultTerminalFdWidth
+	isTerminalFn  = func() bool { return isTerminal(os.Stdout) }
+)
+
 func normalizeFormat(f string) string {
 	switch strings.ToLower(strings.TrimSpace(f)) {
 	case "sbs", "sidebyside", "side-by-side", "tui":
 		return "side-by-side"
 	case "unified", "uni":
 		return "unified"
+	case "auto":
+		return "auto"
 	case "json":
 		return "json"
 	case "actions":
@@ -303,6 +303,61 @@ func normalizeFormat(f string) string {
 	default:
 		return f
 	}
+}
+
+func defaultTerminalFdWidth() int {
+	if wFd, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && wFd > 0 {
+		return wFd
+	}
+	return 0
+}
+
+func terminalWidth() int {
+	if w := termFdWidthFn(); w > 0 {
+		return w
+	}
+	if colStr := os.Getenv("COLUMNS"); colStr != "" {
+		if cols, err := strconv.Atoi(colStr); err == nil && cols > 0 {
+			return cols
+		}
+	}
+	return 0
+}
+
+func resolveFormat(cmd *cobra.Command) string {
+	if cmd.Flags().Changed("format") {
+		f, _ := cmd.Flags().GetString("format")
+		if f != "" {
+			norm := normalizeFormat(f)
+			if norm != "auto" {
+				return norm
+			}
+		}
+	} else if patchMode, _ := cmd.Flags().GetBool("patch"); patchMode {
+		return "unified"
+	} else if unifiedFlag, _ := cmd.Flags().GetBool("unified"); unifiedFlag {
+		return "unified"
+	} else if envFmt := strings.TrimSpace(os.Getenv("DIFFM_FORMAT")); envFmt != "" {
+		norm := normalizeFormat(envFmt)
+		if norm != "auto" {
+			return norm
+		}
+	}
+
+	// Side-by-side layout needs roughly 60 columns per pane for line numbers, gutters,
+	// and code before text wrapping degrades readability. Fall back to unified on narrow viewports.
+	if w := terminalWidth(); w > 0 {
+		if w < 120 {
+			return "unified"
+		}
+		return "side-by-side"
+	}
+
+	if isTerminalFn() {
+		return "unified"
+	}
+
+	return "side-by-side"
 }
 
 // renderConfig groups settings needed to render a diff.
@@ -765,13 +820,7 @@ func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 
 	termWidth := wrapWidth
 	if wrapFlag && termWidth <= 0 {
-		if wFd, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && wFd > 0 {
-			termWidth = wFd
-		} else if colStr := os.Getenv("COLUMNS"); colStr != "" {
-			if cols, err := strconv.Atoi(colStr); err == nil && cols > 0 {
-				termWidth = cols
-			}
-		}
+		termWidth = terminalWidth()
 		if termWidth <= 0 && isTerminal(os.Stdout) {
 			termWidth = 80
 		}
@@ -844,6 +893,7 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 	tabWidth := resolveTabWidth(cmd)
 
 	return sidebyside.RenderOptions{
+		TerminalWidth:      terminalWidth(),
 		Color:              useColor,
 		ContextLines:       contextLines,
 		LineNumbers:        lineNumbers,
@@ -1150,7 +1200,7 @@ func RootCmd() *cobra.Command {
 }
 
 func init() {
-	rootCmd.Flags().StringP("format", "f", "", "Output format: side-by-side, unified (or -u), json, actions (default: side-by-side)")
+	rootCmd.Flags().StringP("format", "f", "", "Output format: side-by-side, unified (or -u), json, actions, auto (default: auto, side-by-side if width >= 120)")
 	rootCmd.Flags().BoolP("unified", "u", false, "Generate unified diff output (equivalent to -f unified)")
 	rootCmd.Flags().BoolP("ignore-comments", "C", false, "Ignore all comments when diffing")
 	rootCmd.Flags().IntP("parse-error-limit", "e", 0, "Maximum parse errors allowed before falling back to line diffing")
@@ -1180,7 +1230,7 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Print version")
 
 	_ = rootCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"side-by-side", "unified", "json", "actions"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"side-by-side", "unified", "json", "actions", "auto"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	_ = rootCmd.RegisterFlagCompletionFunc("color", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"always", "never", "auto"}, cobra.ShellCompDirectiveNoFileComp
