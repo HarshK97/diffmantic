@@ -26,11 +26,15 @@ func IsBrokenPipe(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) {
+	if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) || errors.Is(err, os.ErrClosed) {
 		return true
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "closed pipe")
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "closed pipe") ||
+		strings.Contains(msg, "file already closed") ||
+		strings.Contains(msg, "pipe has been ended") ||
+		strings.Contains(msg, "pipe is being closed")
 }
 
 // Start launches a pager (evaluating $DIFFM_PAGER -> $GIT_PAGER -> core.pager -> $PAGER -> less -RFX)

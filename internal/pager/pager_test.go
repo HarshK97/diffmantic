@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
 	"slices"
 	"syscall"
 	"testing"
@@ -75,11 +77,86 @@ func TestIsBrokenPipe(t *testing.T) {
 	if !IsBrokenPipe(syscall.EPIPE) {
 		t.Error("expected syscall.EPIPE to be broken pipe")
 	}
+	if !IsBrokenPipe(os.ErrClosed) {
+		t.Error("expected os.ErrClosed to be broken pipe")
+	}
 	if !IsBrokenPipe(errors.New("write: broken pipe")) {
 		t.Error("expected broken pipe string error to be broken pipe")
 	}
+	if !IsBrokenPipe(errors.New("write |1: file already closed")) {
+		t.Error("expected file already closed string error to be broken pipe")
+	}
+	if !IsBrokenPipe(errors.New("write |1: The pipe has been ended.")) {
+		t.Error("expected windows pipe has been ended error to be broken pipe")
+	}
+	if !IsBrokenPipe(errors.New("write |1: The pipe is being closed.")) {
+		t.Error("expected windows pipe is being closed error to be broken pipe")
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create os.Pipe: %v", err)
+	}
+	_ = r.Close()
+	_ = w.Close()
+	_, writeErr := w.Write([]byte("test"))
+	if !IsBrokenPipe(writeErr) {
+		t.Errorf("expected write on closed pipe (%v) to be broken pipe", writeErr)
+	}
+
 	if IsBrokenPipe(errors.New("some other error")) {
 		t.Error("expected other error to not be broken pipe")
+	}
+}
+
+func TestIsBrokenPipe_OSKernelPipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create os.Pipe: %v", err)
+	}
+	_ = r.Close()
+	defer func() { _ = w.Close() }()
+
+	var writeErr error
+	for i := 0; i < 1000; i++ {
+		_, writeErr = w.Write([]byte("test data to trigger kernel broken pipe\n"))
+		if writeErr != nil {
+			break
+		}
+	}
+	if writeErr == nil {
+		t.Fatal("expected write to pipe with closed reader to fail, got nil")
+	}
+	if !IsBrokenPipe(writeErr) {
+		t.Errorf("expected kernel write error (%v) to be broken pipe on %s", writeErr, runtime.GOOS)
+	}
+}
+
+func TestIsBrokenPipe_SubprocessExit(t *testing.T) {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd.exe", "/c", "exit 0")
+	} else {
+		cmd = exec.Command("true")
+	}
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("StdinPipe failed: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("cmd.Start failed: %v", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("cmd.Wait failed: %v", err)
+	}
+
+	_, writeErr := stdin.Write([]byte("payload after subprocess exit\n"))
+	if writeErr == nil {
+		t.Fatal("expected write after child exit to fail, got nil")
+	}
+	if !IsBrokenPipe(writeErr) {
+		t.Errorf("expected write error after child exit (%v) to be broken pipe on %s", writeErr, runtime.GOOS)
 	}
 }
 
