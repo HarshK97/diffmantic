@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -300,8 +301,11 @@ func TestFlagAutocompletion(t *testing.T) {
 		t.Fatal("expected flag completion function for --format")
 	}
 	formats, dir := formatFn(rootCmd, nil, "")
-	if len(formats) != 4 || dir != cobra.ShellCompDirectiveNoFileComp {
+	if len(formats) != 5 || dir != cobra.ShellCompDirectiveNoFileComp {
 		t.Errorf("unexpected --format completions: %v, directive: %d", formats, dir)
+	}
+	if !slices.Contains(formats, "auto") {
+		t.Errorf("expected --format completions to contain \"auto\", got %v", formats)
 	}
 
 	colorFn, ok := rootCmd.GetFlagCompletionFunc("color")

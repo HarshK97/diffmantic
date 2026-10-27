@@ -210,7 +210,7 @@ func RenderLongHelp(cmd *cobra.Command, colorize bool) string {
 	buf.WriteString("    variables. Command-line flags always take precedence over environment\n")
 	buf.WriteString("    variables.\n\n")
 	buf.WriteString("    " + bold("DIFFM_FORMAT") + "\n")
-	buf.WriteString("        Default diff output format (side-by-side, unified, json, actions).\n\n")
+	buf.WriteString("        Default diff output format (side-by-side, unified, json, actions, auto).\n\n")
 	buf.WriteString("    " + bold("DIFFM_COLOR") + "\n")
 	buf.WriteString("        Color output mode (always, never, auto).\n\n")
 	buf.WriteString("    " + bold("DIFFM_TAB_WIDTH") + "\n")

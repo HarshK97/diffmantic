@@ -1371,10 +1371,11 @@ func TestE2E_StreamMode_PipeGitDiffSBS(t *testing.T) {
 		t.Fatalf("git diff failed: %v", err)
 	}
 
-	// Pipe git diff into diffm --no-pager (default SBS mode)
+	// Force a 140-column width so auto-format selects side-by-side in headless test runners.
 	diffmCmd := exec.Command(binaryPath, "--no-pager")
 	diffmCmd.Dir = repoDir
 	diffmCmd.Stdin = bytes.NewReader(diffBytes)
+	diffmCmd.Env = append(os.Environ(), "COLUMNS=140")
 	outBytes, err := diffmCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("diffm stream failed: %v\nOutput: %s", err, string(outBytes))

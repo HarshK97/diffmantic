@@ -64,14 +64,14 @@ func Process(in io.Reader, out io.Writer, cwd string, cfg StreamConfig) error {
 			return nil
 		}
 
-		// Need both paths and object IDs to run an AST diff — fall back to raw Git text.
+		// Need both paths and object IDs to run an AST diff, fall back to raw Git text.
 		if current.oldPath == "" || current.newPath == "" || current.oldOID == "" || current.newOID == "" {
 			return dumpLines(out, current.lines)
 		}
 
 		oldBytes, newBytes, err := fetchBuffers(cwd, current, session, gitAvailable)
 		if err != nil {
-			// Blob fetch failed (e.g. shallow clone, untracked file) — fall back to raw text.
+			// Blob fetch failed (e.g. shallow clone, untracked file), fall back to raw text.
 			return dumpLines(out, current.lines)
 		}
 
