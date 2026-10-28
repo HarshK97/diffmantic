@@ -51,8 +51,10 @@ type EnvelopeOptions struct {
 type FallbackReason string
 
 const (
-	FallbackReasonNone       FallbackReason = ""
-	FallbackReasonParseError FallbackReason = "parse_error"
+	FallbackReasonNone                FallbackReason = ""
+	FallbackReasonParseError          FallbackReason = "parse_error"
+	FallbackReasonUnsupportedLanguage FallbackReason = "unsupported_language"
+	FallbackReasonMismatchedLanguages FallbackReason = "mismatched_languages"
 )
 
 // FallbackAnnotationParseError is the user-facing terminal badge text for parse errors.

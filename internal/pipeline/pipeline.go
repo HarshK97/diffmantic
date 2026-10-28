@@ -118,17 +118,6 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	langA, _ := treesitter.DetectLanguage(srcFile)
 	langB, _ := treesitter.DetectLanguage(dstFile)
 
-	// If tree-sitter doesn't support the language, fall back to line diffing.
-	if langA == nil && langB == nil {
-		return &DiffResult{
-			SrcBytes: srcBytes,
-			DstBytes: dstBytes,
-			SrcFile:  srcFile,
-			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
-		}, nil
-	}
-
 	if langA == nil && len(srcBytes) == 0 {
 		langA = langB
 	}
@@ -137,14 +126,20 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	}
 
 	// If either language is unknown or languages differ (cross-language diff),
-	// fall back to clean line diffing without parse error annotation.
+	// fall back to clean line diffing without a terminal parse error annotation.
 	if langA == nil || langB == nil || langA.Name != langB.Name {
+		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
+		if langA == nil || langB == nil {
+			env.FallbackReason = serialize.FallbackReasonUnsupportedLanguage
+		} else {
+			env.FallbackReason = serialize.FallbackReasonMismatchedLanguages
+		}
 		return &DiffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,
 			SrcFile:  srcFile,
 			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
+			Envelope: env,
 		}, nil
 	}
 

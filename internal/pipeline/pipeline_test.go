@@ -300,7 +300,7 @@ func f() {
 	}
 }
 
-func TestPipeline_ParseErrorFallbackDemarcation(t *testing.T) {
+func TestPipeline_ParseErrorFallbackBoundary(t *testing.T) {
 	validGo := []byte("package main\n\nfunc main() {\n\tx := 10\n}\n")
 	brokenGo := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
 	plainText := []byte("This is plain text documentation.\nNot Go code at all.\n")
@@ -332,24 +332,47 @@ func TestPipeline_ParseErrorFallbackDemarcation(t *testing.T) {
 		if res.MatchResult != nil {
 			t.Error("expected MatchResult to be nil on cross-language diff")
 		}
-		if res.Envelope.FallbackReason != "" || res.Envelope.FallbackAnnotation != "" {
-			t.Errorf("expected empty FallbackReason and FallbackAnnotation on asymmetric diff, got reason=%q, annotation=%q",
-				res.Envelope.FallbackReason, res.Envelope.FallbackAnnotation)
+		if res.Envelope.FallbackReason != serialize.FallbackReasonUnsupportedLanguage {
+			t.Errorf("expected FallbackReason %q on asymmetric diff, got %q",
+				serialize.FallbackReasonUnsupportedLanguage, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation on asymmetric diff, got annotation=%q", res.Envelope.FallbackAnnotation)
 		}
 	})
 
-	t.Run("DisparateLanguagesDoNotTriggerParseError", func(t *testing.T) {
+	t.Run("BothUnsupportedLanguages", func(t *testing.T) {
+		res, err := Run(plainText, plainText, "README.txt", "CHANGES.txt", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult != nil {
+			t.Error("expected MatchResult to be nil on unsupported language diff")
+		}
+		if res.Envelope.FallbackReason != serialize.FallbackReasonUnsupportedLanguage {
+			t.Errorf("expected FallbackReason %q on unsupported language diff, got %q",
+				serialize.FallbackReasonUnsupportedLanguage, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation on unsupported language diff, got annotation=%q", res.Envelope.FallbackAnnotation)
+		}
+	})
+
+	t.Run("MismatchedLanguagesDoNotTriggerParseError", func(t *testing.T) {
 		pyCode := []byte("def hello():\n    print('hi')\n")
 		res, err := Run(validGo, pyCode, "main.go", "script.py", DiffOptions{ParseErrorLimit: 0})
 		if err != nil {
 			t.Fatalf("unexpected Run error: %v", err)
 		}
 		if res.MatchResult != nil {
-			t.Error("expected MatchResult to be nil on disparate language diff")
+			t.Error("expected MatchResult to be nil on mismatched language diff")
 		}
-		if res.Envelope.FallbackReason != "" || res.Envelope.FallbackAnnotation != "" {
-			t.Errorf("expected empty FallbackReason and FallbackAnnotation on disparate language diff, got reason=%q, annotation=%q",
-				res.Envelope.FallbackReason, res.Envelope.FallbackAnnotation)
+		if res.Envelope.FallbackReason != serialize.FallbackReasonMismatchedLanguages {
+			t.Errorf("expected FallbackReason %q on mismatched language diff, got %q",
+				serialize.FallbackReasonMismatchedLanguages, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation on mismatched language diff, got annotation=%q", res.Envelope.FallbackAnnotation)
 		}
 	})
 
