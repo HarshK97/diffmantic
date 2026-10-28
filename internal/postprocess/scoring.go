@@ -632,3 +632,41 @@ func isLocalVariableExtraction(src, dst, srcStmt, dstStmt *treesitter.ASTNode, m
 	}
 	return dstCount == 1
 }
+
+// isDecomposedExpressionMove checks whether src was split across statements while
+// leaving some of its clauses behind in the original statement.
+func isDecomposedExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || ms == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(src.GetLanguage()))
+	if r == nil {
+		return false
+	}
+	if (!r.IsExpression(src.Type) && !r.IsWrapper(src.Type)) || len(src.Children) == 0 {
+		return false
+	}
+
+	srcStmt := engine.FindImmediateStatement(src, r)
+	dstStmt := engine.FindImmediateStatement(dst, r)
+	if srcStmt == nil || dstStmt == nil {
+		return false
+	}
+	mappedSrcStmt := ms.Src()[srcStmt]
+	if mappedSrcStmt == nil || mappedSrcStmt == dstStmt {
+		return false
+	}
+
+	// If any content token stayed in the original statement outside dstStmt, the expression was split.
+	isSplitLeaf := func(d *treesitter.ASTNode) bool {
+		if !isPayloadLeaf(d, r) {
+			return false
+		}
+		dDst, ok := ms.Src()[d]
+		return ok && mappedSrcStmt.Contains(dDst) && !dstStmt.Contains(dDst)
+	}
+	if idx := src.Index; idx != nil && src.PreSize > 0 {
+		return slices.ContainsFunc(idx.Nodes[src.ID+1:src.ID+src.PreSize], isSplitLeaf)
+	}
+	return slices.ContainsFunc(src.Descendants(), isSplitLeaf)
+}
