@@ -26,6 +26,7 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 	evicted := make(map[*treesitter.ASTNode]struct{})
 
 	explicitMoves := make(map[*treesitter.ASTNode]bool)
+	promotedNodes := make(map[*treesitter.ASTNode]bool)
 	for _, a := range es.Actions() {
 		if a.Type == actions.Move && a.Node != nil {
 			explicitMoves[a.Node] = true
@@ -84,11 +85,17 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			evicted[a.Node] = struct{}{}
 			changed = true
 
+			// If a compound expression was split across statements, promote any
+			// extracted clauses before evicting descendants so their moves survive.
+			if isDecomposedExpressionMove(a.Node, dstNode, ms, r) {
+				promoteDecomposedChildMoves(a.Node, dstNode, ms, r, explicitMoves, promotedNodes, es)
+			}
+
 			// Children without their own Move only moved as part of a.Node. Evict them
 			// first so isSubtreeDemotion doesn't count them as surviving inside dstNode.
 			for _, d := range a.Node.Descendants() {
 				if dDst, ok := ms.Src()[d]; ok && dstNode.Contains(dDst) {
-					if !explicitMoves[d] {
+					if !explicitMoves[d] && !promotedNodes[d] {
 						demotedDescendants[d] = struct{}{}
 						evicted[d] = struct{}{}
 					}
@@ -288,6 +295,15 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		return false
 	}
 
+	if isIsolatedLeafCrossStatementMove(src, dst, ms, r) {
+		return true
+	}
+
+	// When an expression is split across statements, demote the outer container
+	// if some of its clauses stayed behind in the original statement.
+	if isDecomposedExpressionMove(src, dst, ms, r) {
+		return true
+	}
 	// Keep the move when an intermediate wrapper around src was removed
 	// and src now sits directly inside the same matched outer container.
 	if src.Parent != nil && dst.Parent != nil && src.Parent.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
@@ -395,4 +411,74 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	}
 
 	return score < threshold
+}
+
+// promoteDecomposedChildMoves turns extracted sub-expressions into standalone
+// Move actions before their parent expression gets demoted and its children evicted.
+func promoteDecomposedChildMoves(
+	parent, dstNode *treesitter.ASTNode,
+	ms *engine.Mapping,
+	r *rules.Rules,
+	explicitMoves map[*treesitter.ASTNode]bool,
+	promotedNodes map[*treesitter.ASTNode]bool,
+	es *actions.EditScript,
+) {
+	if parent == nil || dstNode == nil || ms == nil || r == nil {
+		return
+	}
+	srcStmt := engine.FindImmediateStatement(parent, r)
+	if srcStmt == nil {
+		return
+	}
+	mappedSrcStmt := ms.Src()[srcStmt]
+	if mappedSrcStmt == nil {
+		return
+	}
+	for _, childSrc := range parent.Children {
+		if childSrc.IsAnonymous() {
+			continue
+		}
+		childDst, ok := ms.Src()[childSrc]
+		if ok && childDst != nil {
+			if !dstNode.Contains(childDst) && childDst != dstNode {
+				if len(childSrc.Children) > 0 {
+					promoteDecomposedChildMoves(childSrc, dstNode, ms, r, explicitMoves, promotedNodes, es)
+				}
+				continue
+			}
+			if isDecomposedExpressionMove(childSrc, childDst, ms, r) {
+				promoteDecomposedChildMoves(childSrc, childDst, ms, r, explicitMoves, promotedNodes, es)
+				continue
+			}
+			dstStmt := engine.FindImmediateStatement(childDst, r)
+			if dstStmt == nil || mappedSrcStmt == dstStmt {
+				continue
+			}
+			if !hasPayloadLeaves(childSrc, r) {
+				continue
+			}
+			score := moveStructuralScore(childSrc, r, ms)
+			thresh := requiredMoveThreshold(childSrc, childDst, ms, r)
+			if score < thresh {
+				continue
+			}
+			promotedNodes[childSrc] = true
+			for _, cd := range childSrc.Descendants() {
+				promotedNodes[cd] = true
+			}
+			if !explicitMoves[childSrc] {
+				explicitMoves[childSrc] = true
+				es.Add(actions.Action{
+					Type:     actions.Move,
+					Node:     childSrc,
+					DestNode: childDst,
+					Parent:   childDst.Parent,
+					Position: childDst.ChildIndex(),
+					Subtree:  len(childSrc.Children) > 0,
+				})
+			}
+		} else if len(childSrc.Children) > 0 {
+			promoteDecomposedChildMoves(childSrc, dstNode, ms, r, explicitMoves, promotedNodes, es)
+		}
+	}
 }

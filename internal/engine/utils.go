@@ -546,6 +546,32 @@ func FindEnclosingStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.A
 	return n
 }
 
+// FindImmediateStatement returns the nearest enclosing statement or branch.
+// Unlike FindEnclosingStatement, it stops at chained else-if branches or
+// case clauses instead of climbing all the way to the enclosing block.
+func FindImmediateStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rules.Get(n.GetLanguage()))
+	for curr := n; curr != nil; curr = curr.Parent {
+		if isStatementOrBranch(curr, r) {
+			return curr
+		}
+	}
+	return n
+}
+
+func isStatementOrBranch(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r != nil {
+		return r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type)
+	}
+	return rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type)
+}
+
 // Treat case clauses as statement blocks because they hold statements directly without curly braces.
 func isStatementBlock(p *treesitter.ASTNode, r *rules.Rules) bool {
 	if p == nil {

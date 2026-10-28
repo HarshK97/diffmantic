@@ -1481,3 +1481,175 @@ func sortItems(scored any) {
 		}
 	}
 }
+
+func TestDecomposedExpressionMoveDemotion(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("go")
+		ms := engine.NewMapping()
+
+		// src: if rawType == "ERROR" || missingFlag { count++ }
+		leafRawSrc := mkNode("identifier", "rawType")
+		leafErrSrc := mkNode("string_literal", `"ERROR"`)
+		eqSrc := mkNode("binary_expression", "", leafRawSrc, mkNode("==", "=="), leafErrSrc)
+
+		leafFlagSrc := mkNode("identifier", "missingFlag")
+		parenSrc := mkNode("parenthesized_expression", "", leafFlagSrc)
+
+		compoundSrc := mkNode("binary_expression", "", eqSrc, mkNode("||", "||"), parenSrc)
+		srcBody := mkNode("block", "", mkNode("inc_statement", ""))
+		srcIf := mkNode("if_statement", "", compoundSrc, srcBody)
+		setLanguageRecursive(srcIf, "go")
+
+		// dst:
+		// if rawType == "ERROR" { count++ }
+		// else if missingFlag { missing++ }
+		leafRawDst := mkNode("identifier", "rawType")
+		leafErrDst := mkNode("string_literal", `"ERROR"`)
+		eqDst := mkNode("binary_expression", "", leafRawDst, mkNode("==", "=="), leafErrDst)
+		dstBody1 := mkNode("block", "", mkNode("inc_statement", ""))
+		dstIf := mkNode("if_statement", "", eqDst, dstBody1)
+
+		leafFlagDst := mkNode("identifier", "missingFlag")
+		parenDst := mkNode("parenthesized_expression", "", leafFlagDst)
+		dstBody2 := mkNode("block", "", mkNode("inc_statement", ""))
+		elseIf := mkNode("if_statement", "", parenDst, dstBody2)
+		setLanguageRecursive(dstIf, "go")
+		setLanguageRecursive(elseIf, "go")
+
+		// Map stationary parts to dstIf
+		ms.Add(srcIf, dstIf)
+		ms.Add(leafRawSrc, leafRawDst)
+		ms.Add(leafErrSrc, leafErrDst)
+		ms.Add(eqSrc, eqDst)
+
+		// Map extracted clause to elseIf
+		ms.Add(leafFlagSrc, leafFlagDst)
+		ms.Add(parenSrc, parenDst)
+
+		// When compoundSrc is mapped to elseIf condition, it is decomposed because
+		// eqSrc stayed in dstIf (the mapped srcStmt) outside elseIf.
+		if !isDecomposedExpressionMove(compoundSrc, parenDst, ms, r) {
+			t.Errorf("expected isDecomposedExpressionMove to return true for split compound expression")
+		}
+
+		// Non-split expression should return false
+		if isDecomposedExpressionMove(eqSrc, eqDst, ms, r) {
+			t.Errorf("expected isDecomposedExpressionMove to return false when all clauses stay in mapped statement")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package test
+func f(rawType string, fn Node) {
+	startTimer()
+	if rawType == "ERROR" || (fn.Flags&FlatNodeError != 0) || (fn.Flags&FlatNodeMissing != 0) {
+		errCount++
+	}
+	logSummary()
+}
+`)
+		dst := []byte(`package test
+func f(rawType string, fn Node) {
+	startTimer()
+	if rawType == "ERROR" || (fn.Flags&FlatNodeError != 0) {
+		errorCount++
+	} else if (fn.Flags&FlatNodeMissing != 0) || strings.HasPrefix(rawType, "MISSING") {
+		missingCount++
+	}
+	logSummary()
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// Clauses that stayed on the outer if statement should stay as context.
+		// Only the clause extracted into the else-if should be a Move.
+		var moveActions []actions.Action
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move {
+				moveActions = append(moveActions, a)
+			}
+		}
+
+		if len(moveActions) != 1 {
+			t.Fatalf("expected exactly 1 move action for the extracted clause, got %d: %+v", len(moveActions), moveActions)
+		}
+
+		movedNode := moveActions[0].Node
+		movedText := string(src[movedNode.StartByte:movedNode.EndByte])
+		if movedText != "(fn.Flags&FlatNodeMissing != 0)" {
+			t.Errorf("expected moved node text to be '(fn.Flags&FlatNodeMissing != 0)', got %q", movedText)
+		}
+
+		// The moved clause shouldn't have any deleted children.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Delete && movedNode.Contains(a.Node) {
+				t.Errorf("unexpected Delete action on descendant of moved node: %s %s", a.Node.Type, string(src[a.Node.StartByte:a.Node.EndByte]))
+			}
+		}
+	})
+}
+
+func TestDecomposedExpressionMovePromotion_NestedClauseRecursed(t *testing.T) {
+	src := []byte(`package test
+func f(idx int) {
+	initCount()
+	if idx > 0 && idx+1 < len(t1.Children) && idx+1 < len(t2.Children) {
+		foo()
+	}
+	finish()
+}
+`)
+	dst := []byte(`package test
+func f(idx int) {
+	initCount()
+	if idx > 0 && idx < len(t2.Children) {
+		foo()
+	}
+	if idx+1 < len(t1.Children) && idx+1 < len(t2.Children) {
+		bar()
+	}
+	finish()
+}
+`)
+
+	srcAST, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+	// Both idx+1 < len(t1.Children) and idx+1 < len(t2.Children) should survive as moves.
+	moves := make(map[string]bool)
+	for _, a := range normalized.Actions() {
+		if a.Type == actions.Move && a.Node != nil {
+			txt := string(src[a.Node.StartByte:a.Node.EndByte])
+			moves[txt] = true
+		}
+	}
+
+	if !moves["idx+1 < len(t1.Children)"] {
+		t.Errorf("expected idx+1 < len(t1.Children) to be preserved as a move, moves: %+v", moves)
+	}
+	if !moves["idx+1 < len(t2.Children)"] {
+		t.Errorf("expected idx+1 < len(t2.Children) to be preserved as a move, moves: %+v", moves)
+	}
+}
