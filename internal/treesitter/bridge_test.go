@@ -198,3 +198,33 @@ func foo() {
 		t.Errorf("unexpected DanglingTrivia on root: %q", root.DanglingTrivia[0].Text)
 	}
 }
+
+func TestParseErrorDetection(t *testing.T) {
+	t.Run("ValidCode", func(t *testing.T) {
+		validSrc := []byte("package main\n\nfunc main() {\n\tx := 10\n}\n")
+		validRoot, err := treesitter.ParseWithLanguage(validSrc, "go")
+		if err != nil {
+			t.Fatalf("ParseWithLanguage failed: %v", err)
+		}
+		if validRoot.HasError {
+			t.Errorf("expected HasError=false for valid code")
+		}
+		if validRoot.ParseErrorCount != 0 {
+			t.Errorf("expected ParseErrorCount=0, got %d", validRoot.ParseErrorCount)
+		}
+	})
+
+	t.Run("SyntaxError", func(t *testing.T) {
+		errSrc := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
+		errRoot, err := treesitter.ParseWithLanguage(errSrc, "go")
+		if err != nil {
+			t.Fatalf("ParseWithLanguage failed: %v", err)
+		}
+		if !errRoot.HasError {
+			t.Errorf("expected HasError=true for syntax error code")
+		}
+		if errRoot.ParseErrorCount == 0 {
+			t.Errorf("expected ParseErrorCount > 0 for syntax error code")
+		}
+	})
+}

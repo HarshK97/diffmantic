@@ -193,6 +193,16 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 	var meta renderutil.MoveBadges
 	if !opts.DisableAnnotations {
 		meta = renderutil.BuildMoveBadges(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r, true)
+		if env.FallbackAnnotation != "" && !opts.SuppressHunkFallbackAnnotation {
+			if meta.HunkHeaders == nil {
+				meta.HunkHeaders = make(map[int]string)
+			}
+			if existing, ok := meta.HunkHeaders[0]; ok && existing != "" {
+				meta.HunkHeaders[0] = existing + " " + env.FallbackAnnotation
+			} else {
+				meta.HunkHeaders[0] = " " + env.FallbackAnnotation
+			}
+		}
 	}
 
 	var slicer renderutil.Slicer

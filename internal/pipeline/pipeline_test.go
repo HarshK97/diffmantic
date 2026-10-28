@@ -299,3 +299,106 @@ func f() {
 		t.Errorf("expected trailing semicolon on line 3 to be deleted, highlights: %+v", res.Envelope.LeftHighlights)
 	}
 }
+
+func TestPipeline_ParseErrorFallbackBoundary(t *testing.T) {
+	validGo := []byte("package main\n\nfunc main() {\n\tx := 10\n}\n")
+	brokenGo := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
+	plainText := []byte("This is plain text documentation.\nNot Go code at all.\n")
+
+	t.Run("SyntaxErrorTriggersParseErrorFallback", func(t *testing.T) {
+		res, err := Run(validGo, brokenGo, "a.go", "b.go", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult != nil {
+			t.Error("expected MatchResult to be nil on parse error fallback")
+		}
+		if res.SrcAST != nil || res.DstAST != nil {
+			t.Errorf("expected SrcAST and DstAST to be nil on fallback, got src=%v, dst=%v", res.SrcAST, res.DstAST)
+		}
+		if res.Envelope.FallbackReason != serialize.FallbackReasonParseError {
+			t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonParseError, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != serialize.FallbackAnnotationParseError {
+			t.Errorf("expected FallbackAnnotation %q, got %q", serialize.FallbackAnnotationParseError, res.Envelope.FallbackAnnotation)
+		}
+	})
+
+	t.Run("AsymmetricUnsupportedVsSupportedDoesNotTriggerParseError", func(t *testing.T) {
+		res, err := Run(plainText, validGo, "README.txt", "main.go", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult != nil {
+			t.Error("expected MatchResult to be nil on cross-language diff")
+		}
+		if res.Envelope.FallbackReason != serialize.FallbackReasonUnsupportedLanguage {
+			t.Errorf("expected FallbackReason %q on asymmetric diff, got %q",
+				serialize.FallbackReasonUnsupportedLanguage, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation on asymmetric diff, got annotation=%q", res.Envelope.FallbackAnnotation)
+		}
+	})
+
+	t.Run("BothUnsupportedLanguages", func(t *testing.T) {
+		res, err := Run(plainText, plainText, "README.txt", "CHANGES.txt", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult != nil {
+			t.Error("expected MatchResult to be nil on unsupported language diff")
+		}
+		if res.Envelope.FallbackReason != serialize.FallbackReasonUnsupportedLanguage {
+			t.Errorf("expected FallbackReason %q on unsupported language diff, got %q",
+				serialize.FallbackReasonUnsupportedLanguage, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation on unsupported language diff, got annotation=%q", res.Envelope.FallbackAnnotation)
+		}
+	})
+
+	t.Run("MismatchedLanguagesDoNotTriggerParseError", func(t *testing.T) {
+		pyCode := []byte("def hello():\n    print('hi')\n")
+		res, err := Run(validGo, pyCode, "main.go", "script.py", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult != nil {
+			t.Error("expected MatchResult to be nil on mismatched language diff")
+		}
+		if res.Envelope.FallbackReason != serialize.FallbackReasonMismatchedLanguages {
+			t.Errorf("expected FallbackReason %q on mismatched language diff, got %q",
+				serialize.FallbackReasonMismatchedLanguages, res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation on mismatched language diff, got annotation=%q", res.Envelope.FallbackAnnotation)
+		}
+	})
+
+	t.Run("EmptyFileInheritsPeerLanguageForValidCode", func(t *testing.T) {
+		res, err := Run([]byte{}, validGo, "/dev/null", "main.go", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult == nil {
+			t.Error("expected AST MatchResult when new file has valid code")
+		}
+		if res.Envelope.FallbackReason != "" {
+			t.Errorf("expected empty FallbackReason for valid new file, got %q", res.Envelope.FallbackReason)
+		}
+	})
+
+	t.Run("EmptyFileInheritsPeerLanguageForBrokenCode", func(t *testing.T) {
+		res, err := Run([]byte{}, brokenGo, "/dev/null", "main.go", DiffOptions{ParseErrorLimit: 0})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult != nil {
+			t.Error("expected MatchResult to be nil on broken new file")
+		}
+		if res.Envelope.FallbackReason != serialize.FallbackReasonParseError {
+			t.Errorf("expected FallbackReason %q on broken new file, got %q", serialize.FallbackReasonParseError, res.Envelope.FallbackReason)
+		}
+	})
+}

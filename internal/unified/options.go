@@ -11,6 +11,8 @@ type RenderOptions struct {
 	LineNumbers bool
 	// DisableAnnotations hides AST move and shift badges from line output.
 	DisableAnnotations bool
+	// SuppressHunkFallbackAnnotation stops hunk headers from repeating the fallback tag when the file banner already shows it.
+	SuppressHunkFallbackAnnotation bool
 	// Wrap enables soft line wrapping to fit the terminal width.
 	Wrap bool
 	// TerminalWidth is the wrap boundary (0 to auto-detect from the terminal).

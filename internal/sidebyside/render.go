@@ -180,6 +180,16 @@ func Render(
 		srcLineBadgeColors = badges.SrcLineBadgeColors
 		dstLineBadgeColors = badges.DstLineBadgeColors
 		hunkHeaders = badges.HunkHeaders
+		if env.FallbackAnnotation != "" && !opts.SuppressHunkFallbackAnnotation {
+			if hunkHeaders == nil {
+				hunkHeaders = make(map[int]string)
+			}
+			if existing, ok := hunkHeaders[0]; ok && existing != "" {
+				hunkHeaders[0] = existing + " " + env.FallbackAnnotation
+			} else {
+				hunkHeaders[0] = " " + env.FallbackAnnotation
+			}
+		}
 	}
 
 	scratch := &RenderScratch{TabWidth: opts.TabWidth}
@@ -188,11 +198,15 @@ func Render(
 	hasSrc := len(srcBytes) > 0 && srcFile != os.DevNull && srcFile != "/dev/null"
 	hasDst := len(dstBytes) > 0 && dstFile != os.DevNull && dstFile != "/dev/null"
 
+	extra := ""
+	if !opts.DisableAnnotations && !opts.SuppressHunkFallbackAnnotation && env.FallbackAnnotation != "" {
+		extra = " " + env.FallbackAnnotation
+	}
 	if len(srcBytes) == 0 && !opts.ForceSideBySide {
-		return renderWholeFileSingleColumn(dstLines, rightSpansByLine, dstLineBadges, numWidth, termWidth, opts, scratch, color.ActionInsert, w, dstEndsWithNL)
+		return renderWholeFileSingleColumn(dstLines, rightSpansByLine, dstLineBadges, numWidth, termWidth, opts, scratch, color.ActionInsert, w, dstEndsWithNL, extra)
 	}
 	if len(dstBytes) == 0 && !opts.ForceSideBySide {
-		return renderWholeFileSingleColumn(srcLines, leftSpansByLine, srcLineBadges, numWidth, termWidth, opts, scratch, color.ActionDelete, w, srcEndsWithNL)
+		return renderWholeFileSingleColumn(srcLines, leftSpansByLine, srcLineBadges, numWidth, termWidth, opts, scratch, color.ActionDelete, w, srcEndsWithNL, extra)
 	}
 
 	for i, h := range hunks {
@@ -539,12 +553,13 @@ func renderWholeFileSingleColumn(
 	action color.ActionKind,
 	w io.Writer,
 	endsWithNL bool,
+	extra string,
 ) error {
 	var hunkHeader string
 	if action == color.ActionInsert {
-		hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, len(lines), "")
+		hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, len(lines), extra)
 	} else {
-		hunkHeader = renderutil.FormatHunkHeader(1, len(lines), 0, 0, "")
+		hunkHeader = renderutil.FormatHunkHeader(1, len(lines), 0, 0, extra)
 	}
 	if opts.Color {
 		_, _ = fmt.Fprintf(w, "%s%s%s\n", color.HeaderFg, hunkHeader, color.Reset)
@@ -792,8 +807,8 @@ func CountLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	return ins, del, upd
 }
 
-// RenderFileBanner prints a header with the file path and change stats.
-func RenderFileBanner(path string, insertions, deletions, updates int, colorMode bool, w io.Writer) error {
+// RenderFileBanner prints a header with the file path, change stats, and optional annotation.
+func RenderFileBanner(path string, insertions, deletions, updates int, annotation string, colorMode bool, w io.Writer) error {
 	if !colorMode {
 		var stats string
 		if insertions == 0 && deletions == 0 && updates == 0 {
@@ -802,6 +817,9 @@ func RenderFileBanner(path string, insertions, deletions, updates int, colorMode
 			stats = fmt.Sprintf("[+%d -%d]", insertions, deletions)
 		} else {
 			stats = fmt.Sprintf("[+%d -%d ~%d]", insertions, deletions, updates)
+		}
+		if annotation != "" {
+			stats += "  " + annotation
 		}
 		_, err := fmt.Fprintf(w, "%s  %s\n", path, stats)
 		return err
@@ -823,6 +841,9 @@ func RenderFileBanner(path string, insertions, deletions, updates int, colorMode
 			color.DeleteFg, deletions, color.Reset,
 			color.UpdateFg, updates, color.Reset,
 		)
+	}
+	if annotation != "" {
+		statStr += fmt.Sprintf("  %s%s%s", color.UpdateFg, annotation, color.Reset)
 	}
 
 	_, err := fmt.Fprintf(w, "%s  %s%s\n", title, statStr, color.Reset)

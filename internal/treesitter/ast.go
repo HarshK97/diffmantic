@@ -47,7 +47,7 @@ type ASTNode struct {
 	EndCol          uint32
 	Language        string // Set on root node only
 	HasError        bool   // True if parse tree contained any ERROR nodes
-	ParseErrorCount int    // Total count of ERROR nodes in parse tree
+	ParseErrorCount int    // Total count of ERROR and MISSING nodes in parse tree
 	IsKeyword       bool   // True if node is a keyword token
 	IsUnordered     bool   // True if children of this container node are order-insensitive
 

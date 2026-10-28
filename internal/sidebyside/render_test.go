@@ -262,6 +262,76 @@ func TestRender_NarrowWidthFallback(t *testing.T) {
 	}
 }
 
+func TestRender_SideBySideFallbackAnnotation(t *testing.T) {
+	src := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
+	dst := []byte("package main\n\nfunc main() {\n\tx := 1\n}\n")
+
+	env := &serialize.Envelope{
+		FallbackReason:     serialize.FallbackReasonParseError,
+		FallbackAnnotation: serialize.FallbackAnnotationParseError,
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: 1},
+			{LeftLine: 2, RightLine: 2},
+			{LeftLine: 3, RightLine: -1},
+			{LeftLine: -1, RightLine: 3},
+			{LeftLine: 4, RightLine: 4},
+		},
+		Actions: []serialize.Action{
+			{Action: "delete", Node: &serialize.NodeRef{Tree: "before", StartByte: 29, EndByte: 35}},
+			{Action: "insert", Node: &serialize.NodeRef{Tree: "after", StartByte: 29, EndByte: 37}},
+		},
+	}
+
+	opts := RenderOptions{
+		TerminalWidth:   120,
+		ContextLines:    3,
+		LineNumbers:     true,
+		Color:           false,
+		ForceSideBySide: true,
+	}
+
+	t.Run("DefaultEnabled", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := Render("a.go", "b.go", src, dst, env, opts, &buf)
+		if err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "@@ -1,5 +1,5 @@ [parse error, falling back to line diff]") {
+			t.Errorf("expected hunk header to contain fallback annotation, got:\n%s", out)
+		}
+	})
+
+	t.Run("AnnotationsDisabled", func(t *testing.T) {
+		optsDisabled := opts
+		optsDisabled.DisableAnnotations = true
+		var buf bytes.Buffer
+		err := Render("a.go", "b.go", src, dst, env, optsDisabled, &buf)
+		if err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		outDisabled := buf.String()
+		if strings.Contains(outDisabled, "[parse error, falling back to line diff]") {
+			t.Errorf("expected fallback annotation suppressed when DisableAnnotations=true, got:\n%s", outDisabled)
+		}
+	})
+
+	t.Run("SuppressHunkFallbackAnnotation", func(t *testing.T) {
+		optsSuppressed := opts
+		optsSuppressed.SuppressHunkFallbackAnnotation = true
+		var buf bytes.Buffer
+		err := Render("a.go", "b.go", src, dst, env, optsSuppressed, &buf)
+		if err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		outSuppressed := buf.String()
+		if strings.Contains(outSuppressed, "[parse error, falling back to line diff]") {
+			t.Errorf("expected fallback annotation suppressed from hunk when SuppressHunkFallbackAnnotation=true, got:\n%s", outSuppressed)
+		}
+	})
+}
+
 func TestRenderFileBanner(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -269,6 +339,7 @@ func TestRenderFileBanner(t *testing.T) {
 		insertions int
 		deletions  int
 		updates    int
+		annotation string
 		colorMode  bool
 		want       string
 	}{
@@ -305,12 +376,31 @@ func TestRenderFileBanner(t *testing.T) {
 			colorMode:  true,
 			want:       "\x1b[1m\x1b[1;94mpkg/auth/token.go\x1b[0m  [\x1b[32m+1\x1b[0m \x1b[31m-2\x1b[0m]\x1b[0m\n",
 		},
+		{
+			name:       "with fallback annotation plain text",
+			path:       "pkg/auth/token.go",
+			insertions: 1,
+			deletions:  2,
+			updates:    0,
+			annotation: serialize.FallbackAnnotationParseError,
+			want:       "pkg/auth/token.go  [+1 -2]  [parse error, falling back to line diff]\n",
+		},
+		{
+			name:       "with fallback annotation color mode",
+			path:       "pkg/auth/token.go",
+			insertions: 1,
+			deletions:  2,
+			updates:    0,
+			annotation: serialize.FallbackAnnotationParseError,
+			colorMode:  true,
+			want:       "\x1b[1m\x1b[1;94mpkg/auth/token.go\x1b[0m  [\x1b[32m+1\x1b[0m \x1b[31m-2\x1b[0m]  \x1b[33m[parse error, falling back to line diff]\x1b[0m\x1b[0m\n",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			err := RenderFileBanner(tt.path, tt.insertions, tt.deletions, tt.updates, tt.colorMode, &buf)
+			err := RenderFileBanner(tt.path, tt.insertions, tt.deletions, tt.updates, tt.annotation, tt.colorMode, &buf)
 			if err != nil {
 				t.Fatalf("RenderFileBanner() error = %v", err)
 			}

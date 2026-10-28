@@ -434,7 +434,7 @@ func renderDiff(out io.Writer, dr *pipeline.DiffResult, h *fileHunk, cfg StreamC
 
 	if dr.IsBinary {
 		if cfg.Format == "side-by-side" || cfg.Format == "" {
-			if err := sidebyside.RenderFileBanner(path, 0, 0, 0, cfg.SideBySideOpts.Color, out); err != nil {
+			if err := sidebyside.RenderFileBanner(path, 0, 0, 0, "", cfg.SideBySideOpts.Color, out); err != nil {
 				return err
 			}
 		}
@@ -476,10 +476,16 @@ func renderDiff(out io.Writer, dr *pipeline.DiffResult, h *fileHunk, cfg StreamC
 		return actions.FprintActions(out, dr.EditScript)
 	default:
 		ins, del, upd := sidebyside.CountLineStats(dr.SrcBytes, dr.DstBytes, dr.Envelope)
-		if err := sidebyside.RenderFileBanner(path, ins, del, upd, cfg.SideBySideOpts.Color, out); err != nil {
+		annotation := ""
+		if !cfg.SideBySideOpts.DisableAnnotations && dr.Envelope != nil {
+			annotation = dr.Envelope.FallbackAnnotation
+		}
+		if err := sidebyside.RenderFileBanner(path, ins, del, upd, annotation, cfg.SideBySideOpts.Color, out); err != nil {
 			return err
 		}
-		return sidebyside.Render(h.oldPath, h.newPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, cfg.SideBySideOpts, out)
+		sbsOpts := cfg.SideBySideOpts
+		sbsOpts.SuppressHunkFallbackAnnotation = true
+		return sidebyside.Render(h.oldPath, h.newPath, dr.SrcBytes, dr.DstBytes, dr.Envelope, sbsOpts, out)
 	}
 }
 
