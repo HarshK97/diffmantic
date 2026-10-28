@@ -11,6 +11,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/unified"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -137,6 +138,18 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	if resDefault.MatchResult != nil {
 		t.Error("expected line diff fallback (nil MatchResult) when limit is 0")
 	}
+	if resDefault.Envelope == nil {
+		t.Fatal("expected non-nil Envelope on parse error fallback")
+	}
+	if resDefault.Envelope.FallbackReason != serialize.FallbackReasonParseError {
+		t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonParseError, resDefault.Envelope.FallbackReason)
+	}
+	if resDefault.Envelope.FallbackAnnotation != serialize.FallbackAnnotationParseError {
+		t.Errorf("expected FallbackAnnotation %q, got %q", serialize.FallbackAnnotationParseError, resDefault.Envelope.FallbackAnnotation)
+	}
+	if resDefault.SrcAST != nil || resDefault.DstAST != nil {
+		t.Errorf("expected SrcAST and DstAST to be nil on parse error fallback, got src=%v, dst=%v", resDefault.SrcAST, resDefault.DstAST)
+	}
 
 	// Tolerated errors should keep AST matching enabled
 	resAllowed, err := pipeline.RunFiles(fileA, fileB, pipeline.DiffOptions{ParseErrorLimit: 5, EnvelopeOpts: opts})
@@ -145,6 +158,55 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	}
 	if resAllowed.MatchResult == nil {
 		t.Error("expected structural AST match result when limit is 5")
+	}
+	if resAllowed.Envelope != nil && (resAllowed.Envelope.FallbackReason != "" || resAllowed.Envelope.FallbackAnnotation != "") {
+		t.Errorf("expected empty FallbackReason and FallbackAnnotation when errors allowed, got reason=%q, annotation=%q",
+			resAllowed.Envelope.FallbackReason, resAllowed.Envelope.FallbackAnnotation)
+	}
+}
+
+func TestRenderDiffResult_UnifiedPreservesFallbackAnnotationWhenShowBanner(t *testing.T) {
+	src := []byte("line1\nline2\n")
+	dst := []byte("line1\nline3\n")
+	env := &serialize.Envelope{
+		FallbackReason:     serialize.FallbackReasonParseError,
+		FallbackAnnotation: serialize.FallbackAnnotationParseError,
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: -1},
+			{LeftLine: -1, RightLine: 1},
+		},
+		Actions: []serialize.Action{
+			{Action: "delete", Node: &serialize.NodeRef{Tree: "before", StartByte: 6, EndByte: 11}},
+			{Action: "insert", Node: &serialize.NodeRef{Tree: "after", StartByte: 6, EndByte: 11}},
+		},
+	}
+	dr := &pipeline.DiffResult{
+		SrcBytes: src,
+		DstBytes: dst,
+		SrcFile:  "a.txt",
+		DstFile:  "b.txt",
+		Envelope: env,
+	}
+
+	var buf bytes.Buffer
+	rc := renderConfig{
+		format:     "unified",
+		showBanner: true, // Multi-file diff sets showBanner to true
+		writer:     &buf,
+		unifiedOpts: unified.RenderOptions{
+			Color:        false,
+			ContextLines: 3,
+		},
+	}
+
+	if err := renderDiffResult("a.txt", "b.txt", src, dst, dr, rc); err != nil {
+		t.Fatalf("renderDiffResult failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, serialize.FallbackAnnotationParseError) {
+		t.Errorf("expected unified output to preserve fallback annotation when showBanner=true, got:\n%s", out)
 	}
 }
 

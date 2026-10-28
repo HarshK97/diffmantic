@@ -129,11 +129,23 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		}, nil
 	}
 
-	if langA == nil {
+	if langA == nil && len(srcBytes) == 0 {
 		langA = langB
 	}
-	if langB == nil {
+	if langB == nil && len(dstBytes) == 0 {
 		langB = langA
+	}
+
+	// If either language is unknown or languages differ (cross-language diff),
+	// fall back to clean line diffing without parse error annotation.
+	if langA == nil || langB == nil || langA.Name != langB.Name {
+		return &DiffResult{
+			SrcBytes: srcBytes,
+			DstBytes: dstBytes,
+			SrcFile:  srcFile,
+			DstFile:  dstFile,
+			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
+		}, nil
 	}
 
 	var (
@@ -160,13 +172,23 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	part := engine.NewLinePartition(srcBytes, dstBytes)
 	wg.Wait()
 
-	if srcAST == nil || dstAST == nil || (!opts.DisableErrorFallback && (srcAST.ParseErrorCount > opts.ParseErrorLimit || dstAST.ParseErrorCount > opts.ParseErrorLimit)) {
+	hasParseError := !opts.DisableErrorFallback && ((srcAST != nil && srcAST.ParseErrorCount > opts.ParseErrorLimit) ||
+		(dstAST != nil && dstAST.ParseErrorCount > opts.ParseErrorLimit))
+
+	if srcAST == nil || dstAST == nil || hasParseError {
+		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
+		if hasParseError {
+			env.FallbackReason = serialize.FallbackReasonParseError
+			env.FallbackAnnotation = serialize.FallbackAnnotationParseError
+		}
 		return &DiffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,
 			SrcFile:  srcFile,
 			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
+			SrcAST:   nil,
+			DstAST:   nil,
+			Envelope: env,
 		}, nil
 	}
 

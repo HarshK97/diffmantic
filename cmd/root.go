@@ -384,11 +384,19 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 			if bannerPath == "/dev/null" || bannerPath == "" {
 				bannerPath = srcFile
 			}
-			if err := sidebyside.RenderFileBanner(bannerPath, numIns, numDel, numUpd, rc.sbsOpts.Color, rc.writer); err != nil {
+			bannerAnnotation := ""
+			if !rc.sbsOpts.DisableAnnotations && dr.Envelope != nil {
+				bannerAnnotation = dr.Envelope.FallbackAnnotation
+			}
+			if err := sidebyside.RenderFileBanner(bannerPath, numIns, numDel, numUpd, bannerAnnotation, rc.sbsOpts.Color, rc.writer); err != nil {
 				return err
 			}
 		}
-		err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, rc.sbsOpts, rc.writer)
+		sbsOpts := rc.sbsOpts
+		if rc.showBanner {
+			sbsOpts.SuppressHunkFallbackAnnotation = true
+		}
+		err := sidebyside.Render(srcFile, dstFile, srcBytes, dstBytes, dr.Envelope, sbsOpts, rc.writer)
 		if err != nil {
 			return err
 		}
@@ -440,7 +448,7 @@ func renderBinaryDiff(srcFile, dstFile string, rc renderConfig) {
 	switch rc.format {
 	case "side-by-side":
 		if rc.showBanner {
-			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, rc.sbsOpts.Color, rc.writer)
+			_ = sidebyside.RenderFileBanner(dstFile, 0, 0, 0, "", rc.sbsOpts.Color, rc.writer)
 		}
 		_, _ = fmt.Fprintf(rc.writer, "Binary files %s and %s differ\n", srcFile, dstFile)
 	case "unified":

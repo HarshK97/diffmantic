@@ -316,6 +316,46 @@ func TestRender_DisableAnnotationsOption(t *testing.T) {
 	}
 }
 
+func TestRender_FallbackAnnotation(t *testing.T) {
+	src := []byte("line1\nline2\n")
+	dst := []byte("line1\nline3\n")
+
+	env := &serialize.Envelope{
+		FallbackReason:     serialize.FallbackReasonParseError,
+		FallbackAnnotation: serialize.FallbackAnnotationParseError,
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: -1},
+			{LeftLine: -1, RightLine: 1},
+		},
+		Actions: []serialize.Action{
+			{Action: "delete", Node: &serialize.NodeRef{Tree: "before", StartByte: 6, EndByte: 11}},
+			{Action: "insert", Node: &serialize.NodeRef{Tree: "after", StartByte: 6, EndByte: 11}},
+		},
+	}
+
+	t.Run("DefaultEnabled", func(t *testing.T) {
+		got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false, DisableAnnotations: false})
+		if !strings.Contains(got, "@@ -1,2 +1,2 @@ [parse error, falling back to line diff]") {
+			t.Errorf("expected hunk header to contain fallback annotation, got:\n%s", got)
+		}
+	})
+
+	t.Run("AnnotationsDisabled", func(t *testing.T) {
+		got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false, DisableAnnotations: true})
+		if strings.Contains(got, "[parse error, falling back to line diff]") {
+			t.Errorf("expected fallback annotation suppressed when DisableAnnotations=true, got:\n%s", got)
+		}
+	})
+
+	t.Run("SuppressHunkFallbackAnnotation", func(t *testing.T) {
+		got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false, SuppressHunkFallbackAnnotation: true})
+		if strings.Contains(got, "[parse error, falling back to line diff]") {
+			t.Errorf("expected fallback annotation suppressed from hunk when SuppressHunkFallbackAnnotation=true, got:\n%s", got)
+		}
+	})
+}
+
 func TestExtractDeclarationSignature(t *testing.T) {
 	lines := []string{
 		"func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error {",

@@ -47,14 +47,27 @@ type EnvelopeOptions struct {
 	CommentLineMappings map[int]int
 }
 
+// FallbackReason classifies why Diffmantic degraded to line-diff mode.
+type FallbackReason string
+
+const (
+	FallbackReasonNone       FallbackReason = ""
+	FallbackReasonParseError FallbackReason = "parse_error"
+)
+
+// FallbackAnnotationParseError is the user-facing terminal badge text for parse errors.
+const FallbackAnnotationParseError = "[parse error, falling back to line diff]"
+
 // Envelope wraps the serialized actions list with a schema version.
 type Envelope struct {
-	Version         string              `json:"version"`
-	IsBinary        bool                `json:"is_binary,omitempty"`
-	Actions         []Action            `json:"actions,omitempty"`
-	LineAlignment   []LineAlignmentPair `json:"line_alignment,omitempty"`
-	LeftHighlights  []HighlightSpan     `json:"left_highlights,omitempty"`
-	RightHighlights []HighlightSpan     `json:"right_highlights,omitempty"`
+	Version            string              `json:"version"`
+	IsBinary           bool                `json:"is_binary,omitempty"`
+	FallbackReason     FallbackReason      `json:"fallback_reason,omitempty"`
+	FallbackAnnotation string              `json:"fallback_annotation,omitempty"`
+	Actions            []Action            `json:"actions,omitempty"`
+	LineAlignment      []LineAlignmentPair `json:"line_alignment,omitempty"`
+	LeftHighlights     []HighlightSpan     `json:"left_highlights,omitempty"`
+	RightHighlights    []HighlightSpan     `json:"right_highlights,omitempty"`
 }
 
 // Action is a single AST edit operation. Omitting "subtree" on the wire implicitly means false.
