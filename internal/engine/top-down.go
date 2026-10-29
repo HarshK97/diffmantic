@@ -10,14 +10,14 @@ import (
 )
 
 type scoredPair struct {
-	pair          [2]*treesitter.ASTNode
-	dice          float64
-	parentLeafSim float64
-	ancSim        int
-	lineageSim    int
-	isFallback    bool
-	nameMatched   bool
-	mismatched    bool
+	pair                    [2]*treesitter.ASTNode
+	dice                    float64
+	stmtAffinity            float64
+	parentLeafSim           float64
+	ancSim, lineageSim      int
+	drift                   int
+	isFallback              bool
+	nameMatched, mismatched bool
 }
 
 // TopDown matches largest isomorphic subtrees top-down by height.
@@ -130,9 +130,11 @@ func TopDown(
 
 		di := Dice(t1.Parent, t2.Parent, m.Src())
 		isFallback := false
+		r1 := rulesFor(t1)
+		r2 := rulesFor(t2)
+		c1 := getEnclosingConstruct(t1, r1)
+		c2 := getEnclosingConstruct(t2, r2)
 		if di == 0 && nameMatched {
-			c1 := getEnclosingConstruct(t1, rulesFor(t1))
-			c2 := getEnclosingConstruct(t2, rulesFor(t2))
 			if c1 != nil && c2 != nil && (c1 != t1.Parent || c2 != t2.Parent) {
 				if f := Dice(c1, c2, m.Src()) * 0.5; f > 0 {
 					di = f
@@ -140,16 +142,29 @@ func TopDown(
 				}
 			}
 		}
+
+		s1 := FindImmediateStatement(t1, r1)
+		s2 := FindImmediateStatement(t2, r2)
+		stmtSim := LeafSimilarity(s1, s2)
+		constructSim := stmtSim
+		if s1 != c1 || s2 != c2 {
+			constructSim = LeafSimilarity(c1, c2)
+		}
+		stmtAffinity := 0.5*stmtSim + 0.5*constructSim
+
 		si := AncestorNameSimilarity(t1, t2)
 		li := parentLineageSimilarity(t1, t2)
 		pls := LeafSimilarity(t1.Parent, t2.Parent)
+		drift := m.AdjustedLineDistance(t1, t2)
 		scored = append(scored, scoredPair{
 			pair:          pair,
 			dice:          di,
+			stmtAffinity:  stmtAffinity,
 			parentLeafSim: pls,
 			isFallback:    isFallback,
 			ancSim:        si,
 			lineageSim:    li,
+			drift:         drift,
 			nameMatched:   nameMatched,
 			mismatched:    mismatched,
 		})
@@ -177,11 +192,20 @@ func TopDown(
 				return 1
 			}
 		}
+		// Only compare line drift when both candidates belong to the same named declaration.
+		// Across different functions or top-level code, physical row distance would penalize
+		// moved functions that shifted far down the file.
+		var driftCmp int
+		if a.nameMatched {
+			driftCmp = cmp.Compare(a.drift, b.drift)
+		}
 		return cmp.Or(
 			cmp.Compare(b.dice, a.dice),
 			cmp.Compare(b.ancSim, a.ancSim),
 			cmp.Compare(b.lineageSim, a.lineageSim),
 			cmp.Compare(b.parentLeafSim, a.parentLeafSim),
+			cmp.Compare(b.stmtAffinity, a.stmtAffinity),
+			driftCmp,
 		)
 	})
 

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -996,6 +997,195 @@ fn f2() void {
 		}
 		if got := mr.Mappings.Dst()[newFoo2]; got != nil {
 			t.Errorf("expected new f2 foo call to be unmapped, got %v", got)
+		}
+	})
+}
+
+func TestTopDown_ImmediateStatementAffinity(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Synthetic AST: two adjacent declarations sharing an identical literal value (false).
+		// Inverted order in dst: flagB comes first, flagA comes second.
+		// Statement affinity must anchor each literal to its own declaration without being tricked
+		// by physical document order.
+		idSrcA := testutil.Node("identifier", "flagA")
+		litSrcA := testutil.Leaf("false", "false")
+		declSrcA := testutil.Node("short_var_declaration", "", idSrcA, litSrcA)
+
+		idSrcB := testutil.Node("identifier", "flagB")
+		litSrcB := testutil.Leaf("false", "false")
+		declSrcB := testutil.Node("short_var_declaration", "", idSrcB, litSrcB)
+
+		blockSrc := testutil.Node("block", "", declSrcA, declSrcB)
+		fnSrc := testutil.Node("function_declaration", "", testutil.Leaf("f", "f"), blockSrc)
+		rootSrc := testutil.Node("source_file", "", fnSrc)
+		rootSrc.Language = "go"
+		treesitter.EnsureIndex(rootSrc)
+
+		// In destination: flagB first, flagA second
+		idDstB := testutil.Node("identifier", "flagB")
+		litDstB := testutil.Leaf("false", "false")
+		declDstB := testutil.Node("short_var_declaration", "", idDstB, litDstB)
+
+		idDstA := testutil.Node("identifier", "flagA")
+		litDstA := testutil.Leaf("false", "false")
+		declDstA := testutil.Node("short_var_declaration", "", idDstA, litDstA)
+
+		blockDst := testutil.Node("block", "", declDstB, declDstA)
+		fnDst := testutil.Node("function_declaration", "", testutil.Leaf("f", "f"), blockDst)
+		rootDst := testutil.Node("source_file", "", fnDst)
+		rootDst.Language = "go"
+		treesitter.EnsureIndex(rootDst)
+
+		m := NewMapping()
+		TopDown(rootSrc, rootDst, 1, m, nil)
+
+		if got := m.Get(litSrcA); got != litDstA {
+			t.Errorf("flagA literal 'false' mapped to %v, want flagA literal 'false' %v", got, litDstA)
+		}
+		if got := m.Get(litSrcB); got != litDstB {
+			t.Errorf("flagB literal 'false' mapped to %v, want flagB literal 'false' %v", got, litDstB)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package main
+
+func f() {
+	{
+		iter := slice("1", "b")
+		expect(1, iter.get(0))
+		expectStrings("b", iter.get(1))
+	}
+}
+`)
+
+		dst := []byte(`package main
+
+func f() {
+	{
+		iter := slice("1", "2")
+		expect(1, iter.get(0))
+		expect(2, iter.get(1))
+	}
+
+	{
+		iter := slice("1", "2", "b")
+		expect(1, iter.get(0))
+		expect(2, iter.get(1))
+		expectStrings("b", iter.get(2))
+	}
+}
+`)
+
+		oldTree, err := treesitter.Parse(src, "old.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		newTree, err := treesitter.Parse(dst, "new.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := rulesFor(oldTree)
+		part := NewLinePartition(src, dst)
+		mr := Match(oldTree, newTree, src, dst, part)
+		m := mr.Mappings
+
+		// 1. Enclosing Context: Function declaration must map in place.
+		var oldFn, newFn *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				oldFn = n
+				break
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				newFn = n
+				break
+			}
+		}
+		if oldFn == nil || newFn == nil || m.Src()[oldFn] != newFn {
+			t.Fatalf("expected function f to map in place, got %v", m.Src()[oldFn])
+		}
+
+		// Locate inner blocks in old and new trees.
+		// oldTree has 1 inner block; newTree has 2 inner blocks.
+		var oldBlock *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsBlock(n.Type) && n.Parent != nil && r.IsBlock(n.Parent.Type) {
+				oldBlock = n
+				break
+			}
+		}
+		var newBlock1, newBlock2 *treesitter.ASTNode
+		for _, n := range newTree.PreOrder() {
+			if r.IsBlock(n.Type) && n.Parent != nil && r.IsBlock(n.Parent.Type) {
+				if newBlock1 == nil {
+					newBlock1 = n
+				} else if newBlock2 == nil {
+					newBlock2 = n
+					break
+				}
+			}
+		}
+		if oldBlock == nil || newBlock1 == nil || newBlock2 == nil {
+			t.Fatalf("failed to locate inner blocks: old=%v new1=%v new2=%v", oldBlock, newBlock1, newBlock2)
+		}
+
+		// 2. Target & Containers:
+		// Newly prepended block 1 must NOT steal oldBlock. oldBlock must map to newBlock2 where "b" survives.
+		if m.Src()[oldBlock] == newBlock1 {
+			t.Errorf("oldBlock erroneously mapped to newly prepended newBlock1")
+		}
+		if m.Src()[oldBlock] != newBlock2 {
+			t.Errorf("expected oldBlock to map to newBlock2, got %v", m.Src()[oldBlock])
+		}
+
+		// 3. Surrounding Sequence & Target Statement:
+		// In diffm_main, expectStrings in oldBlock was stolen by newBlock1's expect(2, iter.get(1)).
+		// In diffm_branch, expectStrings is correctly anchored inside newBlock2.
+		var oldExpectStrings *treesitter.ASTNode
+		for _, n := range oldBlock.PreOrder() {
+			if r.IsCall(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("expectStrings")) {
+				oldExpectStrings = n
+				break
+			}
+		}
+		if oldExpectStrings == nil {
+			t.Fatalf("failed to locate expectStrings call in oldBlock: %v", oldExpectStrings)
+		}
+		mappedCall := m.Src()[oldExpectStrings]
+		if mappedCall == nil {
+			t.Fatalf("expected expectStrings in oldBlock to be mapped")
+		}
+		if newBlock1.Contains(mappedCall) {
+			t.Errorf("expectStrings was erroneously stolen by newly prepended newBlock1 (diffm_main bug)")
+		}
+		if !newBlock2.Contains(mappedCall) {
+			t.Errorf("expected expectStrings to be mapped inside newBlock2, got %v", mappedCall)
+		}
+
+		// 4. Stationary Operands:
+		// expect(1, iter.get(0)) in oldBlock must stay mapped to newBlock2's expect(1, iter.get(0)).
+		var oldExpect1, newExpect1InBlock2 *treesitter.ASTNode
+		for _, n := range oldBlock.PreOrder() {
+			if r.IsCall(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("expect(1")) {
+				oldExpect1 = n
+				break
+			}
+		}
+		for _, n := range newBlock2.PreOrder() {
+			if r.IsCall(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("expect(1")) {
+				newExpect1InBlock2 = n
+				break
+			}
+		}
+		if oldExpect1 == nil || newExpect1InBlock2 == nil {
+			t.Fatalf("failed to locate expect(1) calls: old=%v new=%v", oldExpect1, newExpect1InBlock2)
+		}
+		if m.Src()[oldExpect1] != newExpect1InBlock2 {
+			t.Errorf("expected expect(1) to stay mapped in-place to newBlock2, got %v", m.Src()[oldExpect1])
 		}
 	})
 }

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -2171,6 +2172,287 @@ func TestHasSplitStatementDescendant(t *testing.T) {
 
 		if hasSplitStatementDescendant(bin1, bin2, m, goRules) {
 			t.Errorf("expected hasSplitStatementDescendant to permit expressions whose operands stay in the same statement")
+		}
+	})
+}
+
+func TestBottomUp_SplitStatementDescendant_Bidirectional(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		srcCode := []byte(`package main
+
+func f() {
+	x := 10
+}
+`)
+		dstCode := []byte(`package main
+
+func f() {
+	z := 99
+	x := 10
+}
+`)
+
+		t1Root, err := treesitter.Parse(srcCode, "src.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstRoot, err := treesitter.Parse(dstCode, "dst.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var t1 *treesitter.ASTNode
+		for _, n := range t1Root.PreOrder() {
+			if n.Type == "short_var_declaration" {
+				t1 = n
+				break
+			}
+		}
+		if t1 == nil {
+			t.Fatal("failed to find short_var_declaration in src")
+		}
+
+		var dstZ, dstX *treesitter.ASTNode
+		for _, n := range dstRoot.PreOrder() {
+			if n.Type == "short_var_declaration" {
+				if string(dstCode[n.StartByte:n.EndByte]) == "z := 99" {
+					dstZ = n
+				} else if string(dstCode[n.StartByte:n.EndByte]) == "x := 10" {
+					dstX = n
+				}
+			}
+		}
+		if dstZ == nil || dstX == nil {
+			t.Fatal("failed to find short_var_declarations in dst")
+		}
+
+		r := rules.Get("go")
+
+		t.Run("outside descendant encountered before inside descendant", func(t *testing.T) {
+			m := NewMapping()
+			var t1LHS, t1RHS *treesitter.ASTNode
+			for _, ch := range t1.PreOrder() {
+				if ch.Type == "identifier" && ch.Label == "x" {
+					t1LHS = ch
+				} else if ch.Type == "int_literal" && ch.Label == "10" {
+					t1RHS = ch
+				}
+			}
+			var dstZLHS *treesitter.ASTNode
+			for _, ch := range dstZ.PreOrder() {
+				if ch.Type == "identifier" && ch.Label == "z" {
+					dstZLHS = ch
+					break
+				}
+			}
+			var dstXRHS *treesitter.ASTNode
+			for _, ch := range dstX.PreOrder() {
+				if ch.Type == "int_literal" && ch.Label == "10" {
+					dstXRHS = ch
+					break
+				}
+			}
+			if t1LHS == nil || t1RHS == nil || dstZLHS == nil || dstXRHS == nil {
+				t.Fatal("failed to locate identifier/literal nodes")
+			}
+
+			m.Add(t1LHS, dstZLHS)
+			m.Add(t1RHS, dstXRHS)
+
+			if !hasSplitStatementDescendant(t1, dstX, m, r) {
+				t.Errorf("expected hasSplitStatementDescendant to return true for split descendants")
+			}
+
+			allocs := testing.AllocsPerRun(100, func() {
+				_ = hasSplitStatementDescendant(t1, dstX, m, r)
+			})
+			if allocs > 0 {
+				t.Errorf("expected 0 B/op allocation overhead, got %f allocs/run", allocs)
+			}
+		})
+
+		t.Run("symmetrical reverse check", func(t *testing.T) {
+			m := NewMapping()
+			var dstXLHS, dstXRHS *treesitter.ASTNode
+			for _, ch := range dstX.PreOrder() {
+				if ch.Type == "identifier" && ch.Label == "x" {
+					dstXLHS = ch
+				} else if ch.Type == "int_literal" && ch.Label == "10" {
+					dstXRHS = ch
+				}
+			}
+			var t1RHS *treesitter.ASTNode
+			for _, ch := range t1.PreOrder() {
+				if ch.Type == "int_literal" && ch.Label == "10" {
+					t1RHS = ch
+					break
+				}
+			}
+
+			foreignLHS := testutil.Leaf("identifier", "z")
+			_ = testutil.Node("short_var_declaration", "", foreignLHS)
+
+			m.Add(foreignLHS, dstXLHS)
+			m.Add(t1RHS, dstXRHS)
+
+			if !hasSplitStatementDescendant(t1, dstX, m, r) {
+				t.Errorf("expected hasSplitStatementDescendant reverse traversal to return true")
+			}
+		})
+
+		t.Run("all descendants inside candidate", func(t *testing.T) {
+			m := NewMapping()
+			for _, ch1 := range t1.Children {
+				for _, ch2 := range dstX.Children {
+					if ch1.Type == ch2.Type && ch1.Label == ch2.Label {
+						m.Add(ch1, ch2)
+					}
+				}
+			}
+			if hasSplitStatementDescendant(t1, dstX, m, r) {
+				t.Errorf("expected hasSplitStatementDescendant to return false when all descendants are inside")
+			}
+		})
+
+		t.Run("all descendants outside candidate", func(t *testing.T) {
+			m := NewMapping()
+			for _, ch1 := range t1.Children {
+				for _, ch2 := range dstZ.Children {
+					if ch1.Type == ch2.Type {
+						m.Add(ch1, ch2)
+					}
+				}
+			}
+			if hasSplitStatementDescendant(t1, dstX, m, r) {
+				t.Errorf("expected hasSplitStatementDescendant to return false when all descendants are outside")
+			}
+		})
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`package test
+
+func f() {
+	setupContext()
+	res := checkA() || checkB()
+	finalizeContext(res)
+}
+`)
+
+		newSrc := []byte(`package test
+
+func f() {
+	setupContext()
+	if checkA() {
+		return
+	}
+	other := checkB()
+	res := other || defaultVal()
+	finalizeContext(res)
+}
+`)
+
+		oldTree, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := rulesFor(oldTree)
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		m := mr.Mappings
+
+		// 1. Enclosing Context: Function declaration maps in place.
+		var oldFn, newFn *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				oldFn = n
+				break
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				newFn = n
+				break
+			}
+		}
+		if oldFn == nil || newFn == nil || m.Src()[oldFn] != newFn {
+			t.Fatalf("expected function f to map in place, got %v", m.Src()[oldFn])
+		}
+
+		// 2. Surrounding Sequence: setupContext and finalizeContext map in place.
+		var oldSetup, oldFinalize, newSetup, newFinalize *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsCall(n.Type) {
+				switch {
+				case bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("setupContext")):
+					oldSetup = n
+				case bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("finalizeContext")):
+					oldFinalize = n
+				}
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsCall(n.Type) {
+				switch {
+				case bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("setupContext")):
+					newSetup = n
+				case bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("finalizeContext")):
+					newFinalize = n
+				}
+			}
+		}
+		if oldSetup == nil || newSetup == nil || m.Src()[oldSetup] != newSetup {
+			t.Errorf("expected setupContext to map in place, got %v", m.Src()[oldSetup])
+		}
+		if oldFinalize == nil || newFinalize == nil || m.Src()[oldFinalize] != newFinalize {
+			t.Errorf("expected finalizeContext to map in place, got %v", m.Src()[oldFinalize])
+		}
+
+		// 3. Target Construct: Split binary expression in old statement must NOT map to destination binary expression.
+		var oldBin, newBin *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
+				oldBin = n
+				break
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
+				newBin = n
+				break
+			}
+		}
+		if oldBin == nil || newBin == nil {
+			t.Fatalf("failed to locate binary expressions: old=%v new=%v", oldBin, newBin)
+		}
+		if m.Src()[oldBin] == newBin {
+			t.Errorf("expected split binary expression checkA() || checkB() not to map to newBin, got %v", m.Src()[oldBin])
+		}
+
+		// 4. Target Statements: Statements map by variable slot (res :=), but without cross-statement operand moves.
+		var oldResDecl, newResDecl *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("res :=")) {
+				oldResDecl = n
+				break
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("res :=")) {
+				newResDecl = n
+				break
+			}
+		}
+		if oldResDecl == nil || newResDecl == nil {
+			t.Fatalf("failed to locate res := statements: old=%v new=%v", oldResDecl, newResDecl)
+		}
+		if m.Src()[oldResDecl] != newResDecl {
+			t.Errorf("expected res := statement to match in place, got %v", m.Src()[oldResDecl])
 		}
 	})
 }
