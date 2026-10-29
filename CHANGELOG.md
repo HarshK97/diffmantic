@@ -7,11 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Performance
-- Directory and Git diffs now process files in parallel while keeping output in the original order, roughly 2–3x faster on multi-file diffs with a modest memory increase.
+## [0.14.0] - 2026-10-29
+
+### Added
+- Git pager mode: run Diffmantic directly as your Git pager (`git config pager.diff diffm`, `git config pager.log diffm`, or piped `git diff | diffm`). It intercepts patch streams on stdin, pulls the underlying Git blobs into memory, and renders full structural AST diffs while streaming commit logs and author metadata through untouched.
+- Auto format switching (`--format auto` or default when unset): automatically picks side-by-side on wide terminals (≥ 120 columns) and switches to unified on narrower screens so code doesn't get squeezed or wrapped.
+- Clear parse error fallback indicators: file banners and the first hunk header now badge `[line-diff fallback: parse error]` (or unsupported/mismatched languages) when Tree-sitter runs into syntax errors, and JSON output includes `fallback_reason: "parse_error"` so you know why AST matching was skipped.
+- Built-in reference manual and quick help: replaced external roff man pages with an embedded terminal manual (`diffm --help`, `diffm help`) and a single-screen flag overview (`diffm -h`), eliminating man page installation issues across Windows and `go install`.
+- Git diff headers in patch mode: patch mode (`-p` / `--patch`) now outputs standard `diff --git`, file mode, and index headers so `git apply` can consume unified diffs directly.
+- External diff driver support: `diff.external` now accepts 7 to 9 arguments on file renames and `/dev/null` comparisons (like Lazygit diffing untracked files with `--no-index`).
+
+### Changed
+- Dim italic move badges: directional move badges now render in dim italics so they read like subtle hints instead of code tokens, keeping underlines free for in-place edits.
+- Contrasting colors for reordered statements: when moving code into a helper, statements that stay in relative order use teal, while reordered or hoisted outliers stand out in contrasting mauve.
+- Tab expansion: unwrapped lines in unified diff mode now expand tabs against column stops according to `--tab-width`, while patch mode (`-p`) keeps literal tabs intact for `git apply`.
+
 ### Fixed
-- Stopped expressions and local variables from matching as moves across unrelated closures and lambdas.
-- Fixed sibling statements with similar structure (like repeated error handling or dispatch branches) inverting their matches and showing as false moves when earlier lines shifted.
+- Pulling an expression out into an adjacent variable declaration (like `val := ...`) now stays tracked as a clean move instead of falling back to a delete and insert.
+- Changing an expression statement into a variable assignment (like `EnsureIndex(root)` turning into `index := EnsureIndex(root)`) now keeps the unchanged expression matched in place.
+- Reordering a single statement in a moved block no longer marks the whole block as swapped; Diffmantic keeps the in-order chain grouped and isolates only the reordered statements.
+- Splitting compound boolean conditions across statements (like breaking an `if` condition into an `if`/`else-if` chain) won't turn the outer condition into a false move, while extracted clauses stay marked as moves.
+- Inverted nested guards wrapping the same body block now match cleanly without flagging unchanged body statements as modified.
+- Identical literals across nearby lines now respect statement affinity, stopping them from jumping across statements based purely on line drift.
+- Sibling statements sharing boilerplate (like repeated error handling or dispatch branches) won't invert matches or show false cross-branch moves when earlier lines shift.
+- Closures and anonymous functions (like Go `func()` literals or JavaScript arrow functions) now act as strict scope boundaries, stopping expressions and local variables from moving across unrelated closures in the same function.
+- Quitting `less` early with `q` now cancels background workers immediately and handles closed pipes cleanly without printing "file already closed" write errors.
+
+### Performance
+- Directory diffs and multi-file Git diffs now process files concurrently across a worker pool (up to 4 workers), streaming results in order roughly 2–3x faster while keeping memory footprint low.
+- Git stream pager mode fetches objects sequentially over a persistent `git cat-file --batch` coprocess, eliminating child process overhead per file.
 
 ## [0.13.0] - 2026-10-19
 
@@ -366,7 +390,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/HarshK97/diffmantic/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/HarshK97/diffmantic/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/HarshK97/diffmantic/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/HarshK97/diffmantic/compare/v0.10.0...v0.11.0
