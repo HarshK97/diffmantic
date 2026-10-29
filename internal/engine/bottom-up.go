@@ -1237,62 +1237,51 @@ func hasSplitStatementDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules
 		return false
 	}
 	r = cmp.Or(r, rules.Get(t1.GetLanguage()), rules.Get(c.GetLanguage()))
-	if isStatementOrBranch(t1, r) || isStatementOrBranch(c, r) {
-		return false
-	}
 	op1 := findOperatorGlue(t1, r)
 	op2 := findOperatorGlue(c, r)
 	if op1 == nil || op2 == nil {
 		return false
 	}
 
-	var stmtC *treesitter.ASTNode
-	hasInside := false
-	hasOutsideStmt := false
-
-	for _, d1 := range t1.Descendants() {
-		d2, ok := m.Src()[d1]
-		if !ok {
-			continue
-		}
-		if c.Contains(d2) || c == d2 {
-			hasInside = true
+	checkSplit := func(root, target *treesitter.ASTNode, targetMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+		var nodes []*treesitter.ASTNode
+		if root.Index != nil {
+			if root.PreSize > 1 {
+				nodes = root.Index.Nodes[root.ID+1 : root.ID+root.PreSize]
+			}
 		} else {
-			stmtD2 := FindImmediateStatement(d2, r)
-			if stmtC == nil {
-				stmtC = FindImmediateStatement(c, r)
+			nodes = root.Descendants()
+		}
+
+		var stmtTarget *treesitter.ASTNode
+		hasInside := false
+		hasOutsideStmt := false
+
+		for _, d1 := range nodes {
+			d2, ok := targetMap[d1]
+			if !ok {
+				continue
 			}
-			if stmtD2 != nil && stmtC != nil && stmtD2 != stmtC {
-				hasOutsideStmt = true
+			if target.Contains(d2) || target == d2 {
+				hasInside = true
+			} else {
+				stmtD2 := FindImmediateStatement(d2, r)
+				if stmtTarget == nil {
+					stmtTarget = FindImmediateStatement(target, r)
+				}
+				if stmtD2 != nil && stmtTarget != nil && stmtD2 != stmtTarget {
+					hasOutsideStmt = true
+				}
+			}
+			if hasInside && hasOutsideStmt {
+				return true
 			}
 		}
-		if hasInside && hasOutsideStmt {
-			return true
-		}
+		return false
 	}
 
-	var stmtT1 *treesitter.ASTNode
-	hasDstInside := false
-	hasDstOutsideStmt := false
-	for _, d2 := range c.Descendants() {
-		d1, ok := m.Dst()[d2]
-		if !ok {
-			continue
-		}
-		if t1.Contains(d1) || t1 == d1 {
-			hasDstInside = true
-		} else {
-			stmtD1 := FindImmediateStatement(d1, r)
-			if stmtT1 == nil {
-				stmtT1 = FindImmediateStatement(t1, r)
-			}
-			if stmtD1 != nil && stmtT1 != nil && stmtD1 != stmtT1 {
-				hasDstOutsideStmt = true
-			}
-		}
-		if hasDstInside && hasDstOutsideStmt {
-			return true
-		}
+	if checkSplit(t1, c, m.Src()) {
+		return true
 	}
-	return false
+	return checkSplit(c, t1, m.Dst())
 }
