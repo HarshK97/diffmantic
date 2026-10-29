@@ -1692,3 +1692,485 @@ func f() {
 		}
 	})
 }
+
+func TestBottomUp_InvertedNestedGuardsMatching(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `package test
+
+func f() {
+	initTask()
+	if checkA() && checkB() {
+		if condC {
+			doAction()
+		}
+	}
+	cleanupTask()
+}
+`
+		newSrc := `package test
+
+func f() {
+	initTask()
+	if condC {
+		if checkA() && checkB() {
+			doAction()
+		}
+	}
+	cleanupTask()
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), nil)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		// 1. Target guard expression verification: checkA() && checkB() maps across inverted guards
+		var oldBin, newBin *treesitter.ASTNode
+		var srcDoAction, dstDoAction *treesitter.ASTNode
+		var srcInit, dstInit, srcCleanup, dstCleanup *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
+				oldBin = n
+			}
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "doAction":
+					srcDoAction = n
+				case "initTask":
+					srcInit = n
+				case "cleanupTask":
+					srcCleanup = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
+				newBin = n
+			}
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "doAction":
+					dstDoAction = n
+				case "initTask":
+					dstInit = n
+				case "cleanupTask":
+					dstCleanup = n
+				}
+			}
+		}
+
+		if oldBin == nil || newBin == nil {
+			t.Fatalf("failed to locate binary expression nodes: old=%v new=%v", oldBin, newBin)
+		}
+		if mr.Mappings.Src()[oldBin] != newBin {
+			t.Errorf("expected checkA() && checkB() to match across inverted guards, got %v", mr.Mappings.Src()[oldBin])
+		}
+
+		// 2. Enclosing function declaration maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil {
+			t.Fatalf("missing function declaration: src=%v dst=%v", srcFunc, dstFunc)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected func f to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+
+		// 3. Surrounding statements and body call map in place
+		if matched := mr.Mappings.Src()[srcInit]; matched != dstInit {
+			t.Errorf("expected initTask to map in place, got %v", matched)
+		}
+		if matched := mr.Mappings.Src()[srcCleanup]; matched != dstCleanup {
+			t.Errorf("expected cleanupTask to map in place, got %v", matched)
+		}
+		if matched := mr.Mappings.Src()[srcDoAction]; matched != dstDoAction {
+			t.Errorf("expected doAction to map in place, got %v", matched)
+		}
+	})
+}
+
+func TestBottomUp_SplitStatementDescendantsRejected(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		runTest := func(t *testing.T, oldSrc, newSrc string) {
+			srcAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+
+			part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+			mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			r := rulesFor(srcAST)
+			if r == nil {
+				t.Fatal("rulesFor returned nil")
+			}
+
+			// 1. Target binary expression rejection: compound expression MUST NOT map to dstBin
+			var srcBin, dstBin *treesitter.ASTNode
+			var srcCondA, srcCondB, dstCondA, dstCondB *treesitter.ASTNode
+			var srcSetup, srcFinalize, dstSetup, dstFinalize *treesitter.ASTNode
+
+			for _, n := range srcAST.Descendants() {
+				if r.IsExpression(n.Type) && n.Type == "binary_expression" {
+					srcBin = n
+				}
+				if r.IsCall(n.Type) {
+					switch extractCalleeLabel(n, r) {
+					case "condA":
+						srcCondA = n
+					case "condB":
+						srcCondB = n
+					case "setupContext":
+						srcSetup = n
+					case "finalizeContext":
+						srcFinalize = n
+					}
+				}
+			}
+
+			for _, n := range dstAST.Descendants() {
+				if r.IsExpression(n.Type) && n.Type == "binary_expression" {
+					dstBin = n
+				}
+				if r.IsCall(n.Type) {
+					switch extractCalleeLabel(n, r) {
+					case "condA":
+						dstCondA = n
+					case "condB":
+						dstCondB = n
+					case "setupContext":
+						dstSetup = n
+					case "finalizeContext":
+						dstFinalize = n
+					}
+				}
+			}
+
+			if srcBin == nil || dstBin == nil {
+				t.Fatalf("missing binary expressions: srcBin=%v dstBin=%v", srcBin, dstBin)
+			}
+			if srcCondA == nil || srcCondB == nil || dstCondA == nil || dstCondB == nil {
+				t.Fatalf("missing cond calls: srcA=%v srcB=%v dstA=%v dstB=%v", srcCondA, srcCondB, dstCondA, dstCondB)
+			}
+			if srcSetup == nil || srcFinalize == nil || dstSetup == nil || dstFinalize == nil {
+				t.Fatalf("missing surrounding calls: srcSetup=%v dstSetup=%v", srcSetup, dstSetup)
+			}
+
+			// Split compound expression must remain unmapped
+			if mapped := mr.Mappings.Src()[srcBin]; mapped != nil {
+				t.Errorf("expected split compound expression srcBin NOT to map to dstBin, got %v", mapped)
+			}
+
+			// Stationary / moved sub-expressions
+			if matched := mr.Mappings.Src()[srcCondA]; matched != dstCondA {
+				t.Errorf("expected condA to match dstCondA, got %v", matched)
+			}
+			if matched := mr.Mappings.Src()[srcCondB]; matched != dstCondB {
+				t.Errorf("expected condB to match dstCondB, got %v", matched)
+			}
+
+			// 2. Enclosing function maps in place
+			var srcFunc, dstFunc *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					srcFunc = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					dstFunc = n
+					break
+				}
+			}
+			if srcFunc == nil || dstFunc == nil {
+				t.Fatalf("missing function declaration: src=%v dst=%v", srcFunc, dstFunc)
+			}
+			if mr.Mappings.Src()[srcFunc] != dstFunc {
+				t.Errorf("expected func f to map in place, got %v", mr.Mappings.Src()[srcFunc])
+			}
+
+			// 3. Surrounding sequence: setupContext and finalizeContext map in place
+			if matched := mr.Mappings.Src()[srcSetup]; matched != dstSetup {
+				t.Errorf("expected setupContext to map in place, got %v", matched)
+			}
+			if matched := mr.Mappings.Src()[srcFinalize]; matched != dstFinalize {
+				t.Errorf("expected finalizeContext to map in place, got %v", matched)
+			}
+		}
+
+		newSrc := `package test
+
+func f() {
+	setupContext()
+	if condA() || !otherCheck() {
+		return
+	}
+	if condB() {
+		action2()
+	}
+	finalizeContext()
+}
+`
+
+		t.Run("StandardOrder", func(t *testing.T) {
+			oldSrc := `package test
+
+func f() {
+	setupContext()
+	if !condA() && condB() {
+		action1()
+	}
+	finalizeContext()
+}
+`
+			runTest(t, oldSrc, newSrc)
+		})
+
+		t.Run("ReversedOrder", func(t *testing.T) {
+			oldSrc := `package test
+
+func f() {
+	setupContext()
+	if condB() && !condA() {
+		action1()
+	}
+	finalizeContext()
+}
+`
+			runTest(t, oldSrc, newSrc)
+		})
+	})
+}
+
+func TestHasForeignBodyOwner_InvertedNestedGuards(t *testing.T) {
+	goRules := rules.Get("go")
+
+	body1 := testutil.Node("block", "")
+	condC1 := testutil.Node("identifier", "condC")
+	innerIf1 := testutil.Node("if_statement", "", condC1, body1)
+	block1 := testutil.Node("block", "", innerIf1)
+	cond1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "checkA"), testutil.Leaf("identifier", "checkB"))
+	outerIf1 := testutil.Node("if_statement", "", cond1, block1)
+	root1 := testutil.Node("source_file", "", outerIf1)
+	root1.Language = "go"
+
+	body2 := testutil.Node("block", "")
+	cond2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "checkA"), testutil.Leaf("identifier", "checkB"))
+	innerIf2 := testutil.Node("if_statement", "", cond2, body2)
+	block2 := testutil.Node("block", "", innerIf2)
+	condC2 := testutil.Node("identifier", "condC")
+	outerIf2 := testutil.Node("if_statement", "", condC2, block2)
+	root2 := testutil.Node("source_file", "", outerIf2)
+	root2.Language = "go"
+
+	treesitter.EnsureIndex(root1)
+	treesitter.EnsureIndex(root2)
+
+	m := NewMapping()
+	m.Add(body1, body2)
+	m.Add(condC1, condC2)
+
+	if hasForeignBodyOwner(cond1, cond2, m, goRules) {
+		t.Errorf("expected inverted nested guards to permit matching cond1 vs cond2")
+	}
+
+	// Parenthesized guard variant: expression wrappers shouldn't trap the construct lookup.
+	bodyParen := testutil.Node("block", "")
+	condCParen := testutil.Node("identifier", "condC")
+	innerIfParen := testutil.Node("if_statement", "", condCParen, bodyParen)
+	blockParen := testutil.Node("block", "", innerIfParen)
+	rawCondParen := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "checkA"), testutil.Leaf("identifier", "checkB"))
+	parenExpr := testutil.Node("parenthesized_expression", "", rawCondParen)
+	outerIfParen := testutil.Node("if_statement", "", parenExpr, blockParen)
+	rootParen := testutil.Node("source_file", "", outerIfParen)
+	rootParen.Language = "go"
+	treesitter.EnsureIndex(rootParen)
+
+	mParen := NewMapping()
+	mParen.Add(bodyParen, body2)
+	mParen.Add(condCParen, condC2)
+
+	if hasForeignBodyOwner(rawCondParen, cond2, mParen, goRules) {
+		t.Errorf("expected parenthesized inverted guard to permit matching rawCondParen vs cond2")
+	}
+
+	// Unrelated construct condition should still be rejected as foreign.
+	unrelatedBody := testutil.Node("block", "")
+	unrelatedCond := testutil.Node("binary_expression", "")
+	unrelatedIf := testutil.Node("if_statement", "", unrelatedCond, unrelatedBody)
+	rootUnrelated := testutil.Node("source_file", "", unrelatedIf)
+	rootUnrelated.Language = "go"
+	treesitter.EnsureIndex(rootUnrelated)
+
+	if !hasForeignBodyOwner(unrelatedCond, cond2, m, goRules) {
+		t.Errorf("expected unrelated condition to be rejected by hasForeignBodyOwner")
+	}
+}
+
+func TestHasSplitStatementDescendant(t *testing.T) {
+	goRules := rules.Get("go")
+
+	t.Run("LeftInsideRightOutside", func(t *testing.T) {
+		d1Left := testutil.Node("identifier", "condA")
+		op1 := testutil.Leaf("&&", "&&")
+		d1Right := testutil.Node("identifier", "condB")
+		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Right)
+		stmt1 := testutil.Node("expression_statement", "", bin1)
+		root1 := testutil.Node("source_file", "", stmt1)
+		root1.Language = "go"
+		treesitter.EnsureIndex(root1)
+
+		d2Left := testutil.Node("identifier", "condA")
+		op2 := testutil.Leaf("||", "||")
+		d2Other := testutil.Node("identifier", "other")
+		bin2 := testutil.Node("binary_expression", "", d2Left, op2, d2Other)
+		stmt2 := testutil.Node("expression_statement", "", bin2)
+
+		d2Outside := testutil.Node("identifier", "condB")
+		stmtOutside := testutil.Node("expression_statement", "", d2Outside)
+
+		block2 := testutil.Node("block", "", stmt2, stmtOutside)
+		root2 := testutil.Node("source_file", "", block2)
+		root2.Language = "go"
+		treesitter.EnsureIndex(root2)
+
+		m := NewMapping()
+		m.Add(d1Left, d2Left)
+		m.Add(d1Right, d2Outside)
+
+		if !hasSplitStatementDescendant(bin1, bin2, m, goRules) {
+			t.Errorf("expected hasSplitStatementDescendant to reject bin1 vs bin2 when operands split across statements")
+		}
+	})
+
+	t.Run("RightInsideLeftOutside_ReversedOrder", func(t *testing.T) {
+		// When outside descendant is encountered before inside descendant in pre-order,
+		// the matcher must not break prematurely.
+		d1Left := testutil.Node("identifier", "condB") // outside
+		op1 := testutil.Leaf("&&", "&&")
+		d1Right := testutil.Node("identifier", "condA") // inside
+		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Right)
+		stmt1 := testutil.Node("expression_statement", "", bin1)
+		root1 := testutil.Node("source_file", "", stmt1)
+		root1.Language = "go"
+		treesitter.EnsureIndex(root1)
+
+		d2Inside := testutil.Node("identifier", "condA")
+		op2 := testutil.Leaf("||", "||")
+		d2Other := testutil.Node("identifier", "other")
+		bin2 := testutil.Node("binary_expression", "", d2Inside, op2, d2Other)
+		stmt2 := testutil.Node("expression_statement", "", bin2)
+
+		d2Outside := testutil.Node("identifier", "condB")
+		stmtOutside := testutil.Node("expression_statement", "", d2Outside)
+
+		block2 := testutil.Node("block", "", stmt2, stmtOutside)
+		root2 := testutil.Node("source_file", "", block2)
+		root2.Language = "go"
+		treesitter.EnsureIndex(root2)
+
+		m := NewMapping()
+		m.Add(d1Right, d2Inside)
+		m.Add(d1Left, d2Outside)
+
+		if !hasSplitStatementDescendant(bin1, bin2, m, goRules) {
+			t.Errorf("expected hasSplitStatementDescendant to reject bin1 vs bin2 even when outside descendant appears first in pre-order")
+		}
+	})
+
+	t.Run("ReverseDirection", func(t *testing.T) {
+		// Candidate c in tree 2 has operands split across multiple statements in tree 1.
+		d1Left := testutil.Node("identifier", "condA")
+		op1 := testutil.Leaf("&&", "&&")
+		d1Unused := testutil.Node("identifier", "unused")
+		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Unused)
+		stmt1 := testutil.Node("expression_statement", "", bin1)
+
+		d1Outside := testutil.Node("identifier", "other")
+		stmtOutside1 := testutil.Node("expression_statement", "", d1Outside)
+
+		block1 := testutil.Node("block", "", stmt1, stmtOutside1)
+		root1 := testutil.Node("source_file", "", block1)
+		root1.Language = "go"
+		treesitter.EnsureIndex(root1)
+
+		d2Left := testutil.Node("identifier", "condA")
+		op2 := testutil.Leaf("||", "||")
+		d2Right := testutil.Node("identifier", "other")
+		bin2 := testutil.Node("binary_expression", "", d2Left, op2, d2Right)
+		stmt2 := testutil.Node("expression_statement", "", bin2)
+		root2 := testutil.Node("source_file", "", stmt2)
+		root2.Language = "go"
+		treesitter.EnsureIndex(root2)
+
+		m := NewMapping()
+		m.Add(d1Left, d2Left)
+		m.Add(d1Outside, d2Right)
+
+		if !hasSplitStatementDescendant(bin1, bin2, m, goRules) {
+			t.Errorf("expected hasSplitStatementDescendant to reject when candidate c has operands split across statements in tree 1")
+		}
+	})
+
+	t.Run("SameStatementPermitted", func(t *testing.T) {
+		d1Left := testutil.Node("identifier", "condA")
+		op1 := testutil.Leaf("&&", "&&")
+		d1Right := testutil.Node("identifier", "condB")
+		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Right)
+		stmt1 := testutil.Node("expression_statement", "", bin1)
+		root1 := testutil.Node("source_file", "", stmt1)
+		root1.Language = "go"
+		treesitter.EnsureIndex(root1)
+
+		d2Left := testutil.Node("identifier", "condA")
+		op2 := testutil.Leaf("||", "||")
+		d2Right := testutil.Node("identifier", "condB")
+		bin2 := testutil.Node("binary_expression", "", d2Left, op2, d2Right)
+		stmt2 := testutil.Node("expression_statement", "", bin2)
+		root2 := testutil.Node("source_file", "", stmt2)
+		root2.Language = "go"
+		treesitter.EnsureIndex(root2)
+
+		m := NewMapping()
+		m.Add(d1Left, d2Left)
+		m.Add(d1Right, d2Right)
+
+		if hasSplitStatementDescendant(bin1, bin2, m, goRules) {
+			t.Errorf("expected hasSplitStatementDescendant to permit expressions whose operands stay in the same statement")
+		}
+	})
+}

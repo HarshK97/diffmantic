@@ -203,6 +203,12 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Don't pair compound expressions when their operands were split across separate
+	// statements (e.g. an extracted guard clause).
+	if hasSplitStatementDescendant(t1, c, m, r) {
+		return -1.0
+	}
+
 	// Call containers must share callee tokens or non-block arguments; do not pair calls purely based on trailing blocks or callbacks.
 	isCall := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))
 	if isCall && !hasCallCalleeOrArgMatch(t1, c, m, r) {
@@ -365,7 +371,14 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 				continue
 			}
 			if srcBody, ok := m.Dst()[b]; ok && srcBody.Parent != nil {
-				if srcBody.Parent != t1 && !srcBody.Parent.Contains(t1) {
+				t1Construct := t1
+				if stmt1 := FindImmediateStatement(t1, r); stmt1 != nil && !isBlock(stmt1) {
+					isDecl := (r != nil && r.IsDeclaration(stmt1.Type)) || (r == nil && rules.IsDeclaration(stmt1.Type))
+					if !isDecl {
+						t1Construct = stmt1
+					}
+				}
+				if srcBody.Parent != t1 && !srcBody.Parent.Contains(t1) && !t1Construct.Contains(srcBody.Parent) {
 					return true
 				}
 			}
@@ -386,7 +399,14 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 				continue
 			}
 			if dstBody, ok := m.Src()[b]; ok && dstBody.Parent != nil {
-				if dstBody.Parent != c && !dstBody.Parent.Contains(c) {
+				cConstruct := c
+				if stmtC := FindImmediateStatement(c, r); stmtC != nil && !isBlock(stmtC) {
+					isDecl := (r != nil && r.IsDeclaration(stmtC.Type)) || (r == nil && rules.IsDeclaration(stmtC.Type))
+					if !isDecl {
+						cConstruct = stmtC
+					}
+				}
+				if dstBody.Parent != c && !dstBody.Parent.Contains(c) && !cConstruct.Contains(dstBody.Parent) {
 					return true
 				}
 			}
@@ -1205,6 +1225,73 @@ func hasCrossSideOperatorMismatch(t1, c *treesitter.ASTNode, m *Mapping, r *rule
 			if (c.StartByte < parentOp2.StartByte) == crossLeftToRight {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// hasSplitStatementDescendant reports whether an operator expression has mapped
+// operands that land in different statements outside candidate c (or vice versa).
+func hasSplitStatementDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(t1.GetLanguage()), rules.Get(c.GetLanguage()))
+	if isStatementOrBranch(t1, r) || isStatementOrBranch(c, r) {
+		return false
+	}
+	op1 := findOperatorGlue(t1, r)
+	op2 := findOperatorGlue(c, r)
+	if op1 == nil || op2 == nil {
+		return false
+	}
+
+	var stmtC *treesitter.ASTNode
+	hasInside := false
+	hasOutsideStmt := false
+
+	for _, d1 := range t1.Descendants() {
+		d2, ok := m.Src()[d1]
+		if !ok {
+			continue
+		}
+		if c.Contains(d2) || c == d2 {
+			hasInside = true
+		} else {
+			stmtD2 := FindImmediateStatement(d2, r)
+			if stmtC == nil {
+				stmtC = FindImmediateStatement(c, r)
+			}
+			if stmtD2 != nil && stmtC != nil && stmtD2 != stmtC {
+				hasOutsideStmt = true
+			}
+		}
+		if hasInside && hasOutsideStmt {
+			return true
+		}
+	}
+
+	var stmtT1 *treesitter.ASTNode
+	hasDstInside := false
+	hasDstOutsideStmt := false
+	for _, d2 := range c.Descendants() {
+		d1, ok := m.Dst()[d2]
+		if !ok {
+			continue
+		}
+		if t1.Contains(d1) || t1 == d1 {
+			hasDstInside = true
+		} else {
+			stmtD1 := FindImmediateStatement(d1, r)
+			if stmtT1 == nil {
+				stmtT1 = FindImmediateStatement(t1, r)
+			}
+			if stmtD1 != nil && stmtT1 != nil && stmtD1 != stmtT1 {
+				hasDstOutsideStmt = true
+			}
+		}
+		if hasDstInside && hasDstOutsideStmt {
+			return true
 		}
 	}
 	return false
