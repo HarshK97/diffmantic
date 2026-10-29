@@ -47,7 +47,7 @@ func isPipedInput(f *os.File) bool {
 
 var rootCmd = &cobra.Command{
 	Use:     "diffm [refA] [refB]",
-	Version: "0.13.0",
+	Version: "0.14.0",
 	Short:   "Semantic diff engine powered by Tree-sitter",
 	Long: `diffmantic is a structural source code diff engine.
 
