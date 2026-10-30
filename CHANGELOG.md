@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Moving a block statement (like an `if` or `for` loop) along with its body now keeps the header, body statements, and enclosing braces in the same move color, rather than splitting the header into a conflicting color.
+
 ## [0.14.0] - 2026-10-29
 
 ### Added

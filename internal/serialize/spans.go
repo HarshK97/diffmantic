@@ -264,13 +264,20 @@ func actionLineCount(act *Action, lineIndex []int, fileBytes []byte, side string
 	var startByte, endByte uint32
 	switch side {
 	case "left":
-		if act.Node == nil {
+		if act.OrigEndByte > act.OrigStartByte {
+			startByte = act.OrigStartByte
+			endByte = act.OrigEndByte
+		} else if act.Node != nil {
+			startByte = act.Node.StartByte
+			endByte = act.Node.EndByte
+		} else {
 			return 0
 		}
-		startByte = act.Node.StartByte
-		endByte = act.Node.EndByte
 	case "right":
-		if act.DestStartByte != nil && act.DestEndByte != nil {
+		if act.DestOrigEndByte > act.DestOrigStartByte {
+			startByte = act.DestOrigStartByte
+			endByte = act.DestOrigEndByte
+		} else if act.DestStartByte != nil && act.DestEndByte != nil {
 			startByte = *act.DestStartByte
 			endByte = *act.DestEndByte
 		} else if act.DestNode != nil {
