@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // LinePartition partitions AST nodes into untouched lines (Group 1) and edited
@@ -19,6 +20,8 @@ type LinePartition struct {
 	matchedB     map[int]int // rowB -> rowA
 	substantiveA []bool
 	substantiveB []bool
+	scopeA       []string // rowA -> declaration scope name
+	scopeB       []string // rowB -> declaration scope name
 	cacheA       map[*treesitter.ASTNode]groupResult
 	cacheB       map[*treesitter.ASTNode]groupResult
 }
@@ -49,12 +52,51 @@ func NewLinePartition(srcA, srcB []byte) *LinePartition {
 	}
 }
 
+// AttachRoots records declaration scopes so lines moved across functions
+// aren't treated as untouched stationary code (Group 1).
+func (p *LinePartition) AttachRoots(rootA, rootB *treesitter.ASTNode) {
+	if p == nil {
+		return
+	}
+	buildScopes := func(root *treesitter.ASTNode, lineCount int) []string {
+		if root == nil || lineCount <= 0 {
+			return nil
+		}
+		scopes := make([]string, lineCount)
+		r := rulesFor(root)
+		for _, n := range root.PreOrder() {
+			var name string
+			isContainer := (r != nil && r.IsContainerDeclaration(n.Type)) || (r == nil && rules.IsContainerDeclaration(n.Type))
+			isClosureAssign := ((r != nil && (r.IsLocalVarDeclaration(n.Type) || r.IsAssignment(n.Type))) ||
+				(r == nil && (rules.IsLocalVarDeclaration(n.Type) || rules.IsAssignment(n.Type)))) &&
+				hasClosureChild(n, r)
+			if isContainer {
+				name = getDeclarationName(n)
+			} else if isClosureAssign {
+				name = getClosureDeclarationName(n, r)
+			}
+			if name != "" {
+				start := max(0, int(n.StartRow))
+				end := min(lineCount-1, int(n.EndRow))
+				for row := start; row <= end; row++ {
+					scopes[row] = name
+				}
+			}
+		}
+		return scopes
+	}
+	p.scopeA = buildScopes(rootA, len(p.substantiveA))
+	p.scopeB = buildScopes(rootB, len(p.substantiveB))
+	p.cacheA = make(map[*treesitter.ASTNode]groupResult)
+	p.cacheB = make(map[*treesitter.ASTNode]groupResult)
+}
+
 // IsGroup1A returns true if all lines spanned by n1 in file A are non-edited lines.
 func (p *LinePartition) IsGroup1A(n1 *treesitter.ASTNode) (bool, int) {
 	if p == nil {
 		return false, -1
 	}
-	return p.isGroup1Cached(n1, p.cacheA, p.matchedA, p.substantiveA)
+	return p.isGroup1Cached(n1, p.cacheA, p.matchedA, p.substantiveA, true)
 }
 
 // IsGroup1B returns true if all lines spanned by n2 in file B are non-edited lines.
@@ -62,22 +104,22 @@ func (p *LinePartition) IsGroup1B(n2 *treesitter.ASTNode) (bool, int) {
 	if p == nil {
 		return false, -1
 	}
-	return p.isGroup1Cached(n2, p.cacheB, p.matchedB, p.substantiveB)
+	return p.isGroup1Cached(n2, p.cacheB, p.matchedB, p.substantiveB, false)
 }
 
-func (p *LinePartition) isGroup1Cached(n *treesitter.ASTNode, cache map[*treesitter.ASTNode]groupResult, matched map[int]int, substantive []bool) (bool, int) {
+func (p *LinePartition) isGroup1Cached(n *treesitter.ASTNode, cache map[*treesitter.ASTNode]groupResult, matched map[int]int, substantive []bool, isA bool) (bool, int) {
 	if p == nil || n == nil {
 		return false, -1
 	}
 	if res, ok := cache[n]; ok {
 		return res.isG1, res.startOther
 	}
-	isG1, startOther := p.isGroup1(matched, substantive, n)
+	isG1, startOther := p.isGroup1(matched, substantive, n, isA)
 	cache[n] = groupResult{isG1: isG1, startOther: startOther}
 	return isG1, startOther
 }
 
-func (p *LinePartition) isGroup1(matched map[int]int, substantive []bool, n *treesitter.ASTNode) (bool, int) {
+func (p *LinePartition) isGroup1(matched map[int]int, substantive []bool, n *treesitter.ASTNode, isA bool) (bool, int) {
 	if len(matched) == 0 || n == nil {
 		return false, -1
 	}
@@ -93,6 +135,27 @@ func (p *LinePartition) isGroup1(matched map[int]int, substantive []bool, n *tre
 	for r := startRow; r <= endRow; r++ {
 		m, ok := matched[r]
 		if !ok || m != startOther+(r-startRow) {
+			return false, -1
+		}
+	}
+	if len(p.scopeA) > 0 && len(p.scopeB) > 0 {
+		var sOwn, sOther string
+		if isA {
+			if startRow < len(p.scopeA) {
+				sOwn = p.scopeA[startRow]
+			}
+			if startOther < len(p.scopeB) {
+				sOther = p.scopeB[startOther]
+			}
+		} else {
+			if startRow < len(p.scopeB) {
+				sOwn = p.scopeB[startRow]
+			}
+			if startOther < len(p.scopeA) {
+				sOther = p.scopeA[startOther]
+			}
+		}
+		if (sOwn != "" || sOther != "") && sOwn != sOther {
 			return false, -1
 		}
 	}

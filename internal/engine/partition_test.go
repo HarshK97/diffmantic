@@ -106,4 +106,32 @@ func TestLinePartition(t *testing.T) {
 			t.Errorf("expected single substantive line with only a brace neighbor to remain Group 2, got isG1=%v", isG1)
 		}
 	})
+
+	t.Run("Cross-scope matched lines are excluded from Group 1 via AttachRoots", func(t *testing.T) {
+		srcA := []byte("func oldHelper() {\n\tdoWork(a, b)\n\tdoWork(c, d)\n}\nfunc receiver() {\n}\n")
+		srcB := []byte("func oldHelper() {\n}\nfunc receiver() {\n\tdoWork(a, b)\n\tdoWork(c, d)\n}\n")
+
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(srcB, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		part := NewLinePartition(srcA, srcB)
+
+		// Before attaching roots, line diff matches lines 1..2 in A with lines 3..4 in B as identical runs.
+		nodeA := &treesitter.ASTNode{StartRow: 1, EndRow: 2}
+		if isG1, _ := part.IsGroup1A(nodeA); !isG1 {
+			t.Errorf("expected lines to match as Group 1 before declaration scopes are attached")
+		}
+
+		// After attaching roots, the declaration scope mismatch (oldHelper vs receiver) must demote to Group 2.
+		part.AttachRoots(rootA, rootB)
+		if isG1, _ := part.IsGroup1A(nodeA); isG1 {
+			t.Errorf("expected cross-scope lines to be excluded from Group 1 after AttachRoots, got isG1=true")
+		}
+	})
 }

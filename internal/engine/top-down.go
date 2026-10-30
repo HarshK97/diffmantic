@@ -329,14 +329,25 @@ func getScopeName(n *treesitter.ASTNode) string {
 	if name := getDeclarationName(n); name != "" {
 		return name
 	}
+	r := rulesFor(n)
+	if hasClosureChild(n, r) {
+		if name := getClosureDeclarationName(n, r); name != "" {
+			return name
+		}
+	}
 	enc := GetEnclosingDeclaration(n)
 	if enc != nil {
 		if name := getDeclarationName(enc); name != "" {
 			return name
 		}
+		if hasClosureChild(enc, r) {
+			if name := getClosureDeclarationName(enc, r); name != "" {
+				return name
+			}
+		}
 		// Anonymous callbacks lack a declaration name, so resolve scope
 		// from the caller (e.g. vim.wait, describe, or t.Run).
-		r := rulesFor(enc)
+		r = rulesFor(enc)
 		for curr := enc.Parent; curr != nil; curr = curr.Parent {
 			if isCallNode(curr, r) {
 				if len(curr.Children) > 0 {

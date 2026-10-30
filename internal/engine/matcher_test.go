@@ -1126,3 +1126,239 @@ func ExtractedHelper() {
 		}
 	})
 }
+
+func TestGetClosureDeclarationName(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// 1. short_var_declaration with expression_list LHS and func_literal RHS
+		lhs := testutil.Node("expression_list", "", testutil.Leaf("identifier", "alignWindow"))
+		op := testutil.Leaf(":=", ":=")
+		rhs := testutil.Node("expression_list", "", testutil.Node("func_literal", "",
+			testutil.Leaf("func", "func"),
+			testutil.Node("parameter_list", ""),
+			testutil.Node("block", "", testutil.Leaf("identifier", "internalSecret")),
+		))
+		decl := testutil.Node("short_var_declaration", "", lhs, op, rhs)
+		decl.Language = "go"
+
+		r := rulesFor(decl)
+		name := getClosureDeclarationName(decl, r)
+		if name != "alignWindow" {
+			t.Errorf("expected closure declaration name 'alignWindow', got %q", name)
+		}
+
+		// 2. Multi-variable scalar declaration: a, b := 1, 2
+		// Scalar assignments like a, b := 1, 2 shouldn't count as closure scopes.
+		lhsTuple := testutil.Node("expression_list", "",
+			testutil.Leaf("identifier", "a"),
+			testutil.Leaf("identifier", "b"),
+		)
+		rhsTuple := testutil.Node("expression_list", "",
+			testutil.Leaf("int_literal", "1"),
+			testutil.Leaf("int_literal", "2"),
+		)
+		tupleDecl := testutil.Node("short_var_declaration", "", lhsTuple, testutil.Leaf(":=", ":="), rhsTuple)
+		tupleDecl.Language = "go"
+
+		tupleR := rulesFor(tupleDecl)
+		tupleName := getClosureDeclarationName(tupleDecl, tupleR)
+		if tupleName != "" {
+			t.Errorf("expected empty declaration name for scalar variable declaration, got %q", tupleName)
+		}
+
+		// 3. RHS func_literal itself has no declaration name
+		fnLit := rhs.Children[0]
+		fnLit.Language = "go"
+		if fnName := getDeclarationName(fnLit); fnName != "" {
+			t.Errorf("expected func_literal to have empty declaration name, got %q", fnName)
+		}
+	})
+}
+
+func TestLinediffCrossMoveInversion_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `package p
+
+func Process() {
+	setup()
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 10; j++ {
+			if cond1 && i > 0 {
+				dist := max(i-j, j-i)
+				if dist < 10 {
+					bestDist = dist
+				}
+				matched[i] = dist
+				total += dist
+			}
+		}
+	}
+}
+
+func Batch() {
+	worker := func() {
+		for i := 0; i < 10; i++ {
+			for j := 0; j < 10; j++ {
+				if cond1 && i > 0 {
+					dist := max(i-j, j-i)
+					if dist < 10 {
+						bestDist = dist
+					}
+					matched[i] = dist
+					total += dist
+				}
+			}
+		}
+	}
+	worker()
+}
+`
+
+		newSrc := `package p
+
+func Process() {
+	setup()
+	fallback()
+}
+
+func worker() {
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 10; j++ {
+			if cond2 && i > 0 {
+				dist := max(i-j, j-i)
+				if dist < 10 {
+					bestDist = dist
+				}
+				matched[i] = dist
+				total += dist
+			}
+		}
+	}
+}
+
+func Batch() {
+	worker()
+}
+`
+		rootA, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		rA := rulesFor(rootA)
+		rB := rulesFor(rootB)
+
+		var fnProcessA, fnBatchA, loopProcessA *treesitter.ASTNode
+		for _, n := range rootA.PreOrder() {
+			if rA.IsContainerDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "Process":
+					fnProcessA = n
+				case "Batch":
+					fnBatchA = n
+				}
+			}
+		}
+		if fnProcessA != nil {
+			for _, n := range fnProcessA.Descendants() {
+				if rA.IsStatement(n.Type) && n.StartRow == 4 {
+					loopProcessA = n
+					break
+				}
+			}
+		}
+
+		var fnProcessB, fnBatchB, fnWorkerB *treesitter.ASTNode
+		for _, n := range rootB.PreOrder() {
+			if rB.IsContainerDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "Process":
+					fnProcessB = n
+				case "Batch":
+					fnBatchB = n
+				case "worker":
+					fnWorkerB = n
+				}
+			}
+		}
+
+		if fnProcessA == nil || fnBatchA == nil || loopProcessA == nil {
+			t.Fatalf("missing declarations in A: fnProcessA=%v, fnBatchA=%v, loopProcessA=%v",
+				fnProcessA, fnBatchA, loopProcessA)
+		}
+		if fnProcessB == nil || fnBatchB == nil || fnWorkerB == nil {
+			t.Fatalf("missing declarations in B: fnProcessB=%v, fnBatchB=%v, fnWorkerB=%v",
+				fnProcessB, fnBatchB, fnWorkerB)
+		}
+
+		// Locate the outer loop of worker() in rootB using declarative rules
+		var dstLoop *treesitter.ASTNode
+		for _, n := range fnWorkerB.Descendants() {
+			if rB.IsStatement(n.Type) && n.StartRow == 8 {
+				dstLoop = n
+				break
+			}
+		}
+		if dstLoop == nil {
+			t.Fatal("could not find loop in worker() in rootB")
+		}
+
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		res := Match(rootA, rootB, []byte(oldSrc), []byte(newSrc), part)
+		if res == nil || res.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Whole-snippet verification 1: enclosing declarations map in place
+		if res.Mappings.Src()[fnProcessA] != fnProcessB {
+			t.Errorf("expected Process to map to Process, got %v", res.Mappings.Src()[fnProcessA])
+		}
+		if res.Mappings.Src()[fnBatchA] != fnBatchB {
+			t.Errorf("expected Batch to map to Batch, got %v", res.Mappings.Src()[fnBatchA])
+		}
+
+		// Whole-snippet verification 2: surrounding statements map in place
+		var setupA, setupB *treesitter.ASTNode
+		for _, n := range fnProcessA.Descendants() {
+			if rA.IsCall(n.Type) {
+				setupA = n
+				break
+			}
+		}
+		for _, n := range fnProcessB.Descendants() {
+			if rB.IsCall(n.Type) {
+				setupB = n
+				break
+			}
+		}
+		if setupA != nil && setupB != nil {
+			if res.Mappings.Src()[setupA] != setupB {
+				t.Errorf("expected setup() in Process to map in place, got %v", res.Mappings.Src()[setupA])
+			}
+		}
+
+		// Whole-snippet verification 3: Process()'s loop must not map to worker() in B
+		if mappedLoopA := res.Mappings.Src()[loopProcessA]; mappedLoopA != nil {
+			if fnWorkerB.Contains(mappedLoopA) {
+				t.Fatalf("cross-scope move theft: loop in Process() was stolen by worker(), mapped to %v", mappedLoopA)
+			}
+		}
+
+		srcLoop := res.Mappings.Dst()[dstLoop]
+		if srcLoop == nil {
+			t.Fatal("expected dstLoop in worker() to be mapped, got nil")
+		}
+
+		// The loop in worker() must originate from Batch's closure, never stolen from Process
+		srcScope := getScopeName(srcLoop)
+		if srcScope == "Process" {
+			t.Fatalf("cross-scope move theft: dstLoop in worker() was stolen from %q", srcScope)
+		}
+		if srcScope != "worker" {
+			t.Fatalf("expected dstLoop to map from closure scope %q, got %q", "worker", srcScope)
+		}
+	})
+}
