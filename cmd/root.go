@@ -131,7 +131,9 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 		parseTree, _ := cmd.Flags().GetBool("parse-tree")
 		isCST, _ := cmd.Flags().GetBool("cst")
 		if parseTree || isCST {
-			runParseTree(cmd, args, noPager, isCST)
+			if runParseTree(cmd, args, noPager, isCST) {
+				os.Exit(1)
+			}
 			return
 		}
 
@@ -168,7 +170,9 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 			if !cmd.Flags().Changed("no-pager") {
 				noPager = true
 			}
-			runFileDiff(cmd, oldFile, newFile, pathA, pathB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+			if runFileDiff(cmd, oldFile, newFile, pathA, pathB, normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+				os.Exit(1)
+			}
 			return
 		}
 
@@ -191,7 +195,9 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 
 			// Case 1: Both exist on disk as files or /dev/null
 			if isFileOrDevNull(argA) && isFileOrDevNull(argB) {
-				runFileDiff(cmd, argA, argB, "", "", normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager)
+				if runFileDiff(cmd, argA, argB, "", "", normFormat, ignoreComments, parseErrorLimit, sizeLimitKB, lineLimitLines, noPager) {
+					os.Exit(1)
+				}
 				return
 			}
 
@@ -935,7 +941,8 @@ func validateNoMisplacedFlags(args []string) error {
 }
 
 // runFileDiff runs the diff pipeline for two files, supporting separate display paths for git external diff.
-func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) {
+// Returns true if any errors occurred during processing.
+func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB string, format string, ignoreComments bool, parseErrorLimit int, sizeLimitKB int, lineLimitLines int, noPager bool) bool {
 	uiMode, _ := cmd.Flags().GetBool("ui")
 	fullMode, _ := cmd.Flags().GetBool("full")
 
@@ -965,7 +972,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 	var err error
 
 	if fileA == fileB && format != "json" {
-		return
+		return false
 	}
 
 	if fileA == os.DevNull || fileA == "/dev/null" {
@@ -974,7 +981,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		srcBytes, err = os.ReadFile(fileA)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", fileA, err)
-			os.Exit(1)
+			return true
 		}
 	}
 
@@ -984,12 +991,12 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		dstBytes, err = os.ReadFile(fileB)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: reading %s: %v\n", fileB, err)
-			os.Exit(1)
+			return true
 		}
 	}
 
 	if bytes.Equal(srcBytes, dstBytes) && format != "json" {
-		return
+		return false
 	}
 
 	dr, err := pipeline.Run(srcBytes, dstBytes, displayA, displayB, pipeline.DiffOptions{
@@ -1003,7 +1010,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return true
 	}
 
 	switch format {
@@ -1014,7 +1021,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		renderOpts := resolveSideBySideOptions(cmd)
 		err := sidebyside.Render(displayA, displayB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts, writer)
 		if err != nil && pager.IsBrokenPipe(err) {
-			return
+			return false
 		}
 	case "unified":
 		p, writer := pager.Start(noPager)
@@ -1025,18 +1032,18 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		if output != "" {
 			if _, err := io.WriteString(writer, output); err != nil {
 				if pager.IsBrokenPipe(err) {
-					return
+					return false
 				}
 				fmt.Fprintf(os.Stderr, "Error: writing diff output: %v\n", err)
-				os.Exit(1)
+				return true
 			}
 			if !strings.HasSuffix(output, "\n") {
 				if _, err := io.WriteString(writer, "\n"); err != nil {
 					if pager.IsBrokenPipe(err) {
-						return
+						return false
 					}
 					fmt.Fprintf(os.Stderr, "Error: writing newline: %v\n", err)
-					os.Exit(1)
+					return true
 				}
 			}
 		}
@@ -1044,7 +1051,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		jsonData, err := json.MarshalIndent(dr.Envelope, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: serializing JSON: %v\n", err)
-			os.Exit(1)
+			return true
 		}
 		_, _ = os.Stdout.Write(jsonData)
 		_, _ = os.Stdout.Write([]byte("\n"))
@@ -1053,12 +1060,13 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		defer p.Close()
 		if dr.IsBinary {
 			_, _ = fmt.Fprintf(writer, "Binary files %s and %s differ\n", displayA, displayB)
-			return
+			return false
 		}
 		_, _ = fmt.Fprintf(writer, "Diffing  %s  →  %s\n\n", displayA, displayB)
 		_ = engine.FprintMappings(writer, dr.MatchResult)
 		_ = actions.FprintActions(writer, dr.EditScript)
 	}
+	return false
 }
 
 func runStreamMode(
@@ -1122,14 +1130,14 @@ func runStreamMode(
 	return false
 }
 
-func runParseTree(cmd *cobra.Command, args []string, noPager bool, isCST bool) {
+func runParseTree(cmd *cobra.Command, args []string, noPager bool, isCST bool) bool {
 	if len(args) == 0 {
 		flagName := "--parse-tree"
 		if isCST {
 			flagName = "--cst"
 		}
 		fmt.Fprintf(os.Stderr, "Error: %s requires at least one file argument\n", flagName)
-		os.Exit(1)
+		return true
 	}
 
 	p, writer := pager.Start(noPager)
@@ -1140,9 +1148,10 @@ func runParseTree(cmd *cobra.Command, args []string, noPager bool, isCST bool) {
 	if err := dumpFiles(writer, args, isCST); err != nil {
 		if !pager.IsBrokenPipe(err) {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return true
 		}
 	}
+	return false
 }
 
 func dumpFiles(w io.Writer, paths []string, isCST bool) error {
