@@ -1020,8 +1020,12 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 
 		renderOpts := resolveSideBySideOptions(cmd)
 		err := sidebyside.Render(displayA, displayB, dr.SrcBytes, dr.DstBytes, dr.Envelope, renderOpts, writer)
-		if err != nil && pager.IsBrokenPipe(err) {
-			return false
+		if err != nil {
+			if pager.IsBrokenPipe(err) {
+				return false
+			}
+			fmt.Fprintf(os.Stderr, "Error: rendering side-by-side diff: %v\n", err)
+			return true
 		}
 	case "unified":
 		p, writer := pager.Start(noPager)

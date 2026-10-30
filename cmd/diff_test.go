@@ -327,6 +327,91 @@ func TestDumpFilesLanguageDetectionError(t *testing.T) {
 	}
 }
 
+func TestRunParseTree(t *testing.T) {
+	resetRootCmdFlags()
+
+	t.Run("ZeroArgsReturnsTrue", func(t *testing.T) {
+		hadErrors := runParseTree(rootCmd, nil, true, false)
+		if !hadErrors {
+			t.Error("expected runParseTree to return true (hadErrors) for zero arguments")
+		}
+	})
+
+	t.Run("NonExistentFileReturnsTrue", func(t *testing.T) {
+		hadErrors := runParseTree(rootCmd, []string{"/non/existent/path/never_there.go"}, true, false)
+		if !hadErrors {
+			t.Error("expected runParseTree to return true (hadErrors) for non-existent file")
+		}
+	})
+
+	t.Run("ValidFileReturnsFalse", func(t *testing.T) {
+		dir := t.TempDir()
+		file := filepath.Join(dir, "valid.go")
+		if err := os.WriteFile(file, []byte("package main\n\nfunc Hello() {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hadErrors := runParseTree(rootCmd, []string{file}, true, false)
+		if hadErrors {
+			t.Error("expected runParseTree to return false for valid file")
+		}
+	})
+}
+
+func TestRunFileDiff(t *testing.T) {
+	resetRootCmdFlags()
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.go")
+	fileB := filepath.Join(dir, "b.go")
+	if err := os.WriteFile(fileA, []byte("package main\n\nfunc Foo() { println(1) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fileB, []byte("package main\n\nfunc Foo() { println(2) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("NonExistentFileAReturnsTrue", func(t *testing.T) {
+		hadErrors := runFileDiff(rootCmd, "/non/existent/a.go", fileB, "", "", "side-by-side", false, 0, 0, 0, true)
+		if !hadErrors {
+			t.Error("expected runFileDiff to return true (hadErrors) when fileA does not exist")
+		}
+	})
+
+	t.Run("NonExistentFileBReturnsTrue", func(t *testing.T) {
+		hadErrors := runFileDiff(rootCmd, fileA, "/non/existent/b.go", "", "", "side-by-side", false, 0, 0, 0, true)
+		if !hadErrors {
+			t.Error("expected runFileDiff to return true (hadErrors) when fileB does not exist")
+		}
+	})
+
+	t.Run("IdenticalFilesReturnsFalse", func(t *testing.T) {
+		hadErrors := runFileDiff(rootCmd, fileA, fileA, "", "", "side-by-side", false, 0, 0, 0, true)
+		if hadErrors {
+			t.Error("expected runFileDiff to return false for identical files")
+		}
+	})
+
+	t.Run("ValidSideBySideDiffReturnsFalse", func(t *testing.T) {
+		hadErrors := runFileDiff(rootCmd, fileA, fileB, "", "", "side-by-side", false, 0, 0, 0, true)
+		if hadErrors {
+			t.Error("expected runFileDiff to return false for valid side-by-side diff")
+		}
+	})
+
+	t.Run("ValidUnifiedDiffReturnsFalse", func(t *testing.T) {
+		hadErrors := runFileDiff(rootCmd, fileA, fileB, "", "", "unified", false, 0, 0, 0, true)
+		if hadErrors {
+			t.Error("expected runFileDiff to return false for valid unified diff")
+		}
+	})
+
+	t.Run("ValidDevNullDiffReturnsFalse", func(t *testing.T) {
+		hadErrors := runFileDiff(rootCmd, os.DevNull, fileB, "", "", "side-by-side", false, 0, 0, 0, true)
+		if hadErrors {
+			t.Error("expected runFileDiff to return false when diffing /dev/null against valid file")
+		}
+	})
+}
+
 func TestRootCmdAutocompletion(t *testing.T) {
 	if rootCmd.ValidArgsFunction == nil {
 		t.Fatal("expected rootCmd.ValidArgsFunction to be defined")
