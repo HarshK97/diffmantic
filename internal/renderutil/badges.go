@@ -98,21 +98,27 @@ func BuildMoveBadges(
 			continue
 		}
 		sStart, _ := serialize.ByteToLineCol(srcOffsets, a.Node.StartByte)
-		sEnd, _ := serialize.ByteToLineCol(srcOffsets, a.Node.EndByte)
+		sEndLineByte := a.Node.EndByte
+		if a.OrigEndByte > a.OrigStartByte {
+			sEndLineByte = a.OrigEndByte
+		}
+		sEnd, _ := serialize.ByteToLineCol(srcOffsets, sEndLineByte)
 
-		var dStart, dEnd int
-		var dStartByteLine uint32
+		var dStartByteLine, dEndLineByte uint32
 		if a.DestStartByte != nil && a.DestEndByte != nil {
 			dStartByteLine = *a.DestStartByte
-			dStart, _ = serialize.ByteToLineCol(dstOffsets, *a.DestStartByte)
-			dEnd, _ = serialize.ByteToLineCol(dstOffsets, *a.DestEndByte)
+			dEndLineByte = *a.DestEndByte
 		} else if a.DestNode != nil {
 			dStartByteLine = a.DestNode.StartByte
-			dStart, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.StartByte)
-			dEnd, _ = serialize.ByteToLineCol(dstOffsets, a.DestNode.EndByte)
+			dEndLineByte = a.DestNode.EndByte
 		} else {
 			continue
 		}
+		if a.DestOrigEndByte > a.DestOrigStartByte {
+			dEndLineByte = a.DestOrigEndByte
+		}
+		dStart, _ := serialize.ByteToLineCol(dstOffsets, dStartByteLine)
+		dEnd, _ := serialize.ByteToLineCol(dstOffsets, dEndLineByte)
 
 		hSrc, inSrcHunk := srcLineToHunk[sStart]
 		hDst, inDstHunk := dstLineToHunk[dStart]

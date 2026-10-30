@@ -648,9 +648,9 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			continue
 		}
 
-		// If a child node moved inside an already-moved parent, keep their colors matched.
+		// If an action moved along with a parent or container, match its color.
 		if pIdx := slices.IndexFunc(moves, func(prev moveInterval) bool {
-			return isColored[prev.actIdx] && isChildCoMover(curAct, &actions[prev.actIdx])
+			return isColored[prev.actIdx] && isHierarchicalCoMover(curAct, &actions[prev.actIdx])
 		}); pIdx >= 0 {
 			c := actions[moves[pIdx].actIdx].MoveColorIndex
 			curAct.MoveColorIndex = c
@@ -691,9 +691,51 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 	}
 }
 
-// isHierarchicalCoMover reports whether either action is a child of the other in both trees.
+// isHierarchicalCoMover reports whether either action is a child or body descendant of the other in both trees.
 func isHierarchicalCoMover(a, b *Action) bool {
-	return isChildCoMover(a, b) || isChildCoMover(b, a)
+	return isChildCoMover(a, b) || isChildCoMover(b, a) || isContainerBodyCoMover(a, b) || isContainerBodyCoMover(b, a)
+}
+
+// isContainerBodyCoMover reports whether child moved inside parent's body block across both trees.
+func isContainerBodyCoMover(child, parent *Action) bool {
+	if child == nil || parent == nil || child.ASTNode == nil || parent.ASTNode == nil {
+		return false
+	}
+	r := rules.Get(parent.ASTNode.GetLanguage())
+	if r == nil {
+		return false
+	}
+	srcBlock := getDirectOrEnclosedBlock(parent.ASTNode, r)
+	if srcBlock == nil || !srcBlock.Contains(child.ASTNode) {
+		return false
+	}
+
+	dstParent := parent.DestASTNode
+	if dstParent == nil {
+		return false
+	}
+	dstBlock := getDirectOrEnclosedBlock(dstParent, r)
+	if dstBlock == nil {
+		return false
+	}
+	if child.DestASTNode != nil {
+		return dstBlock.Contains(child.DestASTNode)
+	}
+	if child.DestStartByte != nil && child.DestEndByte != nil {
+		return dstBlock.StartByte <= *child.DestStartByte && dstBlock.EndByte >= *child.DestEndByte
+	}
+	return false
+}
+
+// getDirectOrEnclosedBlock returns n if it is already a block, or searches for an enclosed block child.
+func getDirectOrEnclosedBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil || r == nil {
+		return nil
+	}
+	if r.IsBlock(n.Type) {
+		return n
+	}
+	return findDirectOrEnclosedBlock(n, r)
 }
 
 // isChildCoMover reports whether child is a direct child of parent in both the before and after trees.

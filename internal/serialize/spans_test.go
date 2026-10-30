@@ -1,6 +1,7 @@
 package serialize
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -986,6 +987,53 @@ func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.
 	}
 	if closeSpan.ColorIndex != 1 {
 		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Magenta), got %d", closeSpan.ColorIndex)
+	}
+}
+
+func TestBuildHighlightSpans_MultilineConstructMutesHeaderAndDelimiter(t *testing.T) {
+	// A 10-line if statement whose header range was adjusted to line 0 ("if cond {\n")
+	src := "if cond {\n" + strings.Repeat("    stmt()\n", 8) + "}\n"
+	srcBytes := []byte(src)
+
+	// Header-only node span, but unclipped bounds cover the full construct so it mutes.
+	act := Action{
+		Action:         "move",
+		MoveColorIndex: 1, // initially assigned 1 by interference
+		OrigStartByte:  0,
+		OrigEndByte:    uint32(len(srcBytes)),
+		Node:           &NodeRef{Type: "if_statement", StartByte: 0, EndByte: 9},
+		DestStartByte:  ptr(uint32(0)),
+		DestEndByte:    ptr(uint32(9)),
+	}
+
+	actions := []Action{act}
+	closingDelimiter := DelimiterSpan{
+		StartByte: uint32(len(srcBytes) - 2), // '}'
+		EndByte:   uint32(len(srcBytes) - 1),
+		Action:    "move",
+		ActionRef: &actions[0],
+	}
+
+	spans := BuildHighlightSpans(srcBytes, actions, "left", closingDelimiter)
+
+	var openSpan, closeSpan *HighlightSpan
+	for i := range spans {
+		if spans[i].Line == 0 && spans[i].Action == "move" {
+			openSpan = &spans[i]
+		}
+		if spans[i].Line == 9 && spans[i].Action == "move" {
+			closeSpan = &spans[i]
+		}
+	}
+
+	if openSpan == nil || closeSpan == nil {
+		t.Fatalf("expected both opening and closing move spans, got open=%v, close=%v", openSpan, closeSpan)
+	}
+	if openSpan.ColorIndex != 0 {
+		t.Errorf("expected multiline construct header to mute to ColorIndex 0 (Teal), got %d", openSpan.ColorIndex)
+	}
+	if closeSpan.ColorIndex != 0 {
+		t.Errorf("expected multiline construct closing delimiter to mute to ColorIndex 0 (Teal), got %d", closeSpan.ColorIndex)
 	}
 }
 

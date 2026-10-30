@@ -721,6 +721,60 @@ func TestAssignMoveColors(t *testing.T) {
 			t.Errorf("expected child co-mover across EquivalentTypes to inherit parent color %d, got %d", actions[1].MoveColorIndex, actions[2].MoveColorIndex)
 		}
 	})
+
+	t.Run("Container header and enclosed body co-mover share move color without interference", func(t *testing.T) {
+		srcBytes := []byte("line0\nif cond {\n\tbody()\n}\n")
+		dstBytes := []byte("other0\nif cond {\n\tbody()\n}\n")
+		srcOffsets := BuildLineIndex(srcBytes)
+		dstOffsets := BuildLineIndex(dstBytes)
+
+		srcBody := &treesitter.ASTNode{Type: "expression_statement", StartByte: 16, EndByte: 23, Language: "go"}
+		srcBlock := &treesitter.ASTNode{Type: "block", StartByte: 14, EndByte: 25, Children: []*treesitter.ASTNode{srcBody}, Language: "go"}
+		srcBody.Parent = srcBlock
+		srcIf := &treesitter.ASTNode{Type: "if_statement", StartByte: 6, EndByte: 25, Children: []*treesitter.ASTNode{srcBlock}, Language: "go"}
+		srcBlock.Parent = srcIf
+
+		dstBody := &treesitter.ASTNode{Type: "expression_statement", StartByte: 17, EndByte: 24, Language: "go"}
+		dstBlock := &treesitter.ASTNode{Type: "block", StartByte: 15, EndByte: 26, Children: []*treesitter.ASTNode{dstBody}, Language: "go"}
+		dstBody.Parent = dstBlock
+		dstIf := &treesitter.ASTNode{Type: "if_statement", StartByte: 7, EndByte: 26, Children: []*treesitter.ASTNode{dstBlock}, Language: "go"}
+		dstBlock.Parent = dstIf
+
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 5},
+				DestStartByte: ptr(uint32(0)),
+				DestEndByte:   ptr(uint32(6)),
+			},
+			{
+				Action:        "move",
+				GroupID:       "group-1",
+				ASTNode:       srcBody,
+				DestASTNode:   dstBody,
+				Node:          &NodeRef{Type: "expression_statement", StartByte: 16, EndByte: 23},
+				DestStartByte: ptr(uint32(17)),
+				DestEndByte:   ptr(uint32(24)),
+			},
+			{
+				Action:        "move",
+				ASTNode:       srcIf,
+				DestASTNode:   dstIf,
+				Node:          &NodeRef{Type: "if_statement", StartByte: 6, EndByte: 15},
+				DestStartByte: ptr(uint32(7)),
+				DestEndByte:   ptr(uint32(16)),
+			},
+		}
+
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+
+		if actions[1].MoveColorIndex != 0 {
+			t.Fatalf("expected body move in group-1 to get color 0, got %d", actions[1].MoveColorIndex)
+		}
+		if actions[2].MoveColorIndex != 0 {
+			t.Errorf("expected container header to inherit co-mover body color 0 instead of taking conflicting color 1, got %d", actions[2].MoveColorIndex)
+		}
+	})
 }
 
 func TestAssignMoveColors_FullEngine(t *testing.T) {
@@ -1001,6 +1055,85 @@ func run() {
 		// 5. Whole-snippet context line purity: stationary statements step5..step15 remain unhighlighted
 		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9})
 		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17, 18, 19, 20})
+	})
+
+	t.Run("container header and body co-movers share move color without fracture", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func run() {
+	extra()
+	if cond {
+		body1()
+		body2()
+	}
+	workMovedIn()
+	step1()
+	step2()
+	step3()
+}
+`
+		newSrc := `package main
+
+func run() {
+	step1()
+	step2()
+	step3()
+	extra()
+	if cond {
+		workMovedIn()
+		body1()
+		body2()
+	}
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+
+		// 1. Whole-snippet verification: enclosing package and func declarations have no edit actions.
+		for _, a := range env.Actions {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 2. Whole-snippet context line purity: stationary statements step1..step3 remain unhighlighted.
+		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8})
+		assertContextLinesPure(t, env.RightHighlights, []int{6, 7, 8, 9, 10, 11})
+
+		// 3. Container header, body statements, and closing delimiter all share move ColorIndex 0 without fracture.
+		for _, h := range env.LeftHighlights {
+			if h.Action == "move" && h.ColorIndex != 0 {
+				t.Errorf("expected left move span on line %d [%d..%d] to have ColorIndex 0, got %d",
+					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Action == "move" && h.ColorIndex != 0 {
+				t.Errorf("expected right move span on line %d [%d..%d] to have ColorIndex 0, got %d",
+					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
+			}
+		}
+
+		// 4. Specifically verify opening '{' and closing '}' delimiters on right side share ColorIndex 0.
+		var foundOpeningBrace, foundClosingBrace bool
+		for _, h := range env.RightHighlights {
+			if h.Line == 7 && h.StartCol == 9 && h.EndCol == 10 && h.Action == "move" && h.ColorIndex == 0 {
+				foundOpeningBrace = true
+			}
+			if h.Line == 11 && h.StartCol == 1 && h.EndCol == 2 && h.Action == "move" && h.ColorIndex == 0 {
+				foundClosingBrace = true
+			}
+		}
+		if !foundOpeningBrace {
+			t.Errorf("expected right opening brace highlight span on line 7 with ColorIndex 0, got %+v", env.RightHighlights)
+		}
+		if !foundClosingBrace {
+			t.Errorf("expected right closing brace highlight span on line 11 with ColorIndex 0, got %+v", env.RightHighlights)
+		}
 	})
 }
 
