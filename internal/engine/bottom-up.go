@@ -228,6 +228,9 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	if hasForeignBodyOwner(t1, c, m, r) || hasForeignHeaderOwner(t1, c, m, r) {
 		return -1.0
 	}
+	if hasForeignScopeConflict(t1, c, m) {
+		return -1.0
+	}
 
 	// Don't pair with a candidate that has a different body, unless the candidate
 	// wraps the mapped block and shares header tokens.
@@ -413,6 +416,55 @@ func hasForeignBodyOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) 
 		}
 	}
 
+	return false
+}
+
+// hasForeignScopeConflict reports whether candidate c (or t1) has more mapped descendants
+// in a foreign declaration scope than in its own.
+func hasForeignScopeConflict(t1, c *treesitter.ASTNode, m *Mapping) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	s1 := getScopeName(t1)
+	if s1 != "" {
+		ownCount := 0
+		foreignCount := 0
+		dstMap := m.Dst()
+		for _, d2 := range c.Descendants() {
+			if d1, ok := dstMap[d2]; ok {
+				if t1.Contains(d1) {
+					ownCount++
+				} else if sd := getScopeName(d1); sd == s1 {
+					ownCount++
+				} else if sd != "" {
+					foreignCount++
+				}
+			}
+		}
+		if foreignCount > ownCount {
+			return true
+		}
+	}
+	sc := getScopeName(c)
+	if sc != "" {
+		ownCount := 0
+		foreignCount := 0
+		srcMap := m.Src()
+		for _, d1 := range t1.Descendants() {
+			if d2, ok := srcMap[d1]; ok {
+				if c.Contains(d2) {
+					ownCount++
+				} else if sd := getScopeName(d2); sd == sc {
+					ownCount++
+				} else if sd != "" {
+					foreignCount++
+				}
+			}
+		}
+		if foreignCount > ownCount {
+			return true
+		}
+	}
 	return false
 }
 

@@ -290,6 +290,74 @@ func SharedMatchedAncestor(t1, t2 *treesitter.ASTNode, m *Mapping) (*treesitter.
 	return nil, nil
 }
 
+// hasClosureChild reports whether n contains any closure descendant.
+func hasClosureChild(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	isClosure := func(typ string) bool {
+		if r != nil {
+			return r.IsClosure(typ)
+		}
+		return rules.IsClosure(typ)
+	}
+	if n.Index != nil && n.PreSize > 1 {
+		return slices.ContainsFunc(n.Index.Nodes[n.ID+1:n.ID+n.PreSize], func(d *treesitter.ASTNode) bool {
+			return isClosure(d.Type)
+		})
+	}
+	return slices.ContainsFunc(n.Descendants(), func(d *treesitter.ASTNode) bool {
+		return isClosure(d.Type)
+	})
+}
+
+// getClosureDeclarationName extracts the variable name assigning a closure (e.g. alignWindow := func(...)).
+func getClosureDeclarationName(n *treesitter.ASTNode, r *rules.Rules) string {
+	if n == nil {
+		return ""
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	if !hasClosureChild(n, r) {
+		return ""
+	}
+	isAssignOp := func(child *treesitter.ASTNode) bool {
+		if r != nil {
+			return r.IsAssignment(child.Type) || r.IsOperatorLiteral(child.Type)
+		}
+		return rules.IsAssignment(child.Type) || rules.IsOperatorLiteral(child.Type)
+	}
+	isID := func(child *treesitter.ASTNode) bool {
+		if r != nil {
+			return r.IsIdentifier(child.Type)
+		}
+		return rules.IsIdentifier(child.Type)
+	}
+	isBlock := func(child *treesitter.ASTNode) bool {
+		if r != nil {
+			return r.IsBlock(child.Type)
+		}
+		return rules.IsBlock(child.Type)
+	}
+	for _, child := range n.Children {
+		if isAssignOp(child) {
+			break
+		}
+		if isBlock(child) {
+			continue
+		}
+		for _, desc := range child.PreOrder() {
+			if isID(desc) {
+				if txt := identifierText(desc); txt != "" {
+					return txt
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // GetEnclosingDeclaration traverses up from n to find the nearest ancestor registered
 // in rules.Declarations or rules.LocalVarDeclarations.
 func GetEnclosingDeclaration(n *treesitter.ASTNode) *treesitter.ASTNode {

@@ -27,6 +27,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 	if part == nil {
 		part = NewLinePartition(srcA, srcB)
 	}
+	part.AttachRoots(t1, t2)
 
 	minHeight := 2
 	minDice := 0.5
