@@ -796,3 +796,231 @@ func TestBuildCohortProtected(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildCohortProtected_ContiguousMonotonicRun(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Contiguous, monotonic, diverse statements without anchor: protected.
+		srcFunc := mkNode("function_declaration", "fnOld")
+		srcFunc.Language = "go"
+		srcBody := mkNode("block", "")
+		srcBody.Language = "go"
+		srcBody.Parent = srcFunc
+		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+
+		dstFunc := mkNode("function_declaration", "fnNew")
+		dstFunc.Language = "go"
+		dstBody := mkNode("block", "")
+		dstBody.Language = "go"
+		dstBody.Parent = dstFunc
+		dstFunc.Children = []*treesitter.ASTNode{dstBody}
+
+		ms := engine.NewMapping()
+		es := actions.NewEditScript()
+
+		var srcStmts, dstStmts []*treesitter.ASTNode
+		for i := range 12 {
+			sSrc := mkNode("short_var_declaration", fmt.Sprintf("val%d := compute%d(arg%d, param%d)", i, i, i, i))
+			sSrc.Language = "go"
+			sSrc.Parent = srcBody
+			sSrc.StartRow = uint32(10 + i*2)
+			sSrc.EndRow = uint32(10 + i*2 + 1)
+
+			for _, sym := range []string{fmt.Sprintf("val%d", i), ":=", fmt.Sprintf("compute%d", i), fmt.Sprintf("arg%d", i), fmt.Sprintf("param%d", i)} {
+				leaf := mkNode("identifier", sym)
+				leaf.Language = "go"
+				leaf.Parent = sSrc
+				sSrc.Children = append(sSrc.Children, leaf)
+			}
+
+			sDst := mkNode("short_var_declaration", fmt.Sprintf("val%d := compute%d(arg%d, param%d)", i, i, i, i))
+			sDst.Language = "go"
+			sDst.Parent = dstBody
+			sDst.StartRow = uint32(200 + i*2)
+			sDst.EndRow = uint32(200 + i*2 + 1)
+
+			for _, sym := range []string{fmt.Sprintf("val%d", i), ":=", fmt.Sprintf("compute%d", i), fmt.Sprintf("arg%d", i), fmt.Sprintf("param%d", i)} {
+				leaf := mkNode("identifier", sym)
+				leaf.Language = "go"
+				leaf.Parent = sDst
+				sDst.Children = append(sDst.Children, leaf)
+			}
+
+			srcStmts = append(srcStmts, sSrc)
+			dstStmts = append(dstStmts, sDst)
+			ms.Add(sSrc, sDst)
+			es.Add(actions.Action{Type: actions.Move, Node: sSrc, DestNode: sDst})
+		}
+		srcBody.Children = srcStmts
+		dstBody.Children = dstStmts
+
+		protected := buildCohortProtected(es, ms)
+		if len(protected) != 12 {
+			t.Errorf("expected all 12 contiguous statements to be protected by CMR, got %d", len(protected))
+		}
+
+		// Non-contiguous run in source: interrupted by deleted statement.
+		srcBodyBroken := mkNode("block", "")
+		srcBodyBroken.Language = "go"
+		srcBodyBroken.Parent = srcFunc
+
+		s0 := srcStmts[0]
+		s0.Parent = srcBodyBroken
+		sDeleted := mkNode("expression_statement", "cleanup()")
+		sDeleted.Language = "go"
+		sDeleted.Parent = srcBodyBroken
+		s1 := srcStmts[1]
+		s1.Parent = srcBodyBroken
+		s2 := srcStmts[2]
+		s2.Parent = srcBodyBroken
+		s3 := srcStmts[3]
+		s3.Parent = srcBodyBroken
+		srcBodyBroken.Children = []*treesitter.ASTNode{s0, sDeleted, s1, s2, s3}
+
+		esBroken := actions.NewEditScript()
+		esBroken.Add(actions.Action{Type: actions.Move, Node: s0, DestNode: dstStmts[0]})
+		esBroken.Add(actions.Action{Type: actions.Move, Node: s1, DestNode: dstStmts[1]})
+		esBroken.Add(actions.Action{Type: actions.Move, Node: s2, DestNode: dstStmts[2]})
+		esBroken.Add(actions.Action{Type: actions.Move, Node: s3, DestNode: dstStmts[3]})
+
+		protectedBroken := buildCohortProtected(esBroken, ms)
+		if len(protectedBroken) != 0 {
+			t.Errorf("expected 0 protected nodes for non-contiguous run (interrupted by deleted statement), got %d", len(protectedBroken))
+		}
+
+		// Repetitive assertion boilerplate with low entropy should not be protected.
+		srcBodyBoiler := mkNode("block", "")
+		srcBodyBoiler.Language = "go"
+		srcBodyBoiler.Parent = srcFunc
+		dstBodyBoiler := mkNode("block", "")
+		dstBodyBoiler.Language = "go"
+		dstBodyBoiler.Parent = dstFunc
+
+		esBoiler := actions.NewEditScript()
+		msBoiler := engine.NewMapping()
+		var boilerSrc, boilerDst []*treesitter.ASTNode
+
+		for i := range 10 {
+			bSrc := mkNode("expression_statement", "assert.NoError(t, err)")
+			bSrc.Language = "go"
+			bSrc.Parent = srcBodyBoiler
+			bSrc.StartRow = uint32(10 + i)
+			for _, sym := range []string{"assert", "NoError", "t", "err"} {
+				leaf := mkNode("identifier", sym)
+				leaf.Language = "go"
+				leaf.Parent = bSrc
+				bSrc.Children = append(bSrc.Children, leaf)
+			}
+
+			bDst := mkNode("expression_statement", "assert.NoError(t, err)")
+			bDst.Language = "go"
+			bDst.Parent = dstBodyBoiler
+			bDst.StartRow = uint32(300 + i)
+			for _, sym := range []string{"assert", "NoError", "t", "err"} {
+				leaf := mkNode("identifier", sym)
+				leaf.Language = "go"
+				leaf.Parent = bDst
+				bDst.Children = append(bDst.Children, leaf)
+			}
+
+			boilerSrc = append(boilerSrc, bSrc)
+			boilerDst = append(boilerDst, bDst)
+			msBoiler.Add(bSrc, bDst)
+			esBoiler.Add(actions.Action{Type: actions.Move, Node: bSrc, DestNode: bDst})
+		}
+		srcBodyBoiler.Children = boilerSrc
+		dstBodyBoiler.Children = boilerDst
+
+		protectedBoiler := buildCohortProtected(esBoiler, msBoiler)
+		if len(protectedBoiler) != 0 {
+			t.Errorf("expected 0 protected nodes for low-entropy repetitive assertions, got %d", len(protectedBoiler))
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package main
+
+func OldHandler() {
+	config := loadConfig("production", true)
+	logger := initLogger(config.LogLevel, "stderr")
+	client := connectDatabase(config.DBHost, config.DBPort, config.Timeout)
+	session := client.CreateSession("admin", true)
+	metrics := registerMetrics("service_v1", session.ID)
+	worker := newWorkerPool(config.Concurrency, metrics)
+	worker.Start(session.Context())
+	cache := initCache(config.CacheSize, "lru")
+	server := startServer(config.HTTPPort, router, cache)
+	notifyStartup(logger, server.Address())
+}
+
+func Helper1() { println("h1") }
+func Helper2() { println("h2") }
+func Helper3() { println("h3") }
+func Helper4() { println("h4") }
+func Helper5() { println("h5") }
+func Helper6() { println("h6") }
+func Helper7() { println("h7") }
+func Helper8() { println("h8") }
+func Helper9() { println("h9") }
+func Helper10() { println("h10") }
+`
+		dst := `package main
+
+func OldHandler() {
+	println("placeholder")
+}
+
+func Helper1() { println("h1") }
+func Helper2() { println("h2") }
+func Helper3() { println("h3") }
+func Helper4() { println("h4") }
+func Helper5() { println("h5") }
+func Helper6() { println("h6") }
+func Helper7() { println("h7") }
+func Helper8() { println("h8") }
+func Helper9() { println("h9") }
+func Helper10() { println("h10") }
+
+func NewExtractedHandler() {
+	config := loadConfig("production", true)
+	logger := initLogger(config.LogLevel, "stderr")
+	client := connectDatabase(config.DBHost, config.DBPort, config.Timeout)
+	session := client.CreateSession("admin", true)
+	metrics := registerMetrics("service_v1", session.ID)
+	worker := newWorkerPool(config.Concurrency, metrics)
+	worker.Start(session.Context())
+	cache := initCache(config.CacheSize, "lru")
+	server := startServer(config.HTTPPort, router, cache)
+	notifyStartup(logger, server.Address())
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(src), []byte(dst))
+		mr := engine.Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		es := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		es = Run(es, mr.Mappings, srcAST, dstAST)
+
+		// All contiguous procedural statements should survive as moves.
+		moveCount := 0
+		for _, a := range es.Actions() {
+			if a.Type == actions.Move && a.Node != nil && rules.Get("go").IsStatement(a.Node.Type) {
+				moveCount++
+			}
+		}
+
+		if moveCount < 10 {
+			t.Errorf("expected at least 10 statement moves preserved by CMR, got %d", moveCount)
+		}
+	})
+}
