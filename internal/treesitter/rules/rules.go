@@ -10,7 +10,6 @@ type Rules struct {
 	Flattened             []string
 	Ignored               []string
 	Aliased               map[string]string
-	LabelIgnored          []string
 	Scaffolding           []string
 	Keywords              []string
 	Declarations          []string
@@ -22,7 +21,6 @@ type Rules struct {
 	EquivalentTypes       [][]string
 	Comments              []string
 	Calls                 []string
-	ScopedDeclarations    []string
 	Indexed               []string // Subscript nodes with prefix receivers (e.g. arr[i]).
 	LocalVarDeclarations  []string
 	Assignments           []string // Assignment expressions or statements (e.g. assignment_expression, assignment_statement).
@@ -44,7 +42,6 @@ type Rules struct {
 	flattenedSet             map[string]struct{}
 	statementsSet            map[string]struct{}
 	ignoredSet               map[string]struct{}
-	labelIgnoredSet          map[string]struct{}
 	keywordsSet              map[string]struct{}
 	declarationsSet          map[string]struct{}
 	identifiersSet           map[string]struct{}
@@ -55,7 +52,6 @@ type Rules struct {
 	unorderedSet             map[string]struct{}
 	commentsSet              map[string]struct{}
 	callsSet                 map[string]struct{}
-	scopedDeclarationsSet    map[string]struct{}
 	indexedSet               map[string]struct{}
 	localVarDeclarationsSet  map[string]struct{}
 	assignmentsSet           map[string]struct{}
@@ -104,7 +100,6 @@ var (
 func (r *Rules) CompileSets() {
 	r.flattenedSet = sliceToSet(r.Flattened)
 	r.ignoredSet = sliceToSet(r.Ignored)
-	r.labelIgnoredSet = sliceToSet(r.LabelIgnored)
 	r.keywordsSet = sliceToSet(r.Keywords)
 	r.declarationsSet = sliceToSet(r.Declarations)
 	r.identifiersSet = sliceToSet(r.Identifiers)
@@ -115,7 +110,6 @@ func (r *Rules) CompileSets() {
 	r.unorderedSet = sliceToSet(r.Unordered)
 	r.commentsSet = sliceToSet(r.Comments)
 	r.callsSet = sliceToSet(r.Calls)
-	r.scopedDeclarationsSet = sliceToSet(r.ScopedDeclarations)
 	r.indexedSet = sliceToSet(r.Indexed)
 	r.localVarDeclarationsSet = sliceToSet(r.LocalVarDeclarations)
 	r.assignmentsSet = sliceToSet(r.Assignments)
@@ -213,18 +207,6 @@ func (r *Rules) IsDeclaration(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Declarations, nodeType)
-}
-
-// IsScopedDeclaration reports whether nodeType is a declaration with an explicit signature receiver or scope.
-func (r *Rules) IsScopedDeclaration(nodeType string) bool {
-	if r == nil || nodeType == "" {
-		return false
-	}
-	if len(r.scopedDeclarationsSet) > 0 {
-		_, ok := r.scopedDeclarationsSet[nodeType]
-		return ok
-	}
-	return slices.Contains(r.ScopedDeclarations, nodeType)
 }
 
 // IsLocalVarDeclaration reports whether nodeType is a local variable declaration.
@@ -417,18 +399,6 @@ func (r *Rules) IsKeyword(nodeType, label string) bool {
 	return slices.Contains(r.Keywords, nodeType) || (label != "" && slices.Contains(r.Keywords, label))
 }
 
-// IsLabelIgnored checks if node labels should be dropped for this type.
-func (r *Rules) IsLabelIgnored(nodeType string) bool {
-	if r == nil {
-		return false
-	}
-	if len(r.labelIgnoredSet) > 0 {
-		_, ok := r.labelIgnoredSet[nodeType]
-		return ok
-	}
-	return slices.Contains(r.LabelIgnored, nodeType)
-}
-
 // IsPair checks if nodeType represents a key-value property pair.
 func (r *Rules) IsPair(nodeType string) bool {
 	if r == nil {
@@ -577,16 +547,6 @@ func (r *Rules) DefaultRootType() string {
 		return r.Scaffolding[0]
 	}
 	return ""
-}
-
-// IsFlattenedType reports whether nodeType is configured as flattened in any language rule set.
-func IsFlattenedType(nodeType string) bool {
-	for _, r := range registry {
-		if r.IsFlattened(nodeType) {
-			return true
-		}
-	}
-	return false
 }
 
 // IsComment reports whether nodeType is configured as a comment in any language rule set.

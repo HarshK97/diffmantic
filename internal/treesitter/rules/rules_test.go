@@ -163,6 +163,35 @@ func TestRulesAliased(t *testing.T) {
 	}
 }
 
+func TestRulesDefaultRootType(t *testing.T) {
+	var nilRules *Rules
+	if got := nilRules.DefaultRootType(); got != "" {
+		t.Errorf("nilRules.DefaultRootType() = %q, want empty", got)
+	}
+
+	emptyRules := &Rules{}
+	if got := emptyRules.DefaultRootType(); got != "" {
+		t.Errorf("emptyRules.DefaultRootType() = %q, want empty", got)
+	}
+
+	r := &Rules{
+		Scaffolding: []string{"source_file", "block"},
+	}
+	if got := r.DefaultRootType(); got != "source_file" {
+		t.Errorf("r.DefaultRootType() = %q, want %q", got, "source_file")
+	}
+
+	for _, lang := range []string{"go", "python", "javascript", "typescript", "c", "cpp", "rust", "zig", "java", "lua"} {
+		lr := Get(lang)
+		if lr == nil {
+			t.Fatalf("Get(%q) = nil", lang)
+		}
+		if got := lr.DefaultRootType(); got == "" {
+			t.Errorf("Get(%q).DefaultRootType() = empty, want non-empty root type", lang)
+		}
+	}
+}
+
 func TestRulesUnordered(t *testing.T) {
 	r := &Rules{
 		Unordered: []string{"object", "start_tag"},
@@ -212,16 +241,15 @@ func TestRulesAreTypesEquivalent(t *testing.T) {
 func TestRulesHelperMethods(t *testing.T) {
 	newSampleRules := func() *Rules {
 		return &Rules{
-			Ignored:      []string{"comment", ";"},
-			Keywords:     []string{"func", "return"},
-			Aliased:      map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
-			LabelIgnored: []string{"identifier"},
-			Unordered:    []string{"object", "hash"},
-			Flattened:    []string{"string_literal"},
-			Blocks:       []string{"block", "compound_statement"},
-			Calls:        []string{"call_expression"},
-			Indexed:      []string{"subscript_expression", "index_expression"},
-			Tags:         []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
+			Ignored:   []string{"comment", ";"},
+			Keywords:  []string{"func", "return"},
+			Aliased:   map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
+			Unordered: []string{"object", "hash"},
+			Flattened: []string{"string_literal"},
+			Blocks:    []string{"block", "compound_statement"},
+			Calls:     []string{"call_expression"},
+			Indexed:   []string{"subscript_expression", "index_expression"},
+			Tags:      []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
 			EquivalentTypes: [][]string{
 				{"function_declaration", "function_definition", "variable_declaration"},
 				{"assignment_statement", "variable_declaration"},
@@ -251,13 +279,6 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if r.IsKeyword("node", "val") {
 			t.Errorf("IsKeyword(node, val) = true, want false")
-		}
-
-		if !r.IsLabelIgnored("identifier") {
-			t.Errorf("IsLabelIgnored(identifier) = false, want true")
-		}
-		if r.IsLabelIgnored("other") {
-			t.Errorf("IsLabelIgnored(other) = true, want false")
 		}
 
 		if !r.IsUnordered("object") {
@@ -329,9 +350,6 @@ func TestRulesHelperMethods(t *testing.T) {
 		if !r.IsKeyword("func", "") || !r.IsKeyword("other", "return") || r.IsKeyword("node", "val") {
 			t.Errorf("IsKeyword uncompiled fallback failed")
 		}
-		if !r.IsLabelIgnored("identifier") || r.IsLabelIgnored("other") {
-			t.Errorf("IsLabelIgnored uncompiled fallback failed")
-		}
 		if !r.IsUnordered("object") || r.IsUnordered("array") {
 			t.Errorf("IsUnordered uncompiled fallback failed")
 		}
@@ -365,9 +383,6 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if r.IsKeyword("a", "b") {
 			t.Errorf("nil.IsKeyword returned true")
-		}
-		if r.IsLabelIgnored("a") {
-			t.Errorf("nil.IsLabelIgnored returned true")
 		}
 		if r.IsUnordered("a") {
 			t.Errorf("nil.IsUnordered returned true")

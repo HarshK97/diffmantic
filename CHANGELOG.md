@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Directional move badges on runs of consecutive single-line statements now collapse into a single badge on the opening line, eliminating repetitive badge ladders while keeping compound statements like `if` and `for` clearly badged on their headers.
+- Cleaned up unused Tree-sitter rule tables for scoped declarations and ignored labels, dropping dead label-stripping logic during AST ingestion.
 
 ### Fixed
 - Extracting a closure or local function into a helper won't steal identical statements from untouched functions or show false move.
