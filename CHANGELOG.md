@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Extracting a closure or local function into a helper won't steal identical statements from untouched functions or show false move.
 - Moving a block statement (like an `if` or `for` loop) along with its body now keeps the header, body statements, and enclosing braces in the same move color, rather than splitting the header into a conflicting color.
+- Extracting a statement block into a new helper function or inlining a helper back into a caller now preserves move highlights on the closing delimiter, rather than fracturing it into a spurious insert or delete.
 
 ## [0.14.0] - 2026-10-29
 
