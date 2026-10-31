@@ -491,9 +491,15 @@ type cohortKey struct {
 	dstContainer *treesitter.ASTNode
 }
 
-// buildCohortProtected marks moves that shouldn't be demoted because they're
-// moving alongside an anchor. If several siblings move together to the same
-// destination and at least one qualifies on its own, we keep the whole group.
+// siblingBucketKey groups moves by exact source parent and destination parent blocks.
+type siblingBucketKey struct {
+	srcParent *treesitter.ASTNode
+	dstParent *treesitter.ASTNode
+}
+
+// buildCohortProtected marks moves that shouldn't be demoted because they are
+// moving alongside an anchor (Pass 1) or form a contiguous run of statements
+// moving together (Pass 2).
 func buildCohortProtected(es *actions.EditScript, ms *engine.Mapping) map[*treesitter.ASTNode]bool {
 	const minCohortSize = 3
 
@@ -535,6 +541,126 @@ func buildCohortProtected(es *actions.EditScript, ms *engine.Mapping) map[*trees
 			protected[n] = true
 		}
 	}
+
+	// Pass 2: Protect runs of statements that move together without a large anchor,
+	// such as extracted test setup or procedural helpers.
+	const (
+		minRunLength       = 4
+		minEntropyFloor    = 20
+		minCohortMassFloor = 120
+		minStatementFloor  = 4
+	)
+
+	buckets := make(map[siblingBucketKey][]*treesitter.ASTNode)
+	seen := make(map[*treesitter.ASTNode]bool)
+
+	for _, a := range es.Actions() {
+		if a.Type != actions.Move || a.Node == nil || a.Node.Parent == nil {
+			continue
+		}
+		if protected[a.Node] || seen[a.Node] {
+			continue
+		}
+		dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
+		if dstNode == nil || dstNode.Parent == nil {
+			continue
+		}
+		r := rules.Get(a.Node.GetLanguage())
+		isStmt := (r != nil && r.IsStatement(a.Node.Type)) || (r == nil && rules.IsStatement(a.Node.Type))
+		if !isStmt {
+			continue
+		}
+		seen[a.Node] = true
+		key := siblingBucketKey{srcParent: a.Node.Parent, dstParent: dstNode.Parent}
+		buckets[key] = append(buckets[key], a.Node)
+	}
+
+	for key, nodes := range buckets {
+		if len(nodes) < minRunLength {
+			continue
+		}
+
+		slices.SortFunc(nodes, func(a, b *treesitter.ASTNode) int {
+			return cmp.Compare(a.ChildIndex(), b.ChildIndex())
+		})
+
+		runStart := 0
+		for i := range nodes {
+			isEnd := (i == len(nodes)-1) || (nodes[i+1].ChildIndex() != nodes[i].ChildIndex()+1)
+			if !isEnd {
+				continue
+			}
+
+			run := nodes[runStart : i+1]
+			runStart = i + 1
+			if len(run) < minRunLength {
+				continue
+			}
+
+			// Destination statements must also be contiguous in the same block.
+			dstContiguous := true
+			for j := range len(run) - 1 {
+				dstJ := ms.Src()[run[j]]
+				dstNext := ms.Src()[run[j+1]]
+				if dstJ == nil || dstNext == nil || dstJ.Parent != key.dstParent || dstNext.Parent != key.dstParent {
+					dstContiguous = false
+					break
+				}
+				if dstNext.ChildIndex() != dstJ.ChildIndex()+1 {
+					dstContiguous = false
+					break
+				}
+			}
+			if !dstContiguous {
+				continue
+			}
+
+			uniqueSymbols := make(map[string]struct{})
+			collectiveScore := 0
+			totalLineDist := 0
+
+			for _, s := range run {
+				dst := ms.Src()[s]
+				r := rules.Get(s.GetLanguage())
+				score := moveStructuralScore(s, r, ms)
+
+				// Exclude control flow jumps and trivial jump bodies from collective mass.
+				body := s
+				isBlock := (r != nil && r.IsBlock(s.Type)) || (r == nil && rules.IsBlock(s.Type))
+				if !isBlock {
+					body = findBodyBlock(s, r)
+				}
+				isBoilerplate := (body != nil && isTrivialJumpBody(body, r)) || isTerminatingStatement(s, r)
+				if score >= minStatementFloor && !isBoilerplate {
+					collectiveScore += score
+				}
+
+				lineDist := max(int(s.StartRow)-int(dst.StartRow), int(dst.StartRow)-int(s.StartRow))
+				totalLineDist += lineDist
+
+				for _, d := range s.Descendants() {
+					if isPayloadLeaf(d, r) && d.Label != "" {
+						uniqueSymbols[d.Label] = struct{}{}
+					}
+				}
+			}
+
+			avgDist := totalLineDist / len(run)
+			baseThresh := 50 + avgDist/10
+			r0 := rules.Get(run[0].GetLanguage())
+			if sameScopeDeclaration(run[0], ms.Src()[run[0]], ms, r0) {
+				baseThresh = 4 + avgDist/5
+			}
+			requiredCollective := max(int(float64(baseThresh)*1.5), minCohortMassFloor)
+
+			if collectiveScore >= requiredCollective && len(uniqueSymbols) >= minEntropyFloor {
+				for _, s := range run {
+					protected[s] = true
+				}
+			}
+		}
+	}
+
 	return protected
 }
 
