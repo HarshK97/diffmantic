@@ -763,3 +763,206 @@ func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T)
 		}
 	}
 }
+
+func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
+	goRules := rules.Get("go")
+
+	srcLines := make([]string, 40)
+	for i := range 40 {
+		srcLines[i] = fmt.Sprintf("src line %d", i)
+	}
+	dstLines := make([]string, 50)
+	for i := range 50 {
+		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	}
+
+	srcOffsets := make([]int, len(srcLines)+1)
+	for i := range srcLines {
+		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	}
+	dstOffsets := make([]int, len(dstLines)+1)
+	for i := range dstLines {
+		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	}
+
+	pairs := make([]serialize.LineAlignmentPair, 0, 90)
+	for i := range 40 {
+		pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
+	}
+	for i := range 50 {
+		pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
+	}
+	hunks := []Interval{
+		{Start: 0, End: len(pairs) - 1},
+	}
+
+	mkAction := func(sType string, sL1, sL2, dL1, dL2 int, grp string) serialize.Action {
+		sStart := uint32(srcOffsets[sL1])
+		sEnd := uint32(srcOffsets[sL2+1] - 1)
+		dStart := uint32(dstOffsets[dL1])
+		dEnd := uint32(dstOffsets[dL2+1] - 1)
+		return serialize.Action{
+			Action:  "move",
+			GroupID: grp,
+			Node: &serialize.NodeRef{
+				Type:      sType,
+				StartByte: sStart,
+				EndByte:   sEnd,
+			},
+			DestStartByte:     &dStart,
+			DestEndByte:       &dEnd,
+			OrigStartByte:     sStart,
+			OrigEndByte:       sEnd,
+			DestOrigStartByte: dStart,
+			DestOrigEndByte:   dEnd,
+		}
+	}
+
+	t.Run("ContiguousRunAndMultilineLandmark", func(t *testing.T) {
+		actions := []serialize.Action{
+			mkAction("expression_statement", 2, 2, 20, 20, "group-1"),
+			mkAction("expression_statement", 3, 3, 21, 21, "group-1"),
+			mkAction("expression_statement", 4, 4, 22, 22, "group-1"),
+			mkAction("if_statement", 5, 7, 23, 25, "group-1"),
+			mkAction("expression_statement", 8, 8, 26, 26, "group-1"),
+			mkAction("expression_statement", 9, 9, 27, 27, "group-1"),
+		}
+
+		badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+
+		// First flat run: only the leading statement keeps its badge.
+		if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L21") {
+			t.Errorf("expected line 2 badge '➔ L21', got %q", badge)
+		}
+		if badge, ok := badges.DstLineBadges[20]; !ok || !strings.Contains(badge, "↳ L3") {
+			t.Errorf("expected dst line 20 badge '↳ L3', got %q", badge)
+		}
+		for _, l := range []int{3, 4} {
+			if badge, ok := badges.SrcLineBadges[l]; ok {
+				t.Errorf("expected line %d badge suppressed, found %q", l, badge)
+			}
+		}
+		for _, l := range []int{21, 22} {
+			if badge, ok := badges.DstLineBadges[l]; ok {
+				t.Errorf("expected dst line %d badge suppressed, found %q", l, badge)
+			}
+		}
+
+		// Multiline compound statements stay badged as landmarks.
+		if badge, ok := badges.SrcLineBadges[5]; !ok || !strings.Contains(badge, "➔ L24") {
+			t.Errorf("expected if statement line 5 badge '➔ L24', got %q", badge)
+		}
+		if badge, ok := badges.DstLineBadges[23]; !ok || !strings.Contains(badge, "↳ L6") {
+			t.Errorf("expected dst if statement line 23 badge '↳ L6', got %q", badge)
+		}
+
+		// Trailing run starts fresh after the compound statement.
+		if badge, ok := badges.SrcLineBadges[8]; !ok || !strings.Contains(badge, "➔ L27") {
+			t.Errorf("expected line 8 badge '➔ L27', got %q", badge)
+		}
+		if badge, ok := badges.DstLineBadges[26]; !ok || !strings.Contains(badge, "↳ L9") {
+			t.Errorf("expected dst line 26 badge '↳ L9', got %q", badge)
+		}
+		if badge, ok := badges.SrcLineBadges[9]; ok {
+			t.Errorf("expected line 9 badge suppressed, found %q", badge)
+		}
+		if badge, ok := badges.DstLineBadges[27]; ok {
+			t.Errorf("expected dst line 27 badge suppressed, found %q", badge)
+		}
+	})
+
+	t.Run("InterveningTriviaAndComments", func(t *testing.T) {
+		triviaSrc := make([]string, 10)
+		triviaDst := make([]string, 20)
+		triviaSrc[0] = "a = 1"
+		triviaSrc[1] = "-- lua comment line"
+		triviaSrc[2] = ""
+		triviaSrc[3] = "b = 2"
+
+		triviaDst[10] = "a = 1"
+		triviaDst[11] = "/* block comment */"
+		triviaDst[12] = "b = 2"
+
+		tSrcOffsets := make([]int, len(triviaSrc)+1)
+		for i := range triviaSrc {
+			tSrcOffsets[i+1] = tSrcOffsets[i] + len(triviaSrc[i]) + 1
+		}
+		tDstOffsets := make([]int, len(triviaDst)+1)
+		for i := range triviaDst {
+			tDstOffsets[i+1] = tDstOffsets[i] + len(triviaDst[i]) + 1
+		}
+
+		tPairs := make([]serialize.LineAlignmentPair, 0, 40)
+		for i := range 20 {
+			tPairs = append(tPairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
+		}
+		for i := range 20 {
+			tPairs = append(tPairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
+		}
+		tHunks := []Interval{{Start: 0, End: len(tPairs) - 1}}
+
+		s0Start := uint32(tSrcOffsets[0])
+		s0End := uint32(tSrcOffsets[1] - 1)
+		d0Start := uint32(tDstOffsets[10])
+		d0End := uint32(tDstOffsets[11] - 1)
+
+		s1Start := uint32(tSrcOffsets[3])
+		s1End := uint32(tSrcOffsets[4] - 1)
+		d1Start := uint32(tDstOffsets[12])
+		d1End := uint32(tDstOffsets[13] - 1)
+
+		triviaActions := []serialize.Action{
+			{
+				Action:  "move",
+				GroupID: "lua-group",
+				Node: &serialize.NodeRef{
+					Type:      "assignment_statement",
+					StartByte: s0Start,
+					EndByte:   s0End,
+				},
+				DestStartByte: &d0Start,
+				DestEndByte:   &d0End,
+			},
+			{
+				Action:  "move",
+				GroupID: "lua-group",
+				Node: &serialize.NodeRef{
+					Type:      "assignment_statement",
+					StartByte: s1Start,
+					EndByte:   s1End,
+				},
+				DestStartByte: &d1Start,
+				DestEndByte:   &d1End,
+			},
+		}
+
+		luaRules := rules.Get("lua")
+		badges := BuildMoveBadges(triviaActions, tHunks, tPairs, tSrcOffsets, tDstOffsets, triviaSrc, triviaDst, luaRules, false)
+
+		if _, ok := badges.SrcLineBadges[0]; !ok {
+			t.Errorf("expected line 0 to keep badge across trivia")
+		}
+		if badge, ok := badges.SrcLineBadges[3]; ok {
+			t.Errorf("expected line 3 badge to be collapsed across Lua comment and blank line, but got %q", badge)
+		}
+		if badge, ok := badges.DstLineBadges[12]; ok {
+			t.Errorf("expected dst line 12 badge to be collapsed across block comment, but got %q", badge)
+		}
+	})
+
+	t.Run("TriviaBoundsSafety", func(t *testing.T) {
+		lines := []string{"// comment", "code"}
+		if isLinesTriviaOnly(lines, -1, 0) {
+			t.Errorf("expected negative startLine to return false")
+		}
+		if isLinesTriviaOnly(lines, 0, 5) {
+			t.Errorf("expected out-of-bounds endLine to return false")
+		}
+		if !isLinesTriviaOnly(lines, 0, 0) {
+			t.Errorf("expected line 0 comment to be trivia")
+		}
+		if isLinesTriviaOnly(lines, 1, 1) {
+			t.Errorf("expected line 1 code not to be trivia")
+		}
+	})
+}
