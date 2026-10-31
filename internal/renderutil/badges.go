@@ -201,9 +201,51 @@ func BuildMoveBadges(
 		}
 	}
 
+	// Only badge the first statement in a contiguous run of single-line moves within the same group.
+	// Multiline compound statements (like if/for) always keep their badges as landmarks.
+	suppressFlatFollower := make(map[*moveCandidate]bool)
+	candidatesByGroup := make(map[string][]*moveCandidate)
+	for _, c := range candidates {
+		if c.act.GroupID != "" {
+			candidatesByGroup[c.act.GroupID] = append(candidatesByGroup[c.act.GroupID], c)
+		}
+	}
+
+	for _, grp := range candidatesByGroup {
+		if len(grp) < 2 {
+			continue
+		}
+		slices.SortFunc(grp, func(a, b *moveCandidate) int {
+			return cmp.Or(
+				cmp.Compare(a.sStart, b.sStart),
+				cmp.Compare(a.sStartByte, b.sStartByte),
+			)
+		})
+
+		for i := 1; i < len(grp); i++ {
+			prev := grp[i-1]
+			curr := grp[i]
+
+			prevSingle := (prev.sStart == prev.sEnd) && (prev.dStart == prev.dEnd) && !prev.isDecl
+			currSingle := (curr.sStart == curr.sEnd) && (curr.dStart == curr.dEnd) && !curr.isDecl
+			if !prevSingle || !currSingle {
+				continue
+			}
+
+			srcContiguous := (curr.sStart == prev.sEnd+1) ||
+				(curr.sStart > prev.sEnd+1 && isLinesTriviaOnly(srcLines, prev.sEnd+1, curr.sStart-1))
+			dstContiguous := (curr.dStart == prev.dEnd+1) ||
+				(curr.dStart > prev.dEnd+1 && isLinesTriviaOnly(dstLines, prev.dEnd+1, curr.dStart-1))
+
+			if srcContiguous && dstContiguous {
+				suppressFlatFollower[curr] = true
+			}
+		}
+	}
+
 	for cIdx, c := range candidates {
-		suppressSrc := c.alignedNear
-		suppressDst := c.alignedNear
+		suppressSrc := c.alignedNear || suppressFlatFollower[c]
+		suppressDst := c.alignedNear || suppressFlatFollower[c]
 
 		// Don't badge children if their enclosing parent move already has a badge (or is nearby) and they stayed inside it.
 		for _, p := range candidates[:cIdx] {
@@ -305,4 +347,30 @@ func ExtractDeclarationSignature(node *serialize.NodeRef, lines []string, sStart
 		return node.Type
 	}
 	return "declaration"
+}
+
+// isTriviaOrBlankLine reports whether line contains only whitespace or comments.
+func isTriviaOrBlankLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "//") ||
+		strings.HasPrefix(trimmed, "/*") ||
+		strings.HasPrefix(trimmed, "*") ||
+		strings.HasPrefix(trimmed, "#") ||
+		strings.HasPrefix(trimmed, "--")
+}
+
+// isLinesTriviaOnly reports whether all lines from startLine to endLine (inclusive) are empty or comments.
+func isLinesTriviaOnly(lines []string, startLine, endLine int) bool {
+	if startLine < 0 || endLine >= len(lines) {
+		return false
+	}
+	for l := startLine; l <= endLine; l++ {
+		if !isTriviaOrBlankLine(lines[l]) {
+			return false
+		}
+	}
+	return true
 }

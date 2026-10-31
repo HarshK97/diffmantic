@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Directional move badges on runs of consecutive single-line statements now collapse into a single badge on the opening line, eliminating repetitive badge ladders while keeping compound statements like `if` and `for` clearly badged on their headers.
+
 ### Fixed
 - Extracting a closure or local function into a helper won't steal identical statements from untouched functions or show false move.
 - Moving a block statement (like an `if` or `for` loop) along with its body now keeps the header, body statements, and enclosing braces in the same move color, rather than splitting the header into a conflicting color.
