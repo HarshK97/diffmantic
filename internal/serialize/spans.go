@@ -497,10 +497,19 @@ func nodeLen(a *Action, side string) int {
 		return 0
 	}
 	if side == "left" {
+		if a.OrigEndByte > a.OrigStartByte {
+			return int(a.OrigEndByte - a.OrigStartByte)
+		}
 		if a.Node != nil {
 			return int(a.Node.EndByte - a.Node.StartByte)
 		}
 	} else {
+		if a.DestOrigEndByte > a.DestOrigStartByte {
+			return int(a.DestOrigEndByte - a.DestOrigStartByte)
+		}
+		if a.Action == "insert" && a.OrigEndByte > a.OrigStartByte {
+			return int(a.OrigEndByte - a.OrigStartByte)
+		}
 		if dStart, dEnd, ok := actionDestBytes(a); ok {
 			return int(dEnd - dStart)
 		}

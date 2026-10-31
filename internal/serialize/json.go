@@ -228,21 +228,29 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 				if a.Node == nil {
 					return nil, fmt.Errorf("insert action has nil Node")
 				}
+				ja.DestOrigStartByte = a.Node.StartByte
+				ja.DestOrigEndByte = a.Node.EndByte
 				nodeRef, err := makeNodeRef(a.Node, "after")
 				if err != nil {
 					return nil, fmt.Errorf("failed to build node reference for insert: %w", err)
 				}
 				if !a.Subtree {
-					hasFooter, fStart, fEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, dstBytes)
-					if hasFooter {
-						rightFooters = append(rightFooters, pendingFooter{
-							span: DelimiterSpan{
-								StartByte: fStart,
-								EndByte:   fEnd,
-								Action:    "insert",
-							},
-							actionIndex: len(actionsList),
-						})
+					if hasFooter, fStart, fEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, dstBytes); hasFooter {
+						// When the enclosed block moved from elsewhere, its closing brace
+						// belongs to that move, so skip emitting a synthetic insert footer.
+						r := rules.Get(a.Node.GetLanguage())
+						enclosedBlock := findDirectOrEnclosedBlock(a.Node, r)
+						blockMapped := enclosedBlock != nil && ms != nil && ms.Dst()[enclosedBlock] != nil
+						if !blockMapped {
+							rightFooters = append(rightFooters, pendingFooter{
+								span: DelimiterSpan{
+									StartByte: fStart,
+									EndByte:   fEnd,
+									Action:    "insert",
+								},
+								actionIndex: len(actionsList),
+							})
+						}
 					}
 				}
 				ja.Node = nodeRef
@@ -269,16 +277,22 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					return nil, fmt.Errorf("failed to build node reference for delete: %w", err)
 				}
 				if !a.Subtree {
-					hasFooter, fStart, fEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, srcBytes)
-					if hasFooter {
-						leftFooters = append(leftFooters, pendingFooter{
-							span: DelimiterSpan{
-								StartByte: fStart,
-								EndByte:   fEnd,
-								Action:    "delete",
-							},
-							actionIndex: len(actionsList),
-						})
+					if hasFooter, fStart, fEnd := adjustRangeForContainer(a.Node, &nodeRef.StartByte, &nodeRef.EndByte, srcBytes); hasFooter {
+						// When the enclosed block moved to elsewhere, its closing brace
+						// belongs to that move, so skip emitting a synthetic delete footer.
+						r := rules.Get(a.Node.GetLanguage())
+						enclosedBlock := findDirectOrEnclosedBlock(a.Node, r)
+						blockMapped := enclosedBlock != nil && ms != nil && ms.Src()[enclosedBlock] != nil
+						if !blockMapped {
+							leftFooters = append(leftFooters, pendingFooter{
+								span: DelimiterSpan{
+									StartByte: fStart,
+									EndByte:   fEnd,
+									Action:    "delete",
+								},
+								actionIndex: len(actionsList),
+							})
+						}
 					}
 				}
 				ja.Node = nodeRef

@@ -1470,3 +1470,156 @@ func TestResolveMoveColor(t *testing.T) {
 		t.Errorf("expected ungrouped move with 10 lines to collapse to 0, got %d", got)
 	}
 }
+
+func TestContainerDelimiterMoveParity(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// nodeLen should use the full construct range, not the clipped header.
+		insertAct := &Action{
+			Action:            "insert",
+			OrigStartByte:     100,
+			OrigEndByte:       250,
+			DestOrigStartByte: 100,
+			DestOrigEndByte:   250,
+			Node: &NodeRef{
+				StartByte: 100,
+				EndByte:   130, // clipped to header line
+			},
+		}
+		if got := nodeLen(insertAct, "right"); got != 150 {
+			t.Errorf("expected nodeLen on right to return unclipped 150, got %d", got)
+		}
+
+		deleteAct := &Action{
+			Action:        "delete",
+			OrigStartByte: 100,
+			OrigEndByte:   250,
+			Node: &NodeRef{
+				StartByte: 100,
+				EndByte:   130, // clipped to header line
+			},
+		}
+		if got := nodeLen(deleteAct, "left"); got != 150 {
+			t.Errorf("expected nodeLen on left to return unclipped 150, got %d", got)
+		}
+
+		// If a moved block and an inserted container both claim the closing brace, the move wins.
+		fileBytes := []byte("func helper() {\n\treturn\n}\n")
+		lineIndex := BuildLineIndex(fileBytes)
+		moveAct := &Action{
+			Action:            "move",
+			DestOrigStartByte: 14,
+			DestOrigEndByte:   25,
+		}
+		spans := []internalSpan{
+			{startCol: 0, endCol: 1, action: "insert", actRef: insertAct},
+			{startCol: 0, endCol: 1, action: "move", actRef: moveAct},
+		}
+		partitioned := partitionLineSpans(spans, "right", lineIndex, fileBytes, nil)
+		if len(partitioned) != 1 || partitioned[0].action != "move" {
+			t.Fatalf("expected child block move to beat container insert footer, got: %+v", partitioned)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `package main
+
+func Process(condition bool) error {
+	if condition {
+		step1 := validate()
+		step2 := transform(step1)
+		step3 := persist(step2)
+		notify(step3)
+		logAudit(step3)
+		return nil
+	}
+	return nil
+}
+`
+		newSrc := `package main
+
+func Process(condition bool) error {
+	if condition {
+		return handleCondition()
+	}
+	return nil
+}
+
+func handleCondition() error {
+	step1 := validate()
+	step2 := transform(step1)
+	step3 := persist(step2)
+	notify(step3)
+	logAudit(step3)
+	return nil
+}
+`
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+			IncludeHighlights: true,
+			IncludeActions:    true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Line 16 is handleCondition's closing brace; it should highlight as a move matching line 9's opening brace.
+		var closingBraceSpans []HighlightSpan
+		for _, h := range env.RightHighlights {
+			if h.Line == 16 {
+				closingBraceSpans = append(closingBraceSpans, h)
+			}
+		}
+		if len(closingBraceSpans) != 1 {
+			t.Fatalf("expected exactly 1 highlight span on right line 16, got %d: %+v", len(closingBraceSpans), closingBraceSpans)
+		}
+		if closingBraceSpans[0].Action != "move" {
+			t.Errorf("expected closing brace to have action 'move', got %q: %+v", closingBraceSpans[0].Action, closingBraceSpans[0])
+		}
+		if closingBraceSpans[0].StartCol != 0 || closingBraceSpans[0].EndCol != 1 {
+			t.Errorf("expected closing brace span [0..1], got [%d..%d]", closingBraceSpans[0].StartCol, closingBraceSpans[0].EndCol)
+		}
+
+		// Untouched lines (package declaration, outer return) shouldn't get stray highlights.
+		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
+		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16})
+
+		// Inlined back: closing brace on line 10 should stay a move instead of taking a delete footer.
+		partRev := engine.NewLinePartition([]byte(newSrc), []byte(oldSrc))
+		mrRev := engine.Match(newAST, oldAST, []byte(newSrc), []byte(oldSrc), partRev)
+		esRev := actions.GenerateEditScript(newAST, oldAST, mrRev.Mappings)
+		envRev, err := BuildEnvelopeWithOptions(esRev, mrRev.Mappings, newAST, oldAST, []byte(newSrc), []byte(oldSrc), EnvelopeOptions{
+			IncludeHighlights: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions reverse failed: %v", err)
+		}
+
+		var revRightLine10 []HighlightSpan
+		for _, h := range envRev.RightHighlights {
+			if h.Line == 10 {
+				revRightLine10 = append(revRightLine10, h)
+			}
+		}
+		if len(revRightLine10) != 1 {
+			t.Fatalf("expected exactly 1 highlight span on reverse right line 10, got %d: %+v", len(revRightLine10), revRightLine10)
+		}
+		if revRightLine10[0].Action != "move" {
+			t.Errorf("expected reverse inlined closing brace to have action 'move', got %q: %+v", revRightLine10[0].Action, revRightLine10[0])
+		}
+
+		assertContextLinesPure(t, envRev.LeftHighlights, []int{3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16})
+		assertContextLinesPure(t, envRev.RightHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
+	})
+}
