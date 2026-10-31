@@ -91,9 +91,6 @@ func buildFromIndex(idx uint32, nodes []FlatNode, symbols []string, src []byte, 
 		if alias, ok := r.Alias(node.Type, label); ok {
 			node.Type = alias
 		}
-		if r.IsLabelIgnored(node.Type) {
-			node.Label = ""
-		}
 		if isLeaf && r.IsKeyword(node.Type, label) {
 			node.IsKeyword = true
 		}

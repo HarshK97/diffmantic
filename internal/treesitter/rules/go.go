@@ -158,9 +158,6 @@ var golangRules = &Rules{
 	Calls: []string{
 		"call_expression",
 	},
-	ScopedDeclarations: []string{
-		"method_declaration",
-	},
 	Indexed: []string{
 		"index_expression",
 		"slice_expression",
