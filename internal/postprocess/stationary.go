@@ -9,6 +9,35 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
+// findContainingStatement returns the statement or declaration that owns n,
+// climbing past blocks and case clauses.
+func findContainingStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rules.Get(n.GetLanguage()))
+	if r != nil {
+		for curr := n; curr != nil; curr = curr.Parent {
+			if r.IsBlock(curr.Type) || r.IsCaseClause(curr.Type) {
+				continue
+			}
+			if r.IsStatement(curr.Type) || r.IsDeclaration(curr.Type) {
+				return curr
+			}
+		}
+		return nil
+	}
+	for curr := n; curr != nil; curr = curr.Parent {
+		if rules.IsBlock(curr.Type) || rules.IsCaseClause(curr.Type) {
+			continue
+		}
+		if rules.IsStatement(curr.Type) || rules.IsDeclaration(curr.Type) {
+			return curr
+		}
+	}
+	return nil
+}
+
 // isStationaryMove reports whether a move stayed in place, accounting for transparent
 // wrappers, expression shifts, and container provenance.
 func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
@@ -41,7 +70,14 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 	if hasPos && node.StartRow == dstNode.StartRow && node.EndRow == dstNode.EndRow &&
 		node.StartCol == dstNode.StartCol && node.EndCol == dstNode.EndCol {
 		if sameScopeDeclaration(node, dstNode, ms, r) {
-			return true
+			srcStmt := findContainingStatement(node.Parent, r)
+			dstStmt := findContainingStatement(dstNode.Parent, r)
+			crossStmt := srcStmt != nil && dstStmt != nil &&
+				ms.Src()[srcStmt] != dstStmt &&
+				!isStatementSlotEquivalent(srcStmt, dstStmt, node, dstNode, ms, r)
+			if !crossStmt {
+				return true
+			}
 		}
 	}
 
