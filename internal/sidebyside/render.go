@@ -162,7 +162,6 @@ func Render(
 
 	var srcLineBadges, dstLineBadges map[int]string
 	var srcLineBadgeColors, dstLineBadgeColors map[int]int
-	var hunkHeaders map[int]string
 	if !opts.DisableAnnotations {
 		badges := renderutil.BuildMoveBadges(
 			env.Actions,
@@ -173,23 +172,11 @@ func Render(
 			srcLines,
 			dstLines,
 			r,
-			true,
 		)
 		srcLineBadges = badges.SrcLineBadges
 		dstLineBadges = badges.DstLineBadges
 		srcLineBadgeColors = badges.SrcLineBadgeColors
 		dstLineBadgeColors = badges.DstLineBadgeColors
-		hunkHeaders = badges.HunkHeaders
-		if env.FallbackAnnotation != "" && !opts.SuppressHunkFallbackAnnotation {
-			if hunkHeaders == nil {
-				hunkHeaders = make(map[int]string)
-			}
-			if existing, ok := hunkHeaders[0]; ok && existing != "" {
-				hunkHeaders[0] = existing + " " + env.FallbackAnnotation
-			} else {
-				hunkHeaders[0] = " " + env.FallbackAnnotation
-			}
-		}
 	}
 
 	scratch := &RenderScratch{TabWidth: opts.TabWidth}
@@ -216,7 +203,10 @@ func Render(
 		layout := ClassifyHunk(h, filteredPairs, isPairChanged, srcLines, dstLines, leftSpansByLine, rightSpansByLine, opts.ForceSideBySide)
 
 		srcStart, srcCount, dstStart, dstCount := renderutil.ComputeHunkRange(h, filteredPairs, hasSrc, hasDst)
-		hunkHdrExtra := hunkHeaders[i]
+		var hunkHdrExtra string
+		if i == 0 {
+			hunkHdrExtra = extra
+		}
 		hunkHeader := renderutil.FormatHunkHeader(srcStart, srcCount, dstStart, dstCount, hunkHdrExtra)
 		if opts.Color {
 			_, _ = fmt.Fprintf(w, "%s%s%s\n", color.HeaderFg, hunkHeader, color.Reset)

@@ -10,16 +10,15 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-// MoveBadges contains line-level arrow annotations and hunk header descriptions for moves.
+// MoveBadges contains line-level arrow annotations for moves.
 type MoveBadges struct {
 	SrcLineBadges      map[int]string // Source line index -> " ➔ L{dst}"
 	DstLineBadges      map[int]string // Destination line index -> " ↳ L{src}"
 	SrcLineBadgeColors map[int]int    // Source line index -> Color index (0: Cyan, 1: Magenta)
 	DstLineBadgeColors map[int]int    // Destination line index -> Color index (0: Cyan, 1: Magenta)
-	HunkHeaders        map[int]string // Hunk index -> " func Foo() (moved to L{dst})"
 }
 
-// BuildMoveBadges computes directional line badges and hunk header move annotations.
+// BuildMoveBadges computes directional line badges for moves.
 func BuildMoveBadges(
 	actions []serialize.Action,
 	hunks []Interval,
@@ -27,14 +26,12 @@ func BuildMoveBadges(
 	srcOffsets, dstOffsets []int,
 	srcLines, dstLines []string,
 	r *rules.Rules,
-	promoteDeclarations bool,
 ) MoveBadges {
 	meta := MoveBadges{
 		SrcLineBadges:      make(map[int]string),
 		DstLineBadges:      make(map[int]string),
 		SrcLineBadgeColors: make(map[int]int),
 		DstLineBadgeColors: make(map[int]int),
-		HunkHeaders:        make(map[int]string),
 	}
 	if len(hunks) == 0 || len(actions) == 0 {
 		return meta
@@ -83,9 +80,7 @@ func BuildMoveBadges(
 		dStartByte     uint32
 		dEndByte       uint32
 		dStartByteLine uint32
-		hSrc, hDst     int
 		inSrc, inDst   bool
-		isDecl         bool
 		alignedNear    bool
 		hasSrcBadge    bool
 		hasDstBadge    bool
@@ -169,11 +164,8 @@ func BuildMoveBadges(
 			dStartByte:     dStartByte,
 			dEndByte:       dEndByte,
 			dStartByteLine: dStartByteLine,
-			hSrc:           hSrc,
-			hDst:           hDst,
 			inSrc:          inSrcHunk,
 			inDst:          inDstHunk,
-			isDecl:         isDecl,
 			alignedNear:    alignedNear,
 		})
 	}
@@ -226,8 +218,8 @@ func BuildMoveBadges(
 			prev := grp[i-1]
 			curr := grp[i]
 
-			prevSingle := (prev.sStart == prev.sEnd) && (prev.dStart == prev.dEnd) && !prev.isDecl
-			currSingle := (curr.sStart == curr.sEnd) && (curr.dStart == curr.dEnd) && !curr.isDecl
+			prevSingle := (prev.sStart == prev.sEnd) && (prev.dStart == prev.dEnd)
+			currSingle := (curr.sStart == curr.sEnd) && (curr.dStart == curr.dEnd)
 			if !prevSingle || !currSingle {
 				continue
 			}
@@ -270,83 +262,23 @@ func BuildMoveBadges(
 		_, isDeleted := deletedStartBytes[c.act.Node.StartByte]
 		_, isInserted := insertedStartBytes[c.dStartByteLine]
 
-		if promoteDeclarations && c.isDecl {
-			// Top-level declaration moves are summarized directly in the hunk header
-			sig := ExtractDeclarationSignature(c.act.Node, srcLines, c.sStart, c.sEnd)
-			if sig == "declaration" {
-				sig = ExtractDeclarationSignature(c.act.Node, dstLines, c.dStart, c.dEnd)
+		if c.inSrc && c.sStart >= 0 && c.sStart < len(srcLines) && !isDeleted && !suppressSrc {
+			if _, exists := meta.SrcLineBadges[c.sStart]; !exists {
+				meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" ➔ L%d", c.dStart+1)
+				meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, c.sEnd-c.sStart+1, multiLineGroupsSrc[c.act.GroupID])
+				c.hasSrcBadge = true
 			}
-			if c.inSrc && sig != "" && !isDeleted && !suppressSrc {
-				if _, exists := meta.HunkHeaders[c.hSrc]; !exists {
-					meta.HunkHeaders[c.hSrc] = fmt.Sprintf(" %s (moved to L%d)", sig, c.dStart+1)
-					c.hasSrcBadge = true
-				}
-			}
-			if c.inDst && sig != "" && !isInserted && !suppressDst {
-				if _, exists := meta.HunkHeaders[c.hDst]; !exists {
-					meta.HunkHeaders[c.hDst] = fmt.Sprintf(" %s (moved from L%d)", sig, c.sStart+1)
-					c.hasDstBadge = true
-				}
-			}
-		} else {
-			// Sub-block or nested moves show a directional badge on the opening line
-			// (or top-level declarations when promoteDeclarations is false in SBS)
-			if c.inSrc && c.sStart >= 0 && c.sStart < len(srcLines) && !isDeleted && !suppressSrc {
-				if _, exists := meta.SrcLineBadges[c.sStart]; !exists {
-					meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" ➔ L%d", c.dStart+1)
-					meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, c.sEnd-c.sStart+1, multiLineGroupsSrc[c.act.GroupID])
-					c.hasSrcBadge = true
-				}
-			}
-			if c.inDst && c.dStart >= 0 && c.dStart < len(dstLines) && !isInserted && !suppressDst {
-				if _, exists := meta.DstLineBadges[c.dStart]; !exists {
-					meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ↳ L%d", c.sStart+1)
-					meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, c.dEnd-c.dStart+1, multiLineGroupsDst[c.act.GroupID])
-					c.hasDstBadge = true
-				}
+		}
+		if c.inDst && c.dStart >= 0 && c.dStart < len(dstLines) && !isInserted && !suppressDst {
+			if _, exists := meta.DstLineBadges[c.dStart]; !exists {
+				meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ↳ L%d", c.sStart+1)
+				meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, c.dEnd-c.dStart+1, multiLineGroupsDst[c.act.GroupID])
+				c.hasDstBadge = true
 			}
 		}
 	}
 
 	return meta
-}
-
-// ExtractDeclarationSignature extracts the declaration signature line from lines,
-// trimming leading decorators, comments, and trailing braces.
-func ExtractDeclarationSignature(node *serialize.NodeRef, lines []string, sStartLine, sEndLine int) string {
-	if sStartLine >= 0 && sStartLine < len(lines) {
-		maxLine := sEndLine
-		if maxLine < sStartLine || maxLine >= len(lines) {
-			maxLine = sStartLine
-		}
-		for lineIdx := sStartLine; lineIdx <= maxLine; lineIdx++ {
-			line := strings.TrimSpace(lines[lineIdx])
-			if line == "" {
-				continue
-			}
-			if strings.HasPrefix(line, "@") || strings.HasPrefix(line, "#[") || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") || strings.HasPrefix(line, "#") {
-				continue
-			}
-			line = strings.TrimSuffix(line, " {")
-			line = strings.TrimSuffix(line, "{")
-			line = strings.TrimSuffix(line, ";")
-			line = strings.TrimSpace(line)
-			if line != "" {
-				runes := []rune(line)
-				if len(runes) > 80 {
-					return string(runes[:77]) + "..."
-				}
-				return line
-			}
-		}
-	}
-	if node != nil && node.Label != "" {
-		return node.Label
-	}
-	if node != nil && node.Type != "" {
-		return node.Type
-	}
-	return "declaration"
 }
 
 // isTriviaOrBlankLine reports whether line contains only whitespace or comments.

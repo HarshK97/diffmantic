@@ -332,6 +332,67 @@ func TestRender_SideBySideFallbackAnnotation(t *testing.T) {
 	})
 }
 
+func TestRender_DeclarationMove_CleanHunkHeaderWithLineBadges(t *testing.T) {
+	src := []byte("package main\n\nfunc MovedFunc() {\n\tprintln(\"hello\")\n}\n\nfunc Anchor() {\n\tprintln(\"anchor\")\n}\n")
+	dst := []byte("package main\n\nfunc Anchor() {\n\tprintln(\"anchor\")\n}\n\nfunc MovedFunc() {\n\tprintln(\"hello\")\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = Render("main.go", "main.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false}, &buf)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	got := buf.String()
+
+	if strings.Contains(got, "moved to") || strings.Contains(got, "moved from") {
+		t.Errorf("expected hunk headers to not contain 'moved to' or 'moved from', got:\n%s", got)
+	}
+	if !strings.Contains(got, "➔ L") {
+		t.Errorf("expected line badge '➔ L' on moved source declaration, got:\n%s", got)
+	}
+	if !strings.Contains(got, "↳ L") {
+		t.Errorf("expected line badge '↳ L' on moved destination declaration, got:\n%s", got)
+	}
+}
+
+func TestRender_SideBySideDisableAnnotations_SuppressesMoveBadges(t *testing.T) {
+	src := []byte("package main\n\nfunc MovedFunc() {\n\tprintln(\"hello\")\n}\n\nfunc Anchor() {\n\tprintln(\"anchor\")\n}\n")
+	dst := []byte("package main\n\nfunc Anchor() {\n\tprintln(\"anchor\")\n}\n\nfunc MovedFunc() {\n\tprintln(\"hello\")\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	var buf bytes.Buffer
+	opts := RenderOptions{Color: false, ContextLines: 1, LineNumbers: false, DisableAnnotations: true}
+	err = Render("main.go", "main.go", src, dst, dr.Envelope, opts, &buf)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	got := buf.String()
+
+	if strings.Contains(got, "➔") || strings.Contains(got, "↳") || strings.Contains(got, "moved") {
+		t.Errorf("expected zero move annotations when DisableAnnotations=true, got:\n%s", got)
+	}
+}
+
 func TestRenderFileBanner(t *testing.T) {
 	tests := []struct {
 		name       string
