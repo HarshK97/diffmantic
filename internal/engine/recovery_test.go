@@ -1040,3 +1040,339 @@ func check(item Item, hasPayload, hasMapped bool) bool {
 		}
 	})
 }
+
+func TestRecovery_CrossSideOperatorGuard(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("go")
+		m := NewMapping()
+
+		mkLeaf := func(typ, label string, startByte, endByte uint32) *treesitter.ASTNode {
+			n := testutil.Leaf(typ, label)
+			n.Language = "go"
+			n.StartByte, n.EndByte = startByte, endByte
+			return n
+		}
+		mkContainer := func(typ string, startByte, endByte uint32, children ...*treesitter.ASTNode) *treesitter.ASTNode {
+			n := testutil.Node(typ, "", children...)
+			n.Language = "go"
+			n.StartByte, n.EndByte = startByte, endByte
+			return n
+		}
+
+		// target: (MoveFg + badgeText)
+		// MoveFg: 10..16, +: 17..18, badgeText: 19..28
+		moveFg1 := mkLeaf("identifier", "MoveFg", 10, 16)
+		plus1 := mkLeaf("arithmetic_operator_literal", "+", 17, 18)
+		badge1 := mkLeaf("identifier", "badgeText", 19, 28)
+		target := mkContainer("binary_expression", 10, 28, moveFg1, plus1, badge1)
+
+		// compound: (((Dim + Italic) + MoveFg) + badgeText)
+		// inner1: Dim (10..13) + (14..15) Italic (16..22)
+		dim := mkLeaf("identifier", "Dim", 10, 13)
+		plusDim := mkLeaf("arithmetic_operator_literal", "+", 14, 15)
+		italic := mkLeaf("identifier", "Italic", 16, 22)
+		inner1 := mkContainer("binary_expression", 10, 22, dim, plusDim, italic)
+
+		// inner2: inner1 (10..22) + (23..24) MoveFg (25..31) (MoveFg is on RHS!)
+		plusInner2 := mkLeaf("arithmetic_operator_literal", "+", 23, 24)
+		moveFg2 := mkLeaf("identifier", "MoveFg", 25, 31)
+		inner2 := mkContainer("binary_expression", 10, 31, inner1, plusInner2, moveFg2)
+
+		// compound: inner2 (10..31) + (32..33) badgeText (34..43)
+		plusCompound := mkLeaf("arithmetic_operator_literal", "+", 32, 33)
+		badge2 := mkLeaf("identifier", "badgeText", 34, 43)
+		compound := mkContainer("binary_expression", 10, 43, inner2, plusCompound, badge2)
+
+		treesitter.EnsureIndex(target)
+		treesitter.EnsureIndex(compound)
+
+		// Simulate earlier matching phases having already paired MoveFg across both sides.
+		m.Add(moveFg1, moveFg2)
+
+		// findUnwrappedDstExpressionCandidate must reject inner2 because MoveFg crossed sides of the operator.
+		cand := findUnwrappedDstExpressionCandidate(target, compound, m, r)
+		if cand != nil {
+			t.Errorf("expected findUnwrappedDstExpressionCandidate to return nil due to cross-side operator mismatch, got %v", cand)
+		}
+
+		// Also test the reversed direction (compound on src, target on dst).
+		mRev := NewMapping()
+		mRev.Add(moveFg2, moveFg1)
+		candRev := findUnwrappedExpressionCandidate(compound, target, mRev, r)
+		if candRev != nil {
+			t.Errorf("expected findUnwrappedExpressionCandidate to return nil due to cross-side operator mismatch, got %v", candRev)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package renderutil
+
+func formatBadge(lastChunkStr, badgeText string) bool {
+	prefix := "badge:"
+	if !hasSuffix(lastChunkStr, color.MoveFg+badgeText+color.Reset) {
+		return false
+	}
+	return true
+}
+`
+		dst := `package renderutil
+
+func formatBadge(lastChunkStr, badgeText string) bool {
+	prefix := "badge:"
+	if !hasSuffix(lastChunkStr, color.Dim+color.Italic+color.MoveFg+badgeText+color.Reset) {
+		return false
+	}
+	return true
+}
+`
+		srcBytes := []byte(src)
+		dstBytes := []byte(dst)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		// 1. Enclosing Context: Function declaration, parameter list, and parameter identifiers
+		var srcFunc, dstFunc, srcParams, dstParams *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "formatBadge" {
+						srcFunc = n
+						break
+					}
+				}
+			}
+		}
+		if srcFunc != nil {
+			for _, c := range srcFunc.Children {
+				if r.IsDelimitedContainer(c.Type) {
+					srcParams = c
+					break
+				}
+			}
+		}
+
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "formatBadge" {
+						dstFunc = n
+						break
+					}
+				}
+			}
+		}
+		if dstFunc != nil {
+			for _, c := range dstFunc.Children {
+				if r.IsDelimitedContainer(c.Type) {
+					dstParams = c
+					break
+				}
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || srcParams == nil || dstParams == nil {
+			t.Fatalf("missing func or params: srcFunc=%v, dstFunc=%v, srcParams=%v, dstParams=%v",
+				srcFunc, dstFunc, srcParams, dstParams)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected function formatBadge to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+		if mr.Mappings.Src()[srcParams] != dstParams {
+			t.Errorf("expected parameter_list to map in place, got %v", mr.Mappings.Src()[srcParams])
+		}
+
+		// 2. Surrounding Sequence: Preceding short_var_declaration, if_statement, and returns
+		var srcPrefixStmt, dstPrefixStmt, srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && n.StartRow == 3 {
+				srcPrefixStmt = n
+			}
+			if r.IsStatement(n.Type) && n.StartRow == 4 {
+				srcIf = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && n.StartRow == 3 {
+				dstPrefixStmt = n
+			}
+			if r.IsStatement(n.Type) && n.StartRow == 4 {
+				dstIf = n
+			}
+		}
+		if srcPrefixStmt == nil || dstPrefixStmt == nil || srcIf == nil || dstIf == nil {
+			t.Fatalf("missing statements: srcPrefix=%v, dstPrefix=%v, srcIf=%v, dstIf=%v",
+				srcPrefixStmt, dstPrefixStmt, srcIf, dstIf)
+		}
+		if mr.Mappings.Src()[srcPrefixStmt] != dstPrefixStmt {
+			t.Errorf("expected prefix := \"badge:\" to map in place, got %v", mr.Mappings.Src()[srcPrefixStmt])
+		}
+		if mr.Mappings.Src()[srcIf] != dstIf {
+			t.Errorf("expected if_statement to map in place, got %v", mr.Mappings.Src()[srcIf])
+		}
+
+		var srcReturns, dstReturns []*treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsJumpStatement(n.Type) {
+				srcReturns = append(srcReturns, n)
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsJumpStatement(n.Type) {
+				dstReturns = append(dstReturns, n)
+			}
+		}
+		if len(srcReturns) != 2 || len(dstReturns) != 2 {
+			t.Fatalf("expected 2 returns in src and dst, got src=%d, dst=%d", len(srcReturns), len(dstReturns))
+		}
+		if mr.Mappings.Src()[srcReturns[0]] != dstReturns[0] {
+			t.Errorf("expected return false to map in place, got %v", mr.Mappings.Src()[srcReturns[0]])
+		}
+		if mr.Mappings.Src()[srcReturns[1]] != dstReturns[1] {
+			t.Errorf("expected return true to map in place, got %v", mr.Mappings.Src()[srcReturns[1]])
+		}
+
+		// 3. Target, Containers & Defect Invariant:
+		// In src:
+		//   bOldOuter: (color.MoveFg + badgeText) + color.Reset
+		//   bOldInner: color.MoveFg + badgeText
+		// In dst:
+		//   bDst0: color.Dim + color.Italic (inserted)
+		//   bDst1: bDst0 + color.MoveFg (inserted candidate where MoveFg crossed to RHS)
+		//   bDst2: bDst1 + badgeText (stationary match for bOldInner)
+		//   bDst3: bDst2 + color.Reset (stationary match for bOldOuter)
+		var bOldOuter, bOldInner *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsExpression(n.Type) && len(n.Children) == 3 && r.IsOperatorLiteral(n.Children[1].Type) {
+				if n.Children[2].Label == "badgeText" {
+					bOldInner = n
+				}
+				if n.Children[2].Label == "Reset" || (len(n.Children[2].Children) > 0 && n.Children[2].Children[len(n.Children[2].Children)-1].Label == "Reset") {
+					bOldOuter = n
+				}
+			}
+		}
+
+		var bDst0, bDst1, bDst2, bDst3 *treesitter.ASTNode
+		for _, n := range dstAST.Descendants() {
+			if r.IsExpression(n.Type) && len(n.Children) == 3 && r.IsOperatorLiteral(n.Children[1].Type) {
+				if n.Children[0].Label == "Dim" || (len(n.Children[0].Children) > 0 && n.Children[0].Children[len(n.Children[0].Children)-1].Label == "Dim") {
+					bDst0 = n
+				}
+				if n.Children[2].Label == "MoveFg" || (len(n.Children[2].Children) > 0 && n.Children[2].Children[len(n.Children[2].Children)-1].Label == "MoveFg") {
+					bDst1 = n
+				}
+				if n.Children[2].Label == "badgeText" {
+					bDst2 = n
+				}
+				if n.Children[2].Label == "Reset" || (len(n.Children[2].Children) > 0 && n.Children[2].Children[len(n.Children[2].Children)-1].Label == "Reset") {
+					bDst3 = n
+				}
+			}
+		}
+
+		if bOldInner == nil || bOldOuter == nil || bDst0 == nil || bDst1 == nil || bDst2 == nil || bDst3 == nil {
+			t.Fatalf("failed to locate binary expressions: bOldInner=%v, bOldOuter=%v, bDst0=%v, bDst1=%v, bDst2=%v, bDst3=%v",
+				bOldInner, bOldOuter, bDst0, bDst1, bDst2, bDst3)
+		}
+
+		if mr.Mappings.Src()[bOldInner] != bDst2 {
+			t.Errorf("expected bOldInner (MoveFg+badgeText) to map to bDst2, got %v", mr.Mappings.Src()[bOldInner])
+		}
+		if mr.Mappings.Src()[bOldOuter] != bDst3 {
+			t.Errorf("expected bOldOuter (... + Reset) to map to bDst3, got %v", mr.Mappings.Src()[bOldOuter])
+		}
+
+		// Defect assertions: on main without the guard, uniqueTypePairs mistakenly paired bOldInner with bDst1.
+		if mapped := mr.Mappings.Src()[bOldInner]; mapped == bDst1 {
+			t.Errorf("bOldInner was erroneously mapped to bDst1 (cross-side operator mismatch)")
+		}
+		if mr.Mappings.Dst()[bDst1] != nil {
+			t.Errorf("expected intermediate candidate bDst1 to remain unmapped, got %v", mr.Mappings.Dst()[bDst1])
+		}
+		if mr.Mappings.Dst()[bDst0] != nil {
+			t.Errorf("expected newly inserted bDst0 to remain unmapped, got %v", mr.Mappings.Dst()[bDst0])
+		}
+
+		// 4. Stationary Operands & Operators:
+		srcMoveFg := bOldInner.Children[0]
+		srcPlusInner := bOldInner.Children[1]
+		srcBadge := bOldInner.Children[2]
+
+		dstMoveFg := bDst1.Children[2]
+		dstPlusInner := bDst2.Children[1]
+		dstBadge := bDst2.Children[2]
+
+		if mr.Mappings.Src()[srcBadge] != dstBadge {
+			t.Errorf("expected badgeText to map in place, got %v", mr.Mappings.Src()[srcBadge])
+		}
+		if mr.Mappings.Src()[srcMoveFg] != dstMoveFg {
+			t.Errorf("expected MoveFg to map in place, got %v", mr.Mappings.Src()[srcMoveFg])
+		}
+		if mr.Mappings.Src()[srcPlusInner] != dstPlusInner {
+			t.Errorf("expected '+' before badgeText to map to corresponding '+', got %v", mr.Mappings.Src()[srcPlusInner])
+		}
+
+		srcPlusOuter := bOldOuter.Children[1]
+		srcReset := bOldOuter.Children[2]
+		dstPlusOuter := bDst3.Children[1]
+		dstReset := bDst3.Children[2]
+
+		if mr.Mappings.Src()[srcReset] != dstReset {
+			t.Errorf("expected color.Reset to map in place, got %v", mr.Mappings.Src()[srcReset])
+		}
+		if mr.Mappings.Src()[srcPlusOuter] != dstPlusOuter {
+			t.Errorf("expected '+' before Reset to map in place, got %v", mr.Mappings.Src()[srcPlusOuter])
+		}
+
+		var srcCall, dstCall, srcArgs, dstArgs *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) {
+				srcCall = n
+				for _, c := range n.Children {
+					if r.IsDelimitedContainer(c.Type) {
+						srcArgs = c
+					}
+				}
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) {
+				dstCall = n
+				for _, c := range n.Children {
+					if r.IsDelimitedContainer(c.Type) {
+						dstArgs = c
+					}
+				}
+				break
+			}
+		}
+		if srcCall == nil || dstCall == nil || srcArgs == nil || dstArgs == nil {
+			t.Fatalf("missing call or args: srcCall=%v, dstCall=%v, srcArgs=%v, dstArgs=%v",
+				srcCall, dstCall, srcArgs, dstArgs)
+		}
+		if mr.Mappings.Src()[srcCall] != dstCall {
+			t.Errorf("expected hasSuffix call to map in place, got %v", mr.Mappings.Src()[srcCall])
+		}
+		if mr.Mappings.Src()[srcArgs] != dstArgs {
+			t.Errorf("expected argument_list to map in place, got %v", mr.Mappings.Src()[srcArgs])
+		}
+	})
+}
