@@ -220,17 +220,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			r = rules.Get(langName)
 		}
 
-		meta = renderutil.BuildMoveBadges(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r, true)
-		if env.FallbackAnnotation != "" && !opts.SuppressHunkFallbackAnnotation {
-			if meta.HunkHeaders == nil {
-				meta.HunkHeaders = make(map[int]string)
-			}
-			if existing, ok := meta.HunkHeaders[0]; ok && existing != "" {
-				meta.HunkHeaders[0] = existing + " " + env.FallbackAnnotation
-			} else {
-				meta.HunkHeaders[0] = " " + env.FallbackAnnotation
-			}
-		}
+		meta = renderutil.BuildMoveBadges(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r)
 	}
 
 	var slicer renderutil.Slicer
@@ -276,6 +266,11 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 	} else {
 		out.WriteString("--- " + srcHeaderPath + "\n")
 		out.WriteString("+++ " + dstHeaderPath + "\n")
+	}
+
+	extra := ""
+	if !opts.DisableAnnotations && !opts.SuppressHunkFallbackAnnotation && env.FallbackAnnotation != "" {
+		extra = " " + env.FallbackAnnotation
 	}
 
 	for hunkIdx, h := range hunks {
@@ -338,7 +333,10 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		hasDst := len(dstBytes) > 0 && dstFile != os.DevNull && dstFile != "/dev/null"
 		srcStart, srcCount, dstStart, dstCount := renderutil.ComputeHunkRange(h, filteredPairs, hasSrc, hasDst)
 
-		hunkHdrExtra := meta.HunkHeaders[hunkIdx]
+		var hunkHdrExtra string
+		if hunkIdx == 0 {
+			hunkHdrExtra = extra
+		}
 		hunkHeader := renderutil.FormatHunkHeader(srcStart, srcCount, dstStart, dstCount, hunkHdrExtra)
 		if opts.Color {
 			out.WriteString(color.HeaderFg + hunkHeader + color.Reset + "\n")

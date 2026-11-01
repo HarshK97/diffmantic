@@ -9,48 +9,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-func TestExtractDeclarationSignature(t *testing.T) {
-	lines := []string{
-		"func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error {",
-		"\treturn nil",
-		"}",
-	}
-	sig := ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, lines, 0, 2)
-	if sig != "func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error" {
-		t.Errorf("unexpected signature: %q", sig)
-	}
-
-	// Test decorator and comment bypassing
-	linesWithDecorator := []string{
-		"// Header comment",
-		"@dataclass",
-		"@app.route(\"/api/v1\")",
-		"def handle_request(req):",
-		"\tpass",
-	}
-	sigDec := ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_definition"}, linesWithDecorator, 0, 4)
-	if sigDec != "def handle_request(req):" {
-		t.Errorf("expected decorator bypass, got %q", sigDec)
-	}
-
-	longLine := "func VeryLongFunctionNameToTestTruncationBehaviorAcrossBoundaries(withManyArgumentsA string, withManyArgumentsB int) error {"
-	longLines := []string{longLine}
-	sigLong := ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, longLines, 0, 0)
-	if len(sigLong) > 80 {
-		t.Errorf("expected signature length <= 80, got %d (%q)", len(sigLong), sigLong)
-	}
-	if !strings.HasSuffix(sigLong, "...") {
-		t.Errorf("expected ellipsis suffix for long signature, got %q", sigLong)
-	}
-
-	// Fallback to node label / type
-	nodeWithLabel := &serialize.NodeRef{Type: "unknown_type", Label: "CustomLabel"}
-	if got := ExtractDeclarationSignature(nodeWithLabel, nil, -1, -1); got != "CustomLabel" {
-		t.Errorf("expected label fallback, got %q", got)
-	}
-}
-
-func TestBuildMoveBadges_Tier2Promotion(t *testing.T) {
+func TestBuildMoveBadges_DeclarationMove(t *testing.T) {
 	goRules := rules.Get("go")
 
 	srcContent := "package main\n\nfunc OldFunc() {\n\tprintln(\"old\")\n}\n\nfunc Unchanged() {\n}\n"
@@ -99,31 +58,12 @@ func TestBuildMoveBadges_Tier2Promotion(t *testing.T) {
 		{LeftLine: -1, RightLine: 7},
 	}
 
-	// 1. promoteDeclarations = true (Unified format: Tier 2 hunk headers, no line badges)
-	unifiedBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, true)
-	if len(unifiedBadges.SrcLineBadges) != 0 {
-		t.Errorf("unified mode expected 0 SrcLineBadges for declaration move, got %v", unifiedBadges.SrcLineBadges)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
+	if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L6") {
+		t.Errorf("expected SrcLineBadges[2] to contain '➔ L6', got %q", badge)
 	}
-	if len(unifiedBadges.DstLineBadges) != 0 {
-		t.Errorf("unified mode expected 0 DstLineBadges for declaration move, got %v", unifiedBadges.DstLineBadges)
-	}
-	if len(unifiedBadges.HunkHeaders) == 0 {
-		t.Fatalf("unified mode expected HunkHeaders to be populated")
-	}
-	if !strings.Contains(unifiedBadges.HunkHeaders[0], "func OldFunc()") {
-		t.Errorf("expected hunk 0 header to mention 'func OldFunc()', got: %q", unifiedBadges.HunkHeaders[0])
-	}
-
-	// 2. promoteDeclarations = false (Side-by-Side format: Tier 3 line badges, no hunk headers)
-	sbsBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
-	if len(sbsBadges.HunkHeaders) != 0 {
-		t.Errorf("SBS mode expected 0 HunkHeaders, got %v", sbsBadges.HunkHeaders)
-	}
-	if badge, ok := sbsBadges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L6") {
-		t.Errorf("SBS mode expected SrcLineBadges[2] to contain '➔ L6', got %q", badge)
-	}
-	if badge, ok := sbsBadges.DstLineBadges[5]; !ok || !strings.Contains(badge, "↳ L3") {
-		t.Errorf("SBS mode expected DstLineBadges[5] to contain '↳ L3', got %q", badge)
+	if badge, ok := badges.DstLineBadges[5]; !ok || !strings.Contains(badge, "↳ L3") {
+		t.Errorf("expected DstLineBadges[5] to contain '↳ L3', got %q", badge)
 	}
 }
 
@@ -176,21 +116,12 @@ func TestBuildMoveBadges_SingleLineStatementMove(t *testing.T) {
 		{LeftLine: 6, RightLine: 9},
 	}
 
-	// Single-line statement moves get line badges in both unified and SBS mode, not hunk headers.
-	unifiedBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, true)
-	if badge, ok := unifiedBadges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "➔ L4") {
-		t.Errorf("unified mode expected SrcLineBadges[4] to contain '➔ L4', got %q", badge)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
+	if badge, ok := badges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "➔ L4") {
+		t.Errorf("expected SrcLineBadges[4] to contain '➔ L4', got %q", badge)
 	}
-	if badge, ok := unifiedBadges.DstLineBadges[3]; !ok || !strings.Contains(badge, "↳ L5") {
-		t.Errorf("unified mode expected DstLineBadges[3] to contain '↳ L5', got %q", badge)
-	}
-
-	sbsBadges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
-	if badge, ok := sbsBadges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "➔ L4") {
-		t.Errorf("SBS mode expected SrcLineBadges[4] to contain '➔ L4', got %q", badge)
-	}
-	if badge, ok := sbsBadges.DstLineBadges[3]; !ok || !strings.Contains(badge, "↳ L5") {
-		t.Errorf("SBS mode expected DstLineBadges[3] to contain '↳ L5', got %q", badge)
+	if badge, ok := badges.DstLineBadges[3]; !ok || !strings.Contains(badge, "↳ L5") {
+		t.Errorf("expected DstLineBadges[3] to contain '↳ L5', got %q", badge)
 	}
 }
 
@@ -258,7 +189,7 @@ func TestBuildMoveBadges_SuppressedWhenOpeningIsDeletedOrInserted(t *testing.T) 
 		{LeftLine: 7, RightLine: 7},
 	}
 
-	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, tsxRules, false)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, tsxRules)
 
 	// Since line 2's opening tag was deleted on source, no '➔ L3' should appear on line 2
 	if badge, exists := badges.SrcLineBadges[2]; exists {
@@ -404,7 +335,7 @@ func TestBuildMoveBadges_HierarchicalSuppression(t *testing.T) {
 		{LeftLine: -1, RightLine: 26},
 	}
 
-	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	// Parent move must have directional badges
 	if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L11") {
@@ -511,7 +442,7 @@ func TestBuildMoveBadges_AlignmentDistanceThreshold(t *testing.T) {
 		{Start: 0, End: 39},
 	}
 
-	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	if badge, exists := badges.SrcLineBadges[2]; exists {
 		t.Errorf("expected aligned multi-line if_statement on src line 2 to suppress badge, got %q", badge)
@@ -645,7 +576,7 @@ func TestBuildMoveBadges_ColorSynchronization(t *testing.T) {
 		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
 	}
 
-	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
 		t.Errorf("expected single-line ungrouped outlier src badge color to be 1, got %d", color)
@@ -734,7 +665,7 @@ func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T)
 		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
 	}
 
-	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	// 1. 3-line reordered move keeps slot 1 (Magenta)
 	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
@@ -755,11 +686,6 @@ func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T)
 	for line, badge := range badges.DstLineBadges {
 		if strings.Contains(badge, "hoisted") || strings.Contains(badge, "sunk") {
 			t.Errorf("dst badge on line %d contains unexpected label: %q", line, badge)
-		}
-	}
-	for hIdx, header := range badges.HunkHeaders {
-		if strings.Contains(header, "hoisted") || strings.Contains(header, "sunk") {
-			t.Errorf("hunk header %d contains unexpected label: %q", hIdx, header)
 		}
 	}
 }
@@ -828,7 +754,7 @@ func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 			mkAction("expression_statement", 9, 9, 27, 27, "group-1"),
 		}
 
-		badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules, false)
+		badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 		// First flat run: only the leading statement keeps its badge.
 		if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L21") {
@@ -937,7 +863,7 @@ func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 		}
 
 		luaRules := rules.Get("lua")
-		badges := BuildMoveBadges(triviaActions, tHunks, tPairs, tSrcOffsets, tDstOffsets, triviaSrc, triviaDst, luaRules, false)
+		badges := BuildMoveBadges(triviaActions, tHunks, tPairs, tSrcOffsets, tDstOffsets, triviaSrc, triviaDst, luaRules)
 
 		if _, ok := badges.SrcLineBadges[0]; !ok {
 			t.Errorf("expected line 0 to keep badge across trivia")

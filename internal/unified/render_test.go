@@ -6,7 +6,6 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/color"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
-	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 )
 
@@ -226,7 +225,10 @@ func TestRender_Tier2_CrossHunkDeclarationMove(t *testing.T) {
 
 	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
-	// Check that unified hunk header contains moved context or clean lines.
+	// Check that output contains the moved declaration without hunk header move summaries.
+	if strings.Contains(got, "moved to") || strings.Contains(got, "moved from") {
+		t.Errorf("expected hunk headers to not contain 'moved to' or 'moved from', got:\n%s", got)
+	}
 	if strings.Contains(got, "←") {
 		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
 	}
@@ -356,41 +358,6 @@ func TestRender_FallbackAnnotation(t *testing.T) {
 	})
 }
 
-func TestExtractDeclarationSignature(t *testing.T) {
-	lines := []string{
-		"func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error {",
-		"\treturn nil",
-		"}",
-	}
-	sig := renderutil.ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, lines, 0, 2)
-	if sig != "func (h *Header) MarshalXML(e *xml.Encoder, start xml.StartElement) error" {
-		t.Errorf("unexpected signature: %q", sig)
-	}
-
-	// Test decorator and comment bypassing
-	linesWithDecorator := []string{
-		"// Header comment",
-		"@dataclass",
-		"@app.route(\"/api/v1\")",
-		"def handle_request(req):",
-		"\tpass",
-	}
-	sigDec := renderutil.ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_definition"}, linesWithDecorator, 0, 4)
-	if sigDec != "def handle_request(req):" {
-		t.Errorf("expected decorator bypass, got %q", sigDec)
-	}
-
-	longLine := "func VeryLongFunctionNameToTestTruncationBehaviorAcrossBoundaries(withManyArgumentsA string, withManyArgumentsB int) error {"
-	longLines := []string{longLine}
-	sigLong := renderutil.ExtractDeclarationSignature(&serialize.NodeRef{Type: "function_declaration"}, longLines, 0, 0)
-	if len(sigLong) > 80 {
-		t.Errorf("expected signature length <= 80, got %d (%q)", len(sigLong), sigLong)
-	}
-	if !strings.HasSuffix(sigLong, "...") {
-		t.Errorf("expected ellipsis suffix for long signature, got %q", sigLong)
-	}
-}
-
 func TestRender_Tier2_ModifiedRelocation(t *testing.T) {
 	src := []byte("package main\n\nfunc Process() {\n\tstepA()\n\tstepB()\n}\n\nfunc Helper() {\n\tnoop()\n}\n")
 	dst := []byte("package main\n\nfunc Helper() {\n\tnoop()\n}\n\nfunc Extra() {\n\tlog()\n}\n\nfunc Process() {\n\tstepA()\n\tstepB_modified()\n\tstepC_new()\n}\n")
@@ -409,6 +376,30 @@ func TestRender_Tier2_ModifiedRelocation(t *testing.T) {
 	}
 	if strings.Contains(got, "←") {
 		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
+	}
+}
+
+func TestRender_DeclarationMove_CleanHunkHeaderWithLineBadges(t *testing.T) {
+	src := []byte("package main\n\nfunc MovedFunc() {\n\tprintln(\"hello\")\n}\n\nfunc Anchor() {\n\tprintln(\"anchor\")\n}\n")
+	dst := []byte("package main\n\nfunc Anchor() {\n\tprintln(\"anchor\")\n}\n\nfunc MovedFunc() {\n\tprintln(\"hello\")\n}\n")
+
+	dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	got := Render("main.go", "main.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
+
+	if strings.Contains(got, "moved to") || strings.Contains(got, "moved from") {
+		t.Errorf("expected hunk headers to not contain 'moved to' or 'moved from', got:\n%s", got)
+	}
+	if !strings.Contains(got, "➔ L") {
+		t.Errorf("expected line badge '➔ L' on moved source declaration, got:\n%s", got)
+	}
+	if !strings.Contains(got, "↳ L") {
+		t.Errorf("expected line badge '↳ L' on moved destination declaration, got:\n%s", got)
 	}
 }
 
