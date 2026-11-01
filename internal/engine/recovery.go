@@ -306,7 +306,8 @@ func findUnwrappedExpressionCandidate(
 		return TypesMatch(d.Type, target.Type, r) && CompatiblePairRoles(d, target)
 	}
 	commonFn := func(d *treesitter.ASTNode) bool { return m != nil && hasCommonDescendant(d, target, m) }
-	return findBestExpressionMatch(compound, target, r, hasFn, typesMatchFn, commonFn)
+	mismatchFn := func(d *treesitter.ASTNode) bool { return hasCrossSideOperatorMismatch(d, target, m, r) }
+	return findBestExpressionMatch(compound, target, r, hasFn, typesMatchFn, commonFn, mismatchFn)
 }
 
 // findUnwrappedDstExpressionCandidate mirrors findUnwrappedExpressionCandidate
@@ -321,18 +322,20 @@ func findUnwrappedDstExpressionCandidate(
 		return TypesMatch(target.Type, d.Type, r) && CompatiblePairRoles(target, d)
 	}
 	commonFn := func(d *treesitter.ASTNode) bool { return m != nil && hasCommonDescendant(target, d, m) }
-	return findBestExpressionMatch(compound, target, r, hasFn, typesMatchFn, commonFn)
+	mismatchFn := func(d *treesitter.ASTNode) bool { return hasCrossSideOperatorMismatch(target, d, m, r) }
+	return findBestExpressionMatch(compound, target, r, hasFn, typesMatchFn, commonFn, mismatchFn)
 }
 
 // findBestExpressionMatch picks the descendant in compound that best matches
-// target by leaf overlap. It skips mapped nodes, checks type/role compatibility,
-// and gives a heavy score boost if an inner node is already mapped to target.
+// target by leaf overlap. It skips mapped nodes, rejects structural mismatches,
+// and boosts candidates that already share mapped nodes with target.
 func findBestExpressionMatch(
 	compound, target *treesitter.ASTNode,
 	r *rules.Rules,
 	hasFn func(*treesitter.ASTNode) bool,
 	typesMatchFn func(*treesitter.ASTNode) bool,
 	commonFn func(*treesitter.ASTNode) bool,
+	mismatchFn func(*treesitter.ASTNode) bool,
 ) *treesitter.ASTNode {
 	if compound == nil || target == nil {
 		return nil
@@ -357,6 +360,9 @@ func findBestExpressionMatch(
 				continue
 			}
 			if !hasFn(d) && typesMatchFn(d) {
+				if mismatchFn != nil && mismatchFn(d) {
+					continue
+				}
 				dOp := getOperatorNode(d, r)
 				if targetOp == nil || (dOp != nil && dOp.Label == targetOp.Label) {
 					dLabels := d.LeafLabels()
