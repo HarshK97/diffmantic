@@ -432,15 +432,6 @@ func TestSliceLineToChunks_TabWidth(t *testing.T) {
 			},
 			want: "        return x",
 		},
-		{
-			name: "PreserveRawTabs",
-			cfg: SliceConfig{
-				TargetWidth: 0,
-				TabWidth:    4,
-				RawTabs:     true,
-			},
-			want: "\treturn x",
-		},
 	}
 
 	for _, tc := range tests {

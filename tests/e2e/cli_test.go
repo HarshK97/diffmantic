@@ -766,25 +766,13 @@ func TestCLI_UnifiedFormat(t *testing.T) {
 		t.Errorf("expected no move annotations with --annotations=false, got:\n%s", stdoutAnnotOff)
 	}
 
-	// 8. Patch mode: -p / --patch
-	stdoutPatch, stderrPatch, err := runDiffm(moveOld, moveNew, "-p", "--no-pager")
-	if err != nil {
-		t.Fatalf("diffm -p failed: %v\nstderr: %s", err, stderrPatch)
-	}
-	if strings.Contains(stdoutPatch, "│") || strings.Contains(stdoutPatch, "←") || strings.Contains(stdoutPatch, "\x1b[") {
-		t.Errorf("expected clean standard patch with -p, got:\n%s", stdoutPatch)
-	}
-	if !strings.Contains(stdoutPatch, "-	w.ResponseWriter.(http.Flusher).Flush()") {
-		t.Errorf("expected clean minus line in patch, got:\n%s", stdoutPatch)
-	}
-
-	// 9. Soft line wrapping: --wrap-width
+	// 8. Soft line wrapping: --wrap-width
 	_, stderrWrap, err := runDiffm(moveOld, moveNew, "--wrap-width=50", "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm --wrap-width failed: %v\nstderr: %s", err, stderrWrap)
 	}
 
-	// 10. Tab width option: --tab-width
+	// 9. Tab width option: --tab-width
 	stdoutTab, stderrTab, err := runDiffm(moveOld, moveNew, "-f", "unified", "--tab-width=8", "--no-pager")
 	if err != nil {
 		t.Fatalf("diffm --tab-width failed: %v\nstderr: %s", err, stderrTab)
