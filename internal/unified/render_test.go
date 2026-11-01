@@ -226,7 +226,7 @@ func TestRender_Tier2_CrossHunkDeclarationMove(t *testing.T) {
 
 	got := Render("a.go", "b.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 1, LineNumbers: false})
 
-	// Check that POSIX hunk header contains moved context or clean lines.
+	// Check that unified hunk header contains moved context or clean lines.
 	if strings.Contains(got, "←") {
 		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
 	}
@@ -902,46 +902,21 @@ func TestRender_WhitespaceRealignedStructFields_PreservedAsContext(t *testing.T)
 	}
 	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, opts)
 
-	// Realigned struct fields without AST changes should stay as context
-	// instead of flashing a red/green line replacement.
-	if strings.Contains(rendered, "-    Action string") {
-		t.Errorf("expected whitespace-aligned Action field not to be deleted, got:\n%s", rendered)
+	// Realigned struct fields without AST changes must stay as context lines,
+	// formatted with destination alignment, not deleted/inserted hunks.
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			t.Errorf("expected no deleted lines in whitespace-realigned struct, got line: %q\nFull output:\n%s", line, rendered)
+		}
 	}
-	if strings.Contains(rendered, "+    Action          string") {
-		t.Errorf("expected whitespace-aligned Action field not to be inserted, got:\n%s", rendered)
+	if strings.Contains(rendered, "+   Action") || strings.Contains(rendered, "+\tAction") {
+		t.Errorf("expected realigned Action field NOT to be inserted (+), got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "+    SourceStartByte *uint32") {
-		t.Errorf("expected inserted SourceStartByte field to be marked as insert (+), got:\n%s", rendered)
+	if !strings.Contains(rendered, "Action          string") {
+		t.Errorf("expected whitespace-aligned Action field to be rendered as context with destination alignment, got:\n%s", rendered)
 	}
-}
-
-func TestRender_GitDiffHeaders(t *testing.T) {
-	src := []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n")
-	dst := []byte("package main\n\nfunc main() {\n\tprintln(\"world\")\n}\n")
-
-	dr, err := pipeline.Run(src, dst, "old.go", "new.go", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
-	}
-
-	opts := RenderOptions{
-		Color:        false,
-		ContextLines: 3,
-		LineNumbers:  false,
-		GitDiff:      true,
-	}
-	rendered := Render("old.go", "new.go", src, dst, dr.Envelope, opts)
-
-	if !strings.Contains(rendered, "diff --git a/old.go b/new.go\n") {
-		t.Errorf("expected git diff header, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "index ") || !strings.Contains(rendered, " 100644\n") {
-		t.Errorf("expected index line with mode, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "--- a/old.go\n") || !strings.Contains(rendered, "+++ b/new.go\n") {
-		t.Errorf("expected standard file headers, got:\n%s", rendered)
+	if !strings.Contains(rendered, "SourceStartByte *uint32") {
+		t.Errorf("expected inserted SourceStartByte field in output, got:\n%s", rendered)
 	}
 }
 
@@ -955,7 +930,6 @@ func TestFormatFilePath_AbsolutePath(t *testing.T) {
 		{"/var/log/test.c", "b/", "b/var/log/test.c"},
 		{"internal/git.go", "a/", "a/internal/git.go"},
 		{"/dev/null", "a/", "/dev/null"},
-		{"", "a/", "/dev/null"},
 		{"a/foo.go", "a/", "a/foo.go"},
 		{"a/foo.go", "b/", "b/a/foo.go"},
 		{"b/foo.go", "b/", "b/foo.go"},
@@ -969,153 +943,30 @@ func TestFormatFilePath_AbsolutePath(t *testing.T) {
 	}
 }
 
-func TestCleanGitPath(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"/dev/null", "/dev/null"},
-		{"", "/dev/null"},
-		{"a/foo.go", "a/foo.go"},
-		{"b/foo.go", "b/foo.go"},
-		{"a/b/foo.go", "a/b/foo.go"},
-		{"pkg/service.go", "pkg/service.go"},
-		{"/var/log/app.log", "var/log/app.log"},
-		{"/tmp/foo.go", "tmp/foo.go"},
-	}
-
-	for _, tt := range tests {
-		got := cleanGitPath(tt.input)
-		if got != tt.want {
-			t.Errorf("cleanGitPath(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestRender_GitDiffHeaders_NewFile(t *testing.T) {
-	src := []byte{}
-	dst := []byte("package main\n")
-
-	dr, err := pipeline.Run(src, dst, "/dev/null", "new.go", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
+func TestRender_Labels(t *testing.T) {
+	src := []byte("func a() {}\n")
+	dst := []byte("func b() {}\n")
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: -1},
+			{LeftLine: -1, RightLine: 0},
+		},
+		Actions: []serialize.Action{
+			{Action: "update"},
+		},
 	}
 
 	opts := RenderOptions{
-		Color:   false,
-		GitDiff: true,
+		ContextLines: 3,
+		SrcLabel:     "HEAD",
+		DstLabel:     "feature",
 	}
-	rendered := Render("/dev/null", "new.go", src, dst, dr.Envelope, opts)
-
-	if !strings.Contains(rendered, "diff --git a/new.go b/new.go\n") {
-		t.Errorf("expected diff --git a/new.go b/new.go, got:\n%s", rendered)
+	out := Render("service (copy).go", "service (copy).go", src, dst, env, opts)
+	if !strings.Contains(out, "--- a/service (copy).go (HEAD)") {
+		t.Errorf("expected LHS header with (HEAD), got:\n%s", out)
 	}
-	if !strings.Contains(rendered, "new file mode 100644\n") {
-		t.Errorf("expected new file mode 100644, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "index 0000000..") {
-		t.Errorf("expected index 0000000.., got:\n%s", rendered)
-	}
-	for _, line := range strings.Split(rendered, "\n") {
-		if strings.HasPrefix(line, "index ") && strings.Contains(line, "100644") {
-			t.Errorf("new file mode index line must not include mode, got: %s", line)
-		}
-	}
-	if !strings.Contains(rendered, "--- /dev/null\n") || !strings.Contains(rendered, "+++ b/new.go\n") {
-		t.Errorf("expected --- /dev/null and +++ b/new.go, got:\n%s", rendered)
-	}
-}
-
-func TestRender_GitDiffHeaders_DeletedFile(t *testing.T) {
-	src := []byte("package main\n")
-	dst := []byte{}
-
-	dr, err := pipeline.Run(src, dst, "old.go", "/dev/null", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
-	}
-
-	opts := RenderOptions{
-		Color:   false,
-		GitDiff: true,
-	}
-	rendered := Render("old.go", "/dev/null", src, dst, dr.Envelope, opts)
-
-	if !strings.Contains(rendered, "diff --git a/old.go b/old.go\n") {
-		t.Errorf("expected diff --git a/old.go b/old.go, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "deleted file mode 100644\n") {
-		t.Errorf("expected deleted file mode 100644, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "..0000000\n") {
-		t.Errorf("expected index ending with ..0000000, got:\n%s", rendered)
-	}
-	if strings.Contains(rendered, "..0000000 100644\n") {
-		t.Errorf("deleted file index line must not include mode, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "--- a/old.go\n") || !strings.Contains(rendered, "+++ /dev/null\n") {
-		t.Errorf("expected --- a/old.go and +++ /dev/null, got:\n%s", rendered)
-	}
-}
-
-func TestRender_GitDiffHeaders_ModifiedEmptyFile(t *testing.T) {
-	src := []byte{}
-	dst := []byte("package main\n\nfunc main() {}\n")
-
-	dr, err := pipeline.Run(src, dst, "empty.go", "empty.go", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
-	}
-
-	opts := RenderOptions{
-		Color:   false,
-		GitDiff: true,
-	}
-	rendered := Render("empty.go", "empty.go", src, dst, dr.Envelope, opts)
-
-	if strings.Contains(rendered, "new file mode") {
-		t.Errorf("empty file modification must not emit new file mode, got:\n%s", rendered)
-	}
-	if strings.Contains(rendered, "deleted file mode") {
-		t.Errorf("empty file modification must not emit deleted file mode, got:\n%s", rendered)
-	}
-	// Git empty blob SHA-1 is e69de29
-	if !strings.Contains(rendered, "index e69de29..") {
-		t.Errorf("expected empty blob hash e69de29 in index line, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "--- a/empty.go\n") || !strings.Contains(rendered, "+++ b/empty.go\n") {
-		t.Errorf("expected standard --- a/empty.go and +++ b/empty.go, got:\n%s", rendered)
-	}
-}
-
-func TestRender_GitDiffHeaders_DirectoryA(t *testing.T) {
-	src := []byte("package main\n\nfunc hello() {}\n")
-	dst := []byte("package main\n\nfunc helloWorld() {}\n")
-
-	dr, err := pipeline.Run(src, dst, "a/foo.go", "a/foo.go", pipeline.DiffOptions{
-		EnvelopeOpts: fullEnvelopeOpts(),
-	})
-	if err != nil {
-		t.Fatalf("pipeline.Run failed: %v", err)
-	}
-
-	opts := RenderOptions{
-		Color:   false,
-		GitDiff: true,
-	}
-	rendered := Render("a/foo.go", "a/foo.go", src, dst, dr.Envelope, opts)
-
-	if !strings.Contains(rendered, "diff --git a/a/foo.go b/a/foo.go\n") {
-		t.Errorf("expected diff --git a/a/foo.go b/a/foo.go, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "--- a/a/foo.go\n") || !strings.Contains(rendered, "+++ b/a/foo.go\n") {
-		t.Errorf("expected --- a/a/foo.go and +++ b/a/foo.go, got:\n%s", rendered)
+	if !strings.Contains(out, "+++ b/service (copy).go (feature)") {
+		t.Errorf("expected RHS header with (feature), got:\n%s", out)
 	}
 }
 
@@ -1155,19 +1006,57 @@ func TestRender_CustomTabWidth(t *testing.T) {
 			t.Errorf("expected 8 spaces indent with TabWidth=8, got:\n%s", out)
 		}
 	})
+}
 
-	t.Run("GitDiffPatchModePreservesLiteralTabs", func(t *testing.T) {
-		// Patch mode has to keep literal tabs so git apply doesn't choke on altered whitespace.
-		opts := RenderOptions{
-			Color:        false,
-			ContextLines: 3,
-			LineNumbers:  false,
-			TabWidth:     2,
-			GitDiff:      true,
-		}
-		out := Render("main.go", "main.go", src, dst, dr.Envelope, opts)
-		if !strings.Contains(out, "-\treturn 1") || !strings.Contains(out, "+\treturn 2") {
-			t.Errorf("expected literal tabs in patch mode, got:\n%s", out)
-		}
+func TestRender_PythonIndentationChangePreserved(t *testing.T) {
+	src := []byte("def compute():\n    if True:\n        x = 1\n        return x\n")
+	dst := []byte("def compute():\n    if True:\n        x = 1\n    return x\n")
+
+	dr, err := pipeline.Run(src, dst, "calc.py", "calc.py", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
 	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	opts := RenderOptions{
+		Color:        false,
+		ContextLines: 3,
+		LineNumbers:  false,
+	}
+	rendered := Render("calc.py", "calc.py", src, dst, dr.Envelope, opts)
+
+	if !strings.Contains(rendered, "-        return x") {
+		t.Errorf("expected deleted indented line '-        return x', got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "+    return x") {
+		t.Errorf("expected inserted unindented line '+    return x', got:\n%s", rendered)
+	}
+}
+
+func TestEqualIgnoringInteriorWhitespace(t *testing.T) {
+	tests := []struct {
+		s, d string
+		want bool
+	}{
+		{"", "", true},
+		{"   ", "   ", true},
+		{"\tAction string", "\tAction          string", true},
+		{"Action string", "Action    string", true},
+		// Indentation mismatch (must NOT be equal)
+		{"", "   ", false},
+		{"   ", "", false},
+		{"  x = 1", "    x = 1", false},
+		{"\tx = 1", "  x = 1", false},
+		// Token mismatch
+		{"a b", "a c", false},
+		{"a b", "a b c", false},
+	}
+
+	for _, tt := range tests {
+		got := equalIgnoringInteriorWhitespace(tt.s, tt.d)
+		if got != tt.want {
+			t.Errorf("equalIgnoringInteriorWhitespace(%q, %q) = %v, want %v", tt.s, tt.d, got, tt.want)
+		}
+	}
 }

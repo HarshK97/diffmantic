@@ -4,12 +4,9 @@ package unified
 import (
 	"bytes"
 	"cmp"
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -24,23 +21,47 @@ func isDevNull(path string) bool {
 	return path == "" || path == "/dev/null" || path == os.DevNull
 }
 
-// computeBlobOID returns Git's 7-character abbreviated hash for a blob.
-func computeBlobOID(data []byte) string {
-	h := sha1.New()
-	_, _ = h.Write([]byte("blob "))
-	_, _ = h.Write([]byte(strconv.Itoa(len(data))))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write(data)
-	return hex.EncodeToString(h.Sum(nil))[:7]
-}
-
-// cleanGitPath normalizes a file path for git diff headers, mapping empty or null paths to /dev/null.
-func cleanGitPath(path string) string {
-	if isDevNull(path) {
-		return "/dev/null"
+// equalIgnoringInteriorWhitespace checks if two lines have identical leading whitespace
+// and identical non-whitespace token sequences, with zero heap allocations.
+func equalIgnoringInteriorWhitespace(s, d string) bool {
+	// 1. Leading indentation must match byte-for-byte (Python & layout safety).
+	i, j := 0, 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
 	}
-	clean := filepath.ToSlash(filepath.Clean(path))
-	return strings.TrimPrefix(clean, "/")
+	for j < len(d) && (d[j] == ' ' || d[j] == '\t') {
+		j++
+	}
+	if s[:i] != d[:j] {
+		return false
+	}
+
+	// 2. Both must have identical non-whitespace tokens (zero allocations).
+	for i < len(s) || j < len(d) {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n') {
+			i++
+		}
+		for j < len(d) && (d[j] == ' ' || d[j] == '\t' || d[j] == '\r' || d[j] == '\n') {
+			j++
+		}
+		if i >= len(s) && j >= len(d) {
+			return true
+		}
+		if i >= len(s) || j >= len(d) {
+			return false
+		}
+		startI, startJ := i, j
+		for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '\r' && s[i] != '\n' {
+			i++
+		}
+		for j < len(d) && d[j] != ' ' && d[j] != '\t' && d[j] != '\r' && d[j] != '\n' {
+			j++
+		}
+		if s[startI:i] != d[startJ:j] {
+			return false
+		}
+	}
+	return true
 }
 
 type lineKind int
@@ -158,10 +179,17 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			}
 
 			isEOFLine := (pair.LeftLine == lastSrcLineIdx && pair.RightLine == lastDstLineIdx)
-			// If AST nodes didn't change and only whitespace shifted (like realigned
-			// struct fields or column formatting), treat the line as unchanged context
-			// so we don't trigger a raw delete/insert hunk.
-			if (isEOFLine && srcEndsWithNL != dstEndsWithNL) || (sText != dText && !slices.Equal(strings.Fields(sText), strings.Fields(dText))) {
+			isEOFChange := isEOFLine && srcEndsWithNL != dstEndsWithNL
+
+			if sText == dText {
+				if isEOFChange {
+					isPairChanged[i] = true
+					hasAnyChange = true
+				}
+				continue
+			}
+
+			if isEOFChange || !equalIgnoringInteriorWhitespace(sText, dText) {
 				isPairChanged[i] = true
 				hasAnyChange = true
 			}
@@ -179,19 +207,19 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 	hunks := renderutil.MergeHunks(changeIntervals, len(filteredPairs), contextLines)
 
-	srcOffsets := serialize.BuildLineIndex(srcBytes)
-	dstOffsets := serialize.BuildLineIndex(dstBytes)
-
-	// Need language rules to tell declarations apart from statements for badge placement.
-	var r *rules.Rules
-	if langName, err := treesitter.DetectLanguageName(srcFile); err == nil {
-		r = rules.Get(langName)
-	} else if langName, err := treesitter.DetectLanguageName(dstFile); err == nil {
-		r = rules.Get(langName)
-	}
-
 	var meta renderutil.MoveBadges
 	if !opts.DisableAnnotations {
+		srcOffsets := serialize.BuildLineIndex(srcBytes)
+		dstOffsets := serialize.BuildLineIndex(dstBytes)
+
+		// Need language rules to tell declarations apart from statements for badge placement.
+		var r *rules.Rules
+		if langName, err := treesitter.DetectLanguageName(srcFile); err == nil {
+			r = rules.Get(langName)
+		} else if langName, err := treesitter.DetectLanguageName(dstFile); err == nil {
+			r = rules.Get(langName)
+		}
+
 		meta = renderutil.BuildMoveBadges(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r, true)
 		if env.FallbackAnnotation != "" && !opts.SuppressHunkFallbackAnnotation {
 			if meta.HunkHeaders == nil {
@@ -235,63 +263,11 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 	srcHeaderPath := formatFilePath(srcFile, "a/")
 	dstHeaderPath := formatFilePath(dstFile, "b/")
-
-	if opts.GitDiff {
-		srcGitPath := cleanGitPath(srcFile)
-		dstGitPath := cleanGitPath(dstFile)
-		if srcGitPath == "/dev/null" {
-			srcGitPath = dstGitPath
-		}
-		if dstGitPath == "/dev/null" {
-			dstGitPath = srcGitPath
-		}
-		if restSrc, okSrc := strings.CutPrefix(srcGitPath, "a/"); okSrc {
-			if restDst, okDst := strings.CutPrefix(dstGitPath, "b/"); okDst && restSrc == restDst {
-				srcGitPath = restSrc
-				dstGitPath = restDst
-			}
-		}
-		out.WriteString("diff --git a/" + srcGitPath + " b/" + dstGitPath + "\n")
-
-		mode := cmp.Or(opts.FileMode, "100644")
-		srcOID := opts.GitSrcOID
-		if srcOID == "" {
-			if isDevNull(srcFile) {
-				srcOID = "0000000"
-			} else {
-				srcOID = computeBlobOID(srcBytes)
-			}
-		}
-		dstOID := opts.GitDstOID
-		if dstOID == "" {
-			if isDevNull(dstFile) {
-				dstOID = "0000000"
-			} else {
-				dstOID = computeBlobOID(dstBytes)
-			}
-		}
-
-		isNew := isDevNull(srcFile)
-		isDeleted := isDevNull(dstFile)
-
-		if isNew {
-			out.WriteString("new file mode " + mode + "\n")
-			srcHeaderPath = "/dev/null"
-			dstHeaderPath = "b/" + dstGitPath
-		} else if isDeleted {
-			out.WriteString("deleted file mode " + mode + "\n")
-			srcHeaderPath = "a/" + srcGitPath
-			dstHeaderPath = "/dev/null"
-		} else {
-			srcHeaderPath = "a/" + srcGitPath
-			dstHeaderPath = "b/" + dstGitPath
-		}
-
-		if isNew || isDeleted {
-			out.WriteString("index " + srcOID + ".." + dstOID + "\n")
-		} else {
-			out.WriteString("index " + srcOID + ".." + dstOID + " " + mode + "\n")
-		}
+	if opts.SrcLabel != "" && !isDevNull(srcFile) {
+		srcHeaderPath = fmt.Sprintf("%s (%s)", srcHeaderPath, opts.SrcLabel)
+	}
+	if opts.DstLabel != "" && !isDevNull(dstFile) {
+		dstHeaderPath = fmt.Sprintf("%s (%s)", dstHeaderPath, opts.DstLabel)
 	}
 
 	if opts.Color {
@@ -309,7 +285,6 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			if !isPairChanged[k] {
 				pair := filteredPairs[k]
 				text := ""
-				// Show the destination file's indentation when rendering unchanged context.
 				if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 					text = dstLines[pair.RightLine]
 				} else if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
@@ -424,7 +399,6 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 				TabWidth:         tabWidth,
 				ColorMode:        opts.Color,
 				PadToTargetWidth: false,
-				RawTabs:          opts.GitDiff,
 				BadgeColor:       badgeColor,
 				Context:          lineCtx,
 			}

@@ -10,7 +10,6 @@ func newTestCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.Flags().StringP("format", "f", "", "")
 	cmd.Flags().BoolP("unified", "u", false, "")
-	cmd.Flags().BoolP("patch", "p", false, "")
 	return cmd
 }
 
@@ -55,13 +54,6 @@ func TestResolveFormat(t *testing.T) {
 			name: "explicit -u flag",
 			setupCmd: func(c *cobra.Command) {
 				_ = c.Flags().Set("unified", "true")
-			},
-			wantFormat: "unified",
-		},
-		{
-			name: "explicit -p patch flag",
-			setupCmd: func(c *cobra.Command) {
-				_ = c.Flags().Set("patch", "true")
 			},
 			wantFormat: "unified",
 		},

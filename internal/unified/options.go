@@ -19,12 +19,8 @@ type RenderOptions struct {
 	TerminalWidth int
 	// TabWidth sets spaces per tab stop (default: 4).
 	TabWidth int
-	// GitDiff includes standard git diff, mode, and index headers.
-	GitDiff bool
-	// GitSrcOID overrides the source blob hash in the index line.
-	GitSrcOID string
-	// GitDstOID overrides the destination blob hash in the index line.
-	GitDstOID string
-	// FileMode is the octal file mode (default: "100644").
-	FileMode string
+	// SrcLabel is an optional label appended to the source file header.
+	SrcLabel string
+	// DstLabel is an optional label appended to the destination file header.
+	DstLabel string
 }

@@ -95,11 +95,6 @@ editor plugins (Neovim, VS Code) via JSON output.`,
 		}
 
 		noPager, _ := cmd.Flags().GetBool("no-pager")
-		patchMode, _ := cmd.Flags().GetBool("patch")
-		if patchMode && !cmd.Flags().Changed("no-pager") {
-			noPager = true
-		}
-
 		normFormat := resolveFormat(cmd)
 		if !slices.Contains(validFormats, normFormat) {
 			rawFormat, _ := cmd.Flags().GetString("format")
@@ -339,8 +334,6 @@ func resolveFormat(cmd *cobra.Command) string {
 				return norm
 			}
 		}
-	} else if patchMode, _ := cmd.Flags().GetBool("patch"); patchMode {
-		return "unified"
 	} else if unifiedFlag, _ := cmd.Flags().GetBool("unified"); unifiedFlag {
 		return "unified"
 	} else if envFmt := strings.TrimSpace(os.Getenv("DIFFM_FORMAT")); envFmt != "" {
@@ -787,12 +780,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 }
 
 func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
-	patchMode, _ := cmd.Flags().GetBool("patch")
-
 	colorFlag, _ := cmd.Flags().GetString("color")
-	if patchMode && !cmd.Flags().Changed("color") {
-		colorFlag = "never"
-	}
 
 	contextLines, _ := cmd.Flags().GetInt("context")
 	if contextLines < 0 {
@@ -800,14 +788,7 @@ func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 	}
 
 	lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
-	if patchMode && !cmd.Flags().Changed("line-numbers") {
-		lineNumbers = false
-	}
-
 	annotations, _ := cmd.Flags().GetBool("annotations")
-	if patchMode && !cmd.Flags().Changed("annotations") {
-		annotations = false
-	}
 
 	var useColor bool
 	switch colorFlag {
@@ -823,9 +804,7 @@ func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 	wrapFlag, _ := cmd.Flags().GetBool("wrap")
 	wrapWidth, _ := cmd.Flags().GetInt("wrap-width")
 
-	if patchMode {
-		wrapFlag = false
-	} else if !wrapChanged && wrapWidth > 0 && cmd.Flags().Changed("wrap-width") {
+	if !wrapChanged && wrapWidth > 0 && cmd.Flags().Changed("wrap-width") {
 		wrapFlag = true
 	}
 	if !wrapChanged && !cmd.Flags().Changed("wrap-width") && !isTerminal(os.Stdout) {
@@ -854,7 +833,6 @@ func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 		Wrap:               wrapFlag,
 		TerminalWidth:      termWidth,
 		TabWidth:           tabWidth,
-		GitDiff:            patchMode,
 	}
 }
 
@@ -870,12 +848,7 @@ func resolveTabWidth(cmd *cobra.Command) int {
 }
 
 func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
-	patchMode, _ := cmd.Flags().GetBool("patch")
-
 	colorFlag, _ := cmd.Flags().GetString("color")
-	if patchMode && !cmd.Flags().Changed("color") {
-		colorFlag = "never"
-	}
 
 	contextLines, _ := cmd.Flags().GetInt("context")
 	if contextLines < 0 {
@@ -883,14 +856,7 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 	}
 
 	lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
-	if patchMode && !cmd.Flags().Changed("line-numbers") {
-		lineNumbers = false
-	}
-
 	annotations, _ := cmd.Flags().GetBool("annotations")
-	if patchMode && !cmd.Flags().Changed("annotations") {
-		annotations = false
-	}
 
 	var useColor bool
 	switch colorFlag {
@@ -1237,7 +1203,6 @@ func init() {
 	rootCmd.Flags().IntP("context", "U", 3, "Lines of context to show for diff")
 	rootCmd.Flags().BoolP("line-numbers", "n", true, "Show line numbers in diff output")
 	rootCmd.Flags().Bool("annotations", true, "Include AST move annotations in diff")
-	rootCmd.Flags().BoolP("patch", "p", false, "Generate a standard patch suitable for git apply / patch tools")
 	rootCmd.Flags().Bool("force-sbs", false, "Force strict 50/50 side-by-side rendering without adaptive hybrid unified switching")
 	rootCmd.Flags().Bool("no-pager", false, "Do not pipe output into a pager")
 	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in unified diff")

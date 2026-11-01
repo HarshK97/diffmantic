@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracting a statement block into a new helper function or inlining a helper back into a caller now preserves move highlights on the closing delimiter, rather than fracturing it into a spurious insert or delete.
 - Moving or extracting a run of consecutive statements (like procedural setup code or test steps) into another function now preserves them as moves even without an enclosing loop or block, while repetitive boilerplate like identical assertions still falls back to inserts and deletes.
 
+### Removed
+- Dropped `-p` / `--patch`. Diffmantic is built for reading structural diffs in your terminal, not generating patches for `git apply`. If you need a patch file, use `git diff`.
+
 ## [0.14.0] - 2026-10-29
 
 ### Added
