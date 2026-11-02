@@ -16,6 +16,9 @@ type scoredPair struct {
 	parentLeafSim           float64
 	ancSim, lineageSim      int
 	drift                   int
+	relDrift                int
+	hasRelDrift             bool
+	slotMatch               bool
 	isFallback              bool
 	nameMatched, mismatched bool
 }
@@ -156,6 +159,48 @@ func TopDown(
 		li := parentLineageSimilarity(t1, t2)
 		pls := LeafSimilarity(t1.Parent, t2.Parent)
 		drift := m.AdjustedLineDistance(t1, t2)
+
+		anchor1 := resolveDriftAnchor(t1, c1)
+		anchor2 := resolveDriftAnchor(t2, c2)
+
+		var (
+			hasRelDrift bool
+			relDrift    int
+			slotMatch   bool
+		)
+
+		if nameMatched && anchor1 != nil && anchor2 != nil {
+			isCompatible := anchor1.Type == anchor2.Type &&
+				(LeafSimilarity(anchor1, anchor2) >= 0.30 || Dice(anchor1, anchor2, m.Src()) >= 0.30)
+
+			if !isCompatible {
+				d1 := GetEnclosingDeclaration(t1)
+				d2 := GetEnclosingDeclaration(t2)
+				if d1 != nil && d2 != nil && d1.Type == d2.Type {
+					anchor1 = d1
+					anchor2 = d2
+					isCompatible = true
+				}
+			}
+
+			if isCompatible {
+				hasRelDrift = true
+				relSrc := int(t1.StartRow) - int(anchor1.StartRow)
+				relDst := int(t2.StartRow) - int(anchor2.StartRow)
+				d := relSrc - relDst
+				if d < 0 {
+					d = -d
+				}
+				relDrift = d
+
+				if anchor1 == c1 && anchor2 == c2 {
+					slot1 := branchSlotIndex(t1, c1)
+					slot2 := branchSlotIndex(t2, c2)
+					slotMatch = (slot1 >= 0 && slot2 >= 0 && slot1 == slot2)
+				}
+			}
+		}
+
 		scored = append(scored, scoredPair{
 			pair:          pair,
 			dice:          di,
@@ -165,6 +210,9 @@ func TopDown(
 			ancSim:        si,
 			lineageSim:    li,
 			drift:         drift,
+			relDrift:      relDrift,
+			hasRelDrift:   hasRelDrift,
+			slotMatch:     slotMatch,
 			nameMatched:   nameMatched,
 			mismatched:    mismatched,
 		})
@@ -192,21 +240,56 @@ func TopDown(
 				return 1
 			}
 		}
+
+		if c := cmp.Compare(b.dice, a.dice); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.ancSim, a.ancSim); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.lineageSim, a.lineageSim); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.parentLeafSim, a.parentLeafSim); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.stmtAffinity, a.stmtAffinity); c != 0 {
+			return c
+		}
+
+		// Prefer in-branch candidates over cross-branch candidates when competing within the same construct.
+		if a.nameMatched && b.nameMatched && a.slotMatch != b.slotMatch {
+			if a.slotMatch {
+				return -1
+			}
+			return 1
+		}
+
+		// Compare drift relative to the construct or function so upstream deletions don't skew line distance.
+		if a.nameMatched && b.nameMatched && a.hasRelDrift && b.hasRelDrift {
+			if c := cmp.Compare(a.relDrift, b.relDrift); c != 0 {
+				return c
+			}
+		}
+
 		// Only compare line drift when both candidates belong to the same named declaration.
 		// Across different functions or top-level code, physical row distance would penalize
 		// moved functions that shifted far down the file.
-		var driftCmp int
-		if a.nameMatched {
-			driftCmp = cmp.Compare(a.drift, b.drift)
+		if a.nameMatched && b.nameMatched {
+			if c := cmp.Compare(a.drift, b.drift); c != 0 {
+				return c
+			}
 		}
-		return cmp.Or(
-			cmp.Compare(b.dice, a.dice),
-			cmp.Compare(b.ancSim, a.ancSim),
-			cmp.Compare(b.lineageSim, a.lineageSim),
-			cmp.Compare(b.parentLeafSim, a.parentLeafSim),
-			cmp.Compare(b.stmtAffinity, a.stmtAffinity),
-			driftCmp,
-		)
+
+		// If still tied, keep source document order so statements in the same function don't swap places.
+		if a.nameMatched && b.nameMatched {
+			if c := cmp.Compare(a.pair[0].StartByte, b.pair[0].StartByte); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.pair[1].StartByte, b.pair[1].StartByte)
+		}
+
+		return 0
 	})
 
 	for len(scored) > 0 {
@@ -434,4 +517,30 @@ func getEnclosingConstruct(n *treesitter.ASTNode, r *rules.Rules) *treesitter.AS
 		curr = p
 	}
 	return curr
+}
+
+// resolveDriftAnchor returns the baseline node used to measure relative line drift.
+// If t is inside a construct (if, for, switch, etc.), we measure from that construct.
+// If t is already at the function level, we fall back to the function declaration itself.
+func resolveDriftAnchor(t, c *treesitter.ASTNode) *treesitter.ASTNode {
+	if c != nil && c != t {
+		return c
+	}
+	return GetEnclosingDeclaration(t)
+}
+
+// branchSlotIndex returns the child index of the direct child container under c that encloses t.
+// Returns -1 if t is nil, c is nil, or t is c.
+func branchSlotIndex(t, c *treesitter.ASTNode) int {
+	if t == nil || c == nil || t == c {
+		return -1
+	}
+	curr := t
+	for curr.Parent != nil && curr.Parent != c {
+		curr = curr.Parent
+	}
+	if curr.Parent != c {
+		return -1
+	}
+	return curr.ChildIndex()
 }

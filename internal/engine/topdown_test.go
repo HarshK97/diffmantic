@@ -1189,3 +1189,247 @@ func f() {
 		}
 	})
 }
+
+// TestTopDown_BaselineDriftBranchCrossMatching ensures upstream line drift
+// doesn't cause ambiguous subtrees in sibling branches (then vs else) to cross-match.
+func TestTopDown_BaselineDriftBranchCrossMatching(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Build synthetic AST with upstream deletion drift D = 15.
+		// Old tree at row 558: if_statement with consequence (row 560) and alternative (row 562).
+		oldThenExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
+		oldThenSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
+		oldThenCall := testutil.Node("call_expression", "", oldThenSel, testutil.Node("argument_list", "", testutil.Leaf("identifier", "extra")))
+		oldThenStmt := testutil.Node("assignment_statement", "", oldThenExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", oldThenCall))
+		oldThenBlock := testutil.Node("block", "", oldThenStmt)
+
+		oldElseExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
+		oldElseSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
+		oldElseCall := testutil.Node("call_expression", "", oldElseSel, testutil.Node("argument_list", "", testutil.Leaf("identifier", "extra")))
+		oldElseStmt := testutil.Node("assignment_statement", "", oldElseExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", oldElseCall))
+		oldElseBlock := testutil.Node("block", "", oldElseStmt)
+
+		oldIf := testutil.Node("if_statement", "",
+			testutil.Leaf("if", "if"),
+			testutil.Leaf("identifier", "cond"),
+			oldThenBlock,
+			testutil.Leaf("else", "else"),
+			oldElseBlock,
+		)
+		oldFunc := testutil.Node("function_declaration", "renderWholeFile", testutil.Leaf("identifier", "renderWholeFile"), testutil.Node("block", "", oldIf))
+
+		oldFunc.StartRow, oldFunc.EndRow = 540, 570
+		oldIf.StartRow, oldIf.EndRow = 558, 563
+		oldThenBlock.StartRow, oldThenBlock.EndRow = 558, 561
+		oldThenStmt.StartRow, oldThenStmt.EndRow = 560, 560
+		oldThenExpr.StartRow, oldThenExpr.EndRow = 560, 560
+		oldThenSel.StartRow, oldThenSel.EndRow = 560, 560
+		oldElseBlock.StartRow, oldElseBlock.EndRow = 561, 563
+		oldElseStmt.StartRow, oldElseStmt.EndRow = 562, 562
+		oldElseExpr.StartRow, oldElseExpr.EndRow = 562, 562
+		oldElseSel.StartRow, oldElseSel.EndRow = 562, 562
+
+		// New tree shifted up by D = 15 lines (starts at row 525 instead of 540).
+		newThenExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
+		newThenSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
+		newThenCall := testutil.Node("call_expression", "", newThenSel, testutil.Node("argument_list", "", testutil.Leaf("string", `""`)))
+		newThenStmt := testutil.Node("assignment_statement", "", newThenExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", newThenCall))
+		newThenBlock := testutil.Node("block", "", newThenStmt)
+
+		newElseExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
+		newElseSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
+		newElseCall := testutil.Node("call_expression", "", newElseSel, testutil.Node("argument_list", "", testutil.Leaf("string", `""`)))
+		newElseStmt := testutil.Node("assignment_statement", "", newElseExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", newElseCall))
+		newElseBlock := testutil.Node("block", "", newElseStmt)
+
+		newIf := testutil.Node("if_statement", "",
+			testutil.Leaf("if", "if"),
+			testutil.Leaf("identifier", "cond"),
+			newThenBlock,
+			testutil.Leaf("else", "else"),
+			newElseBlock,
+		)
+		newFunc := testutil.Node("function_declaration", "renderWholeFile", testutil.Leaf("identifier", "renderWholeFile"), testutil.Node("block", "", newIf))
+
+		newFunc.StartRow, newFunc.EndRow = 525, 555
+		newIf.StartRow, newIf.EndRow = 543, 548
+		newThenBlock.StartRow, newThenBlock.EndRow = 543, 546
+		newThenStmt.StartRow, newThenStmt.EndRow = 545, 545
+		newThenExpr.StartRow, newThenExpr.EndRow = 545, 545
+		newThenSel.StartRow, newThenSel.EndRow = 545, 545
+		newElseBlock.StartRow, newElseBlock.EndRow = 546, 548
+		newElseStmt.StartRow, newElseStmt.EndRow = 547, 547
+		newElseExpr.StartRow, newElseExpr.EndRow = 547, 547
+		newElseSel.StartRow, newElseSel.EndRow = 547, 547
+
+		m := NewMapping()
+		TopDown(oldFunc, newFunc, 2, m, nil)
+
+		// Sibling expressions must stay in their own branch.
+		if got := m.Src()[oldThenExpr]; got != newThenExpr {
+			t.Errorf("oldThenExpr mapped to %v, want newThenExpr %v (in-branch)", got, newThenExpr)
+		}
+		if got := m.Src()[oldThenSel]; got != newThenSel {
+			t.Errorf("oldThenSel mapped to %v, want newThenSel %v (in-branch)", got, newThenSel)
+		}
+		if got := m.Src()[oldElseExpr]; got != newElseExpr {
+			t.Errorf("oldElseExpr mapped to %v, want newElseExpr %v (in-branch)", got, newElseExpr)
+		}
+		if got := m.Src()[oldElseSel]; got != newElseSel {
+			t.Errorf("oldElseSel mapped to %v, want newElseSel %v (in-branch)", got, newElseSel)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		// Realistic source with deleted helper lines before the function creating 15 lines of drift.
+		oldSrc := []byte(`package render
+
+func unusedHelperA() {
+	println("1")
+	println("2")
+}
+
+func renderWholeFileSingleColumn(action int, extra string) error {
+	var hunkHeader string
+	if action == 1 {
+		hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, 10, extra)
+	} else {
+		hunkHeader = renderutil.FormatHunkHeader(1, 10, 0, 0, extra)
+	}
+	fmt.Printf("%s\n", hunkHeader)
+	return nil
+}
+`)
+
+		newSrc := []byte(`package render
+
+func renderWholeFileSingleColumn(action int) error {
+	var hunkHeader string
+	if action == 1 {
+		hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, 10, "")
+	} else {
+		hunkHeader = renderutil.FormatHunkHeader(1, 10, 0, 0, "")
+	}
+	fmt.Printf("%s\n", hunkHeader)
+	return nil
+}
+`)
+
+		oldTree, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old.go: %v", err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new.go: %v", err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		r := rulesFor(oldTree)
+		if r == nil {
+			t.Fatal("rulesFor(oldTree) returned nil")
+		}
+
+		// 1. Enclosing context: function declaration must map in place
+		var oldFn, newFn *treesitter.ASTNode
+		for _, n := range oldTree.Children {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "identifier" && c.Label == "renderWholeFileSingleColumn" {
+						oldFn = n
+					}
+				}
+			}
+		}
+		for _, n := range newTree.Children {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "identifier" && c.Label == "renderWholeFileSingleColumn" {
+						newFn = n
+					}
+				}
+			}
+		}
+		if oldFn == nil || newFn == nil {
+			t.Fatalf("failed to locate function declarations: old=%v, new=%v", oldFn, newFn)
+		}
+		if got := mr.Mappings.Src()[oldFn]; got != newFn {
+			t.Errorf("expected function to map in place, got %v", got)
+		}
+
+		var oldIf, newIf *treesitter.ASTNode
+		var oldThenStmt, oldElseStmt *treesitter.ASTNode
+		var newThenStmt, newElseStmt *treesitter.ASTNode
+
+		for _, n := range oldFn.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" && oldIf == nil {
+				oldIf = n
+			}
+			if r.IsStatement(n.Type) && n.Type == "assignment_statement" {
+				if oldThenStmt == nil {
+					oldThenStmt = n
+				} else if oldElseStmt == nil {
+					oldElseStmt = n
+				}
+			}
+		}
+		for _, n := range newFn.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" && newIf == nil {
+				newIf = n
+			}
+			if r.IsStatement(n.Type) && n.Type == "assignment_statement" {
+				if newThenStmt == nil {
+					newThenStmt = n
+				} else if newElseStmt == nil {
+					newElseStmt = n
+				}
+			}
+		}
+
+		if oldIf == nil || newIf == nil {
+			t.Fatalf("failed to locate if_statement: old=%v, new=%v", oldIf, newIf)
+		}
+		if oldThenStmt == nil || oldElseStmt == nil || newThenStmt == nil || newElseStmt == nil {
+			t.Fatalf("failed to locate assignment statements: oldThen=%v, oldElse=%v, newThen=%v, newElse=%v",
+				oldThenStmt, oldElseStmt, newThenStmt, newElseStmt)
+		}
+
+		// 2. Surrounding sequence: if_statement maps in place
+		if got := mr.Mappings.Src()[oldIf]; got != newIf {
+			t.Errorf("expected if_statement to map in place, got %v", got)
+		}
+
+		// 3. In-branch statement preservation: then maps to then, else maps to else (never inverted)
+		if got := mr.Mappings.Src()[oldThenStmt]; got != newThenStmt {
+			t.Errorf("oldThenStmt mapped to %v, want newThenStmt %v (never cross-branch)", got, newThenStmt)
+		}
+		if got := mr.Mappings.Src()[oldElseStmt]; got != newElseStmt {
+			t.Errorf("oldElseStmt mapped to %v, want newElseStmt %v (never cross-branch)", got, newElseStmt)
+		}
+
+		// 4. Stationary sub-statement tokens (hunkHeader and FormatHunkHeader) must map in-branch
+		var oldThenHunk, newThenHunk *treesitter.ASTNode
+		for _, n := range oldThenStmt.PreOrder() {
+			if n.Type == "identifier" && n.Label == "hunkHeader" {
+				oldThenHunk = n
+				break
+			}
+		}
+		for _, n := range newThenStmt.PreOrder() {
+			if n.Type == "identifier" && n.Label == "hunkHeader" {
+				newThenHunk = n
+				break
+			}
+		}
+		if oldThenHunk == nil || newThenHunk == nil {
+			t.Fatalf("failed to locate hunkHeader identifier: old=%v, new=%v", oldThenHunk, newThenHunk)
+		}
+		if got := mr.Mappings.Src()[oldThenHunk]; got != newThenHunk {
+			t.Errorf("oldThenHunk mapped to %v, want newThenHunk %v", got, newThenHunk)
+		}
+	})
+}
