@@ -126,6 +126,7 @@ var golangRules = &Rules{
 		"block",
 	},
 	Wrappers: []string{
+		"labeled_statement",
 		"parenthesized_expression",
 		"parenthesized_type",
 		"argument_list",

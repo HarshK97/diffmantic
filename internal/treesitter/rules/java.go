@@ -188,6 +188,7 @@ var javaRules = &Rules{
 		"constructor_body",
 	},
 	Wrappers: []string{
+		"labeled_statement",
 		"parenthesized_expression",
 		"argument_list",
 		"formal_parameters",

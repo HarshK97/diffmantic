@@ -2478,3 +2478,246 @@ func TestProcess(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeStationaryMove_LabeledStatementWrapper(t *testing.T) {
+	r := rules.Get("go")
+
+	t.Run("Unit", func(t *testing.T) {
+		// Wrapping a statement in a label in place shouldn't trigger a move.
+		fnSrc := mkNode("function_declaration", "Evaluate")
+		fnSrc.Language = "go"
+		bodySrc := mkNode("block", "")
+		bodySrc.Language = "go"
+		bodySrc.Parent = fnSrc
+		fnSrc.Children = []*treesitter.ASTNode{bodySrc}
+
+		preStmtSrc := mkNode("expression_statement", "check()")
+		preStmtSrc.Language = "go"
+		preStmtSrc.Parent = bodySrc
+
+		targetStmtSrc := mkNode("short_var_declaration", "match := true")
+		targetStmtSrc.Language = "go"
+		targetStmtSrc.Parent = bodySrc
+
+		postStmtSrc := mkNode("return_statement", "return match")
+		postStmtSrc.Language = "go"
+		postStmtSrc.Parent = bodySrc
+
+		bodySrc.Children = []*treesitter.ASTNode{preStmtSrc, targetStmtSrc, postStmtSrc}
+
+		fnDst := mkNode("function_declaration", "Evaluate")
+		fnDst.Language = "go"
+		bodyDst := mkNode("block", "")
+		bodyDst.Language = "go"
+		bodyDst.Parent = fnDst
+		fnDst.Children = []*treesitter.ASTNode{bodyDst}
+
+		preStmtDst := mkNode("expression_statement", "check()")
+		preStmtDst.Language = "go"
+		preStmtDst.Parent = bodyDst
+
+		labeledDst := mkNode("labeled_statement", "fallback:")
+		labeledDst.Language = "go"
+		labeledDst.Parent = bodyDst
+
+		targetStmtDst := mkNode("short_var_declaration", "match := true")
+		targetStmtDst.Language = "go"
+		targetStmtDst.Parent = labeledDst
+		labeledDst.Children = []*treesitter.ASTNode{targetStmtDst}
+
+		postStmtDst := mkNode("return_statement", "return match")
+		postStmtDst.Language = "go"
+		postStmtDst.Parent = bodyDst
+
+		bodyDst.Children = []*treesitter.ASTNode{preStmtDst, labeledDst, postStmtDst}
+
+		ms := engine.NewMapping()
+		ms.Add(fnSrc, fnDst)
+		ms.Add(bodySrc, bodyDst)
+		ms.Add(preStmtSrc, preStmtDst)
+		ms.Add(targetStmtSrc, targetStmtDst)
+		ms.Add(postStmtSrc, postStmtDst)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: targetStmtSrc, DestNode: targetStmtDst})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 0 {
+			t.Fatalf("expected 0 actions after dropping labeled_statement wrapper move, got %d", result.Size())
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package engine
+
+func Evaluate(node, dstNode *Node) bool {
+	if node == nil || dstNode == nil {
+		return false
+	}
+	if node.IsLeaf() && dstNode.IsLeaf() {
+		return true
+	}
+
+	match := node.Kind == dstNode.Kind
+	logMatch(match)
+	return match
+}
+`)
+		dst := []byte(`package engine
+
+func Evaluate(node, dstNode *Node) bool {
+	if node == nil || dstNode == nil {
+		return false
+	}
+	if node.IsLeaf() && dstNode.IsLeaf() {
+		if node.Value != dstNode.Value {
+			goto fallback
+		}
+		return true
+	}
+
+fallback:
+	match := node.Kind == dstNode.Kind
+	logMatch(match)
+	return match
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "engine.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "engine.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: outer function declaration doesn't get touched.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsContainerDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsContainerDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected enclosing function declaration to map in place")
+		}
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && (r.IsDeclaration(a.Node.Type) || r.IsContainerDeclaration(a.Node.Type)) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 2. Surrounding sequence: guard check and trailing log/return statements map in place.
+		var srcGuard, dstGuard, srcLog, dstLog, srcRet, dstRet *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(src[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "if node == nil") {
+					srcGuard = n
+				} else if text == "logMatch(match)" {
+					srcLog = n
+				} else if text == "return match" {
+					srcRet = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(dst[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "if node == nil") {
+					dstGuard = n
+				} else if text == "logMatch(match)" {
+					dstLog = n
+				} else if text == "return match" {
+					dstRet = n
+				}
+			}
+		}
+		if srcGuard == nil || dstGuard == nil || matchResult.Mappings.Src()[srcGuard] != dstGuard {
+			t.Errorf("expected guard if statement to map in place")
+		}
+		if srcLog == nil || dstLog == nil || matchResult.Mappings.Src()[srcLog] != dstLog {
+			t.Errorf("expected succeeding statement logMatch(match) to map in place")
+		}
+		if srcRet == nil || dstRet == nil || matchResult.Mappings.Src()[srcRet] != dstRet {
+			t.Errorf("expected succeeding statement return match to map in place")
+		}
+
+		// 3. Target statement: the labeled assignment maps in place and drops its move.
+		var srcTarget, dstTarget *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "match := node.Kind == dstNode.Kind" {
+				srcTarget = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "match := node.Kind == dstNode.Kind" {
+				dstTarget = n
+				break
+			}
+		}
+		if srcTarget == nil || dstTarget == nil {
+			t.Fatalf("failed to locate target statement in ASTs")
+		}
+		if matchResult.Mappings.Src()[srcTarget] != dstTarget {
+			t.Errorf("expected target statement to map in place")
+		}
+
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && a.Node == srcTarget
+		})
+		if hasMove {
+			t.Errorf("expected Move action on target statement to be dropped by stationary wrapper normalization, but found: %v", normalized.Actions())
+		}
+
+		hasLabelInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Insert && (a.Node.Label == "fallback" || (a.DestNode != nil && a.DestNode.Label == "fallback"))
+		})
+		if !hasLabelInsert {
+			t.Errorf("expected label insert action for fallback label, but found actions: %v", normalized.Actions())
+		}
+
+		// 4. Stationary operands: inner selector expressions stay mapped in place.
+		var srcKind, dstKind, srcDstKind, dstDstKind *treesitter.ASTNode
+		for _, n := range srcTarget.Descendants() {
+			switch string(src[n.StartByte:n.EndByte]) {
+			case "node.Kind":
+				srcKind = n
+			case "dstNode.Kind":
+				srcDstKind = n
+			}
+		}
+		for _, n := range dstTarget.Descendants() {
+			switch string(dst[n.StartByte:n.EndByte]) {
+			case "node.Kind":
+				dstKind = n
+			case "dstNode.Kind":
+				dstDstKind = n
+			}
+		}
+		if srcKind == nil || dstKind == nil || matchResult.Mappings.Src()[srcKind] != dstKind {
+			t.Errorf("expected inner operand node.Kind to map in place")
+		}
+		if srcDstKind == nil || dstDstKind == nil || matchResult.Mappings.Src()[srcDstKind] != dstDstKind {
+			t.Errorf("expected inner operand dstNode.Kind to map in place")
+		}
+	})
+}

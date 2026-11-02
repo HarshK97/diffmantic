@@ -158,6 +158,7 @@ var cRules = &Rules{
 		"compound_statement",
 	},
 	Wrappers: []string{
+		"labeled_statement",
 		"parenthesized_expression",
 		"argument_list",
 		"parameter_list",
