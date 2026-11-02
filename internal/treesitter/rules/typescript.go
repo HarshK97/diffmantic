@@ -196,6 +196,7 @@ var typescriptRules = &Rules{
 		"statement_block",
 	},
 	Wrappers: []string{
+		"labeled_statement",
 		"export_statement",
 		"parenthesized_expression",
 		"parenthesized_type",

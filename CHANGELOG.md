@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleaned up unused Tree-sitter rule tables for scoped declarations and ignored labels, dropping dead label-stripping logic during AST ingestion.
 
 ### Fixed
+- Adding a label to an existing statement or loop (like `outer:` in Go, Java, JS, or C/C++) won't treat the enclosed code as moved or rewritten just because Tree-sitter wrapped it in a new label node.
 - Inserting a new statement above an existing one (like adding a guard `if`) won't treat expressions moved into the new statement as stationary just because their line and column coordinates happen to collide.
 - Prepending operands to a chained expression (like adding styles to `color.MoveFg + badgeText`) won't invert operand positions across the operator or highlight untouched operands as false moves.
 - Extracting a closure or local function into a helper won't steal identical statements from untouched functions or show false move.
