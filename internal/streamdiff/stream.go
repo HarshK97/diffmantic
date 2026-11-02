@@ -4,6 +4,9 @@ package streamdiff
 
 import (
 	"bufio"
+	"bytes"
+	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,8 +14,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -33,6 +40,34 @@ type StreamConfig struct {
 	// IsActive reports whether the output receiver is still alive and accepting data.
 	// If nil, processing continues until EOF.
 	IsActive func() bool
+	// Pager monitors the terminal pager subprocess, if active.
+	Pager *pager.Pager
+	// Context cancels streaming when the caller is done.
+	Context context.Context
+}
+
+type streamItemKind int
+
+const (
+	itemRawText streamItemKind = iota
+	itemDiffJob
+)
+
+type streamItem struct {
+	kind    streamItemKind
+	rawText []byte
+	job     *diffJob
+}
+
+// diffJob is a single file diff sent to background workers.
+type diffJob struct {
+	hunk     *fileHunk
+	srcBytes []byte // pre-fetched by reader so workers don't need git access
+	dstBytes []byte
+
+	out  []byte
+	err  error
+	done chan struct{}
 }
 
 // fileHunk buffers raw lines and tracks object IDs for a single file in the stream.
@@ -45,191 +80,449 @@ type fileHunk struct {
 	streamingRaw bool
 }
 
-// Process parses a Git patch stream from in, runs 2-way diffs through the AST pipeline,
-// and passes everything else (commit logs, raw patches, merge conflicts) straight to out.
-func Process(in io.Reader, out io.Writer, cwd string, cfg StreamConfig) error {
-	reader := bufio.NewReader(in)
-	var current *fileHunk
-	var session *git.BatchSession
-	gitAvailable := true
+const (
+	defaultMaxWorkers = 4
+	streamQueueCap    = 256
+	diffJobSemCap     = 16
+	rawChunkLimit     = 8 * 1024 // batch non-diff output up to 8 KB before sending to the queue
+)
 
+// rawChunkBuffer batches non-diff text so we don't flood the queue with single-line channel items.
+type rawChunkBuffer struct {
+	buf   bytes.Buffer
+	queue chan<- streamItem
+}
+
+func (b *rawChunkBuffer) writeString(ctx context.Context, s string) error {
+	b.buf.WriteString(s)
+	if b.buf.Len() >= rawChunkLimit {
+		return b.flush(ctx)
+	}
+	return nil
+}
+
+func (b *rawChunkBuffer) flush(ctx context.Context) error {
+	if b.buf.Len() == 0 {
+		return nil
+	}
+	chunk := bytes.Clone(b.buf.Bytes())
+	b.buf.Reset()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case b.queue <- streamItem{kind: itemRawText, rawText: chunk}:
+		return nil
+	}
+}
+
+// processStreamJob diffs a single file and renders the output into job.out.
+// It drops the AST and buffers before returning so memory doesn't stick around.
+func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
+	defer close(job.done)
 	defer func() {
-		if session != nil {
-			_ = session.Close()
-		}
+		job.srcBytes = nil
+		job.dstBytes = nil
 	}()
 
-	flushCurrent := func() error {
-		if cfg.IsActive != nil && !cfg.IsActive() {
-			return nil
-		}
-		if current == nil {
-			return nil
-		}
-		defer func() { current = nil }()
-
-		if current.streamingRaw {
-			return nil
-		}
-
-		// Need both paths and object IDs to run an AST diff, fall back to raw Git text.
-		if current.oldPath == "" || current.newPath == "" || current.oldOID == "" || current.newOID == "" {
-			return dumpLines(out, current.lines)
-		}
-
-		oldBytes, newBytes, err := fetchBuffers(cwd, current, session, gitAvailable)
-		if err != nil {
-			// Blob fetch failed (e.g. shallow clone, untracked file), fall back to raw text.
-			return dumpLines(out, current.lines)
-		}
-
-		dr, err := pipeline.Run(oldBytes, newBytes, current.oldPath, current.newPath, cfg.DiffOpts)
-		if err != nil || dr == nil {
-			return dumpLines(out, current.lines)
-		}
-
-		return renderDiff(out, dr, current, cfg)
+	if err := ctx.Err(); err != nil {
+		job.err = err
+		return
 	}
 
-	for {
-		if cfg.IsActive != nil && !cfg.IsActive() {
+	if bytes.Equal(job.srcBytes, job.dstBytes) && cfg.Format != "json" {
+		return
+	}
+
+	var buf bytes.Buffer
+
+	dr, err := pipeline.Run(job.srcBytes, job.dstBytes, job.hunk.oldPath, job.hunk.newPath, cfg.DiffOpts)
+	if err != nil || dr == nil {
+		_ = dumpLines(&buf, job.hunk.lines)
+		job.out = buf.Bytes()
+		return
+	}
+
+	if renderErr := renderDiff(&buf, dr, job.hunk, cfg); renderErr != nil {
+		job.err = renderErr
+		return
+	}
+
+	// Drop large trees right away to keep heap usage low.
+	dr.SrcAST = nil
+	dr.DstAST = nil
+	dr.MatchResult = nil
+	dr.SrcBytes = nil
+	dr.DstBytes = nil
+
+	job.out = buf.Bytes()
+}
+
+// Process parses a Git patch stream from in, runs 2-way diffs through the AST pipeline
+// concurrently across a bounded worker pool, and passes everything else straight to out in order.
+func Process(in io.Reader, out io.Writer, cwd string, cfg StreamConfig) error {
+	ctx, cancel := context.WithCancel(cmp.Or(cfg.Context, context.Background()))
+
+	numWorkers := min(max(1, runtime.GOMAXPROCS(0)), defaultMaxWorkers)
+	workQueue := make(chan *diffJob, diffJobSemCap)
+	streamQueue := make(chan streamItem, streamQueueCap)
+	sem := make(chan struct{}, diffJobSemCap)
+
+	var wgWorkers sync.WaitGroup
+
+	var (
+		flusherErr     error
+		firstWorkerErr error
+		readerErr      atomic.Pointer[error]
+	)
+	failReader := func(err error) {
+		readerErr.CompareAndSwap(nil, &err)
+		cancel()
+	}
+
+	// Clean up in order: cancel context, close pager handle, then wait for workers.
+	// BatchSession is reader-confined and closed exclusively by the reader goroutine.
+	defer func() {
+		cancel()
+		if cfg.Pager != nil {
+			cfg.Pager.Close()
+		}
+		wgWorkers.Wait()
+	}()
+
+	if deadliner, ok := in.(interface{ SetReadDeadline(time.Time) error }); ok {
+		stopDeadliner := context.AfterFunc(ctx, func() {
+			_ = deadliner.SetReadDeadline(time.Now())
+		})
+		defer stopDeadliner()
+	}
+
+	// Stop processing if the pager quits (e.g. user pressed 'q').
+	if cfg.Pager != nil {
+		wgWorkers.Go(func() {
+			select {
+			case <-ctx.Done():
+			case <-cfg.Pager.Done():
+				cancel()
+			}
+		})
+	}
+
+	for range numWorkers {
+		wgWorkers.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case job, ok := <-workQueue:
+					if !ok {
+						return
+					}
+					processStreamJob(ctx, job, cfg)
+				}
+			}
+		})
+	}
+
+	// Flusher writes chunks and completed diffs to out in their original order.
+	flusherDone := make(chan struct{})
+	wgWorkers.Go(func() {
+		defer close(flusherDone)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case item, ok := <-streamQueue:
+				if !ok {
+					return
+				}
+				switch item.kind {
+				case itemRawText:
+					if len(item.rawText) > 0 {
+						if _, err := out.Write(item.rawText); err != nil {
+							if pager.IsBrokenPipe(err) {
+								cancel()
+								return
+							}
+							flusherErr = err
+							cancel()
+							return
+						}
+					}
+				case itemDiffJob:
+					select {
+					case <-ctx.Done():
+						return
+					case <-item.job.done:
+					}
+
+					if item.job.err != nil {
+						if pager.IsBrokenPipe(item.job.err) || errors.Is(item.job.err, context.Canceled) {
+							cancel()
+							return
+						}
+						if firstWorkerErr == nil {
+							firstWorkerErr = item.job.err
+						}
+					}
+
+					if len(item.job.out) > 0 {
+						if _, err := out.Write(item.job.out); err != nil {
+							if pager.IsBrokenPipe(err) {
+								cancel()
+								return
+							}
+							flusherErr = err
+							cancel()
+							return
+						}
+					}
+
+					item.job.out = nil
+
+					// Free up a slot so the reader can queue another diff.
+					select {
+					case <-sem:
+					default:
+					}
+				}
+			}
+		}
+	})
+
+	// The reader runs separately from wgWorkers so a blocked stdin read won't hold up teardown.
+	go func() {
+		var session *git.BatchSession
+		gitAvailable := true
+
+		defer func() {
+			if session != nil {
+				_ = session.Close()
+			}
+			close(workQueue)
+			close(streamQueue)
+		}()
+
+		reader := bufio.NewReader(in)
+		rawBuf := &rawChunkBuffer{
+			queue: streamQueue,
+		}
+
+		var current *fileHunk
+
+		dumpToRawBuf := func(lines []string) error {
+			for _, l := range lines {
+				if err := rawBuf.writeString(ctx, l); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 
-		line, err := reader.ReadString('\n')
-		if err != nil && len(line) == 0 {
+		flushCurrent := func() error {
+			if current == nil {
+				return nil
+			}
+			h := current
+			current = nil
+
+			if h.streamingRaw {
+				return nil
+			}
+
+			if h.oldPath == "" || h.newPath == "" || h.oldOID == "" || h.newOID == "" {
+				return dumpToRawBuf(h.lines)
+			}
+
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			oldBytes, newBytes, err := fetchBuffers(cwd, h, session, gitAvailable)
+			if err != nil {
+				return dumpToRawBuf(h.lines)
+			}
+
+			if err := rawBuf.flush(ctx); err != nil {
+				return err
+			}
+
+			job := &diffJob{
+				hunk:     h,
+				srcBytes: oldBytes,
+				dstBytes: newBytes,
+				done:     make(chan struct{}),
+			}
+
+			permitAcquired := false
+			defer func() {
+				if permitAcquired {
+					select {
+					case <-sem:
+					default:
+					}
+				}
+			}()
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case sem <- struct{}{}:
+				permitAcquired = true
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case workQueue <- job:
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case streamQueue <- streamItem{kind: itemDiffJob, job: job}:
+				permitAcquired = false // ownership safely transferred to flusher
+			}
+
+			return nil
+		}
+
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+
+			if cfg.IsActive != nil && !cfg.IsActive() {
+				break
+			}
+
+			line, err := reader.ReadString('\n')
+			if err != nil && len(line) == 0 {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				failReader(err)
+				return
+			}
+
+			cleanLine := cleanStreamLine(line)
+
+			if strings.HasPrefix(cleanLine, "commit ") || strings.HasPrefix(cleanLine, "From ") {
+				if flushErr := flushCurrent(); flushErr != nil {
+					failReader(flushErr)
+					return
+				}
+				if err := rawBuf.writeString(ctx, line); err != nil {
+					failReader(err)
+					return
+				}
+				continue
+			}
+
+			if strings.HasPrefix(cleanLine, "diff --git ") {
+				if flushErr := flushCurrent(); flushErr != nil {
+					failReader(flushErr)
+					return
+				}
+
+				if session == nil && gitAvailable {
+					if s, err := git.StartBatchSession(cwd); err == nil {
+						session = s
+					} else {
+						gitAvailable = false
+					}
+				}
+
+				oldPath, newPath := parseDiffGitPaths(cleanLine)
+				current = &fileHunk{
+					oldPath: oldPath,
+					newPath: newPath,
+					lines:   []string{line},
+				}
+				continue
+			}
+
+			// Combined diff detection (pass straight through)
+			if strings.HasPrefix(cleanLine, "diff --combined ") || strings.HasPrefix(cleanLine, "diff --cc ") {
+				if flushErr := flushCurrent(); flushErr != nil {
+					failReader(flushErr)
+					return
+				}
+				if err := rawBuf.writeString(ctx, line); err != nil {
+					failReader(err)
+					return
+				}
+				continue
+			}
+
+			if current != nil {
+				if current.streamingRaw {
+					if err := rawBuf.writeString(ctx, line); err != nil {
+						failReader(err)
+						return
+					}
+					continue
+				}
+
+				current.lines = append(current.lines, line)
+				if len(current.lines) > 50000 {
+					if err := dumpToRawBuf(current.lines); err != nil {
+						failReader(err)
+						return
+					}
+					current.lines = nil
+					current.streamingRaw = true
+					continue
+				}
+
+				if strings.HasPrefix(cleanLine, "index ") && current.oldOID == "" {
+					oldOID, newOID := parseIndexOIDs(cleanLine)
+					current.oldOID = oldOID
+					current.newOID = newOID
+				} else if p := parseHeaderPath(cleanLine, "rename from "); p != "" {
+					current.oldPath = p
+				} else if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
+					current.newPath = p
+				} else if p := parseHeaderPath(cleanLine, "--- "); p != "" {
+					current.oldPath = p
+				} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+					current.newPath = p
+				}
+				continue
+			}
+
+			if err := rawBuf.writeString(ctx, line); err != nil {
+				failReader(err)
+				return
+			}
+
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return err
 		}
 
-		cleanLine := cleanStreamLine(line)
-
-		// Flush the previous file diff before printing the next commit header.
-		if strings.HasPrefix(cleanLine, "commit ") || strings.HasPrefix(cleanLine, "From ") {
-			if flushErr := flushCurrent(); flushErr != nil {
-				if pager.IsBrokenPipe(flushErr) {
-					return nil
-				}
-				return flushErr
-			}
-			if _, wErr := io.WriteString(out, line); wErr != nil {
-				if pager.IsBrokenPipe(wErr) {
-					return nil
-				}
-				return wErr
-			}
-			continue
+		if flushErr := flushCurrent(); flushErr != nil {
+			failReader(flushErr)
+			return
 		}
+		_ = rawBuf.flush(ctx)
+	}()
 
-		// Start of a new file diff. Graph lines (*, |) and combined diffs pass straight
-		// through to keep column alignment and multi-parent merge output intact (Case 77).
-		if strings.HasPrefix(cleanLine, "diff --git ") {
-			if flushErr := flushCurrent(); flushErr != nil {
-				if pager.IsBrokenPipe(flushErr) {
-					return nil
-				}
-				return flushErr
-			}
+	<-flusherDone
 
-			if session == nil && gitAvailable {
-				if s, err := git.StartBatchSession(cwd); err == nil {
-					session = s
-				} else {
-					gitAvailable = false
-				}
-			}
-
-			oldPath, newPath := parseDiffGitPaths(cleanLine)
-			current = &fileHunk{
-				oldPath: oldPath,
-				newPath: newPath,
-				lines:   []string{line},
-			}
-			continue
-		}
-
-		// Flush in-flight diffs and pass combined merge diffs through untouched.
-		if strings.HasPrefix(cleanLine, "diff --combined ") || strings.HasPrefix(cleanLine, "diff --cc ") {
-			if flushErr := flushCurrent(); flushErr != nil {
-				if pager.IsBrokenPipe(flushErr) {
-					return nil
-				}
-				return flushErr
-			}
-			if _, wErr := io.WriteString(out, line); wErr != nil {
-				if pager.IsBrokenPipe(wErr) {
-					return nil
-				}
-				return wErr
-			}
-			continue
-		}
-
-		// Buffer raw lines so we can replay Git's original output if AST parsing fails.
-		if current != nil {
-			if current.streamingRaw {
-				if _, wErr := io.WriteString(out, line); wErr != nil {
-					if pager.IsBrokenPipe(wErr) {
-						return nil
-					}
-					return wErr
-				}
-				continue
-			}
-
-			current.lines = append(current.lines, line)
-			if len(current.lines) > 50000 {
-				if err := dumpLines(out, current.lines); err != nil {
-					if pager.IsBrokenPipe(err) {
-						return nil
-					}
-					return err
-				}
-				current.lines = nil
-				current.streamingRaw = true
-				continue
-			}
-
-			if strings.HasPrefix(cleanLine, "index ") && current.oldOID == "" {
-				oldOID, newOID := parseIndexOIDs(cleanLine)
-				current.oldOID = oldOID
-				current.newOID = newOID
-			} else if strings.HasPrefix(cleanLine, "rename from ") {
-				if p := parseHeaderPath(cleanLine, "rename from "); p != "" {
-					current.oldPath = p
-				}
-			} else if strings.HasPrefix(cleanLine, "rename to ") {
-				if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
-					current.newPath = p
-				}
-			} else if strings.HasPrefix(cleanLine, "--- ") {
-				if p := parseHeaderPath(cleanLine, "--- "); p != "" {
-					current.oldPath = p
-				}
-			} else if strings.HasPrefix(cleanLine, "+++ ") {
-				if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
-					current.newPath = p
-				}
-			}
-			continue
-		}
-
-		if _, wErr := io.WriteString(out, line); wErr != nil {
-			if pager.IsBrokenPipe(wErr) {
-				return nil
-			}
-			return wErr
-		}
-
-		if errors.Is(err, io.EOF) {
-			break
-		}
+	if flusherErr != nil && !pager.IsBrokenPipe(flusherErr) {
+		return flusherErr
 	}
-
-	if err := flushCurrent(); err != nil && !pager.IsBrokenPipe(err) {
-		return err
+	var rErr error
+	if p := readerErr.Load(); p != nil {
+		rErr = *p
+	}
+	if rErr != nil && !pager.IsBrokenPipe(rErr) && !errors.Is(rErr, context.Canceled) && !errors.Is(rErr, os.ErrDeadlineExceeded) {
+		return rErr
+	}
+	if ctx.Err() == nil && firstWorkerErr != nil {
+		return fmt.Errorf("streamdiff worker: %w", firstWorkerErr)
 	}
 	return nil
 }
