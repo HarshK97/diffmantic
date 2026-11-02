@@ -1623,3 +1623,94 @@ func handleCondition() error {
 		assertContextLinesPure(t, envRev.RightHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
 	})
 }
+
+func TestCommentTriviaHighlighting_Unit(t *testing.T) {
+	// Verify that DelimiterSpan move actions inherit the anchor's color index.
+	srcBytes := []byte("// Doc for relocated function\nfunc Relocated() {}\n")
+
+	act := Action{
+		Action:         "move",
+		MoveColorIndex: 1, // Slot 1 / Magenta
+		Node: &NodeRef{
+			StartByte: 30,
+			EndByte:   49,
+		},
+		OrigStartByte: 30,
+		OrigEndByte:   49,
+	}
+
+	extra := DelimiterSpan{
+		StartByte: 0,
+		EndByte:   29,
+		Action:    "move",
+		ActionRef: &act,
+	}
+
+	spans := BuildHighlightSpans(srcBytes, []Action{act}, "left", extra)
+	var commentSpans []HighlightSpan
+	for _, s := range spans {
+		if s.Line == 0 {
+			commentSpans = append(commentSpans, s)
+		}
+	}
+
+	if len(commentSpans) == 0 {
+		t.Fatalf("expected highlight span on line 0 for comment trivia, got none")
+	}
+	if commentSpans[0].Action != "move" {
+		t.Errorf("expected comment action to be 'move', got %q", commentSpans[0].Action)
+	}
+	if commentSpans[0].ColorIndex != 1 {
+		t.Errorf("expected comment ColorIndex to match anchor (1), got %d", commentSpans[0].ColorIndex)
+	}
+
+	// An update action inside the moved comment promotes to move_update.
+	updAct := Action{
+		Action: "update",
+		Node: &NodeRef{
+			StartByte: 7,
+			EndByte:   16, // "relocated"
+		},
+		OrigStartByte: 7,
+		OrigEndByte:   16,
+	}
+	spansWithUpd := BuildHighlightSpans(srcBytes, []Action{act, updAct}, "left", extra)
+	hasMoveUpdate := false
+	for _, s := range spansWithUpd {
+		if s.Line == 0 && s.Action == "move_update" {
+			hasMoveUpdate = true
+			if s.ColorIndex != 1 {
+				t.Errorf("expected move_update ColorIndex to match anchor (1), got %d", s.ColorIndex)
+			}
+		}
+	}
+	if !hasMoveUpdate {
+		t.Errorf("expected comment update inside move to promote to 'move_update', got: %+v", spansWithUpd)
+	}
+
+	// Deleted comments shouldn't get marked as moved, even if attached to a moved node.
+	delAct := Action{
+		Action: "delete",
+		Node: &NodeRef{
+			StartByte: 0,
+			EndByte:   29,
+		},
+		OrigStartByte: 0,
+		OrigEndByte:   29,
+	}
+	spansWithDel := BuildHighlightSpans(srcBytes, []Action{act, delAct}, "left")
+	hasDelete := false
+	for _, s := range spansWithDel {
+		if s.Line == 0 {
+			if s.Action == "move" {
+				t.Errorf("expected deleted comment not to take 'move', got: %+v", s)
+			}
+			if s.Action == "delete" {
+				hasDelete = true
+			}
+		}
+	}
+	if !hasDelete {
+		t.Errorf("expected deleted comment to take 'delete' highlight, got: %+v", spansWithDel)
+	}
+}

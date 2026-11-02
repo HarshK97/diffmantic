@@ -243,6 +243,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 			EndRow:    int(fn.EndRow),
 			EndCol:    int(fn.EndCol),
 			Language:  langName,
+			IsComment: true,
 		}
 
 		// 1. Find the CST parent node and its nearest ASTNode

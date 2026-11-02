@@ -169,6 +169,19 @@ func collectMoveRanges(es *actions.EditScript, ms *engine.Mapping, srcLines []st
 			hasDst = true
 		}
 
+		for _, tr := range a.Node.LeadingTrivia {
+			if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) {
+				sStart = min(sStart, tr.StartRow)
+			}
+		}
+		if dstNode != nil {
+			for _, tr := range dstNode.LeadingTrivia {
+				if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) {
+					dStart = min(dStart, tr.StartRow)
+				}
+			}
+		}
+
 		r := rules.Get(a.Node.GetLanguage())
 		drift := sStart - dStart
 		if drift < 0 {

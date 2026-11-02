@@ -509,6 +509,50 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 		rightDelims = append(rightDelims, extraRight...)
 	}
 
+	deletedCommentBytes := make(map[uint32]bool)
+	insertedCommentBytes := make(map[uint32]bool)
+	for _, a := range actionsList {
+		if a.Action == "delete" && a.ASTNode != nil && a.ASTNode.IsComment() {
+			deletedCommentBytes[a.ASTNode.StartByte] = true
+		} else if a.Action == "insert" && a.ASTNode != nil && a.ASTNode.IsComment() {
+			insertedCommentBytes[a.ASTNode.StartByte] = true
+		}
+	}
+
+	for actIdx := range actionsList {
+		ja := &actionsList[actIdx]
+		if ja.Action != "move" && ja.Action != "move_update" {
+			continue
+		}
+
+		// Attach leading doc comments as visual move spans so they share the moved block's highlight.
+		if ja.ASTNode != nil {
+			for _, tr := range ja.ASTNode.LeadingTrivia {
+				if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) && !deletedCommentBytes[tr.StartByte] {
+					leftDelims = append(leftDelims, DelimiterSpan{
+						StartByte: tr.StartByte,
+						EndByte:   tr.EndByte,
+						Action:    "move",
+						ActionRef: ja,
+					})
+				}
+			}
+		}
+
+		if ja.DestASTNode != nil {
+			for _, tr := range ja.DestASTNode.LeadingTrivia {
+				if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) && !insertedCommentBytes[tr.StartByte] {
+					rightDelims = append(rightDelims, DelimiterSpan{
+						StartByte: tr.StartByte,
+						EndByte:   tr.EndByte,
+						Action:    "move",
+						ActionRef: ja,
+					})
+				}
+			}
+		}
+	}
+
 	hasMoves := slices.ContainsFunc(actionsList, func(a Action) bool {
 		return a.Action == "move" || a.Action == "move_update"
 	})

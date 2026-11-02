@@ -24,6 +24,7 @@ type CommentBlock struct {
 	ParentRow    int
 	ParentEndRow int
 	Language     string
+	IsComment    bool
 
 	// Structural Declaration & Scope Context
 	DeclStart     uint32
@@ -127,11 +128,29 @@ func (n *ASTNode) Root() *ASTNode {
 
 // GetLanguage walks up to the root to retrieve the AST's language.
 func (n *ASTNode) GetLanguage() string {
+	if n == nil {
+		return ""
+	}
+	if n.Language != "" {
+		return n.Language
+	}
 	root := n.Root()
 	if root == nil {
 		return ""
 	}
 	return root.Language
+}
+
+// IsComment reports whether the node represents a comment in the language grammar.
+func (n *ASTNode) IsComment() bool {
+	if n == nil {
+		return false
+	}
+	r := rules.Get(n.GetLanguage())
+	if r != nil {
+		return r.IsComment(n.Type)
+	}
+	return rules.IsComment(n.Type)
 }
 
 // IsBracketOrParen reports whether the node label is a bracket, brace, or parenthesis.
