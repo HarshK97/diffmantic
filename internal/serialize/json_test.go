@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
+	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -1677,5 +1678,461 @@ func TestCollectMappedTrailingDelimiters_FullEngine(t *testing.T) {
 		// Whole-snippet context line purity: only line 3 has highlights
 		assertContextLinesPure(t, env.LeftHighlights, []int{3})
 		assertContextLinesPure(t, env.RightHighlights, []int{3})
+	})
+}
+
+func TestCommentTriviaMoveHighlighting_FullEngine(t *testing.T) {
+	t.Run("MovedFunctionWithDocComment", func(t *testing.T) {
+		oldSrc := `package main
+
+// CalculateTax computes order tax.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`
+		newSrc := `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+// CalculateTax computes order tax.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		srcComments := comments.ExtractComments(oldAST)
+		dstComments := comments.ExtractComments(newAST)
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		var commentLineMappings map[int]int
+		if len(srcComments) > 0 || len(dstComments) > 0 {
+			cRes := comments.DiffComments(srcComments, dstComments, mr.Mappings)
+			if cRes != nil {
+				for _, act := range cRes.Actions {
+					es.Add(act)
+				}
+				commentLineMappings = cRes.LineMappings
+			}
+		}
+
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:      true,
+			IncludeHighlights:   true,
+			IncludeAlignment:    true,
+			CommentLineMappings: commentLineMappings,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Only the moved function belongs in env.Actions, with no synthetic comment actions.
+		moveCount := 0
+		for _, a := range env.Actions {
+			if a.Action == "move" {
+				moveCount++
+				if a.Node != nil && a.Node.Type != "function_declaration" {
+					t.Errorf("unexpected move action on non-function node: %s", a.Node.Type)
+				}
+			}
+		}
+		if moveCount != 1 {
+			t.Fatalf("expected exactly 1 move action in env.Actions, got %d (actions: %+v)", moveCount, env.Actions)
+		}
+		if len(env.Actions) != 1 {
+			t.Errorf("expected 1:1 AST action purity (len == 1), got %d: %+v", len(env.Actions), env.Actions)
+		}
+
+		// The doc comment on line 2 must move along with the function on line 3 using the same color.
+		var leftCommentSpans, leftFuncSpans []HighlightSpan
+		for _, h := range env.LeftHighlights {
+			switch h.Line {
+			case 2:
+				leftCommentSpans = append(leftCommentSpans, h)
+			case 3:
+				leftFuncSpans = append(leftFuncSpans, h)
+			}
+		}
+		if len(leftCommentSpans) == 0 {
+			t.Fatalf("expected move highlight on left doc comment line 2, got none (highlights: %+v)", env.LeftHighlights)
+		}
+		if leftCommentSpans[0].Action != "move" {
+			t.Errorf("expected left comment action to be 'move', got %q", leftCommentSpans[0].Action)
+		}
+		if len(leftFuncSpans) == 0 {
+			t.Fatalf("expected move highlight on left function line 3, got none")
+		}
+		if leftCommentSpans[0].ColorIndex != leftFuncSpans[0].ColorIndex {
+			t.Errorf("expected left comment ColorIndex (%d) to match function ColorIndex (%d)",
+				leftCommentSpans[0].ColorIndex, leftFuncSpans[0].ColorIndex)
+		}
+
+		// On the right side, the doc comment on line 14 should also take the move highlight.
+		var rightCommentSpans, rightFuncSpans []HighlightSpan
+		for _, h := range env.RightHighlights {
+			switch h.Line {
+			case 14:
+				rightCommentSpans = append(rightCommentSpans, h)
+			case 15:
+				rightFuncSpans = append(rightFuncSpans, h)
+			}
+		}
+		if len(rightCommentSpans) == 0 {
+			t.Fatalf("expected move highlight on right doc comment line 14, got none (highlights: %+v)", env.RightHighlights)
+		}
+		if rightCommentSpans[0].Action != "move" {
+			t.Errorf("expected right comment action to be 'move', got %q", rightCommentSpans[0].Action)
+		}
+		if len(rightFuncSpans) == 0 {
+			t.Fatalf("expected move highlight on right function line 15, got none")
+		}
+		if rightCommentSpans[0].ColorIndex != rightFuncSpans[0].ColorIndex {
+			t.Errorf("expected right comment ColorIndex (%d) to match function ColorIndex (%d)",
+				rightCommentSpans[0].ColorIndex, rightFuncSpans[0].ColorIndex)
+		}
+
+		// Surrounding stationary functions shouldn't have any highlights.
+		assertContextLinesPure(t, env.LeftHighlights, []int{2, 3, 4, 5})
+		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
+	})
+
+	t.Run("MovedFunctionWithUpdatedDocComment", func(t *testing.T) {
+		oldSrc := `package main
+
+// CalculateTax computes standard tax.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`
+		newSrc := `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+// CalculateTax computes regional VAT.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		srcComments := comments.ExtractComments(oldAST)
+		dstComments := comments.ExtractComments(newAST)
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		var commentLineMappings map[int]int
+		if len(srcComments) > 0 || len(dstComments) > 0 {
+			cRes := comments.DiffComments(srcComments, dstComments, mr.Mappings)
+			if cRes != nil {
+				for _, act := range cRes.Actions {
+					es.Add(act)
+				}
+				commentLineMappings = cRes.LineMappings
+			}
+		}
+
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:      true,
+			IncludeHighlights:   true,
+			IncludeAlignment:    true,
+			CommentLineMappings: commentLineMappings,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Updated comment text inside moved doc comment must promote to move_update.
+		hasMoveUpdateLeft := false
+		for _, h := range env.LeftHighlights {
+			if h.Line == 2 && h.Action == "move_update" {
+				hasMoveUpdateLeft = true
+			}
+		}
+		if !hasMoveUpdateLeft {
+			t.Errorf("expected left comment line 2 to contain 'move_update' span, got: %+v", env.LeftHighlights)
+		}
+
+		hasMoveUpdateRight := false
+		for _, h := range env.RightHighlights {
+			if h.Line == 14 && h.Action == "move_update" {
+				hasMoveUpdateRight = true
+			}
+		}
+		if !hasMoveUpdateRight {
+			t.Errorf("expected right comment line 14 to contain 'move_update' span, got: %+v", env.RightHighlights)
+		}
+
+		// Untouched functions stay unhighlighted.
+		assertContextLinesPure(t, env.LeftHighlights, []int{2, 3, 4, 5})
+		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
+	})
+
+	t.Run("DeletedCommentOnMovedFunction", func(t *testing.T) {
+		oldSrc := `package main
+
+// CalculateTax computes order tax.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`
+		newSrc := `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		srcComments := comments.ExtractComments(oldAST)
+		dstComments := comments.ExtractComments(newAST)
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		var commentLineMappings map[int]int
+		if len(srcComments) > 0 || len(dstComments) > 0 {
+			cRes := comments.DiffComments(srcComments, dstComments, mr.Mappings)
+			if cRes != nil {
+				for _, act := range cRes.Actions {
+					es.Add(act)
+				}
+				commentLineMappings = cRes.LineMappings
+			}
+		}
+
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:      true,
+			IncludeHighlights:   true,
+			IncludeAlignment:    true,
+			CommentLineMappings: commentLineMappings,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// The deleted comment on line 2 should take delete, not move.
+		var leftCommentSpans []HighlightSpan
+		for _, h := range env.LeftHighlights {
+			if h.Line == 2 {
+				leftCommentSpans = append(leftCommentSpans, h)
+			}
+		}
+		if len(leftCommentSpans) == 0 {
+			t.Fatalf("expected delete highlight on left doc comment line 2, got none")
+		}
+		for _, s := range leftCommentSpans {
+			if s.Action == "move" {
+				t.Errorf("deleted comment must NOT take 'move' highlight, got %+v", s)
+			}
+			if s.Action != "delete" {
+				t.Errorf("expected deleted comment to take 'delete' highlight, got %q", s.Action)
+			}
+		}
+
+		// Make sure line 13 on the right stays pure context since no comment was added there.
+		for _, h := range env.RightHighlights {
+			if h.Line == 13 {
+				t.Errorf("expected line 13 on right to be pure context, got highlight %+v", h)
+			}
+		}
+	})
+
+	t.Run("LineAlignmentCommentInversionShielding", func(t *testing.T) {
+		// Moving a comment shouldn't create inverted Tier 1 line anchors.
+		oldSrc := `package main
+
+func first() int {
+	return 1
+}
+
+// Comment on second
+func second() int {
+	return 2
+}
+
+func stationary() int {
+	return 3
+}
+`
+		newSrc := `package main
+
+func first() int {
+	return 1
+}
+
+func stationary() int {
+	return 3
+}
+
+// Comment on second
+func second() int {
+	return 2
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		srcComments := comments.ExtractComments(oldAST)
+		dstComments := comments.ExtractComments(newAST)
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		var commentLineMappings map[int]int
+		if len(srcComments) > 0 || len(dstComments) > 0 {
+			cRes := comments.DiffComments(srcComments, dstComments, mr.Mappings)
+			if cRes != nil {
+				for _, act := range cRes.Actions {
+					es.Add(act)
+				}
+				commentLineMappings = cRes.LineMappings
+			}
+		}
+
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:      true,
+			IncludeHighlights:   true,
+			IncludeAlignment:    true,
+			CommentLineMappings: commentLineMappings,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Alignment pairs must be strictly monotonic without inversions.
+		lastLeft := -1
+		lastRight := -1
+		for _, pair := range env.LineAlignment {
+			if pair.LeftLine != -1 && pair.RightLine != -1 {
+				if pair.LeftLine < lastLeft || pair.RightLine < lastRight {
+					t.Errorf("detected alignment inversion: pair (%d, %d) preceded by (%d, %d)",
+						pair.LeftLine, pair.RightLine, lastLeft, lastRight)
+				}
+				lastLeft = pair.LeftLine
+				lastRight = pair.RightLine
+			}
+		}
 	})
 }

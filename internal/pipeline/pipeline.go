@@ -207,9 +207,12 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 
 	wgPost.Wait()
 
-	if commentRes != nil && len(commentRes.Actions) > 0 {
+	if commentRes != nil {
 		for _, act := range commentRes.Actions {
 			es.Add(act)
+		}
+		if len(commentRes.LineMappings) > 0 {
+			envOpts.CommentLineMappings = commentRes.LineMappings
 		}
 	}
 

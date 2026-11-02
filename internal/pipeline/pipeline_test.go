@@ -402,3 +402,98 @@ func TestPipeline_ParseErrorFallbackBoundary(t *testing.T) {
 		}
 	})
 }
+
+func TestPipeline_CommentTriviaMoveHighlighting(t *testing.T) {
+	oldSrc := `package main
+
+// CalculateTax computes order tax.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`
+	newSrc := `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+// CalculateTax computes order tax.
+func CalculateTax(subtotal int) int {
+	return subtotal * 2
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "old.go", "new.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	env := res.Envelope
+
+	// Only the function should show as moved, without extra comment actions.
+	if len(env.Actions) != 1 {
+		t.Fatalf("expected exactly 1 action in env.Actions, got %d: %+v", len(env.Actions), env.Actions)
+	}
+	if env.Actions[0].Action != "move" {
+		t.Errorf("expected move action, got %s", env.Actions[0].Action)
+	}
+
+	// Both sides of the attached comment should highlight as moved.
+	hasLeftCommentMove := false
+	for _, h := range env.LeftHighlights {
+		if h.Line == 2 && h.Action == "move" {
+			hasLeftCommentMove = true
+		}
+	}
+	if !hasLeftCommentMove {
+		t.Errorf("expected left comment on line 2 to have 'move' highlight, got: %+v", env.LeftHighlights)
+	}
+
+	hasRightCommentMove := false
+	for _, h := range env.RightHighlights {
+		if h.Line == 14 && h.Action == "move" {
+			hasRightCommentMove = true
+		}
+	}
+	if !hasRightCommentMove {
+		t.Errorf("expected right comment on line 14 to have 'move' highlight, got: %+v", env.RightHighlights)
+	}
+
+	// Line alignments should stay strictly monotonic.
+	lastLeft := -1
+	lastRight := -1
+	for _, pair := range env.LineAlignment {
+		if pair.LeftLine != -1 && pair.RightLine != -1 {
+			if pair.LeftLine < lastLeft || pair.RightLine < lastRight {
+				t.Errorf("detected alignment inversion: pair (%d, %d) preceded by (%d, %d)",
+					pair.LeftLine, pair.RightLine, lastLeft, lastRight)
+			}
+			lastLeft = pair.LeftLine
+			lastRight = pair.RightLine
+		}
+	}
+}
