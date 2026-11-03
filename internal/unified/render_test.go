@@ -7,6 +7,8 @@ import (
 	"github.com/HarshK97/diffmantic/internal/color"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func fullEnvelopeOpts() serialize.EnvelopeOptions {
@@ -893,9 +895,9 @@ func TestRender_WhitespaceRealignedStructFields_PreservedAsContext(t *testing.T)
 	}
 	rendered := Render("a.go", "b.go", src, dst, dr.Envelope, opts)
 
-	// Realigned struct fields without AST changes must stay as context lines,
-	// formatted with destination alignment, not deleted/inserted hunks.
-	for _, line := range strings.Split(rendered, "\n") {
+	// Realigned struct fields without AST changes stay as context lines
+	// using the original source text, not deleted/inserted hunks.
+	for line := range strings.SplitSeq(rendered, "\n") {
 		if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
 			t.Errorf("expected no deleted lines in whitespace-realigned struct, got line: %q\nFull output:\n%s", line, rendered)
 		}
@@ -903,8 +905,8 @@ func TestRender_WhitespaceRealignedStructFields_PreservedAsContext(t *testing.T)
 	if strings.Contains(rendered, "+   Action") || strings.Contains(rendered, "+\tAction") {
 		t.Errorf("expected realigned Action field NOT to be inserted (+), got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "Action          string") {
-		t.Errorf("expected whitespace-aligned Action field to be rendered as context with destination alignment, got:\n%s", rendered)
+	if !strings.Contains(rendered, "Action string") {
+		t.Errorf("expected whitespace-aligned Action field to be rendered as source context, got:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "SourceStartByte *uint32") {
 		t.Errorf("expected inserted SourceStartByte field in output, got:\n%s", rendered)
@@ -1025,29 +1027,345 @@ func TestRender_PythonIndentationChangePreserved(t *testing.T) {
 	}
 }
 
-func TestEqualIgnoringInteriorWhitespace(t *testing.T) {
-	tests := []struct {
-		s, d string
-		want bool
-	}{
-		{"", "", true},
-		{"   ", "   ", true},
-		{"\tAction string", "\tAction          string", true},
-		{"Action string", "Action    string", true},
-		// Indentation mismatch (must NOT be equal)
-		{"", "   ", false},
-		{"   ", "", false},
-		{"  x = 1", "    x = 1", false},
-		{"\tx = 1", "  x = 1", false},
-		// Token mismatch
-		{"a b", "a c", false},
-		{"a b", "a b c", false},
+func TestRender_ShowStyleChanges(t *testing.T) {
+	t.Run("Go indentation change", func(t *testing.T) {
+		src := []byte("package main\n\nfunc A() {\n\tx := 1\n\t_ = x\n}\n")
+		dst := []byte("package main\n\nfunc A() {\n\t\tx := 1\n\t\t_ = x\n}\n")
+
+		dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+			EnvelopeOpts: fullEnvelopeOpts(),
+		})
+		if err != nil {
+			t.Fatalf("pipeline.Run failed: %v", err)
+		}
+
+		optsSuppressed := RenderOptions{
+			ShowStyleChanges: false,
+		}
+		outSuppressed := Render("main.go", "main.go", src, dst, dr.Envelope, optsSuppressed)
+		if outSuppressed != "" {
+			t.Errorf("expected empty diff when ShowStyleChanges=false for Go indentation shift, got:\n%s", outSuppressed)
+		}
+
+		optsShown := RenderOptions{
+			ShowStyleChanges: true,
+		}
+		outShown := Render("main.go", "main.go", src, dst, dr.Envelope, optsShown)
+		if !strings.Contains(outShown, "-    x := 1") || !strings.Contains(outShown, "+        x := 1") {
+			t.Errorf("expected diff hunks when ShowStyleChanges=true, got:\n%s", outShown)
+		}
+	})
+
+	t.Run("Go interior whitespace change", func(t *testing.T) {
+		src := []byte("package main\n\nfunc A() {\n\tx  :=  1\n}\n")
+		dst := []byte("package main\n\nfunc A() {\n\tx := 1\n}\n")
+
+		dr, err := pipeline.Run(src, dst, "main.go", "main.go", pipeline.DiffOptions{
+			EnvelopeOpts: fullEnvelopeOpts(),
+		})
+		if err != nil {
+			t.Fatalf("pipeline.Run failed: %v", err)
+		}
+
+		optsSuppressed := RenderOptions{
+			ShowStyleChanges: false,
+		}
+		outSuppressed := Render("main.go", "main.go", src, dst, dr.Envelope, optsSuppressed)
+		if outSuppressed != "" {
+			t.Errorf("expected empty diff when ShowStyleChanges=false for Go interior whitespace, got:\n%s", outSuppressed)
+		}
+
+		optsShown := RenderOptions{
+			ShowStyleChanges: true,
+		}
+		outShown := Render("main.go", "main.go", src, dst, dr.Envelope, optsShown)
+		if !strings.Contains(outShown, "-    x  :=  1") || !strings.Contains(outShown, "+    x := 1") {
+			t.Errorf("expected diff hunks when ShowStyleChanges=true, got:\n%s", outShown)
+		}
+	})
+
+	t.Run("Python formatting-only indentation change", func(t *testing.T) {
+		src := []byte("def compute():\n    x = 1\n    return x\n")
+		dst := []byte("def compute():\n  x = 1\n  return x\n")
+
+		dr, err := pipeline.Run(src, dst, "compute.py", "compute.py", pipeline.DiffOptions{
+			EnvelopeOpts: fullEnvelopeOpts(),
+		})
+		if err != nil {
+			t.Fatalf("pipeline.Run failed: %v", err)
+		}
+
+		optsSuppressed := RenderOptions{
+			ShowStyleChanges: false,
+		}
+		outSuppressed := Render("compute.py", "compute.py", src, dst, dr.Envelope, optsSuppressed)
+		if outSuppressed != "" {
+			t.Errorf("expected empty diff when ShowStyleChanges=false for Python formatting-only shift, got:\n%s", outSuppressed)
+		}
+
+		optsShown := RenderOptions{
+			ShowStyleChanges: true,
+		}
+		outShown := Render("compute.py", "compute.py", src, dst, dr.Envelope, optsShown)
+		if !strings.Contains(outShown, "-    x = 1") || !strings.Contains(outShown, "+  x = 1") {
+			t.Errorf("expected diff hunks when ShowStyleChanges=true, got:\n%s", outShown)
+		}
+	})
+
+	t.Run("Python structural indentation change", func(t *testing.T) {
+		src := []byte("def compute():\n    if True:\n        x = 1\n        return x\n")
+		dst := []byte("def compute():\n    if True:\n        x = 1\n    return x\n")
+
+		dr, err := pipeline.Run(src, dst, "compute.py", "compute.py", pipeline.DiffOptions{
+			EnvelopeOpts: fullEnvelopeOpts(),
+		})
+		if err != nil {
+			t.Fatalf("pipeline.Run failed: %v", err)
+		}
+
+		optsSuppressed := RenderOptions{
+			ShowStyleChanges: false,
+		}
+		outSuppressed := Render("compute.py", "compute.py", src, dst, dr.Envelope, optsSuppressed)
+		if !strings.Contains(outSuppressed, "-        return x") || !strings.Contains(outSuppressed, "+    return x") {
+			t.Errorf("expected structural indentation change visible by default, got:\n%s", outSuppressed)
+		}
+
+		optsShown := RenderOptions{
+			ShowStyleChanges: true,
+		}
+		outShown := Render("compute.py", "compute.py", src, dst, dr.Envelope, optsShown)
+		if !strings.Contains(outShown, "-        return x") || !strings.Contains(outShown, "+    return x") {
+			t.Errorf("expected structural indentation change visible with ShowStyleChanges=true, got:\n%s", outShown)
+		}
+	})
+}
+
+func TestPython_StyleNormalization_FullEngine(t *testing.T) {
+	r := rules.Get("python")
+	if r == nil {
+		t.Fatal("rules for python not found")
 	}
 
-	for _, tt := range tests {
-		got := equalIgnoringInteriorWhitespace(tt.s, tt.d)
-		if got != tt.want {
-			t.Errorf("equalIgnoringInteriorWhitespace(%q, %q) = %v, want %v", tt.s, tt.d, got, tt.want)
+	src := []byte(`def process_data(items, factor):
+    """Calculate normalized scores."""
+    total = 0
+    for item in items:
+        if factor > 1:
+            total += item * factor
+        else:
+            total += item
+    return total
+`)
+	dst := []byte(`def process_data(items, factor):
+  """Calculate normalized scores."""
+  total = 0
+  for item in items:
+    if factor > 1:
+      total += item * factor
+    else:
+      total += item
+  return total
+`)
+
+	dr, err := pipeline.Run(src, dst, "data.py", "data.py", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	// 1. AST edit script must be empty (identical AST Merkle structure).
+	if len(dr.Envelope.Actions) != 0 {
+		t.Errorf("expected 0 actions for re-indented Python module, got %d", len(dr.Envelope.Actions))
+	}
+
+	// 2. Highlight spans must be empty.
+	if len(dr.Envelope.LeftHighlights) != 0 || len(dr.Envelope.RightHighlights) != 0 {
+		t.Errorf("expected 0 highlight spans, got left=%d right=%d",
+			len(dr.Envelope.LeftHighlights), len(dr.Envelope.RightHighlights))
+	}
+
+	// 3. Whole-Snippet AST integrity: enclosing function and stationary statements map in place.
+	if dr.MatchResult == nil || dr.MatchResult.Mappings == nil {
+		t.Fatal("expected non-nil mappings")
+	}
+	for _, n := range dr.SrcAST.Descendants() {
+		if r.IsContainerDeclaration(n.Type) {
+			mapped := dr.MatchResult.Mappings.Src()[n]
+			if mapped == nil || !r.IsContainerDeclaration(mapped.Type) {
+				t.Errorf("expected enclosing declaration %s to map in place", n.Type)
+			}
 		}
+	}
+
+	// 4. Default unified diff: suppressed (empty string, matching Difftastic).
+	outDefault := Render("data.py", "data.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: false})
+	if outDefault != "" {
+		t.Errorf("expected empty unified diff output by default, got:\n%s", outDefault)
+	}
+
+	// 5. Revealed with ShowStyleChanges: true.
+	outShown := Render("data.py", "data.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: true})
+	if !strings.Contains(outShown, "-    total = 0") || !strings.Contains(outShown, "+  total = 0") {
+		t.Errorf("expected diff hunks when ShowStyleChanges=true, got:\n%s", outShown)
+	}
+}
+
+func TestPython_StructuralIndentationPreserved_FullEngine(t *testing.T) {
+	r := rules.Get("python")
+	if r == nil {
+		t.Fatal("rules for python not found")
+	}
+
+	src := []byte(`def execute(cond):
+    init()
+    if cond:
+        run_task()
+    cleanup()
+`)
+	dst := []byte(`def execute(cond):
+    init()
+    if cond:
+        pass
+    run_task()
+    cleanup()
+`)
+
+	dr, err := pipeline.Run(src, dst, "exec.py", "exec.py", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	// 1. Structural change: Tree-sitter emits actions.
+	if len(dr.Envelope.Actions) == 0 {
+		t.Fatal("expected edit actions for structural indentation shift")
+	}
+
+	// 2. Highlight spans must be non-empty.
+	if len(dr.Envelope.LeftHighlights) == 0 && len(dr.Envelope.RightHighlights) == 0 {
+		t.Error("expected non-empty highlight spans for structural indentation shift")
+	}
+
+	// 3. Whole-Snippet Verification: stationary statements map in place.
+	var srcInit, dstInit, srcCleanup, dstCleanup *treesitter.ASTNode
+	for _, n := range dr.SrcAST.Descendants() {
+		if r.IsCall(n.Type) {
+			text := string(src[n.StartByte:n.EndByte])
+			if strings.Contains(text, "init") {
+				srcInit = n
+			} else if strings.Contains(text, "cleanup") {
+				srcCleanup = n
+			}
+		}
+	}
+	for _, n := range dr.DstAST.Descendants() {
+		if r.IsCall(n.Type) {
+			text := string(dst[n.StartByte:n.EndByte])
+			if strings.Contains(text, "init") {
+				dstInit = n
+			} else if strings.Contains(text, "cleanup") {
+				dstCleanup = n
+			}
+		}
+	}
+	if srcInit == nil || dstInit == nil || srcCleanup == nil || dstCleanup == nil {
+		t.Fatal("failed to find init or cleanup call nodes")
+	}
+	if dr.MatchResult.Mappings.Src()[srcInit] != dstInit {
+		t.Errorf("expected stationary init() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcInit])
+	}
+	if dr.MatchResult.Mappings.Src()[srcCleanup] != dstCleanup {
+		t.Errorf("expected stationary cleanup() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcCleanup])
+	}
+
+	// 4. Structural change is displayed unconditionally (both with and without ShowStyleChanges).
+	outDefault := Render("exec.py", "exec.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: false})
+	if !strings.Contains(outDefault, "-        run_task()") || !strings.Contains(outDefault, "+    run_task()") {
+		t.Errorf("expected structural indentation shift in default output, got:\n%s", outDefault)
+	}
+
+	outShown := Render("exec.py", "exec.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: true})
+	if !strings.Contains(outShown, "-        run_task()") || !strings.Contains(outShown, "+    run_task()") {
+		t.Errorf("expected structural indentation shift in show-style output, got:\n%s", outShown)
+	}
+}
+
+func TestPython_MultilineStringWhitespace_FullEngine(t *testing.T) {
+	r := rules.Get("python")
+	if r == nil {
+		t.Fatal("rules for python not found")
+	}
+
+	src := []byte(`def describe():
+    prologue()
+    text = """first line
+    indented line
+    third line"""
+    epilogue()
+`)
+	dst := []byte(`def describe():
+    prologue()
+    text = """first line
+  indented line
+    third line"""
+    epilogue()
+`)
+
+	dr, err := pipeline.Run(src, dst, "desc.py", "desc.py", pipeline.DiffOptions{
+		EnvelopeOpts: fullEnvelopeOpts(),
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	// 1. Multiline string whitespace modification produces edit actions.
+	if len(dr.Envelope.Actions) == 0 {
+		t.Fatal("expected edit actions for modified multiline string")
+	}
+
+	// 2. Highlight spans are populated.
+	if len(dr.Envelope.LeftHighlights) == 0 && len(dr.Envelope.RightHighlights) == 0 {
+		t.Error("expected non-empty highlight spans for modified multiline string")
+	}
+
+	// 3. Whole-Snippet Verification: stationary prologue and epilogue map in place.
+	var srcPrologue, dstPrologue, srcEpilogue, dstEpilogue *treesitter.ASTNode
+	for _, n := range dr.SrcAST.Descendants() {
+		if r.IsCall(n.Type) {
+			text := string(src[n.StartByte:n.EndByte])
+			if strings.Contains(text, "prologue") {
+				srcPrologue = n
+			} else if strings.Contains(text, "epilogue") {
+				srcEpilogue = n
+			}
+		}
+	}
+	for _, n := range dr.DstAST.Descendants() {
+		if r.IsCall(n.Type) {
+			text := string(dst[n.StartByte:n.EndByte])
+			if strings.Contains(text, "prologue") {
+				dstPrologue = n
+			} else if strings.Contains(text, "epilogue") {
+				dstEpilogue = n
+			}
+		}
+	}
+	if srcPrologue == nil || dstPrologue == nil || srcEpilogue == nil || dstEpilogue == nil {
+		t.Fatal("failed to find prologue or epilogue call nodes")
+	}
+	if dr.MatchResult.Mappings.Src()[srcPrologue] != dstPrologue {
+		t.Errorf("expected stationary prologue() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcPrologue])
+	}
+	if dr.MatchResult.Mappings.Src()[srcEpilogue] != dstEpilogue {
+		t.Errorf("expected stationary epilogue() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcEpilogue])
+	}
+
+	// 4. Output displays unconditionally.
+	outDefault := Render("desc.py", "desc.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: false})
+	if outDefault == "" {
+		t.Errorf("expected multiline string diff output by default, got empty")
 	}
 }

@@ -11,6 +11,7 @@ type RenderOptions struct {
 	SuppressHunkFallbackAnnotation bool // Stops hunk headers from repeating the fallback tag when the file banner already shows it
 	TabWidth                       int  // Spaces per tab stop (default 4)
 	ForceSideBySide                bool // Disable hybrid single-column layout and force 50/50 dual-column view
+	ShowStyleChanges               bool // Display changes that only differ in whitespace or formatting
 }
 
 // DefaultOptions returns standard settings for interactive terminals.

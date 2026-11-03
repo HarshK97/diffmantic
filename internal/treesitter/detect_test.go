@@ -48,3 +48,28 @@ func TestDetectLanguageName(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectSignificantWhitespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		src, dst string
+		want     bool
+	}{
+		{"python files", "calc.py", "calc.py", true},
+		{"python src, dev null dst", "calc.py", "/dev/null", true},
+		{"dev null src, python dst", "/dev/null", "calc.py", true},
+		{"go files", "main.go", "main.go", false},
+		{"rust files", "lib.rs", "lib.rs", false},
+		{"unknown files", "Makefile", "Makefile", true},
+		{"unsupported plain text", "notes.txt", "notes.txt", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := treesitter.DetectSignificantWhitespace(tt.src, tt.dst)
+			if got != tt.want {
+				t.Errorf("DetectSignificantWhitespace(%q, %q) = %v, want %v", tt.src, tt.dst, got, tt.want)
+			}
+		})
+	}
+}

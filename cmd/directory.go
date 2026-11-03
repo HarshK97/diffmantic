@@ -66,6 +66,7 @@ func runDirectoryDiff(
 		IncludeActions:    format == "unified" || format == "side-by-side" || (!uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
+		ShowStyleChanges:  resolveShowStyleChanges(cmd),
 	}
 
 	unifiedOpts := resolveUnifiedOptions(cmd)

@@ -39,6 +39,9 @@ type Rules struct {
 	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
 	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
 
+	// SignificantWhitespace reports whether indentation defines blocks and scope (as in Python).
+	SignificantWhitespace bool
+
 	flattenedSet             map[string]struct{}
 	statementsSet            map[string]struct{}
 	ignoredSet               map[string]struct{}

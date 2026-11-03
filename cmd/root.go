@@ -378,7 +378,8 @@ func renderDiffResult(srcFile, dstFile string, srcBytes, dstBytes []byte, dr *pi
 	switch rc.format {
 	case "side-by-side":
 		if rc.showBanner {
-			numIns, numDel, numUpd := sidebyside.CountLineStats(srcBytes, dstBytes, dr.Envelope)
+			significantWhitespace := treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+			numIns, numDel, numUpd := sidebyside.CountLineStats(srcBytes, dstBytes, dr.Envelope, rc.sbsOpts.ShowStyleChanges, significantWhitespace)
 			bannerPath := dstFile
 			if bannerPath == "/dev/null" || bannerPath == "" {
 				bannerPath = srcFile
@@ -515,6 +516,7 @@ func runGitMode(cmd *cobra.Command, args []string, format string, ignoreComments
 		IncludeActions:    format == "unified" || format == "side-by-side" || (!uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
+		ShowStyleChanges:  resolveShowStyleChanges(cmd),
 	}
 
 	unifiedOpts := resolveUnifiedOptions(cmd)
@@ -833,6 +835,7 @@ func resolveUnifiedOptions(cmd *cobra.Command) unified.RenderOptions {
 		Wrap:               wrapFlag,
 		TerminalWidth:      termWidth,
 		TabWidth:           tabWidth,
+		ShowStyleChanges:   resolveShowStyleChanges(cmd),
 	}
 }
 
@@ -845,6 +848,14 @@ func resolveTabWidth(cmd *cobra.Command) int {
 		tabWidth = defaultTabWidth
 	}
 	return tabWidth
+}
+
+func resolveShowStyleChanges(cmd *cobra.Command) bool {
+	showStyleChanges, _ := cmd.Flags().GetBool("show-style-changes")
+	if !cmd.Flags().Changed("show-style-changes") {
+		showStyleChanges = getEnvBool("DIFFM_SHOW_STYLE_CHANGES", false)
+	}
+	return showStyleChanges
 }
 
 func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
@@ -880,6 +891,7 @@ func resolveSideBySideOptions(cmd *cobra.Command) sidebyside.RenderOptions {
 		DisableAnnotations: !annotations,
 		TabWidth:           tabWidth,
 		ForceSideBySide:    forceSBSFlag,
+		ShowStyleChanges:   resolveShowStyleChanges(cmd),
 	}
 }
 
@@ -932,6 +944,7 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		IncludeActions:    format == "unified" || format == "side-by-side" || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
+		ShowStyleChanges:  resolveShowStyleChanges(cmd),
 	}
 
 	var srcBytes, dstBytes []byte
@@ -1058,6 +1071,7 @@ func runStreamMode(
 		IncludeActions:    format == "unified" || format == "side-by-side" || (!uiMode) || fullMode,
 		IncludeAlignment:  includeUI,
 		IncludeHighlights: includeUI,
+		ShowStyleChanges:  resolveShowStyleChanges(cmd),
 	}
 
 	diffOpts := pipeline.DiffOptions{
@@ -1208,6 +1222,7 @@ func init() {
 	rootCmd.Flags().Bool("wrap", false, "Wrap long lines to terminal width in unified diff")
 	rootCmd.Flags().Int("wrap-width", 0, "Explicit column width for line wrapping (0 to auto-detect terminal width)")
 	rootCmd.Flags().Int("tab-width", 4, "Number of spaces per tab stop in diff output")
+	rootCmd.Flags().Bool("show-style-changes", false, "Show changes that only differ in whitespace or formatting")
 	rootCmd.Flags().Bool("parse-tree", false, "Parse files and dump the syntax tree for debugging")
 	rootCmd.Flags().Bool("cst", false, "Dump the raw Tree-sitter concrete syntax tree instead of the Diffmantic AST")
 	rootCmd.Flags().Bool("textconv", false, "Allow external text conversion filters to be run when comparing binary files")

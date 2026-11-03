@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `--show-style-changes` flag (and matching `DIFFM_SHOW_STYLE_CHANGES` environment variable) to show changes that only differ in whitespace or formatting. By default, cosmetic changes like `gofmt` column realignments or re-indented code blocks are hidden from diff hunks (matching Difftastic). If you want to see formatting differences, pass `--show-style-changes` or set `DIFFM_SHOW_STYLE_CHANGES=1`.
+
 ### Changed
 - Moved declarations (like functions, types, or methods) now use opening-line badges instead of injecting move summaries into hunk headers, keeping hunk headers clean across both unified and side-by-side views.
 - Directional move badges on runs of consecutive single-line statements now collapse into a single badge on the opening line, eliminating repetitive badge ladders while keeping compound statements like `if` and `for` clearly badged on their headers.
@@ -17,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inserting a new statement above an existing one (like adding a guard `if`) won't treat expressions moved into the new statement as stationary just because their line and column coordinates happen to collide.
 - Prepending operands to a chained expression (like adding styles to `color.MoveFg + badgeText`) won't invert operand positions across the operator or highlight untouched operands as false moves.
 - Extracting a closure or local function into a helper won't steal identical statements from untouched functions or show false move.
+- Cosmetic formatting and indentation shifts across side-by-side and unified diffs are now handled consistently. Previously, `diffm -f sbs` could expand whole files or structs when a formatter aligned columns, while `-f unified` split re-indented blocks into deletion and insertion hunks. Both modes now treat formatting shifts on unchanged statements as quiet context lines.
+- File banners and summary stats no longer count pure formatting shifts as modified lines (`~`) when style changes are hidden, eliminating phantom update counts above empty diff output.
 - Comments attached to moved functions or code blocks (like leading doc comments) now highlight in the same move color as the code rather than appearing as unhighlighted white text, and edits made to the comment in transit cleanly promote to a combined move-and-update (`move_update`) highlight.
 - Moving a block statement (like an `if` or `for` loop) along with its body now keeps the header, body statements, and enclosing braces in the same move color, rather than splitting the header into a conflicting color.
 - Extracting a statement block into a new helper function or inlining a helper back into a caller now preserves move highlights on the closing delimiter, rather than fracturing it into a spurious insert or delete.

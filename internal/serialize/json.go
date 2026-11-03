@@ -41,10 +41,12 @@ func (p *LineAlignmentPair) UnmarshalJSON(b []byte) error {
 
 // EnvelopeOptions selects which sections to include in the JSON envelope.
 type EnvelopeOptions struct {
-	IncludeActions      bool
-	IncludeAlignment    bool
-	IncludeHighlights   bool
-	CommentLineMappings map[int]int
+	IncludeActions        bool
+	IncludeAlignment      bool
+	IncludeHighlights     bool
+	CommentLineMappings   map[int]int
+	ShowStyleChanges      bool
+	SignificantWhitespace bool
 }
 
 // FallbackReason classifies why Diffmantic degraded to line-diff mode.
@@ -70,6 +72,11 @@ type Envelope struct {
 	LineAlignment      []LineAlignmentPair `json:"line_alignment,omitempty"`
 	LeftHighlights     []HighlightSpan     `json:"left_highlights,omitempty"`
 	RightHighlights    []HighlightSpan     `json:"right_highlights,omitempty"`
+}
+
+// IsFallback reports whether the envelope represents a line-diff fallback rather than a clean AST diff.
+func (e *Envelope) IsFallback() bool {
+	return e == nil || e.FallbackReason != FallbackReasonNone || e.FallbackAnnotation != ""
 }
 
 // Action is a single AST edit operation. Omitting "subtree" on the wire implicitly means false.
@@ -156,6 +163,11 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 			} else if pair.LeftLine != -1 && pair.RightLine != -1 {
 				// Paired lines with differing text turn into a delete on the left and insert on the right.
 				if pair.LeftLine < len(srcLines) && pair.RightLine < len(dstLines) && srcLines[pair.LeftLine] != dstLines[pair.RightLine] {
+					sText := srcLines[pair.LeftLine]
+					dText := dstLines[pair.RightLine]
+					if !opts.ShowStyleChanges && EqualIgnoringStyle(sText, dText, opts.SignificantWhitespace) {
+						continue
+					}
 					startSrc, endSrc := getBounds(pair.LeftLine, offsetsSrc, len(srcBytes))
 					startDst, endDst := getBounds(pair.RightLine, offsetsDst, len(dstBytes))
 					actionsList = append(actionsList, Action{

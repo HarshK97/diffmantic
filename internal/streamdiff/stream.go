@@ -20,6 +20,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/sidebyside"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/unified"
 )
 
@@ -475,7 +476,8 @@ func renderDiff(out io.Writer, dr *pipeline.DiffResult, h *fileHunk, cfg StreamC
 		}
 		return actions.FprintActions(out, dr.EditScript)
 	default:
-		ins, del, upd := sidebyside.CountLineStats(dr.SrcBytes, dr.DstBytes, dr.Envelope)
+		significantWhitespace := treesitter.DetectSignificantWhitespace(h.oldPath, h.newPath)
+		ins, del, upd := sidebyside.CountLineStats(dr.SrcBytes, dr.DstBytes, dr.Envelope, cfg.SideBySideOpts.ShowStyleChanges, significantWhitespace)
 		annotation := ""
 		if !cfg.SideBySideOpts.DisableAnnotations && dr.Envelope != nil {
 			annotation = dr.Envelope.FallbackAnnotation

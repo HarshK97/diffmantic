@@ -11,7 +11,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 	"github.com/HarshK97/diffmantic/internal/unified"
 	"golang.org/x/term"
 )
@@ -95,16 +94,10 @@ func Render(
 		rightSpansByLine[sp.Line] = append(rightSpansByLine[sp.Line], sp)
 	}
 
+	significantWhitespace := env.IsFallback() && treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+
 	isPairChanged := make([]bool, len(filteredPairs))
 	for i, pair := range filteredPairs {
-		if pair.LeftLine == -1 || pair.RightLine == -1 {
-			isPairChanged[i] = true
-			continue
-		}
-		if len(leftSpansByLine[pair.LeftLine]) > 0 || len(rightSpansByLine[pair.RightLine]) > 0 {
-			isPairChanged[i] = true
-			continue
-		}
 		srcText := ""
 		if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
 			srcText = srcLines[pair.LeftLine]
@@ -113,7 +106,18 @@ func Render(
 		if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 			dstText = dstLines[pair.RightLine]
 		}
-		if srcText != dstText {
+		isEOFLine := (pair.LeftLine == lastSrcLineIdx && pair.RightLine == lastDstLineIdx)
+		isEOFChange := isEOFLine && srcEndsWithNL != dstEndsWithNL
+
+		var leftSpans, rightSpans []serialize.HighlightSpan
+		if pair.LeftLine >= 0 {
+			leftSpans = leftSpansByLine[pair.LeftLine]
+		}
+		if pair.RightLine >= 0 {
+			rightSpans = rightSpansByLine[pair.RightLine]
+		}
+
+		if renderutil.IsPairChanged(pair, leftSpans, rightSpans, srcText, dstText, opts.ShowStyleChanges, isEOFChange, significantWhitespace) {
 			isPairChanged[i] = true
 		}
 	}
@@ -133,6 +137,7 @@ func Render(
 			LineNumbers:        opts.LineNumbers,
 			DisableAnnotations: opts.DisableAnnotations,
 			TabWidth:           opts.TabWidth,
+			ShowStyleChanges:   opts.ShowStyleChanges,
 		}
 		output := unified.Render(srcFile, dstFile, srcBytes, dstBytes, env, unifiedOpts)
 		_, err := io.WriteString(w, output)
@@ -153,16 +158,10 @@ func Render(
 	srcOffsets := serialize.BuildLineIndex(srcBytes)
 	dstOffsets := serialize.BuildLineIndex(dstBytes)
 
-	var r *rules.Rules
-	if langName, err := treesitter.DetectLanguageName(srcFile); err == nil {
-		r = rules.Get(langName)
-	} else if langName, err := treesitter.DetectLanguageName(dstFile); err == nil {
-		r = rules.Get(langName)
-	}
-
 	var srcLineBadges, dstLineBadges map[int]string
 	var srcLineBadgeColors, dstLineBadgeColors map[int]int
 	if !opts.DisableAnnotations {
+		r := treesitter.DetectRules(srcFile, dstFile)
 		badges := renderutil.BuildMoveBadges(
 			env.Actions,
 			hunks,
@@ -200,7 +199,7 @@ func Render(
 		if ew.err != nil {
 			return ew.err
 		}
-		layout := ClassifyHunk(h, filteredPairs, isPairChanged, srcLines, dstLines, leftSpansByLine, rightSpansByLine, opts.ForceSideBySide)
+		layout := ClassifyHunk(h, filteredPairs, isPairChanged, leftSpansByLine, rightSpansByLine, opts.ForceSideBySide)
 
 		srcStart, srcCount, dstStart, dstCount := renderutil.ComputeHunkRange(h, filteredPairs, hasSrc, hasDst)
 		var hunkHdrExtra string
@@ -726,7 +725,7 @@ func renderEOFNewlineWarning(w io.Writer, leftWarn, rightWarn bool, numWidth, co
 }
 
 // CountLineStats returns the inserted, deleted, and updated line counts for the diff banner.
-func CountLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, int, int) {
+func CountLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope, showStyleChanges bool, significantWhitespace bool) (int, int, int) {
 	if env == nil || len(env.LineAlignment) == 0 {
 		return 0, 0, 0
 	}
@@ -756,6 +755,7 @@ func CountLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 	}
 
 	ins, del, upd := 0, 0, 0
+	effectiveSW := env.IsFallback() && significantWhitespace
 
 	for _, pair := range env.LineAlignment {
 		left := pair.LeftLine
@@ -788,8 +788,11 @@ func CountLineStats(srcBytes, dstBytes []byte, env *serialize.Envelope) (int, in
 				dText = dstLines[right]
 			}
 			isEOFLine := (left == lastSrcLineIdx && right == lastDstLineIdx)
-			if sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL) {
-				upd++
+			isEOFChange := isEOFLine && srcEndsWithNL != dstEndsWithNL
+			if sText != dText || isEOFChange {
+				if showStyleChanges || isEOFChange || !serialize.EqualIgnoringStyle(sText, dText, effectiveSW) {
+					upd++
+				}
 			}
 		}
 	}

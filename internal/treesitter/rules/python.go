@@ -1,6 +1,7 @@
 package rules
 
 var pythonRules = &Rules{
+	SignificantWhitespace: true,
 	Flattened: []string{
 		"string",
 		"concatenated_string",

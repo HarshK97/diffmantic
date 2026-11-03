@@ -1506,3 +1506,104 @@ func TestE2E_StreamMode_EarlyExitPipe(t *testing.T) {
 		}
 	}
 }
+
+func TestE2E_ShowStyleChanges(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	goOld := filepath.Join(tmpDir, "old.go")
+	goNew := filepath.Join(tmpDir, "new.go")
+	writeTestFile(t, goOld, "package main\n\nfunc A() {\n\tx := 1\n}\n")
+	writeTestFile(t, goNew, "package main\n\nfunc A() {\n\t\tx := 1\n}\n")
+
+	// Default (suppressed): exit 0, no diff output
+	cmdDefault := exec.Command(binaryPath, "-u", "--no-pager", goOld, goNew)
+	outDefault, errDefault := cmdDefault.CombinedOutput()
+	if errDefault != nil {
+		t.Fatalf("expected exit 0 for style-only change by default, got: %v\nOutput: %s", errDefault, string(outDefault))
+	}
+	if len(outDefault) > 0 {
+		t.Errorf("expected empty output for style-only change by default, got:\n%s", string(outDefault))
+	}
+
+	// With --show-style-changes: shows diff hunks
+	cmdShown := exec.Command(binaryPath, "-u", "--no-pager", "--show-style-changes", goOld, goNew)
+	outShown, errShown := cmdShown.CombinedOutput()
+	if errShown != nil {
+		t.Fatalf("expected clean exit for --show-style-changes, got: %v\nOutput: %s", errShown, string(outShown))
+	}
+	if !strings.Contains(string(outShown), "-") || !strings.Contains(string(outShown), "+") {
+		t.Errorf("expected diff output with --show-style-changes, got:\n%s", string(outShown))
+	}
+
+	// With DIFFM_SHOW_STYLE_CHANGES=1 env var
+	cmdEnv := exec.Command(binaryPath, "-u", "--no-pager", goOld, goNew)
+	cmdEnv.Env = append(os.Environ(), "DIFFM_SHOW_STYLE_CHANGES=1")
+	outEnv, errEnv := cmdEnv.CombinedOutput()
+	if errEnv != nil {
+		t.Fatalf("expected clean exit for DIFFM_SHOW_STYLE_CHANGES=1, got: %v\nOutput: %s", errEnv, string(outEnv))
+	}
+	if !strings.Contains(string(outEnv), "-") || !strings.Contains(string(outEnv), "+") {
+		t.Errorf("expected diff output with DIFFM_SHOW_STYLE_CHANGES=1, got:\n%s", string(outEnv))
+	}
+
+	// Python formatting-only change (re-indentation 4-space to 2-space)
+	pyFmtOld := filepath.Join(tmpDir, "fmt_old.py")
+	pyFmtNew := filepath.Join(tmpDir, "fmt_new.py")
+	writeTestFile(t, pyFmtOld, "def compute():\n    x = 1\n    return x\n")
+	writeTestFile(t, pyFmtNew, "def compute():\n  x = 1\n  return x\n")
+
+	// Default: suppressed (exit 0, empty diff output)
+	cmdPyFmtDefault := exec.Command(binaryPath, "-u", "--no-pager", pyFmtOld, pyFmtNew)
+	outPyFmtDefault, errPyFmtDefault := cmdPyFmtDefault.CombinedOutput()
+	if errPyFmtDefault != nil {
+		t.Fatalf("expected exit 0 for Python formatting-only change by default, got: %v\nOutput: %s", errPyFmtDefault, string(outPyFmtDefault))
+	}
+	if len(outPyFmtDefault) > 0 {
+		t.Errorf("expected empty output for Python formatting-only change by default, got:\n%s", string(outPyFmtDefault))
+	}
+
+	// With --show-style-changes: revealed
+	cmdPyFmtShown := exec.Command(binaryPath, "-u", "--no-pager", "--show-style-changes", pyFmtOld, pyFmtNew)
+	outPyFmtShown, errPyFmtShown := cmdPyFmtShown.CombinedOutput()
+	if errPyFmtShown != nil {
+		t.Fatalf("expected clean exit for Python --show-style-changes, got: %v\nOutput: %s", errPyFmtShown, string(outPyFmtShown))
+	}
+	if !strings.Contains(string(outPyFmtShown), "-") || !strings.Contains(string(outPyFmtShown), "+") {
+		t.Errorf("expected diff output for Python formatting with --show-style-changes, got:\n%s", string(outPyFmtShown))
+	}
+
+	// With DIFFM_SHOW_STYLE_CHANGES=1: revealed
+	cmdPyFmtEnv := exec.Command(binaryPath, "-u", "--no-pager", pyFmtOld, pyFmtNew)
+	cmdPyFmtEnv.Env = append(os.Environ(), "DIFFM_SHOW_STYLE_CHANGES=1")
+	outPyFmtEnv, errPyFmtEnv := cmdPyFmtEnv.CombinedOutput()
+	if errPyFmtEnv != nil {
+		t.Fatalf("expected clean exit for Python DIFFM_SHOW_STYLE_CHANGES=1, got: %v\nOutput: %s", errPyFmtEnv, string(outPyFmtEnv))
+	}
+	if !strings.Contains(string(outPyFmtEnv), "-") || !strings.Contains(string(outPyFmtEnv), "+") {
+		t.Errorf("expected diff output for Python formatting with DIFFM_SHOW_STYLE_CHANGES=1, got:\n%s", string(outPyFmtEnv))
+	}
+
+	// Python structural indentation change preserved both without and with --show-style-changes
+	pyOld := filepath.Join(tmpDir, "old.py")
+	pyNew := filepath.Join(tmpDir, "new.py")
+	writeTestFile(t, pyOld, "def compute():\n    if True:\n        x = 1\n        return x\n")
+	writeTestFile(t, pyNew, "def compute():\n    if True:\n        x = 1\n    return x\n")
+
+	cmdPy := exec.Command(binaryPath, "-u", "--no-pager", pyOld, pyNew)
+	outPy, errPy := cmdPy.CombinedOutput()
+	if errPy != nil {
+		t.Fatalf("expected clean exit for Python indentation change, got: %v\nOutput: %s", errPy, string(outPy))
+	}
+	if !strings.Contains(string(outPy), "-        return x") || !strings.Contains(string(outPy), "+    return x") {
+		t.Errorf("expected Python indentation change to appear in diff output, got:\n%s", string(outPy))
+	}
+
+	cmdPyWithStyle := exec.Command(binaryPath, "-u", "--no-pager", "--show-style-changes", pyOld, pyNew)
+	outPyWithStyle, errPyWithStyle := cmdPyWithStyle.CombinedOutput()
+	if errPyWithStyle != nil {
+		t.Fatalf("expected clean exit for Python indentation change with --show-style-changes, got: %v\nOutput: %s", errPyWithStyle, string(outPyWithStyle))
+	}
+	if !strings.Contains(string(outPyWithStyle), "-        return x") || !strings.Contains(string(outPyWithStyle), "+    return x") {
+		t.Errorf("expected Python indentation change to appear in diff output with --show-style-changes, got:\n%s", string(outPyWithStyle))
+	}
+}

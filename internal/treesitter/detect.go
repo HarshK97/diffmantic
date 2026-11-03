@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // Language represents a recognized programming language.
@@ -83,4 +85,29 @@ func DetectLanguageName(filename string) (string, error) {
 	}
 
 	return "", fmt.Errorf("unsupported language for file: %s", filename)
+}
+
+// DetectRules returns the language rules for srcPath, falling back to dstPath.
+func DetectRules(srcPath, dstPath string) *rules.Rules {
+	if langName, err := DetectLanguageName(srcPath); err == nil {
+		if r := rules.Get(langName); r != nil {
+			return r
+		}
+	}
+	if langName, err := DetectLanguageName(dstPath); err == nil {
+		if r := rules.Get(langName); r != nil {
+			return r
+		}
+	}
+	return nil
+}
+
+// DetectSignificantWhitespace reports whether the language detected from srcPath
+// (falling back to dstPath) has block scoping defined by leading indentation (e.g. Python).
+// Unknown grammars default conservatively to true.
+func DetectSignificantWhitespace(srcPath, dstPath string) bool {
+	if r := DetectRules(srcPath, dstPath); r != nil {
+		return r.SignificantWhitespace
+	}
+	return true
 }

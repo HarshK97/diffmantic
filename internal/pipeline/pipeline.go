@@ -106,6 +106,9 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 
 	if opts.IsConflict || (HasConflictMarkers(srcBytes) || HasConflictMarkers(dstBytes)) ||
 		exceedsSize || exceedsLines {
+		if !envOpts.SignificantWhitespace {
+			envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+		}
 		return &DiffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,
@@ -128,6 +131,9 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	// If either language is unknown or languages differ (cross-language diff),
 	// fall back to clean line diffing without a terminal parse error annotation.
 	if langA == nil || langB == nil || langA.Name != langB.Name {
+		if !envOpts.SignificantWhitespace {
+			envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+		}
 		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
 		if langA == nil || langB == nil {
 			env.FallbackReason = serialize.FallbackReasonUnsupportedLanguage
@@ -171,6 +177,9 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		(dstAST != nil && dstAST.ParseErrorCount > opts.ParseErrorLimit))
 
 	if srcAST == nil || dstAST == nil || hasParseError {
+		if !envOpts.SignificantWhitespace {
+			envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+		}
 		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
 		if hasParseError {
 			env.FallbackReason = serialize.FallbackReasonParseError

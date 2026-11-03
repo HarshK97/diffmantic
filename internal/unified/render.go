@@ -14,54 +14,10 @@ import (
 	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func isDevNull(path string) bool {
 	return path == "" || path == "/dev/null" || path == os.DevNull
-}
-
-// equalIgnoringInteriorWhitespace checks if two lines have identical leading whitespace
-// and identical non-whitespace token sequences, with zero heap allocations.
-func equalIgnoringInteriorWhitespace(s, d string) bool {
-	// 1. Leading indentation must match byte-for-byte (Python & layout safety).
-	i, j := 0, 0
-	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
-		i++
-	}
-	for j < len(d) && (d[j] == ' ' || d[j] == '\t') {
-		j++
-	}
-	if s[:i] != d[:j] {
-		return false
-	}
-
-	// 2. Both must have identical non-whitespace tokens (zero allocations).
-	for i < len(s) || j < len(d) {
-		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n') {
-			i++
-		}
-		for j < len(d) && (d[j] == ' ' || d[j] == '\t' || d[j] == '\r' || d[j] == '\n') {
-			j++
-		}
-		if i >= len(s) && j >= len(d) {
-			return true
-		}
-		if i >= len(s) || j >= len(d) {
-			return false
-		}
-		startI, startJ := i, j
-		for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '\r' && s[i] != '\n' {
-			i++
-		}
-		for j < len(d) && d[j] != ' ' && d[j] != '\t' && d[j] != '\r' && d[j] != '\n' {
-			j++
-		}
-		if s[startI:i] != d[startJ:j] {
-			return false
-		}
-	}
-	return true
 }
 
 type lineKind int
@@ -158,41 +114,35 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 		return ""
 	}
 
+	significantWhitespace := env.IsFallback() && treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+
 	isPairChanged := make([]bool, len(filteredPairs))
 	hasAnyChange := false
 
 	for i, pair := range filteredPairs {
-		if pair.LeftLine == -1 || pair.RightLine == -1 {
+		sText := ""
+		if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+			sText = srcLines[pair.LeftLine]
+		}
+		dText := ""
+		if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+			dText = dstLines[pair.RightLine]
+		}
+
+		isEOFLine := (pair.LeftLine == lastSrcLineIdx && pair.RightLine == lastDstLineIdx)
+		isEOFChange := isEOFLine && srcEndsWithNL != dstEndsWithNL
+
+		var leftSpans, rightSpans []serialize.HighlightSpan
+		if pair.LeftLine >= 0 {
+			leftSpans = leftSpansByLine[pair.LeftLine]
+		}
+		if pair.RightLine >= 0 {
+			rightSpans = rightSpansByLine[pair.RightLine]
+		}
+
+		if renderutil.IsPairChanged(pair, leftSpans, rightSpans, sText, dText, opts.ShowStyleChanges, isEOFChange, significantWhitespace) {
 			isPairChanged[i] = true
 			hasAnyChange = true
-		} else if len(leftSpansByLine[pair.LeftLine]) > 0 || len(rightSpansByLine[pair.RightLine]) > 0 {
-			isPairChanged[i] = true
-			hasAnyChange = true
-		} else {
-			sText := ""
-			if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
-				sText = srcLines[pair.LeftLine]
-			}
-			dText := ""
-			if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
-				dText = dstLines[pair.RightLine]
-			}
-
-			isEOFLine := (pair.LeftLine == lastSrcLineIdx && pair.RightLine == lastDstLineIdx)
-			isEOFChange := isEOFLine && srcEndsWithNL != dstEndsWithNL
-
-			if sText == dText {
-				if isEOFChange {
-					isPairChanged[i] = true
-					hasAnyChange = true
-				}
-				continue
-			}
-
-			if isEOFChange || !equalIgnoringInteriorWhitespace(sText, dText) {
-				isPairChanged[i] = true
-				hasAnyChange = true
-			}
 		}
 	}
 
@@ -211,15 +161,7 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 	if !opts.DisableAnnotations {
 		srcOffsets := serialize.BuildLineIndex(srcBytes)
 		dstOffsets := serialize.BuildLineIndex(dstBytes)
-
-		// Need language rules to tell declarations apart from statements for badge placement.
-		var r *rules.Rules
-		if langName, err := treesitter.DetectLanguageName(srcFile); err == nil {
-			r = rules.Get(langName)
-		} else if langName, err := treesitter.DetectLanguageName(dstFile); err == nil {
-			r = rules.Get(langName)
-		}
-
+		r := treesitter.DetectRules(srcFile, dstFile)
 		meta = renderutil.BuildMoveBadges(env.Actions, hunks, filteredPairs, srcOffsets, dstOffsets, srcLines, dstLines, r)
 	}
 
@@ -280,10 +222,10 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 			if !isPairChanged[k] {
 				pair := filteredPairs[k]
 				text := ""
-				if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
-					text = dstLines[pair.RightLine]
-				} else if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+				if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
 					text = srcLines[pair.LeftLine]
+				} else if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+					text = dstLines[pair.RightLine]
 				}
 				lines = append(lines, hunkLine{
 					kind:       kindContext,

@@ -487,15 +487,114 @@ func TestCountLineStats(t *testing.T) {
 		t.Fatalf("pipeline.Run failed: %v", err)
 	}
 
-	ins, del, upd := CountLineStats([]byte(src), []byte(dst), dr.Envelope)
+	ins, del, upd := CountLineStats([]byte(src), []byte(dst), dr.Envelope, false, false)
 	if ins == 0 && upd == 0 {
 		t.Errorf("CountLineStats expected insertions and updates, got ins=%d, del=%d, upd=%d", ins, del, upd)
 	}
 
+	// Whitespace-only changes
+	srcWS := "package main\n\nfunc A() {\n\tx  :=  1\n}\n"
+	dstWS := "package main\n\nfunc A() {\n\tx := 1\n}\n"
+	drWS, err := pipeline.Run([]byte(srcWS), []byte(dstWS), "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	_, _, updSuppressed := CountLineStats([]byte(srcWS), []byte(dstWS), drWS.Envelope, false, false)
+	if updSuppressed != 0 {
+		t.Errorf("CountLineStats with showStyleChanges=false expected upd=0, got %d", updSuppressed)
+	}
+
+	_, _, updShown := CountLineStats([]byte(srcWS), []byte(dstWS), drWS.Envelope, true, false)
+	if updShown == 0 {
+		t.Errorf("CountLineStats with showStyleChanges=true expected upd > 0, got %d", updShown)
+	}
+
 	// Nil envelope safety
-	ins0, del0, upd0 := CountLineStats(nil, nil, nil)
+	ins0, del0, upd0 := CountLineStats(nil, nil, nil, false, false)
 	if ins0 != 0 || del0 != 0 || upd0 != 0 {
 		t.Errorf("CountLineStats on nil: got (%d, %d, %d), want (0, 0, 0)", ins0, del0, upd0)
+	}
+}
+
+func TestRender_ShowStyleChanges(t *testing.T) {
+	src := "package main\n\nfunc A() {\n\tx  :=  1\n}\n"
+	dst := "package main\n\nfunc A() {\n\tx := 1\n}\n"
+
+	dr, err := pipeline.Run([]byte(src), []byte(dst), "a.go", "b.go", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	var bufSuppressed strings.Builder
+	optsSuppressed := DefaultOptions()
+	optsSuppressed.ShowStyleChanges = false
+	optsSuppressed.ForceSideBySide = true
+	if err := Render("a.go", "b.go", []byte(src), []byte(dst), dr.Envelope, optsSuppressed, &bufSuppressed); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if strings.Contains(bufSuppressed.String(), "@@") {
+		t.Errorf("expected no hunks when ShowStyleChanges=false, got:\n%s", bufSuppressed.String())
+	}
+
+	var bufShown strings.Builder
+	optsShown := DefaultOptions()
+	optsShown.ShowStyleChanges = true
+	optsShown.ForceSideBySide = true
+	if err := Render("a.go", "b.go", []byte(src), []byte(dst), dr.Envelope, optsShown, &bufShown); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if !strings.Contains(bufShown.String(), "@@") {
+		t.Errorf("expected diff hunks when ShowStyleChanges=true, got:\n%s", bufShown.String())
+	}
+
+	// Python formatting-only shift
+	srcPy := "def compute():\n    x = 1\n    return x\n"
+	dstPy := "def compute():\n  x = 1\n  return x\n"
+
+	drPy, err := pipeline.Run([]byte(srcPy), []byte(dstPy), "a.py", "b.py", pipeline.DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeAlignment:  true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("pipeline.Run failed: %v", err)
+	}
+
+	var bufPySuppressed strings.Builder
+	optsPySuppressed := DefaultOptions()
+	optsPySuppressed.ShowStyleChanges = false
+	optsPySuppressed.ForceSideBySide = true
+	if err := Render("a.py", "b.py", []byte(srcPy), []byte(dstPy), drPy.Envelope, optsPySuppressed, &bufPySuppressed); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if strings.Contains(bufPySuppressed.String(), "@@") {
+		t.Errorf("expected no hunks for Python formatting when ShowStyleChanges=false, got:\n%s", bufPySuppressed.String())
+	}
+
+	var bufPyShown strings.Builder
+	optsPyShown := DefaultOptions()
+	optsPyShown.ShowStyleChanges = true
+	optsPyShown.ForceSideBySide = true
+	if err := Render("a.py", "b.py", []byte(srcPy), []byte(dstPy), drPy.Envelope, optsPyShown, &bufPyShown); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if !strings.Contains(bufPyShown.String(), "@@") {
+		t.Errorf("expected diff hunks for Python formatting when ShowStyleChanges=true, got:\n%s", bufPyShown.String())
 	}
 }
 

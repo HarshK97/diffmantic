@@ -403,3 +403,200 @@ func TestGroupMoves_LIS_SunkStatementUngrouped(t *testing.T) {
 		t.Errorf("expected sunk statement 1 to have empty GroupID, got %q", acts[0].GroupID)
 	}
 }
+
+func TestGroupingParent_DelimiterlessBlocks(t *testing.T) {
+	root := &treesitter.ASTNode{Type: "module", Language: "python"}
+	fn := &treesitter.ASTNode{Type: "function_definition", Language: "python"}
+	setParentAndRange(fn, root, 0, 100)
+
+	// In Python, block has no delimiters and shares StartRow with its first statement
+	block := &treesitter.ASTNode{Type: "block", Language: "python", StartRow: 1, EndRow: 2}
+	setParentAndRange(block, fn, 20, 100)
+
+	stmt1 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 1, EndRow: 1}
+	setParentAndRange(stmt1, block, 24, 50)
+
+	stmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 2, EndRow: 2}
+	setParentAndRange(stmt2, block, 54, 80)
+
+	p1 := groupingParent(stmt1)
+	p2 := groupingParent(stmt2)
+
+	if p1 != block {
+		t.Errorf("expected stmt1 groupingParent to be block, got %v", p1)
+	}
+	if p2 != block {
+		t.Errorf("expected stmt2 groupingParent to be block, got %v", p2)
+	}
+}
+
+func TestGrouping_SingleLineCompoundStatements(t *testing.T) {
+	// Source tree: if cond: a = 1; b = 2 (all on row 0)
+	srcRoot := &treesitter.ASTNode{Type: "module", Language: "python", StartRow: 0, EndRow: 0}
+	srcIf := &treesitter.ASTNode{Type: "if_statement", Language: "python", StartRow: 0, EndRow: 0}
+	setParentAndRange(srcIf, srcRoot, 0, 30)
+
+	srcBlock := &treesitter.ASTNode{Type: "block", Language: "python", StartRow: 0, EndRow: 0}
+	setParentAndRange(srcBlock, srcIf, 9, 30)
+
+	srcStmt1 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 0, EndRow: 0}
+	setParentAndRange(srcStmt1, srcBlock, 9, 18)
+
+	srcStmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 0, EndRow: 0}
+	setParentAndRange(srcStmt2, srcBlock, 20, 29)
+
+	// Destination tree: target block
+	dstRoot := &treesitter.ASTNode{Type: "module", Language: "python", StartRow: 0, EndRow: 10}
+	dstBlock := &treesitter.ASTNode{Type: "block", Language: "python", StartRow: 1, EndRow: 3}
+	setParentAndRange(dstBlock, dstRoot, 10, 80)
+
+	dstStmt1 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 1, EndRow: 1}
+	setParentAndRange(dstStmt1, dstBlock, 15, 24)
+
+	dstStmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 2, EndRow: 2}
+	setParentAndRange(dstStmt2, dstBlock, 29, 38)
+
+	es := actions.NewEditScript()
+	es.Add(actions.Action{Type: actions.Move, Node: srcStmt1, DestNode: dstStmt1, Parent: dstBlock})
+	es.Add(actions.Action{Type: actions.Move, Node: srcStmt2, DestNode: dstStmt2, Parent: dstBlock})
+
+	grouped := GroupMoves(es, nil)
+	acts := grouped.Actions()
+	if len(acts) != 2 {
+		t.Fatalf("expected 2 actions, got %d", len(acts))
+	}
+	if acts[0].GroupID != "group-1" || acts[1].GroupID != "group-1" {
+		t.Errorf("expected both single-line compound statements to unify under group-1, got %q and %q", acts[0].GroupID, acts[1].GroupID)
+	}
+}
+
+func TestPython_MoveGrouping_FullEngine(t *testing.T) {
+	r := rules.Get("python")
+	if r == nil {
+		t.Fatal("rules for python not found")
+	}
+
+	src := []byte(`def source_fn():
+    print("prologue")
+    moved_one()
+    moved_two()
+    print("epilogue")
+
+def dest_fn():
+    pass
+`)
+	dst := []byte(`def source_fn():
+    print("prologue")
+    print("epilogue")
+
+def dest_fn():
+    moved_one()
+    moved_two()
+`)
+
+	srcAST, err := treesitter.Parse(src, "module.py")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "module.py")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+	if matchResult == nil || matchResult.Mappings == nil {
+		t.Fatal("Match returned nil mappings")
+	}
+
+	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+	// Whole-Snippet Verification:
+	// 1. Enclosing context declarations (source_fn, dest_fn) map in place with no edit actions.
+	for _, a := range normalized.Actions() {
+		if a.Node != nil && r.IsContainerDeclaration(a.Node.Type) {
+			t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+		}
+	}
+
+	// 2. Preceding stationary statement: print("prologue") maps in place.
+	var srcPrologue, dstPrologue *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prologue") {
+			srcPrologue = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prologue") {
+			dstPrologue = n
+			break
+		}
+	}
+	if srcPrologue == nil || dstPrologue == nil {
+		t.Fatal("failed to find prologue call nodes")
+	}
+	if matchResult.Mappings.Src()[srcPrologue] != dstPrologue {
+		t.Errorf("expected prologue call to map in place, got %v", matchResult.Mappings.Src()[srcPrologue])
+	}
+
+	// 3. Succeeding stationary statement: print("epilogue") maps in place.
+	var srcEpilogue, dstEpilogue *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "epilogue") {
+			srcEpilogue = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "epilogue") {
+			dstEpilogue = n
+			break
+		}
+	}
+	if srcEpilogue == nil || dstEpilogue == nil {
+		t.Fatal("failed to find epilogue call nodes")
+	}
+	if matchResult.Mappings.Src()[srcEpilogue] != dstEpilogue {
+		t.Errorf("expected epilogue call to map in place, got %v", matchResult.Mappings.Src()[srcEpilogue])
+	}
+
+	// 4. Stationary argument literals ("prologue", "epilogue") map in place.
+	for _, argName := range []string{`"prologue"`, `"epilogue"`} {
+		var sArg, dArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsFlattened(n.Type) && string(src[n.StartByte:n.EndByte]) == argName {
+				sArg = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsFlattened(n.Type) && string(dst[n.StartByte:n.EndByte]) == argName {
+				dArg = n
+				break
+			}
+		}
+		if sArg == nil || dArg == nil {
+			t.Fatalf("failed to find literal %s", argName)
+		}
+		if matchResult.Mappings.Src()[sArg] != dArg {
+			t.Errorf("expected literal %s to map in place, got %v", argName, matchResult.Mappings.Src()[sArg])
+		}
+	}
+
+	// 5. Target statements moved_one() and moved_two() move together and receive identical GroupID "group-1".
+	groupMap := make(map[string]string)
+	for _, a := range normalized.Actions() {
+		if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
+			text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
+			groupMap[text] = a.GroupID
+		}
+	}
+
+	for _, stmt := range []string{"moved_one()", "moved_two()"} {
+		if gid, ok := groupMap[stmt]; !ok || gid != "group-1" {
+			t.Errorf("expected co-moving Python statement %s to have GroupID group-1, got %q", stmt, gid)
+		}
+	}
+}
