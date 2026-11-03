@@ -336,16 +336,16 @@ func renderSingleColumnHunk(
 		}
 		pair := filteredPairs[p]
 
+		leftLineNum := pair.LeftLine
+		rightLineNum := pair.RightLine
+
 		var text string
 		var badge string
 		var badgeColor int
 		var spans []serialize.HighlightSpan
-		var leftLineNum, rightLineNum int
 		var action color.ActionKind
 
 		if p < len(isPairChanged) && !isPairChanged[p] {
-			leftLineNum = pair.LeftLine
-			rightLineNum = pair.RightLine
 			if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 				text = dstLines[pair.RightLine]
 			} else if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
@@ -353,8 +353,6 @@ func renderSingleColumnHunk(
 			}
 			action = color.ActionKind(-1)
 		} else if pair.LeftLine == -1 && pair.RightLine >= 0 {
-			leftLineNum = -1
-			rightLineNum = pair.RightLine
 			if pair.RightLine < len(dstLines) {
 				text = dstLines[pair.RightLine]
 			}
@@ -363,8 +361,6 @@ func renderSingleColumnHunk(
 			spans = rightSpansByLine[pair.RightLine]
 			action = color.ActionInsert
 		} else if pair.LeftLine >= 0 && pair.RightLine == -1 {
-			leftLineNum = pair.LeftLine
-			rightLineNum = -1
 			if pair.LeftLine < len(srcLines) {
 				text = srcLines[pair.LeftLine]
 			}
@@ -374,8 +370,6 @@ func renderSingleColumnHunk(
 			action = color.ActionDelete
 		} else {
 			if layout == HunkLayoutSingleColumnRight {
-				leftLineNum = -1
-				rightLineNum = pair.RightLine
 				if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
 					text = dstLines[pair.RightLine]
 					spans = rightSpansByLine[pair.RightLine]
@@ -384,8 +378,6 @@ func renderSingleColumnHunk(
 				}
 				action = color.ActionInsert
 			} else {
-				leftLineNum = pair.LeftLine
-				rightLineNum = -1
 				if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
 					text = srcLines[pair.LeftLine]
 					spans = leftSpansByLine[pair.LeftLine]
@@ -396,8 +388,9 @@ func renderSingleColumnHunk(
 			}
 		}
 
+		isUnpaired := pair.LeftLine == -1 || pair.RightLine == -1
 		lineCtx := renderutil.LineContextAligned
-		if renderutil.ShouldStyleStandalone(true, spans, text) {
+		if renderutil.ShouldStyleStandalone(isUnpaired, spans, text) {
 			switch action {
 			case color.ActionInsert:
 				lineCtx = renderutil.LineContextStandaloneInsert

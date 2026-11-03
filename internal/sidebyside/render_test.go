@@ -1255,3 +1255,104 @@ func TestRender_UnpairedSplitLineDoesNotColorMatchedTokensAsInsert(t *testing.T)
 		t.Errorf("expected matched code on unpaired right line NOT to use InsertFg, got:\n%s", rendered)
 	}
 }
+
+func TestRender_Hybrid_SingleColumn_AlignedModificationGutter(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		src := []byte("package main\n\nfunc A() {\n\treturn foo(x)\n}\n")
+		dst := []byte("package main\n\nfunc A() {\n\treturn foo(x, true)\n}\n")
+
+		env := &serialize.Envelope{
+			LineAlignment: []serialize.LineAlignmentPair{
+				{LeftLine: 0, RightLine: 0},
+				{LeftLine: 1, RightLine: 1},
+				{LeftLine: 2, RightLine: 2},
+				{LeftLine: 3, RightLine: 3},
+				{LeftLine: 4, RightLine: 4},
+			},
+			RightHighlights: []serialize.HighlightSpan{
+				{Line: 3, StartCol: 14, EndCol: 20, Action: "insert"},
+			},
+		}
+
+		opts := RenderOptions{
+			Color:         false,
+			LineNumbers:   true,
+			ContextLines:  3,
+			TerminalWidth: 100,
+		}
+
+		var buf bytes.Buffer
+		if err := Render("main.go", "main.go", src, dst, env, opts, &buf); err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		out := buf.String()
+
+		// Line 4 was modified in place, so the gutter should keep both line numbers (' 4   4') rather than dropping the left side to ' ..   4'.
+		if !strings.Contains(out, " 4   4") || strings.Contains(out, " ..   4") {
+			t.Errorf("expected aligned line 4 to display both left and right line numbers ' 4   4', got:\n%s", out)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package main
+
+func check(x int) bool {
+	if x < 0 {
+		return false
+	}
+	return helper(x)
+}
+`)
+		dst := []byte(`package main
+
+func check(x int) bool {
+	if x < 0 {
+		return false
+	}
+	return helper(x, false)
+}
+`)
+
+		dr, err := pipeline.Run(src, dst, "check.go", "check.go", pipeline.DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeActions:    true,
+				IncludeAlignment:  true,
+				IncludeHighlights: true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("pipeline.Run failed: %v", err)
+		}
+
+		opts := RenderOptions{
+			Color:         false,
+			LineNumbers:   true,
+			ContextLines:  3,
+			TerminalWidth: 100,
+		}
+
+		var buf bytes.Buffer
+		if err := Render("check.go", "check.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		out := buf.String()
+
+		// Enclosing function header and surrounding statements should stay aligned as context lines.
+		if !strings.Contains(out, "  4   4     if x < 0 {") {
+			t.Errorf("expected context line 4 to be present, got:\n%s", out)
+		}
+		if !strings.Contains(out, "  5   5         return false") {
+			t.Errorf("expected context line 5 to be present, got:\n%s", out)
+		}
+		if !strings.Contains(out, "  6   6     }") {
+			t.Errorf("expected context line 6 to be present, got:\n%s", out)
+		}
+		// The modified call on line 7 should show '  7   7' in the gutter, not ' ..   7'.
+		if !strings.Contains(out, "  7   7     return helper(x, false)") {
+			t.Errorf("expected aligned modified line to display '  7   7     return helper(x, false)', got:\n%s", out)
+		}
+		if strings.Contains(out, " ..   7") {
+			t.Errorf("expected left line number not to be replaced by '..', got:\n%s", out)
+		}
+	})
+}
