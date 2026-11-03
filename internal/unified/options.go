@@ -23,4 +23,6 @@ type RenderOptions struct {
 	SrcLabel string
 	// DstLabel is an optional label appended to the destination file header.
 	DstLabel string
+	// ShowStyleChanges displays changes that only differ in whitespace or formatting.
+	ShowStyleChanges bool
 }

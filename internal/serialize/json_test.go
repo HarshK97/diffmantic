@@ -283,6 +283,35 @@ func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
 	}
 }
 
+func TestBuildLineDiffEnvelopeWithOptions_ShowStyleChanges(t *testing.T) {
+	srcBytes := []byte("func main() {\n\tval  :=  1\n}\n")
+	dstBytes := []byte("func main() {\n\tval := 1\n}\n")
+
+	// When ShowStyleChanges is false (default), cosmetic whitespace difference should NOT emit delete/insert actions
+	optsSuppressed := EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeAlignment:  true,
+		IncludeHighlights: true,
+		ShowStyleChanges:  false,
+	}
+	envSuppressed := BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, optsSuppressed)
+	if len(envSuppressed.Actions) != 0 {
+		t.Errorf("expected 0 actions when ShowStyleChanges=false, got %d: %+v", len(envSuppressed.Actions), envSuppressed.Actions)
+	}
+
+	// When ShowStyleChanges is true, whitespace difference should emit synthetic delete + insert
+	optsShown := EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeAlignment:  true,
+		IncludeHighlights: true,
+		ShowStyleChanges:  true,
+	}
+	envShown := BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, optsShown)
+	if len(envShown.Actions) != 2 {
+		t.Fatalf("expected 2 actions when ShowStyleChanges=true, got %d: %+v", len(envShown.Actions), envShown.Actions)
+	}
+}
+
 func TestAdjustRangeForContainerDeclarationChild(t *testing.T) {
 	kw := &treesitter.ASTNode{Type: "friend", StartByte: 10, EndByte: 16, StartRow: 1, EndRow: 1}
 	fn := &treesitter.ASTNode{Type: "function_definition", StartByte: 17, EndByte: 80, StartRow: 1, EndRow: 4}

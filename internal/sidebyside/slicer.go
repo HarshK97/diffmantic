@@ -77,7 +77,6 @@ func ClassifyHunk(
 	h renderutil.Interval,
 	filteredPairs []serialize.LineAlignmentPair,
 	isPairChanged []bool,
-	srcLines, dstLines []string,
 	leftSpansByLine, rightSpansByLine map[int][]serialize.HighlightSpan,
 	forceSBS bool,
 ) HunkLayoutKind {
@@ -102,16 +101,9 @@ func ClassifyHunk(
 		} else if pair.LeftLine == -1 && pair.RightLine >= 0 {
 			hasRightChanges = true
 		} else if pair.LeftLine >= 0 && pair.RightLine >= 0 {
-			var srcText, dstText string
-			if pair.LeftLine < len(srcLines) {
-				srcText = srcLines[pair.LeftLine]
-			}
-			if pair.RightLine < len(dstLines) {
-				dstText = dstLines[pair.RightLine]
-			}
-
-			leftChanged := len(leftSpansByLine[pair.LeftLine]) > 0 || srcText != dstText
-			rightChanged := len(rightSpansByLine[pair.RightLine]) > 0 || srcText != dstText
+			hasSpans := len(leftSpansByLine[pair.LeftLine]) > 0 || len(rightSpansByLine[pair.RightLine]) > 0
+			leftChanged := len(leftSpansByLine[pair.LeftLine]) > 0 || !hasSpans
+			rightChanged := len(rightSpansByLine[pair.RightLine]) > 0 || !hasSpans
 
 			if leftChanged {
 				hasLeftChanges = true

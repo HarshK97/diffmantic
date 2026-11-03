@@ -58,6 +58,7 @@ func TestRootCmdFlags(t *testing.T) {
 		{name: "parse-tree", shorthand: "", defValue: "false"},
 		{name: "cst", shorthand: "", defValue: "false"},
 		{name: "tab-width", shorthand: "", defValue: "4"},
+		{name: "show-style-changes", shorthand: "", defValue: "false"},
 	}
 
 	for _, tt := range flags {
@@ -661,4 +662,35 @@ func TestValidateNoMisplacedFlags(t *testing.T) {
 			t.Errorf("validateNoMisplacedFlags(%v) error = %v, want nil", dashFile, err)
 		}
 	})
+}
+
+func TestResolveShowStyleChanges(t *testing.T) {
+	defer resetRootCmdFlags()
+
+	// Default when unset
+	resetRootCmdFlags()
+	if got := resolveShowStyleChanges(rootCmd); got {
+		t.Errorf("expected default false, got true")
+	}
+
+	// Via environment variable
+	t.Setenv("DIFFM_SHOW_STYLE_CHANGES", "1")
+	resetRootCmdFlags()
+	if got := resolveShowStyleChanges(rootCmd); !got {
+		t.Errorf("expected true from DIFFM_SHOW_STYLE_CHANGES=1, got false")
+	}
+
+	// Explicit flag overrides env var
+	resetRootCmdFlags()
+	_ = rootCmd.Flags().Set("show-style-changes", "false")
+	if got := resolveShowStyleChanges(rootCmd); got {
+		t.Errorf("expected explicit flag false to override env var, got true")
+	}
+
+	// Explicit flag true
+	resetRootCmdFlags()
+	_ = rootCmd.Flags().Set("show-style-changes", "true")
+	if got := resolveShowStyleChanges(rootCmd); !got {
+		t.Errorf("expected explicit flag true, got false")
+	}
 }

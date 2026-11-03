@@ -16,6 +16,20 @@ type groupKey struct {
 	newParent *treesitter.ASTNode
 }
 
+// isCanonicalContainer reports whether n represents a statement container, block, or scope root.
+func isCanonicalContainer(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if n.Parent == nil {
+		return true
+	}
+	if r != nil {
+		return r.IsBlock(n.Type) || r.IsCaseClause(n.Type) || r.IsContainerDeclaration(n.Type)
+	}
+	return rules.IsBlock(n.Type) || rules.IsCaseClause(n.Type) || rules.IsContainerDeclaration(n.Type)
+}
+
 func groupingParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 	if n == nil {
 		return nil
@@ -24,10 +38,12 @@ func groupingParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 	stmt := engine.FindEnclosingStatement(n, r)
 	curr := n.Parent
 	for curr != nil && curr.Parent != nil {
+		// Stop at the enclosing statement so expressions in different statements don't group together.
 		if curr == stmt {
 			return curr
 		}
-		if curr.StartRow != n.StartRow {
+		// For whole statements, stop at the enclosing block or function.
+		if isCanonicalContainer(curr, r) {
 			return curr
 		}
 		curr = curr.Parent
@@ -43,13 +59,17 @@ func groupingNewParent(n *treesitter.ASTNode) *treesitter.ASTNode {
 		return nil
 	}
 	r := rules.Get(n.GetLanguage())
+	// If we're already at a block or function, don't climb any further.
+	if isCanonicalContainer(n, r) {
+		return n
+	}
 	stmt := engine.FindEnclosingStatement(n, r)
 	curr := n
 	for curr != nil && curr.Parent != nil {
 		if curr == stmt {
 			return curr
 		}
-		if curr.StartRow != n.StartRow {
+		if isCanonicalContainer(curr, r) {
 			return curr
 		}
 		curr = curr.Parent
