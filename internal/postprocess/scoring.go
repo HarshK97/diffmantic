@@ -679,7 +679,7 @@ func isLocalVariableExtraction(src, dst, srcStmt, dstStmt *treesitter.ASTNode, m
 		return false
 	}
 
-	// Skip small expressions and boilerplate (like err != nil or len(s)) that shouldn't move.
+	// Skip small expressions and boilerplate (like len(s) or single identifiers) that shouldn't move.
 	if moveStructuralScore(src, r, ms) < 6 {
 		return false
 	}

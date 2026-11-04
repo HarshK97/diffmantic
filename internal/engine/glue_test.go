@@ -1108,3 +1108,193 @@ func Helper(x any) bool {
 		}
 	})
 }
+
+func TestBinaryOperatorGlue_SingleOperandMutation(t *testing.T) {
+	r := rules.Get("go")
+	if r == nil {
+		t.Fatal("rules for go not found")
+	}
+
+	t.Run("Unit", func(t *testing.T) {
+		// Make sure hasAsymmetricOperatorOperands stops rollup when the enclosing
+		// statements map to different places.
+		stmt1 := testutil.Node("if_statement", "")
+		bin1 := testutil.Node("binary_expression", "",
+			testutil.NodeAt("identifier", "sText", 0, 5),
+			testutil.NodeAt("logical_operator_literal", "||", 6, 8),
+			testutil.NodeAt("identifier", "oldCond", 9, 16),
+		)
+		stmt1.Children = []*treesitter.ASTNode{bin1}
+		bin1.Parent = stmt1
+
+		stmt2 := testutil.Node("if_statement", "") // foreign destination for stmt1
+		stmt3 := testutil.Node("if_statement", "") // new statement holding bin2
+		bin2 := testutil.Node("binary_expression", "",
+			testutil.NodeAt("identifier", "sText", 0, 5),
+			testutil.NodeAt("logical_operator_literal", "||", 6, 8),
+			testutil.NodeAt("identifier", "newCond", 9, 16),
+		)
+		stmt3.Children = []*treesitter.ASTNode{bin2}
+		bin2.Parent = stmt3
+
+		m := NewMapping()
+		m.Add(stmt1, stmt2)                       // stmt1 is already mapped to a different statement
+		m.Add(bin1.Children[0], bin2.Children[0]) // sText mapped to sText
+
+		if !hasAsymmetricOperatorOperands(bin1, bin2, bin1.Children[0], m, r) {
+			t.Errorf("expected hasAsymmetricOperatorOperands to return true for cross-statement expressions")
+		}
+
+		// Also verify that a single leaf operand on the opposite side mapped outside bin2
+		// is detected even within the same enclosing statement.
+		mSame := NewMapping()
+		mSame.Add(stmt1, stmt3)                       // enclosing statements map to each other
+		mSame.Add(bin1.Children[0], bin2.Children[0]) // sText mapped to sText
+		foreignTarget := testutil.Leaf("identifier", "oldCond")
+		mSame.Add(bin1.Children[2], foreignTarget) // oldCond is a leaf mapped outside bin2
+
+		if !hasAsymmetricOperatorOperands(bin1, bin2, bin1.Children[0], mSame, r) {
+			t.Errorf("expected hasAsymmetricOperatorOperands to return true when opposite leaf operand maps outside bin2")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package main
+
+func renderTest(left, right, lastSrcLineIdx, lastDstLineIdx int, sText, dText string, srcEndsWithNL, dstEndsWithNL bool) {
+	isEOFLine := (left == lastSrcLineIdx && right == lastDstLineIdx)
+	if sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL) {
+		upd++
+	}
+}
+`
+		dst := `package main
+
+func renderTest(left, right, lastSrcLineIdx, lastDstLineIdx int, sText, dText string, srcEndsWithNL, dstEndsWithNL bool) {
+	isEOFLine := (left == lastSrcLineIdx && right == lastDstLineIdx)
+	isEOFChange := isEOFLine && srcEndsWithNL != dstEndsWithNL
+	if sText != dText || isEOFChange {
+		if showStyleChanges || isEOFChange || !renderutil.EqualIgnoringStyle(sText, dText, significantWhitespace) {
+			upd++
+		}
+	}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST.Root(), dstAST.Root(), []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: outer func renderTest maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_declaration" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_declaration" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil {
+			t.Fatalf("missing function_declaration: src=%v, dst=%v", srcFunc, dstFunc)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected outer function to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+
+		// 2. Surrounding sequence: isEOFLine declaration maps in place
+		var srcEOFDecl, dstEOFDecl *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "isEOFLine") {
+				srcEOFDecl = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "isEOFLine") {
+				dstEOFDecl = n
+				break
+			}
+		}
+		if srcEOFDecl == nil || dstEOFDecl == nil {
+			t.Fatalf("missing isEOFLine declaration: src=%v, dst=%v", srcEOFDecl, dstEOFDecl)
+		}
+		if mr.Mappings.Src()[srcEOFDecl] != dstEOFDecl {
+			t.Errorf("expected isEOFLine declaration to map in place, got %v", mr.Mappings.Src()[srcEOFDecl])
+		}
+
+		// 3. Stationary body: upd++ maps in place
+		var srcUpd, dstUpd *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "inc_statement" && strings.Contains(src[n.StartByte:n.EndByte], "upd++") {
+				srcUpd = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "inc_statement" && strings.Contains(dst[n.StartByte:n.EndByte], "upd++") {
+				dstUpd = n
+				break
+			}
+		}
+		if srcUpd == nil || dstUpd == nil {
+			t.Fatalf("missing upd++ statement: src=%v, dst=%v", srcUpd, dstUpd)
+		}
+		if mr.Mappings.Src()[srcUpd] != dstUpd {
+			t.Errorf("expected upd++ statement to map in place, got %v", mr.Mappings.Src()[srcUpd])
+		}
+
+		// 4. Target operand: sText != dText must map to sText != dText
+		var srcSTextBin, dstSTextBin *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsExpression(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "sText != dText") && n.EndByte-n.StartByte <= 16 {
+				srcSTextBin = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsExpression(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "sText != dText") && n.EndByte-n.StartByte <= 16 {
+				dstSTextBin = n
+				break
+			}
+		}
+		if srcSTextBin == nil || dstSTextBin == nil {
+			t.Fatalf("missing sText != dText node: src=%v, dst=%v", srcSTextBin, dstSTextBin)
+		}
+		if mr.Mappings.Src()[srcSTextBin] != dstSTextBin {
+			t.Errorf("expected sText != dText to map, got %v", mr.Mappings.Src()[srcSTextBin])
+		}
+
+		// 5. Outer binary expression: sText != dText || ... must NOT map to sText != dText || isEOFChange
+		var srcOuterBin, dstOuterBin *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsExpression(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "sText != dText || (isEOFLine") {
+				srcOuterBin = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsExpression(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "sText != dText || isEOFChange") {
+				dstOuterBin = n
+				break
+			}
+		}
+		if srcOuterBin != nil && mr.Mappings.Src()[srcOuterBin] == dstOuterBin {
+			t.Errorf("outer binary expression must NOT map to dstOuterBin across mutated operands")
+		}
+	})
+}
