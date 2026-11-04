@@ -497,3 +497,49 @@ func CalculateTax(subtotal int) int {
 		}
 	}
 }
+
+func TestPipeline_ForceBinaryAndForceText(t *testing.T) {
+	t.Run("ForceBinaryOverridesPlainText", func(t *testing.T) {
+		src := []byte("package main\n\nfunc A() int { return 1 }\n")
+		dst := []byte("package main\n\nfunc A() int { return 2 }\n")
+
+		res, err := Run(src, dst, "a.go", "b.go", DiffOptions{
+			ForceBinary: true,
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		if !res.IsBinary {
+			t.Errorf("expected res.IsBinary to be true with ForceBinary: true")
+		}
+		if res.Envelope == nil || !res.Envelope.IsBinary {
+			t.Errorf("expected res.Envelope.IsBinary to be true")
+		}
+	})
+
+	t.Run("ForceTextOverridesNULBytes", func(t *testing.T) {
+		src := []byte("hello\x00world\nline 2\n")
+		dst := []byte("hello\x00world\nline 2 modified\n")
+
+		resDefault, err := Run(src, dst, "data.bin", "data.bin", DiffOptions{})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		if !resDefault.IsBinary {
+			t.Errorf("expected default NUL buffer to be detected as binary")
+		}
+
+		resForceText, err := Run(src, dst, "data.bin", "data.bin", DiffOptions{
+			ForceText: true,
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		if resForceText.IsBinary {
+			t.Errorf("expected ForceText: true to bypass binary detection")
+		}
+		if resForceText.Envelope == nil || resForceText.Envelope.IsBinary {
+			t.Errorf("expected envelope not to be binary with ForceText: true")
+		}
+	})
+}

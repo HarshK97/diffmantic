@@ -42,6 +42,14 @@ func ClearCache() {
 	clear(validRevCache)
 	clear(trackedFileCache)
 	clear(repoPrefixCache)
+
+	textconvCacheMu.Lock()
+	clear(textconvCache)
+	textconvCacheMu.Unlock()
+
+	diffAttrCacheMu.Lock()
+	clear(diffAttrCache)
+	diffAttrCacheMu.Unlock()
 }
 
 func isSandboxPermissionError(stderr string) bool {
@@ -479,28 +487,144 @@ func splitCommandWords(s string) []string {
 	return args
 }
 
-// applyWorkingTreeTextconv runs Git's textconv filter on a working tree file if configured.
-func applyWorkingTreeTextconv(cwd, path, cleanPath string) ([]byte, bool, error) {
-	attrOut, err := RunGit(cwd, "check-attr", "diff", cleanPath)
-	if err != nil {
-		return nil, false, err
+// DiffAttr represents the diff behavior specified in .gitattributes for a file.
+type DiffAttr int
+
+const (
+	// DiffAttrUnspecified means no diff attribute was set.
+	DiffAttrUnspecified DiffAttr = iota
+	// DiffAttrText forces text diffing (attribute 'diff').
+	DiffAttrText
+	// DiffAttrBinary forces binary treatment (attribute '-diff' or 'binary').
+	DiffAttrBinary
+)
+
+// FileDiffAttr holds gitattributes diff settings for a file.
+type FileDiffAttr struct {
+	Attr   DiffAttr // Configured diff behavior (unspecified, text, or binary).
+	Driver string   // Custom diff driver name, if set (e.g. "pdfconv").
+}
+
+var (
+	diffAttrCacheMu sync.RWMutex
+	diffAttrCache   = make(map[string]FileDiffAttr) // cacheKey (cleanRepoRoot + "\x00" + cleanPath) -> FileDiffAttr
+)
+
+func diffAttrCacheKey(cleanRepoRoot, cwd, p string) string {
+	absPath := p
+	if !filepath.IsAbs(p) {
+		absPath = filepath.Join(cwd, p)
 	}
-	line := strings.TrimSpace(string(attrOut))
-	_, driver, ok := strings.Cut(line, ": diff: ")
-	if !ok {
-		return nil, false, nil
-	}
-	driver = strings.TrimSpace(driver)
-	if driver == "" || driver == "unspecified" || driver == "unset" || driver == "set" {
-		return nil, false, nil
+	return cleanRepoRoot + "\x00" + filepath.Clean(absPath)
+}
+
+// CheckDiffAttr queries Git for the diff and binary attributes of the given paths.
+// If neither cwd nor any path is inside a Git repository, it returns an empty map without running git.
+func CheckDiffAttr(cwd string, paths ...string) map[string]FileDiffAttr {
+	if len(paths) == 0 {
+		return make(map[string]FileDiffAttr)
 	}
 
+	repoRoot := FindRepoRoot(cwd)
+	execDir := cwd
+	if repoRoot == "" {
+		for _, p := range paths {
+			if p != "" && p != os.DevNull && p != "/dev/null" {
+				targetPath := p
+				if !filepath.IsAbs(p) {
+					targetPath = filepath.Join(cwd, p)
+				}
+				dir := filepath.Dir(targetPath)
+				if r := FindRepoRoot(dir); r != "" {
+					repoRoot = r
+					execDir = dir
+					break
+				}
+			}
+		}
+	}
+	if repoRoot == "" {
+		return make(map[string]FileDiffAttr)
+	}
+
+	result := make(map[string]FileDiffAttr, len(paths))
+	var missingPaths []string
+	cleanRepoRoot := filepath.Clean(repoRoot)
+
+	diffAttrCacheMu.RLock()
+	for _, p := range paths {
+		if p == "" || p == os.DevNull || p == "/dev/null" {
+			continue
+		}
+		cacheKey := diffAttrCacheKey(cleanRepoRoot, cwd, p)
+		if val, found := diffAttrCache[cacheKey]; found {
+			result[p] = val
+		} else {
+			missingPaths = append(missingPaths, p)
+		}
+	}
+	diffAttrCacheMu.RUnlock()
+
+	if len(missingPaths) == 0 {
+		return result
+	}
+
+	args := append([]string{"check-attr", "diff", "binary", "-z", "--"}, missingPaths...)
+	out, err := RunGit(execDir, args...)
+	if err != nil {
+		return result
+	}
+
+	tokens := bytes.Split(out, []byte{0})
+	if len(tokens) > 0 && len(tokens[len(tokens)-1]) == 0 {
+		tokens = tokens[:len(tokens)-1]
+	}
+
+	rawMap := make(map[string]FileDiffAttr, len(missingPaths))
+	for i := 0; i+2 < len(tokens); i += 3 {
+		cleanPath := filepath.Clean(string(tokens[i]))
+		attrName := string(tokens[i+1])
+		attrInfo := string(tokens[i+2])
+
+		entry := rawMap[cleanPath]
+		switch {
+		case attrName == "binary" && attrInfo == "set",
+			attrName == "diff" && attrInfo == "unset":
+			entry.Attr = DiffAttrBinary
+		case attrName == "diff" && attrInfo == "set":
+			entry.Attr = DiffAttrText
+		case attrName == "diff" && attrInfo != "" && attrInfo != "unspecified":
+			entry.Driver = attrInfo
+		}
+		rawMap[cleanPath] = entry
+	}
+
+	diffAttrCacheMu.Lock()
+	defer diffAttrCacheMu.Unlock()
+
+	for _, p := range missingPaths {
+		fileAttr := rawMap[filepath.Clean(p)]
+		cacheKey := diffAttrCacheKey(cleanRepoRoot, cwd, p)
+		diffAttrCache[cacheKey] = fileAttr
+		result[p] = fileAttr
+	}
+
+	return result
+}
+
+// ApplyTextconvFilter runs a configured textconv filter for driver on filePath.
+// If driver has no configured textconv command in Git config or filePath does not exist,
+// it returns nil, false, nil.
+func ApplyTextconvFilter(cwd, driver, filePath string) ([]byte, bool, error) {
 	cmdStr := getDriverTextconv(cwd, driver)
 	if cmdStr == "" {
 		return nil, false, nil
 	}
 
-	fullFilePath := filepath.Join(cwd, path)
+	fullFilePath := filePath
+	if !filepath.IsAbs(fullFilePath) {
+		fullFilePath = filepath.Join(cwd, filePath)
+	}
 	if _, statErr := os.Stat(fullFilePath); statErr != nil {
 		if os.IsNotExist(statErr) {
 			return nil, false, nil
@@ -521,9 +645,19 @@ func applyWorkingTreeTextconv(cwd, path, cleanPath string) ([]byte, bool, error)
 	c.Dir = cwd
 	out, err := c.Output()
 	if err != nil {
-		return nil, true, fmt.Errorf("running textconv filter for %s: %w", path, err)
+		return nil, true, fmt.Errorf("running textconv filter for %s: %w", filePath, err)
 	}
 	return out, true, nil
+}
+
+// applyWorkingTreeTextconv runs Git's textconv filter on a working tree file if configured.
+func applyWorkingTreeTextconv(cwd, path, cleanPath string) ([]byte, bool, error) {
+	attrs := CheckDiffAttr(cwd, cleanPath)
+	driver := attrs[cleanPath].Driver
+	if driver == "" {
+		return nil, false, nil
+	}
+	return ApplyTextconvFilter(cwd, driver, path)
 }
 
 func cleanRevisionPath(cwd, path string) string {

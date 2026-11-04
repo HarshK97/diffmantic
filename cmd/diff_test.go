@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/unified"
@@ -693,4 +695,219 @@ func TestResolveShowStyleChanges(t *testing.T) {
 	if got := resolveShowStyleChanges(rootCmd); !got {
 		t.Errorf("expected explicit flag true, got false")
 	}
+}
+
+func TestRunFileDiff_GitAttributes(t *testing.T) {
+	git.ClearCache()
+	defer git.ClearCache()
+	defer resetRootCmdFlags()
+
+	tempDir := t.TempDir()
+	if _, err := git.RunGit(tempDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+
+	gitattrs := `*.min.js -diff
+*.bin diff
+`
+	if err := os.WriteFile(filepath.Join(tempDir, ".gitattributes"), []byte(gitattrs), 0o644); err != nil {
+		t.Fatalf("failed to write .gitattributes: %v", err)
+	}
+
+	t.Run("MinifiedFileMarkedMinusDiffTreatedAsBinary", func(t *testing.T) {
+		fileA := filepath.Join(tempDir, "bundle.min.js")
+		fileB := filepath.Join(tempDir, "bundle_v2.min.js")
+
+		jsA := `function compute(x, y) { return x + y; }`
+		jsB := `function compute(x, y) { return x + y + 1; }`
+
+		if err := os.WriteFile(fileA, []byte(jsA), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fileB, []byte(jsB), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		resetRootCmdFlags()
+		rootCmd.SetArgs([]string{"-f", "json", "--no-pager", fileA, fileB})
+		err := rootCmd.Execute()
+
+		_ = w.Close()
+		os.Stdout = oldStdout
+
+		if err != nil {
+			t.Fatalf("rootCmd.Execute failed: %v", err)
+		}
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		outStr := buf.String()
+
+		if !strings.Contains(outStr, `"is_binary":true`) && !strings.Contains(outStr, `"is_binary": true`) {
+			t.Errorf("expected JSON envelope to have is_binary: true for -diff file, got:\n%s", outStr)
+		}
+	})
+
+	t.Run("BinaryFileWithDiffAttributeForcedAsText", func(t *testing.T) {
+		fileA := filepath.Join(tempDir, "data1.bin")
+		fileB := filepath.Join(tempDir, "data2.bin")
+
+		binA := "line 1\nline 2 with \x00 null byte\n"
+		binB := "line 1\nline 2 with \x00 null byte modified\n"
+
+		if err := os.WriteFile(fileA, []byte(binA), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fileB, []byte(binB), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		resetRootCmdFlags()
+		rootCmd.SetArgs([]string{"-f", "json", "--no-pager", fileA, fileB})
+		err := rootCmd.Execute()
+
+		_ = w.Close()
+		os.Stdout = oldStdout
+
+		if err != nil {
+			t.Fatalf("rootCmd.Execute failed: %v", err)
+		}
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		outStr := buf.String()
+
+		if strings.Contains(outStr, `"is_binary":true`) || strings.Contains(outStr, `"is_binary": true`) {
+			t.Errorf("expected file with 'diff' attribute to force text diffing, got is_binary: true in:\n%s", outStr)
+		}
+	})
+
+	t.Run("DirectoryDiffHonorsGitAttributes", func(t *testing.T) {
+		dirA := filepath.Join(tempDir, "dirA")
+		dirB := filepath.Join(tempDir, "dirB")
+		if err := os.MkdirAll(dirA, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dirB, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dirA, "app.min.js"), []byte("const x = 1;"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dirB, "app.min.js"), []byte("const x = 2;"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdout = w
+
+		resetRootCmdFlags()
+		rootCmd.SetArgs([]string{"-f", "unified", "--no-pager", dirA, dirB})
+		execErr := rootCmd.Execute()
+
+		_ = w.Close()
+		os.Stdout = oldStdout
+
+		if execErr != nil {
+			t.Fatalf("directory diff failed: %v", execErr)
+		}
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		outStr := buf.String()
+
+		if !strings.Contains(outStr, "Binary files") {
+			t.Errorf("expected directory diff to report Binary files for app.min.js, got:\n%s", outStr)
+		}
+	})
+
+	t.Run("DirectoryDiffHonorsGitAttributes_ForceText", func(t *testing.T) {
+		dirA := filepath.Join(tempDir, "dirTextA")
+		dirB := filepath.Join(tempDir, "dirTextB")
+		if err := os.MkdirAll(dirA, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dirB, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dirA, "data.bin"), []byte("line 1 with \x00 byte\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dirB, "data.bin"), []byte("line 1 with \x00 byte modified\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdout = w
+
+		resetRootCmdFlags()
+		rootCmd.SetArgs([]string{"-f", "unified", "--no-pager", dirA, dirB})
+		execErr := rootCmd.Execute()
+
+		_ = w.Close()
+		os.Stdout = oldStdout
+
+		if execErr != nil {
+			t.Fatalf("directory diff failed: %v", execErr)
+		}
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		outStr := buf.String()
+
+		if strings.Contains(outStr, "Binary files") {
+			t.Errorf("expected directory diff to force text for data.bin, but got binary: %s", outStr)
+		}
+	})
+
+	t.Run("SingleSidedDiffAttributeAddedFile", func(t *testing.T) {
+		fileB := filepath.Join(tempDir, "new_data.bin")
+		if err := os.WriteFile(fileB, []byte("line 1 with \x00 byte\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdout = w
+
+		resetRootCmdFlags()
+		rootCmd.SetArgs([]string{"-f", "json", "--no-pager", os.DevNull, fileB})
+		execErr := rootCmd.Execute()
+
+		_ = w.Close()
+		os.Stdout = oldStdout
+
+		if execErr != nil {
+			t.Fatalf("rootCmd.Execute failed: %v", execErr)
+		}
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		outStr := buf.String()
+
+		if strings.Contains(outStr, `"is_binary":true`) || strings.Contains(outStr, `"is_binary": true`) {
+			t.Errorf("expected added file with diff attribute to force text diffing against dev null, got: %s", outStr)
+		}
+	})
 }

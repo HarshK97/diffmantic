@@ -30,6 +30,8 @@ type DiffOptions struct {
 	MaxASTFileLines      int
 	IsConflict           bool
 	IgnoreComments       bool
+	ForceBinary          bool
+	ForceText            bool
 	EnvelopeOpts         serialize.EnvelopeOptions
 }
 
@@ -75,7 +77,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		}
 	}
 
-	if IsBinary(srcBytes) || IsBinary(dstBytes) {
+	if opts.ForceBinary || ((IsBinary(srcBytes) || IsBinary(dstBytes)) && !opts.ForceText) {
 		return &DiffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,

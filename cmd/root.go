@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -978,6 +979,67 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		return false
 	}
 
+	textconv, _ := cmd.Flags().GetBool("textconv")
+
+	var forceBinary, forceText bool
+	var repoRoot string
+	if fileB != os.DevNull && fileB != "/dev/null" {
+		repoRoot = git.FindRepoRoot(filepath.Dir(fileB))
+	}
+	if repoRoot == "" && fileA != os.DevNull && fileA != "/dev/null" {
+		repoRoot = git.FindRepoRoot(filepath.Dir(fileA))
+	}
+	if repoRoot == "" {
+		repoRoot = git.FindRepoRoot(".")
+	}
+
+	if repoRoot != "" {
+		pathsToQuery := make([]string, 0, 4)
+		if fileA != os.DevNull && fileA != "/dev/null" {
+			pathsToQuery = append(pathsToQuery, displayA)
+			if fileA != displayA {
+				pathsToQuery = append(pathsToQuery, fileA)
+			}
+		}
+		if fileB != os.DevNull && fileB != "/dev/null" {
+			pathsToQuery = append(pathsToQuery, displayB)
+			if fileB != displayB {
+				pathsToQuery = append(pathsToQuery, fileB)
+			}
+		}
+
+		attrs := git.CheckDiffAttr(repoRoot, pathsToQuery...)
+		attrA := attrs[displayA]
+		if attrA.Attr == git.DiffAttrUnspecified && fileA != displayA {
+			attrA = attrs[fileA]
+		}
+		attrB := attrs[displayB]
+		if attrB.Attr == git.DiffAttrUnspecified && fileB != displayB {
+			attrB = attrs[fileB]
+		}
+
+		if attrA.Attr == git.DiffAttrBinary || attrB.Attr == git.DiffAttrBinary {
+			forceBinary = true
+		} else if attrA.Attr == git.DiffAttrText || attrB.Attr == git.DiffAttrText {
+			forceText = true
+		}
+
+		if textconv {
+			if fileA != os.DevNull && fileA != "/dev/null" && attrA.Driver != "" {
+				if conv, ok, err := git.ApplyTextconvFilter(repoRoot, attrA.Driver, fileA); err == nil && ok && conv != nil {
+					srcBytes = conv
+					forceBinary = false
+				}
+			}
+			if fileB != os.DevNull && fileB != "/dev/null" && attrB.Driver != "" {
+				if conv, ok, err := git.ApplyTextconvFilter(repoRoot, attrB.Driver, fileB); err == nil && ok && conv != nil {
+					dstBytes = conv
+					forceBinary = false
+				}
+			}
+		}
+	}
+
 	dr, err := pipeline.Run(srcBytes, dstBytes, displayA, displayB, pipeline.DiffOptions{
 		ParseErrorLimit:  parseErrorLimit,
 		IgnoreComments:   ignoreComments,
@@ -985,6 +1047,8 @@ func runFileDiff(cmd *cobra.Command, fileA, fileB, displayPathA, displayPathB st
 		MaxASTFileSize:   sizeLimitKB * 1024,
 		DisableLineLimit: lineLimitLines <= 0,
 		MaxASTFileLines:  lineLimitLines,
+		ForceBinary:      forceBinary,
+		ForceText:        forceText,
 		EnvelopeOpts:     opts,
 	})
 	if err != nil {

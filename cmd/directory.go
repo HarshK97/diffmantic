@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/HarshK97/diffmantic/internal/git"
 	"github.com/HarshK97/diffmantic/internal/pager"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
@@ -140,13 +141,39 @@ func runDirectoryDiff(
 
 	showBanner := len(changedFiles) > 1
 
+	repoRoot := cmp.Or(git.FindRepoRoot(dirA), git.FindRepoRoot(dirB), git.FindRepoRoot("."))
+
+	var attrMap map[string]git.FileDiffAttr
+	if repoRoot != "" {
+		pathsToQuery := make([]string, len(changedFiles))
+		for i, cf := range changedFiles {
+			pathsToQuery[i] = cmp.Or(cf.pathA, cf.pathB)
+		}
+		attrMap = git.CheckDiffAttr(repoRoot, pathsToQuery...)
+	}
+
 	jobs := make([]diffJob, len(changedFiles))
 	for i, cf := range changedFiles {
+		isBin := false
+		forceTxt := false
+		if attrMap != nil {
+			lookup := cmp.Or(cf.pathA, cf.pathB)
+			if a, ok := attrMap[lookup]; ok {
+				switch a.Attr {
+				case git.DiffAttrBinary:
+					isBin = true
+				case git.DiffAttrText:
+					forceTxt = true
+				}
+			}
+		}
 		jobs[i] = diffJob{
-			displayA: filepath.Join(dirA, cf.relPath),
-			displayB: filepath.Join(dirB, cf.relPath),
-			relPathA: cf.relPath,
-			relPathB: cf.relPath,
+			displayA:  filepath.Join(dirA, cf.relPath),
+			displayB:  filepath.Join(dirB, cf.relPath),
+			relPathA:  cf.relPath,
+			relPathB:  cf.relPath,
+			isBinary:  isBin,
+			forceText: forceTxt,
 			load: func() ([]byte, []byte, error) {
 				var srcBytes, dstBytes []byte
 				var err error
