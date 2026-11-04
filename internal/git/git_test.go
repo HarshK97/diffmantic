@@ -529,3 +529,70 @@ func TestFindRepoRoot(t *testing.T) {
 		t.Errorf("FindRepoRoot(notGit) = %q, want empty string", got)
 	}
 }
+
+func TestCheckDiffAttr(t *testing.T) {
+	ClearCache()
+	defer ClearCache()
+
+	t.Run("OutsideGitRepo", func(t *testing.T) {
+		nonGit := t.TempDir()
+		attrs := CheckDiffAttr(nonGit, "file.txt")
+		if len(attrs) != 0 {
+			t.Errorf("expected empty map outside git repo, got: %v", attrs)
+		}
+	})
+
+	t.Run("GitAttributesParsingAndCaching", func(t *testing.T) {
+		tempDir := t.TempDir()
+		if _, err := RunGit(tempDir, "init", "-b", "main"); err != nil {
+			t.Fatalf("git init failed: %v", err)
+		}
+
+		gitattrs := `*.min.js -diff
+*.bin diff
+*.pdf diff=pdfconv
+*.png binary
+`
+		if err := os.WriteFile(filepath.Join(tempDir, ".gitattributes"), []byte(gitattrs), 0o644); err != nil {
+			t.Fatalf("failed to write .gitattributes: %v", err)
+		}
+
+		paths := []string{
+			"bundle.min.js",
+			"data.bin",
+			"manual.pdf",
+			"logo.png",
+			"code.go",
+			"/dev/null",
+			"",
+		}
+
+		attrs := CheckDiffAttr(tempDir, paths...)
+
+		if got := attrs["bundle.min.js"]; got.Attr != DiffAttrBinary {
+			t.Errorf("expected bundle.min.js to have DiffAttrBinary, got: %v", got)
+		}
+
+		if got := attrs["data.bin"]; got.Attr != DiffAttrText {
+			t.Errorf("expected data.bin to have DiffAttrText, got: %v", got)
+		}
+
+		if got := attrs["manual.pdf"]; got.Driver != "pdfconv" || got.Attr != DiffAttrUnspecified {
+			t.Errorf("expected manual.pdf to have Driver='pdfconv' and DiffAttrUnspecified, got: %v", got)
+		}
+
+		if got := attrs["logo.png"]; got.Attr != DiffAttrBinary {
+			t.Errorf("expected logo.png to have DiffAttrBinary, got: %v", got)
+		}
+
+		if got := attrs["code.go"]; got.Attr != DiffAttrUnspecified || got.Driver != "" {
+			t.Errorf("expected code.go to have DiffAttrUnspecified, got: %v", got)
+		}
+
+		// Subsequent calls should hit cache and match.
+		cachedAttrs := CheckDiffAttr(tempDir, "bundle.min.js", "logo.png")
+		if cachedAttrs["bundle.min.js"].Attr != DiffAttrBinary || cachedAttrs["logo.png"].Attr != DiffAttrBinary {
+			t.Errorf("cached result mismatch: %v", cachedAttrs)
+		}
+	})
+}

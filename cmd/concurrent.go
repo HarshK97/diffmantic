@@ -13,14 +13,15 @@ import (
 )
 
 type diffJob struct {
-	displayA string
-	displayB string
-	relPathA string
-	relPathB string
-	srcBytes []byte
-	dstBytes []byte
-	isBinary bool
-	load     func() (srcBytes, dstBytes []byte, err error)
+	displayA  string
+	displayB  string
+	relPathA  string
+	relPathB  string
+	srcBytes  []byte
+	dstBytes  []byte
+	isBinary  bool
+	forceText bool
+	load      func() (srcBytes, dstBytes []byte, err error)
 
 	// Holds the rendered diff until it's this file's turn to print.
 	out       []byte
@@ -83,7 +84,12 @@ func processDiffJob(ctx context.Context, j *diffJob, diffOpts pipeline.DiffOptio
 		return
 	}
 
-	dr, err := pipeline.Run(j.srcBytes, j.dstBytes, j.relPathA, j.relPathB, diffOpts)
+	jobDiffOpts := diffOpts
+	if j.forceText {
+		jobDiffOpts.ForceText = true
+	}
+
+	dr, err := pipeline.Run(j.srcBytes, j.dstBytes, j.relPathA, j.relPathB, jobDiffOpts)
 	if err != nil {
 		j.err = err
 		return
