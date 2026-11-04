@@ -640,6 +640,21 @@ func isStatementOrBranch(n *treesitter.ASTNode, r *rules.Rules) bool {
 	return rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type)
 }
 
+// findActualEnclosingStatement walks strictly up from n's parent to find an
+// enclosing statement or branch, returning nil if n has no enclosing statement.
+func findActualEnclosingStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rules.Get(n.GetLanguage()))
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if isStatementOrBranch(curr, r) {
+			return curr
+		}
+	}
+	return nil
+}
+
 // Treat case clauses as statement blocks because they hold statements directly without curly braces.
 func isStatementBlock(p *treesitter.ASTNode, r *rules.Rules) bool {
 	if p == nil {

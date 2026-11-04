@@ -2268,8 +2268,9 @@ func process() {
 			}
 		})
 
-		t.Run("BoilerplateDemoted", func(t *testing.T) {
-			// Small boilerplate like "err != nil" (score < 6) must be demoted under T=20
+		t.Run("ConditionExtractedIntoVariable", func(t *testing.T) {
+			// Extracting a condition like "err != nil" into a local variable
+			// is recognized as a Move action from the if condition to the variable declaration.
 			src := []byte(`package test
 
 func process() {
@@ -2317,11 +2318,16 @@ func process() {
 				}
 			}
 
-			// 2. Zero Move actions across entire snippet: boilerplate err != nil is demoted to delete+insert
+			// 2. Extracted condition err != nil is preserved as Move into the variable declaration
+			var hasMove bool
 			for _, a := range normalized.Actions() {
-				if a.Type == actions.Move {
-					t.Errorf("expected zero Move actions for boilerplate extraction, found move on %s: %v", a.Node.Type, a)
+				if a.Type == actions.Move && a.Node != nil && r.IsExpression(a.Node.Type) && string(src[a.Node.StartByte:a.Node.EndByte]) == "err != nil" {
+					hasMove = true
+					break
 				}
+			}
+			if !hasMove {
+				t.Error("expected extracted condition err != nil to be preserved as Move, got demoted")
 			}
 		})
 	})

@@ -608,6 +608,9 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		bestCount := 0
 		isWrapper := (r != nil && r.IsWrapper(t1.Type)) || (r == nil && rules.IsWrapper(t1.Type))
 		for _, c := range t1.Children {
+			if isGlueToken(c, r) {
+				continue
+			}
 			if c2, ok := m.Src()[c]; ok &&
 				c2.Parent != nil &&
 				!m.HasDst(c2.Parent) &&
@@ -615,6 +618,9 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				!hasForeignBodyOwner(t1, c2.Parent, m, r) &&
 				!hasForeignHeaderOwner(t1, c2.Parent, m, r) {
 				if hasDisjointAssignmentTargets(t1, c2.Parent, r) {
+					continue
+				}
+				if hasAsymmetricOperatorOperands(t1, c2.Parent, c, m, r) {
 					continue
 				}
 				if isWrapper && hasForeignMappedDescendants(t1, c2.Parent, m) {
@@ -1336,4 +1342,99 @@ func hasSplitStatementDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules
 		return true
 	}
 	return checkSplit(c, t1, m.Dst())
+}
+
+// hasAsymmetricOperatorOperands reports whether t1 and c2Parent are binary or comparison
+// operator expressions where only one side of the operator matches and the other side is
+// unmapped or belongs to a foreign statement.
+func hasAsymmetricOperatorOperands(t1, c2Parent, matchedChild *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c2Parent == nil || matchedChild == nil || m == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(t1.GetLanguage()), rules.Get(c2Parent.GetLanguage()))
+	isExpr := (r != nil && r.IsExpression(t1.Type)) || (r == nil && rules.IsExpression(t1.Type))
+	isStmt := (r != nil && r.IsStatement(t1.Type)) || (r == nil && rules.IsStatement(t1.Type))
+	if !isExpr || isStmt {
+		return false
+	}
+
+	op1 := findOperatorGlue(t1, r)
+	op2 := findOperatorGlue(c2Parent, r)
+	if op1 == nil || op2 == nil {
+		return false
+	}
+
+	cLeft := matchedChild.StartByte < op1.StartByte
+	c2 := m.Src()[matchedChild]
+	c2Left := cLeft
+	if c2 != nil {
+		c2Left = c2.StartByte < op2.StartByte
+	}
+	stmt1 := findActualEnclosingStatement(t1, r)
+	stmt2 := findActualEnclosingStatement(c2Parent, r)
+	isCrossStatement := false
+	if stmt1 != nil && stmt2 != nil {
+		if mapped1, ok := m.Src()[stmt1]; ok && mapped1 != stmt2 {
+			isCrossStatement = true
+		}
+		if mapped2, ok := m.Dst()[stmt2]; ok && mapped2 != stmt1 {
+			isCrossStatement = true
+		}
+	}
+
+	hasOppositeMatch := false
+	for _, ch1 := range t1.Children {
+		if ch1 == op1 || isGlueToken(ch1, r) {
+			continue
+		}
+		if (ch1.StartByte < op1.StartByte) == cLeft {
+			continue // same side
+		}
+		if d2 := m.Src()[ch1]; d2 != nil && c2Parent.Contains(d2) && (d2.StartByte < op2.StartByte) != c2Left {
+			hasOppositeMatch = true
+			break
+		}
+		for _, desc1 := range ch1.Descendants() {
+			if d2 := m.Src()[desc1]; d2 != nil && c2Parent.Contains(d2) && (d2.StartByte < op2.StartByte) != c2Left {
+				hasOppositeMatch = true
+				break
+			}
+		}
+		if hasOppositeMatch {
+			break
+		}
+	}
+
+	if !hasOppositeMatch {
+		if isCrossStatement {
+			return true
+		}
+		for _, ch1 := range t1.Children {
+			if ch1 == op1 || isGlueToken(ch1, r) || (ch1.StartByte < op1.StartByte) == cLeft {
+				continue
+			}
+			if d2 := m.Src()[ch1]; d2 != nil && !c2Parent.Contains(d2) {
+				return true
+			}
+			for _, desc1 := range ch1.Descendants() {
+				if d2 := m.Src()[desc1]; d2 != nil && !c2Parent.Contains(d2) {
+					return true
+				}
+			}
+		}
+		for _, ch2 := range c2Parent.Children {
+			if ch2 == op2 || isGlueToken(ch2, r) || (ch2.StartByte < op2.StartByte) == c2Left {
+				continue
+			}
+			if s1 := m.Dst()[ch2]; s1 != nil && !t1.Contains(s1) {
+				return true
+			}
+			for _, desc2 := range ch2.Descendants() {
+				if s1 := m.Dst()[desc2]; s1 != nil && !t1.Contains(s1) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

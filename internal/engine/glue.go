@@ -83,6 +83,23 @@ func RecoverGlueAnchors(m *Mapping) {
 			if (c1.StartByte < op1.StartByte) != (c2.StartByte < op2.StartByte) {
 				continue
 			}
+			stmt1 := findActualEnclosingStatement(p1, r)
+			stmt2 := findActualEnclosingStatement(p2, r)
+			if stmt1 != nil && stmt2 != nil {
+				isCrossStatement := false
+				if mapped1, ok := m.Src()[stmt1]; ok && mapped1 != stmt2 {
+					isCrossStatement = true
+				}
+				if mapped2, ok := m.Dst()[stmt2]; ok && mapped2 != stmt1 {
+					isCrossStatement = true
+				}
+				if isCrossStatement {
+					// Don't anchor the operator across different statements unless the other operand also matches.
+					if !hasMatchingOppositeOperand(p1, p2, op1, op2, c1.StartByte < op1.StartByte, m, r) {
+						continue
+					}
+				}
+			}
 			if !m.Has(op1) && !m.HasDst(op2) {
 				m.Add(op1, op2)
 			}
@@ -226,7 +243,8 @@ func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *M
 	r = cmp.Or(r, rulesFor(srcParent), rulesFor(dstParent))
 	isStmt := FindEnclosingStatement(srcParent, r) == srcParent && FindEnclosingStatement(dstParent, r) == dstParent
 	parentMatched := isEnclosingContainerMatched(srcParent, dstParent, m, r)
-	if (isStmt || parentMatched) && hasNonGlueChildren(srcParent, r) && Isomorphic(srcParent, dstParent) {
+	sameScope := isSameScopeDeclaration(srcParent, dstParent, m, r)
+	if (isStmt || parentMatched || sameScope) && hasNonGlueChildren(srcParent, r) && Isomorphic(srcParent, dstParent) {
 		return true
 	}
 	var nonGlueTotal, nonGlueMatched int
@@ -242,7 +260,7 @@ func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *M
 			nonGlueMatched++
 		}
 	}
-	if !isStmt && !parentMatched {
+	if !isStmt && !parentMatched && !sameScope {
 		return false
 	}
 	var dstNonGlueTotal int
@@ -252,6 +270,16 @@ func hasMatchedDirectNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *M
 		}
 	}
 	return nonGlueTotal > 0 && nonGlueMatched == nonGlueTotal && dstNonGlueTotal == nonGlueTotal
+}
+
+// isSameScopeDeclaration reports whether src and dst belong to the same enclosing mapped declaration.
+func isSameScopeDeclaration(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || m == nil {
+		return false
+	}
+	srcDecl := getEnclosingScopeDeclaration(src, r)
+	dstDecl := getEnclosingScopeDeclaration(dst, r)
+	return srcDecl != nil && dstDecl != nil && m.Src()[srcDecl] == dstDecl
 }
 
 // isEnclosingContainerMatched reports whether src and dst have effective parents
@@ -505,6 +533,32 @@ func isSiblingGlueBound(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rules
 		prevDst := dst.Parent.Children[dstIdx-1]
 		if !isGlueToken(prevSrc, r) && m.Src()[prevSrc] == prevDst {
 			return true
+		}
+	}
+	return false
+}
+
+// hasMatchingOppositeOperand checks whether an operator container has mapped
+// descendants on the opposite side of the operator from c1.
+func hasMatchingOppositeOperand(p1, p2, op1, op2 *treesitter.ASTNode, c1Left bool, m *Mapping, r *rules.Rules) bool {
+	if p1 == nil || p2 == nil || op1 == nil || op2 == nil || m == nil {
+		return false
+	}
+	for _, ch1 := range p1.Children {
+		if ch1 == op1 || isGlueToken(ch1, r) {
+			continue
+		}
+		if (ch1.StartByte < op1.StartByte) == c1Left {
+			continue // same side as c1
+		}
+		// ch1 is on the opposite side of op1
+		if d2 := m.Src()[ch1]; d2 != nil && p2.Contains(d2) && (d2.StartByte < op2.StartByte) != c1Left {
+			return true
+		}
+		for _, desc1 := range ch1.Descendants() {
+			if d2 := m.Src()[desc1]; d2 != nil && p2.Contains(d2) && (d2.StartByte < op2.StartByte) != c1Left {
+				return true
+			}
 		}
 	}
 	return false
