@@ -126,3 +126,14 @@ func FormatRange(start, count int) string {
 func FormatHunkHeader(srcStart, srcCount, dstStart, dstCount int, extra string) string {
 	return fmt.Sprintf("@@ -%s +%s @@%s", FormatRange(srcStart, srcCount), FormatRange(dstStart, dstCount), extra)
 }
+
+// MaxVisibleLine returns the highest 1-indexed line number visible across the hunks, or 0 if empty.
+func MaxVisibleLine(hunks []Interval, pairs []serialize.LineAlignmentPair) int {
+	maxLine := 0
+	for _, h := range hunks {
+		for p := h.Start; p <= h.End && p < len(pairs); p++ {
+			maxLine = max(maxLine, pairs[p].LeftLine+1, pairs[p].RightLine+1)
+		}
+	}
+	return maxLine
+}

@@ -167,8 +167,8 @@ func Render(srcFile, dstFile string, srcBytes, dstBytes []byte, env *serialize.E
 
 	var slicer renderutil.Slicer
 
-	maxLine := max(len(srcLines), len(dstLines))
-	numWidth := max(3, len(strconv.Itoa(maxLine)))
+	maxLine := cmp.Or(renderutil.MaxVisibleLine(hunks, filteredPairs), max(len(srcLines), len(dstLines)))
+	numWidth := max(1, len(strconv.Itoa(maxLine)))
 
 	wrapActive := opts.Wrap && opts.TerminalWidth > 0
 	targetWidth := 0

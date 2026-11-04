@@ -2,6 +2,7 @@ package sidebyside
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -628,9 +629,12 @@ func TestRender_WrappingAndContinuationGutter(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Must contain continuation gutter ".."
-	if !strings.Contains(out, "..") {
-		t.Errorf("expected continuation gutter '..' in wrapped output:\n%s", out)
+	// Wrapped row should indent with plain spaces instead of dots
+	if !strings.Contains(out, "  idthAndMustWrapCleanly") {
+		t.Errorf("expected wrapped continuation line with space gutter in output:\n%s", out)
+	}
+	if strings.Contains(out, "..") {
+		t.Errorf("expected no dots in continuation gutter, got:\n%s", out)
 	}
 }
 
@@ -691,8 +695,8 @@ func TestRender_AdaptiveHybridLayout_MonolithicInsert(t *testing.T) {
 
 	out := buf.String()
 	// Pure addition hunk should render single-column without central divider
-	if !strings.Contains(out, " ..   7 func NewBigFunction() error {") {
-		t.Errorf("expected inserted function in single-column output with ' ..   7':\n%s", out)
+	if !strings.Contains(out, "    7 func NewBigFunction() error {") {
+		t.Errorf("expected inserted function in single-column output with '    7', got:\n%s", out)
 	}
 }
 
@@ -794,8 +798,8 @@ func TestRender_Hybrid_PureAdditionHunk(t *testing.T) {
 	if !strings.Contains(out, "@@") {
 		t.Errorf("expected hunk header '@@', got:\n%s", out)
 	}
-	if !strings.Contains(out, " ..   7 func B() {") {
-		t.Errorf("expected ' ..   7 func B() {', got:\n%s", out)
+	if !strings.Contains(out, "    7 func B() {") {
+		t.Errorf("expected '    7 func B() {', got:\n%s", out)
 	}
 }
 
@@ -827,8 +831,8 @@ func TestRender_Hybrid_PureDeletionHunk(t *testing.T) {
 	if !strings.Contains(out, "@@") {
 		t.Errorf("expected hunk header '@@', got:\n%s", out)
 	}
-	if !strings.Contains(out, "  7  .. func B() {") {
-		t.Errorf("expected '  7  .. func B() {', got:\n%s", out)
+	if !strings.Contains(out, " 7    func B() {") {
+		t.Errorf("expected ' 7    func B() {', got:\n%s", out)
 	}
 }
 
@@ -926,8 +930,8 @@ func TestRender_Hybrid_WholeFileAddition(t *testing.T) {
 	if !strings.Contains(out, "@@ -0,0 +1,6 @@") {
 		t.Errorf("expected hunk header '@@ -0,0 +1,6 @@', got:\n%s", out)
 	}
-	if !strings.Contains(out, "  3 func New() {") {
-		t.Errorf("expected single line number gutter '  3 func New() {', got:\n%s", out)
+	if !strings.Contains(out, "3 func New() {") {
+		t.Errorf("expected single line number gutter '3 func New() {', got:\n%s", out)
 	}
 }
 
@@ -959,8 +963,8 @@ func TestRender_Hybrid_WholeFileDeletion(t *testing.T) {
 	if !strings.Contains(out, "@@ -1,6 +0,0 @@") {
 		t.Errorf("expected hunk header '@@ -1,6 +0,0 @@', got:\n%s", out)
 	}
-	if !strings.Contains(out, "  3 func Old() {") {
-		t.Errorf("expected single line number gutter '  3 func Old() {', got:\n%s", out)
+	if !strings.Contains(out, "3 func Old() {") {
+		t.Errorf("expected single line number gutter '3 func Old() {', got:\n%s", out)
 	}
 }
 
@@ -1287,9 +1291,9 @@ func TestRender_Hybrid_SingleColumn_AlignedModificationGutter(t *testing.T) {
 		}
 		out := buf.String()
 
-		// Line 4 was modified in place, so the gutter should keep both line numbers (' 4   4') rather than dropping the left side to ' ..   4'.
-		if !strings.Contains(out, " 4   4") || strings.Contains(out, " ..   4") {
-			t.Errorf("expected aligned line 4 to display both left and right line numbers ' 4   4', got:\n%s", out)
+		// Line 4 was modified in place, so the gutter should keep both line numbers ('4 4') rather than dropping the left side.
+		if !strings.Contains(out, "4 4") {
+			t.Errorf("expected aligned line 4 to display both left and right line numbers '4 4', got:\n%s", out)
 		}
 	})
 
@@ -1338,21 +1342,180 @@ func check(x int) bool {
 		out := buf.String()
 
 		// Enclosing function header and surrounding statements should stay aligned as context lines.
-		if !strings.Contains(out, "  4   4     if x < 0 {") {
+		if !strings.Contains(out, "4 4     if x < 0 {") {
 			t.Errorf("expected context line 4 to be present, got:\n%s", out)
 		}
-		if !strings.Contains(out, "  5   5         return false") {
+		if !strings.Contains(out, "5 5         return false") {
 			t.Errorf("expected context line 5 to be present, got:\n%s", out)
 		}
-		if !strings.Contains(out, "  6   6     }") {
+		if !strings.Contains(out, "6 6     }") {
 			t.Errorf("expected context line 6 to be present, got:\n%s", out)
 		}
-		// The modified call on line 7 should show '  7   7' in the gutter, not ' ..   7'.
-		if !strings.Contains(out, "  7   7     return helper(x, false)") {
-			t.Errorf("expected aligned modified line to display '  7   7     return helper(x, false)', got:\n%s", out)
+		// The modified call on line 7 should show '7 7' in the gutter.
+		if !strings.Contains(out, "7 7     return helper(x, false)") {
+			t.Errorf("expected aligned modified line to display '7 7     return helper(x, false)', got:\n%s", out)
 		}
-		if strings.Contains(out, " ..   7") {
-			t.Errorf("expected left line number not to be replaced by '..', got:\n%s", out)
+	})
+}
+
+func TestRender_MaxVisibleLine_GutterWidth(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// 150 lines total, but only lines 10..15 are in the displayed hunk.
+		// numWidth must be 2, not 3.
+		var srcLines, dstLines []string
+		for i := 0; i < 150; i++ {
+			srcLines = append(srcLines, fmt.Sprintf("line %d", i+1))
+			if i == 12 {
+				dstLines = append(dstLines, "modified line 13")
+			} else {
+				dstLines = append(dstLines, fmt.Sprintf("line %d", i+1))
+			}
+		}
+		src := []byte(strings.Join(srcLines, "\n") + "\n")
+		dst := []byte(strings.Join(dstLines, "\n") + "\n")
+
+		var pairs []serialize.LineAlignmentPair
+		for i := 0; i < 150; i++ {
+			pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: i})
+		}
+
+		env := &serialize.Envelope{
+			LineAlignment: pairs,
+			RightHighlights: []serialize.HighlightSpan{
+				{Line: 12, StartCol: 0, EndCol: 16, Action: "update"},
+			},
+		}
+
+		opts := RenderOptions{
+			Color:         false,
+			LineNumbers:   true,
+			ContextLines:  3,
+			TerminalWidth: 100,
+		}
+
+		var buf bytes.Buffer
+		if err := Render("test.txt", "test.txt", src, dst, env, opts, &buf); err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		out := buf.String()
+
+		// Max visible line in this hunk is 16 (12 + 1 + 3 context lines).
+		// Line 13 must format with 2 digits ("13 13"), NOT 3 digits (" 13  13" or "  13").
+		if !strings.Contains(out, "13 13") {
+			t.Errorf("expected 2-digit gutter '13 13' without 3-digit padding, got:\n%s", out)
+		}
+		if strings.Contains(out, " 13  13") || strings.Contains(out, "  13") {
+			t.Errorf("expected no leading space padding before 2-digit line numbers, got:\n%s", out)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		// Build a 110-line file where only line 14 is modified. The max visible line
+		// in the hunk is under 20, so the gutter should size to 2 digits ("14 14")
+		// rather than padding to 3 digits (" 14  14") based on total file length.
+		var srcBuilder, dstBuilder strings.Builder
+		header := `package main
+
+import "fmt"
+
+func processRecord(id int, active bool) error {
+	prefix := "REC"
+	if id < 0 {
+		return fmt.Errorf("negative id: %d", id)
+	}
+	tag := fmt.Sprintf("%s-%d", prefix, id)
+	if !active {
+		return nil
+	}
+	result := calculate(tag, 100)
+	fmt.Println(result)
+	return nil
+}
+`
+		headerDst := `package main
+
+import "fmt"
+
+func processRecord(id int, active bool) error {
+	prefix := "REC"
+	if id < 0 {
+		return fmt.Errorf("negative id: %d", id)
+	}
+	tag := fmt.Sprintf("%s-%d", prefix, id)
+	if !active {
+		return nil
+	}
+	result := calculate(tag, 200)
+	fmt.Println(result)
+	return nil
+}
+`
+		srcBuilder.WriteString(header)
+		dstBuilder.WriteString(headerDst)
+
+		// Append 90 trailing lines so total file lines > 100 (3 digits).
+		for i := 1; i <= 90; i++ {
+			decl := fmt.Sprintf("\nvar TrailingGlobal%d = %d\n", i, i)
+			srcBuilder.WriteString(decl)
+			dstBuilder.WriteString(decl)
+		}
+
+		src := []byte(srcBuilder.String())
+		dst := []byte(dstBuilder.String())
+
+		dr, err := pipeline.Run(src, dst, "record.go", "record.go", pipeline.DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeActions:    true,
+				IncludeAlignment:  true,
+				IncludeHighlights: true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("pipeline.Run failed: %v", err)
+		}
+
+		opts := RenderOptions{
+			Color:         false,
+			LineNumbers:   true,
+			ContextLines:  3,
+			TerminalWidth: 100,
+		}
+
+		var buf bytes.Buffer
+		if err := Render("record.go", "record.go", src, dst, dr.Envelope, opts, &buf); err != nil {
+			t.Fatalf("Render failed: %v", err)
+		}
+		out := buf.String()
+
+		// Verify Whole-Snippet:
+		// 1. Preceding context lines remain mapped with 2-digit gutters.
+		if !strings.Contains(out, "11     if !active {") {
+			t.Errorf("expected preceding context line 11 to be present with 2-digit gutter, got:\n%s", out)
+		}
+		if !strings.Contains(out, "12         return nil") {
+			t.Errorf("expected preceding context line 12 to be present with 2-digit gutter, got:\n%s", out)
+		}
+		if !strings.Contains(out, "13     }") {
+			t.Errorf("expected preceding context line 13 to be present with 2-digit gutter, got:\n%s", out)
+		}
+		// 2. Dual-column SBS lines: modified statement on line 14 displays '14     result := calculate(tag, ...)'.
+		if !strings.Contains(out, "14     result := calculate(tag, 100)") || !strings.Contains(out, "14     result := calculate(tag, 200)") {
+			t.Errorf("expected modified line 14 to display both left and right columns with 2-digit gutters, got:\n%s", out)
+		}
+		// 3. Succeeding context lines remain mapped.
+		if !strings.Contains(out, "15     fmt.Println(result)") {
+			t.Errorf("expected succeeding context line 15 to be present with 2-digit gutter, got:\n%s", out)
+		}
+		if !strings.Contains(out, "16     return nil") {
+			t.Errorf("expected succeeding context line 16 to be present with 2-digit gutter, got:\n%s", out)
+		}
+		// 4. Verify no 3-digit padding leaked from the 110-line file length.
+		// In a 2-digit gutter, line 14 starts with "14 ", not " 14 ".
+		lines := strings.Split(out, "\n")
+		for _, l := range lines {
+			if strings.HasPrefix(l, " 14 ") || strings.HasPrefix(l, "  14") {
+				t.Errorf("expected 2-digit gutter without 3-digit padding, got line: %q", l)
+			}
 		}
 	})
 }

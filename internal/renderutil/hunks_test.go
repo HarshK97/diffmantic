@@ -177,3 +177,34 @@ func TestFormatHunkHeader(t *testing.T) {
 		t.Errorf("FormatHunkHeader = %q, want %q", header, want)
 	}
 }
+
+func TestMaxVisibleLine(t *testing.T) {
+	t.Run("EmptyHunksOrPairs", func(t *testing.T) {
+		if got := MaxVisibleLine(nil, nil); got != 0 {
+			t.Errorf("expected 0 for nil input, got %d", got)
+		}
+	})
+
+	t.Run("ExtractsMaxAcrossHunks", func(t *testing.T) {
+		pairs := []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: 1},
+			{LeftLine: 2, RightLine: 2},
+			{LeftLine: 3, RightLine: 3},
+			{LeftLine: 4, RightLine: -1},
+			{LeftLine: -1, RightLine: 4},
+			{LeftLine: 50, RightLine: 52},
+		}
+		// Hunk 1 covers pairs 0..2 (max line 3)
+		hunk1 := []Interval{{Start: 0, End: 2}}
+		if got := MaxVisibleLine(hunk1, pairs); got != 3 {
+			t.Errorf("expected max visible line 3, got %d", got)
+		}
+
+		// Hunk 2 covers pairs 6..6 (max line 53)
+		hunk2 := []Interval{{Start: 0, End: 2}, {Start: 6, End: 6}}
+		if got := MaxVisibleLine(hunk2, pairs); got != 53 {
+			t.Errorf("expected max visible line 53, got %d", got)
+		}
+	})
+}
