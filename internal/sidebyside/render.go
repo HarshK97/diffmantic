@@ -137,9 +137,9 @@ func Render(
 	}
 	separatorWidth := 2 // "  "
 	availableWidth := max(20, termWidth-gutterWidth-separatorWidth)
-	codeWidth := availableWidth / 2
+	maxCodeWidth := availableWidth / 2
 
-	if !opts.ForceSideBySide && (termWidth < 80 || codeWidth < 30) {
+	if !opts.ForceSideBySide && (termWidth < 80 || maxCodeWidth < 30) {
 		unifiedOpts := unified.RenderOptions{
 			Color:              opts.Color,
 			ContextLines:       opts.ContextLines,
@@ -151,10 +151,6 @@ func Render(
 		output := unified.Render(srcFile, dstFile, srcBytes, dstBytes, env, unifiedOpts)
 		_, err := io.WriteString(w, output)
 		return err
-	}
-
-	if codeWidth < 10 {
-		codeWidth = 10
 	}
 
 	srcOffsets := serialize.BuildLineIndex(srcBytes)
@@ -178,6 +174,26 @@ func Render(
 		dstLineBadges = badges.DstLineBadges
 		srcLineBadgeColors = badges.SrcLineBadgeColors
 		dstLineBadgeColors = badges.DstLineBadgeColors
+	}
+
+	codeWidth := maxCodeWidth
+	if len(hunks) > 0 {
+		maxVisibleLineWidth := renderutil.MaxVisibleLineDisplayWidth(
+			hunks,
+			filteredPairs,
+			srcLines,
+			dstLines,
+			srcLineBadges,
+			dstLineBadges,
+			opts.TabWidth,
+		)
+		// Cap column width on wide displays so short lines don't leave giant voids between panes.
+		desiredWidth := max(35, maxVisibleLineWidth+2)
+		codeWidth = min(maxCodeWidth, desiredWidth)
+	}
+
+	if codeWidth < 10 {
+		codeWidth = 10
 	}
 
 	scratch := &RenderScratch{TabWidth: opts.TabWidth}

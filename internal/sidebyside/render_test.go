@@ -1519,3 +1519,66 @@ func processRecord(id int, active bool) error {
 		}
 	})
 }
+
+func TestRender_DynamicColumnCapping(t *testing.T) {
+	// Test on an ultrawide terminal width (160 columns) with short code lines (max 18 chars).
+	// Without dynamic column capping, codeWidth = (160 - 8 - 2) / 2 = 75, leaving 57 spaces
+	// of padding on the left pane.
+	// With dynamic column capping, desiredWidth = max(35, 18 + 2) = 35.
+	// codeWidth = min(75, 35) = 35.
+	src := []byte("a := 1\nb := 2\n")
+	dst := []byte("a := 1\nb := 99\n")
+
+	env := &serialize.Envelope{
+		LineAlignment: []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: 1},
+		},
+		Actions: []serialize.Action{
+			{Action: "update", Node: &serialize.NodeRef{Tree: "before", StartByte: 12, EndByte: 13}},
+		},
+	}
+
+	opts := RenderOptions{
+		Color:         false,
+		LineNumbers:   true,
+		ContextLines:  3,
+		TerminalWidth: 160,
+	}
+
+	var buf bytes.Buffer
+	if err := Render("test.go", "test.go", src, dst, env, opts, &buf); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	out := buf.String()
+
+	var codeLine string
+	for l := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
+		if strings.Contains(l, "b := 2") {
+			codeLine = l
+			break
+		}
+	}
+	if codeLine == "" {
+		t.Fatalf("expected to find line with 'b := 2', got:\n%s", out)
+	}
+
+	// Expected structure of the line:
+	// Left gutter: "2 " (width 2)
+	// Left column: "b := 2" + 29 spaces (total width codeWidth = 35)
+	// Separator: "  " (width 2)
+	// Right gutter: "2 " (width 2)
+	// Right column: "b := 99" + 28 spaces (total width codeWidth = 35)
+	// Total line length is 2 + 35 + 2 + 2 + 35 = 76.
+	// If uncapped (codeWidth = 75), total line length would be 2 + 75 + 2 + 2 + 75 = 156.
+	wantLen := 2 + 35 + 2 + 2 + 35
+	if len(codeLine) != wantLen {
+		t.Errorf("expected line length %d with capped codeWidth 35, got %d (line: %q)", wantLen, len(codeLine), codeLine)
+	}
+	if codeLine[2+35:2+35+2] != "  " {
+		t.Errorf("expected column separator '  ' at offset 37, got %q", codeLine[2+35:2+35+2])
+	}
+	if codeLine[2+35+2:2+35+2+2] != "2 " {
+		t.Errorf("expected right gutter '2 ' at offset 39, got %q", codeLine[2+35+2:2+35+2+2])
+	}
+}

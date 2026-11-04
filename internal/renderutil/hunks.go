@@ -3,8 +3,10 @@ package renderutil
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/mattn/go-runewidth"
 )
 
 // Interval represents an inclusive index range [Start, End].
@@ -136,4 +138,54 @@ func MaxVisibleLine(hunks []Interval, pairs []serialize.LineAlignmentPair) int {
 		}
 	}
 	return maxLine
+}
+
+// LineDisplayWidth returns the column width of text in the terminal,
+// expanding tabs and accounting for wide characters.
+func LineDisplayWidth(text string, tabWidth int) int {
+	if tabWidth <= 0 {
+		tabWidth = 4
+	}
+	text = strings.TrimRight(text, "\r\n")
+	col := 0
+	for _, r := range text {
+		if r == '\t' {
+			col += tabWidth - (col % tabWidth)
+		} else {
+			col += max(1, runewidth.RuneWidth(r))
+		}
+	}
+	return col
+}
+
+// MaxVisibleLineDisplayWidth returns the widest display width among source
+// and destination lines across all visible hunks, including move badges.
+func MaxVisibleLineDisplayWidth(
+	hunks []Interval,
+	pairs []serialize.LineAlignmentPair,
+	srcLines, dstLines []string,
+	srcBadges, dstBadges map[int]string,
+	tabWidth int,
+) int {
+	maxCol := 0
+	for _, h := range hunks {
+		for p := max(0, h.Start); p <= h.End && p < len(pairs); p++ {
+			pair := pairs[p]
+			if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+				w := LineDisplayWidth(srcLines[pair.LeftLine], tabWidth)
+				if srcBadges != nil && srcBadges[pair.LeftLine] != "" {
+					w += runewidth.StringWidth(srcBadges[pair.LeftLine])
+				}
+				maxCol = max(maxCol, w)
+			}
+			if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+				w := LineDisplayWidth(dstLines[pair.RightLine], tabWidth)
+				if dstBadges != nil && dstBadges[pair.RightLine] != "" {
+					w += runewidth.StringWidth(dstBadges[pair.RightLine])
+				}
+				maxCol = max(maxCol, w)
+			}
+		}
+	}
+	return maxCol
 }
