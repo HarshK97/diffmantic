@@ -208,3 +208,126 @@ func TestMaxVisibleLine(t *testing.T) {
 		}
 	})
 }
+
+func TestLineDisplayWidth(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		tabWidth int
+		want     int
+	}{
+		{
+			name:     "ASCII plain text",
+			text:     "func A() int {",
+			tabWidth: 4,
+			want:     14,
+		},
+		{
+			name:     "Leading tab with tabWidth 4",
+			text:     "\treturn 1",
+			tabWidth: 4,
+			want:     12, // 4 spaces + 8 chars
+		},
+		{
+			name:     "Multiple tabs with tabWidth 8",
+			text:     "\ta\tb",
+			tabWidth: 8,
+			want:     17, // 8 (tab 1) + 1 ('a') + 7 (tab 2 to col 16) + 1 ('b') = 17
+		},
+		{
+			name:     "Full-width CJK characters",
+			text:     "你好世界",
+			tabWidth: 4,
+			want:     8, // 4 runes * 2 width = 8
+		},
+		{
+			name:     "Trailing CRLF stripped",
+			text:     "val = 42\r\n",
+			tabWidth: 4,
+			want:     8,
+		},
+		{
+			name:     "Negative or zero tabWidth defaults to 4",
+			text:     "\tx",
+			tabWidth: 0,
+			want:     5, // 4 spaces + 1
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LineDisplayWidth(tt.text, tt.tabWidth)
+			if got != tt.want {
+				t.Errorf("LineDisplayWidth(%q, %d) = %d, want %d", tt.text, tt.tabWidth, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaxVisibleLineDisplayWidth(t *testing.T) {
+	t.Run("EmptyHunksOrPairs", func(t *testing.T) {
+		if got := MaxVisibleLineDisplayWidth(nil, nil, nil, nil, nil, nil, 4); got != 0 {
+			t.Errorf("expected 0 for empty input, got %d", got)
+		}
+	})
+
+	t.Run("InspectsVisibleHunksOnly", func(t *testing.T) {
+		srcLines := []string{
+			"short", // line 0 (width 5)
+			"very long line in file that is outside hunk", // line 1 (width 43)
+			"medium line", // line 2 (width 11)
+		}
+		dstLines := []string{
+			"short new", // line 0 (width 9)
+			"very long line in file that is outside hunk", // line 1 (width 43)
+			"medium line modified",                        // line 2 (width 20)
+		}
+		pairs := []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+			{LeftLine: 1, RightLine: 1},
+			{LeftLine: 2, RightLine: 2},
+		}
+
+		// Hunk only covers pair 0: max width is max(5, 9) = 9
+		hunk0 := []Interval{{Start: 0, End: 0}}
+		if got := MaxVisibleLineDisplayWidth(hunk0, pairs, srcLines, dstLines, nil, nil, 4); got != 9 {
+			t.Errorf("expected max width 9, got %d", got)
+		}
+
+		// Hunk covers pairs 0 and 2: max width is max(5, 9, 11, 20) = 20
+		hunk0And2 := []Interval{{Start: 0, End: 0}, {Start: 2, End: 2}}
+		if got := MaxVisibleLineDisplayWidth(hunk0And2, pairs, srcLines, dstLines, nil, nil, 4); got != 20 {
+			t.Errorf("expected max width 20, got %d", got)
+		}
+	})
+
+	t.Run("IncludesBadgeWidth", func(t *testing.T) {
+		srcLines := []string{"stmt := 1"} // width 9
+		dstLines := []string{"stmt := 1"} // width 9
+		pairs := []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+		}
+		hunks := []Interval{{Start: 0, End: 0}}
+
+		srcBadges := map[int]string{0: " ➔ L40"} // width 6
+		dstBadges := map[int]string{0: " ↳ L10"} // width 6
+
+		got := MaxVisibleLineDisplayWidth(hunks, pairs, srcLines, dstLines, srcBadges, dstBadges, 4)
+		// 9 + 6 = 15
+		if got != 15 {
+			t.Errorf("expected max width 15 with badge, got %d", got)
+		}
+	})
+
+	t.Run("NegativeHunkStartDoesNotPanic", func(t *testing.T) {
+		srcLines := []string{"foo"}
+		dstLines := []string{"bar"}
+		pairs := []serialize.LineAlignmentPair{
+			{LeftLine: 0, RightLine: 0},
+		}
+		negativeHunk := []Interval{{Start: -5, End: 0}}
+		if got := MaxVisibleLineDisplayWidth(negativeHunk, pairs, srcLines, dstLines, nil, nil, 4); got != 3 {
+			t.Errorf("expected max width 3, got %d", got)
+		}
+	})
+}
