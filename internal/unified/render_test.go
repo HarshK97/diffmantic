@@ -139,13 +139,13 @@ func TestRender_LineNumbersGutter(t *testing.T) {
 
 	got := Render("old.go", "new.go", src, dst, dr.Envelope, RenderOptions{Color: false, ContextLines: 3, LineNumbers: true})
 
-	if !strings.Contains(got, "  4      -    println(\"hello\")") {
+	if !strings.Contains(got, "4    -    println(\"hello\")") {
 		t.Errorf("expected source line number 4 with '-' prefix in gutter, got:\n%s", got)
 	}
-	if !strings.Contains(got, "      4  +    println(\"world\")") {
+	if !strings.Contains(got, "  4  +    println(\"world\")") {
 		t.Errorf("expected destination line number 4 with '+' prefix in gutter, got:\n%s", got)
 	}
-	if !strings.Contains(got, "  1   1   package main") {
+	if !strings.Contains(got, "1 1   package main") {
 		t.Errorf("expected context line numbers 1 1 with space prefix in gutter, got:\n%s", got)
 	}
 }
@@ -656,7 +656,7 @@ func TestRender_LineWrapping_ContinuationGutter(t *testing.T) {
 	lines := strings.Split(got, "\n")
 	hasContinuationLine := false
 	for _, l := range lines {
-		if strings.HasPrefix(l, "          ") && len(strings.TrimSpace(l)) > 0 && !strings.Contains(l, "func") && !strings.Contains(l, "package") {
+		if strings.HasPrefix(l, "      ") && len(strings.TrimSpace(l)) > 0 && !strings.Contains(l, "func") && !strings.Contains(l, "package") {
 			hasContinuationLine = true
 		}
 	}
@@ -691,14 +691,14 @@ func TestRender_LineWrapping_ColorMode(t *testing.T) {
 
 	lines := strings.Split(got, "\n")
 	// Continuation rows shouldn't have color codes in the gutter - it should be plain spaces.
-	// With ~5 lines, numWidth is 3, so the gutter is 9 chars wide in color mode.
-	const contGutterWidth = 9
+	// With 5 lines (maxVisibleLine = 5), numWidth is 1, so the gutter is 5 chars wide in color mode (2*1 + 3).
+	const contGutterWidth = 5
 	for _, l := range lines {
 		if len(strings.TrimSpace(l)) == 0 {
 			continue
 		}
 		// If the gutter's empty (no digits), it's a continuation row.
-		if len(l) >= contGutterWidth && strings.HasPrefix(l, "   ") && !strings.Contains(l[:contGutterWidth], "1") && !strings.Contains(l[:contGutterWidth], "2") && !strings.Contains(l[:contGutterWidth], "3") {
+		if len(l) >= contGutterWidth && strings.HasPrefix(l, " ") && !strings.Contains(l[:contGutterWidth], "1") && !strings.Contains(l[:contGutterWidth], "2") && !strings.Contains(l[:contGutterWidth], "3") {
 			gutterRaw := l[:contGutterWidth]
 			if strings.Contains(gutterRaw, "\x1b[") {
 				t.Errorf("continuation gutter leaked ANSI escape into line-number area: %q", l)

@@ -1,6 +1,7 @@
 package sidebyside
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -81,8 +82,6 @@ func Render(
 	}
 
 	filteredPairs := env.LineAlignment
-	maxLineNum := max(len(srcLines), len(dstLines))
-	numWidth := max(3, len(strconv.Itoa(maxLineNum)))
 
 	leftSpansByLine := make(map[int][]serialize.HighlightSpan, len(env.LeftHighlights))
 	for _, sp := range env.LeftHighlights {
@@ -122,6 +121,16 @@ func Render(
 		}
 	}
 
+	changeIntervals := renderutil.BuildChangeIntervals(isPairChanged)
+	contextLines := opts.ContextLines
+	if contextLines < 0 {
+		contextLines = len(filteredPairs)
+	}
+	hunks := renderutil.MergeHunks(changeIntervals, len(filteredPairs), contextLines)
+
+	maxLineNum := cmp.Or(renderutil.MaxVisibleLine(hunks, filteredPairs), max(len(srcLines), len(dstLines)))
+	numWidth := max(1, len(strconv.Itoa(maxLineNum)))
+
 	gutterWidth := 0
 	if opts.LineNumbers {
 		gutterWidth = (numWidth + 1) * 2 // left gutter + right gutter
@@ -147,13 +156,6 @@ func Render(
 	if codeWidth < 10 {
 		codeWidth = 10
 	}
-
-	changeIntervals := renderutil.BuildChangeIntervals(isPairChanged)
-	contextLines := opts.ContextLines
-	if contextLines < 0 {
-		contextLines = len(filteredPairs)
-	}
-	hunks := renderutil.MergeHunks(changeIntervals, len(filteredPairs), contextLines)
 
 	srcOffsets := serialize.BuildLineIndex(srcBytes)
 	dstOffsets := serialize.BuildLineIndex(dstBytes)
@@ -273,7 +275,7 @@ func renderSideBySideHunk(
 				if subRow == 0 && pair.LeftLine >= 0 {
 					renderGutter(w, pair.LeftLine, numWidth, opts.Color, pair.RightLine == -1, false)
 				} else {
-					renderContinuationGutter(w, numWidth, opts.Color)
+					renderContinuationGutter(w, numWidth)
 				}
 			}
 
@@ -289,7 +291,7 @@ func renderSideBySideHunk(
 				if subRow == 0 && pair.RightLine >= 0 {
 					renderGutter(w, pair.RightLine, numWidth, opts.Color, false, pair.LeftLine == -1)
 				} else {
-					renderContinuationGutter(w, numWidth, opts.Color)
+					renderContinuationGutter(w, numWidth)
 				}
 			}
 
@@ -407,9 +409,9 @@ func renderSingleColumnHunk(
 		for subRow, chunk := range chunks {
 			if opts.LineNumbers {
 				if subRow == 0 {
-					renderSingleColumnDoubleGutter(w, leftLineNum, rightLineNum, numWidth, lastSrcLineIdx, lastDstLineIdx, opts.Color, action)
+					renderSingleColumnDoubleGutter(w, leftLineNum, rightLineNum, numWidth, opts.Color, action)
 				} else {
-					renderSingleColumnContinuationGutter(w, leftLineNum >= 0, rightLineNum >= 0, numWidth, opts.Color)
+					renderSingleColumnContinuationGutter(w, numWidth)
 				}
 			} else {
 				if subRow == 0 {
@@ -461,23 +463,18 @@ func renderSingleColumnHunk(
 func renderSingleColumnDoubleGutter(
 	w io.Writer,
 	leftLine, rightLine, numWidth int,
-	lastSrcLineIdx, lastDstLineIdx int,
 	colorMode bool,
 	action color.ActionKind,
 ) {
 	var leftStr string
 	if leftLine >= 0 {
 		leftStr = strconv.Itoa(leftLine + 1)
-	} else if lastSrcLineIdx >= 0 {
-		leftStr = ".."
 	}
 	leftPad := fmt.Sprintf("%*s ", numWidth, leftStr)
 
 	var rightStr string
 	if rightLine >= 0 {
 		rightStr = strconv.Itoa(rightLine + 1)
-	} else if lastDstLineIdx >= 0 {
-		rightStr = ".."
 	}
 	rightPad := fmt.Sprintf("%*s ", numWidth, rightStr)
 
@@ -500,29 +497,9 @@ func renderSingleColumnDoubleGutter(
 	}
 }
 
-func renderSingleColumnContinuationGutter(
-	w io.Writer,
-	hasLeft, hasRight bool,
-	numWidth int,
-	colorMode bool,
-) {
-	var leftStr, rightStr string
-	if hasLeft {
-		leftStr = ".."
-	}
-	if hasRight {
-		rightStr = ".."
-	}
-	leftPad := fmt.Sprintf("%*s ", numWidth, leftStr)
-	rightPad := fmt.Sprintf("%*s ", numWidth, rightStr)
-
-	if !colorMode {
-		_, _ = io.WriteString(w, leftPad)
-		_, _ = io.WriteString(w, rightPad)
-		return
-	}
-
-	_, _ = fmt.Fprintf(w, "%s%s%s%s%s%s", color.OverlayFg, leftPad, color.Reset, color.OverlayFg, rightPad, color.Reset)
+func renderSingleColumnContinuationGutter(w io.Writer, numWidth int) {
+	pad := strings.Repeat(" ", (numWidth+1)*2)
+	_, _ = io.WriteString(w, pad)
 }
 
 func renderWholeFileSingleColumn(
@@ -589,12 +566,8 @@ func renderWholeFileSingleColumn(
 						_, _ = io.WriteString(w, pad)
 					}
 				} else {
-					pad := fmt.Sprintf("%*s ", numWidth, "..")
-					if opts.Color {
-						_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, pad, color.Reset)
-					} else {
-						_, _ = io.WriteString(w, pad)
-					}
+					pad := strings.Repeat(" ", numWidth+1)
+					_, _ = io.WriteString(w, pad)
 				}
 			} else {
 				if subRow == 0 {
@@ -668,13 +641,9 @@ func renderGutter(w io.Writer, lineNum, numWidth int, colorMode, isDelete, isIns
 	_, _ = fmt.Fprintf(w, "%s%s%s%s", bold, fg, pad, color.Reset)
 }
 
-func renderContinuationGutter(w io.Writer, numWidth int, colorMode bool) {
-	dots := fmt.Sprintf("%*s ", numWidth, "..")
-	if !colorMode {
-		_, _ = io.WriteString(w, dots)
-		return
-	}
-	_, _ = fmt.Fprintf(w, "%s%s%s", color.OverlayFg, dots, color.Reset)
+func renderContinuationGutter(w io.Writer, numWidth int) {
+	pad := strings.Repeat(" ", numWidth+1)
+	_, _ = io.WriteString(w, pad)
 }
 
 func renderEOFNewlineWarning(w io.Writer, leftWarn, rightWarn bool, numWidth, codeWidth int, lineNumbers, colorMode bool, sep string) {
