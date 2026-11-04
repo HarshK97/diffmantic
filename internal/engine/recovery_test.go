@@ -1723,3 +1723,320 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 		}
 	})
 }
+
+func TestRecovery_ParenthesizedConditionNoOperatorUnwrap(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("typescript")
+
+		target := testutil.Node("parenthesized_expression", "",
+			testutil.Node("binary_expression", "",
+				testutil.Node("identifier", "a"),
+				testutil.Node("binary_operator_literal", "&&"),
+				testutil.Node("identifier", "b"),
+			),
+		)
+
+		compound := testutil.Node("binary_expression", "",
+			testutil.Node("identifier", "a"),
+			testutil.Node("binary_operator_literal", "&&"),
+			testutil.Node("binary_expression", "",
+				testutil.Node("identifier", "b"),
+				testutil.Node("binary_operator_literal", "&&"),
+				testutil.Node("identifier", "c"),
+			),
+		)
+
+		m := NewMapping()
+		match := findUnwrappedDstExpressionCandidate(target, compound, m, r)
+		if match != nil {
+			t.Errorf("expected findUnwrappedDstExpressionCandidate to return nil for parenthesized_expression without operator, got %v", match)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `function checkFlags(context: Context, node: Node) {
+    const valid = isValid(node);
+    if (!(context.flags & Flags.AllowUnresolved && hasDynamicName(node) && isEntityName(node))) {
+        return fallback();
+    }
+    return valid;
+}
+`
+		dst := `function checkFlags(context: Context, node: Node) {
+    const valid = isValid(node);
+    if (!(context.flags & Flags.AllowUnresolved && isEntityName(node))) {
+        return fallback();
+    }
+    return valid;
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "test.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: checkFlags function
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "checkFlags" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "checkFlags" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function checkFlags to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: const valid and return valid
+		var srcValid, dstValid *treesitter.ASTNode
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				srcValid = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 5 {
+				srcReturn = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				dstValid = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 5 {
+				dstReturn = n
+			}
+		}
+		if srcValid == nil || dstValid == nil || mr.Mappings.Src()[srcValid] != dstValid {
+			t.Errorf("expected preceding const valid statement to map in place")
+		}
+		if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected succeeding return valid statement to map in place")
+		}
+
+		// 3. Target & Containers: if statement, unary ! and parenthesized_expression
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
+			t.Fatalf("expected if_statement to map in place, got src=%v dst=%v", srcIf, dstIf)
+		}
+
+		var srcParen, dstParen *treesitter.ASTNode
+		var srcUnary, dstUnary *treesitter.ASTNode
+		for _, n := range srcIf.PreOrder() {
+			if n.Type == "parenthesized_expression" {
+				srcParen = n
+			}
+			if n.Type == "unary_expression" {
+				srcUnary = n
+			}
+		}
+		for _, n := range dstIf.PreOrder() {
+			if n.Type == "parenthesized_expression" {
+				dstParen = n
+			}
+			if n.Type == "unary_expression" {
+				dstUnary = n
+			}
+		}
+		if srcUnary == nil || dstUnary == nil || mr.Mappings.Src()[srcUnary] != dstUnary {
+			t.Errorf("expected unary expression ! to map in place")
+		}
+		if srcParen == nil || dstParen == nil || mr.Mappings.Src()[srcParen] != dstParen {
+			t.Errorf("expected parenthesized_expression to map in place")
+		}
+
+		// 4. Stationary Operands: context.flags & Flags.AllowUnresolved and isEntityName(node)
+		var srcEntityCall, dstEntityCall *treesitter.ASTNode
+		var srcDynCall *treesitter.ASTNode
+		for _, n := range srcIf.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isEntityName" {
+				srcEntityCall = n
+			}
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "hasDynamicName" {
+				srcDynCall = n
+			}
+		}
+		for _, n := range dstIf.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isEntityName" {
+				dstEntityCall = n
+			}
+		}
+		if srcEntityCall == nil || dstEntityCall == nil || mr.Mappings.Src()[srcEntityCall] != dstEntityCall {
+			t.Errorf("expected call isEntityName to map in place")
+		}
+
+		// Deleted middle term hasDynamicName must be unmapped in dst
+		if srcDynCall == nil || mr.Mappings.Src()[srcDynCall] != nil {
+			t.Errorf("expected deleted call hasDynamicName to be unmapped in dst, got %v", mr.Mappings.Src()[srcDynCall])
+		}
+	})
+
+	t.Run("FullEngine_Java", func(t *testing.T) {
+		src := `class FlagsChecker {
+    boolean checkFlags(Context context, Node node) {
+        boolean valid = isValid(node);
+        if (!((context.flags & Flags.AllowUnresolved) != 0 && hasDynamicName(node) && isEntityName(node))) {
+            return fallback();
+        }
+        return valid;
+    }
+}
+`
+		dst := `class FlagsChecker {
+    boolean checkFlags(Context context, Node node) {
+        boolean valid = isValid(node);
+        if (!((context.flags & Flags.AllowUnresolved) != 0 && isEntityName(node))) {
+            return fallback();
+        }
+        return valid;
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.java")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.java")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: checkFlags method
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "checkFlags" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "checkFlags" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected method checkFlags to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: boolean valid and return valid
+		var srcValid, dstValid *treesitter.ASTNode
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				srcValid = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 6 {
+				srcReturn = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				dstValid = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 6 {
+				dstReturn = n
+			}
+		}
+		if srcValid == nil || dstValid == nil || mr.Mappings.Src()[srcValid] != dstValid {
+			t.Errorf("expected preceding boolean valid statement to map in place")
+		}
+		if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected succeeding return valid statement to map in place")
+		}
+
+		// 3. Target: if statement and outer parenthesized condition
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
+			t.Fatalf("expected if_statement to map in place, got src=%v dst=%v", srcIf, dstIf)
+		}
+
+		var srcParen, dstParen *treesitter.ASTNode
+		for _, n := range srcIf.Children {
+			if n.Type == "parenthesized_expression" {
+				srcParen = n
+				break
+			}
+		}
+		for _, n := range dstIf.Children {
+			if n.Type == "parenthesized_expression" {
+				dstParen = n
+				break
+			}
+		}
+		if srcParen == nil || dstParen == nil || mr.Mappings.Src()[srcParen] != dstParen {
+			t.Errorf("expected outer parenthesized_expression to map in place")
+		}
+
+		// 4. Stationary Operands: call isEntityName
+		var srcEntityCall, dstEntityCall *treesitter.ASTNode
+		var srcDynCall *treesitter.ASTNode
+		for _, n := range srcIf.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isEntityName" {
+				srcEntityCall = n
+			}
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "hasDynamicName" {
+				srcDynCall = n
+			}
+		}
+		for _, n := range dstIf.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isEntityName" {
+				dstEntityCall = n
+			}
+		}
+		if srcEntityCall == nil || dstEntityCall == nil || mr.Mappings.Src()[srcEntityCall] != dstEntityCall {
+			t.Errorf("expected call isEntityName to map in place")
+		}
+		if srcDynCall == nil || mr.Mappings.Src()[srcDynCall] != nil {
+			t.Errorf("expected deleted call hasDynamicName to be unmapped in dst, got %v", mr.Mappings.Src()[srcDynCall])
+		}
+	})
+}

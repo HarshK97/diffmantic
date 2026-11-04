@@ -91,6 +91,16 @@ func TopDown(
 							continue
 						}
 
+						if t1.Parent != nil && t2.Parent != nil {
+							isCall1 := (r != nil && r.IsCall(t1.Parent.Type)) || (r == nil && rules.IsCall(t1.Parent.Type))
+							isCall2 := (r != nil && r.IsCall(t2.Parent.Type)) || (r == nil && rules.IsCall(t2.Parent.Type))
+							if isCall1 && isCall2 && len(t1.Parent.Children) > 0 && len(t2.Parent.Children) > 0 {
+								if !calleeLeavesOverlap(t1.Parent, t2.Parent) {
+									continue
+								}
+							}
+						}
+
 						ambiguous := false
 
 						for _, ta := range candidates {
@@ -600,4 +610,25 @@ func branchSlotIndex(t, c *treesitter.ASTNode) int {
 		return -1
 	}
 	return curr.ChildIndex()
+}
+
+// calleeLeavesOverlap reports whether two call expressions share any callee leaf tokens.
+func calleeLeavesOverlap(call1, call2 *treesitter.ASTNode) bool {
+	if call1 == nil || call2 == nil || len(call1.Children) == 0 || len(call2.Children) == 0 {
+		return true
+	}
+	fn1 := call1.Children[0]
+	fn2 := call2.Children[0]
+	if fn1 == nil || fn2 == nil {
+		return true
+	}
+	leaves1 := fn1.Leaves()
+	for _, l2 := range fn2.Leaves() {
+		if l2.Label != "" && slices.ContainsFunc(leaves1, func(l1 *treesitter.ASTNode) bool {
+			return l1.Label == l2.Label
+		}) {
+			return true
+		}
+	}
+	return false
 }

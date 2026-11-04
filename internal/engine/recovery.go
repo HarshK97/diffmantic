@@ -9,15 +9,72 @@ import (
 )
 
 // Recover aligns unmatched nodes inside a matched container pair.
-// Uses Zhang-Shasha (1989) tree edit distance as a last-chance fallback on tiny
-// subtrees (< 20 nodes), and uses SimpleRecovery (Sibling LCS) on larger subtrees.
+// Small subtrees (< 20 nodes) run Zhang-Shasha tree edit distance unless they
+// are structured constructs (delimited containers, wrappers, blocks, calls, or assignments),
+// which route to SimpleRecovery instead.
 func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	reclaimInParentIsomorphicChildren(t1, t2, m)
-	if t1.Size() < 20 && t2.Size() < 20 {
+	r := rulesFor(t1)
+	if !shouldBypassZS(t1, t2, r) && t1.Size() < 20 && t2.Size() < 20 {
 		RunZSRecovery(t1, t2, m)
 	} else {
 		SimpleRecovery(t1, t2, m)
 	}
+}
+
+// shouldBypassZS reports whether container pair (t1, t2) should skip Zhang-Shasha
+// tree edit distance and route directly to SimpleRecovery.
+func shouldBypassZS(t1, t2 *treesitter.ASTNode, r *rules.Rules) bool {
+	if (r != nil && (r.IsDelimitedContainer(t1.Type) || r.IsDelimitedContainer(t2.Type))) ||
+		(r == nil && (rules.IsDelimitedContainer(t1.Type) || rules.IsDelimitedContainer(t2.Type))) {
+		return true
+	}
+	if (r != nil && (r.IsWrapper(t1.Type) || r.IsWrapper(t2.Type))) ||
+		(r == nil && (rules.IsWrapper(t1.Type) || rules.IsWrapper(t2.Type))) {
+		return true
+	}
+	if findBodyBlock(t1, r) != nil || findBodyBlock(t2, r) != nil {
+		return true
+	}
+	// Single-child nodes don't need tree edit distance; let recovery match the child directly.
+	if len(t1.Children) == 1 && len(t2.Children) == 1 {
+		return true
+	}
+	// Keep argument alignment sequential for calls to the same function.
+	isCall1 := (r != nil && r.IsCall(t1.Type)) || (r == nil && rules.IsCall(t1.Type))
+	isCall2 := (r != nil && r.IsCall(t2.Type)) || (r == nil && rules.IsCall(t2.Type))
+	if isCall1 && isCall2 {
+		c1 := extractCalleeLabel(t1, r)
+		c2 := extractCalleeLabel(t2, r)
+		if c1 != "" && c1 == c2 {
+			return true
+		}
+	}
+	// Assignments with matching simple identifier LHS should align LHS and RHS separately.
+	isAssign1 := (r != nil && r.IsAssignment(t1.Type)) || (r == nil && rules.IsAssignment(t1.Type))
+	isAssign2 := (r != nil && r.IsAssignment(t2.Type)) || (r == nil && rules.IsAssignment(t2.Type))
+	if isAssign1 && isAssign2 {
+		lhs1 := assignmentLHSIdent(t1)
+		lhs2 := assignmentLHSIdent(t2)
+		if lhs1 != "" && lhs1 == lhs2 {
+			return true
+		}
+	}
+	return false
+}
+
+func assignmentLHSIdent(n *treesitter.ASTNode) string {
+	if n == nil || len(n.Children) == 0 {
+		return ""
+	}
+	first := n.Children[0]
+	if first.Label != "" {
+		return first.Label
+	}
+	if len(first.Children) == 1 && first.Children[0].Label != "" {
+		return first.Children[0].Label
+	}
+	return ""
 }
 
 // reclaimInParentIsomorphicChildren steals back children of t2 that TopDown
@@ -605,9 +662,14 @@ func findBestExpressionMatch(
 	targetOp := getOperatorNode(target, r)
 	compoundOp := getOperatorNode(compound, r)
 
+	// Only unwrap compound expressions that actually have an operator.
+	if targetOp == nil || compoundOp == nil {
+		return nil
+	}
+
 	// If compound shares target's operator and isn't deeper,
 	// compound itself is already the closest possible match.
-	if targetOp != nil && compoundOp != nil && targetOp.Label == compoundOp.Label && Height(compound) <= Height(target) {
+	if targetOp.Label == compoundOp.Label && Height(compound) <= Height(target) {
 		return nil
 	}
 
