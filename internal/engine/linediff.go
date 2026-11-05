@@ -12,19 +12,12 @@ func LineDiff(linesA, linesB []string) map[int]int {
 	matchedA := make(map[int]int)
 	m, n := len(linesA), len(linesB)
 
-	// Trim common prefix
-	start := 0
-	for start < m && start < n && linesA[start] == linesB[start] {
-		matchedA[start] = start
-		start++
+	start, endA, endB := TrimSliceBounds(linesA, linesB)
+	for i := range start {
+		matchedA[i] = i
 	}
-
-	// Trim common suffix
-	endA, endB := m-1, n-1
-	for endA >= start && endB >= start && linesA[endA] == linesB[endB] {
-		matchedA[endA] = endB
-		endA--
-		endB--
+	for a, b := endA+1, endB+1; a < m && b < n; a, b = a+1, b+1 {
+		matchedA[a] = b
 	}
 
 	if start > endA || start > endB {
@@ -93,42 +86,12 @@ func alignLineWindow(winA, winB []string, wStartA, wStartB int, matchedA map[int
 		return 0
 	}
 
-	stride := wM + 1
-	dp := make([]int, (wN+1)*stride)
-	for i := 1; i <= wN; i++ {
-		for j := 1; j <= wM; j++ {
-			best := max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
-			if mw := matchWeight(i-1, j-1); mw > 0 {
-				best = max(best, dp[(i-1)*stride+(j-1)]+mw)
-			}
-			dp[i*stride+j] = best
-		}
-	}
+	scratch := AcquireSeqScratch()
+	defer ReleaseSeqScratch(scratch)
 
-	i, j := wN, wM
-	for i > 0 && j > 0 {
-		mw := matchWeight(i-1, j-1)
-		if mw > 0 && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+mw {
-			bestJ := j
-			bestDist := max(i-j, j-i)
-			for k := j - 1; k >= 1; k-- {
-				kw := matchWeight(i-1, k-1)
-				if kw > 0 && dp[(i-1)*stride+(k-1)]+kw == dp[i*stride+j] {
-					dist := max(i-k, k-i)
-					if dist < bestDist {
-						bestDist = dist
-						bestJ = k
-					}
-				}
-			}
-			matchedA[wStartA+i-1] = wStartB + bestJ - 1
-			i--
-			j = bestJ - 1
-		} else if dp[(i-1)*stride+j] >= dp[i*stride+(j-1)] {
-			i--
-		} else {
-			j--
-		}
+	matches := scratch.AlignWeighted(wN, wM, matchWeight, true)
+	for _, m := range matches {
+		matchedA[wStartA+m[0]] = wStartB + m[1]
 	}
 }
 

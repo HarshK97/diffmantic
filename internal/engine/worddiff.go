@@ -42,7 +42,7 @@ type WordOp struct {
 type WordDiffScratch struct {
 	tokensSrc  []WordToken
 	tokensDst  []WordToken
-	dp         []uint16
+	seq        *SeqScratch
 	allMatches [][2]int
 	Ops        []WordOp
 }
@@ -52,7 +52,7 @@ var wordDiffScratchPool = sync.Pool{
 		return &WordDiffScratch{
 			tokensSrc:  make([]WordToken, 0, 128),
 			tokensDst:  make([]WordToken, 0, 128),
-			dp:         make([]uint16, maxDPCells),
+			seq:        NewSeqScratch(maxDPCells),
 			allMatches: make([][2]int, 0, 128),
 			Ops:        make([]WordOp, 0, 128),
 		}
@@ -71,6 +71,7 @@ func ReleaseWordDiffScratch(s *WordDiffScratch) {
 	}
 	s.tokensSrc = s.tokensSrc[:0]
 	s.tokensDst = s.tokensDst[:0]
+	s.seq.Reset()
 	s.allMatches = s.allMatches[:0]
 	s.Ops = s.Ops[:0]
 	wordDiffScratchPool.Put(s)
@@ -208,90 +209,46 @@ func (s *WordDiffScratch) Diff(src, dst string) []WordOp {
 		return s.Ops
 	}
 
-	// Trim common prefix tokens
-	prefix := 0
-	for prefix < min(N, M) && tokensEqual(src, dst, tokensSrc[prefix], tokensDst[prefix]) {
-		prefix++
-	}
-
-	// Trim common suffix tokens
-	suffixSrc := N - 1
-	suffixDst := M - 1
-	for suffixSrc >= prefix && suffixDst >= prefix && tokensEqual(src, dst, tokensSrc[suffixSrc], tokensDst[suffixDst]) {
-		suffixSrc--
-		suffixDst--
-	}
+	prefix, endSrc, endDst := TrimBounds(N, M, func(i, j int) bool {
+		return tokensEqual(src, dst, tokensSrc[i], tokensDst[j])
+	})
 
 	// Fast paths when one or both middle ranges are empty
-	if prefix > suffixSrc && prefix > suffixDst {
+	if prefix > endSrc && prefix > endDst {
 		return s.Ops
 	}
 
-	if prefix > suffixSrc && prefix <= suffixDst {
+	if prefix > endSrc && prefix <= endDst {
 		// Source has no unmatched tokens; dest inserted tokens between prefix and suffix
 		s.Ops = append(s.Ops, WordOp{
 			Action:   "insert",
 			DstStart: tokensDst[prefix].Start,
-			DstEnd:   tokensDst[suffixDst].End,
+			DstEnd:   tokensDst[endDst].End,
 		})
 		return s.Ops
 	}
 
-	if prefix <= suffixSrc && prefix > suffixDst {
+	if prefix <= endSrc && prefix > endDst {
 		// Dest has no unmatched tokens; source deleted tokens between prefix and suffix
 		s.Ops = append(s.Ops, WordOp{
 			Action:   "delete",
 			SrcStart: tokensSrc[prefix].Start,
-			SrcEnd:   tokensSrc[suffixSrc].End,
+			SrcEnd:   tokensSrc[endSrc].End,
 		})
 		return s.Ops
 	}
 
 	// Dynamic programming LCS on middle sub-slices
-	subSrc := tokensSrc[prefix : suffixSrc+1]
-	subDst := tokensDst[prefix : suffixDst+1]
+	subSrc := tokensSrc[prefix : endSrc+1]
+	subDst := tokensDst[prefix : endDst+1]
 	subN := len(subSrc)
 	subM := len(subDst)
 
-	stride := subM + 1
-	cells := (subN + 1) * stride
-	dp := s.dp[:cells]
-	clear(dp)
+	matches := s.seq.AlignUniform(subN, subM, func(i, j int) bool {
+		return tokensEqual(src, dst, subSrc[i], subDst[j])
+	})
 
-	for i := 1; i <= subN; i++ {
-		for j := 1; j <= subM; j++ {
-			if tokensEqual(src, dst, subSrc[i-1], subDst[j-1]) {
-				dp[i*stride+j] = dp[(i-1)*stride+(j-1)] + 1
-			} else {
-				dp[i*stride+j] = max(dp[(i-1)*stride+j], dp[i*stride+(j-1)])
-			}
-		}
-	}
-
-	// Backtrack to find matched pairs in subSrc / subDst
-	s.allMatches = s.allMatches[:0]
-	for p := range prefix {
-		s.allMatches = append(s.allMatches, [2]int{p, p})
-	}
-	midStart := len(s.allMatches)
-	i, j := subN, subM
-	for i > 0 && j > 0 {
-		if tokensEqual(src, dst, subSrc[i-1], subDst[j-1]) && dp[i*stride+j] == dp[(i-1)*stride+(j-1)]+1 {
-			s.allMatches = append(s.allMatches, [2]int{prefix + (i - 1), prefix + (j - 1)})
-			i--
-			j--
-		} else if dp[(i-1)*stride+j] >= dp[i*stride+(j-1)] {
-			i--
-		} else {
-			j--
-		}
-	}
-	slices.Reverse(s.allMatches[midStart:])
-
-	suffixCount := N - 1 - suffixSrc
-	for k := range suffixCount {
-		s.allMatches = append(s.allMatches, [2]int{suffixSrc + 1 + k, suffixDst + 1 + k})
-	}
+	s.allMatches = CombineMatches(s.allMatches[:0], prefix, matches, endSrc, endDst, N)
 
 	// When two lines share zero matching tokens (K == 0), there's no common context anchor.
 	// Treat the line as a complete rewrite (delete + insert in red/green) instead of
