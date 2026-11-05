@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Directional move badges on runs of consecutive single-line statements now collapse into a single badge on the opening line, eliminating repetitive badge ladders while keeping compound statements like `if` and `for` clearly badged on their headers.
 - Cleaned up unused Tree-sitter rule tables for scoped declarations and ignored labels, dropping dead label-stripping logic during AST ingestion.
 
+### Performance
+- Multi-file branch diffs are up to 9% faster. When `GOGC` isn't set, branch diffs use a 200% heap growth target, cutting GC cycles roughly in half while peak memory stays around 150 MB. Existing `GOGC` and `GOMEMLIMIT` values still take priority.
+
 ### Fixed
 - Adding a label to an existing statement or loop (like `outer:` in Go, Java, JS, or C/C++) won't treat the enclosed code as moved or rewritten just because Tree-sitter wrapped it in a new label node.
 - Inserting a new statement above an existing one (like adding a guard `if`) won't treat expressions moved into the new statement as stationary just because their line and column coordinates happen to collide.
