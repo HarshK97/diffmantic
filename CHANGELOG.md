@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-5
+
 ### Added
 - Honor `diff` and `binary` attributes from `.gitattributes` for file diffs and directory comparisons. Files marked `-diff` or `binary` (such as minified bundles) skip AST parsing and are treated as binary, while files marked `diff` force text diffing even with NUL bytes. Attribute lookups are cached and skip subprocesses outside Git repos.
 - Add word-level diffing to line fallback mode. When diffing files without AST support (like Markdown, SQL, YAML, or plain text) or files with syntax errors, we now highlight the specific words and punctuation that changed instead of painting entire lines red and green. Small edits like changing an argument or fixing a typo show as inline updates, while additions and deletions highlight right inside the line.
@@ -424,7 +426,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/HarshK97/diffmantic/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/HarshK97/diffmantic/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/HarshK97/diffmantic/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/HarshK97/diffmantic/compare/v0.11.0...v0.12.0
