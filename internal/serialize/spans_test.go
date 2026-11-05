@@ -8,6 +8,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestBuildHighlightSpansGapMerging(t *testing.T) {
@@ -1713,4 +1714,184 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 	if !hasDelete {
 		t.Errorf("expected deleted comment to take 'delete' highlight, got: %+v", spansWithDel)
 	}
+}
+
+func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		leftBytes := []byte("if a {\n\treturn 1\n}\n")
+		rightBytes := []byte("if a &&\n\tb {\n\treturn 1\n\treturn 2\n}\n")
+
+		// A moved block that grows from three lines to five.
+		act := Action{
+			Action:         "move",
+			MoveColorIndex: 1,
+			SrcLineCount:   3,
+			DstLineCount:   5,
+			Node: &NodeRef{
+				StartByte: 0,
+				EndByte:   uint32(len(leftBytes) - 1),
+			},
+			DestStartByte: ptr(uint32(0)),
+			DestEndByte:   ptr(uint32(len(rightBytes) - 1)),
+		}
+
+		leftSpans := BuildHighlightSpans(leftBytes, []Action{act}, "left")
+		rightSpans := BuildHighlightSpans(rightBytes, []Action{act}, "right")
+
+		if len(leftSpans) == 0 || len(rightSpans) == 0 {
+			t.Fatalf("expected highlight spans on both sides, got left=%d right=%d", len(leftSpans), len(rightSpans))
+		}
+
+		for _, s := range leftSpans {
+			if s.Action == "move" && s.ColorIndex != 0 {
+				t.Errorf("expected left span to collapse to ColorIndex 0, got %d", s.ColorIndex)
+			}
+		}
+		for _, s := range rightSpans {
+			if s.Action == "move" && s.ColorIndex != 0 {
+				t.Errorf("expected right span to collapse to ColorIndex 0, got %d", s.ColorIndex)
+			}
+		}
+
+		smallAct := Action{
+			Action:         "move",
+			MoveColorIndex: 1,
+			SrcLineCount:   1,
+			DstLineCount:   2,
+			Node: &NodeRef{
+				StartByte: 0,
+				EndByte:   uint32(len(leftBytes) - 1),
+			},
+			DestStartByte: ptr(uint32(0)),
+			DestEndByte:   ptr(uint32(len(rightBytes) - 1)),
+		}
+		leftSmall := BuildHighlightSpans(leftBytes, []Action{smallAct}, "left")
+		rightSmall := BuildHighlightSpans(rightBytes, []Action{smallAct}, "right")
+		for _, s := range leftSmall {
+			if s.Action == "move" && s.ColorIndex != 1 {
+				t.Errorf("expected small left span to retain ColorIndex 1, got %d", s.ColorIndex)
+			}
+		}
+		for _, s := range rightSmall {
+			if s.Action == "move" && s.ColorIndex != 1 {
+				t.Errorf("expected small right span to retain ColorIndex 1, got %d", s.ColorIndex)
+			}
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func process() error {
+	prepare()
+	count++
+	if count > limit {
+		return flush()
+	}
+	return nil
+}
+`
+		newSrc := `package main
+
+func process() error {
+	prepare()
+	if checkCondition() {
+		if count > limit {
+			return flush(
+			)
+		}
+		count++
+		return nil
+	}
+	return nil
+}
+`
+		oldAST, err := treesitter.Parse([]byte(oldSrc), "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse([]byte(newSrc), "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+			IncludeHighlights: true,
+			IncludeActions:    true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+		var srcPrepare, dstPrepare *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string([]byte(oldSrc)[n.StartByte:n.EndByte]), "prepare") {
+				srcPrepare = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string([]byte(newSrc)[n.StartByte:n.EndByte]), "prepare") {
+				dstPrepare = n
+				break
+			}
+		}
+		if srcPrepare == nil || dstPrepare == nil {
+			t.Fatal("failed to find prepare() call nodes")
+		}
+		if mr.Mappings.Src()[srcPrepare] != dstPrepare {
+			t.Errorf("expected stationary prepare() to map in place, got %v", mr.Mappings.Src()[srcPrepare])
+		}
+
+		leftCountColor, rightCountColor := -1, -1
+		for _, h := range env.LeftHighlights {
+			if h.Action == "move" && h.Line == 4 {
+				leftCountColor = h.ColorIndex
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Action == "move" && h.Line == 9 {
+				rightCountColor = h.ColorIndex
+			}
+		}
+		if leftCountColor != 1 || rightCountColor != 1 {
+			t.Errorf("expected count++ to get ColorIndex 1 (Magenta) symmetrically, got left=%d right=%d", leftCountColor, rightCountColor)
+		}
+
+		var movedIf *Action
+		for i := range env.Actions {
+			a := &env.Actions[i]
+			if a.Action == "move" && a.SrcLineCount == 3 && a.DstLineCount == 4 {
+				movedIf = a
+				break
+			}
+		}
+		if movedIf == nil {
+			t.Fatal("expected a move that grows from three lines to four")
+		}
+
+		for _, h := range env.LeftHighlights {
+			if h.Action == "move" && h.Line >= 5 && h.Line <= 7 {
+				if h.ColorIndex != 0 {
+					t.Errorf("expected dominant if statement left highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
+				}
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Action == "move" && h.Line >= 5 && h.Line <= 8 {
+				if h.ColorIndex != 0 {
+					t.Errorf("expected dominant if statement right highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
+				}
+			}
+		}
+	})
 }

@@ -74,12 +74,17 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	var multiLineGroups map[string]bool
 	for i := range actions {
 		a := &actions[i]
-		if a.GroupID != "" && (a.Action == "move" || a.Action == "move_update") &&
-			actionLineCount(a, lineIndex, fileBytes, side) > 1 {
-			if multiLineGroups == nil {
-				multiLineGroups = make(map[string]bool)
+		if a.GroupID != "" && (a.Action == "move" || a.Action == "move_update") {
+			lines := max(a.SrcLineCount, a.DstLineCount)
+			if lines == 0 && len(lineIndex) > 0 {
+				lines = actionLineCount(a, lineIndex, fileBytes, side)
 			}
-			multiLineGroups[a.GroupID] = true
+			if lines > 1 {
+				if multiLineGroups == nil {
+					multiLineGroups = make(map[string]bool)
+				}
+				multiLineGroups[a.GroupID] = true
+			}
 		}
 	}
 
@@ -579,7 +584,10 @@ func ResolveMoveColor(act *Action, lineCount int, groupIsMultiLine bool) int {
 func partitionLineSpans(spans []internalSpan, side string, lineIndex []int, fileBytes []byte, multiLineGroups map[string]bool) []internalSpan {
 	resolveMoveColor := func(act *Action) int {
 		lineCount := 0
-		if len(lineIndex) > 0 {
+		if act != nil {
+			lineCount = max(act.SrcLineCount, act.DstLineCount)
+		}
+		if lineCount == 0 && len(lineIndex) > 0 {
 			lineCount = actionLineCount(act, lineIndex, fileBytes, side)
 		}
 		isGroupMulti := act != nil && act.GroupID != "" && multiLineGroups[act.GroupID]

@@ -101,6 +101,8 @@ type Action struct {
 	DestOrigEndByte   uint32              `json:"-"`
 	ASTNode           *treesitter.ASTNode `json:"-"`
 	DestASTNode       *treesitter.ASTNode `json:"-"`
+	SrcLineCount      int                 `json:"-"`
+	DstLineCount      int                 `json:"-"`
 }
 
 // NodeRef is a stable and self-describing reference to an AST node.
@@ -627,6 +629,13 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	if hasMoves {
 		offsetsSrc := BuildLineIndex(srcBytes)
 		offsetsDst := BuildLineIndex(dstBytes)
+		for i := range actionsList {
+			a := &actionsList[i]
+			if a.Action == "move" || a.Action == "move_update" {
+				a.SrcLineCount = actionLineCount(a, offsetsSrc, srcBytes, "left")
+				a.DstLineCount = actionLineCount(a, offsetsDst, dstBytes, "right")
+			}
+		}
 		AssignMoveColors(actionsList, offsetsSrc, offsetsDst)
 	}
 

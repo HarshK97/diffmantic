@@ -253,29 +253,46 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 }
 
 // extractLIS finds the longest chain of moves that kept their relative order in the destination.
+// When multiple chains tie for the maximum number of moves, it prefers the chain covering the
+// greatest total code span across source and destination.
 func extractLIS(pool []moveItem) []moveItem {
 	n := len(pool)
 	if n == 0 {
 		return nil
 	}
 	length := make([]int, n)
+	weight := make([]int, n)
 	prev := make([]int, n)
 	bestLen := 0
+	bestWeight := 0
 	bestIdx := -1
+
+	itemWeight := func(item *moveItem) int {
+		w := int(item.srcEnd - item.srcStart)
+		if item.hasDst && item.dstEnd > item.dstStart {
+			w += int(item.dstEnd - item.dstStart)
+		}
+		return w
+	}
 
 	for i := range n {
 		length[i] = 1
+		weight[i] = itemWeight(&pool[i])
 		prev[i] = -1
 		for j := range i {
 			if pool[j].srcStart < pool[i].srcStart && pool[j].dstStart < pool[i].dstStart {
-				if length[j]+1 > length[i] {
-					length[i] = length[j] + 1
+				newLen := length[j] + 1
+				newWeight := weight[j] + itemWeight(&pool[i])
+				if newLen > length[i] || (newLen == length[i] && newWeight > weight[i]) {
+					length[i] = newLen
+					weight[i] = newWeight
 					prev[i] = j
 				}
 			}
 		}
-		if length[i] > bestLen {
+		if length[i] > bestLen || (length[i] == bestLen && weight[i] > bestWeight) {
 			bestLen = length[i]
+			bestWeight = weight[i]
 			bestIdx = i
 		}
 	}

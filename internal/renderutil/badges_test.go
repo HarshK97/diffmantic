@@ -690,6 +690,58 @@ func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T)
 	}
 }
 
+func TestBuildMoveBadges_UsesLargestMoveSide(t *testing.T) {
+	goRules := rules.Get("go")
+
+	srcLines := make([]string, 30)
+	dstLines := make([]string, 30)
+	for i := range srcLines {
+		srcLines[i] = fmt.Sprintf("src line %d", i)
+		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	}
+
+	srcOffsets := make([]int, len(srcLines)+1)
+	dstOffsets := make([]int, len(dstLines)+1)
+	for i := range srcLines {
+		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	}
+
+	srcStart, srcEnd := uint32(srcOffsets[2]), uint32(srcOffsets[5]-1)
+	dstStart, dstEnd := uint32(dstOffsets[20]), uint32(dstOffsets[24]-1)
+	actions := []serialize.Action{{
+		Action:         "move",
+		MoveColorIndex: 1,
+		SrcLineCount:   3,
+		DstLineCount:   4,
+		Node: &serialize.NodeRef{
+			Type:      "if_statement",
+			StartByte: srcStart,
+			EndByte:   srcEnd,
+		},
+		DestStartByte:     &dstStart,
+		DestEndByte:       &dstEnd,
+		OrigStartByte:     srcStart,
+		OrigEndByte:       srcEnd,
+		DestOrigStartByte: dstStart,
+		DestOrigEndByte:   dstEnd,
+	}}
+
+	pairs := make([]serialize.LineAlignmentPair, 60)
+	for i := range srcLines {
+		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
+		pairs[30+i] = serialize.LineAlignmentPair{LeftLine: -1, RightLine: i}
+	}
+
+	badges := BuildMoveBadges(actions, []Interval{{Start: 0, End: 59}}, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
+	if color := badges.SrcLineBadgeColors[2]; color != 0 {
+		t.Errorf("expected source badge to use color 0 when the destination spans four lines, got %d", color)
+	}
+	if color := badges.DstLineBadgeColors[20]; color != 0 {
+		t.Errorf("expected destination badge to use color 0 when the destination spans four lines, got %d", color)
+	}
+}
+
 func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 	goRules := rules.Get("go")
 
