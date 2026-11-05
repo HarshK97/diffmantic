@@ -414,6 +414,9 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 }
 
 func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
+	scratch := engine.AcquireWordDiffScratch()
+	defer engine.ReleaseWordDiffScratch(scratch)
+
 	srcTrimmed := strings.TrimRight(sc.Text, "\r\n")
 	dstTrimmed := strings.TrimRight(dc.Text, "\r\n")
 
@@ -422,14 +425,14 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 
 	if !srcIsMulti && !dstIsMulti {
 		res.LineMappings[sc.StartRow] = dc.StartRow
-		srcNode := createCommentNode(sc, sc.Language)
-		dstNode := createCommentNode(dc, dc.Language)
-		res.Actions = append(res.Actions, actions.Action{
-			Type:     actions.Update,
-			Node:     srcNode,
-			DestNode: dstNode,
-			Value:    dc.Text,
-		})
+		if sc.Text != dc.Text {
+			ops := scratch.Diff(srcTrimmed, dstTrimmed)
+			row := uint32(sc.StartRow)
+			dstRow := uint32(dc.StartRow)
+			srcCol := uint32(max(0, sc.StartCol))
+			dstCol := uint32(max(0, dc.StartCol))
+			emitCommentWordOps(ops, sc, dc, srcTrimmed, dstTrimmed, sc.StartByte, dc.StartByte, row, dstRow, srcCol, dstCol, res)
+		}
 		return
 	}
 
@@ -478,19 +481,18 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 	for i := range srcLines {
 		if j, ok := matchedA[i]; ok {
 			if srcLines[i] != dstLines[j] {
-				startByte, endByte := srcOffsets[i][0], srcOffsets[i][1]
-				dstStartByte, dstEndByte := dstOffsets[j][0], dstOffsets[j][1]
+				ops := scratch.Diff(srcLines[i], dstLines[j])
 				row := uint32(sc.StartRow + i)
 				dstRow := uint32(dc.StartRow + j)
-
-				srcNode := createCommentLineNode(sc, srcLines[i], startByte, endByte, row, sc.Language)
-				dstNode := createCommentLineNode(dc, dstLines[j], dstStartByte, dstEndByte, dstRow, dc.Language)
-				res.Actions = append(res.Actions, actions.Action{
-					Type:     actions.Update,
-					Node:     srcNode,
-					DestNode: dstNode,
-					Value:    dstLines[j],
-				})
+				srcCol := uint32(0)
+				if i == 0 {
+					srcCol = uint32(max(0, sc.StartCol))
+				}
+				dstCol := uint32(0)
+				if j == 0 {
+					dstCol = uint32(max(0, dc.StartCol))
+				}
+				emitCommentWordOps(ops, sc, dc, srcLines[i], dstLines[j], srcOffsets[i][0], dstOffsets[j][0], row, dstRow, srcCol, dstCol, res)
 			}
 		}
 	}
@@ -499,7 +501,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 		if _, ok := matchedA[i]; !ok {
 			startByte, endByte := srcOffsets[i][0], srcOffsets[i][1]
 			row := uint32(sc.StartRow + i)
-			lineNode := createCommentLineNode(sc, srcLines[i], startByte, endByte, row, sc.Language)
+			lineNode := createCommentWordNode(sc, srcLines[i], startByte, endByte, row, 0, uint32(len(srcLines[i])), sc.Language)
 			res.Actions = append(res.Actions, actions.Action{
 				Type: actions.Delete,
 				Node: lineNode,
@@ -511,7 +513,7 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 		if _, ok := matchedB[j]; !ok {
 			startByte, endByte := dstOffsets[j][0], dstOffsets[j][1]
 			row := uint32(dc.StartRow + j)
-			lineNode := createCommentLineNode(dc, dstLines[j], startByte, endByte, row, dc.Language)
+			lineNode := createCommentWordNode(dc, dstLines[j], startByte, endByte, row, 0, uint32(len(dstLines[j])), dc.Language)
 			res.Actions = append(res.Actions, actions.Action{
 				Type: actions.Insert,
 				Node: lineNode,
@@ -520,22 +522,102 @@ func diffCommentBlock(sc, dc *CommentBlock, res *DiffResult) {
 	}
 }
 
+func emitCommentWordOps(ops []engine.WordOp, sc, dc *CommentBlock, srcText, dstText string, srcStartByte, dstStartByte, row, dstRow, srcCol, dstCol uint32, res *DiffResult) {
+	for _, op := range ops {
+		switch op.Action {
+		case "update":
+			srcNode := createCommentWordNode(sc, srcText[op.SrcStart:op.SrcEnd],
+				srcStartByte+uint32(op.SrcStart), srcStartByte+uint32(op.SrcEnd),
+				row, srcCol+uint32(op.SrcStart), srcCol+uint32(op.SrcEnd), sc.Language)
+			dstNode := createCommentWordNode(dc, dstText[op.DstStart:op.DstEnd],
+				dstStartByte+uint32(op.DstStart), dstStartByte+uint32(op.DstEnd),
+				dstRow, dstCol+uint32(op.DstStart), dstCol+uint32(op.DstEnd), dc.Language)
+			res.Actions = append(res.Actions, actions.Action{
+				Type:     actions.Update,
+				Node:     srcNode,
+				DestNode: dstNode,
+				Value:    dstText[op.DstStart:op.DstEnd],
+			})
+		case "delete":
+			srcNode := createCommentWordNode(sc, srcText[op.SrcStart:op.SrcEnd],
+				srcStartByte+uint32(op.SrcStart), srcStartByte+uint32(op.SrcEnd),
+				row, srcCol+uint32(op.SrcStart), srcCol+uint32(op.SrcEnd), sc.Language)
+			res.Actions = append(res.Actions, actions.Action{
+				Type: actions.Delete,
+				Node: srcNode,
+			})
+		case "insert":
+			dstNode := createCommentWordNode(dc, dstText[op.DstStart:op.DstEnd],
+				dstStartByte+uint32(op.DstStart), dstStartByte+uint32(op.DstEnd),
+				dstRow, dstCol+uint32(op.DstStart), dstCol+uint32(op.DstEnd), dc.Language)
+			res.Actions = append(res.Actions, actions.Action{
+				Type: actions.Insert,
+				Node: dstNode,
+			})
+		}
+	}
+}
+
+// cleanCommentContent strips comment syntax delimiters across all supported languages
+// (//, /*, */, *, #, --) and trims leading and trailing whitespace.
+func cleanCommentContent(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.TrimSuffix(text, "*/")
+	text = strings.TrimSpace(text)
+
+	for {
+		trimmed := false
+		text = strings.TrimSpace(text)
+		if strings.HasPrefix(text, "//") {
+			text = strings.TrimLeft(text, "/")
+			trimmed = true
+		} else if strings.HasPrefix(text, "/*") {
+			text = text[2:]
+			trimmed = true
+		} else if strings.HasPrefix(text, "--") {
+			text = strings.TrimLeft(text, "-")
+			trimmed = true
+		} else if strings.HasPrefix(text, "#") {
+			text = strings.TrimLeft(text, "#")
+			trimmed = true
+		} else if strings.HasPrefix(text, "*") {
+			text = strings.TrimLeft(text, "*")
+			trimmed = true
+		}
+		if !trimmed {
+			break
+		}
+	}
+	text = strings.TrimSuffix(text, "*/")
+	return strings.TrimSpace(text)
+}
+
+// stringSimilarity computes bigram Dice similarity over substantive comment content
+// after stripping language comment delimiters and whitespace.
 func stringSimilarity(a, b string) float64 {
-	a = strings.TrimSpace(a)
-	b = strings.TrimSpace(b)
-	if a == b {
+	cleanA := cleanCommentContent(a)
+	cleanB := cleanCommentContent(b)
+
+	if cleanA == cleanB {
+		if len(cleanA) == 0 {
+			return 0.0
+		}
 		return 1.0
 	}
-	if len(a) == 0 || len(b) == 0 {
+
+	// Short substantive content (< 4 chars) requires an exact match to prevent
+	// false-positive bigram pairings on comments like "// ok" vs "// on".
+	if len(cleanA) < 4 || len(cleanB) < 4 {
 		return 0.0
 	}
+
 	bigramsA := make(map[string]int)
-	for i := 0; i < len(a)-1; i++ {
-		bigramsA[a[i:i+2]]++
+	for i := range len(cleanA) - 1 {
+		bigramsA[cleanA[i:i+2]]++
 	}
 	bigramsB := make(map[string]int)
-	for i := 0; i < len(b)-1; i++ {
-		bigramsB[b[i:i+2]]++
+	for i := range len(cleanB) - 1 {
+		bigramsB[cleanB[i:i+2]]++
 	}
 	intersection := 0
 	for bg, countA := range bigramsA {
@@ -543,7 +625,7 @@ func stringSimilarity(a, b string) float64 {
 			intersection += min(countA, countB)
 		}
 	}
-	total := (len(a) - 1) + (len(b) - 1)
+	total := (len(cleanA) - 1) + (len(cleanB) - 1)
 	if total <= 0 {
 		return 0.0
 	}
@@ -572,8 +654,8 @@ func createCommentNode(c *CommentBlock, lang string) *treesitter.ASTNode {
 	return node
 }
 
-func createCommentLineNode(c *CommentBlock, label string, startByte, endByte, row uint32, lang string) *treesitter.ASTNode {
-	node := createSyntheticNode(c.Type, label, startByte, endByte, row, 0, row, uint32(len(label)), lang)
+func createCommentWordNode(c *CommentBlock, label string, startByte, endByte, row, startCol, endCol uint32, lang string) *treesitter.ASTNode {
+	node := createSyntheticNode(c.Type, label, startByte, endByte, row, startCol, row, endCol, lang)
 	if c.ParentType != "" {
 		parent := createSyntheticNode(c.ParentType, "", c.ParentStart, c.ParentEnd, uint32(c.ParentRow), 0, uint32(c.ParentEndRow), 0, lang)
 		node.Parent = parent

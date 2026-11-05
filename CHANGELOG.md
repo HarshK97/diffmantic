@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--show-style-changes` flag (and matching `DIFFM_SHOW_STYLE_CHANGES` environment variable) to show changes that only differ in whitespace or formatting. By default, cosmetic changes like `gofmt` column realignments or re-indented code blocks are hidden from diff hunks (matching Difftastic). If you want to see formatting differences, pass `--show-style-changes` or set `DIFFM_SHOW_STYLE_CHANGES=1`.
 
 ### Changed
+- Comment edits now show only the words that changed. Very short or rewritten comments stay separate, avoiding false updates.
 - Moved declarations (like functions, types, or methods) now use opening-line badges instead of injecting move summaries into hunk headers, keeping hunk headers clean across both unified and side-by-side views.
 - Directional move badges on runs of consecutive single-line statements now collapse into a single badge on the opening line, eliminating repetitive badge ladders while keeping compound statements like `if` and `for` clearly badged on their headers.
 - Cleaned up unused Tree-sitter rule tables for scoped declarations and ignored labels, dropping dead label-stripping logic during AST ingestion.

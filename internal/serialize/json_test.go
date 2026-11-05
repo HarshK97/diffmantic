@@ -1952,7 +1952,7 @@ func CalculateTax(subtotal int) int {
 		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
 	})
 
-	t.Run("MovedFunctionWithUpdatedDocComment", func(t *testing.T) {
+	t.Run("MovedFunctionWithInsertedDocCommentWord", func(t *testing.T) {
 		oldSrc := `package main
 
 // CalculateTax computes standard tax.
@@ -1986,7 +1986,7 @@ func stationaryThree() int {
 	return 3
 }
 
-// CalculateTax computes regional VAT.
+// CalculateTax computes standard regional tax.
 func CalculateTax(subtotal int) int {
 	return subtotal * 2
 }
@@ -2033,15 +2033,15 @@ func CalculateTax(subtotal int) int {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Updated comment text inside moved doc comment must promote to move_update.
-		hasMoveUpdateLeft := false
+		// The unchanged source comment stays a move; the inserted destination word is a move_update.
+		hasMoveLeft := false
 		for _, h := range env.LeftHighlights {
-			if h.Line == 2 && h.Action == "move_update" {
-				hasMoveUpdateLeft = true
+			if h.Line == 2 && h.Action == "move" {
+				hasMoveLeft = true
 			}
 		}
-		if !hasMoveUpdateLeft {
-			t.Errorf("expected left comment line 2 to contain 'move_update' span, got: %+v", env.LeftHighlights)
+		if !hasMoveLeft {
+			t.Errorf("expected left comment line 2 to contain a move span, got: %+v", env.LeftHighlights)
 		}
 
 		hasMoveUpdateRight := false
