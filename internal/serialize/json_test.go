@@ -276,10 +276,100 @@ func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
 	}
 
 	if len(env.LeftHighlights) == 0 {
-		t.Error("expected left highlights for deleted line")
+		t.Fatal("expected left highlights for deleted line")
 	}
 	if len(env.RightHighlights) == 0 {
-		t.Error("expected right highlights for inserted line")
+		t.Fatal("expected right highlights for inserted line")
+	}
+
+	// Verify sub-line word-level highlights isolating "old" vs "new"
+	hLeft := env.LeftHighlights[0]
+	if hLeft.Line != 1 || hLeft.Action != "update" {
+		t.Errorf("expected left highlight on line 1 with action 'update', got %+v", hLeft)
+	}
+	srcLine1 := "\tprintln(\"old\")"
+	if srcLine1[hLeft.StartCol:hLeft.EndCol] != "old" {
+		t.Errorf("expected left highlight to isolate 'old', got %q", srcLine1[hLeft.StartCol:hLeft.EndCol])
+	}
+
+	hRight := env.RightHighlights[0]
+	if hRight.Line != 1 || hRight.Action != "update" {
+		t.Errorf("expected right highlight on line 1 with action 'update', got %+v", hRight)
+	}
+	dstLine1 := "\tprintln(\"new\")"
+	if dstLine1[hRight.StartCol:hRight.EndCol] != "new" {
+		t.Errorf("expected right highlight to isolate 'new', got %q", dstLine1[hRight.StartCol:hRight.EndCol])
+	}
+}
+
+func TestBuildLineDiffEnvelopeWithOptions_WordDiff_AsymmetricAndSpacers(t *testing.T) {
+	// Line 0: identical
+	// Line 1: modified (asymmetrical insert: foo(a) -> foo(a, b))
+	// Line 2: spacer deleted on left (no counterpart on right)
+	srcBytes := []byte("header\nfoo(a)\ndeleted_line\nfooter\n")
+	dstBytes := []byte("header\nfoo(a, b)\nfooter\ninserted_line\n")
+
+	opts := EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeAlignment:  true,
+		IncludeHighlights: true,
+	}
+	env := BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, opts)
+	if env == nil {
+		t.Fatal("expected non-nil envelope")
+	}
+
+	// Line 1 (foo(a) -> foo(a, b)):
+	// Left side should have NO highlights on line 1 because 'foo', '(', 'a', ')' all matched.
+	// Right side should have an 'insert' highlight on line 1 isolating ', b'.
+	for _, h := range env.LeftHighlights {
+		if h.Line == 1 {
+			t.Errorf("unexpected left highlight on line 1 for pure insertion: %+v", h)
+		}
+	}
+	var rightLine1Spans []HighlightSpan
+	for _, h := range env.RightHighlights {
+		if h.Line == 1 {
+			rightLine1Spans = append(rightLine1Spans, h)
+		}
+	}
+	if len(rightLine1Spans) != 1 {
+		t.Fatalf("expected 1 right highlight on line 1, got %d: %+v", len(rightLine1Spans), rightLine1Spans)
+	}
+	if rightLine1Spans[0].Action != "insert" {
+		t.Errorf("expected action 'insert', got %q", rightLine1Spans[0].Action)
+	}
+	dstLine1 := "foo(a, b)"
+	if dstLine1[rightLine1Spans[0].StartCol:rightLine1Spans[0].EndCol] != ", b" {
+		t.Errorf("expected right highlight to isolate ', b', got %q", dstLine1[rightLine1Spans[0].StartCol:rightLine1Spans[0].EndCol])
+	}
+
+	// Line 2: spacer line "deleted_line" on left should emit whole-line delete highlight
+	var leftLine2Spans []HighlightSpan
+	for _, h := range env.LeftHighlights {
+		if h.Line == 2 {
+			leftLine2Spans = append(leftLine2Spans, h)
+		}
+	}
+	if len(leftLine2Spans) != 1 {
+		t.Fatalf("expected 1 left highlight on line 2, got %d: %+v", len(leftLine2Spans), leftLine2Spans)
+	}
+	if leftLine2Spans[0].Action != "delete" || leftLine2Spans[0].StartCol != 0 || leftLine2Spans[0].EndCol != len("deleted_line") {
+		t.Errorf("expected whole-line delete on line 2, got %+v", leftLine2Spans[0])
+	}
+
+	// Line 3 on right: spacer line "inserted_line" should emit whole-line insert highlight
+	var rightLine3Spans []HighlightSpan
+	for _, h := range env.RightHighlights {
+		if h.Line == 3 {
+			rightLine3Spans = append(rightLine3Spans, h)
+		}
+	}
+	if len(rightLine3Spans) != 1 {
+		t.Fatalf("expected 1 right highlight on line 3, got %d: %+v", len(rightLine3Spans), rightLine3Spans)
+	}
+	if rightLine3Spans[0].Action != "insert" || rightLine3Spans[0].StartCol != 0 || rightLine3Spans[0].EndCol != len("inserted_line") {
+		t.Errorf("expected whole-line insert on line 3, got %+v", rightLine3Spans[0])
 	}
 }
 

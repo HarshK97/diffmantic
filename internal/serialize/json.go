@@ -139,6 +139,19 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 		dstLines := strings.Split(string(dstBytes), "\n")
 
 		var actionsList []Action
+		var leftHighlights []HighlightSpan
+		var rightHighlights []HighlightSpan
+
+		var scratch *engine.WordDiffScratch
+		if opts.IncludeHighlights {
+			scratch = engine.AcquireWordDiffScratch()
+			defer engine.ReleaseWordDiffScratch(scratch)
+		}
+
+		trimLineEndCol := func(lineText string) int {
+			return len(strings.TrimRight(lineText, " \t\r\n"))
+		}
+
 		for _, pair := range alignment {
 			if pair.RightLine == -1 && pair.LeftLine != -1 {
 				start, end := getBounds(pair.LeftLine, offsetsSrc, len(srcBytes))
@@ -150,6 +163,17 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 						EndByte:   end,
 					},
 				})
+				if opts.IncludeHighlights && pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+					endCol := trimLineEndCol(srcLines[pair.LeftLine])
+					if endCol > 0 {
+						leftHighlights = append(leftHighlights, HighlightSpan{
+							Line:     pair.LeftLine,
+							StartCol: 0,
+							EndCol:   endCol,
+							Action:   "delete",
+						})
+					}
+				}
 			} else if pair.LeftLine == -1 && pair.RightLine != -1 {
 				start, end := getBounds(pair.RightLine, offsetsDst, len(dstBytes))
 				actionsList = append(actionsList, Action{
@@ -160,9 +184,20 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 						EndByte:   end,
 					},
 				})
+				if opts.IncludeHighlights && pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+					endCol := trimLineEndCol(dstLines[pair.RightLine])
+					if endCol > 0 {
+						rightHighlights = append(rightHighlights, HighlightSpan{
+							Line:     pair.RightLine,
+							StartCol: 0,
+							EndCol:   endCol,
+							Action:   "insert",
+						})
+					}
+				}
 			} else if pair.LeftLine != -1 && pair.RightLine != -1 {
 				// Paired lines with differing text turn into a delete on the left and insert on the right.
-				if pair.LeftLine < len(srcLines) && pair.RightLine < len(dstLines) && srcLines[pair.LeftLine] != dstLines[pair.RightLine] {
+				if pair.LeftLine >= 0 && pair.RightLine >= 0 && pair.LeftLine < len(srcLines) && pair.RightLine < len(dstLines) && srcLines[pair.LeftLine] != dstLines[pair.RightLine] {
 					sText := srcLines[pair.LeftLine]
 					dText := dstLines[pair.RightLine]
 					if !opts.ShowStyleChanges && EqualIgnoringStyle(sText, dText, opts.SignificantWhitespace) {
@@ -186,6 +221,27 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 							EndByte:   endDst,
 						},
 					})
+
+					if scratch != nil {
+						for _, op := range scratch.Diff(sText, dText) {
+							if op.Action != "insert" {
+								leftHighlights = append(leftHighlights, HighlightSpan{
+									Line:     pair.LeftLine,
+									StartCol: op.SrcStart,
+									EndCol:   op.SrcEnd,
+									Action:   op.Action,
+								})
+							}
+							if op.Action != "delete" {
+								rightHighlights = append(rightHighlights, HighlightSpan{
+									Line:     pair.RightLine,
+									StartCol: op.DstStart,
+									EndCol:   op.DstEnd,
+									Action:   op.Action,
+								})
+							}
+						}
+					}
 				}
 			}
 		}
@@ -195,8 +251,8 @@ func BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes []byte, opts EnvelopeOp
 		}
 
 		if opts.IncludeHighlights {
-			env.LeftHighlights = BuildHighlightSpans(srcBytes, actionsList, "left")
-			env.RightHighlights = BuildHighlightSpans(dstBytes, actionsList, "right")
+			env.LeftHighlights = leftHighlights
+			env.RightHighlights = rightHighlights
 		}
 	}
 
