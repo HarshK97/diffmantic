@@ -8,6 +8,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestDiffCommentsIdentical(t *testing.T) {
@@ -40,8 +41,8 @@ func TestDiffCommentsSingleLineUpdate(t *testing.T) {
 	if act.Type != actions.Update {
 		t.Fatalf("expected Update action, got %v", act.Type)
 	}
-	if act.Value != "// New Comment" {
-		t.Errorf("unexpected update value: %q", act.Value)
+	if act.Node.Label != "Old" || act.Value != "New" {
+		t.Errorf("expected word update 'Old' -> 'New', got %q -> %q", act.Node.Label, act.Value)
 	}
 }
 
@@ -65,7 +66,7 @@ func TestDiffCommentsMultiLineLineDiff(t *testing.T) {
 	if act.Type != actions.Update {
 		t.Fatalf("expected Update action, got %v", act.Type)
 	}
-	if act.Node.Label != " * Line 2 Old" || act.Value != " * Line 2 New" {
+	if act.Node.Label != "Old" || act.Value != "New" {
 		t.Errorf("expected line update on line 2, got %q -> %q", act.Node.Label, act.Value)
 	}
 	if act.DestNode == nil {
@@ -113,8 +114,9 @@ func TestDiffCommentsScopeLocking(t *testing.T) {
 	if len(res.Actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(res.Actions))
 	}
-	if res.Actions[0].Type != actions.Update {
-		t.Errorf("expected Update action, got %v", res.Actions[0].Type)
+	// Word diffing classifies inserting "new " as an insert operation.
+	if res.Actions[0].Type != actions.Insert {
+		t.Errorf("expected Insert action, got %v", res.Actions[0].Type)
 	}
 }
 
@@ -265,7 +267,7 @@ func TestSyntheticCommentNodeInvariants(t *testing.T) {
 	}
 }
 
-func TestSyntheticCommentLineNodeInvariants(t *testing.T) {
+func TestSyntheticCommentWordNodeInvariants(t *testing.T) {
 	cb := CommentBlock{
 		Type:         "block_comment",
 		Text:         "/* line 1\n * line 2 */",
@@ -283,7 +285,7 @@ func TestSyntheticCommentLineNodeInvariants(t *testing.T) {
 		Language:     "python",
 	}
 
-	node := createCommentLineNode(&cb, " * line 2 */", 20, 32, 3, cb.Language)
+	node := createCommentWordNode(&cb, " * line 2 */", 20, 32, 3, 0, uint32(len(" * line 2 */")), cb.Language)
 	if node == nil {
 		t.Fatal("expected non-nil ASTNode")
 	}
@@ -599,10 +601,10 @@ func TestDiffCommentsGlobalBestScorePreventsGreedyTheft(t *testing.T) {
 	sc1Deleted := false
 	sc2Updated := false
 	for _, act := range res.Actions {
-		if act.Type == actions.Update && strings.Contains(act.Node.Label, "Delimiter and structural") {
+		if act.Type == actions.Update && act.Node != nil && act.Node.StartRow == uint32(sc2.StartRow) {
 			sc2Updated = true
 		}
-		if act.Type == actions.Delete && strings.Contains(act.Node.Label, "means the parent container is intact") {
+		if act.Type == actions.Delete && act.Node != nil && act.Node.StartRow == uint32(sc1.StartRow) {
 			sc1Deleted = true
 		}
 	}
@@ -647,10 +649,10 @@ func TestDiffCommentsAnchorFirstPrecedenceOverUnanchoredExactMatch(t *testing.T)
 
 	var sc1Updated, scDeletedDeleted bool
 	for _, act := range res.Actions {
-		if act.Type == actions.Update && act.Node != nil && act.Node.Label == "//   doB()" && act.Value == "// doB()" {
+		if act.Type == actions.Update && act.Node != nil && act.Node.StartRow == uint32(sc1.StartRow) {
 			sc1Updated = true
 		}
-		if act.Type == actions.Delete && act.Node != nil && act.Node.Label == "// doB()" {
+		if act.Type == actions.Delete && act.Node != nil && act.Node.StartRow == uint32(scDeleted.StartRow) {
 			scDeletedDeleted = true
 		}
 	}
@@ -699,7 +701,7 @@ func TestDiffCommentsAnchorFirstGlobalBestScorePreventsGreedyTheft(t *testing.T)
 
 	var sc2Updated, sc1Deleted bool
 	for _, act := range res.Actions {
-		if act.Type == actions.Update && act.Node != nil && act.Node.Label == sc2.Text && act.Value == dc.Text {
+		if act.Type == actions.Update && act.Node != nil && act.Node.Label == "string" && act.Value == "text" {
 			sc2Updated = true
 		}
 		if act.Type == actions.Delete && act.Node != nil && act.Node.Label == sc1.Text {
@@ -765,10 +767,10 @@ func main() {
 
 		var stepUpdated, doDeletedDeleted bool
 		for _, act := range res.Actions {
-			if act.Type == actions.Update && strings.Contains(act.Node.Label, "step") && act.Value == "// step" {
+			if act.Type == actions.Update && act.Node != nil && act.Node.StartRow == 4 {
 				stepUpdated = true
 			}
-			if act.Type == actions.Delete && strings.Contains(act.Node.Label, "step") && strings.TrimSpace(act.Node.Label) == "// step" {
+			if act.Type == actions.Delete && act.Node != nil && strings.Contains(act.Node.Label, "step") && act.Node.StartRow == 6 {
 				doDeletedDeleted = true
 			}
 		}
@@ -814,10 +816,10 @@ func main() {
 
 		var stepUpdated, doDeletedDeleted bool
 		for _, act := range res.Actions {
-			if act.Type == actions.Update && strings.Contains(act.Node.Label, "step") && act.Value == "// step" {
+			if act.Type == actions.Update && act.Node != nil && act.Node.StartRow == 3 {
 				stepUpdated = true
 			}
-			if act.Type == actions.Delete && strings.Contains(act.Node.Label, "step") && strings.TrimSpace(act.Node.Label) == "// step" {
+			if act.Type == actions.Delete && act.Node != nil && strings.Contains(act.Node.Label, "step") && act.Node.StartRow == 4 {
 				doDeletedDeleted = true
 			}
 		}
@@ -829,4 +831,240 @@ func main() {
 			t.Errorf("expected doDeleted's comment to be deleted, got actions: %+v", res.Actions)
 		}
 	})
+}
+
+// TestCleanCommentContent verifies delimiter stripping across all 10 supported languages.
+func TestCleanCommentContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "double slash line comment", input: "// Hello world", expected: "Hello world"},
+		{name: "block comment", input: "/* hello world */", expected: "hello world"},
+		{name: "docstring star prefix", input: " * param x", expected: "param x"},
+		{name: "python hash comment", input: "# log error", expected: "log error"},
+		{name: "lua dash comment", input: "-- lua comment", expected: "lua comment"},
+		{name: "triple slash doc comment", input: "/// triple slash", expected: "triple slash"},
+		{name: "leading and trailing whitespace", input: "   //  trimmed text   ", expected: "trimmed text"},
+		{name: "empty comment", input: "//", expected: ""},
+		{name: "empty block comment", input: "/* */", expected: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanCommentContent(tt.input)
+			if got != tt.expected {
+				t.Errorf("cleanCommentContent(%q) = %q, expected %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestStringSimilarity_SubstantiveLengthGuard verifies that short comments require exact matching.
+func TestStringSimilarity_SubstantiveLengthGuard(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		if sim := stringSimilarity("// ok", "// on"); sim != 0.0 {
+			t.Errorf("expected 0.0 for '// ok' vs '// on', got %f", sim)
+		}
+		if sim := stringSimilarity("// a", "// b"); sim != 0.0 {
+			t.Errorf("expected 0.0 for '// a' vs '// b', got %f", sim)
+		}
+		if sim := stringSimilarity("// ok", "// ok"); sim != 1.0 {
+			t.Errorf("expected 1.0 for '// ok' vs '// ok', got %f", sim)
+		}
+		if sim := stringSimilarity("//", "//"); sim != 0.0 {
+			t.Errorf("expected 0.0 for empty comments, got %f", sim)
+		}
+
+		sim := stringSimilarity("// TODO: fix", "// TODO: bug")
+		if sim < 0.50 {
+			t.Errorf("expected similarity >= 0.50 for '// TODO: fix' vs '// TODO: bug', got %f", sim)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func check() {
+	before()
+	// ok
+	target("unchanged")
+	after()
+}
+`)
+		newSrc := []byte(`package main
+
+func check() {
+	before()
+	// on
+	target("unchanged")
+	after()
+}
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.ParseErrorCount != 0 || newAST.ParseErrorCount != 0 {
+			t.Fatalf("expected parseable snippets, got old=%d new=%d errors", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("missing Go rules")
+		}
+		findAtRow := func(root *treesitter.ASTNode, row uint32, matches func(string) bool) *treesitter.ASTNode {
+			var found *treesitter.ASTNode
+			var visit func(*treesitter.ASTNode)
+			visit = func(node *treesitter.ASTNode) {
+				if node == nil || found != nil {
+					return
+				}
+				if node.StartRow == row && matches(node.Type) {
+					found = node
+					return
+				}
+				for _, child := range node.Children {
+					visit(child)
+				}
+			}
+			visit(root)
+			return found
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+		assertMapped := func(name string, src, dst *treesitter.ASTNode) {
+			t.Helper()
+			if src == nil || dst == nil {
+				t.Fatalf("missing %s node: src=%v dst=%v", name, src, dst)
+			}
+			if got := match.Mappings.Src()[src]; got != dst {
+				t.Errorf("%s did not map in place: got %v, want %v", name, got, dst)
+			}
+		}
+
+		assertMapped("function declaration", findAtRow(oldAST, 2, r.IsDeclaration), findAtRow(newAST, 2, r.IsDeclaration))
+		assertMapped("function block", findAtRow(oldAST, 2, r.IsBlock), findAtRow(newAST, 2, r.IsBlock))
+		assertMapped("preceding statement", findAtRow(oldAST, 3, r.IsStatement), findAtRow(newAST, 3, r.IsStatement))
+		assertMapped("target statement", findAtRow(oldAST, 5, r.IsStatement), findAtRow(newAST, 5, r.IsStatement))
+		assertMapped("following statement", findAtRow(oldAST, 6, r.IsStatement), findAtRow(newAST, 6, r.IsStatement))
+		assertMapped("target call", findAtRow(oldAST, 5, r.IsCall), findAtRow(newAST, 5, r.IsCall))
+		assertMapped("target arguments", findAtRow(oldAST, 5, r.IsDelimitedContainer), findAtRow(newAST, 5, r.IsDelimitedContainer))
+
+		srcComments := ExtractComments(oldAST)
+		dstComments := ExtractComments(newAST)
+		if len(srcComments) != 1 || len(dstComments) != 1 {
+			t.Fatalf("expected one comment on each side, got src=%d dst=%d", len(srcComments), len(dstComments))
+		}
+		if srcComments[0].AnchorNode == nil || dstComments[0].AnchorNode == nil {
+			t.Fatalf("expected comments to remain anchored, got src=%+v dst=%+v", srcComments[0], dstComments[0])
+		}
+		assertMapped("comment anchor", srcComments[0].AnchorNode, dstComments[0].AnchorNode)
+
+		result := DiffComments(srcComments, dstComments, match.Mappings)
+		if len(result.Actions) != 2 {
+			t.Fatalf("expected delete and insert for short rewritten comments, got %+v", result.Actions)
+		}
+		var hasDelete, hasInsert bool
+		for _, action := range result.Actions {
+			hasDelete = hasDelete || action.Type == actions.Delete && action.Node.Label == "// ok"
+			hasInsert = hasInsert || action.Type == actions.Insert && action.Node.Label == "// on"
+		}
+		if !hasDelete || !hasInsert {
+			t.Errorf("expected '// ok' delete and '// on' insert, got %+v", result.Actions)
+		}
+	})
+}
+
+// TestDiffComments_WordLevelSingleLine verifies that single-line comment edits
+// isolate the modified words and leave surrounding comment syntax unhighlighted.
+func TestDiffComments_WordLevelSingleLine(t *testing.T) {
+	srcText := "// timeout is 30ms"
+	dstText := "// timeout is 60ms"
+
+	srcComments := []CommentBlock{
+		{Type: "comment", Text: srcText, StartRow: 5, StartCol: 4, StartByte: 50, EndByte: 50 + uint32(len(srcText)), Language: "go"},
+	}
+	dstComments := []CommentBlock{
+		{Type: "comment", Text: dstText, StartRow: 5, StartCol: 4, StartByte: 50, EndByte: 50 + uint32(len(dstText)), Language: "go"},
+	}
+
+	res := DiffComments(srcComments, dstComments, nil)
+	if len(res.Actions) != 1 {
+		t.Fatalf("expected exactly 1 word update action, got %d", len(res.Actions))
+	}
+	act := res.Actions[0]
+	if act.Type != actions.Update {
+		t.Fatalf("expected Update action, got %v", act.Type)
+	}
+	if act.Node.Label != "30ms" {
+		t.Errorf("expected update src label '30ms', got %q", act.Node.Label)
+	}
+	if act.Value != "60ms" {
+		t.Errorf("expected update dest value '60ms', got %q", act.Value)
+	}
+	if act.DestNode == nil || act.DestNode.Label != "60ms" {
+		t.Errorf("expected DestNode label '60ms', got %+v", act.DestNode)
+	}
+
+	// Verify byte offsets: "// timeout is " is 14 bytes, so "30ms" starts at 50 + 14 = 64
+	expectedStart := uint32(50 + 14)
+	expectedEnd := expectedStart + 4
+	if act.Node.StartByte != expectedStart || act.Node.EndByte != expectedEnd {
+		t.Errorf("expected src byte range [%d, %d], got [%d, %d]", expectedStart, expectedEnd, act.Node.StartByte, act.Node.EndByte)
+	}
+	if act.DestNode.StartByte != expectedStart || act.DestNode.EndByte != expectedEnd {
+		t.Errorf("expected dst byte range [%d, %d], got [%d, %d]", expectedStart, expectedEnd, act.DestNode.StartByte, act.DestNode.EndByte)
+	}
+
+	// Verify row and column mapping
+	if act.Node.StartRow != 5 || act.DestNode.StartRow != 5 {
+		t.Errorf("expected row 5 on both nodes, got src %d, dst %d", act.Node.StartRow, act.DestNode.StartRow)
+	}
+	expectedCol := uint32(4 + 14)
+	if act.Node.StartCol != expectedCol || act.DestNode.StartCol != expectedCol {
+		t.Errorf("expected col %d on both nodes, got src %d, dst %d", expectedCol, act.Node.StartCol, act.DestNode.StartCol)
+	}
+	if res.LineMappings[5] != 5 {
+		t.Errorf("expected line mapping 5 -> 5, got %v", res.LineMappings)
+	}
+}
+
+// TestDiffComments_WordLevelMultiLine verifies that modified lines in multiline block
+// comments produce fine-grained word updates rather than whole-line updates.
+func TestDiffComments_WordLevelMultiLine(t *testing.T) {
+	oldComment := "/*\n * Line 1\n * timeout is 30ms\n * Line 3\n */"
+	newComment := "/*\n * Line 1\n * timeout is 60ms\n * Line 3\n */"
+
+	srcComments := []CommentBlock{
+		{Type: "block_comment", Text: oldComment, StartRow: 10, StartByte: 100, EndByte: 100 + uint32(len(oldComment)), Language: "c"},
+	}
+	dstComments := []CommentBlock{
+		{Type: "block_comment", Text: newComment, StartRow: 10, StartByte: 100, EndByte: 100 + uint32(len(newComment)), Language: "c"},
+	}
+
+	res := DiffComments(srcComments, dstComments, nil)
+	if len(res.Actions) != 1 {
+		t.Fatalf("expected exactly 1 word update action in multiline block, got %d (actions: %+v)", len(res.Actions), res.Actions)
+	}
+	act := res.Actions[0]
+	if act.Type != actions.Update {
+		t.Fatalf("expected Update action, got %v", act.Type)
+	}
+	if act.Node.Label != "30ms" {
+		t.Errorf("expected src node label '30ms', got %q", act.Node.Label)
+	}
+	if act.Value != "60ms" {
+		t.Errorf("expected dest value '60ms', got %q", act.Value)
+	}
+	if act.Node.StartRow != 12 || act.DestNode.StartRow != 12 {
+		t.Errorf("expected row 12 for the 3rd line, got src %d, dst %d", act.Node.StartRow, act.DestNode.StartRow)
+	}
 }
