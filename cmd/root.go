@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -1256,6 +1257,9 @@ func dumpFiles(w io.Writer, paths []string, isCST bool) error {
 
 // Execute runs the CLI and exits on error.
 func Execute() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(200)
+	}
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
