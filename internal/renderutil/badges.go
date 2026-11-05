@@ -179,16 +179,17 @@ func BuildMoveBadges(
 		)
 	})
 
-	// If any move in a group spans multiple lines, collapse all member badges to Cyan (slot 0) so they match how the spans render.
-	multiLineGroupsSrc := make(map[string]bool)
-	multiLineGroupsDst := make(map[string]bool)
+	// If any move in a group spans multiple lines in source OR destination,
+	// collapse all member badges to Cyan (slot 0) so they match how the spans render.
+	multiLineGroups := make(map[string]bool)
 	for _, c := range candidates {
 		if c.act.GroupID != "" {
-			if c.sEnd > c.sStart {
-				multiLineGroupsSrc[c.act.GroupID] = true
+			lines := max(c.sEnd-c.sStart+1, c.dEnd-c.dStart+1)
+			if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
+				lines = max(c.act.SrcLineCount, c.act.DstLineCount)
 			}
-			if c.dEnd > c.dStart {
-				multiLineGroupsDst[c.act.GroupID] = true
+			if lines > 1 {
+				multiLineGroups[c.act.GroupID] = true
 			}
 		}
 	}
@@ -265,14 +266,22 @@ func BuildMoveBadges(
 		if c.inSrc && c.sStart >= 0 && c.sStart < len(srcLines) && !isDeleted && !suppressSrc {
 			if _, exists := meta.SrcLineBadges[c.sStart]; !exists {
 				meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" ➔ L%d", c.dStart+1)
-				meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, c.sEnd-c.sStart+1, multiLineGroupsSrc[c.act.GroupID])
+				lines := max(c.sEnd-c.sStart+1, c.dEnd-c.dStart+1)
+				if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
+					lines = max(c.act.SrcLineCount, c.act.DstLineCount)
+				}
+				meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, lines, multiLineGroups[c.act.GroupID])
 				c.hasSrcBadge = true
 			}
 		}
 		if c.inDst && c.dStart >= 0 && c.dStart < len(dstLines) && !isInserted && !suppressDst {
 			if _, exists := meta.DstLineBadges[c.dStart]; !exists {
 				meta.DstLineBadges[c.dStart] = fmt.Sprintf(" ↳ L%d", c.sStart+1)
-				meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, c.dEnd-c.dStart+1, multiLineGroupsDst[c.act.GroupID])
+				lines := max(c.sEnd-c.sStart+1, c.dEnd-c.dStart+1)
+				if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
+					lines = max(c.act.SrcLineCount, c.act.DstLineCount)
+				}
+				meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, lines, multiLineGroups[c.act.GroupID])
 				c.hasDstBadge = true
 			}
 		}

@@ -600,3 +600,149 @@ def dest_fn():
 		}
 	}
 }
+
+func TestGroupMoves_LIS_TiedLengthBreaksByCodeSpan(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		oldParent := &treesitter.ASTNode{Type: "block"}
+		newParent := &treesitter.ASTNode{Type: "block"}
+
+		// 4 statements where 2 and 3 swap order.
+		// Stmt 3 is larger (span 30) than Stmt 2 (span 10).
+		src1 := &treesitter.ASTNode{Type: "expression_statement"}
+		setParentAndRange(src1, oldParent, 10, 30)
+		dst1 := &treesitter.ASTNode{Type: "expression_statement"}
+		setParentAndRange(dst1, newParent, 10, 30)
+
+		src2 := &treesitter.ASTNode{Type: "expression_statement"}
+		setParentAndRange(src2, oldParent, 35, 45)
+		dst2 := &treesitter.ASTNode{Type: "expression_statement"}
+		setParentAndRange(dst2, newParent, 85, 95)
+
+		src3 := &treesitter.ASTNode{Type: "if_statement"}
+		setParentAndRange(src3, oldParent, 50, 80)
+		dst3 := &treesitter.ASTNode{Type: "if_statement"}
+		setParentAndRange(dst3, newParent, 40, 70)
+
+		src4 := &treesitter.ASTNode{Type: "expression_statement"}
+		setParentAndRange(src4, oldParent, 85, 105)
+		dst4 := &treesitter.ASTNode{Type: "expression_statement"}
+		setParentAndRange(dst4, newParent, 100, 120)
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: src1, DestNode: dst1, Parent: newParent})
+		es.Add(actions.Action{Type: actions.Move, Node: src2, DestNode: dst2, Parent: newParent})
+		es.Add(actions.Action{Type: actions.Move, Node: src3, DestNode: dst3, Parent: newParent})
+		es.Add(actions.Action{Type: actions.Move, Node: src4, DestNode: dst4, Parent: newParent})
+
+		grouped := GroupMoves(es, nil)
+		acts := grouped.Actions()
+
+		// 1, 3, 4 cover larger total span than 1, 2, 4, so they form group-1.
+		if acts[0].GroupID != "group-1" {
+			t.Errorf("expected stmt 1 to have group-1, got %q", acts[0].GroupID)
+		}
+		if acts[2].GroupID != "group-1" {
+			t.Errorf("expected larger stmt 3 to have group-1, got %q", acts[2].GroupID)
+		}
+		if acts[3].GroupID != "group-1" {
+			t.Errorf("expected stmt 4 to have group-1, got %q", acts[3].GroupID)
+		}
+		// Smaller stmt 2 was sunk and remains ungrouped.
+		if acts[1].GroupID != "" {
+			t.Errorf("expected smaller sunk stmt 2 to have empty GroupID, got %q", acts[1].GroupID)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		src := []byte(`package main
+
+func process() error {
+	prepare()
+	count++
+	if count > limit {
+		return flush()
+	}
+	return nil
+}
+`)
+		dst := []byte(`package main
+
+func process() error {
+	prepare()
+	if checkCondition() {
+		if count > limit {
+			return flush()
+		}
+		count++
+		return nil
+	}
+	return nil
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "main.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "main.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		var srcPrepare, dstPrepare *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prepare") {
+				srcPrepare = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prepare") {
+				dstPrepare = n
+				break
+			}
+		}
+		if srcPrepare == nil || dstPrepare == nil {
+			t.Fatal("failed to find prepare() call nodes")
+		}
+		if matchResult.Mappings.Src()[srcPrepare] != dstPrepare {
+			t.Errorf("expected stationary prepare() to map in place, got %v", matchResult.Mappings.Src()[srcPrepare])
+		}
+
+		groupMap := make(map[string]string)
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
+				text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
+				groupMap[text] = a.GroupID
+			}
+		}
+
+		ifText := "if count > limit {\n\t\treturn flush()\n\t}"
+		if gid, ok := groupMap[ifText]; !ok || gid == "" {
+			t.Errorf("expected dominant if statement to have non-empty GroupID, got %q (all groups: %+v)", gid, groupMap)
+		}
+		if gid, ok := groupMap["count++"]; !ok || gid != "" {
+			t.Errorf("expected reordered smaller statement count++ to have empty GroupID, got %q", gid)
+		}
+	})
+}
