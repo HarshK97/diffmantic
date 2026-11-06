@@ -755,59 +755,58 @@ func filterMonotonic(cands []anchor) []anchor {
 	if len(cands) == 0 {
 		return nil
 	}
-	// Sort primarily by src ascending, secondarily by dst ascending.
+	// Sort src ascending and dst descending so an increasing dst sequence can't pick
+	// two anchors from the same src line.
 	slices.SortFunc(cands, func(a, b anchor) int {
 		if a.src != b.src {
 			return cmp.Compare(a.src, b.src)
 		}
-		return cmp.Compare(a.dst, b.dst)
+		return cmp.Compare(b.dst, a.dst)
 	})
 
-	// Deduplicate identical (src, dst) pairs.
-	dedup := make([]anchor, 0, len(cands))
-	for i, c := range cands {
-		if i == 0 || c != cands[i-1] {
-			dedup = append(dedup, c)
-		}
-	}
-	cands = dedup
+	cands = slices.Compact(cands)
 	if len(cands) <= 1 {
 		return cands
 	}
 
-	// Dynamic programming to compute the Longest Increasing Subsequence (LIS)
-	// where both src and dst are strictly increasing.
+	// Longest increasing subsequence on dst via patience sorting (O(N log N)).
 	n := len(cands)
-	dp := make([]int, n)
+	tails := make([]int, 0, min(n, 256))
 	parent := make([]int, n)
-	for i := range dp {
-		dp[i] = 1
+	for i := range parent {
 		parent[i] = -1
 	}
 
-	maxLen := 1
-	bestEnd := 0
+	for i, c := range cands {
+		idx, found := slices.BinarySearchFunc(tails, c.dst, func(tailIdx, targetDst int) int {
+			return cmp.Compare(cands[tailIdx].dst, targetDst)
+		})
 
-	for i := 0; i < n; i++ {
-		for j := 0; j < i; j++ {
-			if cands[j].src < cands[i].src && cands[j].dst < cands[i].dst {
-				if dp[j]+1 > dp[i] {
-					dp[i] = dp[j] + 1
-					parent[i] = j
-					if dp[i] > maxLen {
-						maxLen = dp[i]
-						bestEnd = i
-					}
-				}
+		// Already have an anchor for this dst: keep the earlier one since its src line came first.
+		if found {
+			continue
+		}
+
+		if idx == len(tails) {
+			if len(tails) > 0 {
+				parent[i] = tails[len(tails)-1]
 			}
+			tails = append(tails, i)
+		} else {
+			if idx > 0 {
+				parent[i] = tails[idx-1]
+			}
+			tails[idx] = i
 		}
 	}
 
-	result := make([]anchor, 0, maxLen)
-	for curr := bestEnd; curr != -1; curr = parent[curr] {
-		result = append(result, cands[curr])
+	// Reconstruct the anchor chain backwards from the tail.
+	result := make([]anchor, len(tails))
+	curr := tails[len(tails)-1]
+	for k := len(tails) - 1; k >= 0; k-- {
+		result[k] = cands[curr]
+		curr = parent[curr]
 	}
-	slices.Reverse(result)
 	return result
 }
 

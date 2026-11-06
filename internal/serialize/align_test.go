@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1060,6 +1061,70 @@ func BenchmarkAlignLines(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
 			calculateSimilarity(s1, s2, scratch)
+		}
+	})
+}
+
+func TestFilterMonotonicPatienceLIS(t *testing.T) {
+	t.Run("EmptyAndSingle", func(t *testing.T) {
+		if got := filterMonotonic(nil); got != nil {
+			t.Fatalf("got %v, want nil", got)
+		}
+		want := []anchor{{src: 1, dst: 2}}
+		if got := filterMonotonic([]anchor{{src: 1, dst: 2}}); !slices.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("DeduplicationAndDescSorting", func(t *testing.T) {
+		input := []anchor{
+			{src: 1, dst: 5},
+			{src: 1, dst: 5},
+			{src: 1, dst: 10},
+			{src: 2, dst: 8},
+		}
+		want := []anchor{{src: 1, dst: 5}, {src: 2, dst: 8}}
+		if got := filterMonotonic(input); !slices.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("EqualDestinationCollision", func(t *testing.T) {
+		input := []anchor{
+			{src: 1, dst: 5},
+			{src: 2, dst: 5},
+			{src: 3, dst: 10},
+		}
+		want := []anchor{{src: 1, dst: 5}, {src: 3, dst: 10}}
+		if got := filterMonotonic(input); !slices.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("ExhibitB_MonotonicRecovery", func(t *testing.T) {
+		input := []anchor{
+			{src: 1, dst: 2},
+			{src: 2, dst: 1},
+			{src: 3, dst: 3},
+		}
+		res := filterMonotonic(input)
+		if len(res) != 2 {
+			t.Fatalf("expected len 2, got %d (%v)", len(res), res)
+		}
+		if res[0].src >= res[1].src || res[0].dst >= res[1].dst {
+			t.Fatalf("expected strictly increasing subsequence, got %v", res)
+		}
+	})
+
+	t.Run("StrictInversion", func(t *testing.T) {
+		input := []anchor{
+			{src: 1, dst: 3},
+			{src: 2, dst: 2},
+			{src: 3, dst: 1},
+		}
+		res := filterMonotonic(input)
+		if len(res) != 1 {
+			t.Fatalf("expected len 1, got %d (%v)", len(res), res)
 		}
 	})
 }
