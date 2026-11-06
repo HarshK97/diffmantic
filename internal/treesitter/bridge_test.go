@@ -1,6 +1,7 @@
 package treesitter_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -215,7 +216,7 @@ func TestParseErrorDetection(t *testing.T) {
 	})
 
 	t.Run("SyntaxError", func(t *testing.T) {
-		errSrc := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
+		errSrc := []byte("package main\n\nfunc main() {\n\t@@@\n}\n")
 		errRoot, err := treesitter.ParseWithLanguage(errSrc, "go")
 		if err != nil {
 			t.Fatalf("ParseWithLanguage failed: %v", err)
@@ -225,6 +226,108 @@ func TestParseErrorDetection(t *testing.T) {
 		}
 		if errRoot.ParseErrorCount == 0 {
 			t.Errorf("expected ParseErrorCount > 0 for syntax error code")
+		}
+	})
+
+	t.Run("MissingTokenRecovery", func(t *testing.T) {
+		missingSrc := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
+		missingRoot, err := treesitter.ParseWithLanguage(missingSrc, "go")
+		if err != nil {
+			t.Fatalf("ParseWithLanguage failed: %v", err)
+		}
+		if missingRoot.HasError {
+			t.Errorf("expected HasError=false for missing token recovery")
+		}
+		if missingRoot.ParseErrorCount != 0 {
+			t.Errorf("expected ParseErrorCount=0 for missing token recovery, got %d", missingRoot.ParseErrorCount)
+		}
+		var foundMissing bool
+		for _, n := range missingRoot.Descendants() {
+			if strings.HasPrefix(n.Type, "MISSING") {
+				foundMissing = true
+				if n.StartByte != n.EndByte {
+					t.Errorf("expected zero-width MISSING node, got start=%d end=%d", n.StartByte, n.EndByte)
+				}
+				break
+			}
+		}
+		if !foundMissing {
+			t.Errorf("expected at least one MISSING node in AST for missing RHS")
+		}
+	})
+}
+
+func TestIngestFlatAST_ErrorVsMissingSeparation(t *testing.T) {
+	symbols := []string{"source_file", "identifier", ";"}
+	src := []byte("foo")
+
+	t.Run("Unit_MissingFlagDoesNotCountAsParseError", func(t *testing.T) {
+		nodes := []treesitter.FlatNode{
+			{
+				TypeID:         0,
+				Flags:          treesitter.FlatNodeNamed,
+				StartByte:      0,
+				EndByte:        3,
+				ChildCount:     1,
+				FirstChildIdx:  1,
+				NextSiblingIdx: 0xFFFFFFFF,
+				ParentIdx:      0xFFFFFFFF,
+			},
+			{
+				TypeID:         2,
+				Flags:          treesitter.FlatNodeMissing,
+				StartByte:      3,
+				EndByte:        3,
+				ChildCount:     0,
+				FirstChildIdx:  0xFFFFFFFF,
+				NextSiblingIdx: 0xFFFFFFFF,
+				ParentIdx:      0,
+			},
+		}
+		root := treesitter.IngestFlatAST(nodes, symbols, src, "c")
+		if root == nil {
+			t.Fatal("expected non-nil AST root")
+		}
+		if root.HasError {
+			t.Errorf("expected HasError=false for FlatNodeMissing, got true")
+		}
+		if root.ParseErrorCount != 0 {
+			t.Errorf("expected ParseErrorCount=0 for FlatNodeMissing, got %d", root.ParseErrorCount)
+		}
+	})
+
+	t.Run("Unit_ErrorFlagCountsAsParseError", func(t *testing.T) {
+		nodes := []treesitter.FlatNode{
+			{
+				TypeID:         0,
+				Flags:          treesitter.FlatNodeNamed,
+				StartByte:      0,
+				EndByte:        3,
+				ChildCount:     1,
+				FirstChildIdx:  1,
+				NextSiblingIdx: 0xFFFFFFFF,
+				ParentIdx:      0xFFFFFFFF,
+			},
+			{
+				TypeID:         1,
+				Flags:          treesitter.FlatNodeError,
+				StartByte:      0,
+				EndByte:        3,
+				ChildCount:     0,
+				FirstChildIdx:  0xFFFFFFFF,
+				NextSiblingIdx: 0xFFFFFFFF,
+				ParentIdx:      0,
+			},
+		}
+		root := treesitter.IngestFlatAST(nodes, symbols, src, "c")
+		if root == nil {
+			t.Fatal("expected non-nil AST root")
+		}
+		if !root.HasError {
+			t.Errorf("expected HasError=true for FlatNodeError, got false")
+		}
+		if root.ParseErrorCount != 1 {
+			t.Errorf("expected ParseErrorCount=1 for FlatNodeError, got %d", root.ParseErrorCount)
 		}
 	})
 }

@@ -20,7 +20,7 @@ func IngestFlatAST(nodes []FlatNode, symbols []string, src []byte, langName stri
 	var errCount int
 	for i := range nodes {
 		fn := &nodes[i]
-		if (fn.Flags&FlatNodeError != 0) || (fn.Flags&FlatNodeMissing != 0) {
+		if fn.Flags&FlatNodeError != 0 {
 			errCount++
 		}
 	}

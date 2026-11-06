@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestPipeline_LineLimitFallback(t *testing.T) {
@@ -383,7 +385,7 @@ func f() {
 
 func TestPipeline_ParseErrorFallbackBoundary(t *testing.T) {
 	validGo := []byte("package main\n\nfunc main() {\n\tx := 10\n}\n")
-	brokenGo := []byte("package main\n\nfunc main() {\n\tx :=\n}\n")
+	brokenGo := []byte("package main\n\nfunc main() {\n\t@@@\n}\n")
 	plainText := []byte("This is plain text documentation.\nNot Go code at all.\n")
 
 	t.Run("SyntaxErrorTriggersParseErrorFallback", func(t *testing.T) {
@@ -480,6 +482,126 @@ func TestPipeline_ParseErrorFallbackBoundary(t *testing.T) {
 		}
 		if res.Envelope.FallbackReason != serialize.FallbackReasonParseError {
 			t.Errorf("expected FallbackReason %q on broken new file, got %q", serialize.FallbackReasonParseError, res.Envelope.FallbackReason)
+		}
+	})
+
+	t.Run("MissingTokenRecoveryRetainsStructuralDiff", func(t *testing.T) {
+		oldC := []byte(`void logger(const char *msg) {
+    (void)msg;
+}
+
+int main(void) {
+    int total = 0;
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+        total += 10;
+    }
+    return total;
+}
+`)
+		newC := []byte(`void logger(const char *msg) {
+    (void)msg;
+}
+
+int main(void) {
+    int total = 0;
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+        total += 20;
+    }
+    return total;
+}
+`)
+		res, err := Run(oldC, newC, "old.c", "new.c", DiffOptions{
+			ParseErrorLimit: 0,
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected Run error: %v", err)
+		}
+		if res.MatchResult == nil {
+			t.Fatal("expected non-nil MatchResult for C macro with missing tokens under ParseErrorLimit=0")
+		}
+		if res.Envelope.FallbackReason != "" {
+			t.Errorf("expected empty FallbackReason, got %q", res.Envelope.FallbackReason)
+		}
+		if res.Envelope.FallbackAnnotation != "" {
+			t.Errorf("expected empty FallbackAnnotation, got %q", res.Envelope.FallbackAnnotation)
+		}
+
+		// Whole-snippet verification:
+		r := rules.Get("c")
+		srcMappings := res.MatchResult.Mappings.Src()
+
+		hasIdent := func(node *treesitter.ASTNode, name string) bool {
+			return slices.ContainsFunc(node.Descendants(), func(d *treesitter.ASTNode) bool {
+				return r.IsIdentifier(d.Type) && d.Label == name
+			})
+		}
+
+		// 1. Enclosing context: main function definitions must map in place
+		var mainOld, mainNew *treesitter.ASTNode
+		for _, n := range res.SrcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && hasIdent(n, "main") {
+				mainOld = n
+				break
+			}
+		}
+		for _, n := range res.DstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && hasIdent(n, "main") {
+				mainNew = n
+				break
+			}
+		}
+		if mainOld == nil || mainNew == nil {
+			t.Fatalf("expected to locate main function declarations in both ASTs")
+		}
+		if srcMappings[mainOld] != mainNew {
+			t.Errorf("expected main function declaration to map in place across ASTs")
+		}
+
+		// 2. Surrounding statements: macro call and adjacent statements must map in place
+		var macroCallOld, macroCallNew *treesitter.ASTNode
+		for _, n := range mainOld.Descendants() {
+			if r.IsCall(n.Type) && hasIdent(n, "FOR_ALL_TAB_WINDOWS") {
+				macroCallOld = n
+				break
+			}
+		}
+		for _, n := range mainNew.Descendants() {
+			if r.IsCall(n.Type) && hasIdent(n, "FOR_ALL_TAB_WINDOWS") {
+				macroCallNew = n
+				break
+			}
+		}
+		if macroCallOld == nil || macroCallNew == nil {
+			t.Fatalf("expected to find FOR_ALL_TAB_WINDOWS call in both ASTs")
+		}
+		if srcMappings[macroCallOld] != macroCallNew {
+			t.Errorf("expected FOR_ALL_TAB_WINDOWS call to map in place")
+		}
+
+		// 3. Highlights: only '10' -> '20' should take an update highlight
+		var leftUpdates, rightUpdates []serialize.HighlightSpan
+		for _, h := range res.Envelope.LeftHighlights {
+			if h.Action == "update" {
+				leftUpdates = append(leftUpdates, h)
+			}
+		}
+		for _, h := range res.Envelope.RightHighlights {
+			if h.Action == "update" {
+				rightUpdates = append(rightUpdates, h)
+			}
+		}
+		if len(leftUpdates) != 1 || len(rightUpdates) != 1 {
+			t.Errorf("expected exactly 1 update highlight on each side, got left=%v right=%v", leftUpdates, rightUpdates)
+		}
+		if len(leftUpdates) == 1 && (leftUpdates[0].Line != 7 || leftUpdates[0].StartCol != 17 || leftUpdates[0].EndCol != 19) {
+			t.Errorf("unexpected left update highlight bounds: %+v", leftUpdates[0])
+		}
+		if len(rightUpdates) == 1 && (rightUpdates[0].Line != 7 || rightUpdates[0].StartCol != 17 || rightUpdates[0].EndCol != 19) {
+			t.Errorf("unexpected right update highlight bounds: %+v", rightUpdates[0])
 		}
 	})
 }
