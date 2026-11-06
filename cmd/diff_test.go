@@ -128,8 +128,8 @@ func TestComputeDiffWithParseErrorLimit(t *testing.T) {
 	fileA := filepath.Join(dir, "a.go")
 	fileB := filepath.Join(dir, "b.go")
 
-	// File with syntax error (missing := RHS)
-	_ = os.WriteFile(fileA, []byte("package main\n\nfunc foo() {\n\tx :=\n}\n"), 0o644)
+	// File with syntax error producing an ERROR node (@@@ is invalid Go)
+	_ = os.WriteFile(fileA, []byte("package main\n\nfunc foo() {\n\t@@@\n}\n"), 0o644)
 	_ = os.WriteFile(fileB, []byte("package main\n\nfunc foo() {\n\tx := 10\n}\n"), 0o644)
 
 	opts := serialize.EnvelopeOptions{IncludeActions: true}
