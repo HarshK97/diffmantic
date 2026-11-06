@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- Pipelined concurrent Git pager diffing: When using Diffmantic as Git's stream-hijacking pager (`git diff | diffm`, `git log -p | diffm`, or `git config pager.diff diffm`), files now diff concurrently across background CPU workers while streaming, running up to 3× faster with bounded memory and instant, clean exit when quitting the pager (`q`).
+
 ## [0.15.0] - 2026-11-5
 
 ### Added

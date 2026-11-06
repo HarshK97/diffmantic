@@ -1168,6 +1168,7 @@ func runStreamMode(
 		IsActive: func() bool {
 			return p == nil || p.IsActive()
 		},
+		Pager: p,
 	}
 
 	repoRoot := cmp.Or(git.FindRepoRoot("."), ".")

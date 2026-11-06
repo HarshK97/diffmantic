@@ -2,12 +2,17 @@ package streamdiff
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 
 	"github.com/HarshK97/diffmantic/internal/unified"
 )
@@ -780,5 +785,246 @@ Date:   Tue Oct 6 09:25:01 2026 +0530
 	}
 	if calls == 0 {
 		t.Errorf("expected IsActive callback to be invoked, got %d calls", calls)
+	}
+}
+
+// TestConcurrentFIFOStreamReconstruction ensures files diffed in parallel
+// come out in the exact order they appeared in the stream.
+func TestConcurrentFIFOStreamReconstruction(t *testing.T) {
+	repoDir := t.TempDir()
+	execGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	execGit("init")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "checkout", "-b", "main")
+
+	const numFiles = 25
+	for i := range numFiles {
+		name := fmt.Sprintf("file_%02d.go", i)
+		src := fmt.Sprintf("package main\n\nfunc Run%02d() int {\n\treturn %d\n}\n", i, i)
+		if err := os.WriteFile(filepath.Join(repoDir, name), []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	execGit("add", ".")
+	execGit("-c", "commit.gpgsign=false", "-c", "user.email=t@test.com", "-c", "user.name=test", "commit", "-m", "initial 25 files")
+
+	for i := range numFiles {
+		name := fmt.Sprintf("file_%02d.go", i)
+		dst := fmt.Sprintf("package main\n\nfunc Run%02d() int {\n\tval := %d\n\treturn val * 10\n}\n", i, i)
+		if err := os.WriteFile(filepath.Join(repoDir, name), []byte(dst), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	diffText := execGit("diff")
+	if !strings.Contains(diffText, "diff --git a/file_00.go b/file_00.go") {
+		t.Fatalf("expected git diff to contain file_00.go")
+	}
+
+	var out bytes.Buffer
+	cfg := StreamConfig{
+		Format: "unified",
+		UnifiedOpts: unified.RenderOptions{
+			ContextLines: 2,
+			Color:        false,
+		},
+	}
+
+	err := Process(strings.NewReader(diffText), &out, repoDir, cfg)
+	if err != nil {
+		t.Fatalf("Process failed on concurrent 25-file batch: %v", err)
+	}
+
+	outStr := out.String()
+	lastPos := -1
+	for i := range numFiles {
+		target := fmt.Sprintf("file_%02d.go", i)
+		pos := strings.Index(outStr, target)
+		if pos == -1 {
+			t.Fatalf("missing %s in stream output", target)
+		}
+		if pos < lastPos {
+			t.Fatalf("FIFO ordering violation: %s (pos %d) appeared before previous file (pos %d)", target, pos, lastPos)
+		}
+		lastPos = pos
+
+		modCode := fmt.Sprintf("val := %d", i)
+		if !strings.Contains(outStr, modCode) {
+			t.Errorf("missing modified code for %s", target)
+		}
+	}
+}
+
+// TestInWorkerASTPruning checks that ASTs and file buffers are nilled out right after rendering.
+func TestInWorkerASTPruning(t *testing.T) {
+	ctx := t.Context()
+
+	hunk := &fileHunk{
+		oldPath: "foo.go",
+		newPath: "foo.go",
+		lines:   []string{"diff --git a/foo.go b/foo.go\n"},
+	}
+
+	src := []byte("package main\nfunc A() int { return 1 }\n")
+	dst := []byte("package main\nfunc A() int { return 2 }\n")
+
+	job := &diffJob{
+		hunk:     hunk,
+		srcBytes: src,
+		dstBytes: dst,
+		done:     make(chan struct{}),
+	}
+	cfg := StreamConfig{Format: "unified"}
+
+	processStreamJob(ctx, job, cfg)
+	<-job.done
+
+	if job.srcBytes != nil {
+		t.Errorf("expected job.srcBytes to be discarded, but got %v", job.srcBytes)
+	}
+	if job.dstBytes != nil {
+		t.Errorf("expected job.dstBytes to be discarded, but got %v", job.dstBytes)
+	}
+	if len(job.out) == 0 {
+		t.Errorf("expected rendered job.out to be populated")
+	}
+}
+
+// TestTeardownFreezeImmunity checks that canceling the context unblocks Process without freezing.
+func TestTeardownFreezeImmunity(t *testing.T) {
+	pr, pw := io.Pipe()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cfg := StreamConfig{
+		Format:  "unified",
+		Context: ctx,
+	}
+
+	errCh := make(chan error, 1)
+	var out bytes.Buffer
+
+	go func() {
+		errCh <- Process(pr, &out, t.TempDir(), cfg)
+	}()
+
+	// Write start of stream, but leave pipe unclosed
+	go func() {
+		_, _ = pw.Write([]byte("commit 1482c9cdd9d9cf878191d1b04f81422ccd02967e\nAuthor: Dev <d@e.com>\nDate: 2026-10-01\n\n    msg\n\n"))
+	}()
+
+	// Sleep briefly so reader begins reading
+	time.Sleep(20 * time.Millisecond)
+
+	start := time.Now()
+	cancel() // Simulate pager quit 'q'
+
+	select {
+	case err := <-errCh:
+		elapsed := time.Since(start)
+		if elapsed > 200*time.Millisecond {
+			t.Errorf("teardown took too long (%v), expected sub-100ms", elapsed)
+		}
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("unexpected error on teardown: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("terminal freeze detected: Process did not terminate within 500ms after cancel")
+	}
+
+	_ = pw.Close()
+	_ = pr.Close()
+}
+
+// TestTeardownDeadlineUnblock tests that SetReadDeadline unblocking with os.ErrDeadlineExceeded
+// does not trigger a false-positive fatal error when canceling.
+func TestTeardownDeadlineUnblock(t *testing.T) {
+	reader := &deadlineStubReader{unblock: make(chan struct{})}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cfg := StreamConfig{
+		Format:  "unified",
+		Context: ctx,
+	}
+
+	errCh := make(chan error, 1)
+	var out bytes.Buffer
+
+	go func() {
+		errCh <- Process(reader, &out, t.TempDir(), cfg)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("expected nil or context.Canceled on deadline unblock, got: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("deadline reader did not unblock in time")
+	}
+}
+
+type deadlineStubReader struct {
+	unblock chan struct{}
+}
+
+func (r *deadlineStubReader) SetReadDeadline(t time.Time) error {
+	select {
+	case <-r.unblock:
+	default:
+		close(r.unblock)
+	}
+	return nil
+}
+
+func (r *deadlineStubReader) Read(p []byte) (int, error) {
+	<-r.unblock
+	return 0, os.ErrDeadlineExceeded
+}
+
+// TestDualTierExitCodeGovernance checks that fallback diffs return exit code 0,
+// while actual stream read failures return an error.
+func TestDualTierExitCodeGovernance(t *testing.T) {
+	// Case 1: Graceful fallback on missing hashes returns nil (exit code 0)
+	{
+		input := `diff --git a/unknown.go b/unknown.go
+index 1111111..2222222 100644
+--- a/unknown.go
++++ b/unknown.go
+@@ -1 +1 @@
+-old
++new
+`
+		var out bytes.Buffer
+		cfg := StreamConfig{Format: "unified"}
+		err := Process(strings.NewReader(input), &out, t.TempDir(), cfg)
+		if err != nil {
+			t.Fatalf("expected nil error on graceful fallback, got: %v", err)
+		}
+		if !strings.Contains(out.String(), "diff --git a/unknown.go") {
+			t.Errorf("expected raw patch passthrough, got:\n%s", out.String())
+		}
+	}
+
+	// Case 2: Fatal unreadable stream returns fatal error (exit code 1)
+	{
+		errReader := iotest.ErrReader(errors.New("disk read error"))
+		var out bytes.Buffer
+		cfg := StreamConfig{Format: "unified"}
+		err := Process(errReader, &out, t.TempDir(), cfg)
+		if err == nil {
+			t.Fatalf("expected fatal error from broken reader, got nil")
+		}
 	}
 }
