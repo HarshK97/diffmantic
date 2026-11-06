@@ -798,12 +798,13 @@ func reconcileDeclarationSignatures(t1, t2 *treesitter.ASTNode, m *Mapping, r *r
 }
 
 // ContestContainers reassigns T2 containers that got greedily claimed by an inner T1 node
-// during bottom-up matching back to their proper outer T1 parent.
+// during bottom-up matching back to their proper outer T1 parent. If part is provided,
+// it skips untouched Group 1 containers and keeps reassignments within line partition boundaries.
 //
 // Example: deleting an if-block can trick BottomUp into matching the if's inner block
 // to the outer function body (if they share something like a throw). That leaves the
 // real function body unmapped and generates a mess of spurious Move actions.
-func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
+func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *LinePartition) {
 	dstMap := m.Dst()
 	r := rulesFor(t1Root)
 
@@ -813,6 +814,12 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 
 		currentT1 := dstMap[t2]
+
+		// Skip untouched Group 1 nodes: if t2 and currentT1 already sit on matching
+		// untouched lines, nothing else can legally claim t2.
+		if isG1B, startA := part.IsGroup1B(t2); isG1B && int(currentT1.StartRow) == startA {
+			continue
+		}
 
 		t1MappedParent := dstMap[t2.Parent]
 		if t1MappedParent == nil {
@@ -827,12 +834,12 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			var bestCandidate *treesitter.ASTNode
 			bestScore := 0.0
 
-			currCommon, _, _ := commonMappedDescendants(currentT1, t2, m.Src())
-			currDice := m.DiceSrc(currentT1, t2)
-			currAffinity := max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+			currCommon := -1
+			currDice := -1.0
+			currAffinity := -1.0
 
 			for _, candidate := range t1MappedParent.Children {
-				if candidate == currentT1 || !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) {
+				if candidate == currentT1 || !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) || !part.CanMatch(candidate, t2) {
 					continue
 				}
 
@@ -843,6 +850,12 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 				candDice := m.DiceSrc(candidate, t2)
 				candAffinity := max(0, computeAffinity(candidate, t2, m, DefaultAffinityWeights, true))
+
+				if currCommon < 0 {
+					currCommon, _, _ = commonMappedDescendants(currentT1, t2, m.Src())
+					currDice = m.DiceSrc(currentT1, t2)
+					currAffinity = max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+				}
 
 				isSuperior := false
 				if candCommon > currCommon && (candDice >= currDice || candAffinity >= currAffinity) {
@@ -884,17 +897,26 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		var bestCandidate *treesitter.ASTNode
 		bestScore := -1.0
 
-		currCommon, _, _ := commonMappedDescendants(currentT1, t2, m.Src())
-		currDice := m.DiceSrc(currentT1, t2)
-		currAffinity := max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+		currCommon := -1
+		currDice := -1.0
+		currAffinity := -1.0
 
 		for _, candidate := range t1MappedParent.Children {
-			if !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) {
+			if !TypesMatch(candidate.Type, t2.Type, r) || m.Has(candidate) || !part.CanMatch(candidate, t2) {
 				continue
 			}
 
 			if candidate.Contains(currentT1) {
-				if m.DiceSrc(candidate, t2) > currDice || isBlockNode(candidate, r) {
+				if isBlockNode(candidate, r) {
+					bestCandidate = candidate
+					break
+				}
+				if currCommon < 0 {
+					currCommon, _, _ = commonMappedDescendants(currentT1, t2, m.Src())
+					currDice = m.DiceSrc(currentT1, t2)
+					currAffinity = max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+				}
+				if m.DiceSrc(candidate, t2) > currDice {
 					bestCandidate = candidate
 					break
 				}
@@ -904,6 +926,12 @@ func ContestContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			candCommon, _, _ := commonMappedDescendants(candidate, t2, m.Src())
 			candDice := m.DiceSrc(candidate, t2)
 			candAffinity := max(0, computeAffinity(candidate, t2, m, DefaultAffinityWeights, true))
+
+			if currCommon < 0 {
+				currCommon, _, _ = commonMappedDescendants(currentT1, t2, m.Src())
+				currDice = m.DiceSrc(currentT1, t2)
+				currAffinity = max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+			}
 
 			canReclaim := (candCommon > currCommon && (candDice >= currDice || candAffinity >= currAffinity)) ||
 				(candDice > currDice && candAffinity > currAffinity) ||

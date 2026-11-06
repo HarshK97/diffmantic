@@ -240,7 +240,7 @@ func TestContestContainers_SiblingArbitration(t *testing.T) {
 	// Simulate BottomUp greedy post-order: t1Early grabbed t2
 	m.Add(t1Early, t2)
 
-	ContestContainers(root1, root2, m)
+	ContestContainers(root1, root2, m, nil)
 
 	// Sibling contest should reassign t2 from t1Early to t1Stationary
 	if m.Get(t1Early) != nil {
@@ -268,7 +268,7 @@ func TestContestContainers_VerticalHierarchy(t *testing.T) {
 	m.Add(inner1.Children[0], inner2)
 	m.Add(inner1, outer2) // Inner block greedily stole outer function body
 
-	ContestContainers(root1, root2, m)
+	ContestContainers(root1, root2, m, nil)
 
 	if m.Get(inner1) != nil {
 		t.Errorf("expected inner1 to be unmapped, got %v", m.Get(inner1))
@@ -551,7 +551,7 @@ func TestContestContainers_VerticalReclaim(t *testing.T) {
 	m.Add(opDecomp, opNew)
 	m.Add(rhsDecomp, rhsNew)
 
-	ContestContainers(root1, root2, m)
+	ContestContainers(root1, root2, m, nil)
 
 	if got := m.Get(currentT1); got != nil {
 		t.Errorf("m.Get(currentT1) = %v, want nil", got)
@@ -2453,6 +2453,215 @@ func f() {
 		}
 		if m.Src()[oldResDecl] != newResDecl {
 			t.Errorf("expected res := statement to match in place, got %v", m.Src()[oldResDecl])
+		}
+	})
+}
+
+func TestContestContainers_LinePartition(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		// Make sure untouched containers in Group 1 skip contest evaluation,
+		// while edited containers in Group 2 can still be reclaimed by siblings.
+		leafURL1 := testutil.Leaf("string", "\"url_match\"")
+		t1Early := testutil.Node("object", "",
+			testutil.Node("pair", "", testutil.Leaf("string", "\"name\""), testutil.Leaf("string", "\"early\"")),
+			testutil.Node("pair", "", testutil.Leaf("string", "\"url\""), leafURL1),
+		)
+		t1Early.StartRow = 5
+		t1Early.EndRow = 7
+
+		leafDesc1 := testutil.Leaf("string", "\"desc_match\"")
+		leafMatch1 := testutil.Leaf("string", "\"file_match\"")
+		t1Stationary := testutil.Node("object", "",
+			testutil.Node("pair", "", testutil.Leaf("string", "\"name\""), testutil.Leaf("string", "\"stationary\"")),
+			testutil.Node("pair", "", testutil.Leaf("string", "\"desc\""), leafDesc1),
+			testutil.Node("pair", "", testutil.Leaf("string", "\"fileMatch\""), leafMatch1),
+		)
+		t1Stationary.StartRow = 8
+		t1Stationary.EndRow = 11
+
+		root1 := testutil.Node("array", "", t1Early, t1Stationary)
+
+		leafURL2 := testutil.Leaf("string", "\"url_match\"")
+		leafDesc2 := testutil.Leaf("string", "\"desc_match\"")
+		leafMatch2 := testutil.Leaf("string", "\"file_match\"")
+		t2 := testutil.Node("object", "",
+			testutil.Node("pair", "", testutil.Leaf("string", "\"name\""), testutil.Leaf("string", "\"stationary_updated\"")),
+			testutil.Node("pair", "", testutil.Leaf("string", "\"desc\""), leafDesc2),
+			testutil.Node("pair", "", testutil.Leaf("string", "\"fileMatch\""), leafMatch2),
+			testutil.Node("pair", "", testutil.Leaf("string", "\"url\""), leafURL2),
+		)
+		t2.StartRow = 5
+		t2.EndRow = 7
+
+		root2 := testutil.Node("array", "", t2)
+
+		// Case A: t2 sits in an untouched line partition (Group 1, rows 5..7).
+		// ContestContainers should skip it and leave t1Early mapped.
+		partUntouched := &LinePartition{
+			matchedA:     map[int]int{5: 5, 6: 6, 7: 7},
+			matchedB:     map[int]int{5: 5, 6: 6, 7: 7},
+			substantiveA: []bool{false, false, false, false, false, true, true, true},
+			substantiveB: []bool{false, false, false, false, false, true, true, true},
+			cacheA:       make(map[*treesitter.ASTNode]groupResult),
+			cacheB:       make(map[*treesitter.ASTNode]groupResult),
+		}
+
+		mA := NewMapping()
+		mA.Add(root1, root2)
+		mA.Add(leafURL1, leafURL2)
+		mA.Add(leafDesc1, leafDesc2)
+		mA.Add(leafMatch1, leafMatch2)
+		mA.Add(t1Early, t2)
+
+		ContestContainers(root1, root2, mA, partUntouched)
+
+		if mA.Get(t1Early) != t2 {
+			t.Errorf("expected untouched container in Group 1 to bypass contest and remain mapped to t1Early, got %v", mA.Get(t1Early))
+		}
+
+		// Case B: t2 is in Group 2 (edited lines).
+		// Sibling contest should run and reassign t2 to t1Stationary.
+		mB := NewMapping()
+		mB.Add(root1, root2)
+		mB.Add(leafURL1, leafURL2)
+		mB.Add(leafDesc1, leafDesc2)
+		mB.Add(leafMatch1, leafMatch2)
+		mB.Add(t1Early, t2)
+
+		partEdited := &LinePartition{
+			matchedA:     map[int]int{},
+			matchedB:     map[int]int{},
+			substantiveA: make([]bool, 20),
+			substantiveB: make([]bool, 20),
+			cacheA:       make(map[*treesitter.ASTNode]groupResult),
+			cacheB:       make(map[*treesitter.ASTNode]groupResult),
+		}
+
+		ContestContainers(root1, root2, mB, partEdited)
+
+		if mB.Get(t1Early) != nil {
+			t.Errorf("expected t1Early to be unmapped in Group 2 contest, got %v", mB.Get(t1Early))
+		}
+		if mB.Get(t1Stationary) != t2 {
+			t.Errorf("expected t1Stationary to reclaim t2 in Group 2 contest, got %v", mB.Get(t1Stationary))
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func stationaryHelper(val int) int {
+	if val > 10 {
+		return val * 2
+	}
+	return val + 1
+}
+
+func process(x, y int) int {
+	res := 0
+	if x > 0 {
+		res += x * 10
+	}
+	return res + y
+}
+`)
+		newSrc := []byte(`package main
+
+func stationaryHelper(val int) int {
+	if val > 10 {
+		return val * 2
+	}
+	return val + 1
+}
+
+func process(x, y int) int {
+	res := 0
+	if x > 0 {
+		res += x * 20
+	}
+	return res + y
+}
+`)
+
+		oldTree, err := treesitter.Parse(oldSrc, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse old tree: %v", err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse new tree: %v", err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(oldTree, newTree)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil result")
+		}
+
+		r := rulesFor(oldTree)
+		m := mr.Mappings
+
+		// 1. Enclosing Context: Both functions must map in place
+		var oldHelper, newHelper, oldProcess, newProcess *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "stationaryHelper":
+					oldHelper = n
+				case "process":
+					oldProcess = n
+				}
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "stationaryHelper":
+					newHelper = n
+				case "process":
+					newProcess = n
+				}
+			}
+		}
+
+		if oldHelper == nil || newHelper == nil || oldProcess == nil || newProcess == nil {
+			t.Fatalf("failed to locate functions: oldHelper=%v, newHelper=%v, oldProcess=%v, newProcess=%v",
+				oldHelper, newHelper, oldProcess, newProcess)
+		}
+		if m.Src()[oldHelper] != newHelper {
+			t.Errorf("stationaryHelper should map in place, got %v", m.Src()[oldHelper])
+		}
+		if m.Src()[oldProcess] != newProcess {
+			t.Errorf("process should map in place, got %v", m.Src()[oldProcess])
+		}
+
+		// 2. Untouched Containers in stationaryHelper: if block and return statements must map in place
+		for _, n1 := range oldHelper.Descendants() {
+			if r.IsBlock(n1.Type) || r.IsStatement(n1.Type) {
+				n2 := m.Src()[n1]
+				if n2 == nil {
+					t.Errorf("expected untouched node %s in stationaryHelper to be mapped", n1.Type)
+				} else if !newHelper.Contains(n2) {
+					t.Errorf("node %s escaped stationaryHelper into foreign function", n1.Type)
+				}
+			}
+		}
+
+		// 3. Surrounding Sequence & Target Containers in process
+		for _, n1 := range oldProcess.Descendants() {
+			if r.IsStatement(n1.Type) && bytes.Contains(oldSrc[n1.StartByte:n1.EndByte], []byte("res := 0")) {
+				n2 := m.Src()[n1]
+				if n2 == nil || !bytes.Contains(newSrc[n2.StartByte:n2.EndByte], []byte("res := 0")) {
+					t.Errorf("res := 0 statement failed to map in place")
+				}
+			}
+			if r.IsStatement(n1.Type) && bytes.Contains(oldSrc[n1.StartByte:n1.EndByte], []byte("return res + y")) {
+				n2 := m.Src()[n1]
+				if n2 == nil || !bytes.Contains(newSrc[n2.StartByte:n2.EndByte], []byte("return res + y")) {
+					t.Errorf("return res + y statement failed to map in place")
+				}
+			}
 		}
 	})
 }
