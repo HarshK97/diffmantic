@@ -39,7 +39,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 	matchPairValues(t1, t2, mappings)
 
 	BottomUp(t1, t2, mappings, minDice)
-	ContestContainers(t1, t2, mappings)
+	ContestContainers(t1, t2, mappings, part)
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
 	RollupMatchedContainers(t1, t2, mappings)
