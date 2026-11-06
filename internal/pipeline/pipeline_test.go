@@ -26,6 +26,16 @@ func TestPipeline_LineLimitFallback(t *testing.T) {
 	if res.SrcAST != nil || res.DstAST != nil {
 		t.Errorf("expected AST nil on line limit fallback, got non-nil")
 	}
+	if res.Envelope == nil {
+		t.Fatal("expected non-nil Envelope on line limit fallback")
+	}
+	if res.Envelope.FallbackReason != serialize.FallbackReasonLineLimit {
+		t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonLineLimit, res.Envelope.FallbackReason)
+	}
+	expectedLineAnnotation := serialize.FormatFallbackAnnotationLineLimit(12)
+	if res.Envelope.FallbackAnnotation != expectedLineAnnotation {
+		t.Errorf("expected FallbackAnnotation %q, got %q", expectedLineAnnotation, res.Envelope.FallbackAnnotation)
+	}
 
 	// With DisableLineLimit=true, AST should parse regardless.
 	resUnlimited, err := Run(content, content, "main.go", "main.go", DiffOptions{
@@ -48,6 +58,77 @@ func TestPipeline_LineLimitFallback(t *testing.T) {
 	}
 	if resHigher.SrcAST == nil {
 		t.Errorf("expected AST parsed when file is under line limit")
+	}
+}
+
+func TestPipeline_FileSizeLimitFallback(t *testing.T) {
+	content := []byte(strings.Repeat("// Comment line in go file\n", 80))
+
+	res, err := Run(content, content, "main.go", "main.go", DiffOptions{
+		MaxASTFileSize: 1000,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.SrcAST != nil || res.DstAST != nil {
+		t.Errorf("expected AST nil on file size limit fallback, got non-nil")
+	}
+	if res.Envelope == nil {
+		t.Fatal("expected non-nil Envelope on file size fallback")
+	}
+	if res.Envelope.FallbackReason != serialize.FallbackReasonFileSizeLimit {
+		t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonFileSizeLimit, res.Envelope.FallbackReason)
+	}
+	expectedAnnotation := serialize.FormatFallbackAnnotationSizeLimit(len(content))
+	if res.Envelope.FallbackAnnotation != expectedAnnotation {
+		t.Errorf("expected FallbackAnnotation %q, got %q", expectedAnnotation, res.Envelope.FallbackAnnotation)
+	}
+
+	resUnlimited, err := Run(content, content, "main.go", "main.go", DiffOptions{
+		MaxASTFileSize:   1000,
+		DisableSizeLimit: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error with disabled size limit: %v", err)
+	}
+	if resUnlimited.SrcAST == nil {
+		t.Errorf("expected AST parsed when size limit disabled")
+	}
+
+	// Large non-AST files (like .txt) shouldn't show limit banners.
+	resUnsupported, err := Run(content, content, "README.txt", "README.txt", DiffOptions{
+		MaxASTFileSize: 1000,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for unsupported large file: %v", err)
+	}
+	if resUnsupported.Envelope.FallbackReason != serialize.FallbackReasonUnsupportedLanguage {
+		t.Errorf("expected FallbackReason %q for large unsupported file, got %q",
+			serialize.FallbackReasonUnsupportedLanguage, resUnsupported.Envelope.FallbackReason)
+	}
+	if resUnsupported.Envelope.FallbackAnnotation != "" {
+		t.Errorf("expected empty FallbackAnnotation for unsupported large file, got %q",
+			resUnsupported.Envelope.FallbackAnnotation)
+	}
+}
+
+func TestPipeline_ConflictFallback(t *testing.T) {
+	conflictContent := []byte("<<<<<<<\nfoo\n=======\nbar\n>>>>>>>\n")
+	res, err := Run(conflictContent, conflictContent, "main.go", "main.go", DiffOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error on conflict file: %v", err)
+	}
+	if res.SrcAST != nil || res.DstAST != nil {
+		t.Errorf("expected AST nil on conflict fallback, got non-nil")
+	}
+	if res.Envelope == nil {
+		t.Fatal("expected non-nil Envelope on conflict fallback")
+	}
+	if res.Envelope.FallbackReason != serialize.FallbackReasonConflict {
+		t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonConflict, res.Envelope.FallbackReason)
+	}
+	if res.Envelope.FallbackAnnotation != serialize.FallbackAnnotationConflict {
+		t.Errorf("expected FallbackAnnotation %q, got %q", serialize.FallbackAnnotationConflict, res.Envelope.FallbackAnnotation)
 	}
 }
 

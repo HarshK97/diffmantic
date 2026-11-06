@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -55,12 +56,55 @@ type FallbackReason string
 const (
 	FallbackReasonNone                FallbackReason = ""
 	FallbackReasonParseError          FallbackReason = "parse_error"
+	FallbackReasonFileSizeLimit       FallbackReason = "file_size_limit"
+	FallbackReasonLineLimit           FallbackReason = "line_limit"
+	FallbackReasonConflict            FallbackReason = "merge_conflict"
+	FallbackReasonMergeConflict                      = FallbackReasonConflict
 	FallbackReasonUnsupportedLanguage FallbackReason = "unsupported_language"
 	FallbackReasonMismatchedLanguages FallbackReason = "mismatched_languages"
 )
 
-// FallbackAnnotationParseError is the user-facing terminal badge text for parse errors.
+// FallbackAnnotationParseError is the terminal badge text for parse errors.
 const FallbackAnnotationParseError = "[parse error, falling back to line diff]"
+
+// FallbackAnnotationConflict is the terminal badge text for merge conflicts.
+const FallbackAnnotationConflict = "[merge conflict markers, falling back to line diff]"
+
+// FormatFallbackAnnotationSizeLimit returns the terminal badge text when file size exceeds DIFFM_SIZE_LIMIT.
+func FormatFallbackAnnotationSizeLimit(sizeBytes int) string {
+	return fmt.Sprintf("[%s exceeded DIFFM_SIZE_LIMIT, falling back to line diff]", formatByteSize(sizeBytes))
+}
+
+// FormatFallbackAnnotationLineLimit returns the terminal badge text when line count exceeds DIFFM_LINE_LIMIT.
+func FormatFallbackAnnotationLineLimit(lines int) string {
+	return fmt.Sprintf("[%s lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]", formatLineCount(lines))
+}
+
+func formatByteSize(n int) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	if n < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	}
+	return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
+}
+
+func formatLineCount(n int) string {
+	in := strconv.Itoa(n)
+	if len(in) <= 3 {
+		return in
+	}
+	var b strings.Builder
+	b.Grow(len(in) + (len(in)-1)/3)
+	for i, r := range in {
+		if i > 0 && (len(in)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte(byte(r))
+	}
+	return b.String()
+}
 
 // Envelope wraps the serialized actions list with a schema version.
 type Envelope struct {

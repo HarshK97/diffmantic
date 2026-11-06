@@ -507,6 +507,70 @@ func TestCLI_LargeFileFallback_Exceeds1MB(t *testing.T) {
 	if len(envelope.LineAlignment) == 0 {
 		t.Error("expected line alignment entries in fallback envelope")
 	}
+	if envelope.FallbackReason != serialize.FallbackReasonFileSizeLimit {
+		t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonFileSizeLimit, envelope.FallbackReason)
+	}
+	if !strings.Contains(envelope.FallbackAnnotation, "DIFFM_SIZE_LIMIT") {
+		t.Errorf("expected FallbackAnnotation to mention DIFFM_SIZE_LIMIT, got %q", envelope.FallbackAnnotation)
+	}
+
+	// Check unified hunk header.
+	stdoutUnified, stderrUnified, err := runDiffm(oldPath, newPath, "-u")
+	if err != nil {
+		t.Fatalf("diffm -u failed on >1MB file: %v\nstderr: %s", err, stderrUnified)
+	}
+	if !strings.Contains(stdoutUnified, "DIFFM_SIZE_LIMIT") {
+		t.Errorf("expected unified output to display fallback banner, got:\n%s", stdoutUnified[:min(500, len(stdoutUnified))])
+	}
+}
+
+func TestCLI_LineLimitFallback(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.go")
+	newPath := filepath.Join(dir, "new.go")
+
+	var oldBuilder, newBuilder strings.Builder
+	oldBuilder.WriteString("package main\n\nfunc main() {\n")
+	newBuilder.WriteString("package main\n\nfunc main() {\n")
+	for i := range 200 {
+		fmt.Fprintf(&oldBuilder, "\tx%d := %d\n", i, i)
+		fmt.Fprintf(&newBuilder, "\tx%d := %d\n", i, i+1)
+	}
+	oldBuilder.WriteString("}\n")
+	newBuilder.WriteString("}\n")
+
+	if err := os.WriteFile(oldPath, []byte(oldBuilder.String()), 0o644); err != nil {
+		t.Fatalf("writing old file: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(newBuilder.String()), 0o644); err != nil {
+		t.Fatalf("writing new file: %v", err)
+	}
+
+	stdout, stderr, err := runDiffm(oldPath, newPath, "--line-limit", "50", "-f", "json", "--ui")
+	if err != nil {
+		t.Fatalf("diffm failed with --line-limit: %v\nstderr: %s", err, stderr)
+	}
+
+	var envelope serialize.Envelope
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatalf("invalid JSON output on line limit fallback: %v", err)
+	}
+
+	if envelope.FallbackReason != serialize.FallbackReasonLineLimit {
+		t.Errorf("expected FallbackReason %q, got %q", serialize.FallbackReasonLineLimit, envelope.FallbackReason)
+	}
+	if !strings.Contains(envelope.FallbackAnnotation, "DIFFM_LINE_LIMIT") {
+		t.Errorf("expected FallbackAnnotation to mention DIFFM_LINE_LIMIT, got %q", envelope.FallbackAnnotation)
+	}
+
+	// Check unified hunk header.
+	stdoutUnified, stderrUnified, err := runDiffm(oldPath, newPath, "--line-limit", "50", "-u")
+	if err != nil {
+		t.Fatalf("diffm -u failed on line limit: %v\nstderr: %s", err, stderrUnified)
+	}
+	if !strings.Contains(stdoutUnified, "DIFFM_LINE_LIMIT") {
+		t.Errorf("expected unified output to display fallback banner, got:\n%s", stdoutUnified)
+	}
 }
 
 func TestCLI_IgnoreComments(t *testing.T) {
