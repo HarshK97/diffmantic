@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"os"
 	"sync"
@@ -76,6 +77,9 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 			IncludeHighlights: true,
 		}
 	}
+	if !envOpts.SignificantWhitespace {
+		envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
+	}
 
 	if opts.ForceBinary || ((IsBinary(srcBytes) || IsBinary(dstBytes)) && !opts.ForceText) {
 		return &DiffResult{
@@ -91,32 +95,16 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		}, nil
 	}
 
-	maxSize := MaxASTFileSize
-	if opts.MaxASTFileSize > 0 {
-		maxSize = opts.MaxASTFileSize
-	}
-
-	maxLines := MaxASTFileLines
-	if opts.MaxASTFileLines > 0 {
-		maxLines = opts.MaxASTFileLines
-	}
-
-	exceedsLines := !opts.DisableLineLimit && maxLines > 0 &&
-		(bytes.Count(srcBytes, []byte{'\n'}) > maxLines || bytes.Count(dstBytes, []byte{'\n'}) > maxLines)
-
-	exceedsSize := !opts.DisableSizeLimit && (len(srcBytes) > maxSize || len(dstBytes) > maxSize)
-
-	if opts.IsConflict || (HasConflictMarkers(srcBytes) || HasConflictMarkers(dstBytes)) ||
-		exceedsSize || exceedsLines {
-		if !envOpts.SignificantWhitespace {
-			envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
-		}
+	fallbackResult := func(reason serialize.FallbackReason, annotation string) (*DiffResult, error) {
+		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
+		env.FallbackReason = reason
+		env.FallbackAnnotation = annotation
 		return &DiffResult{
 			SrcBytes: srcBytes,
 			DstBytes: dstBytes,
 			SrcFile:  srcFile,
 			DstFile:  dstFile,
-			Envelope: serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts),
+			Envelope: env,
 		}, nil
 	}
 
@@ -133,22 +121,36 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 	// If either language is unknown or languages differ (cross-language diff),
 	// fall back to clean line diffing without a terminal parse error annotation.
 	if langA == nil || langB == nil || langA.Name != langB.Name {
-		if !envOpts.SignificantWhitespace {
-			envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
-		}
-		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
 		if langA == nil || langB == nil {
-			env.FallbackReason = serialize.FallbackReasonUnsupportedLanguage
-		} else {
-			env.FallbackReason = serialize.FallbackReasonMismatchedLanguages
+			return fallbackResult(serialize.FallbackReasonUnsupportedLanguage, "")
 		}
-		return &DiffResult{
-			SrcBytes: srcBytes,
-			DstBytes: dstBytes,
-			SrcFile:  srcFile,
-			DstFile:  dstFile,
-			Envelope: env,
-		}, nil
+		return fallbackResult(serialize.FallbackReasonMismatchedLanguages, "")
+	}
+
+	if opts.IsConflict || (HasConflictMarkers(srcBytes) || HasConflictMarkers(dstBytes)) {
+		return fallbackResult(serialize.FallbackReasonConflict, serialize.FallbackAnnotationConflict)
+	}
+
+	maxSize := cmp.Or(opts.MaxASTFileSize, MaxASTFileSize)
+	maxLines := cmp.Or(opts.MaxASTFileLines, MaxASTFileLines)
+
+	exceedsSize := !opts.DisableSizeLimit && (len(srcBytes) > maxSize || len(dstBytes) > maxSize)
+	if exceedsSize {
+		return fallbackResult(
+			serialize.FallbackReasonFileSizeLimit,
+			serialize.FormatFallbackAnnotationSizeLimit(max(len(srcBytes), len(dstBytes))),
+		)
+	}
+
+	if !opts.DisableLineLimit && maxLines > 0 {
+		srcLines := countFileLines(srcBytes)
+		dstLines := countFileLines(dstBytes)
+		if srcLines > maxLines || dstLines > maxLines {
+			return fallbackResult(
+				serialize.FallbackReasonLineLimit,
+				serialize.FormatFallbackAnnotationLineLimit(max(srcLines, dstLines)),
+			)
+		}
 	}
 
 	var (
@@ -179,23 +181,7 @@ func Run(srcBytes, dstBytes []byte, srcFile, dstFile string, opts DiffOptions) (
 		(dstAST != nil && dstAST.ParseErrorCount > opts.ParseErrorLimit))
 
 	if srcAST == nil || dstAST == nil || hasParseError {
-		if !envOpts.SignificantWhitespace {
-			envOpts.SignificantWhitespace = treesitter.DetectSignificantWhitespace(srcFile, dstFile)
-		}
-		env := serialize.BuildLineDiffEnvelopeWithOptions(srcBytes, dstBytes, envOpts)
-		if hasParseError {
-			env.FallbackReason = serialize.FallbackReasonParseError
-			env.FallbackAnnotation = serialize.FallbackAnnotationParseError
-		}
-		return &DiffResult{
-			SrcBytes: srcBytes,
-			DstBytes: dstBytes,
-			SrcFile:  srcFile,
-			DstFile:  dstFile,
-			SrcAST:   nil,
-			DstAST:   nil,
-			Envelope: env,
-		}, nil
+		return fallbackResult(serialize.FallbackReasonParseError, serialize.FallbackAnnotationParseError)
 	}
 
 	matchResult := engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
@@ -258,4 +244,16 @@ func RunFiles(fileA, fileB string, opts DiffOptions) (*DiffResult, error) {
 		return nil, fmt.Errorf("reading %s: %w", fileB, err)
 	}
 	return Run(srcBytes, dstBytes, fileA, fileB, opts)
+}
+
+// countFileLines returns the line count, including a final line without a trailing newline.
+func countFileLines(data []byte) int {
+	if len(data) == 0 {
+		return 0
+	}
+	n := bytes.Count(data, []byte{'\n'})
+	if data[len(data)-1] != '\n' {
+		n++
+	}
+	return n
 }

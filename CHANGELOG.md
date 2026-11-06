@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Show fallback banners when files exceed size or line limits: when files exceed `DIFFM_SIZE_LIMIT` / `--size-limit` or `DIFFM_LINE_LIMIT` / `--line-limit`, or contain merge conflicts, Diffmantic now badges file banners and hunk headers with the actual count (like `[1.4 MB exceeded DIFFM_SIZE_LIMIT, falling back to line diff]` or `[12,500 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]`) instead of silently dropping to line diff. JSON output now includes typed `fallback_reason` values (`"file_size_limit"`, `"line_limit"`, `"merge_conflict"`) and `fallback_annotation`.
+
 ### Performance
 - Pipelined concurrent Git pager diffing: When using Diffmantic as Git's stream-hijacking pager (`git diff | diffm`, `git log -p | diffm`, or `git config pager.diff diffm`), files now diff concurrently across background CPU workers while streaming, running up to 3× faster with bounded memory and instant, clean exit when quitting the pager (`q`).
 

@@ -2255,3 +2255,41 @@ func second() int {
 		}
 	})
 }
+
+func TestFormatFallbackAnnotation(t *testing.T) {
+	t.Run("SizeLimit", func(t *testing.T) {
+		tests := []struct {
+			bytes int
+			want  string
+		}{
+			{500, "[500 B exceeded DIFFM_SIZE_LIMIT, falling back to line diff]"},
+			{1024, "[1.0 KB exceeded DIFFM_SIZE_LIMIT, falling back to line diff]"},
+			{500 * 1024, "[500.0 KB exceeded DIFFM_SIZE_LIMIT, falling back to line diff]"},
+			{1024 * 1024, "[1.0 MB exceeded DIFFM_SIZE_LIMIT, falling back to line diff]"},
+			{1468006, "[1.4 MB exceeded DIFFM_SIZE_LIMIT, falling back to line diff]"},
+		}
+		for _, tt := range tests {
+			if got := FormatFallbackAnnotationSizeLimit(tt.bytes); got != tt.want {
+				t.Errorf("FormatFallbackAnnotationSizeLimit(%d) = %q, want %q", tt.bytes, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("LineLimit", func(t *testing.T) {
+		tests := []struct {
+			lines int
+			want  string
+		}{
+			{10, "[10 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]"},
+			{999, "[999 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]"},
+			{1000, "[1,000 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]"},
+			{10500, "[10,500 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]"},
+			{1234567, "[1,234,567 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]"},
+		}
+		for _, tt := range tests {
+			if got := FormatFallbackAnnotationLineLimit(tt.lines); got != tt.want {
+				t.Errorf("FormatFallbackAnnotationLineLimit(%d) = %q, want %q", tt.lines, got, tt.want)
+			}
+		}
+	})
+}
