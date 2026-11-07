@@ -1653,3 +1653,430 @@ func f(idx int) {
 		t.Errorf("expected idx+1 < len(t2.Children) to be preserved as a move, moves: %+v", moves)
 	}
 }
+
+func TestNormalize_StationaryMoveProtection(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("typescript")
+		if r == nil {
+			t.Fatal("expected typescript rules to be registered")
+		}
+
+		fn := mkNode("function_declaration", "testFn")
+		fn.Language = "typescript"
+		block := mkNode("statement_block", "")
+		block.Language = "typescript"
+		block.Parent = fn
+		fn.Children = []*treesitter.ASTNode{block}
+
+		// src: if (annotation && getType())
+		srcIf := mkNode("if_statement", "")
+		srcIf.Language = "typescript"
+		srcIf.Parent = block
+		srcParen := mkNode("parenthesized_expression", "")
+		srcParen.Language = "typescript"
+		srcParen.Parent = srcIf
+		srcBin := mkNode("binary_expression", "")
+		srcBin.Language = "typescript"
+		srcBin.Parent = srcParen
+		srcId := mkNode("identifier", "annotation")
+		srcId.Language = "typescript"
+		srcId.StartRow = 5
+		srcId.EndRow = 5
+		srcId.StartCol = 8
+		srcId.EndCol = 18
+		srcId.Parent = srcBin
+		srcBin.Children = []*treesitter.ASTNode{srcId}
+		srcParen.Children = []*treesitter.ASTNode{srcBin}
+		srcIf.Children = []*treesitter.ASTNode{srcParen}
+
+		// dst: if (annotation)
+		dstIf := mkNode("if_statement", "")
+		dstIf.Language = "typescript"
+		dstIf.Parent = block
+		dstParen := mkNode("parenthesized_expression", "")
+		dstParen.Language = "typescript"
+		dstParen.Parent = dstIf
+		dstId := mkNode("identifier", "annotation")
+		dstId.Language = "typescript"
+		dstId.StartRow = 5
+		dstId.EndRow = 5
+		dstId.StartCol = 8
+		dstId.EndCol = 18
+		dstId.Parent = dstParen
+		dstParen.Children = []*treesitter.ASTNode{dstId}
+		dstIf.Children = []*treesitter.ASTNode{dstParen}
+
+		ms := engine.NewMapping()
+		ms.Add(fn, fn)
+		ms.Add(block, block)
+		ms.Add(srcIf, dstIf)
+		ms.Add(srcParen, dstParen)
+		ms.Add(srcId, dstId)
+
+		if !isStationaryMove(srcId, dstId, ms, r) {
+			t.Errorf("expected isStationaryMove to return true for stationary identifier unwrapped from binary expression")
+		}
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcId, DestNode: dstId})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		for _, a := range result.Actions() {
+			if a.Node == srcId && (a.Type == actions.Move || a.Type == actions.Delete) {
+				t.Errorf("expected Move action on stationary identifier to be dropped, got %v", a.Type)
+			}
+		}
+		if !ms.Has(srcId) {
+			t.Errorf("expected srcId to remain in mapping")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`function validate(annotation: any, node: any): boolean {
+    const isReady = checkReady();
+    if (annotation && getTypeFromTypeNode(node)) {
+        return true;
+    }
+    return false;
+}
+`)
+		dst := []byte(`function validate(annotation: any, node: any): boolean {
+    const isReady = checkReady();
+    if (annotation) {
+        return true;
+    }
+    return false;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		ms := matchResult.Mappings
+		r := rules.Get("typescript")
+
+		// 1. Enclosing function declaration mapped
+		if ms.Src()[srcAST.Root()] != dstAST.Root() {
+			t.Errorf("expected root function declaration to map in place")
+		}
+
+		// 2. Surrounding statements mapped in place
+		var srcPreceding, dstPreceding *treesitter.ASTNode
+		var srcSucceeding, dstSucceeding *treesitter.ASTNode
+		var srcIf, dstIf *treesitter.ASTNode
+		var srcAnnotation, dstAnnotation *treesitter.ASTNode
+
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "const isReady = checkReady();" {
+				srcPreceding = n
+			}
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "return false;" {
+				srcSucceeding = n
+			}
+			if n.Type == "if_statement" {
+				srcIf = n
+			}
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" {
+				srcAnnotation = n
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "const isReady = checkReady();" {
+				dstPreceding = n
+			}
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "return false;" {
+				dstSucceeding = n
+			}
+			if n.Type == "if_statement" {
+				dstIf = n
+			}
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" {
+				dstAnnotation = n
+			}
+		}
+
+		if srcPreceding == nil || dstPreceding == nil || ms.Src()[srcPreceding] != dstPreceding {
+			t.Errorf("expected preceding statement to map in place")
+		}
+		if srcSucceeding == nil || dstSucceeding == nil || ms.Src()[srcSucceeding] != dstSucceeding {
+			t.Errorf("expected succeeding statement to map in place")
+		}
+		if srcIf == nil || dstIf == nil || ms.Src()[srcIf] != dstIf {
+			t.Errorf("expected if_statement to map in place")
+		}
+
+		// 3. Target stationary operand mapped
+		if srcAnnotation == nil || dstAnnotation == nil {
+			t.Fatalf("failed to locate annotation identifier")
+		}
+		if ms.Src()[srcAnnotation] != dstAnnotation {
+			t.Errorf("expected annotation identifier to map to dstAnnotation")
+		}
+
+		// 4. Check that postprocessing keeps annotation as context instead of turning it into a delete/insert
+		script := actions.GenerateEditScript(srcAST, dstAST, ms)
+		normalized := Run(script, ms, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Node == srcAnnotation {
+				t.Errorf("expected annotation to be preserved as context without action, got %v", a.Type)
+			}
+		}
+		if !ms.Has(srcAnnotation) {
+			t.Errorf("expected srcAnnotation to remain in mapping after postprocessing")
+		}
+	})
+}
+
+func TestNormalize_BinaryChainOperandStationaryProtection(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("typescript")
+		if r == nil {
+			t.Fatal("rules for typescript not found")
+		}
+
+		fn := mkNode("function_declaration", "")
+		fn.Language = "typescript"
+		body := mkNode("statement_block", "")
+		body.Language = "typescript"
+		fn.Children = []*treesitter.ASTNode{body}
+		body.Parent = fn
+
+		srcIf := mkNode("if_statement", "")
+		srcIf.Language = "typescript"
+		srcIf.StartRow = 10
+		srcIf.EndRow = 12
+		srcIf.Parent = body
+
+		srcParen := mkNode("parenthesized_expression", "")
+		srcParen.Language = "typescript"
+		srcParen.StartRow = 10
+		srcParen.EndRow = 10
+		srcParen.Parent = srcIf
+
+		srcOp := mkNode("logical_operator_literal", "&&")
+		srcOp.Language = "typescript"
+		srcLHS := mkNode("identifier", "addUndefined")
+		srcLHS.Language = "typescript"
+		srcLHS.StartRow = 10
+		srcLHS.EndRow = 10
+		srcRHS := mkNode("unary_expression", "!someType")
+		srcRHS.Language = "typescript"
+		srcRHS.StartRow = 10
+		srcRHS.EndRow = 10
+
+		srcBinary := mkNode("binary_expression", "", srcLHS, srcOp, srcRHS)
+		srcBinary.Language = "typescript"
+		srcBinary.StartRow = 10
+		srcBinary.EndRow = 10
+		srcBinary.Parent = srcParen
+		srcLHS.Parent = srcBinary
+		srcOp.Parent = srcBinary
+		srcRHS.Parent = srcBinary
+		srcParen.Children = []*treesitter.ASTNode{srcBinary}
+		srcIf.Children = []*treesitter.ASTNode{srcParen}
+
+		dstIf := mkNode("if_statement", "")
+		dstIf.Language = "typescript"
+		dstIf.StartRow = 15 // row drift due to comments/inserts
+		dstIf.EndRow = 17
+		dstIf.Parent = body
+
+		dstParen := mkNode("parenthesized_expression", "")
+		dstParen.Language = "typescript"
+		dstParen.StartRow = 15
+		dstParen.EndRow = 15
+		dstParen.Parent = dstIf
+
+		dstInnerOp := mkNode("logical_operator_literal", "&&")
+		dstInnerOp.Language = "typescript"
+		dstLHS := mkNode("identifier", "addUndefined")
+		dstLHS.Language = "typescript"
+		dstLHS.StartRow = 15
+		dstLHS.EndRow = 15
+		dstMiddle := mkNode("call_expression", "containsNonMissing")
+		dstMiddle.Language = "typescript"
+		dstMiddle.StartRow = 15
+		dstMiddle.EndRow = 15
+
+		dstInnerBinary := mkNode("binary_expression", "", dstLHS, dstInnerOp, dstMiddle)
+		dstInnerBinary.Language = "typescript"
+		dstInnerBinary.StartRow = 15
+		dstInnerBinary.EndRow = 15
+		dstLHS.Parent = dstInnerBinary
+		dstInnerOp.Parent = dstInnerBinary
+		dstMiddle.Parent = dstInnerBinary
+
+		dstOuterOp := mkNode("logical_operator_literal", "&&")
+		dstOuterOp.Language = "typescript"
+		dstRHS := mkNode("unary_expression", "!someType")
+		dstRHS.Language = "typescript"
+		dstRHS.StartRow = 15
+		dstRHS.EndRow = 15
+
+		dstOuterBinary := mkNode("binary_expression", "", dstInnerBinary, dstOuterOp, dstRHS)
+		dstOuterBinary.Language = "typescript"
+		dstOuterBinary.StartRow = 15
+		dstOuterBinary.EndRow = 15
+		dstOuterBinary.Parent = dstParen
+		dstInnerBinary.Parent = dstOuterBinary
+		dstOuterOp.Parent = dstOuterBinary
+		dstRHS.Parent = dstOuterBinary
+		dstParen.Children = []*treesitter.ASTNode{dstOuterBinary}
+		dstIf.Children = []*treesitter.ASTNode{dstParen}
+
+		ms := engine.NewMapping()
+		ms.Add(fn, fn)
+		ms.Add(body, body)
+		ms.Add(srcIf, dstIf)
+		ms.Add(srcParen, dstParen)
+		ms.Add(srcBinary, dstOuterBinary)
+		ms.Add(srcLHS, dstLHS)
+		ms.Add(srcRHS, dstRHS)
+
+		// shouldDemoteMove should return false here so we don't demote the operand in an extended binary chain
+		if shouldDemoteMove(srcLHS, dstLHS, ms, r) {
+			t.Errorf("expected shouldDemoteMove to return false for binary chain operand")
+		}
+
+		es := actions.NewEditScript()
+		es.Add(actions.Action{Type: actions.Move, Node: srcLHS, DestNode: dstLHS})
+
+		res := normalizeMovesByStructure(es, ms)
+		for _, a := range res.Actions() {
+			if a.Node == srcLHS && (a.Type == actions.Delete || a.Type == actions.Insert) {
+				t.Fatalf("expected operand not to be demoted to delete/insert, got %v", a.Type)
+			}
+		}
+		if !ms.Has(srcLHS) {
+			t.Errorf("expected srcLHS to remain in mapping after normalizeMovesByStructure")
+		}
+
+		dropped := normalizeStationaryWrapperMoves(res, ms)
+		for _, a := range dropped.Actions() {
+			if a.Node == srcLHS {
+				t.Errorf("expected stationary Move action to be dropped, got %v", a.Type)
+			}
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`function processTypes(type: any, host: any, context: any, typeNode: any, addUndefined: any): any {
+    const originalType = type;
+    if (clone) {
+        if (addUndefined && !someType(getTypeFromTypeNode(context, typeNode), t => !!(t.flags & TypeFlags.Undefined))) {
+            return factory.createUnionTypeNode([clone, factory.createKeywordTypeNode(SyntaxKind.UndefinedKeyword)]);
+        }
+        return clone;
+    }
+    return originalType;
+}
+`)
+		dst := []byte(`function processTypes(type: any, host: any, context: any, typeNode: any, addUndefined: any): any {
+    const originalType = type;
+    if (clone) {
+        // explicitly add | undefined if it is missing from input type nodes
+        if (addUndefined && containsNonMissingUndefinedType(type) && !someType(getTypeFromTypeNode(context, typeNode), t => !!(t.flags & TypeFlags.Undefined))) {
+            return factory.createUnionTypeNode([clone, factory.createKeywordTypeNode(SyntaxKind.UndefinedKeyword)]);
+        }
+        return clone;
+    }
+    return originalType;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		ms := matchResult.Mappings
+		r := rules.Get("typescript")
+
+		// 1. Enclosing Context: Function declaration maps in place
+		if ms.Src()[srcAST.Root()] != dstAST.Root() {
+			t.Errorf("expected root function declaration to map in place")
+		}
+
+		// 2. Surrounding Sequence: Preceding and succeeding statements map in place
+		var srcPreceding, dstPreceding *treesitter.ASTNode
+		var srcSucceeding, dstSucceeding *treesitter.ASTNode
+		var srcInnerIf, dstInnerIf *treesitter.ASTNode
+		var srcAddUndefined, dstAddUndefined *treesitter.ASTNode
+
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "const originalType = type;" {
+				srcPreceding = n
+			}
+			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "return originalType;" {
+				srcSucceeding = n
+			}
+			if n.Type == "if_statement" && n.StartRow == 3 {
+				srcInnerIf = n
+			}
+			if r.IsIdentifier(n.Type) && n.Label == "addUndefined" && n.StartRow == 3 {
+				srcAddUndefined = n
+			}
+		}
+
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "const originalType = type;" {
+				dstPreceding = n
+			}
+			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "return originalType;" {
+				dstSucceeding = n
+			}
+			if n.Type == "if_statement" && n.StartRow == 4 {
+				dstInnerIf = n
+			}
+			if r.IsIdentifier(n.Type) && n.Label == "addUndefined" && n.StartRow == 4 {
+				dstAddUndefined = n
+			}
+		}
+
+		if srcPreceding == nil || dstPreceding == nil || ms.Src()[srcPreceding] != dstPreceding {
+			t.Errorf("expected preceding statement to map in place")
+		}
+		if srcSucceeding == nil || dstSucceeding == nil || ms.Src()[srcSucceeding] != dstSucceeding {
+			t.Errorf("expected succeeding statement to map in place")
+		}
+		if srcInnerIf == nil || dstInnerIf == nil || ms.Src()[srcInnerIf] != dstInnerIf {
+			t.Errorf("expected inner if_statement to map in place")
+		}
+
+		// 3. Target stationary operand mapped
+		if srcAddUndefined == nil || dstAddUndefined == nil {
+			t.Fatalf("failed to locate addUndefined identifier in ASTs")
+		}
+		if ms.Src()[srcAddUndefined] != dstAddUndefined {
+			t.Errorf("expected addUndefined identifier to map in place")
+		}
+
+		// 4. Check that postprocessing keeps addUndefined as context without delete/insert/move
+		script := actions.GenerateEditScript(srcAST, dstAST, ms)
+		normalized := Run(script, ms, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Node == srcAddUndefined || a.Node == dstAddUndefined {
+				t.Errorf("expected addUndefined to be preserved as context without action, got %v (%s)", a.Type, a.Node.Type)
+			}
+		}
+		if !ms.Has(srcAddUndefined) {
+			t.Errorf("expected srcAddUndefined to remain in mapping after postprocessing")
+		}
+	})
+}

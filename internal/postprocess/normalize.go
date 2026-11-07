@@ -320,9 +320,28 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	// One-hop container reparent: a value was wrapped in a new node (like a key-value pair) under the same container.
 	if src.Parent != nil && dst.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
 		mappedSrcParent := ms.Src()[src.Parent]
-		if mappedSrcParent != nil && dst.Parent.Parent == mappedSrcParent &&
-			(r.IsPair(dst.Parent.Type) || r.IsWrapper(dst.Parent.Type)) {
-			return false
+		if mappedSrcParent != nil && dst.Parent.Parent == mappedSrcParent {
+			if r.IsPair(dst.Parent.Type) || r.IsWrapper(dst.Parent.Type) {
+				return false
+			}
+			// When an associative binary chain is extended (e.g. A && B -> A && C && B),
+			// keep stationary outer operands as moves so subsequent passes can preserve them as context.
+			if src.Parent.Type == dst.Parent.Type && dst.Parent.Type == dst.Parent.Parent.Type {
+				srcOp := getBinaryOperatorLabel(src.Parent, r)
+				dstOp := getBinaryOperatorLabel(dst.Parent, r)
+				parentOp := getBinaryOperatorLabel(dst.Parent.Parent, r)
+				if srcOp != "" && srcOp == dstOp && dstOp == parentOp {
+					isSamePos := src.ChildIndex() == dst.ChildIndex() ||
+						(src.ChildIndex() == len(src.Parent.Children)-1 && dst.ChildIndex() == len(dst.Parent.Children)-1)
+					if isSamePos {
+						srcStmt := engine.FindEnclosingStatement(src, r)
+						dstStmt := engine.FindEnclosingStatement(dst, r)
+						if srcStmt != nil && dstStmt != nil && isStatementStationary(srcStmt, dstStmt, ms, r) {
+							return false
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -481,4 +500,21 @@ func promoteDecomposedChildMoves(
 			promoteDecomposedChildMoves(childSrc, dstNode, ms, r, explicitMoves, promotedNodes, es)
 		}
 	}
+}
+
+// getBinaryOperatorLabel returns the operator token text for a binary expression node.
+func getBinaryOperatorLabel(n *treesitter.ASTNode, r *rules.Rules) string {
+	if n == nil {
+		return ""
+	}
+	r = cmp.Or(r, rules.Get(""))
+	for _, c := range n.Children {
+		if r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) {
+			return c.Label
+		}
+	}
+	if len(n.Children) == 3 {
+		return n.Children[1].Label
+	}
+	return ""
 }
