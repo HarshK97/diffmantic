@@ -385,7 +385,9 @@ func (r *Rules) IsIgnored(nodeType, label string) bool {
 
 // IsKeyword checks if a node type or label is a language keyword.
 func (r *Rules) IsKeyword(nodeType, label string) bool {
-	if r == nil {
+	// Identifier tokens are never keywords, even if their label matches
+	// a contextual keyword like "type" or "from".
+	if r == nil || r.IsIdentifier(nodeType) {
 		return false
 	}
 	if len(r.keywordsSet) > 0 {
@@ -649,6 +651,9 @@ func IsOperatorLiteral(nodeType string) bool {
 
 // IsKeyword reports whether nodeType or label is configured as a keyword in any language rule set.
 func IsKeyword(nodeType, label string) bool {
+	if (nodeType == "" && label == "") || IsIdentifier(nodeType) {
+		return false
+	}
 	for _, r := range registry {
 		if r.IsKeyword(nodeType, label) {
 			return true

@@ -484,17 +484,35 @@ func effectiveDepthTo(node, anc *treesitter.ASTNode, r *rules.Rules) int {
 	return depth
 }
 
-// isTransparentWrapper reports whether n is a single-child transparent wrapper.
-// Never treats declarations or blocks as transparent, even with a single child.
+// isTransparentWrapper reports whether n is a transparent wrapper containing exactly
+// one substantive child (ignoring surrounding punctuation like parentheses or brackets).
+// Never treats declarations or blocks as transparent.
 func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
-	if n == nil || len(n.Children) != 1 {
+	if n == nil {
 		return false
 	}
 	if (r != nil && (r.IsDeclaration(n.Type) || r.IsBlock(n.Type))) || (r == nil && (rules.IsDeclaration(n.Type) || rules.IsBlock(n.Type))) {
 		return false
 	}
-	return (r != nil && (r.IsWrapper(n.Type) || r.IsScaffolding(n.Type))) ||
+	isWrap := (r != nil && (r.IsWrapper(n.Type) || r.IsScaffolding(n.Type))) ||
 		(r == nil && (rules.IsWrapper(n.Type) || rules.IsScaffolding(n.Type)))
+	if !isWrap {
+		return false
+	}
+	if len(n.Children) == 1 {
+		return true
+	}
+	substantiveCount := 0
+	for _, c := range n.Children {
+		isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
+		if !isPunct {
+			substantiveCount++
+			if substantiveCount > 1 {
+				return false
+			}
+		}
+	}
+	return substantiveCount == 1
 }
 
 // areSiblingsMatched reports whether sibling nodes s1 and s2 are matched directly
@@ -885,13 +903,24 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	if root == nil {
 		return nil
 	}
-	lang := root.GetLanguage()
-	if lang == "" {
-		return nil
+	r := rulesFor(root)
+	isDecl := func(t string) bool {
+		if r != nil {
+			return r.IsDeclaration(t)
+		}
+		return rules.IsDeclaration(t)
 	}
-	r := rules.Get(lang)
-	if r == nil || len(r.Declarations) == 0 {
-		return nil
+	isLocalVar := func(t string) bool {
+		if r != nil {
+			return r.IsLocalVarDeclaration(t)
+		}
+		return rules.IsLocalVarDeclaration(t)
+	}
+	isContainer := func(t string) bool {
+		if r != nil {
+			return r.IsContainerDeclaration(t) || r.IsClosure(t)
+		}
+		return rules.IsContainerDeclaration(t) || rules.IsClosure(t)
 	}
 
 	var decs []*treesitter.ASTNode
@@ -900,8 +929,22 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 		if n == nil {
 			return
 		}
-		if r.IsDeclaration(n.Type) {
-			decs = append(decs, n)
+		if isDecl(n.Type) {
+			topLevel := true
+			if isLocalVar(n.Type) {
+				// Only match file- or module-level variables here. Locals inside
+				// functions should match as regular statements so we don't steal
+				// variables across scopes or misalign renames.
+				for curr := n.Parent; curr != nil; curr = curr.Parent {
+					if isContainer(curr.Type) {
+						topLevel = false
+						break
+					}
+				}
+			}
+			if topLevel {
+				decs = append(decs, n)
+			}
 		}
 		for _, child := range n.Children {
 			traverse(child)

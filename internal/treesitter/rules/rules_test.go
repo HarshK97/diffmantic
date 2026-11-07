@@ -241,15 +241,16 @@ func TestRulesAreTypesEquivalent(t *testing.T) {
 func TestRulesHelperMethods(t *testing.T) {
 	newSampleRules := func() *Rules {
 		return &Rules{
-			Ignored:   []string{"comment", ";"},
-			Keywords:  []string{"func", "return"},
-			Aliased:   map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
-			Unordered: []string{"object", "hash"},
-			Flattened: []string{"string_literal"},
-			Blocks:    []string{"block", "compound_statement"},
-			Calls:     []string{"call_expression"},
-			Indexed:   []string{"subscript_expression", "index_expression"},
-			Tags:      []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
+			Ignored:     []string{"comment", ";"},
+			Keywords:    []string{"func", "return"},
+			Identifiers: []string{"identifier"},
+			Aliased:     map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
+			Unordered:   []string{"object", "hash"},
+			Flattened:   []string{"string_literal"},
+			Blocks:      []string{"block", "compound_statement"},
+			Calls:       []string{"call_expression"},
+			Indexed:     []string{"subscript_expression", "index_expression"},
+			Tags:        []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
 			EquivalentTypes: [][]string{
 				{"function_declaration", "function_definition", "variable_declaration"},
 				{"assignment_statement", "variable_declaration"},
@@ -276,6 +277,9 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if !r.IsKeyword("other", "return") {
 			t.Errorf("IsKeyword(other, return) = false, want true")
+		}
+		if r.IsKeyword("identifier", "return") {
+			t.Errorf("IsKeyword(identifier, return) = true, want false")
 		}
 		if r.IsKeyword("node", "val") {
 			t.Errorf("IsKeyword(node, val) = true, want false")
@@ -347,7 +351,7 @@ func TestRulesHelperMethods(t *testing.T) {
 		if !r.IsIgnored("comment", "") || !r.IsIgnored("other", ";") || r.IsIgnored("node", "val") {
 			t.Errorf("IsIgnored uncompiled fallback failed")
 		}
-		if !r.IsKeyword("func", "") || !r.IsKeyword("other", "return") || r.IsKeyword("node", "val") {
+		if !r.IsKeyword("func", "") || !r.IsKeyword("other", "return") || r.IsKeyword("identifier", "return") || r.IsKeyword("node", "val") {
 			t.Errorf("IsKeyword uncompiled fallback failed")
 		}
 		if !r.IsUnordered("object") || r.IsUnordered("array") {
