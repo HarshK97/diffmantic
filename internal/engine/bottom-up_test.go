@@ -3636,3 +3636,197 @@ fn get_right_fill_style_for_panel<'a>(
 		}
 	})
 }
+
+func TestBottomUpShortenedCompoundIdentifierMatching(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		m := NewMapping()
+
+		// Inner matched node: crate::tests
+		inner1 := testutil.Node("scoped_identifier", "crate::tests", testutil.Leaf("identifier", "crate"), testutil.Leaf("identifier", "tests"))
+		inner2 := testutil.Node("scoped_identifier", "crate::tests", testutil.Leaf("identifier", "crate"), testutil.Leaf("identifier", "tests"))
+		inner1.Language = "rust"
+		inner2.Language = "rust"
+		m.Add(inner1, inner2)
+
+		// Outer compound identifier in T1: crate::tests::integration_test_utils
+		// contains inner1 and an extra identifier segment
+		outer1 := testutil.Node("scoped_identifier", "crate::tests::integration_test_utils", inner1, testutil.Leaf("identifier", "integration_test_utils"))
+		outer1.Language = "rust"
+
+		// Container T1 (use_declaration) wrapping outer1
+		t1 := testutil.Node("use_declaration", "", testutil.Leaf("use", "use"), outer1)
+		t1.Language = "rust"
+
+		if !hasMatchedChild(t1, m) {
+			t.Errorf("expected hasMatchedChild to return true for container with compound identifier containing matched descendant, got false")
+		}
+
+		// Negative control: non-identifier/non-wrapper child should not traverse arbitrary depths
+		callChild := testutil.Node("call_expression", "", inner1)
+		callChild.Language = "rust"
+		t1Negative := testutil.Node("expression_statement", "", callChild)
+		t1Negative.Language = "rust"
+		if hasMatchedChild(t1Negative, m) {
+			t.Errorf("expected hasMatchedChild to return false for non-identifier/non-wrapper intermediate container, got true")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils::integration_test_utils;
+    use crate::tests::test_utils::test_utils;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`
+		dst := `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils;
+    use crate::tests::test_utils;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: mod tests and its declaration_list body map in place
+		var srcMod, dstMod *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "tests" {
+				srcMod = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "tests" {
+				dstMod = n
+				break
+			}
+		}
+		if srcMod == nil || dstMod == nil || mr.Mappings.Src()[srcMod] != dstMod {
+			t.Fatalf("expected mod tests to map in place, got %v", mr.Mappings.Src()[srcMod])
+		}
+
+		// 2. Surrounding sequence: preceding unchanged imports (rows 2 to 6) map in place
+		for row := 2; row <= 6; row++ {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil || mr.Mappings.Src()[sNode] != dNode {
+				t.Fatalf("expected preceding unchanged import at row %d to map in place", row)
+			}
+		}
+
+		// Succeeding function test_added_file maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test_added_file" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test_added_file" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function test_added_file to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 3. Target & Containers: both shortened use_declaration nodes at rows 7 and 8 must map in place
+		for _, row := range []int{7, 8} {
+			var sImport, dImport *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					sImport = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					dImport = n
+					break
+				}
+			}
+			if sImport == nil || dImport == nil {
+				t.Fatalf("expected imports at row %d to be found, got src=%v dst=%v", row, sImport, dImport)
+			}
+			if mr.Mappings.Src()[sImport] != dImport {
+				t.Errorf("expected shortened use_declaration at row %d to map to destination use_declaration, got %v", row, mr.Mappings.Src()[sImport])
+			}
+		}
+
+		// 4. Stationary operands: shared prefix scoped_identifier must map to destination root scoped_identifier
+		var sPrefix, dRoot *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && int(n.StartRow) == 7 && int(n.EndByte-n.StartByte) == 36 { // crate::tests::integration_test_utils
+				sPrefix = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && int(n.StartRow) == 7 && int(n.EndByte-n.StartByte) == 36 {
+				dRoot = n
+				break
+			}
+		}
+		if sPrefix == nil || dRoot == nil || mr.Mappings.Src()[sPrefix] != dRoot {
+			t.Errorf("expected shared scoped_identifier prefix to map in place, got %v", mr.Mappings.Src()[sPrefix])
+		}
+	})
+}
