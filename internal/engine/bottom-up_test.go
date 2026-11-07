@@ -3452,3 +3452,187 @@ fn _make_process(name: String, args: Vec<String>) -> Option<Command> {
 		}
 	})
 }
+
+func TestRollupMatchedContainers_HeaderMatchUnmappedScope(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("rust")
+
+		// Construct enclosing scope (function body block)
+		// Old: fn foo() { match_arm { match_pattern, block } }
+		pat1 := testutil.Node("match_pattern", "(false, Some(index))")
+		var body1Children []*treesitter.ASTNode
+		for i := 0; i < 20; i++ {
+			body1Children = append(body1Children, testutil.Leaf("identifier", "var"))
+		}
+		body1 := testutil.Node("block", "", body1Children...)
+		arm1 := testutil.Node("match_arm", "", pat1, body1)
+		scope1 := testutil.Node("block", "", arm1)
+
+		// New: fn foo() { match_arm { match_pattern, block } }
+		pat2 := testutil.Node("match_pattern", "(false, Some(index))")
+		var body2Children []*treesitter.ASTNode
+		for i := 0; i < 35; i++ {
+			body2Children = append(body2Children, testutil.Leaf("identifier", "diff"))
+		}
+		body2 := testutil.Node("block", "", body2Children...)
+		arm2 := testutil.Node("match_arm", "", pat2, body2)
+		scope2 := testutil.Node("block", "", arm2)
+
+		treesitter.EnsureIndex(scope1)
+		treesitter.EnsureIndex(scope2)
+
+		m := NewMapping()
+		m.Add(pat1, pat2)
+		m.Add(body1, body2)
+
+		// Scopes (scope1, scope2) are unmapped.
+		// Dice similarity of arm1 and arm2 is less than 0.60.
+		if dice := m.DiceSrc(arm1, arm2); dice >= 0.60 {
+			t.Fatalf("test setup error: DiceSrc must be < 0.60, got %f", dice)
+		}
+		if IsScopePreserved(m, arm1, arm2, r, r) {
+			t.Fatal("test setup error: IsScopePreserved must be false for unmapped scopes")
+		}
+
+		RollupMatchedContainers(scope1, scope2, m)
+
+		if m.Src()[arm1] != arm2 {
+			t.Errorf("expected arm1 to roll up and map to arm2 when header and body match, got %v", m.Src()[arm1])
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `fn outer_helper() -> usize {
+    42
+}
+
+fn get_right_fill_style_for_left_panel(
+    line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[Vec<(usize, &str)>],
+    config: &Config,
+) -> usize {
+    match (line_is_empty, line_index) {
+        (true, _) => config.null_style,
+        (false, None) => config.null_style,
+        (false, Some(index)) => {
+            let (should_fill, fill_style) =
+                compute_fill(
+                    &diff_style_sections[index],
+                    config,
+                );
+            if should_fill {
+                fill_style
+            } else {
+                config.null_style
+            }
+        }
+    }
+}
+`
+		dst := `fn outer_helper() -> usize {
+    42
+}
+
+fn get_right_fill_style_for_panel<'a>(
+    line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[Vec<(usize, &str)>],
+    config: &Config,
+) -> (Option<usize>, usize) {
+    let none_or_override = None;
+    match (line_is_empty, line_index) {
+        (true, _) => (none_or_override, config.null_style),
+        (false, None) => (none_or_override, config.null_style),
+        (false, Some(index)) => {
+            let (bg_fill_mode, fill_style) =
+                compute_fill(
+                    &diff_style_sections[index],
+                    config,
+                );
+
+            match bg_fill_mode {
+                None => (none_or_override, config.null_style),
+                Some(1) => (Some(1), fill_style),
+                _ => (bg_fill_mode, fill_style),
+            }
+        }
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: outer_helper maps in place
+		var srcHelper, dstHelper *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "outer_helper" {
+				srcHelper = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "outer_helper" {
+				dstHelper = n
+				break
+			}
+		}
+		if srcHelper == nil || dstHelper == nil || mr.Mappings.Src()[srcHelper] != dstHelper {
+			t.Fatalf("expected fn outer_helper to map in place, got %v", mr.Mappings.Src()[srcHelper])
+		}
+
+		// 2. Surrounding sequence: arm 0 and arm 1 map in place
+		var srcArm0, dstArm0, srcArm2, dstArm2 *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				if srcArm0 == nil {
+					srcArm0 = n
+				}
+				if bytes.Contains([]byte(src)[n.StartByte:n.EndByte], []byte("Some(index)")) {
+					srcArm2 = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				if dstArm0 == nil {
+					dstArm0 = n
+				}
+				if bytes.Contains([]byte(dst)[n.StartByte:n.EndByte], []byte("Some(index)")) {
+					dstArm2 = n
+				}
+			}
+		}
+
+		if srcArm0 == nil || dstArm0 == nil || mr.Mappings.Src()[srcArm0] != dstArm0 {
+			t.Errorf("expected arm 0 to map in place, got %v", mr.Mappings.Src()[srcArm0])
+		}
+
+		// 3. Target construct: arm 2 (false, Some(index)) must map in place
+		if srcArm2 == nil || dstArm2 == nil {
+			t.Fatalf("expected srcArm2 and dstArm2 to be found, got src=%v dst=%v", srcArm2, dstArm2)
+		}
+		if mr.Mappings.Src()[srcArm2] != dstArm2 {
+			t.Errorf("expected arm 2 (false, Some(index)) to map in place, got %v", mr.Mappings.Src()[srcArm2])
+		}
+	})
+}
