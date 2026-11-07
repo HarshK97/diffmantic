@@ -1433,3 +1433,321 @@ func renderWholeFileSingleColumn(action int) error {
 		}
 	})
 }
+
+func TestTopDown_CalleeCompatibility(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		callee1 := testutil.Node("identifier", "getOptionalType")
+		argType1 := testutil.Node("identifier", "type")
+		args1 := testutil.Node("arguments", "", argType1)
+		call1 := testutil.Node("call_expression", "", callee1, args1)
+		root1 := testutil.Node("statement_block", "", call1)
+
+		callee2 := testutil.Node("identifier", "containsNonMissingUndefinedType")
+		argType2 := testutil.Node("identifier", "type")
+		args2 := testutil.Node("arguments", "", argType2)
+		call2 := testutil.Node("call_expression", "", callee2, args2)
+		root2 := testutil.Node("statement_block", "", call2)
+
+		m := NewMapping()
+		TopDown(root1, root2, 2, m, nil)
+
+		// Arguments should not match across incompatible callees.
+		if m.Src()[args1] != nil {
+			t.Errorf("expected args1 not to match across incompatible callees, got mapped to %v", m.Src()[args1])
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `function evaluateType(type: Type, host: Node) {
+    let original = type;
+    if (addUndefined) {
+        type = getOptionalType(type);
+    }
+    return type;
+}
+`
+		dst := `function evaluateType(type: Type, host: Node) {
+    let original = type;
+    if (addUndefined) {
+        type = getOptionalType(type, !isParameter(host));
+    }
+    if (containsNonMissingUndefinedType(type)) {
+        return undefined;
+    }
+    return type;
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "test.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: evaluateType declaration
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "evaluateType" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "evaluateType" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function evaluateType to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: let original statement and return type statement
+		var srcOrig, dstOrig *treesitter.ASTNode
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				srcOrig = n
+			}
+			if r.IsJumpStatement(n.Type) {
+				srcReturn = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				dstOrig = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 8 {
+				dstReturn = n
+			}
+		}
+		if srcOrig == nil || dstOrig == nil || mr.Mappings.Src()[srcOrig] != dstOrig {
+			t.Errorf("expected preceding let original statement to map in place")
+		}
+		if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected succeeding return type statement to map in place")
+		}
+
+		// 3. Target & Containers: getOptionalType call and arguments
+		var srcOptCall, dstOptCall *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "getOptionalType" {
+				srcOptCall = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "getOptionalType" {
+				dstOptCall = n
+				break
+			}
+		}
+		if srcOptCall == nil || dstOptCall == nil || mr.Mappings.Src()[srcOptCall] != dstOptCall {
+			t.Fatalf("expected getOptionalType call to map in place, got src=%v dst=%v", srcOptCall, dstOptCall)
+		}
+
+		var srcArgs, dstArgs *treesitter.ASTNode
+		for _, c := range srcOptCall.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				srcArgs = c
+			}
+		}
+		for _, c := range dstOptCall.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				dstArgs = c
+			}
+		}
+		if srcArgs == nil || dstArgs == nil || mr.Mappings.Src()[srcArgs] != dstArgs {
+			t.Fatalf("expected getOptionalType arguments to map in place, got src=%v dst=%v", srcArgs, dstArgs)
+		}
+
+		// 4. Stationary Operands: argument "type" must map in place to "type"
+		var srcType, dstType *treesitter.ASTNode
+		for _, c := range srcArgs.Children {
+			if r.IsIdentifier(c.Type) && c.Label == "type" {
+				srcType = c
+				break
+			}
+		}
+		for _, c := range dstArgs.Children {
+			if r.IsIdentifier(c.Type) && c.Label == "type" {
+				dstType = c
+				break
+			}
+		}
+		if srcType == nil || dstType == nil || mr.Mappings.Src()[srcType] != dstType {
+			t.Errorf("expected argument type to map in place, got %v", mr.Mappings.Src()[srcType])
+		}
+
+		// 5. Newly introduced call containsNonMissingUndefinedType must be unmapped in src
+		var dstOtherCall *treesitter.ASTNode
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "containsNonMissingUndefinedType" {
+				dstOtherCall = n
+				break
+			}
+		}
+		if dstOtherCall == nil || mr.Mappings.Dst()[dstOtherCall] != nil {
+			t.Errorf("expected newly added call containsNonMissingUndefinedType to be unmapped in src, got %v", mr.Mappings.Dst()[dstOtherCall])
+		}
+	})
+
+	t.Run("FullEngine_Go", func(t *testing.T) {
+		src := `package main
+
+func evaluateType(t Type, host Node) Type {
+	original := t
+	if addUndefined {
+		t = getOptionalType(t)
+	}
+	return t
+}
+`
+		dst := `package main
+
+func evaluateType(t Type, host Node) Type {
+	original := t
+	if addUndefined {
+		t = getOptionalType(t, !isParameter(host))
+	}
+	if containsNonMissingUndefinedType(t) {
+		return undefined
+	}
+	return t
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: evaluateType declaration
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "evaluateType" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "evaluateType" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function evaluateType to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: original := t and return t
+		var srcOrig, dstOrig *treesitter.ASTNode
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.StartRow == 3 {
+				srcOrig = n
+			}
+			if r.IsJumpStatement(n.Type) {
+				srcReturn = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.StartRow == 3 {
+				dstOrig = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 10 {
+				dstReturn = n
+			}
+		}
+		if srcOrig == nil || dstOrig == nil || mr.Mappings.Src()[srcOrig] != dstOrig {
+			t.Errorf("expected preceding assignment to map in place")
+		}
+		if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected succeeding return statement to map in place")
+		}
+
+		// 3. Target & Containers: getOptionalType call and argument list
+		var srcOptCall, dstOptCall *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "getOptionalType" {
+				srcOptCall = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "getOptionalType" {
+				dstOptCall = n
+				break
+			}
+		}
+		if srcOptCall == nil || dstOptCall == nil || mr.Mappings.Src()[srcOptCall] != dstOptCall {
+			t.Fatalf("expected getOptionalType call to map in place, got src=%v dst=%v", srcOptCall, dstOptCall)
+		}
+
+		var srcArgs, dstArgs *treesitter.ASTNode
+		for _, c := range srcOptCall.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				srcArgs = c
+			}
+		}
+		for _, c := range dstOptCall.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				dstArgs = c
+			}
+		}
+		if srcArgs == nil || dstArgs == nil || mr.Mappings.Src()[srcArgs] != dstArgs {
+			t.Fatalf("expected getOptionalType arguments to map in place, got src=%v dst=%v", srcArgs, dstArgs)
+		}
+
+		// 4. Stationary Operands: argument "t"
+		var srcT, dstT *treesitter.ASTNode
+		for _, c := range srcArgs.Children {
+			if r.IsIdentifier(c.Type) && c.Label == "t" {
+				srcT = c
+				break
+			}
+		}
+		for _, c := range dstArgs.Children {
+			if r.IsIdentifier(c.Type) && c.Label == "t" {
+				dstT = c
+				break
+			}
+		}
+		if srcT == nil || dstT == nil || mr.Mappings.Src()[srcT] != dstT {
+			t.Errorf("expected argument t to map in place, got %v", mr.Mappings.Src()[srcT])
+		}
+
+		// 5. Newly introduced call containsNonMissingUndefinedType must be unmapped in src
+		var dstOtherCall *treesitter.ASTNode
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "containsNonMissingUndefinedType" {
+				dstOtherCall = n
+				break
+			}
+		}
+		if dstOtherCall == nil || mr.Mappings.Dst()[dstOtherCall] != nil {
+			t.Errorf("expected newly added call containsNonMissingUndefinedType to be unmapped in src, got %v", mr.Mappings.Dst()[dstOtherCall])
+		}
+	})
+}

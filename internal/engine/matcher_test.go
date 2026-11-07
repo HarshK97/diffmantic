@@ -1362,3 +1362,312 @@ func Batch() {
 		}
 	})
 }
+
+func TestMatch_UnwrappedConditionIdentifier(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		ann1 := testutil.Node("identifier", "annotation")
+		op1 := testutil.Node("binary_operator_literal", "&&")
+		call1 := testutil.Node("call_expression", "", testutil.Node("identifier", "getType"))
+		bin1 := testutil.Node("binary_expression", "", ann1, op1, call1)
+		paren1 := testutil.Node("parenthesized_expression", "", bin1)
+		root1 := testutil.Node("if_statement", "", paren1)
+
+		ann2 := testutil.Node("identifier", "annotation")
+		paren2 := testutil.Node("parenthesized_expression", "", ann2)
+		root2 := testutil.Node("if_statement", "", paren2)
+
+		m := NewMapping()
+		m.Add(root1, root2)
+		m.Add(paren1, paren2)
+
+		MatchUnmatchedLeaves(root1, root2, m, nil)
+
+		if m.Src()[ann1] != ann2 {
+			t.Errorf("expected annotation to map in place, got %v", m.Src()[ann1])
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`function serialize(annotation: any, type: any) {
+    if (annotation && getTypeFromTypeNode(annotation) === type) {
+        return tryReuse(annotation);
+    }
+}
+`)
+		dst := []byte(`function serialize(annotation: any, type: any) {
+    if (annotation) {
+        return tryReuse(annotation);
+    }
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		r := rules.Get("typescript")
+
+		// 1. Enclosing context: function serialize
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "serialize" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "serialize" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil {
+			t.Fatalf("failed to locate function serialize: src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding sequence: return statement
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsJumpStatement(n.Type) && n.StartRow == 2 {
+				srcReturn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsJumpStatement(n.Type) && n.StartRow == 2 {
+				dstReturn = n
+				break
+			}
+		}
+
+		// 3. Target: condition annotation identifiers
+		var srcCondAnn, dstCondAnn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" && n.Parent != nil && n.Parent.Type == "binary_expression" {
+				srcCondAnn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" && n.Parent != nil && n.Parent.Type == "parenthesized_expression" {
+				dstCondAnn = n
+				break
+			}
+		}
+		if srcCondAnn == nil || dstCondAnn == nil {
+			t.Fatalf("failed to locate condition annotation identifiers: src=%v dst=%v", srcCondAnn, dstCondAnn)
+		}
+
+		part := NewLinePartition(src, dst)
+		res := Match(srcAST, dstAST, src, dst, part)
+
+		if res.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected function serialize to map in place")
+		}
+		if srcReturn != nil && dstReturn != nil && res.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected return statement to map in place")
+		}
+		if mapped := res.Mappings.Src()[srcCondAnn]; mapped != dstCondAnn {
+			srcNode := res.Mappings.Dst()[dstCondAnn]
+			t.Logf("dstCondAnn is mapped to: %v (parent: %v, startRow=%d startCol=%d)", srcNode, srcNode.Parent.Type, srcNode.StartRow, srcNode.StartCol)
+			t.Errorf("expected condition annotation to map to dstCondAnn, got %v", mapped)
+		}
+	})
+
+	t.Run("FullEngine_Go", func(t *testing.T) {
+		src := []byte(`package main
+
+func serialize(annotation bool, t bool) bool {
+	if annotation && getTypeFromTypeNode(annotation) {
+		return tryReuse(annotation)
+	}
+	return false
+}
+`)
+		dst := []byte(`package main
+
+func serialize(annotation bool, t bool) bool {
+	if annotation {
+		return tryReuse(annotation)
+	}
+	return false
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		r := rules.Get("go")
+
+		// 1. Enclosing context: function serialize
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "serialize" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "serialize" {
+				dstFunc = n
+				break
+			}
+		}
+
+		// 2. Surrounding sequence: return false
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsJumpStatement(n.Type) && n.StartRow == 6 {
+				srcReturn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsJumpStatement(n.Type) && n.StartRow == 6 {
+				dstReturn = n
+				break
+			}
+		}
+
+		// 3. Target: condition annotation identifier
+		var srcCondAnn, dstCondAnn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" && n.Parent != nil && n.Parent.Type == "binary_expression" {
+				srcCondAnn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" && n.Parent != nil && n.Parent.Type == "if_statement" {
+				dstCondAnn = n
+				break
+			}
+		}
+		if srcCondAnn == nil || dstCondAnn == nil {
+			t.Fatalf("failed to locate condition annotation identifiers: src=%v dst=%v", srcCondAnn, dstCondAnn)
+		}
+
+		part := NewLinePartition(src, dst)
+		res := Match(srcAST, dstAST, src, dst, part)
+
+		if res.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected function serialize to map in place")
+		}
+		if res.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected return false statement to map in place")
+		}
+		if mapped := res.Mappings.Src()[srcCondAnn]; mapped != dstCondAnn {
+			srcNode := res.Mappings.Dst()[dstCondAnn]
+			t.Logf("dstCondAnn is mapped to: %v (parent: %v, startRow=%d startCol=%d)", srcNode, srcNode.Parent.Type, srcNode.StartRow, srcNode.StartCol)
+			t.Errorf("expected condition annotation to map to dstCondAnn, got %v", mapped)
+		}
+	})
+
+	t.Run("FullEngine_Python", func(t *testing.T) {
+		src := []byte(`def serialize(annotation, type_val):
+    valid = check(annotation)
+    if annotation and getTypeFromTypeNode(annotation):
+        return tryReuse(annotation)
+    return valid
+`)
+		dst := []byte(`def serialize(annotation, type_val):
+    valid = check(annotation)
+    if annotation:
+        return tryReuse(annotation)
+    return valid
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		r := rules.Get("python")
+
+		// 1. Enclosing context: function serialize
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "serialize" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "serialize" {
+				dstFunc = n
+				break
+			}
+		}
+
+		// 2. Surrounding sequence: valid = check(annotation) and return valid
+		var srcPre, dstPre *treesitter.ASTNode
+		var srcPost, dstPost *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsStatement(n.Type) && n.StartRow == 1 {
+				srcPre = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 4 {
+				srcPost = n
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsStatement(n.Type) && n.StartRow == 1 {
+				dstPre = n
+			}
+			if r.IsJumpStatement(n.Type) && n.StartRow == 4 {
+				dstPost = n
+			}
+		}
+
+		// 3. Target: condition annotation identifier
+		var srcCondAnn, dstCondAnn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" && n.Parent != nil && n.Parent.Type == "boolean_operator" {
+				srcCondAnn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "annotation" && n.Parent != nil && n.Parent.Type == "if_statement" {
+				dstCondAnn = n
+				break
+			}
+		}
+		if srcCondAnn == nil || dstCondAnn == nil {
+			t.Fatalf("failed to locate condition annotation identifiers: src=%v dst=%v", srcCondAnn, dstCondAnn)
+		}
+
+		part := NewLinePartition(src, dst)
+		res := Match(srcAST, dstAST, src, dst, part)
+
+		if res.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected function serialize to map in place")
+		}
+		if res.Mappings.Src()[srcPre] != dstPre {
+			t.Errorf("expected preceding assignment to map in place")
+		}
+		if res.Mappings.Src()[srcPost] != dstPost {
+			t.Errorf("expected succeeding return statement to map in place")
+		}
+		if mapped := res.Mappings.Src()[srcCondAnn]; mapped != dstCondAnn {
+			srcNode := res.Mappings.Dst()[dstCondAnn]
+			t.Logf("dstCondAnn is mapped to: %v (parent: %v, startRow=%d startCol=%d)", srcNode, srcNode.Parent.Type, srcNode.StartRow, srcNode.StartCol)
+			t.Errorf("expected condition annotation to map to dstCondAnn, got %v", mapped)
+		}
+	})
+}
