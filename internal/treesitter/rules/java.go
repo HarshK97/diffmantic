@@ -178,6 +178,9 @@ var javaRules = &Rules{
 		"local_variable_declaration",
 		"field_declaration",
 	},
+	Imports: []string{
+		"import_declaration",
+	},
 	Identifiers: []string{
 		"identifier",
 		"type_identifier",

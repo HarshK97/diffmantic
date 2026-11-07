@@ -271,4 +271,7 @@ var zigRules = &Rules{
 		"variable_declaration",
 		"while_statement",
 	},
+	Imports: []string{
+		"using_namespace_declaration",
+	},
 }

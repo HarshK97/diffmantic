@@ -396,4 +396,7 @@ var typescriptRules = &Rules{
 		"while_statement",
 		"with_statement",
 	},
+	Imports: []string{
+		"import_statement",
+	},
 }

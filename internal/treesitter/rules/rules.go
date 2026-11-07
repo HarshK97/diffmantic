@@ -35,6 +35,7 @@ type Rules struct {
 	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
 	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
 	Statements            []string // Standalone statement and statement-level declaration node types.
+	Imports               []string // Import and include declaration node types.
 	OpeningDelimiters     []string // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
 	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
 	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
@@ -71,6 +72,7 @@ type Rules struct {
 	openingDelimitersSet     map[string]struct{}
 	closingDelimitersSet     map[string]struct{}
 	separatorsSet            map[string]struct{}
+	importsSet               map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -127,6 +129,7 @@ func (r *Rules) CompileSets() {
 	r.tagsSet = sliceToSet(r.Tags)
 	r.sentinelsSet = sliceToSet(r.Sentinels)
 	r.statementsSet = sliceToSet(r.Statements)
+	r.importsSet = sliceToSet(r.Imports)
 	if len(r.OpeningDelimiters) > 0 {
 		r.openingDelimitersSet = sliceToSet(r.OpeningDelimiters)
 	} else {
@@ -222,6 +225,18 @@ func (r *Rules) IsLocalVarDeclaration(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.LocalVarDeclarations, nodeType)
+}
+
+// IsImport reports whether nodeType is an import or include declaration.
+func (r *Rules) IsImport(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.importsSet) > 0 {
+		_, ok := r.importsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Imports, nodeType)
 }
 
 // IsAssignment reports whether nodeType is an assignment expression or statement.
@@ -578,6 +593,16 @@ func IsDeclaration(nodeType string) bool {
 func IsLocalVarDeclaration(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsLocalVarDeclaration(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsImport reports whether nodeType is configured as an import in any language rule set.
+func IsImport(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsImport(nodeType) {
 			return true
 		}
 	}

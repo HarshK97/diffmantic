@@ -159,6 +159,10 @@ var pythonRules = &Rules{
 		"class_definition",
 		"type_alias_statement",
 	},
+	Imports: []string{
+		"import_statement",
+		"import_from_statement",
+	},
 	Identifiers: []string{
 		"identifier",
 		"type",

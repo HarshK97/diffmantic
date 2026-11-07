@@ -151,6 +151,11 @@ var rustRules = &Rules{
 		"mod_item",
 		"const_item",
 		"static_item",
+		"field_declaration",
+		"use_declaration",
+	},
+	Imports: []string{
+		"use_declaration",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -173,6 +178,7 @@ var rustRules = &Rules{
 		"index_expression",
 		"arguments",
 		"parameters",
+		"scoped_use_list",
 	},
 	Pairs: []string{
 		"field_initializer",

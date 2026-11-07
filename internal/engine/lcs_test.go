@@ -56,7 +56,7 @@ func TestLCSStructureBasic(t *testing.T) {
 	a := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"))}
 	b := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "y"))}
 
-	pairs := LCSStructure(a, b)
+	pairs := LCSStructure(a, b, nil)
 	if len(pairs) != 1 {
 		t.Errorf("structural match: want 1 pair, got %d", len(pairs))
 	}
@@ -66,7 +66,7 @@ func TestLCSStructureDiffShape(t *testing.T) {
 	a := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"))}
 	b := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))}
 
-	pairs := LCSStructure(a, b)
+	pairs := LCSStructure(a, b, nil)
 	if len(pairs) != 0 {
 		t.Errorf("different shape: want 0 pairs, got %d", len(pairs))
 	}
@@ -102,7 +102,7 @@ func TestScorePartner(t *testing.T) {
 	testutil.Node("call", "", src)
 	testutil.Node("call", "", dst)
 
-	score := scorePartner(src, dst, 0)
+	score := scorePartner(src, dst, 0, nil)
 	if score < 100 {
 		t.Errorf("same position + label should score >= 100, got %d", score)
 	}

@@ -25,6 +25,9 @@ func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
 // shouldBypassZS reports whether container pair (t1, t2) should skip Zhang-Shasha
 // tree edit distance and route directly to SimpleRecovery.
 func shouldBypassZS(t1, t2 *treesitter.ASTNode, r *rules.Rules) bool {
+	if t1.Parent == nil || t2.Parent == nil {
+		return true
+	}
 	if (r != nil && (r.IsDelimitedContainer(t1.Type) || r.IsDelimitedContainer(t2.Type))) ||
 		(r == nil && (rules.IsDelimitedContainer(t1.Type) || rules.IsDelimitedContainer(t2.Type))) {
 		return true
@@ -159,7 +162,7 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	uc2 = unmatchedChildren(t2, m.HasDst)
 
 	if !isDelimited || isBlock {
-		for _, pair := range LCSStructure(uc1, uc2) {
+		for _, pair := range LCSStructure(uc1, uc2, m) {
 			addIsomorphicPairs(pair[0], pair[1], m)
 		}
 	}
@@ -478,6 +481,9 @@ func uniqueTypePairs(
 			}
 
 			isDecl := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
+			if isDecl && !canMatchDeclarations(n1, n2, m, r) {
+				continue
+			}
 			isStmt := ((r != nil && r.IsStatement(n1.Type)) || (r == nil && rules.IsStatement(n1.Type))) && !isDecl
 			diceSrc := 0.0
 			if m != nil {

@@ -2727,3 +2727,142 @@ fallback:
 		}
 	})
 }
+
+func TestImportPathExtension_ScopedUseList(t *testing.T) {
+	r := rules.Get("rust")
+	if r == nil {
+		t.Fatal("rules for rust not found")
+	}
+
+	t.Run("Unit", func(t *testing.T) {
+		if !r.IsWrapper("scoped_use_list") {
+			t.Fatalf("expected scoped_use_list to be registered in Wrappers for Rust")
+		}
+
+		// Wrapping an existing import path in scoped_use_list shouldn't register as a move.
+		oldPath := testutil.Leaf("scoped_identifier", "crate::features::side_by_side")
+		oldPath.Language = "rust"
+		oldUse := testutil.Node("use_declaration", "", oldPath)
+		oldUse.Language = "rust"
+
+		newPath := testutil.Leaf("scoped_identifier", "crate::features::side_by_side")
+		newPath.Language = "rust"
+		newItems := testutil.Leaf("use_list", "{self, ansifill}")
+		newItems.Language = "rust"
+		newWrapper := testutil.Node("scoped_use_list", "", newPath, newItems)
+		newWrapper.Language = "rust"
+		newUse := testutil.Node("use_declaration", "", newWrapper)
+		newUse.Language = "rust"
+
+		ms := engine.NewMapping()
+		ms.Add(oldUse, newUse)
+		ms.Add(oldPath, newPath)
+
+		es := actions.NewEditScript()
+		// Initially oldPath looks like a move because parent changed from use_declaration to scoped_use_list
+		es.Add(actions.Action{Type: actions.Move, Node: oldPath, DestNode: newPath})
+
+		result := normalizeStationaryWrapperMoves(es, ms)
+		if result.Size() != 0 {
+			t.Fatalf("expected 0 actions after unnesting scoped_use_list wrapper, got %d", result.Size())
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`use std::collections::HashMap;
+use crate::features::side_by_side;
+use crate::git_config::GitConfigEntry;
+use crate::style::{self, Style};
+
+pub fn run() {}
+`)
+		dst := []byte(`use std::collections::HashMap;
+use crate::features::side_by_side::{self, ansifill, LeftRight};
+use crate::git_config::{GitConfig, GitConfigEntry};
+use crate::style::{self, Style};
+
+pub fn run() {}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: HashMap, Style imports, and function run map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function run to map in place")
+		}
+
+		// 2. Surrounding sequence: GitConfigEntry maps to GitConfigEntry
+		var srcEntry, dstEntry *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "GitConfigEntry" {
+				srcEntry = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "GitConfigEntry" {
+				dstEntry = n
+				break
+			}
+		}
+		if srcEntry == nil || dstEntry == nil || matchResult.Mappings.Src()[srcEntry] != dstEntry {
+			t.Errorf("expected GitConfigEntry to map to GitConfigEntry in place")
+		}
+
+		// 3. Target & Wrappers: crate::features::side_by_side must NOT have a Move action
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move {
+				if a.Node != nil && strings.Contains(string(src[a.Node.StartByte:a.Node.EndByte]), "side_by_side") {
+					t.Errorf("unexpected Move action on side_by_side: %v", a)
+				}
+			}
+		}
+
+		// 4. Stationary Operands: side_by_side identifier maps in place
+		var srcSide, dstSide *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "side_by_side" {
+				srcSide = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "side_by_side" {
+				dstSide = n
+				break
+			}
+		}
+		if srcSide == nil || dstSide == nil || matchResult.Mappings.Src()[srcSide] != dstSide {
+			t.Errorf("expected side_by_side identifier to map in place")
+		}
+	})
+}

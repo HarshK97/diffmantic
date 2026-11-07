@@ -286,4 +286,7 @@ var cRules = &Rules{
 		"switch_statement",
 		"while_statement",
 	},
+	Imports: []string{
+		"preproc_include",
+	},
 }

@@ -1013,6 +1013,204 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	return ""
 }
 
+func findTypeNode(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	for _, child := range n.Children {
+		isT := (r != nil && r.IsType(child.Type)) || (r == nil && rules.IsType(child.Type))
+		if isT {
+			return child
+		}
+	}
+	for _, child := range n.Children {
+		for _, sub := range child.Children {
+			isT := (r != nil && r.IsType(sub.Type)) || (r == nil && rules.IsType(sub.Type))
+			if isT {
+				return sub
+			}
+		}
+	}
+	return nil
+}
+
+func hasSameFieldType(src, dst *treesitter.ASTNode, r *rules.Rules) bool {
+	if src == nil || dst == nil {
+		return false
+	}
+	if r == nil {
+		r = cmp.Or(rulesFor(src), rulesFor(dst))
+	}
+	t1 := findTypeNode(src, r)
+	t2 := findTypeNode(dst, r)
+	if t1 == nil || t2 == nil {
+		return false
+	}
+	if t1.Type != t2.Type {
+		return false
+	}
+	if len(t1.Children) == 0 && len(t2.Children) == 0 {
+		return t1.Label != "" && t1.Label == t2.Label
+	}
+	return StructureIsomorphic(t1, t2) && LeafSimilarity(t1, t2) == 1.0
+}
+
+func isStationarySlot(src, dst *treesitter.ASTNode, m *Mapping) bool {
+	if src == nil || dst == nil {
+		return false
+	}
+	diff := int(src.StartRow) - int(dst.StartRow)
+	if src.Parent != nil && dst.Parent != nil {
+		if src.Parent.Type != dst.Parent.Type {
+			return false
+		}
+		// Don't cross-match fields across different parent structs or types.
+		if src.Parent.Parent != nil && dst.Parent.Parent != nil {
+			pName1 := getDeclarationName(src.Parent.Parent)
+			pName2 := getDeclarationName(dst.Parent.Parent)
+			if pName1 != "" && pName2 != "" && pName1 != pName2 {
+				return false
+			}
+		}
+		relSrc := int(src.StartRow) - int(src.Parent.StartRow)
+		relDst := int(dst.StartRow) - int(dst.Parent.StartRow)
+		diff = relSrc - relDst
+	}
+	if diff < -2 || diff > 2 {
+		return false
+	}
+
+	// Keep sibling order monotonic: don't cross over already-mapped neighbors.
+	if m != nil && src.Parent != nil && dst.Parent != nil {
+		srcIdx := src.ChildIndex()
+		dstIdx := dst.ChildIndex()
+		srcMap := m.Src()
+
+		for i := srcIdx - 1; i >= 0; i-- {
+			sPrev := src.Parent.Children[i]
+			if dPrev := srcMap[sPrev]; dPrev != nil && dPrev.Parent == dst.Parent {
+				if dPrev.ChildIndex() > dstIdx {
+					return false
+				}
+				break
+			}
+		}
+
+		for i := srcIdx + 1; i < len(src.Parent.Children); i++ {
+			sNext := src.Parent.Children[i]
+			if dNext := srcMap[sNext]; dNext != nil && dNext.Parent == dst.Parent {
+				if dNext.ChildIndex() < dstIdx {
+					return false
+				}
+				break
+			}
+		}
+	}
+
+	return true
+}
+
+func canMatchDeclarations(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil {
+		return false
+	}
+	if r == nil {
+		r = cmp.Or(rulesFor(src), rulesFor(dst))
+	}
+	if !TypesMatch(src.Type, dst.Type, r) {
+		return false
+	}
+
+	name1 := getDeclarationName(src)
+	name2 := getDeclarationName(dst)
+	if name1 != "" && name2 != "" && name1 == name2 {
+		return true
+	}
+
+	// Functions, methods, and classes can't be renamed without at least partial name overlap.
+	isContainer := (r != nil && (r.IsContainerDeclaration(src.Type) || r.IsContainerDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsContainerDeclaration(src.Type) || rules.IsContainerDeclaration(dst.Type)))
+	if isContainer {
+		if name1 != "" && name2 != "" && (strings.Contains(name1, name2) || strings.Contains(name2, name1)) {
+			return true
+		}
+		return false
+	}
+
+	if !isStationarySlot(src, dst, m) {
+		return false
+	}
+
+	// Local variables in the same slot can change types during a refactor.
+	isLocalVar := (r != nil && (r.IsLocalVarDeclaration(src.Type) || r.IsLocalVarDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsLocalVarDeclaration(src.Type) || rules.IsLocalVarDeclaration(dst.Type)))
+	if isLocalVar {
+		return true
+	}
+
+	// Imports with different names only match if they share an import path segment.
+	isImport := (r != nil && (r.IsImport(src.Type) || r.IsImport(dst.Type))) ||
+		(r == nil && (rules.IsImport(src.Type) || rules.IsImport(dst.Type)))
+	if isImport {
+		return hasSharedImportPath(src, dst, r)
+	}
+
+	// Renamed struct fields only match if their types are identical.
+	if hasSameFieldType(src, dst, r) {
+		return true
+	}
+
+	return name1 == "" && name2 == ""
+}
+
+func hasSharedImportPath(src, dst *treesitter.ASTNode, r *rules.Rules) bool {
+	if src == nil || dst == nil {
+		return false
+	}
+	if r == nil {
+		r = cmp.Or(rulesFor(src), rulesFor(dst))
+	}
+	srcTokens := importPathTokens(src, r)
+	if len(srcTokens) == 0 {
+		return false
+	}
+	dstTokens := importPathTokens(dst, r)
+	for t := range dstTokens {
+		if _, ok := srcTokens[t]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func importPathTokens(n *treesitter.ASTNode, r *rules.Rules) map[string]struct{} {
+	tokens := make(map[string]struct{})
+	if n == nil {
+		return tokens
+	}
+	for _, child := range n.Children {
+		isKw := child.IsKeyword || (r != nil && r.IsKeyword(child.Type, child.Label)) || (r == nil && rules.IsKeyword(child.Type, child.Label))
+		if isKw {
+			continue
+		}
+		for _, leaf := range child.Leaves() {
+			if leaf.Label == "" {
+				continue
+			}
+			isPunct := (r != nil && (r.IsPunctuation(leaf.Type) || r.IsPunctuation(leaf.Label))) ||
+				(r == nil && (rules.IsPunctuation(leaf.Type) || rules.IsPunctuation(leaf.Label)))
+			if isPunct || isOperatorGlue(leaf, r) {
+				continue
+			}
+			tokens[leaf.Label] = struct{}{}
+		}
+	}
+	return tokens
+}
+
 func getParentPairKey(n *treesitter.ASTNode) string {
 	r := rulesFor(n)
 	if r == nil {
