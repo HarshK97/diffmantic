@@ -126,8 +126,32 @@ func hasUnmappedChild(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) boo
 }
 
 func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
+	r := rulesFor(t1)
 	return slices.ContainsFunc(t1.Children, func(c *treesitter.ASTNode) bool {
-		return m.Has(c)
+		if m.Has(c) {
+			return true
+		}
+		if (r != nil && (r.IsIdentifier(c.Type) || r.IsWrapper(c.Type))) ||
+			(r == nil && (rules.IsIdentifier(c.Type) || rules.IsWrapper(c.Type))) {
+			for curr := c; curr != nil && len(curr.Children) > 0; {
+				matched := false
+				for _, ch := range curr.Children {
+					if m.Has(ch) {
+						return true
+					}
+					if (r != nil && (r.IsIdentifier(ch.Type) || r.IsWrapper(ch.Type))) ||
+						(r == nil && (rules.IsIdentifier(ch.Type) || rules.IsWrapper(ch.Type))) {
+						curr = ch
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					break
+				}
+			}
+		}
+		return false
 	})
 }
 
