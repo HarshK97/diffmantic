@@ -1185,18 +1185,31 @@ func hasHollowEnclosingCall(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rule
 		return false
 	}
 
-	check := func(outer, target *treesitter.ASTNode, partnerMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+	check := func(outer, target *treesitter.ASTNode, partnerMap map[*treesitter.ASTNode]*treesitter.ASTNode, isReverse bool) bool {
 		targetCallee := extractCalleeLabel(target, r)
-		if targetCallee == "" {
-			return false
-		}
+		outerCallee := extractCalleeLabel(outer, r)
 		desc := outer.Descendants()
 		for _, inner := range desc {
 			if inner == outer || !isCall(inner.Type) || partnerMap[inner] != nil {
 				continue
 			}
 			innerCallee := extractCalleeLabel(inner, r)
-			if innerCallee == "" || !calleesCompatible(targetCallee, innerCallee) {
+
+			var diceInner, diceOuter float64
+			if !isReverse {
+				// Forward: target is T1, inner/outer are T2
+				diceInner = m.DiceSrc(target, inner)
+				diceOuter = m.DiceSrc(target, outer)
+			} else {
+				// Reverse: target is T2, inner/outer are T1
+				diceInner = m.DiceSrc(inner, target)
+				diceOuter = m.DiceSrc(outer, target)
+			}
+
+			isInnerBetter := (targetCallee != "" && innerCallee != "" && calleesCompatible(targetCallee, innerCallee)) ||
+				(inner.Type == target.Type && outer.Type != target.Type) ||
+				(!calleesCompatible(outerCallee, targetCallee) && diceInner > diceOuter)
+			if !isInnerBetter {
 				continue
 			}
 			hasMappedDesc := false
@@ -1220,7 +1233,7 @@ func hasHollowEnclosingCall(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rule
 		return false
 	}
 
-	return check(c, t1, m.Dst()) || check(t1, c, m.Src())
+	return check(c, t1, m.Dst(), false) || check(t1, c, m.Src(), true)
 }
 
 // hasCallCalleeOrArgMatch reports whether two call nodes share any matched tokens
