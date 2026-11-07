@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -91,11 +92,19 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		addIsomorphicPairs(pair[0], pair[1], m)
 	}
 
+	isDelimited := (r != nil && r.IsDelimitedContainer(t1.Type)) || (r == nil && rules.IsDelimitedContainer(t1.Type))
+	isBlock := (r != nil && r.IsBlock(t1.Type)) || (r == nil && rules.IsBlock(t1.Type))
+	if isDelimited && !isBlock {
+		recoverDelimitedSiblingSequences(t1, t2, m, r)
+	}
+
 	uc1 = unmatchedChildren(t1, m.Has)
 	uc2 = unmatchedChildren(t2, m.HasDst)
 
-	for _, pair := range LCSStructure(uc1, uc2) {
-		addIsomorphicPairs(pair[0], pair[1], m)
+	if !isDelimited || isBlock {
+		for _, pair := range LCSStructure(uc1, uc2) {
+			addIsomorphicPairs(pair[0], pair[1], m)
+		}
 	}
 
 	uc1 = unmatchedChildren(t1, m.Has)
@@ -105,6 +114,250 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		m.Add(pair[0], pair[1])
 		Recover(pair[0], pair[1], m)
 	}
+}
+
+// recoverDelimitedSiblingSequences aligns unmatched children inside non-block
+// delimited containers using 2D sequence dynamic programming.
+func recoverDelimitedSiblingSequences(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	uc1 := unmatchedSubstantiveChildren(t1, m.Has, r)
+	uc2 := unmatchedSubstantiveChildren(t2, m.HasDst, r)
+	n1, n2 := len(uc1), len(uc2)
+	if n1 == 0 || n2 == 0 {
+		return
+	}
+
+	dp := make([][]float64, n1+1)
+	for i := range dp {
+		dp[i] = make([]float64, n2+1)
+	}
+
+	sim := make([][]float64, n1)
+	for i := range n1 {
+		sim[i] = make([]float64, n2)
+		for j := range n2 {
+			if ok, score := canPairDelimitedSiblings(uc1[i], uc2[j], m, r); ok {
+				sim[i][j] = score
+			} else {
+				sim[i][j] = -1.0
+			}
+		}
+	}
+
+	const gapPenalty = 0.20
+
+	dp[0][0] = 0.0
+	for i := 1; i <= n1; i++ {
+		dp[i][0] = dp[i-1][0] - gapPenalty
+	}
+	for j := 1; j <= n2; j++ {
+		dp[0][j] = dp[0][j-1] - gapPenalty
+	}
+
+	for i := 1; i <= n1; i++ {
+		for j := 1; j <= n2; j++ {
+			best := max(dp[i-1][j]-gapPenalty, dp[i][j-1]-gapPenalty)
+			if s := sim[i-1][j-1]; s >= 0 {
+				if diag := dp[i-1][j-1] + s; diag > best {
+					best = diag
+				}
+			}
+			dp[i][j] = best
+		}
+	}
+
+	var matchedPairs [][2]*treesitter.ASTNode
+	i, j := n1, n2
+	for i > 0 && j > 0 {
+		if s := sim[i-1][j-1]; s >= 0 && math.Abs(dp[i][j]-(dp[i-1][j-1]+s)) < 1e-6 {
+			matchedPairs = append(matchedPairs, [2]*treesitter.ASTNode{uc1[i-1], uc2[j-1]})
+			i--
+			j--
+		} else if math.Abs(dp[i][j]-(dp[i-1][j]-gapPenalty)) < 1e-6 {
+			i--
+		} else {
+			j--
+		}
+	}
+	slices.Reverse(matchedPairs)
+
+	for _, pair := range matchedPairs {
+		m.Add(pair[0], pair[1])
+		Recover(pair[0], pair[1], m)
+	}
+}
+
+// canPairDelimitedSiblings checks whether two unmatched sibling elements can pair,
+// evaluating container isolation, callee compatibility, and leaf similarity.
+func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) (bool, float64) {
+	if u1 == nil || u2 == nil {
+		return false, 0.0
+	}
+	if !TypesMatch(u1.Type, u2.Type, r) || !CompatiblePairRoles(u1, u2) {
+		return false, 0.0
+	}
+	p1, p2 := u1.Parent, u2.Parent
+	if m != nil && p1 != nil {
+		hasConflict := slices.ContainsFunc(u2.Descendants(), func(d2 *treesitter.ASTNode) bool {
+			src := m.Dst()[d2]
+			return src != nil && p1.Contains(src) && !u1.Contains(src)
+		})
+		if hasConflict {
+			return false, 0.0
+		}
+	}
+	if m != nil && p2 != nil {
+		hasConflict := slices.ContainsFunc(u1.Descendants(), func(d1 *treesitter.ASTNode) bool {
+			dst := m.Src()[d1]
+			return dst != nil && p2.Contains(dst) && !u2.Contains(dst)
+		})
+		if hasConflict {
+			return false, 0.0
+		}
+	}
+
+	isCall1 := (r != nil && r.IsCall(u1.Type)) || (r == nil && rules.IsCall(u1.Type))
+	isCall2 := (r != nil && r.IsCall(u2.Type)) || (r == nil && rules.IsCall(u2.Type))
+	if isCall1 != isCall2 {
+		return false, 0.0
+	}
+	cScore := 1.0
+	if isCall1 && isCall2 {
+		callee1, rec1 := extractCalleeAndReceiver(u1, r)
+		callee2, rec2 := extractCalleeAndReceiver(u2, r)
+
+		if callee1 != "" && callee2 != "" && !calleesCompatible(callee1, callee2) {
+			if hasUnmappedPeerWithCallee(u2, callee1, m, r) {
+				return false, 0.0
+			}
+		}
+
+		if callee1 == callee2 || calleesCompatible(callee1, callee2) {
+			cScore = 1.0
+		} else if rec1 != "" && rec1 == rec2 {
+			cScore = 0.80
+		} else {
+			return false, 0.0
+		}
+	}
+
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+
+// unmatchedSubstantiveChildren collects non-keyword, non-glue, non-punctuation children of t.
+func unmatchedSubstantiveChildren(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bool, r *rules.Rules) []*treesitter.ASTNode {
+	var out []*treesitter.ASTNode
+	isPunct := func(s string) bool {
+		return (r != nil && r.IsPunctuation(s)) || (r == nil && rules.IsPunctuation(s))
+	}
+	for _, c := range t.Children {
+		if hasFn(c) || c.IsKeyword || isGlueToken(c, r) || isPunct(c.Type) || isPunct(c.Label) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func extractCalleeAndReceiver(n *treesitter.ASTNode, r *rules.Rules) (callee string, receiver string) {
+	if n == nil || len(n.Children) == 0 {
+		return "", ""
+	}
+	argIdx := -1
+	for i, c := range n.Children {
+		if (r != nil && r.IsDelimitedContainer(c.Type)) || (r == nil && rules.IsDelimitedContainer(c.Type)) {
+			argIdx = i
+			break
+		}
+	}
+	if argIdx > 0 {
+		prev := n.Children[argIdx-1]
+		if (r != nil && r.IsIdentifier(prev.Type)) || (r == nil && rules.IsIdentifier(prev.Type)) {
+			callee = prev.Label
+			if argIdx > 1 {
+				for _, c := range n.Children[0].Descendants() {
+					if c.Label != "" {
+						receiver = c.Label
+						break
+					}
+				}
+				if receiver == "" {
+					receiver = n.Children[0].Label
+				}
+			}
+			return callee, receiver
+		}
+	}
+	target := n.Children[0]
+	if len(target.Children) > 0 {
+		for _, c := range target.Children {
+			if c.Label != "" {
+				if receiver == "" {
+					receiver = c.Label
+				}
+				callee = c.Label
+			}
+		}
+		if receiver == callee {
+			receiver = ""
+		}
+		return callee, receiver
+	}
+	return target.Label, ""
+}
+
+func substantiveLeafSimilarity(a, b *treesitter.ASTNode, r *rules.Rules) float64 {
+	if a == nil || b == nil {
+		return 0.0
+	}
+	l1, l2 := a.LeafLabels(), b.LeafLabels()
+	intersection, total1, total2 := 0, 0, 0
+	for label, count1 := range l1 {
+		if !isSubstantiveLeaf(label, r) {
+			continue
+		}
+		total1 += count1
+		if count2, ok := l2[label]; ok {
+			intersection += min(count1, count2)
+		}
+	}
+	for label, count2 := range l2 {
+		if isSubstantiveLeaf(label, r) {
+			total2 += count2
+		}
+	}
+	if total1+total2 == 0 {
+		return 0.0
+	}
+	return 2.0 * float64(intersection) / float64(total1+total2)
+}
+
+func isSubstantiveLeaf(label string, r *rules.Rules) bool {
+	if !hasWordChar(label) && !isQuotedLiteral(label) {
+		return false
+	}
+	unquoted := Unquote(label)
+	if unquoted == "" {
+		return false
+	}
+	isStop := func(s string) bool {
+		if r != nil {
+			return r.IsKeyword(s, s) || r.IsSentinel(s) || r.IsPunctuation(s) || r.IsOperatorLiteral(s)
+		}
+		return rules.IsKeyword(s, s) || rules.IsSentinel(s) || rules.IsPunctuation(s) || rules.IsOperatorLiteral(s)
+	}
+	if isStop(unquoted) {
+		return false
+	}
+	switch unquoted {
+	case "0", "1", "self", "this":
+		return false
+	}
+	return true
 }
 
 func unmatchedChildren(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) bool) []*treesitter.ASTNode {
@@ -177,6 +430,15 @@ func uniqueTypePairs(
 			hasBodyBlock := findBodyBlock(n1, r) != nil && findBodyBlock(n2, r) != nil
 			if isStmt && hasBodyBlock && !isomorphicHeader(n1, n2, r) && !labelIsomorphic(n1, n2) && diceSrc == 0.0 {
 				continue
+			}
+			isCall := (r != nil && r.IsCall(n1.Type)) || (r == nil && rules.IsCall(n1.Type))
+			isDelimitedContainer := p1 != nil && ((r != nil && r.IsDelimitedContainer(p1.Type)) || (r == nil && rules.IsDelimitedContainer(p1.Type)))
+			if isDelimitedContainer && isCall {
+				callee1, rec1 := extractCalleeAndReceiver(n1, r)
+				callee2, rec2 := extractCalleeAndReceiver(n2, r)
+				if !calleesCompatible(callee1, callee2) && (rec1 == "" || rec1 != rec2) {
+					continue
+				}
 			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {
 				labels1 := n1.LeafLabels()

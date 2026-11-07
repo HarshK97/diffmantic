@@ -87,6 +87,10 @@ func TopDown(
 							}
 						}
 
+						if isCrossStatementDredging(t1, t2, m, part, r) {
+							continue
+						}
+
 						ambiguous := false
 
 						for _, ta := range candidates {
@@ -452,6 +456,59 @@ func getScopeName(n *treesitter.ASTNode) string {
 		}
 	}
 	return ""
+}
+
+// isCrossStatementDredging checks if an isomorphic subtree candidate reaches across
+// distinct statements, violating line partition locks, statement affinity, or drift limits.
+func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *LinePartition, r *rules.Rules) bool {
+	s1 := FindImmediateStatement(t1, r)
+	s2 := FindImmediateStatement(t2, r)
+	if s1 == nil || s2 == nil {
+		return false
+	}
+	// If both nodes are the statements themselves, let them match normally.
+	if s1 == t1 && s2 == t2 {
+		return false
+	}
+	// If the enclosing statements already map to each other, this is an intra-statement match.
+	if m != nil && m.Src()[s1] == s2 {
+		return false
+	}
+
+	// Gate 1: Phase 0 LinePartition Untouched Line Lock
+	if part != nil {
+		isG1A, _ := part.IsGroup1A(s1)
+		isG1B, _ := part.IsGroup1B(s2)
+		if (isG1A || isG1B) && !part.CanMatch(s1, s2) {
+			return true // Don't dredge out of or into an untouched stationary statement.
+		}
+	}
+
+	// Gate 2: Statement Boundary Affinity (Case 57 Tier 1)
+	if !TypesMatch(s1.Type, s2.Type, r) {
+		isExtractTarget := r != nil && (r.IsAssignment(s2.Type) || r.IsLocalVarDeclaration(s2.Type) || r.IsJumpStatement(s2.Type) ||
+			r.IsAssignment(s1.Type) || r.IsLocalVarDeclaration(s1.Type))
+		if !hasIdentifier(t1, r) || !isExtractTarget {
+			return true // Incompatible statement types, and this isn't an extraction.
+		}
+	}
+	hasMappedOverlap := m != nil && m.DiceSrc(s1, s2) > 0
+	if !hasMappedOverlap && !hasIdentifier(t1, r) && LeafSimilarity(s1, s2) < 0.30 {
+		return true // Not enough statement-level lexical overlap.
+	}
+
+	// Gate 3: Relative Drift Boundedness (Case 79)
+	anchor1 := resolveDriftAnchor(s1, getEnclosingConstruct(s1, r))
+	anchor2 := resolveDriftAnchor(s2, getEnclosingConstruct(s2, r))
+	row1, row2 := int(s1.StartRow), int(s2.StartRow)
+	if anchor1 != nil {
+		row1 -= int(anchor1.StartRow)
+	}
+	if anchor2 != nil {
+		row2 -= int(anchor2.StartRow)
+	}
+	drift := row1 - row2
+	return drift < -10 || drift > 10
 }
 
 // isCallNode reports whether n is a function or method invocation node.

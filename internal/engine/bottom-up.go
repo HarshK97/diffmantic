@@ -1100,24 +1100,21 @@ func hasCallCalleeOrArgMatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rul
 		}
 	}
 
-	hasNonBlockMatch := false
-	for _, d := range t1.Descendants() {
-		if partner, ok := m.Src()[d]; ok && c.Contains(partner) {
-			inBlock := false
-			for anc := d; anc != nil && anc != t1; anc = anc.Parent {
-				if (r != nil && r.IsBlock(anc.Type)) || (r == nil && rules.IsBlock(anc.Type)) {
-					inBlock = true
-					break
+	if m != nil {
+		for _, d := range t1.Descendants() {
+			if partner, ok := m.Src()[d]; ok && c.Contains(partner) {
+				inBlock := false
+				for anc := d; anc != nil && anc != t1; anc = anc.Parent {
+					if (r != nil && r.IsBlock(anc.Type)) || (r == nil && rules.IsBlock(anc.Type)) {
+						inBlock = true
+						break
+					}
+				}
+				if !inBlock {
+					return true
 				}
 			}
-			if !inBlock {
-				hasNonBlockMatch = true
-				break
-			}
 		}
-	}
-	if hasNonBlockMatch {
-		return true
 	}
 
 	return calleesCompatible(callee1, callee2)
