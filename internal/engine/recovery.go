@@ -146,6 +146,11 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 			} else if (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type)) {
 				m.Add(c1, c2)
 				Recover(c1, c2, m)
+			} else if (r != nil && r.IsCaseClause(c1.Type)) || (r == nil && rules.IsCaseClause(c1.Type)) {
+				if hasHeaderMatch(c1, c2, m, r) || m.DiceSrc(c1, c2) > 0 {
+					m.Add(c1, c2)
+					Recover(c1, c2, m)
+				}
 			}
 		}
 	}
