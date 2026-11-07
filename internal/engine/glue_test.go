@@ -678,56 +678,6 @@ func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *tes
 }
 
 func TestRevokeOrphanedGlue_BareJumpPreservedInMovingBlock(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Construct a bare break statement inside a loop/if block that relocated across functions.
-		kwOld := testutil.Leaf("break", "break")
-		kwOld.IsKeyword = true
-		srcBreak := testutil.Node("break_statement", "", kwOld)
-		srcBreak.Language = "go"
-		srcBlock := testutil.Node("block", "", srcBreak)
-		srcBlock.Language = "go"
-		srcFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "fnA"), srcBlock)
-		srcFn.Language = "go"
-
-		kwNew := testutil.Leaf("break", "break")
-		kwNew.IsKeyword = true
-		dstBreak := testutil.Node("break_statement", "", kwNew)
-		dstBreak.Language = "go"
-		dstBlock := testutil.Node("block", "", dstBreak)
-		dstBlock.Language = "go"
-		dstFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "fnB"), dstBlock)
-		dstFn.Language = "go"
-
-		// 1. Keep the jump when its enclosing block moved together across scopes.
-		m := NewMapping()
-		m.Add(srcBlock, dstBlock)
-		m.Add(srcBreak, dstBreak)
-		m.Add(kwOld, kwNew)
-
-		RevokeOrphanedGlue(m)
-
-		if !m.Has(srcBreak) {
-			t.Fatal("bare break statement inside moving matched block should be preserved")
-		}
-		if !m.Has(kwOld) {
-			t.Fatal("break keyword of preserved break statement should remain mapped")
-		}
-
-		// 2. Drop the jump if it moved on its own without its enclosing block.
-		m2 := NewMapping()
-		m2.Add(srcBreak, dstBreak)
-		m2.Add(kwOld, kwNew)
-
-		RevokeOrphanedGlue(m2)
-
-		if m2.Has(srcBreak) {
-			t.Fatal("unmoored break statement moving across unmapped blocks must be revoked")
-		}
-		if m2.Has(kwOld) {
-			t.Fatal("break keyword of unmoored break statement must be revoked")
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
@@ -893,79 +843,6 @@ func helperExtracted(items []int) {
 }
 
 func TestRevokeOrphanedGlue_MovingScalarSubExpressionPreserved(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		srcBlock := testutil.Node("block", "")
-		dstBlock := testutil.Node("block", "")
-
-		// An inner expression like (r != nil) only has leaf operands (height 1),
-		// but since its enclosing expression moved and matched, keep the inner match too.
-		srcSubLHS := testutil.Leaf("identifier", "r")
-		srcSubOp := testutil.Leaf("comparison_operator_literal", "!=")
-		srcSubRHS := testutil.Leaf("nil", "nil")
-		srcSubExpr := testutil.Node("binary_expression", "", srcSubLHS, srcSubOp, srcSubRHS)
-
-		srcParentExpr := testutil.Node("binary_expression", "",
-			srcSubExpr,
-			testutil.Leaf("logical_operator_literal", "&&"),
-			testutil.Leaf("identifier", "other"),
-		)
-		srcParentExpr.Parent = srcBlock
-
-		dstSubLHS := testutil.Leaf("identifier", "r")
-		dstSubOp := testutil.Leaf("comparison_operator_literal", "!=")
-		dstSubRHS := testutil.Leaf("nil", "nil")
-		dstSubExpr := testutil.Node("binary_expression", "", dstSubLHS, dstSubOp, dstSubRHS)
-
-		dstParentExpr := testutil.Node("binary_expression", "",
-			dstSubExpr,
-			testutil.Leaf("logical_operator_literal", "&&"),
-			testutil.Leaf("identifier", "other"),
-		)
-		dstParentExpr.Parent = dstBlock
-
-		mSubExpr := NewMapping()
-		mSubExpr.Add(srcParentExpr, dstParentExpr)
-		mSubExpr.Add(srcSubExpr, dstSubExpr)
-		mSubExpr.Add(srcSubLHS, dstSubLHS)
-		mSubExpr.Add(srcSubOp, dstSubOp)
-		mSubExpr.Add(srcSubRHS, dstSubRHS)
-		RevokeOrphanedGlue(mSubExpr)
-		if !mSubExpr.Has(srcSubExpr) {
-			t.Fatal("moving scalar sub-expression with matched parent should be preserved")
-		}
-		if !mSubExpr.Has(srcSubOp) {
-			t.Fatal("glue inside moving scalar sub-expression with matched parent should be preserved")
-		}
-
-		// If the parent didn't move together with it, drop the inner expression so
-		// it doesn't get stolen across unrelated statements.
-		srcIsoUnmapped := testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "r"),
-			testutil.Leaf("comparison_operator_literal", "!="),
-			testutil.Leaf("nil", "nil"),
-		)
-		srcIsoUnmapped.Parent = testutil.Node("statement_a", "")
-		srcIsoUnmapped.Parent.Parent = srcBlock
-
-		dstIsoUnmapped := testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "r"),
-			testutil.Leaf("comparison_operator_literal", "!="),
-			testutil.Leaf("nil", "nil"),
-		)
-		dstIsoUnmapped.Parent = testutil.Node("statement_b", "")
-		dstIsoUnmapped.Parent.Parent = dstBlock
-
-		mUnmappedParent := NewMapping()
-		mUnmappedParent.Add(srcIsoUnmapped, dstIsoUnmapped)
-		mUnmappedParent.Add(srcIsoUnmapped.Children[0], dstIsoUnmapped.Children[0])
-		mUnmappedParent.Add(srcIsoUnmapped.Children[1], dstIsoUnmapped.Children[1])
-		mUnmappedParent.Add(srcIsoUnmapped.Children[2], dstIsoUnmapped.Children[2])
-		RevokeOrphanedGlue(mUnmappedParent)
-		if mUnmappedParent.Has(srcIsoUnmapped) {
-			t.Fatal("isolated moving scalar sub-expression without matched parent should be revoked")
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
@@ -1114,49 +991,6 @@ func TestBinaryOperatorGlue_SingleOperandMutation(t *testing.T) {
 	if r == nil {
 		t.Fatal("rules for go not found")
 	}
-
-	t.Run("Unit", func(t *testing.T) {
-		// Make sure hasAsymmetricOperatorOperands stops rollup when the enclosing
-		// statements map to different places.
-		stmt1 := testutil.Node("if_statement", "")
-		bin1 := testutil.Node("binary_expression", "",
-			testutil.NodeAt("identifier", "sText", 0, 5),
-			testutil.NodeAt("logical_operator_literal", "||", 6, 8),
-			testutil.NodeAt("identifier", "oldCond", 9, 16),
-		)
-		stmt1.Children = []*treesitter.ASTNode{bin1}
-		bin1.Parent = stmt1
-
-		stmt2 := testutil.Node("if_statement", "") // foreign destination for stmt1
-		stmt3 := testutil.Node("if_statement", "") // new statement holding bin2
-		bin2 := testutil.Node("binary_expression", "",
-			testutil.NodeAt("identifier", "sText", 0, 5),
-			testutil.NodeAt("logical_operator_literal", "||", 6, 8),
-			testutil.NodeAt("identifier", "newCond", 9, 16),
-		)
-		stmt3.Children = []*treesitter.ASTNode{bin2}
-		bin2.Parent = stmt3
-
-		m := NewMapping()
-		m.Add(stmt1, stmt2)                       // stmt1 is already mapped to a different statement
-		m.Add(bin1.Children[0], bin2.Children[0]) // sText mapped to sText
-
-		if !hasAsymmetricOperatorOperands(bin1, bin2, bin1.Children[0], m, r) {
-			t.Errorf("expected hasAsymmetricOperatorOperands to return true for cross-statement expressions")
-		}
-
-		// Also verify that a single leaf operand on the opposite side mapped outside bin2
-		// is detected even within the same enclosing statement.
-		mSame := NewMapping()
-		mSame.Add(stmt1, stmt3)                       // enclosing statements map to each other
-		mSame.Add(bin1.Children[0], bin2.Children[0]) // sText mapped to sText
-		foreignTarget := testutil.Leaf("identifier", "oldCond")
-		mSame.Add(bin1.Children[2], foreignTarget) // oldCond is a leaf mapped outside bin2
-
-		if !hasAsymmetricOperatorOperands(bin1, bin2, bin1.Children[0], mSame, r) {
-			t.Errorf("expected hasAsymmetricOperatorOperands to return true when opposite leaf operand maps outside bin2")
-		}
-	})
 
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main

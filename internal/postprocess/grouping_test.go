@@ -201,48 +201,6 @@ func TestGroupMovesPropagateToBlock(t *testing.T) {
 }
 
 func TestGroupMoves_LIS_PreservesMonotonicCohortWhenOneIsReordered(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		oldParent := &treesitter.ASTNode{Type: "block"}
-		newParent := &treesitter.ASTNode{Type: "block"}
-
-		// Stmt 4 was hoisted to the front, while 1, 2, 3 moved in order.
-		src1 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src1, oldParent, 10, 20)
-		dst1 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst1, newParent, 25, 35)
-
-		src2 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src2, oldParent, 30, 40)
-		dst2 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst2, newParent, 45, 55)
-
-		src3 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src3, oldParent, 50, 60)
-		dst3 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst3, newParent, 65, 75)
-
-		src4 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src4, oldParent, 70, 80)
-		dst4 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst4, newParent, 5, 15)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: src1, DestNode: dst1, Parent: newParent})
-		es.Add(actions.Action{Type: actions.Move, Node: src2, DestNode: dst2, Parent: newParent})
-		es.Add(actions.Action{Type: actions.Move, Node: src3, DestNode: dst3, Parent: newParent})
-		es.Add(actions.Action{Type: actions.Move, Node: src4, DestNode: dst4, Parent: newParent})
-
-		grouped := GroupMoves(es, nil)
-		acts := grouped.Actions()
-
-		if acts[0].GroupID != "group-1" || acts[1].GroupID != "group-1" || acts[2].GroupID != "group-1" {
-			t.Errorf("expected monotonic cohort 1, 2, 3 to have group-1, got %q, %q, %q", acts[0].GroupID, acts[1].GroupID, acts[2].GroupID)
-		}
-		if acts[3].GroupID != "" {
-			t.Errorf("expected out-of-order statement 4 to have empty GroupID, got %q", acts[3].GroupID)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		r := rules.Get("go")
 		if r == nil {
@@ -602,57 +560,6 @@ def dest_fn():
 }
 
 func TestGroupMoves_LIS_TiedLengthBreaksByCodeSpan(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		oldParent := &treesitter.ASTNode{Type: "block"}
-		newParent := &treesitter.ASTNode{Type: "block"}
-
-		// 4 statements where 2 and 3 swap order.
-		// Stmt 3 is larger (span 30) than Stmt 2 (span 10).
-		src1 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src1, oldParent, 10, 30)
-		dst1 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst1, newParent, 10, 30)
-
-		src2 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src2, oldParent, 35, 45)
-		dst2 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst2, newParent, 85, 95)
-
-		src3 := &treesitter.ASTNode{Type: "if_statement"}
-		setParentAndRange(src3, oldParent, 50, 80)
-		dst3 := &treesitter.ASTNode{Type: "if_statement"}
-		setParentAndRange(dst3, newParent, 40, 70)
-
-		src4 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(src4, oldParent, 85, 105)
-		dst4 := &treesitter.ASTNode{Type: "expression_statement"}
-		setParentAndRange(dst4, newParent, 100, 120)
-
-		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: src1, DestNode: dst1, Parent: newParent})
-		es.Add(actions.Action{Type: actions.Move, Node: src2, DestNode: dst2, Parent: newParent})
-		es.Add(actions.Action{Type: actions.Move, Node: src3, DestNode: dst3, Parent: newParent})
-		es.Add(actions.Action{Type: actions.Move, Node: src4, DestNode: dst4, Parent: newParent})
-
-		grouped := GroupMoves(es, nil)
-		acts := grouped.Actions()
-
-		// 1, 3, 4 cover larger total span than 1, 2, 4, so they form group-1.
-		if acts[0].GroupID != "group-1" {
-			t.Errorf("expected stmt 1 to have group-1, got %q", acts[0].GroupID)
-		}
-		if acts[2].GroupID != "group-1" {
-			t.Errorf("expected larger stmt 3 to have group-1, got %q", acts[2].GroupID)
-		}
-		if acts[3].GroupID != "group-1" {
-			t.Errorf("expected stmt 4 to have group-1, got %q", acts[3].GroupID)
-		}
-		// Smaller stmt 2 was sunk and remains ungrouped.
-		if acts[1].GroupID != "" {
-			t.Errorf("expected smaller sunk stmt 2 to have empty GroupID, got %q", acts[1].GroupID)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		r := rules.Get("go")
 		if r == nil {

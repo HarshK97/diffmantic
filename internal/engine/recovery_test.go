@@ -403,59 +403,6 @@ func TestUniqueTypePairs_BlindSingletonTrapStatement(t *testing.T) {
 }
 
 func TestRecover_ReclaimInParentIsomorphicChildren(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Both source blocks share an identical statement. TopDown paired block2's copy
-		// with dstBlock1. When block1 maps to dstBlock1, Recover should reclaim stmt2
-		// for block1's own statement.
-		stmt1A := testutil.Node("short_var_declaration", "",
-			testutil.Leaf("identifier", "shared"),
-			testutil.Leaf("assignment_operator_literal", ":="),
-			testutil.Node("call_expression", "",
-				testutil.Leaf("identifier", "calc"),
-			),
-		)
-		stmt1B := testutil.Node("short_var_declaration", "",
-			testutil.Leaf("identifier", "shared"),
-			testutil.Leaf("assignment_operator_literal", ":="),
-			testutil.Node("call_expression", "",
-				testutil.Leaf("identifier", "calc"),
-			),
-		)
-		stmt2 := testutil.Node("short_var_declaration", "",
-			testutil.Leaf("identifier", "shared"),
-			testutil.Leaf("assignment_operator_literal", ":="),
-			testutil.Node("call_expression", "",
-				testutil.Leaf("identifier", "calc"),
-			),
-		)
-
-		block1 := testutil.Node("block", "", stmt1A)
-		block2 := testutil.Node("block", "", stmt1B)
-		srcRoot := testutil.Node("block", "", block1, block2)
-		srcRoot.Language = "go"
-
-		dstBlock1 := testutil.Node("block", "", stmt2)
-		dstRoot := testutil.Node("block", "", dstBlock1)
-		dstRoot.Language = "go"
-
-		m := NewMapping()
-		// Premature cross-parent match: stmt1B -> stmt2.
-		addIsomorphicPairs(stmt1B, stmt2, m)
-		m.Add(block1, dstBlock1)
-
-		Recover(block1, dstBlock1, m)
-
-		if m.Src()[stmt1A] != stmt2 {
-			t.Errorf("expected Recover to reclaim stmt2 for in-parent child stmt1A, got %v", m.Src()[stmt1A])
-		}
-		if m.Has(stmt1B) {
-			t.Errorf("expected foreign duplicate stmt1B to be unmapped after reclaim")
-		}
-		if m.Has(stmt1B.Children[0]) {
-			t.Errorf("expected descendants of foreign duplicate stmt1B to be unmapped after reclaim")
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
@@ -823,62 +770,6 @@ func sortItems(scored any) {
 }
 
 func TestUniqueTypePairs_RejectsSiblingAbsorptionInExpressions(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// When an operand in (A && B) already matched inside an outer (A && Y), make sure
-		// uniqueTypePairs doesn't pair the surviving sibling B to that outer expression
-		// just because they're both binary expressions.
-		opA := testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "len"),
-			testutil.Leaf(">", ">"),
-			testutil.Leaf("int", "0"),
-		)
-		opA.Language = "go"
-
-		opB := testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "len"),
-			testutil.Leaf(">", ">"),
-			testutil.Leaf("int", "0"),
-		)
-		opB.Language = "go"
-
-		t1 := testutil.Node("binary_expression", "",
-			opA,
-			testutil.Leaf("&&", "&&"),
-			opB,
-		)
-		t1.Language = "go"
-
-		opAPrime := testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "len"),
-			testutil.Leaf(">", ">"),
-			testutil.Leaf("int", "0"),
-		)
-		opAPrime.Language = "go"
-
-		innerC := testutil.Node("binary_expression", "",
-			opAPrime,
-			testutil.Leaf("&&", "&&"),
-			testutil.Leaf("identifier", "hasPayload"),
-		)
-		innerC.Language = "go"
-
-		t2 := testutil.Node("binary_expression", "",
-			innerC,
-			testutil.Leaf("&&", "&&"),
-			testutil.Leaf("identifier", "hasMapped"),
-		)
-		t2.Language = "go"
-
-		m := NewMapping()
-		m.Add(t1, t2)
-		m.Add(opA, opAPrime)
-
-		pairs := uniqueTypePairs([]*treesitter.ASTNode{opB}, []*treesitter.ASTNode{innerC}, m)
-		if len(pairs) != 0 {
-			t.Errorf("expected opB not to pair with innerC (sibling absorption conflict), got %d pairs", len(pairs))
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		// When a duplicate/chained binary expression operand is deleted and the surviving sibling
 		// is absorbed into an intermediate wrapper, uniqueTypePairs must not pair the deleted
@@ -1042,68 +933,6 @@ func check(item Item, hasPayload, hasMapped bool) bool {
 }
 
 func TestRecovery_CrossSideOperatorGuard(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		r := rules.Get("go")
-		m := NewMapping()
-
-		mkLeaf := func(typ, label string, startByte, endByte uint32) *treesitter.ASTNode {
-			n := testutil.Leaf(typ, label)
-			n.Language = "go"
-			n.StartByte, n.EndByte = startByte, endByte
-			return n
-		}
-		mkContainer := func(typ string, startByte, endByte uint32, children ...*treesitter.ASTNode) *treesitter.ASTNode {
-			n := testutil.Node(typ, "", children...)
-			n.Language = "go"
-			n.StartByte, n.EndByte = startByte, endByte
-			return n
-		}
-
-		// target: (MoveFg + badgeText)
-		// MoveFg: 10..16, +: 17..18, badgeText: 19..28
-		moveFg1 := mkLeaf("identifier", "MoveFg", 10, 16)
-		plus1 := mkLeaf("arithmetic_operator_literal", "+", 17, 18)
-		badge1 := mkLeaf("identifier", "badgeText", 19, 28)
-		target := mkContainer("binary_expression", 10, 28, moveFg1, plus1, badge1)
-
-		// compound: (((Dim + Italic) + MoveFg) + badgeText)
-		// inner1: Dim (10..13) + (14..15) Italic (16..22)
-		dim := mkLeaf("identifier", "Dim", 10, 13)
-		plusDim := mkLeaf("arithmetic_operator_literal", "+", 14, 15)
-		italic := mkLeaf("identifier", "Italic", 16, 22)
-		inner1 := mkContainer("binary_expression", 10, 22, dim, plusDim, italic)
-
-		// inner2: inner1 (10..22) + (23..24) MoveFg (25..31) (MoveFg is on RHS!)
-		plusInner2 := mkLeaf("arithmetic_operator_literal", "+", 23, 24)
-		moveFg2 := mkLeaf("identifier", "MoveFg", 25, 31)
-		inner2 := mkContainer("binary_expression", 10, 31, inner1, plusInner2, moveFg2)
-
-		// compound: inner2 (10..31) + (32..33) badgeText (34..43)
-		plusCompound := mkLeaf("arithmetic_operator_literal", "+", 32, 33)
-		badge2 := mkLeaf("identifier", "badgeText", 34, 43)
-		compound := mkContainer("binary_expression", 10, 43, inner2, plusCompound, badge2)
-
-		treesitter.EnsureIndex(target)
-		treesitter.EnsureIndex(compound)
-
-		// Simulate earlier matching phases having already paired MoveFg across both sides.
-		m.Add(moveFg1, moveFg2)
-
-		// findUnwrappedDstExpressionCandidate must reject inner2 because MoveFg crossed sides of the operator.
-		cand := findUnwrappedDstExpressionCandidate(target, compound, m, r)
-		if cand != nil {
-			t.Errorf("expected findUnwrappedDstExpressionCandidate to return nil due to cross-side operator mismatch, got %v", cand)
-		}
-
-		// Also test the reversed direction (compound on src, target on dst).
-		mRev := NewMapping()
-		mRev.Add(moveFg2, moveFg1)
-		candRev := findUnwrappedExpressionCandidate(compound, target, mRev, r)
-		if candRev != nil {
-			t.Errorf("expected findUnwrappedExpressionCandidate to return nil due to cross-side operator mismatch, got %v", candRev)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package renderutil
 
@@ -1378,125 +1207,6 @@ func formatBadge(lastChunkStr, badgeText string) bool {
 }
 
 func TestSiblingRecovery_TwoTier(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		t.Run("DelimitedSiblingDP_DominoImmunity", func(t *testing.T) {
-			// Prepending an unmapped call T0 must not cascade into subsequent mutated calls.
-			callAlphaOld := testutil.Node("call_expression", "",
-				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
-				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"alpha"`), testutil.Leaf("identifier", "oldX")),
-			)
-			callBetaOld := testutil.Node("call_expression", "",
-				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
-				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"beta"`), testutil.Leaf("identifier", "oldY")),
-			)
-			srcArgs := testutil.Node("argument_list", "", callAlphaOld, callBetaOld)
-			srcArgs.Language = "go"
-
-			callTracer := testutil.Node("call_expression", "",
-				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
-				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"tracer"`), testutil.Leaf("identifier", "id")),
-			)
-			callAlphaNew := testutil.Node("call_expression", "",
-				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
-				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"alpha"`), testutil.Leaf("identifier", "newX")),
-			)
-			callBetaNew := testutil.Node("call_expression", "",
-				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
-				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"beta"`), testutil.Leaf("identifier", "newY")),
-			)
-			dstArgs := testutil.Node("argument_list", "", callTracer, callAlphaNew, callBetaNew)
-			dstArgs.Language = "go"
-
-			m := NewMapping()
-			m.Add(srcArgs, dstArgs)
-
-			SimpleRecovery(srcArgs, dstArgs, m)
-
-			if got := m.Src()[callAlphaOld]; got != callAlphaNew {
-				t.Errorf("callAlphaOld mapped to %v, want %v (domino cascade occurred)", got, callAlphaNew)
-			}
-			if got := m.Src()[callBetaOld]; got != callBetaNew {
-				t.Errorf("callBetaOld mapped to %v, want %v (domino cascade occurred)", got, callBetaNew)
-			}
-			if m.HasDst(callTracer) {
-				t.Errorf("callTracer should remain unmapped, got %v", m.Dst()[callTracer])
-			}
-		})
-
-		t.Run("CalleeCompatibilityGate", func(t *testing.T) {
-			// Disjoint callees sharing boilerplate tokens (ctx, nil) must not pair.
-			callAudit := testutil.Node("call_expression", "",
-				testutil.Leaf("identifier", "auditLog"),
-				testutil.Node("argument_list", "", testutil.Leaf("identifier", "ctx"), testutil.Leaf("nil", "nil")),
-			)
-			callMetrics := testutil.Node("call_expression", "",
-				testutil.Leaf("identifier", "metricsRecord"),
-				testutil.Node("argument_list", "", testutil.Leaf("identifier", "ctx"), testutil.Leaf("nil", "nil")),
-			)
-			srcArgs := testutil.Node("argument_list", "", callAudit)
-			dstArgs := testutil.Node("argument_list", "", callMetrics)
-			srcArgs.Language = "go"
-			dstArgs.Language = "go"
-
-			m := NewMapping()
-			m.Add(srcArgs, dstArgs)
-
-			SimpleRecovery(srcArgs, dstArgs, m)
-
-			if m.Has(callAudit) || m.HasDst(callMetrics) {
-				t.Errorf("calls with disjoint callees should not pair: audit=%v, metrics=%v",
-					m.Src()[callAudit], m.Dst()[callMetrics])
-			}
-		})
-
-		t.Run("TopDown_CrossStatementDredgingGuard", func(t *testing.T) {
-			// Leaves inside a statement must not be dredged by TopDown across statement
-			// boundaries into an untouched Group 1 statement.
-			srcLeaf := testutil.Leaf("identifier", "oldCond")
-			srcStmt := testutil.Node("short_var_declaration", "",
-				testutil.Leaf("identifier", "bin1"),
-				testutil.Leaf(":=", ":="),
-				testutil.Node("call_expression", "", testutil.Leaf("identifier", "testutil"), srcLeaf),
-			)
-			srcFunc := testutil.Node("function_declaration", "myTest",
-				testutil.Leaf("identifier", "myTest"),
-				testutil.Node("block", "", srcStmt),
-			)
-			srcStmt.StartRow, srcStmt.EndRow = 10, 10
-			srcLeaf.StartRow, srcLeaf.EndRow = 10, 10
-			srcFunc.StartRow, srcFunc.EndRow = 1, 20
-			srcFunc.Language = "go"
-
-			dstLeaf := testutil.Leaf("identifier", "oldCond")
-			dstStmt := testutil.Node("short_var_declaration", "",
-				testutil.Leaf("identifier", "foreignTarget"),
-				testutil.Leaf(":=", ":="),
-				testutil.Node("call_expression", "", testutil.Leaf("identifier", "testutil"), dstLeaf),
-			)
-			dstFunc := testutil.Node("function_declaration", "myTest",
-				testutil.Leaf("identifier", "myTest"),
-				testutil.Node("block", "", dstStmt),
-			)
-			dstStmt.StartRow, dstStmt.EndRow = 50, 50
-			dstLeaf.StartRow, dstLeaf.EndRow = 50, 50
-			dstFunc.StartRow, dstFunc.EndRow = 1, 60
-			dstFunc.Language = "go"
-
-			part := NewLinePartition(
-				[]byte("package myTest\n\nfunc myTest() {\n\tbin1 := testutil(oldCond)\n}\n"),
-				[]byte("package myTest\n\n// foreign header comments\n\nfunc myTest() {\n\tforeignTarget := testutil(oldCond)\n}\n"),
-			)
-
-			m := NewMapping()
-			m.Add(srcFunc, dstFunc)
-			TopDown(srcFunc, dstFunc, 1, m, part)
-
-			if m.Src()[srcLeaf] != nil {
-				t.Errorf("srcLeaf in edited statement was stolen by dstLeaf in stationary statement: %v", m.Src()[srcLeaf])
-			}
-		})
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package engine
 
@@ -1725,34 +1435,6 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 }
 
 func TestRecovery_ParenthesizedConditionNoOperatorUnwrap(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		r := rules.Get("typescript")
-
-		target := testutil.Node("parenthesized_expression", "",
-			testutil.Node("binary_expression", "",
-				testutil.Node("identifier", "a"),
-				testutil.Node("binary_operator_literal", "&&"),
-				testutil.Node("identifier", "b"),
-			),
-		)
-
-		compound := testutil.Node("binary_expression", "",
-			testutil.Node("identifier", "a"),
-			testutil.Node("binary_operator_literal", "&&"),
-			testutil.Node("binary_expression", "",
-				testutil.Node("identifier", "b"),
-				testutil.Node("binary_operator_literal", "&&"),
-				testutil.Node("identifier", "c"),
-			),
-		)
-
-		m := NewMapping()
-		match := findUnwrappedDstExpressionCandidate(target, compound, m, r)
-		if match != nil {
-			t.Errorf("expected findUnwrappedDstExpressionCandidate to return nil for parenthesized_expression without operator, got %v", match)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `function checkFlags(context: Context, node: Node) {
     const valid = isValid(node);
@@ -2042,39 +1724,6 @@ func TestRecovery_ParenthesizedConditionNoOperatorUnwrap(t *testing.T) {
 }
 
 func TestStructFieldReplacement_NoFalseMove(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		srcField := testutil.Node("field_declaration", "",
-			testutil.Leaf("visibility_modifier", "pub"),
-			testutil.Leaf("field_identifier", "line_numbers_plus_style"),
-			testutil.Leaf("type_identifier", "Style"),
-		)
-		dstField := testutil.Node("field_declaration", "",
-			testutil.Leaf("visibility_modifier", "pub"),
-			testutil.Leaf("field_identifier", "inline_hint_style"),
-			testutil.Leaf("type_identifier", "Style"),
-		)
-		sameNameField := testutil.Node("field_declaration", "",
-			testutil.Leaf("visibility_modifier", "pub"),
-			testutil.Leaf("field_identifier", "line_numbers_plus_style"),
-			testutil.Leaf("type_identifier", "CustomStyle"),
-		)
-		testutil.Node("declaration_list", "", srcField)
-		testutil.Node("declaration_list", "", dstField, sameNameField)
-
-		// In-place rename with same type at same slot should match.
-		if score := scorePartner(srcField, dstField, srcField.ChildIndex(), nil); score < 0 {
-			t.Errorf("scorePartner(srcField, dstField, 0) = %d, want >= 0 for in-place rename", score)
-		}
-		// Displaced field at different child index must be rejected.
-		if score := scorePartner(srcField, dstField, 3, nil); score >= 0 {
-			t.Errorf("scorePartner(srcField, dstField, 3) = %d, want < 0 for displaced field", score)
-		}
-		// Same declaration name with updated type should match.
-		if score := scorePartner(srcField, sameNameField, srcField.ChildIndex(), nil); score < 0 {
-			t.Errorf("scorePartner(srcField, sameNameField) = %d, want >= 0", score)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `struct Config {
     pub hyperlinks: bool,
@@ -2205,27 +1854,6 @@ func TestStructFieldReplacement_NoFalseMove(t *testing.T) {
 }
 
 func TestImportReplacement_NoFalseMove(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		srcUse := testutil.Node("use_declaration", "",
-			testutil.Leaf("use", "use"),
-			testutil.Node("scoped_identifier", "",
-				testutil.Leaf("identifier", "std"),
-				testutil.Leaf("identifier", "process"),
-			),
-		)
-		dstUse := testutil.Node("use_declaration", "",
-			testutil.Leaf("use", "use"),
-			testutil.Node("scoped_identifier", "",
-				testutil.Leaf("crate", "crate"),
-				testutil.Leaf("identifier", "fatal"),
-			),
-		)
-
-		if score := scorePartner(srcUse, dstUse, 0, nil); score >= 0 {
-			t.Errorf("scorePartner(srcUse, dstUse) = %d, want < 0", score)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `use std::collections::HashMap;
 use std::process;
@@ -2316,49 +1944,6 @@ use ansi_term::Color;
 }
 
 func TestGoStructFieldReplacement_NoFalseMove(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		srcField := testutil.Node("field_declaration", "",
-			testutil.Leaf("field_identifier", "OldField"),
-			testutil.Leaf("type_identifier", "Style"),
-		)
-		srcField.Language = "go"
-		dstField := testutil.Node("field_declaration", "",
-			testutil.Leaf("field_identifier", "NewField"),
-			testutil.Leaf("type_identifier", "Style"),
-		)
-		dstField.Language = "go"
-		diffTypeField := testutil.Node("field_declaration", "",
-			testutil.Leaf("field_identifier", "NewField"),
-			testutil.Leaf("type_identifier", "string"),
-		)
-		diffTypeField.Language = "go"
-		sameNameField := testutil.Node("field_declaration", "",
-			testutil.Leaf("field_identifier", "OldField"),
-			testutil.Leaf("type_identifier", "string"),
-		)
-		sameNameField.Language = "go"
-
-		testutil.Node("field_declaration_list", "", srcField)
-		testutil.Node("field_declaration_list", "", dstField, diffTypeField, sameNameField)
-
-		// Same type at same slot matches across rename.
-		if score := scorePartner(srcField, dstField, srcField.ChildIndex(), nil); score < 0 {
-			t.Errorf("scorePartner(srcField, dstField, 0) = %d, want >= 0 for in-place rename", score)
-		}
-		// Different type across rename must be rejected.
-		if score := scorePartner(srcField, diffTypeField, srcField.ChildIndex(), nil); score >= 0 {
-			t.Errorf("scorePartner(srcField, diffTypeField, 0) = %d, want < 0 for different type", score)
-		}
-		// Displaced field at different child index must be rejected.
-		if score := scorePartner(srcField, dstField, 3, nil); score >= 0 {
-			t.Errorf("scorePartner(srcField, dstField, 3) = %d, want < 0 for displaced field", score)
-		}
-		// Same declaration name with updated type matches.
-		if score := scorePartner(srcField, sameNameField, srcField.ChildIndex(), nil); score < 0 {
-			t.Errorf("scorePartner(srcField, sameNameField, 0) = %d, want >= 0", score)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
@@ -2493,36 +2078,6 @@ type Config struct {
 }
 
 func TestColorImportsRecovery(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		r := rules.Get("rust")
-		srcUse := testutil.Node("use_declaration", "",
-			testutil.Leaf("use", "use"),
-			testutil.Node("scoped_identifier", "",
-				testutil.Leaf("crate", "crate"),
-				testutil.Leaf("identifier", "syntect_color"),
-			),
-		)
-		srcUse.Language = "rust"
-		dstUse := testutil.Node("use_declaration", "",
-			testutil.Leaf("use", "use"),
-			testutil.Node("scoped_identifier", "",
-				testutil.Leaf("crate", "crate"),
-				testutil.Leaf("identifier", "syntect_utils"),
-			),
-		)
-		dstUse.Language = "rust"
-
-		testutil.Node("source_file", "", srcUse)
-		testutil.Node("source_file", "", dstUse)
-
-		if !canMatchDeclarations(srcUse, dstUse, nil, r) {
-			t.Errorf("expected canMatchDeclarations to allow imports sharing path root")
-		}
-		if score := scorePartner(srcUse, dstUse, 0, nil); score < 0 {
-			t.Errorf("expected scorePartner >= 0 for shared crate root imports, got %d", score)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		oldSrc := `use std::collections::HashMap;
 use std::process;

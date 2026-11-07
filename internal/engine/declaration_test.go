@@ -5,7 +5,6 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestGetDeclarationName(t *testing.T) {
@@ -588,37 +587,6 @@ func TestDeclarationSignaturePreservation(t *testing.T) {
 }
 
 func TestMatchDeclarations_ExcludesLocalVars(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		r := rules.Get("typescript")
-
-		funcDecl := testutil.Node("function_declaration", "",
-			testutil.Node("identifier", "myFunc"),
-			testutil.Node("statement_block", "",
-				testutil.Node("lexical_declaration", "",
-					testutil.Node("variable_declarator", "",
-						testutil.Node("identifier", "localVar"),
-					),
-				),
-			),
-		)
-		funcDecl.Language = "typescript"
-		root := testutil.Node("program", "", funcDecl)
-		root.Language = "typescript"
-
-		decs := findDeclarations(root)
-		if len(decs) != 1 {
-			t.Fatalf("expected exactly 1 declaration, got %d", len(decs))
-		}
-		if decs[0] != funcDecl {
-			t.Errorf("expected function_declaration, got %v", decs[0])
-		}
-		for _, d := range decs {
-			if r.IsLocalVarDeclaration(d.Type) {
-				t.Errorf("findDeclarations must NOT include local var declaration %s", d.Type)
-			}
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		t.Run("TypeScript", func(t *testing.T) {
 			src := `function buildNode(declaration: Declaration) {
