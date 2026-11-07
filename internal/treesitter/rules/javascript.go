@@ -168,6 +168,9 @@ var javascriptRules = &Rules{
 		"lexical_declaration",
 		"field_definition",
 	},
+	Imports: []string{
+		"import_statement",
+	},
 	Identifiers: []string{
 		"identifier",
 		"property_identifier",

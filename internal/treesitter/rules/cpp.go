@@ -383,4 +383,8 @@ var cppRules = &Rules{
 		"using_declaration",
 		"while_statement",
 	},
+	Imports: []string{
+		"preproc_include",
+		"using_declaration",
+	},
 }

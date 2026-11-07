@@ -67,6 +67,7 @@ var golangRules = &Rules{
 		"literal_value",
 		"literal_element",
 		"import_spec_list",
+		"field_declaration_list",
 		"function_declaration",
 		"method_declaration",
 		"if_statement",
@@ -114,6 +115,12 @@ var golangRules = &Rules{
 		"field_declaration",
 		"const_declaration",
 		"var_declaration",
+		"import_declaration",
+		"import_spec",
+	},
+	Imports: []string{
+		"import_declaration",
+		"import_spec",
 	},
 	Identifiers: []string{
 		"identifier",

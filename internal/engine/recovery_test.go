@@ -2040,3 +2040,545 @@ func TestRecovery_ParenthesizedConditionNoOperatorUnwrap(t *testing.T) {
 		}
 	})
 }
+
+func TestStructFieldReplacement_NoFalseMove(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		srcField := testutil.Node("field_declaration", "",
+			testutil.Leaf("visibility_modifier", "pub"),
+			testutil.Leaf("field_identifier", "line_numbers_plus_style"),
+			testutil.Leaf("type_identifier", "Style"),
+		)
+		dstField := testutil.Node("field_declaration", "",
+			testutil.Leaf("visibility_modifier", "pub"),
+			testutil.Leaf("field_identifier", "inline_hint_style"),
+			testutil.Leaf("type_identifier", "Style"),
+		)
+		sameNameField := testutil.Node("field_declaration", "",
+			testutil.Leaf("visibility_modifier", "pub"),
+			testutil.Leaf("field_identifier", "line_numbers_plus_style"),
+			testutil.Leaf("type_identifier", "CustomStyle"),
+		)
+		testutil.Node("declaration_list", "", srcField)
+		testutil.Node("declaration_list", "", dstField, sameNameField)
+
+		// In-place rename with same type at same slot should match.
+		if score := scorePartner(srcField, dstField, srcField.ChildIndex(), nil); score < 0 {
+			t.Errorf("scorePartner(srcField, dstField, 0) = %d, want >= 0 for in-place rename", score)
+		}
+		// Displaced field at different child index must be rejected.
+		if score := scorePartner(srcField, dstField, 3, nil); score >= 0 {
+			t.Errorf("scorePartner(srcField, dstField, 3) = %d, want < 0 for displaced field", score)
+		}
+		// Same declaration name with updated type should match.
+		if score := scorePartner(srcField, sameNameField, srcField.ChildIndex(), nil); score < 0 {
+			t.Errorf("scorePartner(srcField, sameNameField) = %d, want >= 0", score)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `struct Config {
+    pub hyperlinks: bool,
+    pub foo: Style,
+    pub line_numbers_plus_style: Style,
+    pub line_numbers_zero_style: Style,
+}
+`
+		dst := `struct Config {
+    pub hyperlinks: bool,
+    pub foo: String,
+    pub line_numbers_zero_style: Style,
+    pub inline_hint_style: Style,
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "config.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "config.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: struct Config maps in place.
+		var srcStruct, dstStruct *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Config" {
+				srcStruct = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Config" {
+				dstStruct = n
+				break
+			}
+		}
+		if srcStruct == nil || dstStruct == nil || mr.Mappings.Src()[srcStruct] != dstStruct {
+			t.Fatalf("expected struct Config to map in place, got src=%v dst=%v", srcStruct, dstStruct)
+		}
+
+		// 2. Surrounding Sequence: hyperlinks and line_numbers_zero_style map in place.
+		var srcHyper, dstHyper *treesitter.ASTNode
+		var srcZero, dstZero *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "hyperlinks":
+					srcHyper = n
+				case "line_numbers_zero_style":
+					srcZero = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "hyperlinks":
+					dstHyper = n
+				case "line_numbers_zero_style":
+					dstZero = n
+				}
+			}
+		}
+		if srcHyper == nil || dstHyper == nil || mr.Mappings.Src()[srcHyper] != dstHyper {
+			t.Errorf("expected hyperlinks field to map in place")
+		}
+		if srcZero == nil || dstZero == nil || mr.Mappings.Src()[srcZero] != dstZero {
+			t.Errorf("expected line_numbers_zero_style field to map in place")
+		}
+
+		// 3. Target: Deleted line_numbers_plus_style must NOT match inserted inline_hint_style.
+		var srcPlus, dstInline *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "line_numbers_plus_style" {
+				srcPlus = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "inline_hint_style" {
+				dstInline = n
+				break
+			}
+		}
+		if srcPlus == nil {
+			t.Fatal("source line_numbers_plus_style field not found")
+		}
+		if dstInline == nil {
+			t.Fatal("destination inline_hint_style field not found")
+		}
+		if mapped := mr.Mappings.Src()[srcPlus]; mapped != nil {
+			t.Errorf("expected line_numbers_plus_style to be unmapped, got mapped to %s %q",
+				mapped.Type, getDeclarationName(mapped))
+		}
+		if mapped := mr.Mappings.Dst()[dstInline]; mapped != nil {
+			t.Errorf("expected inline_hint_style to be unmapped in src, got mapped from %s %q",
+				mapped.Type, getDeclarationName(mapped))
+		}
+
+		// 4. Same name with different type: pub foo: Style -> pub foo: String should map.
+		var srcFoo, dstFoo *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "foo" {
+				srcFoo = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "foo" {
+				dstFoo = n
+				break
+			}
+		}
+		if srcFoo == nil || dstFoo == nil || mr.Mappings.Src()[srcFoo] != dstFoo {
+			t.Errorf("expected field foo to map across type update")
+		}
+	})
+}
+
+func TestImportReplacement_NoFalseMove(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		srcUse := testutil.Node("use_declaration", "",
+			testutil.Leaf("use", "use"),
+			testutil.Node("scoped_identifier", "",
+				testutil.Leaf("identifier", "std"),
+				testutil.Leaf("identifier", "process"),
+			),
+		)
+		dstUse := testutil.Node("use_declaration", "",
+			testutil.Leaf("use", "use"),
+			testutil.Node("scoped_identifier", "",
+				testutil.Leaf("crate", "crate"),
+				testutil.Leaf("identifier", "fatal"),
+			),
+		)
+
+		if score := scorePartner(srcUse, dstUse, 0, nil); score >= 0 {
+			t.Errorf("scorePartner(srcUse, dstUse) = %d, want < 0", score)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `use std::collections::HashMap;
+use std::process;
+use ansi_term::Color;
+`
+		dst := `use std::collections::HashMap;
+use crate::fatal;
+use ansi_term::Color;
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "color.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "color.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Surrounding sequence: HashMap and Color must map in place.
+		var srcHashMap, dstHashMap *treesitter.ASTNode
+		var srcColor, dstColor *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				txt := string([]byte(src)[n.StartByte:n.EndByte])
+				if strings.Contains(txt, "HashMap") {
+					srcHashMap = n
+				}
+				if strings.Contains(txt, "Color") {
+					srcColor = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				txt := string([]byte(dst)[n.StartByte:n.EndByte])
+				if strings.Contains(txt, "HashMap") {
+					dstHashMap = n
+				}
+				if strings.Contains(txt, "Color") {
+					dstColor = n
+				}
+			}
+		}
+		if srcHashMap == nil || dstHashMap == nil || mr.Mappings.Src()[srcHashMap] != dstHashMap {
+			t.Errorf("expected use std::collections::HashMap to map in place")
+		}
+		if srcColor == nil || dstColor == nil || mr.Mappings.Src()[srcColor] != dstColor {
+			t.Errorf("expected use ansi_term::Color to map in place")
+		}
+
+		// 2. Target: Deleted use std::process must NOT match inserted use crate::fatal.
+		var srcProcess, dstFatal *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string([]byte(src)[n.StartByte:n.EndByte]), "process") {
+				srcProcess = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string([]byte(dst)[n.StartByte:n.EndByte]), "fatal") {
+				dstFatal = n
+				break
+			}
+		}
+		if srcProcess == nil {
+			t.Fatal("source use std::process not found")
+		}
+		if dstFatal == nil {
+			t.Fatal("destination use crate::fatal not found")
+		}
+		if mapped := mr.Mappings.Src()[srcProcess]; mapped != nil {
+			t.Errorf("expected use std::process to be unmapped, got mapped to %s (%s)",
+				mapped.Type, string([]byte(dst)[mapped.StartByte:mapped.EndByte]))
+		}
+		if mapped := mr.Mappings.Dst()[dstFatal]; mapped != nil {
+			t.Errorf("expected use crate::fatal to be unmapped in src, got mapped from %s (%s)",
+				mapped.Type, string([]byte(src)[mapped.StartByte:mapped.EndByte]))
+		}
+	})
+}
+
+func TestGoStructFieldReplacement_NoFalseMove(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		srcField := testutil.Node("field_declaration", "",
+			testutil.Leaf("field_identifier", "OldField"),
+			testutil.Leaf("type_identifier", "Style"),
+		)
+		srcField.Language = "go"
+		dstField := testutil.Node("field_declaration", "",
+			testutil.Leaf("field_identifier", "NewField"),
+			testutil.Leaf("type_identifier", "Style"),
+		)
+		dstField.Language = "go"
+		diffTypeField := testutil.Node("field_declaration", "",
+			testutil.Leaf("field_identifier", "NewField"),
+			testutil.Leaf("type_identifier", "string"),
+		)
+		diffTypeField.Language = "go"
+		sameNameField := testutil.Node("field_declaration", "",
+			testutil.Leaf("field_identifier", "OldField"),
+			testutil.Leaf("type_identifier", "string"),
+		)
+		sameNameField.Language = "go"
+
+		testutil.Node("field_declaration_list", "", srcField)
+		testutil.Node("field_declaration_list", "", dstField, diffTypeField, sameNameField)
+
+		// Same type at same slot matches across rename.
+		if score := scorePartner(srcField, dstField, srcField.ChildIndex(), nil); score < 0 {
+			t.Errorf("scorePartner(srcField, dstField, 0) = %d, want >= 0 for in-place rename", score)
+		}
+		// Different type across rename must be rejected.
+		if score := scorePartner(srcField, diffTypeField, srcField.ChildIndex(), nil); score >= 0 {
+			t.Errorf("scorePartner(srcField, diffTypeField, 0) = %d, want < 0 for different type", score)
+		}
+		// Displaced field at different child index must be rejected.
+		if score := scorePartner(srcField, dstField, 3, nil); score >= 0 {
+			t.Errorf("scorePartner(srcField, dstField, 3) = %d, want < 0 for displaced field", score)
+		}
+		// Same declaration name with updated type matches.
+		if score := scorePartner(srcField, sameNameField, srcField.ChildIndex(), nil); score < 0 {
+			t.Errorf("scorePartner(srcField, sameNameField, 0) = %d, want >= 0", score)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package main
+
+type Config struct {
+	Hyperlinks bool
+	Foo        Style
+	OldField   Style
+	Numbers    bool
+}
+`
+		dst := `package main
+
+type Config struct {
+	Hyperlinks bool
+	Foo        string
+	Numbers    bool
+	NewField   Style
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "config.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "config.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: type Config struct maps in place.
+		var srcConfig, dstConfig *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Config" {
+				srcConfig = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Config" {
+				dstConfig = n
+				break
+			}
+		}
+		if srcConfig == nil || dstConfig == nil || mr.Mappings.Src()[srcConfig] != dstConfig {
+			t.Fatalf("expected type Config to map in place")
+		}
+
+		// 2. Surrounding sequence: Hyperlinks and Numbers map in place.
+		var srcHyper, dstHyper *treesitter.ASTNode
+		var srcNumbers, dstNumbers *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "Hyperlinks":
+					srcHyper = n
+				case "Numbers":
+					srcNumbers = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "Hyperlinks":
+					dstHyper = n
+				case "Numbers":
+					dstNumbers = n
+				}
+			}
+		}
+		if srcHyper == nil || dstHyper == nil || mr.Mappings.Src()[srcHyper] != dstHyper {
+			t.Errorf("expected Hyperlinks field to map in place")
+		}
+		if srcNumbers == nil || dstNumbers == nil || mr.Mappings.Src()[srcNumbers] != dstNumbers {
+			t.Errorf("expected Numbers field to map in place")
+		}
+
+		// 3. Target: Deleted OldField must NOT match inserted NewField.
+		var srcOld, dstNew *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "OldField" {
+				srcOld = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "NewField" {
+				dstNew = n
+				break
+			}
+		}
+		if srcOld == nil {
+			t.Fatal("source OldField not found")
+		}
+		if dstNew == nil {
+			t.Fatal("destination NewField not found")
+		}
+		if mapped := mr.Mappings.Src()[srcOld]; mapped != nil {
+			t.Errorf("expected OldField to be unmapped, got mapped to %s %q",
+				mapped.Type, getDeclarationName(mapped))
+		}
+		if mapped := mr.Mappings.Dst()[dstNew]; mapped != nil {
+			t.Errorf("expected NewField to be unmapped in src, got mapped from %s %q",
+				mapped.Type, getDeclarationName(mapped))
+		}
+
+		// 4. Same name with different type: Foo Style -> Foo string maps in place.
+		var srcFoo, dstFoo *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Foo" {
+				srcFoo = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Foo" {
+				dstFoo = n
+				break
+			}
+		}
+		if srcFoo == nil || dstFoo == nil || mr.Mappings.Src()[srcFoo] != dstFoo {
+			t.Errorf("expected field Foo to map across type update")
+		}
+	})
+}
+
+func TestColorImportsRecovery(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("rust")
+		srcUse := testutil.Node("use_declaration", "",
+			testutil.Leaf("use", "use"),
+			testutil.Node("scoped_identifier", "",
+				testutil.Leaf("crate", "crate"),
+				testutil.Leaf("identifier", "syntect_color"),
+			),
+		)
+		srcUse.Language = "rust"
+		dstUse := testutil.Node("use_declaration", "",
+			testutil.Leaf("use", "use"),
+			testutil.Node("scoped_identifier", "",
+				testutil.Leaf("crate", "crate"),
+				testutil.Leaf("identifier", "syntect_utils"),
+			),
+		)
+		dstUse.Language = "rust"
+
+		testutil.Node("source_file", "", srcUse)
+		testutil.Node("source_file", "", dstUse)
+
+		if !canMatchDeclarations(srcUse, dstUse, nil, r) {
+			t.Errorf("expected canMatchDeclarations to allow imports sharing path root")
+		}
+		if score := scorePartner(srcUse, dstUse, 0, nil); score < 0 {
+			t.Errorf("expected scorePartner >= 0 for shared crate root imports, got %d", score)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `use std::collections::HashMap;
+use std::process;
+use std::str::FromStr;
+
+use ansi_term::Color;
+use lazy_static::lazy_static;
+use syntect::highlighting::Color as SyntectColor;
+
+use crate::bat_utils::terminal::to_ansi_color;
+use crate::syntect_color;
+
+pub fn parse_color() {}
+`
+		newSrc := `use std::collections::HashMap;
+use std::str::FromStr;
+
+use ansi_term::Color;
+use lazy_static::lazy_static;
+use syntect::highlighting::Color as SyntectColor;
+
+use crate::bat_utils::terminal::to_ansi_color;
+use crate::fatal;
+use crate::syntect_utils;
+
+pub fn parse_color() {}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := rulesFor(srcAST)
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), nil)
+
+		var srcSyn, dstSyn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && strings.Contains(getDeclarationName(n), "syntect_color") {
+				srcSyn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && strings.Contains(getDeclarationName(n), "syntect_utils") {
+				dstSyn = n
+				break
+			}
+		}
+		if srcSyn == nil || dstSyn == nil {
+			t.Fatalf("syn nodes not found: src=%v, dst=%v", srcSyn, dstSyn)
+		}
+		if mr.Mappings.Src()[srcSyn] != dstSyn {
+			t.Errorf("expected syntect_color to map to syntect_utils, got %v", mr.Mappings.Src()[srcSyn])
+		}
+	})
+}

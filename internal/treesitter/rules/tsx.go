@@ -415,4 +415,7 @@ var tsxRules = &Rules{
 		"while_statement",
 		"with_statement",
 	},
+	Imports: []string{
+		"import_statement",
+	},
 }

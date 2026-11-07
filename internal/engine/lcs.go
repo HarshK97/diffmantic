@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 type eqFunc func(a, b *treesitter.ASTNode) bool
@@ -58,8 +60,8 @@ func LCSLabel(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 }
 
 // LCSStructure matches node sequences by type and shape (ignoring leaf labels),
-// using child position and label similarity to resolve ambiguous matches.
-func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
+// using child position, label similarity, and mapping state to resolve ambiguous matches.
+func LCSStructure(seq1, seq2 []*treesitter.ASTNode, m *Mapping) [][2]*treesitter.ASTNode {
 	pairs := LCS(seq1, seq2, StructureIsomorphic)
 	if len(pairs) == 0 {
 		return pairs
@@ -76,10 +78,10 @@ func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 		current := p[1]
 		best := current
 		if hasMultipleStructuralMatches(src, seq2, current) {
-			cand := bestStructuralPartner(src, seq2, current, dstUsed)
+			cand := bestStructuralPartner(src, seq2, current, dstUsed, m)
 			if cand != nil {
-				scoreCurr := scorePartner(src, current, src.ChildIndex())
-				scoreCand := scorePartner(src, cand, src.ChildIndex())
+				scoreCurr := scorePartner(src, current, src.ChildIndex(), m)
+				scoreCand := scorePartner(src, cand, src.ChildIndex(), m)
 				if scoreCand > scoreCurr {
 					dstUsed[current] = false
 					dstUsed[cand] = true
@@ -87,7 +89,7 @@ func LCSStructure(seq1, seq2 []*treesitter.ASTNode) [][2]*treesitter.ASTNode {
 				}
 			}
 		}
-		if scorePartner(src, best, src.ChildIndex()) >= 0 {
+		if scorePartner(src, best, src.ChildIndex(), m) >= 0 {
 			filtered = append(filtered, [2]*treesitter.ASTNode{src, best})
 		} else {
 			dstUsed[best] = false
@@ -118,10 +120,11 @@ func bestStructuralPartner(
 	seq2 []*treesitter.ASTNode,
 	current *treesitter.ASTNode,
 	dstUsed map[*treesitter.ASTNode]bool,
+	m *Mapping,
 ) *treesitter.ASTNode {
 	srcIdx := src.ChildIndex()
 	var best *treesitter.ASTNode
-	bestScore := scorePartner(src, current, srcIdx)
+	bestScore := scorePartner(src, current, srcIdx, m)
 	for _, d := range seq2 {
 		if d == current || dstUsed[d] {
 			continue
@@ -129,7 +132,7 @@ func bestStructuralPartner(
 		if !StructureIsomorphic(src, d) {
 			continue
 		}
-		s := scorePartner(src, d, srcIdx)
+		s := scorePartner(src, d, srcIdx, m)
 		if s > bestScore {
 			bestScore = s
 			best = d
@@ -138,12 +141,23 @@ func bestStructuralPartner(
 	return best
 }
 
-func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int) int {
-	if (HasLongLeafToken(src) || HasLongLeafToken(dst)) && LeafSimilarity(src, dst) == 0 {
-		return -100
-	}
-	score := 0
+func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, m *Mapping) int {
+	r := cmp.Or(rulesFor(src), rulesFor(dst))
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsDeclaration(dst.Type)))
+
 	dstChildIdx := dst.ChildIndex()
+	if isDecl {
+		idxDiff := srcChildIdx - dstChildIdx
+		if idxDiff < -2 || idxDiff > 2 {
+			return -100
+		}
+		if !canMatchDeclarations(src, dst, m, r) {
+			return -100
+		}
+	}
+
+	score := 0
 	if srcChildIdx == dstChildIdx {
 		score += 100
 	}
