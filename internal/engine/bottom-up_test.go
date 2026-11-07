@@ -3830,3 +3830,191 @@ mod tests {
 		}
 	})
 }
+
+func TestBottomUp_HollowEnclosingCall_WrappedMacroEvolution(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		src := []byte(`eprintln!("Invalid color: {}", s);`)
+		dst := []byte(`fatal(format!("Invalid color: {}", s));`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+
+		var srcMacro, dstCall, dstMacro *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && n.Type == "macro_invocation" {
+				srcMacro = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && n.Type == "call_expression" {
+				dstCall = n
+			} else if r.IsCall(n.Type) && n.Type == "macro_invocation" {
+				dstMacro = n
+			}
+		}
+
+		if srcMacro == nil || dstCall == nil || dstMacro == nil {
+			t.Fatalf("failed to locate nodes: srcMacro=%v, dstCall=%v, dstMacro=%v", srcMacro, dstCall, dstMacro)
+		}
+
+		// Pair the descendant token_tree and its string literal
+		m := NewMapping()
+		var sTree, dTree *treesitter.ASTNode
+		for _, n := range srcMacro.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && !r.IsBlock(n.Type) {
+				sTree = n
+				break
+			}
+		}
+		for _, n := range dstMacro.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && !r.IsBlock(n.Type) {
+				dTree = n
+				break
+			}
+		}
+		if sTree == nil || dTree == nil {
+			t.Fatalf("failed to locate token_trees: sTree=%v, dTree=%v", sTree, dTree)
+		}
+		m.Add(sTree, dTree)
+		for _, sc := range sTree.Children {
+			for _, dc := range dTree.Children {
+				if sc.Type == dc.Type && sc.Label == dc.Label {
+					m.Add(sc, dc)
+				}
+			}
+		}
+
+		if !hasHollowEnclosingCall(srcMacro, dstCall, m, r) {
+			t.Errorf("expected hasHollowEnclosingCall to report true for outer call fatal wrapping format!")
+		}
+
+		scoreCall := computeAffinity(srcMacro, dstCall, m, DefaultAffinityWeights, false)
+		if scoreCall != -1.0 {
+			t.Errorf("expected computeAffinity for hollow outer call to return -1.0, got %f", scoreCall)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`pub fn parse_color(s: &str) {
+    let die = || {
+        eprintln!("Invalid color or style attribute: {}", s);
+        process::exit(1);
+    };
+    println!("color: {}", s);
+}
+`)
+		dst := []byte(`pub fn parse_color(s: &str) {
+    let die = || {
+        fatal(format!("Invalid color or style attribute: {}", s));
+    };
+    println!("color: {}", s);
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: parse_color function and die closure map in place
+		var srcFn, dstFn, srcClosure, dstClosure *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "parse_color" {
+				srcFn = n
+			} else if n.Type == "closure_expression" {
+				srcClosure = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "parse_color" {
+				dstFn = n
+			} else if n.Type == "closure_expression" {
+				dstClosure = n
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function parse_color to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+		if srcClosure == nil || dstClosure == nil || mr.Mappings.Src()[srcClosure] != dstClosure {
+			t.Fatalf("expected closure die to map in place, got %v", mr.Mappings.Src()[srcClosure])
+		}
+
+		// 2. Surrounding Sequence: succeeding println! statement maps in place
+		var srcPrint, dstPrint *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				srcPrint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				dstPrint = n
+				break
+			}
+		}
+		if srcPrint == nil || dstPrint == nil || mr.Mappings.Src()[srcPrint] != dstPrint {
+			t.Errorf("expected succeeding println! to map in place, got %v", mr.Mappings.Src()[srcPrint])
+		}
+
+		// 3. Target & Containers: eprintln! must map to format!, NOT the outer call fatal
+		var srcEprint, dstFatal, dstFormat *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "eprintln" {
+				srcEprint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "fatal" {
+				dstFatal = n
+			} else if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "format" {
+				dstFormat = n
+			}
+		}
+		if srcEprint == nil || dstFatal == nil || dstFormat == nil {
+			t.Fatalf("failed to locate target calls: srcEprint=%v, dstFatal=%v, dstFormat=%v", srcEprint, dstFatal, dstFormat)
+		}
+
+		if mapped := mr.Mappings.Src()[srcEprint]; mapped != dstFormat {
+			t.Fatalf("expected eprintln! to map to format!, got %v (fatal=%v)", mapped, dstFatal)
+		}
+
+		// 4. Stationary Operands: token_tree and argument string map in place
+		var srcTree, dstTree *treesitter.ASTNode
+		for _, c := range srcEprint.Children {
+			if r.IsDelimitedContainer(c.Type) && !r.IsBlock(c.Type) {
+				srcTree = c
+				break
+			}
+		}
+		for _, c := range dstFormat.Children {
+			if r.IsDelimitedContainer(c.Type) && !r.IsBlock(c.Type) {
+				dstTree = c
+				break
+			}
+		}
+		if srcTree == nil || dstTree == nil || mr.Mappings.Src()[srcTree] != dstTree {
+			t.Errorf("expected token_tree to map in place across eprintln! -> format!, got %v", mr.Mappings.Src()[srcTree])
+		}
+	})
+}
