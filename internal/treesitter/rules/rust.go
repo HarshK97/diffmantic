@@ -206,6 +206,7 @@ var rustRules = &Rules{
 		{"field_initializer", "shorthand_field_initializer"},
 		{"call_expression", "macro_invocation"},
 		{"arguments", "token_tree"},
+		{"attribute_item", "inner_attribute_item"},
 	},
 	Comments: []string{
 		"line_comment",

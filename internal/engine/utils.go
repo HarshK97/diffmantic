@@ -641,8 +641,8 @@ func isStatementOrBranch(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
 	}
-	isStmt := (r != nil && (r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type))) ||
-		(r == nil && (rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type)))
+	isStmt := (r != nil && (r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type) || r.IsAttribute(n.Type))) ||
+		(r == nil && (rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type) || rules.IsAttribute(n.Type)))
 	if isStmt {
 		return true
 	}
