@@ -911,58 +911,6 @@ func TestMatchUnmatchedLeaves_StatementBoundary_ShortVarDeclaration(t *testing.T
 }
 
 func TestRecoverCohortSiblings_RelocatedCohort(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Source function declaration with 4 statements in its body:
-		// s0: isDelim := ... (unmapped)
-		// s1: hasOutside := false (anchor 1, pre-mapped to d1)
-		// s2: deleteSubtree := ... (unmapped)
-		// s3: hasSrcOutside := false (anchor 2, pre-mapped to d3)
-		makeDecl := func(name string) *treesitter.ASTNode {
-			id := testutil.Leaf("identifier", name)
-			op := testutil.Leaf("assignment_operator_literal", ":=")
-			val := testutil.Leaf("identifier", "val")
-			stmt := testutil.Node("short_var_declaration", "", testutil.Node("expression_list", "", id), op, testutil.Node("expression_list", "", val))
-			stmt.Language = "go"
-			return stmt
-		}
-
-		s0 := makeDecl("isDelim")
-		s1 := makeDecl("hasOutside")
-		s2 := makeDecl("deleteSubtree")
-		s3 := makeDecl("hasSrcOutside")
-		srcBlock := testutil.Node("block", "", s0, s1, s2, s3)
-		srcBlock.Language = "go"
-		srcFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "Demote"), srcBlock)
-		srcRoot := testutil.Node("source_file", "", srcFn)
-		srcRoot.Language = "go"
-
-		d0 := makeDecl("isDelim")
-		d1 := makeDecl("hasOutside")
-		d2 := makeDecl("deleteSubtree")
-		d3 := makeDecl("hasSrcOutside")
-		dstBlock := testutil.Node("block", "", d0, d1, d2, d3)
-		dstBlock.Language = "go"
-		dstFn := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "isSubtreeDemotion"), dstBlock)
-		dstRoot := testutil.Node("source_file", "", dstFn)
-		dstRoot.Language = "go"
-
-		m := NewMapping()
-		// Keep srcFn and dstFn unmapped so they count as separate scopes.
-		m.Add(srcRoot, dstRoot)
-		// Anchor two statements cross-scope.
-		m.Add(s1, d1)
-		m.Add(s3, d3)
-
-		RecoverCohortSiblings(srcRoot, dstRoot, m)
-
-		if !m.Has(s0) || m.Src()[s0] != d0 {
-			t.Errorf("expected s0 (isDelim) to be recovered to d0, got %v", m.Src()[s0])
-		}
-		if !m.Has(s2) || m.Src()[s2] != d2 {
-			t.Errorf("expected s2 (deleteSubtree) to be recovered to d2, got %v", m.Src()[s2])
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
@@ -1364,29 +1312,6 @@ func Batch() {
 }
 
 func TestMatch_UnwrappedConditionIdentifier(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		ann1 := testutil.Node("identifier", "annotation")
-		op1 := testutil.Node("binary_operator_literal", "&&")
-		call1 := testutil.Node("call_expression", "", testutil.Node("identifier", "getType"))
-		bin1 := testutil.Node("binary_expression", "", ann1, op1, call1)
-		paren1 := testutil.Node("parenthesized_expression", "", bin1)
-		root1 := testutil.Node("if_statement", "", paren1)
-
-		ann2 := testutil.Node("identifier", "annotation")
-		paren2 := testutil.Node("parenthesized_expression", "", ann2)
-		root2 := testutil.Node("if_statement", "", paren2)
-
-		m := NewMapping()
-		m.Add(root1, root2)
-		m.Add(paren1, paren2)
-
-		MatchUnmatchedLeaves(root1, root2, m, nil)
-
-		if m.Src()[ann1] != ann2 {
-			t.Errorf("expected annotation to map in place, got %v", m.Src()[ann1])
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := []byte(`function serialize(annotation: any, type: any) {
     if (annotation && getTypeFromTypeNode(annotation) === type) {

@@ -410,75 +410,6 @@ func TestTopDown_DirectParentPrecedenceOverFallback(t *testing.T) {
 }
 
 func TestTopDown_ParentLeafSimilarityTieBreaker(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Two if-statements under the same function share identical `{ continue }` bodies.
-		// With 0 mapped descendants and matching lineage, parent leaf similarity breaks
-		// the tie in favor of the modified condition over the newly inserted one.
-		srcCond := testutil.Node("unary_expression", "",
-			testutil.Node("call_expression", "",
-				testutil.Node("identifier", "shouldDemoteMove"),
-				testutil.Node("argument_list", "",
-					testutil.Node("identifier", "dstNode"),
-					testutil.Node("identifier", "ms"),
-					testutil.Node("identifier", "r"),
-				),
-			),
-		)
-		srcBody := testutil.Node("block", "",
-			testutil.Node("continue_statement", "", testutil.Node("continue", "continue")),
-		)
-		srcIf := testutil.Node("if_statement", "", testutil.Node("if", "if"), srcCond, srcBody)
-		srcIf.StartByte = 100
-		srcRoot := testutil.Node("function_declaration", "",
-			testutil.Node("identifier", "normalizeMovesByStructure"),
-			testutil.Node("block", "", srcIf),
-		)
-		srcRoot.Language = "go"
-
-		dstEarlyCond := testutil.Node("short_var_declaration", "",
-			testutil.Node("identifier", "already"),
-			testutil.Node("identifier", "toDemote"),
-		)
-		dstEarlyBody := testutil.Node("block", "",
-			testutil.Node("continue_statement", "", testutil.Node("continue", "continue")),
-		)
-		dstEarlyIf := testutil.Node("if_statement", "", testutil.Node("if", "if"), dstEarlyCond, dstEarlyBody)
-		dstEarlyIf.StartByte = 50
-
-		dstLateCond := testutil.Node("unary_expression", "",
-			testutil.Node("call_expression", "",
-				testutil.Node("identifier", "shouldDemoteMove"),
-				testutil.Node("argument_list", "",
-					testutil.Node("identifier", "dstNode"),
-					testutil.Node("identifier", "ms"),
-					testutil.Node("identifier", "r"),
-					testutil.Node("identifier", "evicted"),
-				),
-			),
-		)
-		dstLateBody := testutil.Node("block", "",
-			testutil.Node("continue_statement", "", testutil.Node("continue", "continue")),
-		)
-		dstLateIf := testutil.Node("if_statement", "", testutil.Node("if", "if"), dstLateCond, dstLateBody)
-		dstLateIf.StartByte = 150
-
-		dstRoot := testutil.Node("function_declaration", "",
-			testutil.Node("identifier", "normalizeMovesByStructure"),
-			testutil.Node("block", "", dstEarlyIf, dstLateIf),
-		)
-		dstRoot.Language = "go"
-
-		srcRoot.ComputeHashes()
-		dstRoot.ComputeHashes()
-
-		m := NewMapping()
-		TopDown(srcRoot, dstRoot, 2, m, nil)
-
-		if m.Src()[srcBody] != dstLateBody {
-			t.Fatalf("TopDown matched srcBody to %v, want dstLateBody (%v)", m.Src()[srcBody], dstLateBody)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
 
@@ -614,68 +545,6 @@ func process(items []int) {
 }
 
 func TestTopDown_DelimitedContainerBoundaryGuard(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Source collection has two structs: S1 ("staging", SSL: true) and S2 ("backup", SSL: false).
-		s1Host := testutil.Node("keyed_element", "",
-			testutil.Node("identifier", "Host"),
-			testutil.Node("interpreted_string_literal", `"staging.internal"`),
-		)
-		s1SSL := testutil.Node("keyed_element", "",
-			testutil.Node("identifier", "SSL"),
-			testutil.Node("true", "true"),
-		)
-		s1Elem := testutil.Node("literal_value", "", s1Host, s1SSL)
-
-		s2Host := testutil.Node("keyed_element", "",
-			testutil.Node("identifier", "Host"),
-			testutil.Node("interpreted_string_literal", `"backup.internal"`),
-		)
-		s2SSL := testutil.Node("keyed_element", "",
-			testutil.Node("identifier", "SSL"),
-			testutil.Node("false", "false"),
-		)
-		s2Elem := testutil.Node("literal_value", "", s2Host, s2SSL)
-
-		outer1 := testutil.Node("literal_value", "", s1Elem, s2Elem)
-
-		// Destination collection has only D1 ("backup", SSL: true).
-		d1Host := testutil.Node("keyed_element", "",
-			testutil.Node("identifier", "Host"),
-			testutil.Node("interpreted_string_literal", `"backup.internal"`),
-		)
-		d1SSL := testutil.Node("keyed_element", "",
-			testutil.Node("identifier", "SSL"),
-			testutil.Node("true", "true"),
-		)
-		d1Elem := testutil.Node("literal_value", "", d1Host, d1SSL)
-
-		outer2 := testutil.Node("literal_value", "", d1Elem)
-
-		root1 := testutil.Node("source_file", "", outer1)
-		root1.Language = "go"
-		root2 := testutil.Node("source_file", "", outer2)
-		root2.Language = "go"
-
-		r := rulesFor(root1)
-
-		m := NewMapping()
-
-		if s1Pairs := collectContainerPairs(s1Elem, r, nil); len(s1Pairs) != 2 {
-			t.Errorf("expected 2 pairs for s1Elem, got %d", len(s1Pairs))
-		}
-
-		// S1's SSL: true matches D1's SSL: true, but S2 shares the "backup.internal" Host key with D1.
-		// S1 must not greedily steal D1 when S2 is a superior match.
-		if !hasDelimitedContainerConflict(s1SSL, d1SSL, m, r) {
-			t.Errorf("expected conflict between s1 (staging) and d1 (backup) due to unextinguished peer s2 (backup)")
-		}
-
-		// S2's SSL: false should still be allowed to match D1 because they share the Host key.
-		if hasDelimitedContainerConflict(s2SSL, d1SSL, m, r) {
-			t.Errorf("expected no conflict between s2 (backup) and d1 (backup)")
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		runCase := func(t *testing.T, name string, src, dst []byte, stagingRow, backupRowSrc, backupRowDst uint32) {
 			t.Run(name, func(t *testing.T) {
@@ -1002,51 +871,6 @@ fn f2() void {
 }
 
 func TestTopDown_ImmediateStatementAffinity(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Synthetic AST: two adjacent declarations sharing an identical literal value (false).
-		// Inverted order in dst: flagB comes first, flagA comes second.
-		// Statement affinity must anchor each literal to its own declaration without being tricked
-		// by physical document order.
-		idSrcA := testutil.Node("identifier", "flagA")
-		litSrcA := testutil.Leaf("false", "false")
-		declSrcA := testutil.Node("short_var_declaration", "", idSrcA, litSrcA)
-
-		idSrcB := testutil.Node("identifier", "flagB")
-		litSrcB := testutil.Leaf("false", "false")
-		declSrcB := testutil.Node("short_var_declaration", "", idSrcB, litSrcB)
-
-		blockSrc := testutil.Node("block", "", declSrcA, declSrcB)
-		fnSrc := testutil.Node("function_declaration", "", testutil.Leaf("f", "f"), blockSrc)
-		rootSrc := testutil.Node("source_file", "", fnSrc)
-		rootSrc.Language = "go"
-		treesitter.EnsureIndex(rootSrc)
-
-		// In destination: flagB first, flagA second
-		idDstB := testutil.Node("identifier", "flagB")
-		litDstB := testutil.Leaf("false", "false")
-		declDstB := testutil.Node("short_var_declaration", "", idDstB, litDstB)
-
-		idDstA := testutil.Node("identifier", "flagA")
-		litDstA := testutil.Leaf("false", "false")
-		declDstA := testutil.Node("short_var_declaration", "", idDstA, litDstA)
-
-		blockDst := testutil.Node("block", "", declDstB, declDstA)
-		fnDst := testutil.Node("function_declaration", "", testutil.Leaf("f", "f"), blockDst)
-		rootDst := testutil.Node("source_file", "", fnDst)
-		rootDst.Language = "go"
-		treesitter.EnsureIndex(rootDst)
-
-		m := NewMapping()
-		TopDown(rootSrc, rootDst, 1, m, nil)
-
-		if got := m.Get(litSrcA); got != litDstA {
-			t.Errorf("flagA literal 'false' mapped to %v, want flagA literal 'false' %v", got, litDstA)
-		}
-		if got := m.Get(litSrcB); got != litDstB {
-			t.Errorf("flagB literal 'false' mapped to %v, want flagB literal 'false' %v", got, litDstB)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := []byte(`package main
 
@@ -1193,92 +1017,6 @@ func f() {
 // TestTopDown_BaselineDriftBranchCrossMatching ensures upstream line drift
 // doesn't cause ambiguous subtrees in sibling branches (then vs else) to cross-match.
 func TestTopDown_BaselineDriftBranchCrossMatching(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		// Build synthetic AST with upstream deletion drift D = 15.
-		// Old tree at row 558: if_statement with consequence (row 560) and alternative (row 562).
-		oldThenExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
-		oldThenSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
-		oldThenCall := testutil.Node("call_expression", "", oldThenSel, testutil.Node("argument_list", "", testutil.Leaf("identifier", "extra")))
-		oldThenStmt := testutil.Node("assignment_statement", "", oldThenExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", oldThenCall))
-		oldThenBlock := testutil.Node("block", "", oldThenStmt)
-
-		oldElseExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
-		oldElseSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
-		oldElseCall := testutil.Node("call_expression", "", oldElseSel, testutil.Node("argument_list", "", testutil.Leaf("identifier", "extra")))
-		oldElseStmt := testutil.Node("assignment_statement", "", oldElseExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", oldElseCall))
-		oldElseBlock := testutil.Node("block", "", oldElseStmt)
-
-		oldIf := testutil.Node("if_statement", "",
-			testutil.Leaf("if", "if"),
-			testutil.Leaf("identifier", "cond"),
-			oldThenBlock,
-			testutil.Leaf("else", "else"),
-			oldElseBlock,
-		)
-		oldFunc := testutil.Node("function_declaration", "renderWholeFile", testutil.Leaf("identifier", "renderWholeFile"), testutil.Node("block", "", oldIf))
-
-		oldFunc.StartRow, oldFunc.EndRow = 540, 570
-		oldIf.StartRow, oldIf.EndRow = 558, 563
-		oldThenBlock.StartRow, oldThenBlock.EndRow = 558, 561
-		oldThenStmt.StartRow, oldThenStmt.EndRow = 560, 560
-		oldThenExpr.StartRow, oldThenExpr.EndRow = 560, 560
-		oldThenSel.StartRow, oldThenSel.EndRow = 560, 560
-		oldElseBlock.StartRow, oldElseBlock.EndRow = 561, 563
-		oldElseStmt.StartRow, oldElseStmt.EndRow = 562, 562
-		oldElseExpr.StartRow, oldElseExpr.EndRow = 562, 562
-		oldElseSel.StartRow, oldElseSel.EndRow = 562, 562
-
-		// New tree shifted up by D = 15 lines (starts at row 525 instead of 540).
-		newThenExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
-		newThenSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
-		newThenCall := testutil.Node("call_expression", "", newThenSel, testutil.Node("argument_list", "", testutil.Leaf("string", `""`)))
-		newThenStmt := testutil.Node("assignment_statement", "", newThenExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", newThenCall))
-		newThenBlock := testutil.Node("block", "", newThenStmt)
-
-		newElseExpr := testutil.Node("expression_list", "", testutil.Leaf("identifier", "hunkHeader"))
-		newElseSel := testutil.Node("selector_expression", "", testutil.Leaf("identifier", "renderutil"), testutil.Leaf("field_identifier", "FormatHunkHeader"))
-		newElseCall := testutil.Node("call_expression", "", newElseSel, testutil.Node("argument_list", "", testutil.Leaf("string", `""`)))
-		newElseStmt := testutil.Node("assignment_statement", "", newElseExpr, testutil.Leaf("assignment_operator_literal", "="), testutil.Node("expression_list", "", newElseCall))
-		newElseBlock := testutil.Node("block", "", newElseStmt)
-
-		newIf := testutil.Node("if_statement", "",
-			testutil.Leaf("if", "if"),
-			testutil.Leaf("identifier", "cond"),
-			newThenBlock,
-			testutil.Leaf("else", "else"),
-			newElseBlock,
-		)
-		newFunc := testutil.Node("function_declaration", "renderWholeFile", testutil.Leaf("identifier", "renderWholeFile"), testutil.Node("block", "", newIf))
-
-		newFunc.StartRow, newFunc.EndRow = 525, 555
-		newIf.StartRow, newIf.EndRow = 543, 548
-		newThenBlock.StartRow, newThenBlock.EndRow = 543, 546
-		newThenStmt.StartRow, newThenStmt.EndRow = 545, 545
-		newThenExpr.StartRow, newThenExpr.EndRow = 545, 545
-		newThenSel.StartRow, newThenSel.EndRow = 545, 545
-		newElseBlock.StartRow, newElseBlock.EndRow = 546, 548
-		newElseStmt.StartRow, newElseStmt.EndRow = 547, 547
-		newElseExpr.StartRow, newElseExpr.EndRow = 547, 547
-		newElseSel.StartRow, newElseSel.EndRow = 547, 547
-
-		m := NewMapping()
-		TopDown(oldFunc, newFunc, 2, m, nil)
-
-		// Sibling expressions must stay in their own branch.
-		if got := m.Src()[oldThenExpr]; got != newThenExpr {
-			t.Errorf("oldThenExpr mapped to %v, want newThenExpr %v (in-branch)", got, newThenExpr)
-		}
-		if got := m.Src()[oldThenSel]; got != newThenSel {
-			t.Errorf("oldThenSel mapped to %v, want newThenSel %v (in-branch)", got, newThenSel)
-		}
-		if got := m.Src()[oldElseExpr]; got != newElseExpr {
-			t.Errorf("oldElseExpr mapped to %v, want newElseExpr %v (in-branch)", got, newElseExpr)
-		}
-		if got := m.Src()[oldElseSel]; got != newElseSel {
-			t.Errorf("oldElseSel mapped to %v, want newElseSel %v (in-branch)", got, newElseSel)
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		// Realistic source with deleted helper lines before the function creating 15 lines of drift.
 		oldSrc := []byte(`package render
@@ -1435,28 +1173,6 @@ func renderWholeFileSingleColumn(action int) error {
 }
 
 func TestTopDown_CalleeCompatibility(t *testing.T) {
-	t.Run("Unit", func(t *testing.T) {
-		callee1 := testutil.Node("identifier", "getOptionalType")
-		argType1 := testutil.Node("identifier", "type")
-		args1 := testutil.Node("arguments", "", argType1)
-		call1 := testutil.Node("call_expression", "", callee1, args1)
-		root1 := testutil.Node("statement_block", "", call1)
-
-		callee2 := testutil.Node("identifier", "containsNonMissingUndefinedType")
-		argType2 := testutil.Node("identifier", "type")
-		args2 := testutil.Node("arguments", "", argType2)
-		call2 := testutil.Node("call_expression", "", callee2, args2)
-		root2 := testutil.Node("statement_block", "", call2)
-
-		m := NewMapping()
-		TopDown(root1, root2, 2, m, nil)
-
-		// Arguments should not match across incompatible callees.
-		if m.Src()[args1] != nil {
-			t.Errorf("expected args1 not to match across incompatible callees, got mapped to %v", m.Src()[args1])
-		}
-	})
-
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `function evaluateType(type: Type, host: Node) {
     let original = type;
