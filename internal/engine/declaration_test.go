@@ -5,6 +5,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestGetDeclarationName(t *testing.T) {
@@ -583,5 +584,395 @@ func TestDeclarationSignaturePreservation(t *testing.T) {
 		if r.Mappings.Src()[srcParams] == dstInnerParams {
 			t.Errorf("outer parameters must NOT be siphoned into inner helper function")
 		}
+	})
+}
+
+func TestMatchDeclarations_ExcludesLocalVars(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("typescript")
+
+		funcDecl := testutil.Node("function_declaration", "",
+			testutil.Node("identifier", "myFunc"),
+			testutil.Node("statement_block", "",
+				testutil.Node("lexical_declaration", "",
+					testutil.Node("variable_declarator", "",
+						testutil.Node("identifier", "localVar"),
+					),
+				),
+			),
+		)
+		funcDecl.Language = "typescript"
+		root := testutil.Node("program", "", funcDecl)
+		root.Language = "typescript"
+
+		decs := findDeclarations(root)
+		if len(decs) != 1 {
+			t.Fatalf("expected exactly 1 declaration, got %d", len(decs))
+		}
+		if decs[0] != funcDecl {
+			t.Errorf("expected function_declaration, got %v", decs[0])
+		}
+		for _, d := range decs {
+			if r.IsLocalVarDeclaration(d.Type) {
+				t.Errorf("findDeclarations must NOT include local var declaration %s", d.Type)
+			}
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("TypeScript", func(t *testing.T) {
+			src := `function buildNode(declaration: Declaration) {
+    const addUndefined = declaration && isParameter(declaration);
+    const intermediate = compute(declaration);
+    return format(intermediate, addUndefined);
+}
+`
+			dst := `function buildNode(declaration: Declaration) {
+    const addUndefinedForParameter = declaration && isParameter(declaration);
+    const intermediate = compute(declaration);
+    const addUndefined = addUndefinedForParameter || checkOptional(declaration);
+    return format(intermediate, addUndefined);
+}
+`
+
+			srcAST, err := treesitter.Parse([]byte(src), "test.ts")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(dst), "test.ts")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+
+			r := rulesFor(srcAST)
+			part := NewLinePartition([]byte(src), []byte(dst))
+			mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			// 1. Enclosing Context: buildNode function
+			var srcFunc, dstFunc *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && getDeclarationName(n) == "buildNode" {
+					srcFunc = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && getDeclarationName(n) == "buildNode" {
+					dstFunc = n
+					break
+				}
+			}
+			if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+				t.Fatalf("expected function buildNode to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+			}
+
+			// 2. Surrounding Sequence: const intermediate and return format
+			var srcInter, dstInter *treesitter.ASTNode
+			var srcReturn, dstReturn *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 2 {
+					srcInter = n
+				}
+				if r.IsJumpStatement(n.Type) {
+					srcReturn = n
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 2 {
+					dstInter = n
+				}
+				if r.IsJumpStatement(n.Type) {
+					dstReturn = n
+				}
+			}
+			if srcInter == nil || dstInter == nil || mr.Mappings.Src()[srcInter] != dstInter {
+				t.Errorf("expected surrounding const intermediate statement to map in place")
+			}
+			if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+				t.Errorf("expected succeeding return statement to map in place")
+			}
+
+			// 3. Target: first const addUndefined must map in place to const addUndefinedForParameter
+			var srcFirstConst, dstFirstConst, dstSecondConst *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+					srcFirstConst = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+					dstFirstConst = n
+				}
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 3 {
+					dstSecondConst = n
+				}
+			}
+			if srcFirstConst == nil || dstFirstConst == nil {
+				t.Fatalf("missing target local var declarations: src=%v dst1=%v", srcFirstConst, dstFirstConst)
+			}
+			if mr.Mappings.Src()[srcFirstConst] != dstFirstConst {
+				t.Errorf("expected renamed const to map in place to dst row 1, got %v (dstSecondConst=%v)",
+					mr.Mappings.Src()[srcFirstConst], dstSecondConst)
+			}
+
+			// The new const at row 3 must NOT have stolen the identity of src row 1
+			if mr.Mappings.Dst()[dstSecondConst] == srcFirstConst {
+				t.Errorf("newly introduced const at row 3 must not steal src row 1 declaration")
+			}
+		})
+
+		t.Run("Go", func(t *testing.T) {
+			src := `package main
+
+func buildNode(declaration Declaration) string {
+	var addUndefined = declaration && isParameter(declaration)
+	var intermediate = compute(declaration)
+	return format(intermediate, addUndefined)
+}
+`
+			dst := `package main
+
+func buildNode(declaration Declaration) string {
+	var addUndefinedForParameter = declaration && isParameter(declaration)
+	var intermediate = compute(declaration)
+	var addUndefined = addUndefinedForParameter || checkOptional(declaration)
+	return format(intermediate, addUndefined)
+}
+`
+
+			srcAST, err := treesitter.Parse([]byte(src), "test.go")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+
+			r := rulesFor(srcAST)
+			part := NewLinePartition([]byte(src), []byte(dst))
+			mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			// 1. Enclosing Context: buildNode function
+			var srcFunc, dstFunc *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && getDeclarationName(n) == "buildNode" {
+					srcFunc = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && getDeclarationName(n) == "buildNode" {
+					dstFunc = n
+					break
+				}
+			}
+			if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+				t.Fatalf("expected function buildNode to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+			}
+
+			// 2. Surrounding Sequence: var intermediate and return format
+			var srcInter, dstInter *treesitter.ASTNode
+			var srcReturn, dstReturn *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 4 {
+					srcInter = n
+				}
+				if r.IsJumpStatement(n.Type) {
+					srcReturn = n
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 4 {
+					dstInter = n
+				}
+				if r.IsJumpStatement(n.Type) {
+					dstReturn = n
+				}
+			}
+			if srcInter == nil || dstInter == nil || mr.Mappings.Src()[srcInter] != dstInter {
+				t.Errorf("expected surrounding var intermediate statement to map in place")
+			}
+			if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+				t.Errorf("expected succeeding return statement to map in place")
+			}
+
+			// 3. Target: first var addUndefined must map in place to var addUndefinedForParameter
+			var srcFirstVar, dstFirstVar, dstSecondVar *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 3 {
+					srcFirstVar = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 3 {
+					dstFirstVar = n
+				}
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 5 {
+					dstSecondVar = n
+				}
+			}
+			if srcFirstVar == nil || dstFirstVar == nil {
+				t.Fatalf("missing target local var declarations: src=%v dst1=%v", srcFirstVar, dstFirstVar)
+			}
+			if mr.Mappings.Src()[srcFirstVar] != dstFirstVar {
+				t.Errorf("expected renamed var to map in place to dst row 3, got %v (dstSecondVar=%v)",
+					mr.Mappings.Src()[srcFirstVar], dstSecondVar)
+			}
+
+			// The new var at row 5 must NOT have stolen the identity of src row 3
+			if mr.Mappings.Dst()[dstSecondVar] == srcFirstVar {
+				t.Errorf("newly introduced var at row 5 must not steal src row 3 declaration")
+			}
+
+			// 4. Stationary Operands: parameter declaration identifier
+			var srcParam, dstParam *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsIdentifier(n.Type) && identifierText(n) == "declaration" && n.StartRow == 2 {
+					srcParam = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsIdentifier(n.Type) && identifierText(n) == "declaration" && n.StartRow == 2 {
+					dstParam = n
+					break
+				}
+			}
+			if srcParam == nil || dstParam == nil || mr.Mappings.Src()[srcParam] != dstParam {
+				t.Errorf("expected parameter declaration identifier to map in place")
+			}
+		})
+
+		t.Run("Lua", func(t *testing.T) {
+			src := `function build_node(declaration)
+    local add_undefined = declaration and is_parameter(declaration)
+    local intermediate = compute(declaration)
+    return format(intermediate, add_undefined)
+end
+`
+			dst := `function build_node(declaration)
+    local add_undefined_for_parameter = declaration and is_parameter(declaration)
+    local intermediate = compute(declaration)
+    local add_undefined = add_undefined_for_parameter or check_optional(declaration)
+    return format(intermediate, add_undefined)
+end
+`
+
+			srcAST, err := treesitter.Parse([]byte(src), "test.lua")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(dst), "test.lua")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+
+			r := rulesFor(srcAST)
+			part := NewLinePartition([]byte(src), []byte(dst))
+			mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			// 1. Enclosing Context: build_node function
+			var srcFunc, dstFunc *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && getDeclarationName(n) == "build_node" {
+					srcFunc = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && getDeclarationName(n) == "build_node" {
+					dstFunc = n
+					break
+				}
+			}
+			if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+				t.Fatalf("expected function build_node to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+			}
+
+			// 2. Surrounding Sequence: local intermediate and return format
+			var srcInter, dstInter *treesitter.ASTNode
+			var srcReturn, dstReturn *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 2 {
+					srcInter = n
+				}
+				if r.IsJumpStatement(n.Type) {
+					srcReturn = n
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 2 {
+					dstInter = n
+				}
+				if r.IsJumpStatement(n.Type) {
+					dstReturn = n
+				}
+			}
+			if srcInter == nil || dstInter == nil || mr.Mappings.Src()[srcInter] != dstInter {
+				t.Errorf("expected surrounding local intermediate statement to map in place")
+			}
+			if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+				t.Errorf("expected succeeding return statement to map in place")
+			}
+
+			// 3. Target: first local add_undefined must map in place to local add_undefined_for_parameter
+			var srcFirstVar, dstFirstVar, dstSecondVar *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+					srcFirstVar = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+					dstFirstVar = n
+				}
+				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 3 {
+					dstSecondVar = n
+				}
+			}
+			if srcFirstVar == nil || dstFirstVar == nil {
+				t.Fatalf("missing target local var declarations: src=%v dst1=%v", srcFirstVar, dstFirstVar)
+			}
+			if mr.Mappings.Src()[srcFirstVar] != dstFirstVar {
+				t.Errorf("expected renamed local var to map in place to dst row 1, got %v (dstSecondVar=%v)",
+					mr.Mappings.Src()[srcFirstVar], dstSecondVar)
+			}
+
+			// The new local var at row 3 must NOT have stolen the identity of src row 1
+			if mr.Mappings.Dst()[dstSecondVar] == srcFirstVar {
+				t.Errorf("newly introduced local var at row 3 must not steal src row 1 declaration")
+			}
+
+			// 4. Stationary Operands: parameter declaration identifier
+			var srcParam, dstParam *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsIdentifier(n.Type) && identifierText(n) == "declaration" && n.StartRow == 0 {
+					srcParam = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsIdentifier(n.Type) && identifierText(n) == "declaration" && n.StartRow == 0 {
+					dstParam = n
+					break
+				}
+			}
+			if srcParam == nil || dstParam == nil || mr.Mappings.Src()[srcParam] != dstParam {
+				t.Errorf("expected parameter declaration identifier to map in place")
+			}
+		})
 	})
 }

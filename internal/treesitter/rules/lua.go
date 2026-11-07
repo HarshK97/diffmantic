@@ -114,13 +114,14 @@ var luaRules = &Rules{
 		"method_index_expression",
 		"arguments",
 		"parameters",
+		"variable_list",
+		"expression_list",
 	},
 	Pairs: []string{
 		"field",
 	},
 	EquivalentTypes: [][]string{
 		{"function_declaration", "function_definition", "variable_declaration"},
-		{"assignment_statement", "variable_declaration"},
 		{"for_statement", "while_statement", "repeat_statement"},
 		{"if_statement", "elseif_statement"},
 	},
