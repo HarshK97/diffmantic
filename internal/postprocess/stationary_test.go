@@ -4153,4 +4153,3 @@ func TestStationaryWrappedMacroArguments(t *testing.T) {
 		}
 	})
 }
-
