@@ -2570,3 +2570,196 @@ func TestDiffCommentsAnchorFirst() {
 		}
 	})
 }
+
+func TestAttributeUnnestingAndInnerOuterEquivalence(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rust rules not found")
+		}
+
+		// 1. EquivalentTypes: attribute_item and inner_attribute_item must match.
+		if !TypesMatch("attribute_item", "inner_attribute_item", r) {
+			t.Errorf("expected TypesMatch(attribute_item, inner_attribute_item) = true")
+		}
+
+		// 2. isStatementOrBranch must recognize attribute types so FindImmediateStatement
+		// does not climb past an attribute into an enclosing declaration.
+		attrNode := testutil.Node("attribute_item", "")
+		_ = testutil.Node("mod_item", "", attrNode)
+
+		stmt := FindImmediateStatement(attrNode, r)
+		if stmt != attrNode {
+			t.Errorf("expected FindImmediateStatement(attrNode) = attrNode, got %v (type %s)", stmt, stmt.Type)
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rust rules not found")
+		}
+
+		oldSrc := []byte(`#[cfg(test)]
+pub mod test_utils {
+    use std::fs::File;
+
+    pub fn make_options() -> bool {
+        true
+    }
+
+    #[allow(dead_code)]
+    pub fn make_config() -> bool {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    pub fn run_test() {}
+}
+`)
+
+		newSrc := []byte(`#![cfg(test)]
+
+use std::fs::File;
+
+pub fn make_options() -> bool {
+    true
+}
+
+#[allow(dead_code)]
+pub fn make_config() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    pub fn run_test() {}
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.rs")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.rs")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// Find target attribute nodes
+		var (
+			srcCfgTest, dstCfgTest         *treesitter.ASTNode
+			srcAllowDead, dstAllowDead     *treesitter.ASTNode
+			srcTestModAttr, dstTestModAttr *treesitter.ASTNode
+		)
+
+		for _, n := range srcAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				txt := oldSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow == 0:
+					srcCfgTest = n
+				case bytes.Contains(txt, []byte("allow(dead_code)")):
+					srcAllowDead = n
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow > 0:
+					srcTestModAttr = n
+				}
+			}
+		}
+
+		for _, n := range dstAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				txt := newSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow == 0:
+					dstCfgTest = n
+				case bytes.Contains(txt, []byte("allow(dead_code)")):
+					dstAllowDead = n
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow > 0:
+					dstTestModAttr = n
+				}
+			}
+		}
+
+		if srcCfgTest == nil || dstCfgTest == nil {
+			t.Fatalf("failed to locate cfg(test) attribute at line 1: src=%v dst=%v", srcCfgTest, dstCfgTest)
+		}
+		if srcAllowDead == nil || dstAllowDead == nil {
+			t.Fatalf("failed to locate allow(dead_code) attribute: src=%v dst=%v", srcAllowDead, dstAllowDead)
+		}
+		if srcTestModAttr == nil || dstTestModAttr == nil {
+			t.Fatalf("failed to locate tests mod cfg(test) attribute: src=%v dst=%v", srcTestModAttr, dstTestModAttr)
+		}
+
+		// 1. Target 1: Outer attribute #[cfg(test)] at line 1 must map to inner attribute #![cfg(test)] at line 1.
+		if mapped := mr.Mappings.Src()[srcCfgTest]; mapped != dstCfgTest {
+			t.Errorf("expected line 1 #[cfg(test)] to map to line 1 #![cfg(test)], got %v", mapped)
+		}
+
+		// 2. Target 2: #[allow(dead_code)] on make_config must map to #[allow(dead_code)] in place (NOT deleted or cross-matched).
+		if mapped := mr.Mappings.Src()[srcAllowDead]; mapped != dstAllowDead {
+			t.Errorf("expected #[allow(dead_code)] to map to dst #[allow(dead_code)], got %v", mapped)
+		}
+
+		// 3. Sibling Scope: tests mod #[cfg(test)] must remain mapped to tests mod #[cfg(test)] without cross-scope theft.
+		if mapped := mr.Mappings.Src()[srcTestModAttr]; mapped != dstTestModAttr {
+			t.Errorf("expected tests mod #[cfg(test)] to map to dst tests mod #[cfg(test)], got %v", mapped)
+		}
+
+		// 4. Surrounding Sequence & Stationary Functions: make_options and make_config map in place.
+		var (
+			srcMakeOpts, dstMakeOpts *treesitter.ASTNode
+			srcMakeCfg, dstMakeCfg   *treesitter.ASTNode
+			srcTestsMod, dstTestsMod *treesitter.ASTNode
+		)
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "make_options":
+					srcMakeOpts = n
+				case "make_config":
+					srcMakeCfg = n
+				case "tests":
+					srcTestsMod = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "make_options":
+					dstMakeOpts = n
+				case "make_config":
+					dstMakeCfg = n
+				case "tests":
+					dstTestsMod = n
+				}
+			}
+		}
+
+		if srcMakeOpts == nil || dstMakeOpts == nil || mr.Mappings.Src()[srcMakeOpts] != dstMakeOpts {
+			t.Errorf("expected make_options to map in place, got src=%v dst=%v mapped=%v", srcMakeOpts, dstMakeOpts, mr.Mappings.Src()[srcMakeOpts])
+		}
+		if srcMakeCfg == nil || dstMakeCfg == nil || mr.Mappings.Src()[srcMakeCfg] != dstMakeCfg {
+			t.Errorf("expected make_config to map in place, got src=%v dst=%v mapped=%v", srcMakeCfg, dstMakeCfg, mr.Mappings.Src()[srcMakeCfg])
+		}
+		if srcTestsMod == nil || dstTestsMod == nil || mr.Mappings.Src()[srcTestsMod] != dstTestsMod {
+			t.Errorf("expected tests mod to map in place, got src=%v dst=%v mapped=%v", srcTestsMod, dstTestsMod, mr.Mappings.Src()[srcTestsMod])
+		}
+	})
+}
