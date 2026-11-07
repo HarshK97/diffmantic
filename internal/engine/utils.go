@@ -634,10 +634,15 @@ func isStatementOrBranch(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
 	}
-	if r != nil {
-		return r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type)
+	isStmt := (r != nil && (r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type))) ||
+		(r == nil && (rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type)))
+	if isStmt {
+		return true
 	}
-	return rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type)
+	isBlock := func(t string) bool {
+		return (r != nil && r.IsBlock(t)) || (r == nil && rules.IsBlock(t))
+	}
+	return n.Parent != nil && !isBlock(n.Type) && isBlock(n.Parent.Type)
 }
 
 // findActualEnclosingStatement walks strictly up from n's parent to find an

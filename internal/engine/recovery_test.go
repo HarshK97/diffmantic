@@ -1376,3 +1376,350 @@ func formatBadge(lastChunkStr, badgeText string) bool {
 		}
 	})
 }
+
+func TestSiblingRecovery_TwoTier(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		t.Run("DelimitedSiblingDP_DominoImmunity", func(t *testing.T) {
+			// Prepending an unmapped call T0 must not cascade into subsequent mutated calls.
+			callAlphaOld := testutil.Node("call_expression", "",
+				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
+				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"alpha"`), testutil.Leaf("identifier", "oldX")),
+			)
+			callBetaOld := testutil.Node("call_expression", "",
+				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
+				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"beta"`), testutil.Leaf("identifier", "oldY")),
+			)
+			srcArgs := testutil.Node("argument_list", "", callAlphaOld, callBetaOld)
+			srcArgs.Language = "go"
+
+			callTracer := testutil.Node("call_expression", "",
+				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
+				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"tracer"`), testutil.Leaf("identifier", "id")),
+			)
+			callAlphaNew := testutil.Node("call_expression", "",
+				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
+				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"alpha"`), testutil.Leaf("identifier", "newX")),
+			)
+			callBetaNew := testutil.Node("call_expression", "",
+				testutil.Node("selector_expression", "", testutil.Leaf("identifier", "log"), testutil.Leaf("field_identifier", "Info")),
+				testutil.Node("argument_list", "", testutil.Leaf("interpreted_string_literal", `"beta"`), testutil.Leaf("identifier", "newY")),
+			)
+			dstArgs := testutil.Node("argument_list", "", callTracer, callAlphaNew, callBetaNew)
+			dstArgs.Language = "go"
+
+			m := NewMapping()
+			m.Add(srcArgs, dstArgs)
+
+			SimpleRecovery(srcArgs, dstArgs, m)
+
+			if got := m.Src()[callAlphaOld]; got != callAlphaNew {
+				t.Errorf("callAlphaOld mapped to %v, want %v (domino cascade occurred)", got, callAlphaNew)
+			}
+			if got := m.Src()[callBetaOld]; got != callBetaNew {
+				t.Errorf("callBetaOld mapped to %v, want %v (domino cascade occurred)", got, callBetaNew)
+			}
+			if m.HasDst(callTracer) {
+				t.Errorf("callTracer should remain unmapped, got %v", m.Dst()[callTracer])
+			}
+		})
+
+		t.Run("CalleeCompatibilityGate", func(t *testing.T) {
+			// Disjoint callees sharing boilerplate tokens (ctx, nil) must not pair.
+			callAudit := testutil.Node("call_expression", "",
+				testutil.Leaf("identifier", "auditLog"),
+				testutil.Node("argument_list", "", testutil.Leaf("identifier", "ctx"), testutil.Leaf("nil", "nil")),
+			)
+			callMetrics := testutil.Node("call_expression", "",
+				testutil.Leaf("identifier", "metricsRecord"),
+				testutil.Node("argument_list", "", testutil.Leaf("identifier", "ctx"), testutil.Leaf("nil", "nil")),
+			)
+			srcArgs := testutil.Node("argument_list", "", callAudit)
+			dstArgs := testutil.Node("argument_list", "", callMetrics)
+			srcArgs.Language = "go"
+			dstArgs.Language = "go"
+
+			m := NewMapping()
+			m.Add(srcArgs, dstArgs)
+
+			SimpleRecovery(srcArgs, dstArgs, m)
+
+			if m.Has(callAudit) || m.HasDst(callMetrics) {
+				t.Errorf("calls with disjoint callees should not pair: audit=%v, metrics=%v",
+					m.Src()[callAudit], m.Dst()[callMetrics])
+			}
+		})
+
+		t.Run("TopDown_CrossStatementDredgingGuard", func(t *testing.T) {
+			// Leaves inside a statement must not be dredged by TopDown across statement
+			// boundaries into an untouched Group 1 statement.
+			srcLeaf := testutil.Leaf("identifier", "oldCond")
+			srcStmt := testutil.Node("short_var_declaration", "",
+				testutil.Leaf("identifier", "bin1"),
+				testutil.Leaf(":=", ":="),
+				testutil.Node("call_expression", "", testutil.Leaf("identifier", "testutil"), srcLeaf),
+			)
+			srcFunc := testutil.Node("function_declaration", "myTest",
+				testutil.Leaf("identifier", "myTest"),
+				testutil.Node("block", "", srcStmt),
+			)
+			srcStmt.StartRow, srcStmt.EndRow = 10, 10
+			srcLeaf.StartRow, srcLeaf.EndRow = 10, 10
+			srcFunc.StartRow, srcFunc.EndRow = 1, 20
+			srcFunc.Language = "go"
+
+			dstLeaf := testutil.Leaf("identifier", "oldCond")
+			dstStmt := testutil.Node("short_var_declaration", "",
+				testutil.Leaf("identifier", "foreignTarget"),
+				testutil.Leaf(":=", ":="),
+				testutil.Node("call_expression", "", testutil.Leaf("identifier", "testutil"), dstLeaf),
+			)
+			dstFunc := testutil.Node("function_declaration", "myTest",
+				testutil.Leaf("identifier", "myTest"),
+				testutil.Node("block", "", dstStmt),
+			)
+			dstStmt.StartRow, dstStmt.EndRow = 50, 50
+			dstLeaf.StartRow, dstLeaf.EndRow = 50, 50
+			dstFunc.StartRow, dstFunc.EndRow = 1, 60
+			dstFunc.Language = "go"
+
+			part := NewLinePartition(
+				[]byte("package myTest\n\nfunc myTest() {\n\tbin1 := testutil(oldCond)\n}\n"),
+				[]byte("package myTest\n\n// foreign header comments\n\nfunc myTest() {\n\tforeignTarget := testutil(oldCond)\n}\n"),
+			)
+
+			m := NewMapping()
+			m.Add(srcFunc, dstFunc)
+			TopDown(srcFunc, dstFunc, 1, m, part)
+
+			if m.Src()[srcLeaf] != nil {
+				t.Errorf("srcLeaf in edited statement was stolen by dstLeaf in stationary statement: %v", m.Src()[srcLeaf])
+			}
+		})
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package engine
+
+func TestRevokeOrphanedGlue(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		stmt1 := testutil.Node("if_statement", "")
+		bin1 := testutil.Node("binary_expression", "",
+			testutil.Leaf("identifier", "sText"),
+			testutil.Leaf("logical_operator_literal", "||"),
+			testutil.Leaf("identifier", "oldCond"),
+		)
+		stmt1.Children = []*treesitter.ASTNode{bin1}
+		bin1.Parent = stmt1
+	})
+}
+`
+		dst := `package engine
+
+func TestRevokeOrphanedGlue(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		stmt1 := testutil.Node("if_statement", "")
+		bin1 := testutil.Node("binary_expression", "",
+			testutil.NodeAt("identifier", "sText", 0, 5),
+			testutil.NodeAt("logical_operator_literal", "||", 6, 8),
+			testutil.NodeAt("identifier", "oldCond", 9, 16),
+		)
+		stmt1.Children = []*treesitter.ASTNode{bin1}
+		bin1.Parent = stmt1
+	})
+}
+`
+		srcBytes := []byte(src)
+		dstBytes := []byte(dst)
+
+		srcAST, err := treesitter.Parse(srcBytes, "glue_test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "glue_test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		// 1. Enclosing Context: Function declaration, parameters, t.Run call and closure
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "TestRevokeOrphanedGlue" {
+						srcFunc = n
+						break
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "TestRevokeOrphanedGlue" {
+						dstFunc = n
+						break
+					}
+				}
+			}
+		}
+		if srcFunc == nil || dstFunc == nil {
+			t.Fatalf("missing TestRevokeOrphanedGlue: src=%v, dst=%v", srcFunc, dstFunc)
+		}
+		if mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("expected function TestRevokeOrphanedGlue to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+
+		// 2. Surrounding Sequence: stmt1 := ... and stmt1.Children = ... and bin1.Parent = stmt1
+		var srcStmt1, dstStmt1, srcAssignChild, dstAssignChild, srcAssignParent, dstAssignParent *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				switch n.StartRow {
+				case 4:
+					srcStmt1 = n
+				case 10:
+					srcAssignChild = n
+				case 11:
+					srcAssignParent = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				switch n.StartRow {
+				case 4:
+					dstStmt1 = n
+				case 10:
+					dstAssignChild = n
+				case 11:
+					dstAssignParent = n
+				}
+			}
+		}
+		if srcStmt1 == nil || dstStmt1 == nil || srcAssignChild == nil || dstAssignChild == nil || srcAssignParent == nil || dstAssignParent == nil {
+			t.Fatalf("missing surrounding statements: stmt1=(%v,%v), child=(%v,%v), parent=(%v,%v)",
+				srcStmt1, dstStmt1, srcAssignChild, dstAssignChild, srcAssignParent, dstAssignParent)
+		}
+		if mr.Mappings.Src()[srcStmt1] != dstStmt1 {
+			t.Errorf("expected stmt1 declaration to map in place, got %v", mr.Mappings.Src()[srcStmt1])
+		}
+		if mr.Mappings.Src()[srcAssignChild] != dstAssignChild {
+			t.Errorf("expected stmt1.Children assignment to map in place, got %v", mr.Mappings.Src()[srcAssignChild])
+		}
+		if mr.Mappings.Src()[srcAssignParent] != dstAssignParent {
+			t.Errorf("expected bin1.Parent assignment to map in place, got %v", mr.Mappings.Src()[srcAssignParent])
+		}
+
+		// 3. Target & Containers: bin1 outer call and argument_list
+		var srcBinCall, dstBinCall, srcBinArgs, dstBinArgs *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && n.StartRow == 5 {
+				srcBinCall = n
+				for _, c := range n.Children {
+					if r.IsDelimitedContainer(c.Type) {
+						srcBinArgs = c
+					}
+				}
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && n.StartRow == 5 {
+				dstBinCall = n
+				for _, c := range n.Children {
+					if r.IsDelimitedContainer(c.Type) {
+						dstBinArgs = c
+					}
+				}
+				break
+			}
+		}
+		if srcBinCall == nil || dstBinCall == nil || srcBinArgs == nil || dstBinArgs == nil {
+			t.Fatalf("missing bin1 call or argument list: srcCall=%v, dstCall=%v, srcArgs=%v, dstArgs=%v",
+				srcBinCall, dstBinCall, srcBinArgs, dstBinArgs)
+		}
+		if mr.Mappings.Src()[srcBinCall] != dstBinCall {
+			t.Errorf("expected outer testutil.Node call to map in place, got %v", mr.Mappings.Src()[srcBinCall])
+		}
+		if mr.Mappings.Src()[srcBinArgs] != dstBinArgs {
+			t.Errorf("expected outer argument_list to map in place, got %v", mr.Mappings.Src()[srcBinArgs])
+		}
+
+		// 4. Sibling Calls: testutil.Leaf(...) <-> testutil.NodeAt(...)
+		var srcSiblingCalls, dstSiblingCalls []*treesitter.ASTNode
+		for _, c := range srcBinArgs.Children {
+			if r.IsCall(c.Type) {
+				srcSiblingCalls = append(srcSiblingCalls, c)
+			}
+		}
+		for _, c := range dstBinArgs.Children {
+			if r.IsCall(c.Type) {
+				dstSiblingCalls = append(dstSiblingCalls, c)
+			}
+		}
+		if len(srcSiblingCalls) != 3 || len(dstSiblingCalls) != 3 {
+			t.Fatalf("expected 3 sibling calls on both sides, got src=%d, dst=%d",
+				len(srcSiblingCalls), len(dstSiblingCalls))
+		}
+
+		for i := range 3 {
+			sCall := srcSiblingCalls[i]
+			dCall := dstSiblingCalls[i]
+			if mr.Mappings.Src()[sCall] != dCall {
+				t.Errorf("expected sibling call %d to map in place, got %v, want %v",
+					i, mr.Mappings.Src()[sCall], dCall)
+			}
+		}
+
+		// 5. Stationary Operands: "identifier", "sText", "logical_operator_literal", "||", "oldCond"
+		stationaryTokens := []string{`"binary_expression"`, `""`, `"identifier"`, `"sText"`, `"logical_operator_literal"`, `"||"`, `"oldCond"`}
+		for _, tok := range stationaryTokens {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range srcBinCall.Descendants() {
+				if n.Label == tok {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range dstBinCall.Descendants() {
+				if n.Label == tok {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil {
+				t.Fatalf("token %s missing: src=%v, dst=%v", tok, sNode, dNode)
+			}
+			if mr.Mappings.Src()[sNode] != dNode {
+				t.Errorf("expected stationary token %s to map in place, got %v", tok, mr.Mappings.Src()[sNode])
+			}
+		}
+
+		// 6. Granular evolution: "Leaf" and "NodeAt" callees update, new numeric offsets inserted
+		for _, offsetStr := range []string{"0", "5", "6", "8", "9", "16"} {
+			var offNode *treesitter.ASTNode
+			for _, n := range dstBinCall.Descendants() {
+				if n.Label == offsetStr {
+					offNode = n
+					break
+				}
+			}
+			if offNode == nil {
+				t.Fatalf("offset token %s missing in dst", offsetStr)
+			}
+			if mr.Mappings.Dst()[offNode] != nil {
+				t.Errorf("inserted offset token %s should be unmapped, got %v", offsetStr, mr.Mappings.Dst()[offNode])
+			}
+		}
+	})
+}
