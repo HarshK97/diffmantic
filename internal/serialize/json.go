@@ -1015,7 +1015,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			}
 		}
 
-		if r != nil && r.IsWrapper(n.Type) {
+		if r != nil && r.IsWrapper(n.Type) && !r.IsDeclaration(n.Type) {
 			firstChild := n.Children[0]
 			if firstChild.StartByte > *start && firstChild.StartByte < *end {
 				origEnd := *end
@@ -1028,6 +1028,32 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstChild.StartByte && lastChild.EndByte < origEnd {
+					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
+						return true, lastChild.EndByte, origEnd
+					}
+				}
+				return false, 0, 0
+			}
+			// For wrappers starting with a prefix identifier (like tuple_struct_pattern or class_pattern), the delimiter begins after it.
+			if firstChild.StartByte == *start && firstChild.EndByte < *end {
+				*start = firstChild.EndByte
+				if len(n.Children) <= 1 {
+					return false, 0, 0
+				}
+				firstInner := n.Children[1]
+				if firstInner.StartByte <= *start || firstInner.StartByte > *end {
+					return false, 0, 0
+				}
+				origEnd := *end
+				*end = firstInner.StartByte
+				if len(firstInner.LeadingTrivia) > 0 && firstInner.LeadingTrivia[0].StartByte > *start && firstInner.LeadingTrivia[0].StartByte < *end {
+					*end = firstInner.LeadingTrivia[0].StartByte
+				}
+				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
+					return true, trivia.ClosingStart, trivia.ClosingEnd
+				}
+				lastChild := n.Children[len(n.Children)-1]
+				if lastChild.EndByte > firstInner.StartByte && lastChild.EndByte < origEnd {
 					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
 						return true, lastChild.EndByte, origEnd
 					}

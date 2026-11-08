@@ -2374,3 +2374,303 @@ pub fn run() {}
 		}
 	})
 }
+
+func TestStationaryPatternWrapper(t *testing.T) {
+	t.Run("Rust_FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules for rust not found")
+		}
+		src := []byte(`fn get_style(state: State) -> &'static Style {
+    match state {
+        State::HunkPlus(_) => &self.plus_style,
+        State::CommitMeta => &self.commit_style,
+        State::FileMeta => &self.file_style,
+        State::HunkHeader => &self.hunk_header_style,
+        _ => unreachable!(),
+    }
+}
+`)
+		dst := []byte(`fn get_style(state: State) -> &'static Style {
+    match state {
+        State::HunkPlus(_) => &self.plus_style,
+        State::CommitMeta => &self.commit_style,
+        State::FileMeta => &self.file_style,
+        State::HunkHeader(_, _) => &self.hunk_header_style,
+        State::SubmoduleLog => &self.file_style,
+        _ => unreachable!(),
+    }
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: function get_style and parameter state map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function get_style to map in place")
+		}
+
+		// 2. Surrounding sequence: HunkPlus, CommitMeta, FileMeta, and default wildcard map in place.
+		for _, label := range []string{"HunkPlus", "CommitMeta", "FileMeta"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if n.Label == label {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if n.Label == label {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil || matchResult.Mappings.Src()[sNode] != dNode {
+				t.Errorf("expected surrounding arm %s to map in place", label)
+			}
+		}
+
+		// 3. Target & wrappers: State::HunkHeader stays matched without Move or Delete actions.
+		var srcHunkHeader, dstHunkHeader *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "HunkHeader" {
+				srcHunkHeader = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "HunkHeader" {
+				dstHunkHeader = n
+				break
+			}
+		}
+		if srcHunkHeader == nil || dstHunkHeader == nil || matchResult.Mappings.Src()[srcHunkHeader] != dstHunkHeader {
+			t.Fatalf("expected HunkHeader identifier to map in place")
+		}
+
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && (a.Node == srcHunkHeader || a.Node == dstHunkHeader) {
+				t.Errorf("unexpected action on HunkHeader: %v", a)
+			}
+		}
+
+		// 4. Target & insertions: tuple_struct_pattern and SubmoduleLog are inserted.
+		var foundTupleStructInsert, foundSubmoduleLogInsert bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Insert && a.Node != nil {
+				if r.IsWrapper(a.Node.Type) && a.Node.Type == "tuple_struct_pattern" {
+					foundTupleStructInsert = true
+				}
+				if a.Node.Type == "match_arm" && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "SubmoduleLog") {
+					foundSubmoduleLogInsert = true
+				}
+			}
+		}
+		if !foundTupleStructInsert {
+			t.Errorf("expected tuple_struct_pattern to be inserted")
+		}
+		if !foundSubmoduleLogInsert {
+			t.Errorf("expected SubmoduleLog to be inserted")
+		}
+
+		// 5. Stationary operands: hunk_header_style arm body maps in place.
+		var srcStyle, dstStyle *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "hunk_header_style" {
+				srcStyle = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "hunk_header_style" {
+				dstStyle = n
+				break
+			}
+		}
+		if srcStyle == nil || dstStyle == nil || matchResult.Mappings.Src()[srcStyle] != dstStyle {
+			t.Errorf("expected hunk_header_style to map in place")
+		}
+	})
+
+	t.Run("Python_FullEngine", func(t *testing.T) {
+		pyRules := rules.Get("python")
+		if pyRules == nil {
+			t.Fatal("rules for python not found")
+		}
+
+		src := []byte(`def get_style(state):
+    match state:
+        case State.HUNK_PLUS:
+            return self.plus_style
+        case State.COMMIT_META:
+            return self.commit_style
+        case State.FILE_META:
+            return self.file_style
+        case State.HUNK_HEADER:
+            return self.hunk_header_style
+        case _:
+            pass
+`)
+		dst := []byte(`def get_style(state):
+    match state:
+        case State.HUNK_PLUS:
+            return self.plus_style
+        case State.COMMIT_META:
+            return self.commit_style
+        case State.FILE_META:
+            return self.file_style
+        case State.HUNK_HEADER(a, b):
+            return self.hunk_header_style
+        case State.SUBMODULE_LOG:
+            return self.file_style
+        case _:
+            pass
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.py")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.py")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatalf("Match returned nil or missing Mappings")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: function get_style maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if pyRules.IsDeclaration(n.Type) && n.Type == "function_definition" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if pyRules.IsDeclaration(n.Type) && n.Type == "function_definition" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function get_style to map in place")
+		}
+
+		// 2. Surrounding sequence: HUNK_PLUS, COMMIT_META, FILE_META map in place.
+		for _, label := range []string{"HUNK_PLUS", "COMMIT_META", "FILE_META"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if n.Label == label {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if n.Label == label {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil || matchResult.Mappings.Src()[sNode] != dNode {
+				t.Errorf("expected surrounding arm %s to map in place", label)
+			}
+		}
+
+		// 3. Target & wrappers: State.HUNK_HEADER identifier stays matched without Move or Delete actions.
+		var srcHunkHeader, dstHunkHeader *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "HUNK_HEADER" {
+				srcHunkHeader = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "HUNK_HEADER" {
+				dstHunkHeader = n
+				break
+			}
+		}
+		if srcHunkHeader == nil || dstHunkHeader == nil || matchResult.Mappings.Src()[srcHunkHeader] != dstHunkHeader {
+			t.Fatalf("expected HUNK_HEADER identifier to map in place")
+		}
+
+		for _, a := range normalized.Actions() {
+			if a.Node != nil && (a.Node == srcHunkHeader || a.Node == dstHunkHeader) {
+				t.Errorf("unexpected action on HUNK_HEADER: %v", a)
+			}
+		}
+
+		// 4. Target & insertions: class_pattern and SUBMODULE_LOG are inserted.
+		var foundClassPatternInsert, foundSubmoduleLogInsert bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Insert && a.Node != nil {
+				if pyRules.IsWrapper(a.Node.Type) && a.Node.Type == "class_pattern" {
+					foundClassPatternInsert = true
+				}
+				if a.Node.Type == "case_clause" && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "SUBMODULE_LOG") {
+					foundSubmoduleLogInsert = true
+				}
+			}
+		}
+		if !foundClassPatternInsert {
+			t.Errorf("expected class_pattern to be inserted")
+		}
+		if !foundSubmoduleLogInsert {
+			t.Errorf("expected SUBMODULE_LOG to be inserted")
+		}
+
+		// 5. Stationary operands: hunk_header_style arm body maps in place.
+		var srcStyle, dstStyle *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "hunk_header_style" {
+				srcStyle = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "hunk_header_style" {
+				dstStyle = n
+				break
+			}
+		}
+		if srcStyle == nil || dstStyle == nil || matchResult.Mappings.Src()[srcStyle] != dstStyle {
+			t.Errorf("expected hunk_header_style to map in place")
+		}
+	})
+}

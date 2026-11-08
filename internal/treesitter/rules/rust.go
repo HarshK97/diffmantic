@@ -184,6 +184,8 @@ var rustRules = &Rules{
 		"parameters",
 		"scoped_use_list",
 		"use_list",
+		"tuple_pattern",
+		"tuple_struct_pattern",
 	},
 	Pairs: []string{
 		"field_initializer",

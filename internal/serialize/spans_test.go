@@ -1895,3 +1895,147 @@ func process() error {
 		}
 	})
 }
+
+func TestBuildHighlightSpans_PatternWrapperHighlight_FullEngine(t *testing.T) {
+	oldSrc := `fn get_style(state: State) -> &'static Style {
+    match state {
+        State::HunkPlus(_) => &self.plus_style,
+        State::CommitMeta => &self.commit_style,
+        State::FileMeta => &self.file_style,
+        State::HunkHeader => &self.hunk_header_style,
+        _ => unreachable!(),
+    }
+}
+`
+	newSrc := `fn get_style(state: State) -> &'static Style {
+    match state {
+        State::HunkPlus(_) => &self.plus_style,
+        State::CommitMeta => &self.commit_style,
+        State::FileMeta => &self.file_style,
+        State::HunkHeader(_, _) => &self.hunk_header_style,
+        State::SubmoduleLog => &self.file_style,
+        _ => unreachable!(),
+    }
+}
+`
+	oldAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+	if err != nil {
+		t.Fatalf("parse oldSrc: %v", err)
+	}
+	newAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+	if err != nil {
+		t.Fatalf("parse newSrc: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+	mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+	es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+	es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+	env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+		IncludeHighlights: true,
+		IncludeActions:    true,
+	})
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// State::HunkHeader stays unhighlighted as context; only (_, _) is inserted.
+	var line5Highlights []HighlightSpan
+	for _, h := range env.RightHighlights {
+		if h.Line == 5 {
+			line5Highlights = append(line5Highlights, h)
+		}
+	}
+	if len(line5Highlights) == 0 {
+		t.Fatalf("expected right highlight spans on line 5 for '(_, _)', got 0")
+	}
+	var foundParensInsert bool
+	for _, h := range line5Highlights {
+		if h.StartCol < 25 {
+			t.Errorf("expected State::HunkHeader (cols 8..25) to have no highlight, got span [%d..%d] (%s)", h.StartCol, h.EndCol, h.Action)
+		}
+		if h.StartCol >= 25 && h.Action == "insert" {
+			foundParensInsert = true
+		}
+	}
+	if !foundParensInsert {
+		t.Errorf("expected insert highlight on '(_, _)' on line 5")
+	}
+}
+
+func TestBuildHighlightSpans_PythonPatternWrapperHighlight_FullEngine(t *testing.T) {
+	oldSrc := `def get_style(state):
+    match state:
+        case State.HUNK_PLUS:
+            return self.plus_style
+        case State.COMMIT_META:
+            return self.commit_style
+        case State.FILE_META:
+            return self.file_style
+        case State.HUNK_HEADER:
+            return self.hunk_header_style
+        case _:
+            pass
+`
+	newSrc := `def get_style(state):
+    match state:
+        case State.HUNK_PLUS:
+            return self.plus_style
+        case State.COMMIT_META:
+            return self.commit_style
+        case State.FILE_META:
+            return self.file_style
+        case State.HUNK_HEADER(a, b):
+            return self.hunk_header_style
+        case State.SUBMODULE_LOG:
+            return self.file_style
+        case _:
+            pass
+`
+	oldAST, err := treesitter.Parse([]byte(oldSrc), "test.py")
+	if err != nil {
+		t.Fatalf("parse oldSrc: %v", err)
+	}
+	newAST, err := treesitter.Parse([]byte(newSrc), "test.py")
+	if err != nil {
+		t.Fatalf("parse newSrc: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+	mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+	es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+	es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+	env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+		IncludeHighlights: true,
+		IncludeActions:    true,
+	})
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// Line 9 (0-indexed line 8: `        case State.HUNK_HEADER(a, b):`)
+	// State.HUNK_HEADER (cols 13..30) stays unhighlighted as context; only (a, b) is inserted.
+	var line8Highlights []HighlightSpan
+	for _, h := range env.RightHighlights {
+		if h.Line == 8 {
+			line8Highlights = append(line8Highlights, h)
+		}
+	}
+	if len(line8Highlights) == 0 {
+		t.Fatalf("expected right highlight spans on line 8 for '(a, b)', got 0")
+	}
+	var foundParensInsert bool
+	for _, h := range line8Highlights {
+		if h.StartCol < 30 {
+			t.Errorf("expected State.HUNK_HEADER (cols 13..30) to have no highlight, got span [%d..%d] (%s)", h.StartCol, h.EndCol, h.Action)
+		}
+		if h.StartCol >= 30 && h.Action == "insert" {
+			foundParensInsert = true
+		}
+	}
+	if !foundParensInsert {
+		t.Errorf("expected insert highlight on '(a, b)' on line 8")
+	}
+}
