@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,9 @@ import (
 
 // ErrBatchSessionPoisoned is returned when repeated errors poison the batch session.
 var ErrBatchSessionPoisoned = errors.New("git batch session is poisoned after repeated errors")
+
+// ErrNotGitRepository indicates that cwd does not contain a Git repository.
+var ErrNotGitRepository = errors.New("not a git repository")
 
 // BatchSession keeps a git cat-file --batch process open to fetch blobs
 // sequentially without spawning a new process per object.
@@ -33,6 +37,16 @@ type BatchSession struct {
 
 // StartBatchSession starts a git cat-file --batch process in cwd.
 func StartBatchSession(cwd string) (*BatchSession, error) {
+	if FindRepoRoot(cwd) == "" {
+		// Bare repos have HEAD and objects/ directly in cwd without a .git directory.
+		if _, err := os.Stat(filepath.Join(cwd, "HEAD")); err != nil {
+			return nil, ErrNotGitRepository
+		}
+		if _, err := os.Stat(filepath.Join(cwd, "objects")); err != nil {
+			return nil, ErrNotGitRepository
+		}
+	}
+
 	sandboxMu.RLock()
 	isSandboxed := sandboxDetected
 	sandboxMu.RUnlock()
