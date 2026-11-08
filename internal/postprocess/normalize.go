@@ -343,6 +343,9 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 	if isStationaryExpressionMove(src, dst, ms, r, evicted) {
 		return false
 	}
+	if isBlockTailSemicolonTransition(src, dst, ms, r) {
+		return false
+	}
 
 	if isIsolatedLeafCrossStatementMove(src, dst, ms, r) {
 		return true

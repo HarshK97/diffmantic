@@ -236,6 +236,20 @@ func suppressInlineParentRedundancy(
 		checkDst := len(inserted) > 0
 		for _, p := range ms.Pairs {
 			if p.Src != nil && p.Dst != nil {
+				r := rules.Get(p.Dst.GetLanguage())
+				if isBlockTailSemicolonTransition(p.Src, p.Dst, ms, r) {
+					if checkDst && r.IsExpressionStatement(p.Dst.Parent.Type) {
+						if parentAct := inserted[p.Dst.Parent]; parentAct != nil {
+							suppressed[parentAct] = true
+						}
+					}
+					if checkSrc && r.IsExpressionStatement(p.Src.Parent.Type) {
+						if parentAct := deleted[p.Src.Parent]; parentAct != nil {
+							suppressed[parentAct] = true
+						}
+					}
+					continue
+				}
 				if checkSrc && p.Src.StartRow == p.Src.EndRow {
 					suppressCoextensiveWrappers(p.Src, deleted, suppressed)
 				}
