@@ -130,6 +130,10 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 	const maxUnwrapDepth = 3
 	srcDepth := 0
 	for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil && srcDepth < maxUnwrapDepth {
+		// Stop climbing once we have reached the common mapped container.
+		if ms.Src()[srcBase] == dstBase {
+			break
+		}
 		srcChild = srcBase
 		srcBase = srcBase.Parent
 		srcDepth++
@@ -137,6 +141,10 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	dstDepth := 0
 	for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil && dstDepth < maxUnwrapDepth {
+		// Stop climbing once we have reached the common mapped container.
+		if ms.Dst()[dstBase] == srcBase {
+			break
+		}
 		dstChild = dstBase
 		dstBase = dstBase.Parent
 		dstDepth++
