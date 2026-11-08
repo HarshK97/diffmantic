@@ -4412,3 +4412,132 @@ func TestStationaryGenericTypeWrapperUnwrap(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("missing rust rules")
+		}
+
+		src := []byte(`pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
+    let matched_lines = 1;
+    compact_gaps(&ensure_contiguous(&matched_lines));
+    finish_processing();
+}
+`)
+		dst := []byte(`pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
+    let matched_lines = 1;
+    compact_gaps(&ensure_contiguous(&match_preceding_blanks(
+        &matched_lines,
+        lhs_lines,
+        rhs_lines,
+    )));
+    finish_processing();
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "src.rs")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "dst.rs")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: function_item maps in place with zero edit actions.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Parent == srcAST {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Parent == dstAST {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing function declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place, got %v", matchResult.Mappings.Src()[srcFn])
+		}
+
+		// 2. Surrounding sequence: preceding and following statements map in place.
+		var srcLet, dstLet *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				srcLet = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				dstLet = n
+				break
+			}
+		}
+		if srcLet == nil || dstLet == nil || matchResult.Mappings.Src()[srcLet] != dstLet {
+			t.Errorf("expected preceding let declaration to map in place")
+		}
+
+		var srcFinish, dstFinish *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finish_processing") {
+				srcFinish = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finish_processing") {
+				dstFinish = n
+				break
+			}
+		}
+		if srcFinish == nil || dstFinish == nil || matchResult.Mappings.Src()[srcFinish] != dstFinish {
+			t.Errorf("expected following call finish_processing to map in place")
+		}
+
+		// 3. Target call compact_gaps maps in place.
+		var srcCall, dstCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "compact_gaps") {
+				srcCall = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "compact_gaps") {
+				dstCall = n
+				break
+			}
+		}
+		if srcCall == nil || dstCall == nil || matchResult.Mappings.Src()[srcCall] != dstCall {
+			t.Errorf("expected compact_gaps call to map in place")
+		}
+
+		// 4. Stationary operand: &matched_lines must NOT be emitted as a Move.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move {
+				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
+				t.Errorf("expected no Move actions for stationary argument, got Move on %s: %q", a.Node.Type, nodeText)
+			}
+		}
+	})
+}
