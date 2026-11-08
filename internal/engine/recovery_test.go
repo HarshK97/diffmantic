@@ -4658,3 +4658,160 @@ func TestZigBuiltinCallEquivalenceRecovery(t *testing.T) {
 		}
 	})
 }
+
+func TestRustPairValueCallToMacroReplacement(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn make_config(opt: &Options) -> Config {
+    Config {
+        tab_width: opt.tab_width,
+        truncation_symbol: "→".to_string(),
+        zero_style: opt.zero_style,
+    }
+}
+`
+		newSrc := `fn make_config(opt: &Options) -> Config {
+    Config {
+        tab_width: opt.tab_width,
+        truncation_symbol: format!("{}→{}", 1, 2),
+        zero_style: opt.zero_style,
+    }
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: enclosing function and its body block map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "make_config") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "make_config") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected make_config fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: preceding tab_width and succeeding zero_style fields map in place.
+		for _, fieldName := range []string{"tab_width", "zero_style"} {
+			var srcField, dstField *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == fieldName {
+					srcField = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == fieldName {
+					dstField = n
+					break
+				}
+			}
+			if srcField == nil || dstField == nil || mapped[srcField] != dstField {
+				t.Fatalf("expected field %s to map in place, got src=%v dst=%v mapped=%v", fieldName, srcField, dstField, mapped[srcField])
+			}
+		}
+
+		// 3. Target & Containers:
+		// Target pair truncation_symbol maps to truncation_symbol.
+		var srcTargetPair, dstTargetPair *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsPair(n.Type) && getKeyLabel(n) == "truncation_symbol" {
+				srcTargetPair = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsPair(n.Type) && getKeyLabel(n) == "truncation_symbol" {
+				dstTargetPair = n
+				break
+			}
+		}
+		if srcTargetPair == nil || dstTargetPair == nil {
+			t.Fatalf("failed to locate truncation_symbol pair: src=%v dst=%v", srcTargetPair, dstTargetPair)
+		}
+		if mapped[srcTargetPair] != dstTargetPair {
+			t.Fatalf("expected truncation_symbol pair to map in place, got %v", mapped[srcTargetPair])
+		}
+
+		// Key identifiers must map.
+		if len(srcTargetPair.Children) == 0 || len(dstTargetPair.Children) == 0 {
+			t.Fatalf("target pairs missing children: src=%d dst=%d", len(srcTargetPair.Children), len(dstTargetPair.Children))
+		}
+		srcKey := srcTargetPair.Children[0]
+		dstKey := dstTargetPair.Children[0]
+		if mapped[srcKey] != dstKey {
+			t.Errorf("expected field key to map in place, got %v", mapped[srcKey])
+		}
+
+		// Replaced value: call_expression ("→".to_string()) and arguments (()) must remain unmapped,
+		// and macro_invocation (format!(...)) and token_tree must remain unmapped.
+		var srcCall, srcArgs *treesitter.ASTNode
+		for _, c := range srcTargetPair.Descendants() {
+			if r.IsCall(c.Type) {
+				srcCall = c
+			} else if r.IsDelimitedContainer(c.Type) || r.IsWrapper(c.Type) {
+				srcArgs = c
+			}
+		}
+		var dstMacro, dstTree *treesitter.ASTNode
+		for _, c := range dstTargetPair.Descendants() {
+			if r.IsCall(c.Type) {
+				dstMacro = c
+			} else if r.IsDelimitedContainer(c.Type) || r.IsWrapper(c.Type) {
+				dstTree = c
+			}
+		}
+		if srcCall == nil || srcArgs == nil || dstMacro == nil || dstTree == nil {
+			t.Fatalf("failed to locate call/macro/args: srcCall=%v srcArgs=%v dstMacro=%v dstTree=%v",
+				srcCall, srcArgs, dstMacro, dstTree)
+		}
+
+		if got := mapped[srcCall]; got != nil {
+			t.Errorf("expected call_expression to remain unmapped (destined for deletion), but got mapped to %v", got)
+		}
+		if got := mapped[srcArgs]; got != nil {
+			t.Errorf("expected arguments () to remain unmapped (destined for deletion), but got mapped to %v", got)
+		}
+		if got := revMapped[dstMacro]; got != nil {
+			t.Errorf("expected macro_invocation to remain unmapped (destined for insertion), but got reverse-mapped from %v", got)
+		}
+		if got := revMapped[dstTree]; got != nil {
+			t.Errorf("expected macro token_tree to remain unmapped (destined for insertion), but got reverse-mapped from %v", got)
+		}
+	})
+}
