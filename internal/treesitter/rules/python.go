@@ -158,6 +158,7 @@ var pythonRules = &Rules{
 		"function_definition",
 		"class_definition",
 		"type_alias_statement",
+		"decorated_definition",
 	},
 	Imports: []string{
 		"import_statement",

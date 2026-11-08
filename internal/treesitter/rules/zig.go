@@ -124,6 +124,7 @@ var zigRules = &Rules{
 		"error_set_declaration",
 		"test_declaration",
 		"using_namespace_declaration",
+		"container_field",
 	},
 	Identifiers: []string{
 		"identifier",

@@ -387,4 +387,8 @@ var cppRules = &Rules{
 		"preproc_include",
 		"using_declaration",
 	},
+	Attributes: []string{
+		"attribute_specifier",
+		"attribute_declaration",
+	},
 }

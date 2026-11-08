@@ -289,4 +289,7 @@ var cRules = &Rules{
 	Imports: []string{
 		"preproc_include",
 	},
+	Attributes: []string{
+		"attribute_specifier",
+	},
 }

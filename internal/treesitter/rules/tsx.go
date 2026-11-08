@@ -418,4 +418,7 @@ var tsxRules = &Rules{
 	Imports: []string{
 		"import_statement",
 	},
+	Attributes: []string{
+		"decorator",
+	},
 }
