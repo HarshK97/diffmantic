@@ -185,43 +185,49 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		return false
 	}
 
+	type unwrapStep struct {
+		base  *treesitter.ASTNode
+		child *treesitter.ASTNode
+	}
+
 	const maxUnwrapDepth = 3
-	srcDepth := 0
-	for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil && srcDepth < maxUnwrapDepth {
-		// Stop climbing once we have reached the common mapped container.
-		if ms.Src()[srcBase] == dstBase {
-			break
-		}
+
+	srcSteps := []unwrapStep{{base: srcBase, child: srcChild}}
+	for canUnwrap(srcBase, srcChild, false) && srcBase.Parent != nil && len(srcSteps) <= maxUnwrapDepth {
 		srcChild = srcBase
 		srcBase = srcBase.Parent
-		srcDepth++
+		srcSteps = append(srcSteps, unwrapStep{base: srcBase, child: srcChild})
 	}
 
-	dstDepth := 0
-	for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil && dstDepth < maxUnwrapDepth {
-		// Stop climbing once we have reached the common mapped container.
-		if ms.Dst()[dstBase] == srcBase {
-			break
-		}
+	dstSteps := []unwrapStep{{base: dstBase, child: dstChild}}
+	for canUnwrap(dstBase, dstChild, true) && dstBase.Parent != nil && len(dstSteps) <= maxUnwrapDepth {
 		dstChild = dstBase
 		dstBase = dstBase.Parent
-		dstDepth++
+		dstSteps = append(dstSteps, unwrapStep{base: dstBase, child: dstChild})
 	}
 
-	// Different unwrap depths mean code moved into or out of nesting instead of staying put.
-	if srcDepth > 0 && dstDepth > 0 && max(srcDepth, dstDepth)-min(srcDepth, dstDepth) > 1 {
-		return false
-	}
-
-	isStationaryPos := srcChild.ChildIndex() == dstChild.ChildIndex() ||
-		(srcChild.ChildIndex() == len(srcBase.Children)-1 && dstChild.ChildIndex() == len(dstBase.Children)-1) ||
-		isMonotonicContainerChild(srcBase, dstBase, srcChild, dstChild, ms)
-	if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase {
-		if isStationaryPos {
-			return true
-		}
-		if (node.IsKeyword || (r != nil && r.IsKeyword(node.Type, node.Label))) && sameScopeDeclaration(srcBase, dstBase, ms, r) {
-			return true
+	for totalDepth := 1; totalDepth <= maxUnwrapDepth*2; totalDepth++ {
+		for s := 0; s <= totalDepth && s < len(srcSteps); s++ {
+			d := totalDepth - s
+			if d >= len(dstSteps) {
+				continue
+			}
+			if s > 0 && d > 0 && max(s, d)-min(s, d) > 1 {
+				continue
+			}
+			sStep := srcSteps[s]
+			dStep := dstSteps[d]
+			if ms.Src()[sStep.base] == dStep.base {
+				isStationaryPos := sStep.child.ChildIndex() == dStep.child.ChildIndex() ||
+					(sStep.child.ChildIndex() == len(sStep.base.Children)-1 && dStep.child.ChildIndex() == len(dStep.base.Children)-1) ||
+					isMonotonicContainerChild(sStep.base, dStep.base, sStep.child, dStep.child, ms)
+				if isStationaryPos {
+					return true
+				}
+				if (node.IsKeyword || (r != nil && r.IsKeyword(node.Type, node.Label))) && sameScopeDeclaration(sStep.base, dStep.base, ms, r) {
+					return true
+				}
+			}
 		}
 	}
 	return false

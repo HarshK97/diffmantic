@@ -181,6 +181,7 @@ var rustRules = &Rules{
 		"type_arguments",
 		"array_type",
 		"reference_type",
+		"reference_expression",
 		"tuple_expression",
 		"array_expression",
 		"index_expression",
