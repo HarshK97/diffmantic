@@ -1069,7 +1069,9 @@ func TestStreamNoIndex_AbsolutePaths(t *testing.T) {
 	}
 
 	outStr := out.String()
-	if !strings.Contains(outStr, fileA) || !strings.Contains(outStr, fileB) {
+	slashA := filepath.ToSlash(fileA)
+	slashB := filepath.ToSlash(fileB)
+	if !strings.Contains(outStr, slashA) || !strings.Contains(outStr, slashB) {
 		t.Errorf("expected rendered diff to reference absolute paths %q and %q, got:\n%s", fileA, fileB, outStr)
 	}
 	if strings.Contains(outStr, "index 1111111..2222222") {
