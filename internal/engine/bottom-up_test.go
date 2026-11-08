@@ -4261,3 +4261,445 @@ func formatPanel(config *Config) {
 		}
 	})
 }
+
+func TestRollupMatchedContainers_ElseClause_FullEngine(t *testing.T) {
+	tests := []struct {
+		name       string
+		lang       string
+		filename   string
+		src        string
+		dst        string
+		targetFunc string
+	}{
+		{
+			name:     "Rust",
+			lang:     "rust",
+			filename: "test.rs",
+			src: `fn process_records(flag: bool, count: i32) {
+    let mut total = 0;
+    if flag {
+        total += 1;
+    } else {
+        if count > 0 {
+            handle_batch(count);
+            total += count;
+        }
+        finish_records();
+    }
+    record_metric(total);
+}
+`,
+			dst: `fn process_records(flag: bool, count: i32) {
+    let mut total = 0;
+    if flag {
+        total += 1;
+    } else {
+        if count > 0 {
+            match as_singleton_list(count) {
+                Some(items) => {
+                    let mut split = split_records(&items, count);
+                    if split.len() > 1 {
+                        process_all(&mut split);
+                    } else {
+                        record_fallback(count);
+                    }
+                }
+                None => {
+                    record_fallback(count);
+                }
+            }
+            handle_batch(count);
+            total += count;
+        }
+        record_unchanged(count);
+    }
+    record_metric(total);
+}
+`,
+			targetFunc: "process_records",
+		},
+		{
+			name:     "C",
+			lang:     "c",
+			filename: "test.c",
+			src: `void process_records(int flag, int count) {
+    int total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            handle_batch(count);
+            total += count;
+        }
+        finish_records();
+    }
+    record_metric(total);
+}
+`,
+			dst: `void process_records(int flag, int count) {
+    int total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            if (check_extra_threshold(count)) {
+                split_and_process(count);
+                log_debug_batch(count);
+                record_entry(1);
+                record_entry(2);
+                record_entry(3);
+                record_entry(4);
+            } else if (check_secondary_threshold(count)) {
+                record_fallback(count);
+                apply_single_entry(count);
+                record_entry(5);
+                record_entry(6);
+            } else {
+                notify_worker_pool(count);
+                flush_intermediate_state(count);
+            }
+            handle_batch(count);
+            total += count;
+        }
+        record_unchanged(count);
+    }
+    record_metric(total);
+}
+`,
+			targetFunc: "process_records",
+		},
+		{
+			name:     "Cpp",
+			lang:     "cpp",
+			filename: "test.cpp",
+			src: `void process_records(bool flag, int count) {
+    int total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            handle_batch(count);
+            total += count;
+        }
+        finish_records();
+    }
+    record_metric(total);
+}
+`,
+			dst: `void process_records(bool flag, int count) {
+    int total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            if (check_extra_threshold(count)) {
+                split_and_process(count);
+                log_debug_batch(count);
+                record_entry(1);
+                record_entry(2);
+                record_entry(3);
+                record_entry(4);
+            } else if (check_secondary_threshold(count)) {
+                record_fallback(count);
+                apply_single_entry(count);
+                record_entry(5);
+                record_entry(6);
+            } else {
+                notify_worker_pool(count);
+                flush_intermediate_state(count);
+            }
+            handle_batch(count);
+            total += count;
+        }
+        record_unchanged(count);
+    }
+    record_metric(total);
+}
+`,
+			targetFunc: "process_records",
+		},
+		{
+			name:     "JavaScript",
+			lang:     "javascript",
+			filename: "test.js",
+			src: `function processRecords(flag, count) {
+    let total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            handleBatch(count);
+            total += count;
+        }
+        finishRecords();
+    }
+    recordMetric(total);
+}
+`,
+			dst: `function processRecords(flag, count) {
+    let total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            if (checkExtraThreshold(count)) {
+                splitAndProcess(count);
+                logDebugBatch(count);
+                recordEntry(1);
+                recordEntry(2);
+                recordEntry(3);
+                recordEntry(4);
+            } else if (checkSecondaryThreshold(count)) {
+                recordFallback(count);
+                applySingleEntry(count);
+                recordEntry(5);
+                recordEntry(6);
+            } else {
+                notifyWorkerPool(count);
+                flushIntermediateState(count);
+            }
+            handleBatch(count);
+            total += count;
+        }
+        recordUnchanged(count);
+    }
+    recordMetric(total);
+}
+`,
+			targetFunc: "processRecords",
+		},
+		{
+			name:     "TypeScript",
+			lang:     "typescript",
+			filename: "test.ts",
+			src: `function processRecords(flag: boolean, count: number): void {
+    let total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            handleBatch(count);
+            total += count;
+        }
+        finishRecords();
+    }
+    recordMetric(total);
+}
+`,
+			dst: `function processRecords(flag: boolean, count: number): void {
+    let total = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            if (checkExtraThreshold(count)) {
+                splitAndProcess(count);
+                logDebugBatch(count);
+                recordEntry(1);
+                recordEntry(2);
+                recordEntry(3);
+                recordEntry(4);
+            } else if (checkSecondaryThreshold(count)) {
+                recordFallback(count);
+                applySingleEntry(count);
+                recordEntry(5);
+                recordEntry(6);
+            } else {
+                notifyWorkerPool(count);
+                flushIntermediateState(count);
+            }
+            handleBatch(count);
+            total += count;
+        }
+        recordUnchanged(count);
+    }
+    recordMetric(total);
+}
+`,
+			targetFunc: "processRecords",
+		},
+		{
+			name:     "Python",
+			lang:     "python",
+			filename: "test.py",
+			src: `def process_records(flag: bool, count: int) -> None:
+    total = 0
+    if flag:
+        total += 1
+    else:
+        if count > 0:
+            handle_batch(count)
+            total += count
+        finish_records()
+    record_metric(total)
+`,
+			dst: `def process_records(flag: bool, count: int) -> None:
+    total = 0
+    if flag:
+        total += 1
+    else:
+        if count > 0:
+            if check_extra_threshold(count):
+                split_and_process(count)
+                log_debug_batch(count)
+                record_entry(1)
+                record_entry(2)
+                record_entry(3)
+                record_entry(4)
+            elif check_secondary_threshold(count):
+                record_fallback(count)
+                apply_single_entry(count)
+                record_entry(5)
+                record_entry(6)
+            else:
+                notify_worker_pool(count)
+                flush_intermediate_state(count)
+            handle_batch(count)
+            total += count
+        record_unchanged(count)
+    record_metric(total)
+`,
+			targetFunc: "process_records",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := rules.Get(tt.lang)
+			if r == nil {
+				t.Fatalf("missing rules for %s", tt.lang)
+			}
+
+			srcBytes := []byte(tt.src)
+			dstBytes := []byte(tt.dst)
+
+			srcAST, err := treesitter.Parse(srcBytes, tt.filename)
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dstBytes, tt.filename)
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+			}
+
+			part := NewLinePartition(srcBytes, dstBytes)
+			mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			// 1. Enclosing context: function declaration maps in place
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.targetFunc)) {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.targetFunc)) {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil {
+				t.Fatalf("missing target function: src=%v dst=%v", srcFn, dstFn)
+			}
+			if mr.Mappings.Src()[srcFn] != dstFn {
+				t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
+			}
+
+			// 2. Surrounding sequence: preceding total = 0 and succeeding record_metric map in place
+			var srcTotal, dstTotal *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("total")) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("0")) && (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) {
+					srcTotal = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("total")) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("0")) && (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) {
+					dstTotal = n
+					break
+				}
+			}
+			if srcTotal == nil || dstTotal == nil || mr.Mappings.Src()[srcTotal] != dstTotal {
+				t.Errorf("expected preceding total statement to map in place, got %v", mr.Mappings.Src()[srcTotal])
+			}
+
+			var srcMetric, dstMetric *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if (bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("record_metric")) || bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("recordMetric"))) && r.IsStatement(n.Type) {
+					srcMetric = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if (bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("record_metric")) || bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("recordMetric"))) && r.IsStatement(n.Type) {
+					dstMetric = n
+					break
+				}
+			}
+			if srcMetric == nil || dstMetric == nil || mr.Mappings.Src()[srcMetric] != dstMetric {
+				t.Errorf("expected succeeding record_metric statement to map in place, got %v", mr.Mappings.Src()[srcMetric])
+			}
+
+			// 3. Target clause: else_clause must map in place to dst else_clause
+			var srcElseClause, dstElseClause *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if n.Type == "else_clause" {
+					srcElseClause = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if n.Type == "else_clause" {
+					dstElseClause = n
+					break
+				}
+			}
+			if srcElseClause == nil || dstElseClause == nil {
+				t.Fatalf("missing else_clause: src=%v dst=%v", srcElseClause, dstElseClause)
+			}
+			if mr.Mappings.Src()[srcElseClause] != dstElseClause {
+				t.Errorf("expected else_clause to map in place, got %v", mr.Mappings.Src()[srcElseClause])
+			}
+
+			// 4. Alternative body block must map in place
+			srcBody := findBodyBlock(srcElseClause, r)
+			dstBody := findBodyBlock(dstElseClause, r)
+			if srcBody == nil || dstBody == nil {
+				t.Fatalf("missing body block under else_clause: src=%v dst=%v", srcBody, dstBody)
+			}
+			if mr.Mappings.Src()[srcBody] != dstBody {
+				t.Errorf("expected alternative body block to map in place, got %v", mr.Mappings.Src()[srcBody])
+			}
+
+			// 5. Stationary inner statement handle_batch must map in place
+			var srcBatch, dstBatch *treesitter.ASTNode
+			for _, n := range srcElseClause.Descendants() {
+				if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("handle_batch")) || bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("handleBatch")) {
+					if r.IsCall(n.Type) || r.IsStatement(n.Type) {
+						srcBatch = n
+						break
+					}
+				}
+			}
+			for _, n := range dstElseClause.Descendants() {
+				if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("handle_batch")) || bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("handleBatch")) {
+					if r.IsCall(n.Type) || r.IsStatement(n.Type) {
+						dstBatch = n
+						break
+					}
+				}
+			}
+			if srcBatch == nil || dstBatch == nil || mr.Mappings.Src()[srcBatch] != dstBatch {
+				t.Errorf("expected inner handle_batch to map in place, got %v", mr.Mappings.Src()[srcBatch])
+			}
+		})
+	}
+}
