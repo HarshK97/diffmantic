@@ -1756,3 +1756,79 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 		}
 	})
 }
+
+func TestDiffComments_AnchorDeletedOrRewritten(t *testing.T) {
+	t.Run("FullEngine_DeletedImportAnchorAtFileRoot", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("missing rust rules")
+		}
+
+		oldSrc := []byte(`/// This module applies rewrite rules to the command line options, in order to
+/// 1. Express deprecated usages in the new non-deprecated form
+/// 2. Implement options such as --raw which are defined to be equivalent to some set of
+///    other options.
+use std::process;
+
+use structopt::clap;
+use crate::cli;
+`)
+		newSrc := []byte(`/// This module applies rewrite rules to the command line options, in order to
+/// 1. Express deprecated usages in the new non-deprecated form
+/// 2. Implement options such as --raw which are defined to be equivalent to some set of
+///    other options.
+use structopt::clap;
+use crate::cli;
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.rs")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.rs")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 || newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		matchResult := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Surviving use declarations map in place
+		var oldClap, newClap *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(string(oldSrc[n.StartByte:n.EndByte]), "clap") {
+				oldClap = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(string(newSrc[n.StartByte:n.EndByte]), "clap") {
+				newClap = n
+				break
+			}
+		}
+		if oldClap == nil || newClap == nil || matchResult.Mappings.Src()[oldClap] != newClap {
+			t.Errorf("expected use structopt::clap to map in place")
+		}
+
+		oldComments := ExtractComments(oldAST)
+		newComments := ExtractComments(newAST)
+		if len(oldComments) != 4 || len(newComments) != 4 {
+			t.Fatalf("expected 4 comments on each side, got old=%d new=%d", len(oldComments), len(newComments))
+		}
+
+		diffRes := DiffComments(oldComments, newComments, matchResult.Mappings)
+		if len(diffRes.Actions) != 0 {
+			t.Errorf("expected 0 actions for identical file-level doc comment above deleted import, got %d actions: %+v", len(diffRes.Actions), diffRes.Actions)
+		}
+		if len(diffRes.LineMappings) == 0 {
+			t.Errorf("expected line mappings to be populated for matching comment, got none")
+		}
+	})
+}
