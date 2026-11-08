@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -1464,6 +1465,396 @@ func evaluateType(t Type, host Node) Type {
 		}
 		if dstOtherCall == nil || mr.Mappings.Dst()[dstOtherCall] != nil {
 			t.Errorf("expected newly added call containsNonMissingUndefinedType to be unmapped in src, got %v", mr.Mappings.Dst()[dstOtherCall])
+		}
+	})
+
+	t.Run("FullEngine_RustMacroEvolution", func(t *testing.T) {
+		src := `use regex::Regex;
+fn configure(opt: &Opt) {
+    let commit_regex = Regex::new(&opt.commit_regex).unwrap_or_else(|_| {
+        eprintln!(
+            "Invalid commit-regex: {}. \
+             The value must be a valid Rust regular expression. \
+             See https://docs.rs/regex.",
+            opt.commit_regex
+        );
+        process::exit(1);
+    });
+    println!("Ready: {:?}", commit_regex);
+}
+`
+		dst := `use regex::Regex;
+fn configure(opt: &Opt) {
+    let commit_regex = Regex::new(&opt.commit_regex).unwrap_or_else(|_| {
+        fatal(format!(
+            "Invalid commit-regex: {}. \
+             The value must be a valid Rust regular expression. \
+             See https://docs.rs/regex.",
+            opt.commit_regex
+        ));
+    });
+    println!("Ready: {:?}", commit_regex);
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: configure declaration and let commit_regex declaration
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function configure to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcFunc], dstFunc)
+		}
+
+		var srcLet, dstLet *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				srcLet = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				dstLet = n
+				break
+			}
+		}
+		if srcLet == nil || dstLet == nil || mr.Mappings.Src()[srcLet] != dstLet {
+			t.Fatalf("expected let commit_regex declaration to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcLet], dstLet)
+		}
+
+		// 2. Surrounding Sequence: succeeding println! statement maps in place
+		var srcReady, dstReady *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				srcReady = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				dstReady = n
+				break
+			}
+		}
+		if srcReady == nil || dstReady == nil || mr.Mappings.Src()[srcReady] != dstReady {
+			t.Errorf("expected succeeding println! statement to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcReady], dstReady)
+		}
+
+		// 3. Target & Containers: token_tree under eprintln! and format! maps in place
+		var srcTree, dstTree *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && n.Parent != nil && extractCalleeLabel(n.Parent, r) == "eprintln" {
+				srcTree = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && n.Parent != nil && extractCalleeLabel(n.Parent, r) == "format" {
+				dstTree = n
+				break
+			}
+		}
+		if srcTree == nil || dstTree == nil {
+			t.Fatalf("failed to locate token_tree: srcTree=%v, dstTree=%v", srcTree, dstTree)
+		}
+		if mr.Mappings.Src()[srcTree] != dstTree {
+			t.Fatalf("expected token_tree to map in place across eprintln! -> format!, got %v", mr.Mappings.Src()[srcTree])
+		}
+
+		// 4. Stationary Operands: multi-line format string and opt.commit_regex arguments map in place
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, c := range srcTree.Children {
+			if isQuotedLiteral(c.Label) {
+				srcStr = c
+				break
+			}
+		}
+		for _, c := range dstTree.Children {
+			if isQuotedLiteral(c.Label) {
+				dstStr = c
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil || mr.Mappings.Src()[srcStr] != dstStr {
+			t.Errorf("expected string literal to map in place as context, got mapped=%v (want %v)", mr.Mappings.Src()[srcStr], dstStr)
+		}
+
+		// 5. Deleted statement: process::exit(1) in src must be unmapped
+		var srcExit *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "process" {
+				srcExit = n
+				break
+			}
+		}
+		if srcExit == nil {
+			t.Fatal("failed to locate process::exit call in src")
+		}
+		if mr.Mappings.Src()[srcExit] != nil {
+			t.Errorf("expected process::exit to be unmapped (deleted), got mapped to %v", mr.Mappings.Src()[srcExit])
+		}
+	})
+
+	t.Run("FullEngine_C_PrintfEvolution", func(t *testing.T) {
+		src := `#include <stdio.h>
+#include <stdlib.h>
+
+void validate(const char *pattern) {
+    if (!is_valid(pattern)) {
+        printf("Invalid commit-regex: %s. Must be valid regex.\n", pattern);
+        exit(1);
+    }
+    printf("Ready: %s\n", pattern);
+}
+`
+		dst := `#include <stdio.h>
+#include <stdlib.h>
+
+void validate(const char *pattern) {
+    if (!is_valid(pattern)) {
+        fatal(format_error("Invalid commit-regex: %s. Must be valid regex.\n", pattern));
+    }
+    printf("Ready: %s\n", pattern);
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "test.c")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.c")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: validate function definition maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "validate" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "validate" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function validate to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcFunc], dstFunc)
+		}
+
+		// 2. Surrounding Sequence: succeeding printf("Ready:...") call maps in place
+		var srcReady, dstReady *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && n.StartRow == 8 {
+				srcReady = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && n.StartRow == 7 {
+				dstReady = n
+				break
+			}
+		}
+		if srcReady == nil || dstReady == nil || mr.Mappings.Src()[srcReady] != dstReady {
+			t.Errorf("expected succeeding printf statement to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcReady], dstReady)
+		}
+
+		// 3. Target & Containers: argument_list under printf and format_error maps in place
+		var srcArgs, dstArgs *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && n.Parent != nil && extractCalleeLabel(n.Parent, r) == "printf" && n.StartRow == 5 {
+				srcArgs = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && n.Parent != nil && extractCalleeLabel(n.Parent, r) == "format_error" {
+				dstArgs = n
+				break
+			}
+		}
+		if srcArgs == nil || dstArgs == nil {
+			t.Fatalf("failed to locate argument_list: srcArgs=%v, dstArgs=%v", srcArgs, dstArgs)
+		}
+		if mr.Mappings.Src()[srcArgs] != dstArgs {
+			t.Fatalf("expected argument_list to map in place across printf -> format_error, got %v", mr.Mappings.Src()[srcArgs])
+		}
+
+		// 4. Stationary Operands: format string and pattern argument map in place
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, c := range srcArgs.Children {
+			if isQuotedLiteral(c.Label) {
+				srcStr = c
+				break
+			}
+		}
+		for _, c := range dstArgs.Children {
+			if isQuotedLiteral(c.Label) {
+				dstStr = c
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil || mr.Mappings.Src()[srcStr] != dstStr {
+			t.Errorf("expected format string literal to map in place as context, got mapped=%v (want %v)", mr.Mappings.Src()[srcStr], dstStr)
+		}
+
+		// 5. Deleted Statement Theft Guard: exit(1) in src must be unmapped (never stolen by fatal)
+		var srcExit *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "exit" {
+				srcExit = n
+				break
+			}
+		}
+		if srcExit == nil {
+			t.Fatal("failed to locate exit call in src")
+		}
+		if mr.Mappings.Src()[srcExit] != nil {
+			t.Errorf("expected exit(1) to be unmapped (deleted), got falsely mapped to %v", mr.Mappings.Src()[srcExit])
+		}
+	})
+
+	t.Run("FullEngine_Zig_PrintEvolution", func(t *testing.T) {
+		src := `const std = @import("std");
+
+fn validate(pattern: []const u8) void {
+    if (!isValid(pattern)) {
+        std.debug.print("Invalid commit-regex: {s}. See docs.\n", .{pattern});
+        std.process.exit(1);
+    }
+    std.debug.print("Ready: {s}\n", .{pattern});
+}
+`
+		dst := `const std = @import("std");
+
+fn validate(pattern: []const u8) void {
+    if (!isValid(pattern)) {
+        log.err(formatError("Invalid commit-regex: {s}. See docs.\n", .{pattern}));
+    }
+    std.debug.print("Ready: {s}\n", .{pattern});
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "test.zig")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.zig")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: validate function maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "validate" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "validate" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function validate to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcFunc], dstFunc)
+		}
+
+		// 2. Surrounding Sequence: succeeding std.debug.print statement maps in place
+		var srcReady, dstReady *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && n.StartRow == 7 {
+				srcReady = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && n.StartRow == 6 {
+				dstReady = n
+				break
+			}
+		}
+		if srcReady == nil || dstReady == nil || mr.Mappings.Src()[srcReady] != dstReady {
+			t.Errorf("expected succeeding print statement to map in place, got mapped=%v (want %v)", mr.Mappings.Src()[srcReady], dstReady)
+		}
+
+		// 3. Stationary Operands: format string literal maps in place as context
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if isQuotedLiteral(n.Label) && strings.Contains(n.Label, "Invalid commit-regex") {
+				srcStr = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if isQuotedLiteral(n.Label) && strings.Contains(n.Label, "Invalid commit-regex") {
+				dstStr = n
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil || mr.Mappings.Src()[srcStr] != dstStr {
+			t.Errorf("expected format string literal to map in place as context, got mapped=%v (want %v)", mr.Mappings.Src()[srcStr], dstStr)
+		}
+
+		// 4. Deleted Statement: exit call in src must be unmapped
+		var srcExit *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && n.StartRow == 5 {
+				srcExit = n
+				break
+			}
+		}
+		if srcExit == nil {
+			t.Fatal("failed to locate exit call in src")
+		}
+		if mr.Mappings.Src()[srcExit] != nil {
+			t.Errorf("expected exit call to be unmapped (deleted), got mapped to %v", mr.Mappings.Src()[srcExit])
 		}
 	})
 }
