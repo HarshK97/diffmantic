@@ -1028,3 +1028,97 @@ index 1111111..2222222 100644
 		}
 	}
 }
+
+func TestStreamNoIndex_AbsolutePaths(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	fileA := filepath.Join(dirA, "main.rs")
+	fileB := filepath.Join(dirB, "main.rs")
+
+	if err := os.WriteFile(fileA, []byte("fn main() {\n    println!(\"v1\");\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fileB, []byte("fn main() {\n    println!(\"v2\");\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Git --no-index strips the leading slash from absolute paths when prepending "a/" and "b/"
+	cleanA := strings.TrimPrefix(filepath.ToSlash(fileA), "/")
+	cleanB := strings.TrimPrefix(filepath.ToSlash(fileB), "/")
+
+	diffInput := fmt.Sprintf(
+		"diff --git a/%s b/%s\n"+
+			"index 1111111..2222222 100644\n"+
+			"--- a/%s\n"+
+			"+++ b/%s\n"+
+			"@@ -1,3 +1,3 @@\n"+
+			" fn main() {\n"+
+			"-    println!(\"v1\");\n"+
+			"+    println!(\"v2\");\n"+
+			" }\n",
+		cleanA, cleanB, cleanA, cleanB,
+	)
+
+	var out bytes.Buffer
+	cfg := StreamConfig{Format: "unified"}
+	// Run with cwd set to a different repo so relative lookups fail first.
+	err := Process(strings.NewReader(diffInput), &out, ".", cfg)
+	if err != nil {
+		t.Fatalf("Process returned unexpected error: %v", err)
+	}
+
+	outStr := out.String()
+	slashA := filepath.ToSlash(fileA)
+	slashB := filepath.ToSlash(fileB)
+	if !strings.Contains(outStr, slashA) || !strings.Contains(outStr, slashB) {
+		t.Errorf("expected rendered diff to reference absolute paths %q and %q, got:\n%s", fileA, fileB, outStr)
+	}
+	if strings.Contains(outStr, "index 1111111..2222222") {
+		t.Errorf("expected AST diff rendering rather than raw git diff passthrough, got:\n%s", outStr)
+	}
+}
+
+func TestStreamNoIndex_NonGitDirectory(t *testing.T) {
+	nonGitDir := t.TempDir()
+	subA := filepath.Join(nonGitDir, "a")
+	subB := filepath.Join(nonGitDir, "b")
+	if err := os.MkdirAll(subA, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(subB, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	fileA := filepath.Join(subA, "foo.go")
+	fileB := filepath.Join(subB, "foo.go")
+	if err := os.WriteFile(fileA, []byte("package main\n\nfunc A() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fileB, []byte("package main\n\nfunc A() int { return 2 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	diffInput := "diff --git a/a/foo.go b/b/foo.go\n" +
+		"index 3333333..4444444 100644\n" +
+		"--- a/a/foo.go\n" +
+		"+++ b/b/foo.go\n" +
+		"@@ -3 +3 @@\n" +
+		"-func A() int { return 1 }\n" +
+		"+func A() int { return 2 }\n"
+
+	var out bytes.Buffer
+	cfg := StreamConfig{Format: "unified"}
+	err := Process(strings.NewReader(diffInput), &out, nonGitDir, cfg)
+	if err != nil {
+		t.Fatalf("Process returned unexpected error: %v", err)
+	}
+
+	outStr := out.String()
+	if strings.Contains(outStr, "index 3333333..4444444") {
+		t.Errorf("expected AST diff rendering rather than raw fallback in non-git dir, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "func A() int") {
+		t.Errorf("expected AST diff output, got:\n%s", outStr)
+	}
+}

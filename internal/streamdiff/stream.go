@@ -654,48 +654,72 @@ func isAllZeros(s string) bool {
 	return true
 }
 
+// readDiskFile reads path from disk, checking relative to cwd first and
+// restoring any leading slash stripped by Git diff headers.
+func readDiskFile(cwd, path string) (data []byte, resolvedPath string, err error) {
+	if filepath.IsAbs(path) {
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return nil, "", fmt.Errorf("reading file %s: %w", path, err)
+		}
+		return data, path, nil
+	}
+
+	relPath := filepath.Join(cwd, path)
+	if data, err = os.ReadFile(relPath); err == nil {
+		return data, path, nil
+	}
+	lastErr := err
+
+	// Git diff headers drop the leading '/' from absolute paths when prefixing a/ or b/.
+	absCandidate := string(filepath.Separator) + filepath.Clean(path)
+	if data, err = os.ReadFile(absCandidate); err == nil {
+		return data, absCandidate, nil
+	}
+
+	return nil, "", fmt.Errorf("reading file %s: %w", path, lastErr)
+}
+
 // fetchBlob loads object content from the batch coprocess, falling back
 // to git cat-file or working-tree disk files on missing hashes.
-func fetchBlob(cwd, oid, path string, session *git.BatchSession, gitAvailable bool) ([]byte, bool, error) {
+func fetchBlob(cwd, oid, path string, session *git.BatchSession, gitAvailable bool) (data []byte, fromGit bool, resolvedPath string, err error) {
 	if isAllZeros(oid) {
-		return nil, true, nil
+		return nil, true, path, nil
 	}
-	var data []byte
-	var err error
 	if session != nil && !session.IsPoisoned() {
-		data, err = session.Fetch(oid)
-		if err != nil {
-			return nil, false, fmt.Errorf("reading blob %s: %w", oid, err)
+		if d, fetchErr := session.Fetch(oid); fetchErr == nil {
+			data = d
 		}
 	} else if gitAvailable {
-		data, err = git.RunGit(cwd, "cat-file", "-p", oid)
-		if err != nil {
-			data = nil
+		if d, runErr := git.RunGit(cwd, "cat-file", "-p", oid); runErr == nil {
+			data = d
 		}
 	}
 
 	if data != nil {
-		return data, true, nil
+		return data, true, path, nil
 	}
 
-	diskPath := filepath.Join(cwd, path)
-	diskData, diskErr := os.ReadFile(diskPath)
+	diskData, resolvedDiskPath, diskErr := readDiskFile(cwd, path)
 	if diskErr != nil {
-		return nil, false, fmt.Errorf("reading file %s: %w", path, diskErr)
+		return nil, false, "", diskErr
 	}
-	return diskData, false, nil
+	return diskData, false, resolvedDiskPath, nil
 }
 
 // fetchBuffers retrieves before and after file contents from Git objects or disk.
 func fetchBuffers(cwd string, h *fileHunk, session *git.BatchSession, gitAvailable bool) ([]byte, []byte, error) {
-	oldBytes, oldFromGit, err := fetchBlob(cwd, h.oldOID, h.oldPath, session, gitAvailable)
+	oldBytes, oldFromGit, resolvedOld, err := fetchBlob(cwd, h.oldOID, h.oldPath, session, gitAvailable)
 	if err != nil {
 		return nil, nil, err
 	}
-	newBytes, newFromGit, err := fetchBlob(cwd, h.newOID, h.newPath, session, gitAvailable)
+	newBytes, newFromGit, resolvedNew, err := fetchBlob(cwd, h.newOID, h.newPath, session, gitAvailable)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	h.oldPath = cmp.Or(resolvedOld, h.oldPath)
+	h.newPath = cmp.Or(resolvedNew, h.newPath)
 
 	// If neither blob existed in Git and both read the exact same working-tree file,
 	// the commit objects are missing from the local repo (e.g. a shallow clone).

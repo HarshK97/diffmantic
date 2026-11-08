@@ -188,3 +188,17 @@ func TestBatchSession_ConcurrentClose(t *testing.T) {
 		}
 	}
 }
+
+func TestStartBatchSession_NonGitDir(t *testing.T) {
+	nonGitDir := t.TempDir()
+	session, err := StartBatchSession(nonGitDir)
+	if !errors.Is(err, ErrNotGitRepository) {
+		if session != nil {
+			_ = session.Close()
+		}
+		t.Fatalf("expected ErrNotGitRepository starting batch session in non-git dir, got: %v", err)
+	}
+	if session != nil {
+		t.Errorf("expected nil session on failure, got non-nil")
+	}
+}
