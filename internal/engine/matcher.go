@@ -1387,11 +1387,19 @@ func canMatchDeclarations(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rul
 		return false
 	}
 
-	// Local variables in the same slot can change types during a refactor.
+	// Local variables in the same slot can match if they share types, identifier words, or substantive leaves.
 	isLocalVar := (r != nil && (r.IsLocalVarDeclaration(src.Type) || r.IsLocalVarDeclaration(dst.Type))) ||
 		(r == nil && (rules.IsLocalVarDeclaration(src.Type) || rules.IsLocalVarDeclaration(dst.Type)))
 	if isLocalVar {
-		return true
+		if hasSameFieldType(src, dst, r) {
+			return true
+		}
+		words1 := splitIdentifierWords(name1)
+		words2 := splitIdentifierWords(name2)
+		if identifierWordOverlap(words1, words2) > 0 {
+			return true
+		}
+		return substantiveLeafSimilarity(src, dst, r) >= 0.30
 	}
 
 	// Imports with different names only match if they share an import path segment.
