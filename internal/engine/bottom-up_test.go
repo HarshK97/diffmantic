@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -3944,6 +3945,319 @@ func TestBottomUp_HollowEnclosingCall_WrappedMacroEvolution(t *testing.T) {
 		}
 		if srcTree == nil || dstTree == nil || mr.Mappings.Src()[srcTree] != dstTree {
 			t.Errorf("expected token_tree to map in place across eprintln! -> format!, got %v", mr.Mappings.Src()[srcTree])
+		}
+	})
+}
+
+func TestBottomUp_HollowSelectorOuterInnerTheft(t *testing.T) {
+	t.Run("FullEngine/Rust", func(t *testing.T) {
+		src := []byte(`fn format_panel(config: &Config) {
+    let header = config.header.title.clone();
+    let panel_width = config.side_by_side_data.left_panel.width;
+    println!("width: {}", panel_width);
+}
+`)
+		dst := []byte(`fn format_panel(config: &Config) {
+    let header = config.header.title.clone();
+    let panel_width = config.side_by_side_data[panel_side].width;
+    println!("width: {}", panel_width);
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: format_panel function and preceding header assignment map in place
+		var srcFn, dstFn, srcHeader, dstHeader *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "format_panel" {
+				srcFn = n
+			} else if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "header") {
+				srcHeader = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "format_panel" {
+				dstFn = n
+			} else if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "header") {
+				dstHeader = n
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function format_panel to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+		if srcHeader == nil || dstHeader == nil || mr.Mappings.Src()[srcHeader] != dstHeader {
+			t.Fatalf("expected preceding header statement to map in place, got %v", mr.Mappings.Src()[srcHeader])
+		}
+
+		// 2. Surrounding Sequence: succeeding println! statement maps in place
+		var srcPrint, dstPrint *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				srcPrint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				dstPrint = n
+				break
+			}
+		}
+		if srcPrint == nil || dstPrint == nil || mr.Mappings.Src()[srcPrint] != dstPrint {
+			t.Errorf("expected succeeding println! to map in place, got %v", mr.Mappings.Src()[srcPrint])
+		}
+
+		// 3. Target & Containers: outer field_expression (.width) must map in place
+		var srcOuterField, srcInnerField, dstOuterField *treesitter.ASTNode
+		var srcWidthLeaf, srcLeftPanelLeaf, dstWidthLeaf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if string(src[n.StartByte:n.EndByte]) == "config.side_by_side_data.left_panel.width" {
+				srcOuterField = n
+			} else if string(src[n.StartByte:n.EndByte]) == "config.side_by_side_data.left_panel" {
+				srcInnerField = n
+			} else if n.Label == "width" && n.StartByte > srcOuterField.StartByte {
+				srcWidthLeaf = n
+			} else if n.Label == "left_panel" {
+				srcLeftPanelLeaf = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if string(dst[n.StartByte:n.EndByte]) == "config.side_by_side_data[panel_side].width" {
+				dstOuterField = n
+			} else if n.Label == "width" && dstOuterField != nil && n.StartByte > dstOuterField.StartByte {
+				dstWidthLeaf = n
+			}
+		}
+
+		if srcOuterField == nil || dstOuterField == nil {
+			t.Fatalf("failed to locate outer field_expression: srcOuter=%v, dstOuter=%v", srcOuterField, dstOuterField)
+		}
+		if srcWidthLeaf == nil || dstWidthLeaf == nil {
+			t.Fatalf("failed to locate width leaves: srcWidth=%v, dstWidth=%v", srcWidthLeaf, dstWidthLeaf)
+		}
+
+		// Outer field_expression must map to outer field_expression, NOT inner stealing outer
+		if mapped := mr.Mappings.Src()[srcOuterField]; mapped != dstOuterField {
+			t.Fatalf("expected outer field_expression (.width) to map in place, got %v (inner=%v)", mapped, srcInnerField)
+		}
+		if mapped := mr.Mappings.Src()[srcWidthLeaf]; mapped != dstWidthLeaf {
+			t.Fatalf("expected width leaf to map in place, got %v", mapped)
+		}
+		if mapped := mr.Mappings.Src()[srcLeftPanelLeaf]; mapped != nil {
+			t.Fatalf("expected left_panel leaf to be unmapped (deleted), got %v", mapped)
+		}
+
+		// 4. Stationary Operands: base field_expression config.side_by_side_data maps in place
+		var srcBase, dstBase *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if string(src[n.StartByte:n.EndByte]) == "config.side_by_side_data" {
+				srcBase = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if string(dst[n.StartByte:n.EndByte]) == "config.side_by_side_data" {
+				dstBase = n
+				break
+			}
+		}
+		if srcBase == nil || dstBase == nil || mr.Mappings.Src()[srcBase] != dstBase {
+			t.Errorf("expected base config.side_by_side_data to map in place, got %v", mr.Mappings.Src()[srcBase])
+		}
+	})
+
+	t.Run("FullEngine/Go", func(t *testing.T) {
+		src := []byte(`package main
+
+func formatPanel(config *Config) {
+	header := config.header.title
+	panelWidth := config.side_by_side_data.left_panel.width
+	println("width:", panelWidth)
+}
+`)
+		dst := []byte(`package main
+
+func formatPanel(config *Config) {
+	header := config.header.title
+	panelWidth := config.side_by_side_data[panel_side].width
+	println("width:", panelWidth)
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: formatPanel function maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "formatPanel" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "formatPanel" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function formatPanel to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. Surrounding Sequence: succeeding println call maps in place
+		var srcPrint, dstPrint *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				srcPrint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				dstPrint = n
+				break
+			}
+		}
+		if srcPrint == nil || dstPrint == nil || mr.Mappings.Src()[srcPrint] != dstPrint {
+			t.Errorf("expected succeeding println to map in place, got %v", mr.Mappings.Src()[srcPrint])
+		}
+
+		// 3. Target & Containers: outer selector_expression (.width) must map in place
+		var srcOuterField, dstOuterField, srcLeftPanelLeaf, srcWidthLeaf, dstWidthLeaf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if string(src[n.StartByte:n.EndByte]) == "config.side_by_side_data.left_panel.width" {
+				srcOuterField = n
+			} else if n.Label == "width" && srcOuterField != nil && n.StartByte > srcOuterField.StartByte {
+				srcWidthLeaf = n
+			} else if n.Label == "left_panel" {
+				srcLeftPanelLeaf = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if string(dst[n.StartByte:n.EndByte]) == "config.side_by_side_data[panel_side].width" {
+				dstOuterField = n
+			} else if n.Label == "width" && dstOuterField != nil && n.StartByte > dstOuterField.StartByte {
+				dstWidthLeaf = n
+			}
+		}
+
+		if srcOuterField == nil || dstOuterField == nil {
+			t.Fatalf("failed to locate outer selector_expression: srcOuter=%v, dstOuter=%v", srcOuterField, dstOuterField)
+		}
+		if mapped := mr.Mappings.Src()[srcOuterField]; mapped != dstOuterField {
+			t.Fatalf("expected outer selector_expression to map in place, got %v", mapped)
+		}
+		if mapped := mr.Mappings.Src()[srcWidthLeaf]; mapped != dstWidthLeaf {
+			t.Fatalf("expected width leaf to map in place, got %v", mapped)
+		}
+		if mapped := mr.Mappings.Src()[srcLeftPanelLeaf]; mapped != nil {
+			t.Fatalf("expected left_panel leaf to be unmapped, got %v", mapped)
+		}
+	})
+
+	t.Run("FullEngine/TypeScript", func(t *testing.T) {
+		src := []byte(`function formatPanel(config: Config) {
+    const header = config.header.title;
+    const panelWidth = config.sideBySideData.leftPanel.width;
+    console.log("width:", panelWidth);
+}
+`)
+		dst := []byte(`function formatPanel(config: Config) {
+    const header = config.header.title;
+    const panelWidth = config.sideBySideData[panelSide].width;
+    console.log("width:", panelWidth);
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: formatPanel function maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "formatPanel" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "formatPanel" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function formatPanel to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. Target & Containers: outer member_expression (.width) must map in place
+		var srcOuterField, dstOuterField, srcLeftPanelLeaf, srcWidthLeaf, dstWidthLeaf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if string(src[n.StartByte:n.EndByte]) == "config.sideBySideData.leftPanel.width" {
+				srcOuterField = n
+			} else if n.Label == "width" && srcOuterField != nil && n.StartByte > srcOuterField.StartByte {
+				srcWidthLeaf = n
+			} else if n.Label == "leftPanel" {
+				srcLeftPanelLeaf = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if string(dst[n.StartByte:n.EndByte]) == "config.sideBySideData[panelSide].width" {
+				dstOuterField = n
+			} else if n.Label == "width" && dstOuterField != nil && n.StartByte > dstOuterField.StartByte {
+				dstWidthLeaf = n
+			}
+		}
+
+		if srcOuterField == nil || dstOuterField == nil {
+			t.Fatalf("failed to locate outer member_expression: srcOuter=%v, dstOuter=%v", srcOuterField, dstOuterField)
+		}
+		if mapped := mr.Mappings.Src()[srcOuterField]; mapped != dstOuterField {
+			t.Fatalf("expected outer member_expression to map in place, got %v", mapped)
+		}
+		if mapped := mr.Mappings.Src()[srcWidthLeaf]; mapped != dstWidthLeaf {
+			t.Fatalf("expected width leaf to map in place, got %v", mapped)
+		}
+		if mapped := mr.Mappings.Src()[srcLeftPanelLeaf]; mapped != nil {
+			t.Fatalf("expected leftPanel leaf to be unmapped, got %v", mapped)
 		}
 	})
 }
