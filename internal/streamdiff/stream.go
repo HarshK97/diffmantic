@@ -667,7 +667,7 @@ func readDiskFile(cwd, path string) (data []byte, resolvedPath string, err error
 
 	relPath := filepath.Join(cwd, path)
 	if data, err = os.ReadFile(relPath); err == nil {
-		return data, relPath, nil
+		return data, path, nil
 	}
 	lastErr := err
 
