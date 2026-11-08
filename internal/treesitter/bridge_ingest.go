@@ -338,7 +338,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 				}
 				isDecl := func(t string) bool {
 					if r != nil {
-						return r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t)
+						return r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t) && !r.IsImport(t)
 					}
 					return rules.IsDeclaration(t)
 				}
@@ -393,7 +393,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 					cb.DeclStart = enc.StartByte
 					cb.DeclEnd = enc.EndByte
 					cb.RelativePath = "body"
-				} else {
+				} else if target.Parent != root {
 					cb.EnclosingDecl = target
 				}
 				cb.AnchorNode = target

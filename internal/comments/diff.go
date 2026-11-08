@@ -25,6 +25,9 @@ func isAnchorCompatible(sc, dc *CommentBlock, mappings *engine.Mapping) bool {
 	if sc == nil || dc == nil || sc.AnchorNode == nil || dc.AnchorNode == nil {
 		return true
 	}
+	if sc.EnclosingDecl == nil && dc.EnclosingDecl == nil {
+		return true
+	}
 	return mappings.Src()[sc.AnchorNode] == dc.AnchorNode
 }
 
