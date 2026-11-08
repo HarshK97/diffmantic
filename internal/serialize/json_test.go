@@ -479,6 +479,39 @@ func TestAdjustRangeForContainerImplicitLengthArrayType(t *testing.T) {
 	}
 }
 
+func TestAdjustRangeForContainerTupleStructPatternWrapper(t *testing.T) {
+	code := []byte("fn f() { match x { State::HunkHeader(_, _) => {} } }")
+	ast, err := treesitter.Parse(code, "test.rs")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+
+	var pat *treesitter.ASTNode
+	for _, n := range ast.Descendants() {
+		if n.Type == "tuple_struct_pattern" {
+			pat = n
+			break
+		}
+	}
+	if pat == nil {
+		t.Fatal("expected tuple_struct_pattern node")
+	}
+
+	start := pat.StartByte
+	end := pat.EndByte
+
+	hasFooter, fStart, fEnd := adjustRangeForContainer(pat, &start, &end, code)
+	if !hasFooter {
+		t.Fatal("expected tuple_struct_pattern to report footer")
+	}
+	if string(code[start:end]) != "(" {
+		t.Errorf("expected opening delimiter '(', got %q [%d, %d]", string(code[start:end]), start, end)
+	}
+	if string(code[fStart:fEnd]) != ")" {
+		t.Errorf("expected closing delimiter ')', got %q [%d, %d]", string(code[fStart:fEnd]), fStart, fEnd)
+	}
+}
+
 func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	// A block container with an inner statement and closing brace:
 	// line 0: {

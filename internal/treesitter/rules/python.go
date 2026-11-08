@@ -183,6 +183,8 @@ var pythonRules = &Rules{
 		"list_comprehension",
 		"dictionary_comprehension",
 		"set_comprehension",
+		"class_pattern",
+		"tuple_pattern",
 	},
 	Pairs: []string{
 		"pair",
