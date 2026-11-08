@@ -95,7 +95,7 @@ func TopDown(
 							isCall1 := (r != nil && r.IsCall(t1.Parent.Type)) || (r == nil && rules.IsCall(t1.Parent.Type))
 							isCall2 := (r != nil && r.IsCall(t2.Parent.Type)) || (r == nil && rules.IsCall(t2.Parent.Type))
 							if isCall1 && isCall2 && len(t1.Parent.Children) > 0 && len(t2.Parent.Children) > 0 {
-								if !calleeLeavesOverlap(t1.Parent, t2.Parent) {
+								if !calleeLeavesOverlap(t1.Parent, t2.Parent) && !isSubstantiveDelimitedContainer(t1, r) {
 									continue
 								}
 							}
@@ -631,4 +631,27 @@ func calleeLeavesOverlap(call1, call2 *treesitter.ASTNode) bool {
 		}
 	}
 	return false
+}
+
+// isSubstantiveDelimitedContainer reports whether n is a delimited container
+// (like an argument_list or token_tree) carrying real content (string literals,
+// multi-line blocks, or closures) that can match across differing callee names
+// without risking cross-call argument theft.
+func isSubstantiveDelimitedContainer(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	isDelimited := (r != nil && r.IsDelimitedContainer(n.Type)) || (r == nil && rules.IsDelimitedContainer(n.Type))
+	if !isDelimited {
+		return false
+	}
+	if n.EndRow > n.StartRow && n.PreSize >= 4 {
+		return true
+	}
+	for label := range n.LeafLabels() {
+		if isQuotedLiteral(label) && len(label) >= 4 {
+			return true
+		}
+	}
+	return hasClosureChild(n, r)
 }
