@@ -2023,3 +2023,147 @@ fn _make_process_from_less_path() -> Command {
 		}
 	})
 }
+
+func TestRecoverCohortSiblings_UnqualifiedUseDeclaration_FullEngine(t *testing.T) {
+	src := []byte(`pub mod integration_test_utils {
+    use bytelines::ByteLines;
+    use itertools;
+    use crate::ansi;
+
+    pub fn make_options() -> i32 {
+        let default_limit = 42;
+        default_limit
+    }
+}
+`)
+	dst := []byte(`use bytelines::ByteLines;
+use itertools;
+use crate::ansi;
+
+pub fn make_options() -> i32 {
+    let default_limit = 42;
+    default_limit
+}
+`)
+
+	srcAST, err := treesitter.Parse(src, "test.rs")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.rs")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+		t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+	}
+
+	r := rules.Get("rust")
+	if r == nil {
+		t.Fatal("missing rust rules")
+	}
+
+	part := NewLinePartition(src, dst)
+	mr := Match(srcAST, dstAST, src, dst, part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+
+	// 1. Enclosing context / surrounding function: make_options maps in place
+	var srcFn, dstFn *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+			srcFn = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+			dstFn = n
+			break
+		}
+	}
+	if srcFn == nil || dstFn == nil {
+		t.Fatalf("missing make_options declaration: src=%v dst=%v", srcFn, dstFn)
+	}
+	if mr.Mappings.Src()[srcFn] != dstFn {
+		t.Errorf("expected make_options function to map in place, got %v", mr.Mappings.Src()[srcFn])
+	}
+
+	// 2. Stationary function body statement default_limit maps in place
+	var srcLimit, dstLimit *treesitter.ASTNode
+	for _, n := range srcFn.Descendants() {
+		if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("default_limit")) {
+			srcLimit = n
+			break
+		}
+	}
+	for _, n := range dstFn.Descendants() {
+		if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("default_limit")) {
+			dstLimit = n
+			break
+		}
+	}
+	if srcLimit == nil || dstLimit == nil {
+		t.Fatalf("missing default_limit var: src=%v dst=%v", srcLimit, dstLimit)
+	}
+	if mr.Mappings.Src()[srcLimit] != dstLimit {
+		t.Errorf("expected default_limit to map in place, got %v", mr.Mappings.Src()[srcLimit])
+	}
+
+	// 3. Sibling compound imports move alongside
+	var srcByteLines, dstByteLines *treesitter.ASTNode
+	var srcAnsi, dstAnsi *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsImport(n.Type) {
+			if bytes.Contains(src[n.StartByte:n.EndByte], []byte("ByteLines")) {
+				srcByteLines = n
+			} else if bytes.Contains(src[n.StartByte:n.EndByte], []byte("ansi")) {
+				srcAnsi = n
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsImport(n.Type) {
+			if bytes.Contains(dst[n.StartByte:n.EndByte], []byte("ByteLines")) {
+				dstByteLines = n
+			} else if bytes.Contains(dst[n.StartByte:n.EndByte], []byte("ansi")) {
+				dstAnsi = n
+			}
+		}
+	}
+	if srcByteLines == nil || dstByteLines == nil {
+		t.Fatalf("missing ByteLines use_declaration: src=%v dst=%v", srcByteLines, dstByteLines)
+	}
+	if mr.Mappings.Src()[srcByteLines] != dstByteLines {
+		t.Errorf("expected ByteLines use_declaration to map, got %v", mr.Mappings.Src()[srcByteLines])
+	}
+	if srcAnsi == nil || dstAnsi == nil {
+		t.Fatalf("missing ansi use_declaration: src=%v dst=%v", srcAnsi, dstAnsi)
+	}
+	if mr.Mappings.Src()[srcAnsi] != dstAnsi {
+		t.Errorf("expected ansi use_declaration to map, got %v", mr.Mappings.Src()[srcAnsi])
+	}
+
+	// 4. Target unqualified import: use itertools; must map across scopes
+	var srcItertools, dstItertools *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsImport(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("itertools")) {
+			srcItertools = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsImport(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("itertools")) {
+			dstItertools = n
+			break
+		}
+	}
+	if srcItertools == nil || dstItertools == nil {
+		t.Fatalf("missing itertools use_declaration: src=%v dst=%v", srcItertools, dstItertools)
+	}
+	if mr.Mappings.Src()[srcItertools] != dstItertools {
+		t.Errorf("expected unqualified use itertools to map across scopes, got %v", mr.Mappings.Src()[srcItertools])
+	}
+}
