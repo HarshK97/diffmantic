@@ -70,6 +70,16 @@ func shouldBypassZS(t1, t2 *treesitter.ASTNode, r *rules.Rules) bool {
 			return true
 		}
 	}
+	// Pairs with matching keys should align key and value separately.
+	isPair1 := r != nil && r.IsPair(t1.Type)
+	isPair2 := r != nil && r.IsPair(t2.Type)
+	if isPair1 && isPair2 {
+		k1 := getKeyLabel(t1)
+		k2 := getKeyLabel(t2)
+		if k1 != "" && k1 == k2 {
+			return true
+		}
+	}
 	return false
 }
 
