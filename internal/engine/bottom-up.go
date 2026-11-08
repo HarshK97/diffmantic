@@ -241,6 +241,9 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	if isCall && hasHollowEnclosingCall(t1, c, m, r) {
 		return -1.0
 	}
+	if hasHollowEnclosingSelector(t1, c, m, r) {
+		return -1.0
+	}
 
 	// Reject call arguments across incompatible calls when the original callee survives in scope.
 	if t1.Parent != nil && c.Parent != nil {
@@ -1234,6 +1237,117 @@ func hasHollowEnclosingCall(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rule
 	}
 
 	return check(c, t1, m.Dst(), false) || check(t1, c, m.Src(), true)
+}
+
+// hasHollowEnclosingSelector reports whether candidate c (or symmetrically t1) is an
+// outer enclosing selector/field expression that would steal an inner selector candidate
+// from its true outer counterpart, or an inner selector stealing an outer candidate when
+// an outer ancestor of that inner selector is a better match for the candidate.
+func hasHollowEnclosingSelector(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	isSelector := func(t string) bool {
+		return (r != nil && r.IsSelector(t)) || (r == nil && rules.IsSelector(t))
+	}
+	if !isSelector(t1.Type) || !isSelector(c.Type) {
+		return false
+	}
+
+	f1 := extractFieldLabel(t1, r)
+	fC := extractFieldLabel(c, r)
+
+	// Check if t1 is an inner selector stealing candidate c from an unmapped outer ancestor in T1.
+	if f1 != fC {
+		for anc := t1.Parent; anc != nil; anc = anc.Parent {
+			if isSelector(anc.Type) && !m.Has(anc) {
+				fAnc := extractFieldLabel(anc, r)
+				if fAnc == fC && fAnc != "" {
+					return true
+				}
+			}
+		}
+	}
+
+	// Symmetrically check if c is an inner selector stealing target t1 from an unmapped outer ancestor in T2.
+	if f1 != fC {
+		for anc := c.Parent; anc != nil; anc = anc.Parent {
+			if isSelector(anc.Type) && !m.HasDst(anc) {
+				fAnc := extractFieldLabel(anc, r)
+				if fAnc == f1 && fAnc != "" {
+					return true
+				}
+			}
+		}
+	}
+
+	// Check if c is an outer selector stealing target t1 from an unmapped inner selector in T2.
+	for _, inner := range c.Descendants() {
+		if inner == c || !isSelector(inner.Type) || m.HasDst(inner) {
+			continue
+		}
+		fInner := extractFieldLabel(inner, r)
+		if fInner == f1 && fInner != "" && fC != f1 {
+			hasMappedDesc := false
+			hasOutsideDesc := false
+			for _, d2 := range c.Descendants() {
+				if d1, ok := m.Dst()[d2]; ok && (d1 == t1 || t1.Contains(d1)) {
+					if inner == d2 || inner.Contains(d2) {
+						hasMappedDesc = true
+					} else {
+						hasOutsideDesc = true
+						break
+					}
+				}
+			}
+			if hasMappedDesc && !hasOutsideDesc {
+				return true
+			}
+		}
+	}
+
+	// Symmetrically check if t1 is an outer selector stealing target c from an unmapped inner selector in T1.
+	for _, inner := range t1.Descendants() {
+		if inner == t1 || !isSelector(inner.Type) || m.Has(inner) {
+			continue
+		}
+		fInner := extractFieldLabel(inner, r)
+		if fInner == fC && fInner != "" && f1 != fC {
+			hasMappedDesc := false
+			hasOutsideDesc := false
+			for _, d1 := range t1.Descendants() {
+				if d2, ok := m.Src()[d1]; ok && (d2 == c || c.Contains(d2)) {
+					if inner == d1 || inner.Contains(d1) {
+						hasMappedDesc = true
+					} else {
+						hasOutsideDesc = true
+						break
+					}
+				}
+			}
+			if hasMappedDesc && !hasOutsideDesc {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func extractFieldLabel(n *treesitter.ASTNode, r *rules.Rules) string {
+	if n == nil || len(n.Children) < 2 {
+		return ""
+	}
+	fieldChild := n.Children[len(n.Children)-1]
+	if fieldChild.Label != "" {
+		return fieldChild.Label
+	}
+	for _, gc := range fieldChild.Children {
+		if gc.Label != "" {
+			return gc.Label
+		}
+	}
+	return ""
 }
 
 // hasCallCalleeOrArgMatch reports whether two call nodes share any matched tokens

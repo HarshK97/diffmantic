@@ -222,6 +222,9 @@ var rustRules = &Rules{
 	Indexed: []string{
 		"index_expression",
 	},
+	Selectors: []string{
+		"field_expression",
+	},
 	LocalVarDeclarations: []string{
 		"let_declaration",
 	},
