@@ -1342,7 +1342,10 @@ func hasHollowEnclosingSelector(t1, c *treesitter.ASTNode, m *Mapping, r *rules.
 			continue
 		}
 		fInner := extractFieldLabel(inner, r)
-		if fInner == f1 && fInner != "" && fC != f1 {
+		isInnerBetter := (fInner == f1 && fInner != "" && fC != f1) ||
+			calleesCompatible(f1, fInner) ||
+			(!calleesCompatible(fC, f1) && m.DiceSrc(t1, inner) > m.DiceSrc(t1, c))
+		if isInnerBetter {
 			hasMappedDesc := false
 			hasOutsideDesc := false
 			for _, d2 := range c.Descendants() {
@@ -1367,7 +1370,10 @@ func hasHollowEnclosingSelector(t1, c *treesitter.ASTNode, m *Mapping, r *rules.
 			continue
 		}
 		fInner := extractFieldLabel(inner, r)
-		if fInner == fC && fInner != "" && f1 != fC {
+		isInnerBetter := (fInner == fC && fInner != "" && f1 != fC) ||
+			calleesCompatible(fC, fInner) ||
+			(!calleesCompatible(f1, fC) && m.DiceSrc(inner, c) > m.DiceSrc(t1, c))
+		if isInnerBetter {
 			hasMappedDesc := false
 			hasOutsideDesc := false
 			for _, d1 := range t1.Descendants() {
