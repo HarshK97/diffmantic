@@ -179,6 +179,7 @@ var rustRules = &Rules{
 		"arguments",
 		"parameters",
 		"scoped_use_list",
+		"use_list",
 	},
 	Pairs: []string{
 		"field_initializer",
@@ -186,10 +187,12 @@ var rustRules = &Rules{
 	},
 	Unordered: []string{
 		"use_declaration",
+		"use_list",
 	},
 	EquivalentTypes: [][]string{
 		{"struct_item", "enum_item", "union_item", "trait_item"},
 		{"for_expression", "while_expression", "loop_expression"},
+		{"scoped_identifier", "scoped_use_list"},
 	},
 	Comments: []string{
 		"line_comment",

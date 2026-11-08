@@ -2274,7 +2274,7 @@ pub fn run() {}
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		// 1. Enclosing context: HashMap, Style imports, and function run map in place.
+		// 1. Enclosing context: make sure the enclosing function stays mapped in place.
 		var srcFn, dstFn *treesitter.ASTNode
 		for _, n := range srcAST.Descendants() {
 			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
@@ -2292,7 +2292,7 @@ pub fn run() {}
 			t.Fatalf("expected function run to map in place")
 		}
 
-		// 2. Surrounding sequence: GitConfigEntry maps to GitConfigEntry
+		// 2. Surrounding sequence: existing import symbols stay anchored.
 		var srcEntry, dstEntry *treesitter.ASTNode
 		for _, n := range srcAST.Descendants() {
 			if n.Label == "GitConfigEntry" {
@@ -2310,16 +2310,35 @@ pub fn run() {}
 			t.Errorf("expected GitConfigEntry to map to GitConfigEntry in place")
 		}
 
-		// 3. Target & Wrappers: crate::features::side_by_side must NOT have a Move action
+		// 3. Target & wrappers: none of the existing import paths or symbols should be marked as moved.
 		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move {
-				if a.Node != nil && strings.Contains(string(src[a.Node.StartByte:a.Node.EndByte]), "side_by_side") {
+			if a.Type == actions.Move && a.Node != nil {
+				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(nodeText, "side_by_side") {
 					t.Errorf("unexpected Move action on side_by_side: %v", a)
+				}
+				if strings.Contains(nodeText, "GitConfigEntry") {
+					t.Errorf("unexpected Move action on GitConfigEntry: %v", a)
+				}
+				if strings.Contains(nodeText, "git_config") {
+					t.Errorf("unexpected Move action on git_config: %v", a)
 				}
 			}
 		}
 
-		// 4. Stationary Operands: side_by_side identifier maps in place
+		// 4. Target & insertions: only the newly added item and its wrapping list get inserted.
+		if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Insert && a.Node != nil && a.Node.Label == "GitConfig"
+		}) {
+			t.Errorf("expected GitConfig to be inserted")
+		}
+		if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Insert && a.Node != nil && a.Node.Type == "use_list"
+		}) {
+			t.Errorf("expected use_list to be inserted")
+		}
+
+		// 5. Stationary operands: existing path identifiers stay mapped in place.
 		var srcSide, dstSide *treesitter.ASTNode
 		for _, n := range srcAST.Descendants() {
 			if n.Label == "side_by_side" {
@@ -2335,6 +2354,23 @@ pub fn run() {}
 		}
 		if srcSide == nil || dstSide == nil || matchResult.Mappings.Src()[srcSide] != dstSide {
 			t.Errorf("expected side_by_side identifier to map in place")
+		}
+
+		var srcGitConfig, dstGitConfig *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Label == "git_config" {
+				srcGitConfig = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Label == "git_config" {
+				dstGitConfig = n
+				break
+			}
+		}
+		if srcGitConfig == nil || dstGitConfig == nil || matchResult.Mappings.Src()[srcGitConfig] != dstGitConfig {
+			t.Errorf("expected git_config identifier to map in place")
 		}
 	})
 }
