@@ -2763,3 +2763,407 @@ mod tests {
 		}
 	})
 }
+
+func TestTopDown_ChainedMethodCalleeCompatibility(t *testing.T) {
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		src := `fn configure_app() {
+    let mut flags = 0;
+    let app = App::new()
+        .arg(
+            Arg::new("highlight-line")
+                .long("highlight-line")
+                .short('H')
+                .takes_value(true)
+        );
+    finalize(flags);
+}
+`
+		dst := `fn configure_app() {
+    let mut flags = 0;
+    let app = App::new()
+        .arg(
+            Arg::new("nonprintable-notation")
+                .long("nonprintable-notation")
+                .hide_default_value(true)
+        )
+        .arg(
+            Arg::new("highlight-line")
+                .long("highlight-line")
+                .short('H')
+        );
+    finalize(flags);
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src has parse errors: count=%d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst has parse errors: count=%d", dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: configure_app declaration maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_app" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_app" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function configure_app to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: let mut flags = 0 and finalize(flags) map in place
+		var srcFlags, dstFlags *treesitter.ASTNode
+		var srcFinalize, dstFinalize *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+				srcFlags = n
+			}
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "finalize" {
+				srcFinalize = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+				dstFlags = n
+			}
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "finalize" {
+				dstFinalize = n
+			}
+		}
+		if srcFlags == nil || dstFlags == nil || mr.Mappings.Src()[srcFlags] != dstFlags {
+			t.Errorf("expected preceding let mut flags = 0 to map in place")
+		}
+		if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
+			t.Errorf("expected succeeding finalize(flags) to map in place")
+		}
+
+		// 3. Target & Containers: stationary Arg::new("highlight-line") chain maps in place
+		var srcShortCall, dstShortCall *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "field_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "short" {
+								srcShortCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "field_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "short" {
+								dstShortCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if srcShortCall == nil || dstShortCall == nil || mr.Mappings.Src()[srcShortCall] != dstShortCall {
+			t.Fatalf("expected stationary .short('H') call to map in place, got src=%v dst=%v", srcShortCall, dstShortCall)
+		}
+
+		// 4. Deleted tail call takes_value(true) must be unmapped in src
+		var srcTakesValueCall *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "field_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "takes_value" {
+								srcTakesValueCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if srcTakesValueCall == nil {
+			t.Fatal("failed to find src takes_value call")
+		}
+		if partner := mr.Mappings.Src()[srcTakesValueCall]; partner != nil {
+			t.Errorf("expected deleted takes_value call to be unmapped in src, got %v", partner)
+		}
+
+		// 5. Newly inserted hide_default_value(true) must be unmapped in dst
+		var dstHideDefaultCall *treesitter.ASTNode
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "field_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "hide_default_value" {
+								dstHideDefaultCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if dstHideDefaultCall == nil {
+			t.Fatal("failed to find dst hide_default_value call")
+		}
+		if partner := mr.Mappings.Dst()[dstHideDefaultCall]; partner != nil {
+			t.Errorf("expected inserted hide_default_value call to be unmapped in dst, got %v", partner)
+		}
+
+		// 6. Argument literal true in takes_value must NOT map to true in hide_default_value
+		var srcTrue, dstTrue *treesitter.ASTNode
+		for _, n := range srcTakesValueCall.Descendants() {
+			if n.Label == "true" {
+				srcTrue = n
+				break
+			}
+		}
+		for _, n := range dstHideDefaultCall.Descendants() {
+			if n.Label == "true" {
+				dstTrue = n
+				break
+			}
+		}
+		if srcTrue == nil || dstTrue == nil {
+			t.Fatalf("failed to locate true literals: src=%v dst=%v", srcTrue, dstTrue)
+		}
+		if mr.Mappings.Src()[srcTrue] == dstTrue {
+			t.Errorf("argument 'true' in takes_value must not be stolen by hide_default_value")
+		}
+	})
+
+	t.Run("FullEngine_Go", func(t *testing.T) {
+		src := `package main
+
+func configureApp() {
+	flags := 0
+	app := NewApp().
+		Arg(
+			NewArg("highlight-line").
+				Long("highlight-line").
+				Short('H').
+				TakesValue(true),
+		)
+	finalize(flags)
+	_ = app
+}
+`
+		dst := `package main
+
+func configureApp() {
+	flags := 0
+	app := NewApp().
+		Arg(
+			NewArg("nonprintable-notation").
+				Long("nonprintable-notation").
+				HideDefaultValue(true),
+		).
+		Arg(
+			NewArg("highlight-line").
+				Long("highlight-line").
+				Short('H'),
+		)
+	finalize(flags)
+	_ = app
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src has parse errors: count=%d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst has parse errors: count=%d", dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing Context: configureApp declaration maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configureApp" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configureApp" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected function configureApp to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: flags := 0 and finalize(flags) map in place
+		var srcFlags, dstFlags *treesitter.ASTNode
+		var srcFinalize, dstFinalize *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.StartRow == 3 {
+				srcFlags = n
+			}
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "finalize" {
+				srcFinalize = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.StartRow == 3 {
+				dstFlags = n
+			}
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "finalize" {
+				dstFinalize = n
+			}
+		}
+		if srcFlags == nil || dstFlags == nil || mr.Mappings.Src()[srcFlags] != dstFlags {
+			t.Errorf("expected preceding flags := 0 to map in place")
+		}
+		if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
+			t.Errorf("expected succeeding finalize(flags) to map in place")
+		}
+
+		// 3. Target & Containers: stationary NewArg("highlight-line") chain maps in place
+		var srcShortCall, dstShortCall *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "selector_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "Short" {
+								srcShortCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "selector_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "Short" {
+								dstShortCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if srcShortCall == nil || dstShortCall == nil || mr.Mappings.Src()[srcShortCall] != dstShortCall {
+			t.Fatalf("expected stationary .Short('H') call to map in place, got src=%v dst=%v", srcShortCall, dstShortCall)
+		}
+
+		// 4. Deleted tail call TakesValue(true) must be unmapped in src
+		var srcTakesValueCall *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "selector_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "TakesValue" {
+								srcTakesValueCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if srcTakesValueCall == nil {
+			t.Fatal("failed to find src TakesValue call")
+		}
+		if partner := mr.Mappings.Src()[srcTakesValueCall]; partner != nil {
+			t.Errorf("expected deleted TakesValue call to be unmapped in src, got %v", partner)
+		}
+
+		// 5. Newly inserted HideDefaultValue(true) must be unmapped in dst
+		var dstHideDefaultCall *treesitter.ASTNode
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				for _, c := range n.Children {
+					if c.Type == "selector_expression" && len(c.Children) > 0 {
+						for _, gc := range c.Children {
+							if gc.Label == "HideDefaultValue" {
+								dstHideDefaultCall = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if dstHideDefaultCall == nil {
+			t.Fatal("failed to find dst HideDefaultValue call")
+		}
+		if partner := mr.Mappings.Dst()[dstHideDefaultCall]; partner != nil {
+			t.Errorf("expected inserted HideDefaultValue call to be unmapped in dst, got %v", partner)
+		}
+
+		// 6. Argument literal true in TakesValue must NOT map to true in HideDefaultValue
+		var srcTrue, dstTrue *treesitter.ASTNode
+		for _, n := range srcTakesValueCall.Descendants() {
+			if n.Label == "true" {
+				srcTrue = n
+				break
+			}
+		}
+		for _, n := range dstHideDefaultCall.Descendants() {
+			if n.Label == "true" {
+				dstTrue = n
+				break
+			}
+		}
+		if srcTrue == nil || dstTrue == nil {
+			t.Fatalf("failed to locate true literals: src=%v dst=%v", srcTrue, dstTrue)
+		}
+		if mr.Mappings.Src()[srcTrue] == dstTrue {
+			t.Errorf("argument 'true' in TakesValue must not be stolen by HideDefaultValue")
+		}
+	})
+}
