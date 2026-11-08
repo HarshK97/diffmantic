@@ -173,6 +173,7 @@ var rustRules = &Rules{
 	},
 	Blocks: []string{
 		"block",
+		"declaration_list",
 	},
 	Wrappers: []string{
 		"parenthesized_expression",

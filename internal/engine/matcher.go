@@ -279,13 +279,14 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		r := rulesFor(src)
 		srcDecl := src.EnclosingContainerDeclaration(r)
 		dstDecl := dst.EnclosingContainerDeclaration(r)
-		if srcDecl == nil || dstDecl == nil || m.Src()[srcDecl] == dstDecl {
+		sameDecl := (srcDecl == nil && dstDecl == nil) || (srcDecl != nil && dstDecl != nil && m.Src()[srcDecl] == dstDecl)
+		if sameDecl {
 			continue
 		}
 
 		srcBlock := src.Parent
 		dstBlock := dst.Parent
-		if srcBlock == nil || dstBlock == nil || !isStatementBlock(srcBlock, r) || !isStatementBlock(dstBlock, r) {
+		if srcBlock == nil || dstBlock == nil || !isStatementContainer(srcBlock, r) || !isStatementContainer(dstBlock, r) {
 			continue
 		}
 
@@ -345,7 +346,8 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 		srcDecl := src.EnclosingContainerDeclaration(r)
 		dstDecl := dst.EnclosingContainerDeclaration(r)
-		if srcDecl == nil || dstDecl == nil || m.Src()[srcDecl] == dstDecl {
+		sameDecl := (srcDecl == nil && dstDecl == nil) || (srcDecl != nil && dstDecl != nil && m.Src()[srcDecl] == dstDecl)
+		if sameDecl {
 			continue
 		}
 		if !isStatementContainer(src.Parent, r) || !isStatementContainer(dst.Parent, r) {
