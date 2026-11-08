@@ -386,6 +386,10 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 	// can "move" from one struct field to an unrelated one.
 	crossKey := src.Parent != nil && dst.Parent != nil && r.IsPair(src.Parent.Type) && r.IsPair(dst.Parent.Type)
 
+	srcDecl := engine.GetEnclosingDeclaration(src)
+	dstDecl := engine.GetEnclosingDeclaration(dst)
+	crossDecl := srcDecl != nil && dstDecl != nil && srcDecl != dstDecl && ms.Get(srcDecl) != dstDecl
+
 	lineDist := int(src.StartRow) - int(dst.StartRow)
 	if lineDist < 0 {
 		lineDist = -lineDist
@@ -393,7 +397,7 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	// Same-line inline shifts within the same enclosing scope.
 	if lineDist == 0 && sameScopeDeclaration(src, dst, ms, r) {
-		if crossKey {
+		if crossKey || crossDecl {
 			return 5
 		}
 		return 1

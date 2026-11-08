@@ -169,6 +169,7 @@ var rustRules = &Rules{
 		"field_identifier",
 		"shorthand_field_identifier",
 		"scoped_identifier",
+		"lifetime",
 	},
 	Blocks: []string{
 		"block",
@@ -189,6 +190,7 @@ var rustRules = &Rules{
 		"use_list",
 		"tuple_pattern",
 		"tuple_struct_pattern",
+		"lifetime_parameter",
 	},
 	Pairs: []string{
 		"field_initializer",
@@ -258,6 +260,7 @@ var rustRules = &Rules{
 		"tuple_type",
 		"type_identifier",
 		"unit_type",
+		"lifetime",
 	},
 	JumpStatements: []string{
 		"return_expression",
