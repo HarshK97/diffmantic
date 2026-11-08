@@ -4154,7 +4154,6 @@ func TestStationaryWrappedMacroArguments(t *testing.T) {
 	})
 }
 
-
 func TestStationaryReferenceExpressionWrapper(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		r := rules.Get("rust")
