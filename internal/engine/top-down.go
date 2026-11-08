@@ -445,6 +445,9 @@ func getScopeName(n *treesitter.ASTNode) string {
 		}
 	}
 	enc := GetEnclosingDeclaration(n)
+	for enc != nil && r != nil && r.IsImport(enc.Type) {
+		enc = GetEnclosingDeclaration(enc)
+	}
 	if enc != nil {
 		if name := getDeclarationName(enc); name != "" {
 			return name

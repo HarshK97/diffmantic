@@ -1226,6 +1226,28 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 			}
 		}
 	}
+	// For import declarations with scoped container paths (e.g. Rust `use crate::{...};`),
+	// extract the base path prefix.
+	r := rl.r
+	isImport := (r != nil && r.IsImport(n.Type)) || (r == nil && rules.IsImport(n.Type))
+	if isImport {
+		for _, child := range n.Children {
+			if child.IsKeyword || (r != nil && r.IsKeyword(child.Type, child.Label)) || (r == nil && rules.IsKeyword(child.Type, child.Label)) {
+				continue
+			}
+			if rl.isWrapper(child.Type) && len(child.Children) >= 2 && child.Children[0] != nil {
+				hasTrailingList := slices.ContainsFunc(child.Children, func(sub *treesitter.ASTNode) bool {
+					return (r != nil && (r.IsUnordered(sub.Type) || r.IsDelimitedContainer(sub.Type))) ||
+						rules.IsDelimitedContainer(sub.Type)
+				})
+				if hasTrailingList {
+					if txt := identifierText(child.Children[0]); txt != "" {
+						return txt
+					}
+				}
+			}
+		}
+	}
 	// Delegate wrappers like Python's decorated_definition to the wrapped declaration before scanning children.
 	for _, child := range n.Children {
 		if rl.isDecl(child.Type) && (rl.isWrapper(n.Type) || !rl.isLocalVar(child.Type)) {
