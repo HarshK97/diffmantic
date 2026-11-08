@@ -36,6 +36,7 @@ type Rules struct {
 	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
 	Statements            []string // Standalone statement and statement-level declaration node types.
 	Imports               []string // Import and include declaration node types.
+	Attributes            []string // Decorators, attributes, and annotations on declarations (e.g. attribute_item).
 	OpeningDelimiters     []string // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
 	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
 	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
@@ -73,6 +74,7 @@ type Rules struct {
 	closingDelimitersSet     map[string]struct{}
 	separatorsSet            map[string]struct{}
 	importsSet               map[string]struct{}
+	attributesSet            map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -130,6 +132,7 @@ func (r *Rules) CompileSets() {
 	r.sentinelsSet = sliceToSet(r.Sentinels)
 	r.statementsSet = sliceToSet(r.Statements)
 	r.importsSet = sliceToSet(r.Imports)
+	r.attributesSet = sliceToSet(r.Attributes)
 	if len(r.OpeningDelimiters) > 0 {
 		r.openingDelimitersSet = sliceToSet(r.OpeningDelimiters)
 	} else {
@@ -237,6 +240,18 @@ func (r *Rules) IsImport(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Imports, nodeType)
+}
+
+// IsAttribute reports whether nodeType is an attribute or decorator in the language.
+func (r *Rules) IsAttribute(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.attributesSet) > 0 {
+		_, ok := r.attributesSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Attributes, nodeType)
 }
 
 // IsAssignment reports whether nodeType is an assignment expression or statement.
@@ -921,6 +936,19 @@ func IsJumpStatement(nodeType string) bool {
 		}
 	}
 	return defaultRules.IsJumpStatement(nodeType)
+}
+
+// IsAttribute reports whether nodeType is configured as an attribute or decorator in any language rule set.
+func IsAttribute(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsAttribute(nodeType) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsExpression reports whether nodeType represents an expression node.

@@ -157,6 +157,10 @@ var rustRules = &Rules{
 	Imports: []string{
 		"use_declaration",
 	},
+	Attributes: []string{
+		"attribute_item",
+		"inner_attribute_item",
+	},
 	Identifiers: []string{
 		"identifier",
 		"type_identifier",

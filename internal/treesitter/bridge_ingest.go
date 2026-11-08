@@ -329,16 +329,64 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 					cb.ParentRow = int(target.Parent.StartRow)
 					cb.ParentEndRow = int(target.Parent.EndRow)
 				}
-				isTargetDecl := rules.IsDeclaration(target.Type)
-				if r != nil {
-					isTargetDecl = r.IsDeclaration(target.Type) && !r.IsLocalVarDeclaration(target.Type)
+
+				isAttr := func(t string) bool {
+					if r != nil {
+						return r.IsAttribute(t)
+					}
+					return rules.IsAttribute(t)
 				}
-				if isTargetDecl {
-					cb.EnclosingDecl = target
-					cb.DeclType = target.Type
-					cb.DeclStart = target.StartByte
-					cb.DeclEnd = target.EndByte
+				isDecl := func(t string) bool {
+					if r != nil {
+						return r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t)
+					}
+					return rules.IsDeclaration(t)
+				}
+				isDelim := func(t string) bool {
+					if r != nil {
+						return r.IsDelimiter(t, t) || r.IsPunctuation(t)
+					}
+					return rules.IsDelimiter(t, t) || rules.IsPunctuation(t)
+				}
+
+				declTarget := target
+				if isAttr(target.Type) {
+					// When comments sit before an attribute or decorator, walk past any
+					// stacked attributes and punctuation to bind directly to the declaration.
+					currIdx := nodes[nextCodeIdx].NextSiblingIdx
+					for currIdx != FlatNodeNone && int(currIdx) < len(nodes) {
+						cType := ""
+						if int(nodes[currIdx].TypeID) < len(symbols) {
+							cType = symbols[nodes[currIdx].TypeID]
+						}
+						if isComment(cType) || cType == "\n" || isAttr(cType) || isDelim(cType) {
+							currIdx = nodes[currIdx].NextSiblingIdx
+							continue
+						}
+						if cand := findASTNode(currIdx, nodes, flatToAST); cand != nil && isDecl(cand.Type) {
+							declTarget = cand
+						}
+						break
+					}
+				}
+
+				if declTarget != target && declTarget.Parent != nil {
+					cb.ParentType = declTarget.Parent.Type
+					cb.ParentStart = declTarget.Parent.StartByte
+					cb.ParentEnd = declTarget.Parent.EndByte
+					cb.ParentRow = int(declTarget.Parent.StartRow)
+					cb.ParentEndRow = int(declTarget.Parent.EndRow)
+				}
+
+				if isDecl(declTarget.Type) {
+					cb.EnclosingDecl = declTarget
+					cb.DeclType = declTarget.Type
+					cb.DeclStart = declTarget.StartByte
+					cb.DeclEnd = declTarget.EndByte
 					cb.RelativePath = "doc"
+					cb.AnchorNode = declTarget
+					declTarget.LeadingTrivia = append(declTarget.LeadingTrivia, cb)
+					continue
 				} else if enc := findEnclosingDecl(target.Parent, r); enc != nil {
 					cb.EnclosingDecl = enc
 					cb.DeclType = enc.Type

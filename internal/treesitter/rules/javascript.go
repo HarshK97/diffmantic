@@ -171,6 +171,9 @@ var javascriptRules = &Rules{
 	Imports: []string{
 		"import_statement",
 	},
+	Attributes: []string{
+		"decorator",
+	},
 	Identifiers: []string{
 		"identifier",
 		"property_identifier",

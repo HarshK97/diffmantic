@@ -73,5 +73,6 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		checkField("Tags", r.Tags)
 		checkField("Statements", r.Statements)
 		checkField("Imports", r.Imports)
+		checkField("Attributes", r.Attributes)
 	}
 }

@@ -1068,3 +1068,541 @@ func TestDiffComments_WordLevelMultiLine(t *testing.T) {
 		t.Errorf("expected row 12 for the 3rd line, got src %d, dst %d", act.Node.StartRow, act.DestNode.StartRow)
 	}
 }
+
+// TestCommentsAcrossLanguages checks doc comment scoping across all languages
+// for plain and decorated fields, methods, and functions.
+func TestCommentsAcrossLanguages(t *testing.T) {
+	langs := []struct {
+		lang string
+		file string
+		src  string
+	}{
+		{
+			lang: "java",
+			file: "Test.java",
+			src: `class Foo {
+    /** Doc comment on field */
+    @Deprecated
+    private int bar;
+
+    /** Doc comment on method */
+    @Override
+    public void baz() {}
+}`,
+		},
+		{
+			lang: "python",
+			file: "test.py",
+			src: `# Doc comment on fn 1
+def foo():
+    pass
+
+# Doc comment on fn 2
+@staticmethod
+def bar():
+    pass
+`,
+		},
+		{
+			lang: "typescript",
+			file: "test.ts",
+			src: `class Foo {
+    /** Doc comment on property */
+    @Input()
+    bar: string;
+
+    /** Doc comment on method */
+    @HostListener("click")
+    baz() {}
+}`,
+		},
+		{
+			lang: "c",
+			file: "test.c",
+			src: `struct Foo {
+    /** Doc comment on field */
+    int bar;
+};
+
+/** Doc comment on fn */
+void baz(void) {}
+`,
+		},
+		{
+			lang: "cpp",
+			file: "test.cpp",
+			src: `struct Foo {
+    /** Doc comment on field */
+    int bar;
+};
+
+/** Doc comment on fn */
+int baz() { return 0; }
+`,
+		},
+		{
+			lang: "go",
+			file: "test.go",
+			src: `package main
+
+type Foo struct {
+    // Doc comment on field
+    Bar int
+}
+
+// Doc comment on fn
+func Baz() {}
+`,
+		},
+		{
+			lang: "zig",
+			file: "test.zig",
+			src: `const Foo = struct {
+    /// Doc comment on field
+    bar: i32,
+
+    /// Doc comment on fn
+    pub fn baz() void {}
+};
+`,
+		},
+		{
+			lang: "lua",
+			file: "test.lua",
+			src: `local obj = {
+    -- Doc comment on field
+    field = 1,
+}
+
+-- Doc comment on fn
+function baz()
+end
+`,
+		},
+	}
+
+	for _, tc := range langs {
+		t.Run(tc.lang, func(t *testing.T) {
+			ast, err := treesitter.Parse([]byte(tc.src), tc.file)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tc.file, err)
+			}
+			comments := ExtractComments(ast)
+			if len(comments) != 2 {
+				t.Fatalf("expected 2 comments for %s, got %d", tc.lang, len(comments))
+			}
+			for i, c := range comments {
+				if c.EnclosingDecl == nil {
+					t.Errorf("[%s] comment %d: EnclosingDecl should not be nil", tc.lang, i)
+				}
+				if c.AnchorNode == nil {
+					t.Errorf("[%s] comment %d: AnchorNode should not be nil", tc.lang, i)
+				}
+				if tc.lang != "lua" || i == 1 {
+					if c.RelativePath != "doc" {
+						t.Errorf("[%s] comment %d: expected RelativePath 'doc', got %q", tc.lang, i, c.RelativePath)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAttributedDeclarationCommentScoping(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		src := `pub struct Opt {
+    /// The width of decorations.
+    #[structopt(short = "w", long = "width")]
+    pub width: Option<String>,
+
+    /// Whether to use a pager when displaying output.
+    /// default pager is less: this can be altered by setting the environment variables
+    #[structopt(long = "paging", default_value = "auto")]
+    pub paging_mode: String,
+}
+`
+		ast, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse test.rs: %v", err)
+		}
+
+		comments := ExtractComments(ast)
+		if len(comments) != 3 {
+			t.Fatalf("expected 3 comments, got %d", len(comments))
+		}
+
+		// Comment 0: "/// The width of decorations."
+		c0 := comments[0]
+		if c0.EnclosingDecl == nil || c0.EnclosingDecl.Type != "field_declaration" {
+			t.Errorf("expected comment 0 EnclosingDecl to be field_declaration, got %v", c0.EnclosingDecl)
+		}
+		if c0.RelativePath != "doc" {
+			t.Errorf("expected comment 0 RelativePath to be 'doc', got %q", c0.RelativePath)
+		}
+		if c0.AnchorNode == nil || c0.AnchorNode.Type != "field_declaration" {
+			t.Errorf("expected comment 0 AnchorNode to be field_declaration, got %v", c0.AnchorNode)
+		}
+
+		// Comments 1 & 2: on paging_mode
+		for i, ci := range comments[1:3] {
+			idx := i + 1
+			if ci.EnclosingDecl == nil || ci.EnclosingDecl.Type != "field_declaration" {
+				t.Errorf("expected comment %d EnclosingDecl to be field_declaration, got %v", idx, ci.EnclosingDecl)
+			}
+			if ci.RelativePath != "doc" {
+				t.Errorf("expected comment %d RelativePath to be 'doc', got %q", idx, ci.RelativePath)
+			}
+			if ci.AnchorNode == nil || ci.AnchorNode.Type != "field_declaration" {
+				t.Errorf("expected comment %d AnchorNode to be field_declaration, got %v", idx, ci.AnchorNode)
+			}
+			// Must have a different declaration ID than comment 0 (different fields)
+			if ci.EnclosingDecl.ID == c0.EnclosingDecl.ID {
+				t.Errorf("comment %d and comment 0 should belong to distinct field declarations, both have ID %d", idx, c0.EnclosingDecl.ID)
+			}
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust", func(t *testing.T) {
+			oldSrc := `pub struct Opt {
+    /// The width of underline/overline decorations. Use --width=variable to extend
+    #[structopt(short = "w", long = "width")]
+    pub width: Option<String>,
+
+    /// Whether to use a pager when displaying output. Options are: auto, always, and never. The
+    /// default pager is less: this can be altered by setting the environment variables
+    #[structopt(long = "paging", default_value = "auto")]
+    pub paging_mode: String,
+}
+`
+			newSrc := `pub struct Opt {
+    /// The width of underline/overline decorations. Examples: 72
+    // (equivalent to 72 but may be useful if the caller has a variable holding the value 74).
+    #[structopt(short = "w", long = "width")]
+    pub width: Option<String>,
+
+    /// Whether to use a pager when displaying output. Options are: auto, always, and never.
+    #[structopt(long = "paging", default_value = "auto")]
+    pub paging_mode: String,
+}
+`
+			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+			if err != nil {
+				t.Fatalf("parse oldSrc: %v", err)
+			}
+			newAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+			if err != nil {
+				t.Fatalf("parse newSrc: %v", err)
+			}
+
+			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+
+			// 1. Enclosing Context: struct Opt must map in place
+			if mr.Mappings.Src()[oldAST] != newAST {
+				t.Errorf("expected struct_item to map in place")
+			}
+
+			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
+			r := rules.Get("rust")
+			for _, n := range oldAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					if mr.Mappings.Src()[n] == nil {
+						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
+					}
+				}
+			}
+			srcComments := ExtractComments(oldAST)
+			dstComments := ExtractComments(newAST)
+			res := DiffComments(srcComments, dstComments, mr.Mappings)
+
+			var foundCrossFieldUpdate bool
+			var foundDeletedPagerLine bool
+			var foundInsertedWidthLine bool
+
+			for _, act := range res.Actions {
+				if act.Type == actions.Update {
+					// Make sure the pager comment doesn't pair with the width comment across fields.
+					if (act.Node != nil && act.DestNode != nil && act.Node.StartRow == 6 && act.DestNode.StartRow == 2) ||
+						((strings.Contains(act.Node.Label, "default") || strings.Contains(act.Node.Label, "pager")) &&
+							(strings.Contains(act.DestNode.Label, "equivalent") || strings.Contains(act.DestNode.Label, "holding"))) {
+						foundCrossFieldUpdate = true
+					}
+				}
+				if act.Type == actions.Delete && strings.Contains(act.Node.Label, "default pager") {
+					foundDeletedPagerLine = true
+				}
+				if act.Type == actions.Insert && strings.Contains(act.Node.Label, "equivalent to 72") {
+					foundInsertedWidthLine = true
+				}
+			}
+
+			if foundCrossFieldUpdate {
+				t.Errorf("FATAL: false cross-field update detected between pager comment and width comment! Actions: %+v", res.Actions)
+			}
+			if !foundDeletedPagerLine {
+				t.Errorf("expected pager comment line to be emitted as Delete action, got actions: %+v", res.Actions)
+			}
+			if !foundInsertedWidthLine {
+				t.Errorf("expected width comment line to be emitted as Insert action, got actions: %+v", res.Actions)
+			}
+		})
+
+		t.Run("TypeScript", func(t *testing.T) {
+			oldSrc := `class Component {
+    /** The width of decorations. */
+    @HostListener("click")
+    onClick() {
+        console.log("clicked");
+    }
+
+    /** Options are: auto, always, and never. */
+    /** The default pager is less: this can be altered by setting the environment variables */
+    @HostListener("keydown")
+    onKeydown() {
+        console.log("keydown");
+    }
+}
+`
+			newSrc := `class Component {
+    /** The width of decorations. */
+    /** (equivalent to 72 but may be useful if the caller has a variable holding the value 74). */
+    @HostListener("click")
+    onClick() {
+        console.log("clicked");
+    }
+
+    /** Options are: auto, always, and never. */
+    @HostListener("keydown")
+    onKeydown() {
+        console.log("keydown");
+    }
+}
+`
+			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.ts")
+			if err != nil {
+				t.Fatalf("parse oldSrc: %v", err)
+			}
+			newAST, err := treesitter.Parse([]byte(newSrc), "test.ts")
+			if err != nil {
+				t.Fatalf("parse newSrc: %v", err)
+			}
+
+			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+
+			// 1. Enclosing Context: class Component must map in place
+			if mr.Mappings.Src()[oldAST] != newAST {
+				t.Errorf("expected class_declaration to map in place")
+			}
+
+			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
+			r := rules.Get("typescript")
+			for _, n := range oldAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					if mr.Mappings.Src()[n] == nil {
+						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
+					}
+				}
+			}
+			srcComments := ExtractComments(oldAST)
+			dstComments := ExtractComments(newAST)
+			res := DiffComments(srcComments, dstComments, mr.Mappings)
+
+			var foundCrossMethodUpdate bool
+			var foundDeletedPagerLine bool
+			var foundInsertedWidthLine bool
+
+			for _, act := range res.Actions {
+				if act.Type == actions.Update {
+					if (strings.Contains(act.Node.Label, "default") || strings.Contains(act.Node.Label, "pager")) &&
+						(strings.Contains(act.DestNode.Label, "equivalent") || strings.Contains(act.DestNode.Label, "holding")) {
+						foundCrossMethodUpdate = true
+					}
+				}
+				if act.Type == actions.Delete && strings.Contains(act.Node.Label, "default pager") {
+					foundDeletedPagerLine = true
+				}
+				if act.Type == actions.Insert && strings.Contains(act.Node.Label, "equivalent to 72") {
+					foundInsertedWidthLine = true
+				}
+			}
+
+			if foundCrossMethodUpdate {
+				t.Errorf("FATAL: false cross-method update detected in TypeScript! Actions: %+v", res.Actions)
+			}
+			if !foundDeletedPagerLine {
+				t.Errorf("expected pager comment line to be emitted as Delete action, got actions: %+v", res.Actions)
+			}
+			if !foundInsertedWidthLine {
+				t.Errorf("expected width comment line to be emitted as Insert action, got actions: %+v", res.Actions)
+			}
+		})
+
+		t.Run("Python", func(t *testing.T) {
+			oldSrc := `class Controller:
+    # The width of decorations.
+    @app.route("/first")
+    def handle_first(self):
+        return "first"
+
+    # Options are: auto, always, and never.
+    # The default pager is less: this can be altered by setting the environment variables
+    @app.route("/second")
+    def handle_second(self):
+        return "second"
+`
+			newSrc := `class Controller:
+    # The width of decorations.
+    # (equivalent to 72 but may be useful if the caller has a variable holding the value 74).
+    @app.route("/first")
+    def handle_first(self):
+        return "first"
+
+    # Options are: auto, always, and never.
+    @app.route("/second")
+    def handle_second(self):
+        return "second"
+`
+			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.py")
+			if err != nil {
+				t.Fatalf("parse oldSrc: %v", err)
+			}
+			newAST, err := treesitter.Parse([]byte(newSrc), "test.py")
+			if err != nil {
+				t.Fatalf("parse newSrc: %v", err)
+			}
+
+			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+
+			// 1. Enclosing Context: class Controller must map in place
+			if mr.Mappings.Src()[oldAST] != newAST {
+				t.Errorf("expected class_definition to map in place")
+			}
+
+			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
+			r := rules.Get("python")
+			for _, n := range oldAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					if mr.Mappings.Src()[n] == nil {
+						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
+					}
+				}
+			}
+
+			srcComments := ExtractComments(oldAST)
+			dstComments := ExtractComments(newAST)
+			res := DiffComments(srcComments, dstComments, mr.Mappings)
+
+			var foundCrossMethodUpdate bool
+			var foundDeletedPagerLine bool
+			var foundInsertedWidthLine bool
+
+			for _, act := range res.Actions {
+				if act.Type == actions.Update {
+					if (strings.Contains(act.Node.Label, "default") || strings.Contains(act.Node.Label, "pager")) &&
+						(strings.Contains(act.DestNode.Label, "equivalent") || strings.Contains(act.DestNode.Label, "holding")) {
+						foundCrossMethodUpdate = true
+					}
+				}
+				if act.Type == actions.Delete && strings.Contains(act.Node.Label, "default pager") {
+					foundDeletedPagerLine = true
+				}
+				if act.Type == actions.Insert && strings.Contains(act.Node.Label, "equivalent to 72") {
+					foundInsertedWidthLine = true
+				}
+			}
+
+			if foundCrossMethodUpdate {
+				t.Errorf("FATAL: false cross-method update detected in Python! Actions: %+v", res.Actions)
+			}
+			if !foundDeletedPagerLine {
+				t.Errorf("expected pager comment line to be emitted as Delete action, got actions: %+v", res.Actions)
+			}
+			if !foundInsertedWidthLine {
+				t.Errorf("expected width comment line to be emitted as Insert action, got actions: %+v", res.Actions)
+			}
+		})
+
+		t.Run("Zig", func(t *testing.T) {
+			oldSrc := `const Config = struct {
+    /// The width of decorations.
+    width: u32,
+
+    /// Options are: auto, always, and never.
+    /// The default pager is less: this can be altered by setting the environment variables
+    paging: []const u8,
+};
+`
+			newSrc := `const Config = struct {
+    /// The width of decorations.
+    /// (equivalent to 72 but may be useful if the caller has a variable holding the value 74).
+    width: u32,
+
+    /// Options are: auto, always, and never.
+    paging: []const u8,
+};
+`
+			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.zig")
+			if err != nil {
+				t.Fatalf("parse oldSrc: %v", err)
+			}
+			newAST, err := treesitter.Parse([]byte(newSrc), "test.zig")
+			if err != nil {
+				t.Fatalf("parse newSrc: %v", err)
+			}
+
+			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+
+			// 1. Enclosing Context: struct Config must map in place
+			if mr.Mappings.Src()[oldAST] != newAST {
+				t.Errorf("expected struct to map in place")
+			}
+
+			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
+			r := rules.Get("zig")
+			for _, n := range oldAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					if mr.Mappings.Src()[n] == nil {
+						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
+					}
+				}
+			}
+
+			srcComments := ExtractComments(oldAST)
+			dstComments := ExtractComments(newAST)
+			res := DiffComments(srcComments, dstComments, mr.Mappings)
+
+			var foundCrossFieldUpdate bool
+			var foundDeletedPagerLine bool
+			var foundInsertedWidthLine bool
+
+			for _, act := range res.Actions {
+				if act.Type == actions.Update {
+					if (strings.Contains(act.Node.Label, "default") || strings.Contains(act.Node.Label, "pager")) &&
+						(strings.Contains(act.DestNode.Label, "equivalent") || strings.Contains(act.DestNode.Label, "holding")) {
+						foundCrossFieldUpdate = true
+					}
+				}
+				if act.Type == actions.Delete && strings.Contains(act.Node.Label, "default pager") {
+					foundDeletedPagerLine = true
+				}
+				if act.Type == actions.Insert && strings.Contains(act.Node.Label, "equivalent to 72") {
+					foundInsertedWidthLine = true
+				}
+			}
+
+			if foundCrossFieldUpdate {
+				t.Errorf("FATAL: false cross-field update detected in Zig! Actions: %+v", res.Actions)
+			}
+			if !foundDeletedPagerLine {
+				t.Errorf("expected pager comment line to be emitted as Delete action, got actions: %+v", res.Actions)
+			}
+			if !foundInsertedWidthLine {
+				t.Errorf("expected width comment line to be emitted as Insert action, got actions: %+v", res.Actions)
+			}
+		})
+	})
+}
