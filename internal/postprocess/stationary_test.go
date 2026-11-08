@@ -4153,3 +4153,263 @@ func TestStationaryWrappedMacroArguments(t *testing.T) {
 		}
 	})
 }
+
+
+func TestStationaryReferenceExpressionWrapper(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`fn format_commit() {
+    let prefix = "commit: ";
+    format_commit_line_captures_with_osc8_commit_hyperlink(captures, repo);
+    options::set::set_options(&mut opt, git_config, &arg_matches, assets);
+    output_buffer.push_str(prefix);
+}
+`)
+		dst := []byte(`fn format_commit() {
+    let prefix = "commit: ";
+    let shift = 42;
+    format_commit_line_captures_with_osc8_commit_hyperlink(captures, &repo);
+    options::set::set_options(&mut opt, &mut git_config, &arg_matches, assets);
+    output_buffer.push_str(prefix);
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: enclosing function format_commit maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "format_commit") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "format_commit") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function format_commit to map in place")
+		}
+
+		// 2. Surrounding sequence: prefix declaration and output_buffer push call map in place.
+		var srcPrefix, dstPrefix, srcPush, dstPush *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prefix") {
+				srcPrefix = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "push_str") {
+				srcPush = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prefix") {
+				dstPrefix = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "push_str") {
+				dstPush = n
+			}
+		}
+		if srcPrefix == nil || dstPrefix == nil || mr.Mappings.Src()[srcPrefix] != dstPrefix {
+			t.Fatalf("expected prefix declaration to map in place")
+		}
+		if srcPush == nil || dstPush == nil || mr.Mappings.Src()[srcPush] != dstPush {
+			t.Fatalf("expected push_str call to map in place")
+		}
+
+		// 3. Target & Containers: calls to format_commit_line_captures and set_options map in place.
+		var srcCall1, dstCall1, srcCall2, dstCall2 *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "format_commit_line_captures") {
+				srcCall1 = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_options") {
+				srcCall2 = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "format_commit_line_captures") {
+				dstCall1 = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_options") {
+				dstCall2 = n
+			}
+		}
+		if srcCall1 == nil || dstCall1 == nil || mr.Mappings.Src()[srcCall1] != dstCall1 {
+			t.Fatalf("expected format_commit_line_captures call to map in place")
+		}
+		if srcCall2 == nil || dstCall2 == nil || mr.Mappings.Src()[srcCall2] != dstCall2 {
+			t.Fatalf("expected set_options call to map in place")
+		}
+
+		// 4. Stationary Operands: repo and git_config identifiers map in place and have NO Move or Delete actions.
+		var srcRepo, dstRepo, srcGitConfig, dstGitConfig *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "repo" {
+				srcRepo = n
+			} else if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "git_config" {
+				srcGitConfig = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "repo" {
+				dstRepo = n
+			} else if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "git_config" {
+				dstGitConfig = n
+			}
+		}
+		if srcRepo == nil || dstRepo == nil {
+			t.Fatalf("expected repo identifiers to exist")
+		}
+		if srcGitConfig == nil || dstGitConfig == nil {
+			t.Fatalf("expected git_config identifiers to exist")
+		}
+		if mr.Mappings.Src()[srcRepo] != dstRepo {
+			t.Fatalf("expected repo to map in place to dstRepo, got %v", mr.Mappings.Src()[srcRepo])
+		}
+		if mr.Mappings.Src()[srcGitConfig] != dstGitConfig {
+			t.Fatalf("expected git_config to map in place to dstGitConfig, got %v", mr.Mappings.Src()[srcGitConfig])
+		}
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && (a.Node == srcRepo || a.Node == srcGitConfig) {
+				t.Fatalf("unexpected Move action on stationary operand: %v", a)
+			}
+			if a.Type == actions.Delete && (a.Node == srcRepo || a.Node == srcGitConfig) {
+				t.Fatalf("unexpected Delete action on stationary operand: %v", a)
+			}
+		}
+	})
+}
+
+func TestStationaryGenericTypeWrapperUnwrap(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`fn slide_to_prev_node(nodes: &[&Syntax], start_idx: usize, end_idx: usize) {
+    let initial = start_idx;
+    if start_idx == 0 {
+        return;
+    }
+    let end = end_idx;
+}
+`)
+		dst := []byte(`fn slide_to_prev_node<'a>(nodes: &[&'a Syntax<'a>], start_idx: usize, end_idx: usize) {
+    let initial = start_idx;
+    if start_idx == 0 {
+        return;
+    }
+    let end = end_idx;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: slide_to_prev_node maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "slide_to_prev_node") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "slide_to_prev_node") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function slide_to_prev_node to map in place")
+		}
+
+		// 2. Surrounding sequence: initial variable, if condition, and end variable map in place.
+		var srcInit, dstInit, srcIf, dstIf, srcEnd, dstEnd *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "initial") {
+				srcInit = n
+			} else if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "start_idx == 0") {
+				srcIf = n
+			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "end") {
+				srcEnd = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "initial") {
+				dstInit = n
+			} else if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "start_idx == 0") {
+				dstIf = n
+			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "end") {
+				dstEnd = n
+			}
+		}
+		if srcInit == nil || dstInit == nil || mr.Mappings.Src()[srcInit] != dstInit {
+			t.Fatalf("expected initial local var to map in place")
+		}
+		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
+			t.Fatalf("expected if statement to map in place")
+		}
+		if srcEnd == nil || dstEnd == nil || mr.Mappings.Src()[srcEnd] != dstEnd {
+			t.Fatalf("expected end local var to map in place")
+		}
+
+		// 3. Target: Syntax type identifier maps in place and has NO Move or Delete action.
+		var srcSyntax, dstSyntax *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "Syntax" {
+				srcSyntax = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "Syntax" {
+				dstSyntax = n
+				break
+			}
+		}
+		if srcSyntax == nil || dstSyntax == nil {
+			t.Fatalf("expected Syntax identifiers to exist")
+		}
+		if mr.Mappings.Src()[srcSyntax] != dstSyntax {
+			t.Fatalf("expected Syntax to map in place, got %v", mr.Mappings.Src()[srcSyntax])
+		}
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcSyntax {
+				t.Fatalf("unexpected Move action on stationary Syntax: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcSyntax {
+				t.Fatalf("unexpected Delete action on stationary Syntax: %v", a)
+			}
+		}
+	})
+}
