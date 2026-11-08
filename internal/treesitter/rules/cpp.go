@@ -317,6 +317,10 @@ var cppRules = &Rules{
 		"template_argument_list",
 		"template_parameter_list",
 	},
+	Clauses: []string{
+		"else_clause",
+		"catch_clause",
+	},
 	CaseClauses: []string{
 		"case_statement",
 	},

@@ -281,6 +281,10 @@ var javaRules = &Rules{
 		"enum_body",
 		"formal_parameters",
 	},
+	Clauses: []string{
+		"catch_clause",
+		"finally_clause",
+	},
 	CaseClauses: []string{
 		"switch_block_statement_group",
 		"switch_rule",

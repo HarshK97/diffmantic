@@ -266,6 +266,11 @@ var javascriptRules = &Rules{
 		"formal_parameters",
 		"object",
 	},
+	Clauses: []string{
+		"else_clause",
+		"catch_clause",
+		"finally_clause",
+	},
 	CaseClauses: []string{
 		"switch_case",
 		"switch_default",

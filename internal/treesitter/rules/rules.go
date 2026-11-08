@@ -32,6 +32,7 @@ type Rules struct {
 	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
 	Selectors             []string // Member or field access expressions (e.g. selector_expression, field_expression, member_expression, attribute, field_access).
 	Expressions           []string // Expression container node types.
+	Clauses               []string // Clause wrappers connecting control-flow constructs to alternative blocks (else_clause, elif_clause, catch_clause, finally_clause).
 	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
 	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
 	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
@@ -71,6 +72,7 @@ type Rules struct {
 	selectorsSet             map[string]struct{}
 	expressionsSet           map[string]struct{}
 	caseClausesSet           map[string]struct{}
+	clausesSet               map[string]struct{}
 	tagsSet                  map[string]struct{}
 	sentinelsSet             map[string]struct{}
 	openingDelimitersSet     map[string]struct{}
@@ -133,6 +135,7 @@ func (r *Rules) CompileSets() {
 	r.selectorsSet = sliceToSet(r.Selectors)
 	r.expressionsSet = sliceToSet(r.Expressions)
 	r.caseClausesSet = sliceToSet(r.CaseClauses)
+	r.clausesSet = sliceToSet(r.Clauses)
 	r.tagsSet = sliceToSet(r.Tags)
 	r.sentinelsSet = sliceToSet(r.Sentinels)
 	r.statementsSet = sliceToSet(r.Statements)
@@ -523,6 +526,28 @@ func (r *Rules) IsBlock(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Blocks, nodeType)
+}
+
+// IsClause reports whether nodeType is a clause wrapper in a control-flow construct.
+func (r *Rules) IsClause(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.clausesSet) > 0 {
+		_, ok := r.clausesSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Clauses, nodeType)
+}
+
+// IsClause reports whether nodeType is configured as a clause wrapper in any language rule set.
+func IsClause(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsClause(nodeType) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsCaseClause reports whether nodeType is a branch or pattern arm in a switch/match/select statement.

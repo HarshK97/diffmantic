@@ -4651,13 +4651,13 @@ func TestRollupMatchedContainers_ElseClause_FullEngine(t *testing.T) {
 			// 3. Target clause: else_clause must map in place to dst else_clause
 			var srcElseClause, dstElseClause *treesitter.ASTNode
 			for _, n := range srcAST.Descendants() {
-				if n.Type == "else_clause" {
+				if r.IsClause(n.Type) {
 					srcElseClause = n
 					break
 				}
 			}
 			for _, n := range dstAST.Descendants() {
-				if n.Type == "else_clause" {
+				if r.IsClause(n.Type) {
 					dstElseClause = n
 					break
 				}
