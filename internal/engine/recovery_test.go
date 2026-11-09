@@ -2880,3 +2880,325 @@ function configure(opt: Opts) {
 		}
 	})
 }
+
+func TestEnumVariantEvolution_NoFalseMatch(t *testing.T) {
+	findVariant := func(root *treesitter.ASTNode, name string) *treesitter.ASTNode {
+		for _, n := range root.PreOrder() {
+			switch n.Type {
+			case "enum_variant", "enumerator", "enum_constant", "enum_assignment":
+				for _, c := range n.Children {
+					if c.Label == name {
+						return n
+					}
+				}
+			case "property_identifier":
+				if n.Label == name && n.Parent != nil && n.Parent.Type == "enum_body" {
+					return n
+				}
+			}
+		}
+		return nil
+	}
+
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		oldSrc := `#[derive(Clone, Debug, PartialEq)]
+pub enum State {
+    CommitMeta,
+    FileMeta,
+    HunkHeader,
+    HunkZero,
+    HunkMinus(Option<String>),
+    HunkPlus(Option<String>),
+    Unknown,
+}
+`
+		newSrc := `#[derive(Clone, Debug, PartialEq)]
+pub enum State {
+    CommitMeta,
+    FileMeta,
+    HunkHeader(String, String),
+    HunkZero,
+    HunkMinus(Option<String>),
+    HunkPlus(Option<String>),
+    SubmoduleLog,
+    SubmoduleShort(String),
+    Unknown,
+    HunkZeroWrapped,
+    HunkMinusWrapped,
+    HunkPlusWrapped,
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Surrounding sequence maps in place
+		for _, name := range []string{"CommitMeta", "FileMeta", "HunkZero", "Unknown"} {
+			s := findVariant(srcAST, name)
+			d := findVariant(dstAST, name)
+			if s == nil || d == nil || mr.Mappings.Src()[s] != d {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", name, s, d, mr.Mappings.Src()[s])
+			}
+		}
+
+		// 2. Target variant evolves in place
+		sHunkHeader := findVariant(srcAST, "HunkHeader")
+		dHunkHeader := findVariant(dstAST, "HunkHeader")
+		if sHunkHeader == nil || dHunkHeader == nil {
+			t.Fatalf("HunkHeader not found: src=%v, dst=%v", sHunkHeader, dHunkHeader)
+		}
+		if mapped := mr.Mappings.Src()[sHunkHeader]; mapped != dHunkHeader {
+			t.Errorf("expected HunkHeader to map in place, got %v", mapped)
+		}
+
+		// 3. Added variant is unmapped in src (inserted)
+		dHunkPlus := findVariant(dstAST, "HunkPlusWrapped")
+		if dHunkPlus == nil {
+			t.Fatalf("HunkPlusWrapped not found in dst")
+		}
+		if mappedSrc := mr.Mappings.Dst()[dHunkPlus]; mappedSrc != nil {
+			t.Errorf("expected HunkPlusWrapped to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_C", func(t *testing.T) {
+		oldSrc := `enum State {
+    STATE_COMMIT_META,
+    STATE_FILE_META,
+    STATE_OLD_DELETED_HEADER,
+    STATE_HUNK_ZERO,
+    STATE_UNKNOWN
+};
+`
+		newSrc := `enum State {
+    STATE_COMMIT_META,
+    STATE_FILE_META,
+    STATE_NEW_INSERTED_HEADER = 42,
+    STATE_HUNK_ZERO,
+    STATE_UNKNOWN,
+    STATE_HUNK_ZERO_WRAPPED,
+    STATE_HUNK_MINUS_WRAPPED,
+    STATE_HUNK_PLUS_WRAPPED
+};
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		for _, name := range []string{"STATE_COMMIT_META", "STATE_FILE_META", "STATE_HUNK_ZERO", "STATE_UNKNOWN"} {
+			s := findVariant(srcAST, name)
+			d := findVariant(dstAST, name)
+			if s == nil || d == nil || mr.Mappings.Src()[s] != d {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", name, s, d, mr.Mappings.Src()[s])
+			}
+		}
+
+		// Disjoint variant names must not match across non-identical identifiers
+		sOld := findVariant(srcAST, "STATE_OLD_DELETED_HEADER")
+		dNew := findVariant(dstAST, "STATE_NEW_INSERTED_HEADER")
+		if sOld == nil || dNew == nil {
+			t.Fatalf("variants not found: sOld=%v, dNew=%v", sOld, dNew)
+		}
+		if mapped := mr.Mappings.Src()[sOld]; mapped != nil {
+			t.Errorf("expected STATE_OLD_DELETED_HEADER to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dNew]; mappedSrc != nil {
+			t.Errorf("expected STATE_NEW_INSERTED_HEADER to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Cpp", func(t *testing.T) {
+		oldSrc := `enum class State {
+    CommitMeta,
+    FileMeta,
+    OldDeletedHeader,
+    HunkZero,
+    Unknown
+};
+`
+		newSrc := `enum class State {
+    CommitMeta,
+    FileMeta,
+    NewInsertedHeader = 100,
+    HunkZero,
+    Unknown,
+    HunkZeroWrapped,
+    HunkMinusWrapped,
+    HunkPlusWrapped
+};
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		for _, name := range []string{"CommitMeta", "FileMeta", "HunkZero", "Unknown"} {
+			s := findVariant(srcAST, name)
+			d := findVariant(dstAST, name)
+			if s == nil || d == nil || mr.Mappings.Src()[s] != d {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", name, s, d, mr.Mappings.Src()[s])
+			}
+		}
+
+		sOld := findVariant(srcAST, "OldDeletedHeader")
+		dNew := findVariant(dstAST, "NewInsertedHeader")
+		if sOld == nil || dNew == nil {
+			t.Fatalf("variants not found: sOld=%v, dNew=%v", sOld, dNew)
+		}
+		if mapped := mr.Mappings.Src()[sOld]; mapped != nil {
+			t.Errorf("expected OldDeletedHeader to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dNew]; mappedSrc != nil {
+			t.Errorf("expected NewInsertedHeader to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Java", func(t *testing.T) {
+		oldSrc := `public enum State {
+    CommitMeta,
+    FileMeta,
+    HunkHeader,
+    HunkZero,
+    Unknown;
+}
+`
+		newSrc := `public enum State {
+    CommitMeta,
+    FileMeta,
+    HunkHeader(42),
+    HunkZero,
+    Unknown,
+    HunkZeroWrapped,
+    HunkMinusWrapped,
+    HunkPlusWrapped;
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "Test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "Test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		for _, name := range []string{"CommitMeta", "FileMeta", "HunkZero", "Unknown"} {
+			s := findVariant(srcAST, name)
+			d := findVariant(dstAST, name)
+			if s == nil || d == nil || mr.Mappings.Src()[s] != d {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", name, s, d, mr.Mappings.Src()[s])
+			}
+		}
+
+		sHunkHeader := findVariant(srcAST, "HunkHeader")
+		dHunkHeader := findVariant(dstAST, "HunkHeader")
+		if sHunkHeader == nil || dHunkHeader == nil {
+			t.Fatalf("HunkHeader not found: src=%v, dst=%v", sHunkHeader, dHunkHeader)
+		}
+		if mapped := mr.Mappings.Src()[sHunkHeader]; mapped != dHunkHeader {
+			t.Errorf("expected HunkHeader to map in place, got %v", mapped)
+		}
+
+		dHunkPlus := findVariant(dstAST, "HunkPlusWrapped")
+		if dHunkPlus == nil {
+			t.Fatalf("HunkPlusWrapped not found in dst")
+		}
+		if mappedSrc := mr.Mappings.Dst()[dHunkPlus]; mappedSrc != nil {
+			t.Errorf("expected HunkPlusWrapped to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_TypeScript", func(t *testing.T) {
+		oldSrc := `enum State {
+    CommitMeta = 1,
+    FileMeta = 2,
+    HunkHeader,
+    HunkZero = 4,
+    Unknown = 5,
+}
+`
+		newSrc := `enum State {
+    CommitMeta = 1,
+    FileMeta = 2,
+    HunkHeader = 42,
+    HunkZero = 4,
+    Unknown = 5,
+    HunkZeroWrapped,
+    HunkMinusWrapped,
+    HunkPlusWrapped,
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		for _, name := range []string{"CommitMeta", "FileMeta", "HunkZero", "Unknown"} {
+			s := findVariant(srcAST, name)
+			d := findVariant(dstAST, name)
+			if s == nil || d == nil || mr.Mappings.Src()[s] != d {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", name, s, d, mr.Mappings.Src()[s])
+			}
+		}
+
+		sHunkHeader := findVariant(srcAST, "HunkHeader")
+		dHunkHeader := findVariant(dstAST, "HunkHeader")
+		if sHunkHeader == nil || dHunkHeader == nil {
+			t.Fatalf("HunkHeader not found: src=%v, dst=%v", sHunkHeader, dHunkHeader)
+		}
+		if mapped := mr.Mappings.Src()[sHunkHeader]; mapped != dHunkHeader {
+			t.Errorf("expected HunkHeader to map in place, got %v", mapped)
+		}
+
+		dHunkPlus := findVariant(dstAST, "HunkPlusWrapped")
+		if dHunkPlus == nil {
+			t.Fatalf("HunkPlusWrapped not found in dst")
+		}
+		if mappedSrc := mr.Mappings.Dst()[dHunkPlus]; mappedSrc != nil {
+			t.Errorf("expected HunkPlusWrapped to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+}

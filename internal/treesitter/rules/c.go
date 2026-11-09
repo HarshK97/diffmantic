@@ -147,6 +147,7 @@ var cRules = &Rules{
 		"enum_specifier",
 		"type_definition",
 		"field_declaration",
+		"enumerator",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -218,6 +219,7 @@ var cRules = &Rules{
 	},
 	DelimitedContainers: []string{
 		"argument_list",
+		"enumerator_list",
 		"initializer_list",
 		"parameter_list",
 	},

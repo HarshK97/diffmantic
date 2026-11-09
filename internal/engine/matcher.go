@@ -977,6 +977,10 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	isDec := (r != nil && (r.IsDeclaration(n.Type) || r.IsLocalVarDeclaration(n.Type))) ||
 		(r == nil && (rules.IsDeclaration(n.Type) || rules.IsLocalVarDeclaration(n.Type)))
 	if !isDec {
+		isID := (r != nil && r.IsIdentifier(n.Type)) || (r == nil && rules.IsIdentifier(n.Type))
+		if isID {
+			return identifierText(n)
+		}
 		return ""
 	}
 	// First check direct children for an identifier.

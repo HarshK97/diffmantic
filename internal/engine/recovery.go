@@ -339,6 +339,38 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 			}
 		}
 		minThreshold = 0.40
+	} else {
+		isDecl := func(n, p *treesitter.ASTNode) bool {
+			if r != nil {
+				return r.IsDeclaration(n.Type) || (r.IsIdentifier(n.Type) && p != nil && r.IsDelimitedContainer(p.Type))
+			}
+			return rules.IsDeclaration(n.Type) || (rules.IsIdentifier(n.Type) && p != nil && rules.IsDelimitedContainer(p.Type))
+		}
+		isDecl1 := isDecl(u1, p1)
+		isDecl2 := isDecl(u2, p2)
+		if isDecl1 != isDecl2 {
+			return false, 0.0
+		}
+		if isDecl1 {
+			if !canMatchDeclarations(u1, u2, m, r) {
+				return false, 0.0
+			}
+			name1 := getDeclarationName(u1)
+			name2 := getDeclarationName(u2)
+			if m != nil && name1 != "" && name2 != "" && name1 != name2 {
+				if hasUnmappedPeerWithName(p2, name1, m.HasDst) || hasUnmappedPeerWithName(p1, name2, m.Has) {
+					return false, 0.0
+				}
+			}
+			if name1 != "" && name1 == name2 {
+				score = 1.0
+			} else if name1 != "" && name2 != "" && (strings.Contains(name1, name2) || strings.Contains(name2, name1)) {
+				score = 0.80
+			} else {
+				score = 0.50
+			}
+			minThreshold = 0.40
+		}
 	}
 
 	leafSim := substantiveLeafSimilarity(u1, u2, r)
@@ -347,6 +379,15 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 		return false, 0.0
 	}
 	return true, compositeScore
+}
+
+func hasUnmappedPeerWithName(parent *treesitter.ASTNode, name string, hasFn func(*treesitter.ASTNode) bool) bool {
+	if parent == nil || name == "" || hasFn == nil {
+		return false
+	}
+	return slices.ContainsFunc(parent.Children, func(c *treesitter.ASTNode) bool {
+		return !hasFn(c) && getDeclarationName(c) == name
+	})
 }
 
 // hasUnmappedPeerWithKey reports whether parent contains an unmapped child matching key.
