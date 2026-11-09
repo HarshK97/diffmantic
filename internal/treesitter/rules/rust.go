@@ -189,6 +189,7 @@ var rustRules = &Rules{
 	},
 	Pairs: []string{
 		"field_initializer",
+		"shorthand_field_initializer",
 		"field_pattern",
 	},
 	Unordered: []string{
@@ -199,6 +200,7 @@ var rustRules = &Rules{
 		{"struct_item", "enum_item", "union_item", "trait_item"},
 		{"for_expression", "while_expression", "loop_expression"},
 		{"scoped_identifier", "scoped_use_list"},
+		{"field_initializer", "shorthand_field_initializer"},
 	},
 	Comments: []string{
 		"line_comment",

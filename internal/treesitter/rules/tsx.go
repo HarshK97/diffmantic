@@ -227,7 +227,9 @@ var tsxRules = &Rules{
 	},
 	Pairs: []string{
 		"pair",
+		"shorthand_property_identifier",
 		"pair_pattern",
+		"shorthand_property_identifier_pattern",
 		"property_signature",
 		"jsx_attribute",
 	},
@@ -247,6 +249,8 @@ var tsxRules = &Rules{
 		{"lexical_declaration", "variable_declaration"},
 		{"for_statement", "for_in_statement"},
 		{"jsx_element", "jsx_self_closing_element"},
+		{"pair", "shorthand_property_identifier"},
+		{"pair_pattern", "shorthand_property_identifier_pattern"},
 	},
 	Comments: []string{
 		"comment",

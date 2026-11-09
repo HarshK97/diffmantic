@@ -3,6 +3,8 @@ package engine
 import (
 	"math"
 	"slices"
+	"strings"
+	"unicode"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
@@ -280,7 +282,16 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 	if isCall1 != isCall2 {
 		return false, 0.0
 	}
-	cScore := 1.0
+
+	isPair1 := r != nil && r.IsPair(u1.Type)
+	isPair2 := r != nil && r.IsPair(u2.Type)
+	if isPair1 != isPair2 {
+		return false, 0.0
+	}
+
+	score := 1.0
+	minThreshold := 0.50
+
 	if isCall1 && isCall2 {
 		callee1, rec1 := extractCalleeAndReceiver(u1, r)
 		callee2, rec2 := extractCalleeAndReceiver(u2, r)
@@ -292,20 +303,125 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 		}
 
 		if callee1 == callee2 || calleesCompatible(callee1, callee2) {
-			cScore = 1.0
+			score = 1.0
 		} else if rec1 != "" && rec1 == rec2 {
-			cScore = 0.80
+			score = 0.80
 		} else {
 			return false, 0.0
 		}
+	} else if isPair1 && isPair2 {
+		k1 := getKeyLabel(u1)
+		k2 := getKeyLabel(u2)
+
+		if m != nil && k1 != "" && k2 != "" && k1 != k2 {
+			if hasUnmappedPeerWithKey(p2, k1, m.HasDst) || hasUnmappedPeerWithKey(p1, k2, m.Has) {
+				return false, 0.0
+			}
+		}
+
+		if k1 != "" && k1 == k2 {
+			score = 1.0
+		} else {
+			words1 := splitIdentifierWords(k1)
+			words2 := splitIdentifierWords(k2)
+			overlap := identifierWordOverlap(words1, words2)
+			u2Leaves := u2.LeafLabels()
+			u1Leaves := u1.LeafLabels()
+			if (k1 != "" && u2Leaves[k1] > 0) || (k2 != "" && u1Leaves[k2] > 0) {
+				score = max(0.70, overlap)
+				if isEarlierMatchingDescendant(u2, k1, p1) {
+					score += 0.05
+				}
+			} else if overlap >= 0.50 {
+				score = overlap
+			} else {
+				return false, 0.0
+			}
+		}
+		minThreshold = 0.40
 	}
 
 	leafSim := substantiveLeafSimilarity(u1, u2, r)
-	compositeScore := 0.50*cScore + 0.50*leafSim
-	if compositeScore < 0.50 {
+	compositeScore := 0.50*score + 0.50*leafSim
+	if compositeScore < minThreshold {
 		return false, 0.0
 	}
 	return true, compositeScore
+}
+
+// hasUnmappedPeerWithKey reports whether parent contains an unmapped child matching key.
+func hasUnmappedPeerWithKey(parent *treesitter.ASTNode, key string, hasFn func(*treesitter.ASTNode) bool) bool {
+	if parent == nil || key == "" || hasFn == nil {
+		return false
+	}
+	return slices.ContainsFunc(parent.Children, func(c *treesitter.ASTNode) bool {
+		return !hasFn(c) && getKeyLabel(c) == key
+	})
+}
+
+// isEarlierMatchingDescendant reports whether k1 appears earlier in target than any other sibling key from parent.
+func isEarlierMatchingDescendant(target *treesitter.ASTNode, k1 string, parent *treesitter.ASTNode) bool {
+	if target == nil || k1 == "" || parent == nil {
+		return false
+	}
+	otherKeys := make(map[string]bool, len(parent.Children))
+	for _, sib := range parent.Children {
+		if key := getKeyLabel(sib); key != "" && key != k1 {
+			otherKeys[key] = true
+		}
+	}
+	for _, d := range target.Descendants() {
+		if d.Label == k1 {
+			return true
+		}
+		if otherKeys[d.Label] {
+			return false
+		}
+	}
+	return false
+}
+
+// splitIdentifierWords splits an identifier by delimiters and camelCase boundaries into lowercase words.
+func splitIdentifierWords(s string) []string {
+	var words []string
+	cur := make([]rune, 0, len(s))
+	for _, r := range s {
+		if r == '_' || r == '-' || r == ':' || r == '.' {
+			if len(cur) > 0 {
+				words = append(words, strings.ToLower(string(cur)))
+				cur = cur[:0]
+			}
+			continue
+		}
+		if len(cur) > 0 && unicode.IsUpper(r) && !unicode.IsUpper(cur[len(cur)-1]) {
+			words = append(words, strings.ToLower(string(cur)))
+			cur = cur[:0]
+		}
+		cur = append(cur, r)
+	}
+	if len(cur) > 0 {
+		words = append(words, strings.ToLower(string(cur)))
+	}
+	return words
+}
+
+// identifierWordOverlap returns the Sørensen–Dice multiset coefficient between two word lists.
+func identifierWordOverlap(w1, w2 []string) float64 {
+	if len(w1) == 0 || len(w2) == 0 {
+		return 0.0
+	}
+	counts := make(map[string]int, len(w2))
+	for _, w := range w2 {
+		counts[w]++
+	}
+	common := 0
+	for _, w := range w1 {
+		if counts[w] > 0 {
+			common++
+			counts[w]--
+		}
+	}
+	return 2.0 * float64(common) / float64(len(w1)+len(w2))
 }
 
 // unmatchedSubstantiveChildren collects non-keyword, non-glue, non-punctuation children of t.
@@ -495,12 +611,29 @@ func uniqueTypePairs(
 				continue
 			}
 			isCall := (r != nil && r.IsCall(n1.Type)) || (r == nil && rules.IsCall(n1.Type))
+			isPair := (r != nil && r.IsPair(n1.Type))
 			isDelimitedContainer := p1 != nil && ((r != nil && r.IsDelimitedContainer(p1.Type)) || (r == nil && rules.IsDelimitedContainer(p1.Type)))
 			if isDelimitedContainer && isCall {
 				callee1, rec1 := extractCalleeAndReceiver(n1, r)
 				callee2, rec2 := extractCalleeAndReceiver(n2, r)
 				if !calleesCompatible(callee1, callee2) && (rec1 == "" || rec1 != rec2) {
 					continue
+				}
+			}
+			if isPair {
+				k1 := getKeyLabel(n1)
+				k2 := getKeyLabel(n2)
+				if k1 != "" && k2 != "" && k1 != k2 {
+					words1 := splitIdentifierWords(k1)
+					words2 := splitIdentifierWords(k2)
+					overlap := identifierWordOverlap(words1, words2)
+					if overlap < 0.50 {
+						n2Leaves := n2.LeafLabels()
+						n1Leaves := n1.LeafLabels()
+						if n2Leaves[k1] == 0 && n1Leaves[k2] == 0 {
+							continue
+						}
+					}
 				}
 			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {

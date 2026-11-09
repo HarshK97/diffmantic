@@ -201,7 +201,9 @@ var javascriptRules = &Rules{
 	},
 	Pairs: []string{
 		"pair",
+		"shorthand_property_identifier",
 		"pair_pattern",
+		"shorthand_property_identifier_pattern",
 	},
 	Unordered: []string{
 		"object",
@@ -213,6 +215,8 @@ var javascriptRules = &Rules{
 		{"function_declaration", "function_expression", "arrow_function", "generator_function_declaration", "generator_function"},
 		{"lexical_declaration", "variable_declaration"},
 		{"for_statement", "for_in_statement"},
+		{"pair", "shorthand_property_identifier"},
+		{"pair_pattern", "shorthand_property_identifier_pattern"},
 	},
 	Comments: []string{
 		"comment",
