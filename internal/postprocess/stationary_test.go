@@ -2674,3 +2674,220 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 	})
 }
+
+func TestStationaryExpression_ReorderedStatement(t *testing.T) {
+	cases := []struct {
+		name     string
+		filename string
+		lang     string
+		src      []byte
+		dst      []byte
+	}{
+		{
+			name:     "Go",
+			filename: "test.go",
+			lang:     "go",
+			src: []byte(`package main
+
+func helper() {}
+
+func foo() {
+	for _, placeholder := range formatData {
+		alignment_spec := placeholder.alignment_spec.unwrap_or("^")
+		width := calculate_width(
+			placeholder.width,
+			min_field_width,
+			extra_param_1,
+			extra_param_2,
+		)
+		_ = width
+		_ = alignment_spec
+	}
+}
+`),
+			dst: []byte(`package main
+
+func helper1() {}
+func helper2() {}
+func helper3() {}
+func helper4() {}
+func helper5() {}
+func helper6() {}
+func helper7() {}
+func helper8() {}
+
+func foo() {
+	for _, placeholder := range formatData {
+		width := calculate_width(
+			placeholder.width,
+			min_field_width,
+			extra_param_1,
+			extra_param_2,
+		)
+		alignment_spec := placeholder.alignment_spec.as_ref().unwrap_or(AlignCenter)
+		_ = width
+		_ = alignment_spec
+	}
+}
+`),
+		},
+		{
+			name:     "Rust",
+			filename: "test.rs",
+			lang:     "rust",
+			src: []byte(`fn helper() {}
+
+fn foo() {
+    for placeholder in format_data {
+        let alignment_spec = placeholder.alignment_spec.unwrap_or("^");
+        let width = calculate_width(
+            placeholder.width,
+            min_field_width,
+            extra_param_1,
+            extra_param_2,
+        );
+    }
+}
+`),
+			dst: []byte(`fn helper1() {}
+fn helper2() {}
+fn helper3() {}
+fn helper4() {}
+fn helper5() {}
+fn helper6() {}
+fn helper7() {}
+fn helper8() {}
+
+fn foo() {
+    for placeholder in format_data {
+        let width = calculate_width(
+            placeholder.width,
+            min_field_width,
+            extra_param_1,
+            extra_param_2,
+        );
+        let alignment_spec = placeholder.alignment_spec.as_ref().unwrap_or(AlignCenter);
+    }
+}
+`),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := rules.Get(tc.lang)
+
+			srcAST, err := treesitter.Parse(tc.src, tc.filename)
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(tc.dst, tc.filename)
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+
+			part := engine.NewLinePartition(tc.src, tc.dst)
+			matchResult := engine.Match(srcAST, dstAST, tc.src, tc.dst, part)
+			if matchResult == nil || matchResult.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: function foo maps in place.
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected function foo to map in place")
+			}
+
+			// 2. Surrounding sequence: calculate_width call maps in place.
+			var srcWidth, dstWidth *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(tc.src[n.StartByte:n.EndByte]), "calculate_width") {
+					srcWidth = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(tc.dst[n.StartByte:n.EndByte]), "calculate_width") {
+					dstWidth = n
+					break
+				}
+			}
+			if srcWidth == nil || dstWidth == nil || matchResult.Mappings.Src()[srcWidth] != dstWidth {
+				t.Fatalf("expected calculate_width to map in place")
+			}
+
+			// 3. Target Statement: alignment_spec statement maps in place across versions.
+			var srcStmt, dstStmt *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsStatement(n.Type) && strings.Contains(string(tc.src[n.StartByte:n.EndByte]), "alignment_spec") {
+					srcStmt = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsStatement(n.Type) && strings.Contains(string(tc.dst[n.StartByte:n.EndByte]), "alignment_spec") {
+					dstStmt = n
+					break
+				}
+			}
+			if srcStmt == nil || dstStmt == nil || matchResult.Mappings.Src()[srcStmt] != dstStmt {
+				t.Fatalf("expected alignment_spec statement to map in place")
+			}
+
+			// 4. Stationary Operands: placeholder and alignment_spec must NOT be deleted or inserted.
+			for _, a := range normalized.Actions() {
+				if a.Node == nil {
+					continue
+				}
+				var text string
+				switch a.Type {
+				case actions.Delete:
+					text = string(tc.src[a.Node.StartByte:a.Node.EndByte])
+				case actions.Insert:
+					text = string(tc.dst[a.Node.StartByte:a.Node.EndByte])
+				default:
+					continue
+				}
+				if text == "placeholder" || text == "alignment_spec" || text == "placeholder.alignment_spec" {
+					t.Errorf("spurious %s on stationary payload %q (action: %v)", a.Type, text, a)
+				}
+			}
+
+			// 5. Stationary Operands remain mapped in Mappings.
+			var srcExpr, dstExpr *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if string(tc.src[n.StartByte:n.EndByte]) == "placeholder.alignment_spec" {
+					srcExpr = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if string(tc.dst[n.StartByte:n.EndByte]) == "placeholder.alignment_spec" {
+					dstExpr = n
+					break
+				}
+			}
+			if srcExpr == nil || dstExpr == nil {
+				t.Fatalf("failed to locate placeholder.alignment_spec nodes in AST")
+			}
+			if matchResult.Mappings.Src()[srcExpr] != dstExpr {
+				t.Errorf("expected placeholder.alignment_spec to remain mapped across versions, got %v", matchResult.Mappings.Src()[srcExpr])
+			}
+		})
+	}
+}
