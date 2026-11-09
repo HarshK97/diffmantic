@@ -205,6 +205,11 @@ var cppRules = &Rules{
 		"enumerator",
 		"parameter_declaration",
 		"optional_parameter_declaration",
+		"static_assert_declaration",
+		"template_template_parameter_declaration",
+		"type_parameter_declaration",
+		"variadic_parameter_declaration",
+		"variadic_type_parameter_declaration",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -320,6 +325,8 @@ var cppRules = &Rules{
 	Clauses: []string{
 		"else_clause",
 		"catch_clause",
+		"requires_clause",
+		"base_class_clause",
 	},
 	CaseClauses: []string{
 		"case_statement",
@@ -389,9 +396,11 @@ var cppRules = &Rules{
 		"declaration",
 		"do_statement",
 		"expression_statement",
+		"for_range_loop",
 		"for_statement",
 		"goto_statement",
 		"if_statement",
+		"init_statement",
 		"labeled_statement",
 		"return_statement",
 		"seh_leave_statement",

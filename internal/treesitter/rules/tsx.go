@@ -196,6 +196,9 @@ var tsxRules = &Rules{
 		"enum_assignment",
 		"required_parameter",
 		"optional_parameter",
+		"function_signature",
+		"import_alias",
+		"internal_module",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -346,6 +349,10 @@ var tsxRules = &Rules{
 		"else_clause",
 		"catch_clause",
 		"finally_clause",
+		"implements_clause",
+		"extends_clause",
+		"extends_type_clause",
+		"mapped_type_clause",
 	},
 	CaseClauses: []string{
 		"switch_case",

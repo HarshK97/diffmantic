@@ -1,6 +1,9 @@
 package rules_test
 
 import (
+	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -77,5 +80,102 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		checkField("Imports", r.Imports)
 		checkField("Attributes", r.Attributes)
 		checkField("Declarators", r.Declarators)
+	}
+}
+
+func TestAllLanguageGrammarStatementsAndDeclarationsCovered(t *testing.T) {
+	nodeTypesPaths := map[string]string{
+		"c":          "../../../native/bridge/grammars/c_repo/src/node-types.json",
+		"cpp":        "../../../native/bridge/grammars/cpp_repo/src/node-types.json",
+		"go":         "../../../native/bridge/grammars/go_repo/src/node-types.json",
+		"java":       "../../../native/bridge/grammars/java_repo/src/node-types.json",
+		"javascript": "../../../native/bridge/grammars/javascript_repo/src/node-types.json",
+		"lua":        "../../../native/bridge/grammars/lua_repo/src/node-types.json",
+		"python":     "../../../native/bridge/grammars/python_repo/src/node-types.json",
+		"rust":       "../../../native/bridge/grammars/rust_repo/src/node-types.json",
+		"tsx":        "../../../native/bridge/grammars/tsx_repo/tsx/src/node-types.json",
+		"typescript": "../../../native/bridge/grammars/typescript_repo/typescript/src/node-types.json",
+		"zig":        "../../../native/bridge/grammars/zig_repo/src/node-types.json",
+	}
+
+	for lang, relPath := range nodeTypesPaths {
+		t.Run(lang, func(t *testing.T) {
+			data, err := os.ReadFile(relPath)
+			if err != nil {
+				t.Skipf("node-types.json not found for %s: %v", lang, err)
+			}
+
+			var items []struct {
+				Type     string `json:"type"`
+				Named    bool   `json:"named"`
+				Subtypes []struct {
+					Type  string `json:"type"`
+					Named bool   `json:"named"`
+				} `json:"subtypes"`
+			}
+			if err := json.Unmarshal(data, &items); err != nil {
+				t.Fatalf("failed to parse node-types.json for %s: %v", lang, err)
+			}
+
+			r := rules.Get(lang)
+			if r == nil {
+				t.Fatalf("rules not found for %s", lang)
+			}
+
+			supertypes := make(map[string][]string)
+			for _, it := range items {
+				if len(it.Subtypes) > 0 {
+					var subs []string
+					for _, sub := range it.Subtypes {
+						if sub.Named {
+							subs = append(subs, sub.Type)
+						}
+					}
+					supertypes[it.Type] = subs
+				}
+			}
+
+			var getConcrete func(string) []string
+			getConcrete = func(typeName string) []string {
+				if subs, ok := supertypes[typeName]; ok {
+					var out []string
+					for _, s := range subs {
+						out = append(out, getConcrete(s)...)
+					}
+					return out
+				}
+				return []string{typeName}
+			}
+
+			for _, item := range items {
+				lower := strings.ToLower(item.Type)
+				isSuperStmt := strings.Contains(lower, "statement")
+				isSuperDecl := strings.Contains(lower, "declaration") || strings.Contains(lower, "item")
+
+				if isSuperStmt || isSuperDecl {
+					for _, sub := range item.Subtypes {
+						if !sub.Named {
+							continue
+						}
+						for _, concrete := range getConcrete(sub.Type) {
+							if strings.HasPrefix(concrete, "_") {
+								continue
+							}
+							isKnown := r.IsStatement(concrete) ||
+								r.IsDeclaration(concrete) ||
+								r.IsContainerDeclaration(concrete) ||
+								r.IsBlock(concrete) ||
+								r.IsAttribute(concrete) ||
+								r.IsComment(concrete) ||
+								r.IsImport(concrete) ||
+								r.IsJumpStatement(concrete)
+							if !isKnown {
+								t.Errorf("[%s] grammar supertype %q concrete subtype %q is NOT recognized as a statement/declaration/block/attribute", lang, item.Type, concrete)
+							}
+						}
+					}
+				}
+			}
+		})
 	}
 }

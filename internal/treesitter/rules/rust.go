@@ -154,10 +154,16 @@ var rustRules = &Rules{
 		"field_declaration",
 		"enum_variant",
 		"use_declaration",
+		"extern_crate_declaration",
+		"macro_definition",
+		"associated_type",
+		"foreign_mod_item",
+		"function_signature_item",
 		"parameter",
 	},
 	Imports: []string{
 		"use_declaration",
+		"extern_crate_declaration",
 	},
 	Attributes: []string{
 		"attribute_item",
@@ -174,6 +180,8 @@ var rustRules = &Rules{
 	Blocks: []string{
 		"block",
 		"declaration_list",
+		"try_block",
+		"gen_block",
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
@@ -242,6 +250,7 @@ var rustRules = &Rules{
 		"trait_item",
 		"impl_item",
 		"mod_item",
+		"foreign_mod_item",
 		"type_item",
 	},
 	Closures: []string{
@@ -289,6 +298,8 @@ var rustRules = &Rules{
 	},
 	Clauses: []string{
 		"else_clause",
+		"where_clause",
+		"use_as_clause",
 	},
 	CaseClauses: []string{
 		"match_arm",
@@ -321,6 +332,8 @@ var rustRules = &Rules{
 		"unit_expression",
 		"while_expression",
 		"yield_expression",
+		"try_block",
+		"gen_block",
 	},
 	Sentinels: []string{
 		"None",

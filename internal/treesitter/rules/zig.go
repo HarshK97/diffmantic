@@ -123,6 +123,7 @@ var zigRules = &Rules{
 		"opaque_declaration",
 		"error_set_declaration",
 		"test_declaration",
+		"comptime_declaration",
 		"using_namespace_declaration",
 		"container_field",
 		"parameter",
@@ -206,6 +207,9 @@ var zigRules = &Rules{
 		"initializer_list",
 		"parameters",
 	},
+	Clauses: []string{
+		"else_clause",
+	},
 	CaseClauses: []string{
 		"switch_case",
 	},
@@ -277,6 +281,7 @@ var zigRules = &Rules{
 		"labeled_statement",
 		"nosuspend_statement",
 		"suspend_statement",
+		"switch_expression",
 		"variable_declaration",
 		"while_statement",
 	},

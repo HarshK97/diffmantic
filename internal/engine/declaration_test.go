@@ -1045,7 +1045,7 @@ std::string format_items() { return ""; }
 Vec<int> *ptr;
 template<typename T> void foo(T x);
 `,
-				want: []string{"get_items", "format_items", "ptr", "foo", "x"},
+				want: []string{"get_items", "format_items", "ptr", "T", "foo", "x"},
 			},
 			{
 				name:     "Java_ReturnAndFieldTypeNames",
@@ -2348,6 +2348,456 @@ pub fn execute_app() -> bool {
 		}
 		if envVarSrc == nil {
 			t.Fatal("missing get_args_from_env_var")
+		}
+	})
+}
+
+func TestFullEngine_LanguageGrammarConstructs(t *testing.T) {
+	t.Run("Zig_ElseClauseRollup_And_ComptimeDeclaration", func(t *testing.T) {
+		oldSrc := []byte(`const std = @import("std");
+
+comptime {
+    _ = 100;
+}
+
+pub fn execute(flag: bool) void {
+    const start = 1;
+    if (flag) {
+        test_call(start);
+    } else {
+        test_call(start + 1);
+    }
+    const end = 2;
+}
+`)
+		newSrc := []byte(`const std = @import("std");
+
+comptime {
+    _ = 100;
+}
+
+pub fn execute(flag: bool) void {
+    const start = 1;
+    if (flag) {
+        test_call(start);
+    } else {
+        const updated = start + 5;
+        test_call(updated);
+    }
+    const end = 2;
+}
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.zig")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.zig")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("zig")
+
+		var comptimeSrc, comptimeDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("100")) {
+				comptimeSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("100")) {
+				comptimeDst = n
+				break
+			}
+		}
+		if comptimeSrc == nil || comptimeDst == nil {
+			t.Fatalf("comptime_declaration missing: src=%v dst=%v", comptimeSrc, comptimeDst)
+		}
+		if m.Src()[comptimeSrc] != comptimeDst {
+			t.Errorf("expected comptime_declaration to map in place, got %v", m.Src()[comptimeSrc])
+		}
+
+		var elseSrc, elseDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				elseSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				elseDst = n
+				break
+			}
+		}
+		if elseSrc == nil || elseDst == nil {
+			t.Fatalf("else_clause missing: src=%v dst=%v", elseSrc, elseDst)
+		}
+		if m.Src()[elseSrc] != elseDst {
+			t.Errorf("expected else_clause to map in place across body evolution, got %v", m.Src()[elseSrc])
+		}
+	})
+
+	t.Run("Rust_MacroDefinition_And_ExternCrate", func(t *testing.T) {
+		oldSrc := []byte(`extern crate alloc;
+
+macro_rules! my_log {
+    ($msg:expr) => {
+        println!("{}", $msg);
+    };
+}
+
+pub fn run_task() -> i32 {
+    let start = 1;
+    my_log!("running");
+    let end = 2;
+    end
+}
+`)
+		newSrc := []byte(`extern crate alloc;
+
+macro_rules! my_log {
+    ($msg:expr) => {
+        println!("LOG: {}", $msg);
+    };
+}
+
+pub fn run_task() -> i32 {
+    let start = 1;
+    my_log!("running");
+    let end = 2;
+    end
+}
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("rust")
+
+		var externCrateSrc, externCrateDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("alloc")) {
+				externCrateSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("alloc")) {
+				externCrateDst = n
+				break
+			}
+		}
+		if externCrateSrc == nil || externCrateDst == nil {
+			t.Fatalf("extern_crate_declaration missing: src=%v dst=%v", externCrateSrc, externCrateDst)
+		}
+		if m.Src()[externCrateSrc] != externCrateDst {
+			t.Errorf("expected extern_crate_declaration to map in place, got %v", m.Src()[externCrateSrc])
+		}
+
+		var macroDefSrc, macroDefDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("my_log")) {
+				macroDefSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("my_log")) {
+				macroDefDst = n
+				break
+			}
+		}
+		if macroDefSrc == nil || macroDefDst == nil {
+			t.Fatalf("macro_definition missing: src=%v dst=%v", macroDefSrc, macroDefDst)
+		}
+		if m.Src()[macroDefSrc] != macroDefDst {
+			t.Errorf("expected macro_definition to map in place across rule evolution, got %v", m.Src()[macroDefSrc])
+		}
+	})
+
+	t.Run("CPP_RangeForLoop_And_InitStatement", func(t *testing.T) {
+		oldSrc := []byte(`#include <vector>
+
+void process() {
+    int start = 0;
+    std::vector<int> items = {1, 2, 3};
+    for (const auto& val : items) {
+        start += val;
+    }
+    if (int count = items.size(); count > 0) {
+        start += count;
+    }
+    int end = 100;
+}
+`)
+		newSrc := []byte(`#include <vector>
+
+void process() {
+    int start = 0;
+    std::vector<int> items = {1, 2, 3};
+    for (const auto& val : items) {
+        start += val * 2;
+    }
+    if (int count = items.size(); count > 0) {
+        start += count;
+    }
+    int end = 100;
+}
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.cpp")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.cpp")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("cpp")
+
+		var forRangeSrc, forRangeDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("items")) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("for")) {
+				forRangeSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("items")) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("for")) {
+				forRangeDst = n
+				break
+			}
+		}
+		if forRangeSrc == nil || forRangeDst == nil {
+			t.Fatalf("for_range_loop missing: src=%v dst=%v", forRangeSrc, forRangeDst)
+		}
+		if m.Src()[forRangeSrc] != forRangeDst {
+			t.Errorf("expected for_range_loop to map in place, got %v", m.Src()[forRangeSrc])
+		}
+
+		var initStmtSrc, initStmtDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("count = items.size()")) {
+				initStmtSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("count = items.size()")) {
+				initStmtDst = n
+				break
+			}
+		}
+		if initStmtSrc == nil || initStmtDst == nil {
+			t.Fatalf("init_statement missing: src=%v dst=%v", initStmtSrc, initStmtDst)
+		}
+		if m.Src()[initStmtSrc] != initStmtDst {
+			t.Errorf("expected init_statement to map in place, got %v", m.Src()[initStmtSrc])
+		}
+	})
+
+	t.Run("Python_WithClause_And_AliasedImport", func(t *testing.T) {
+		oldSrc := []byte(`import os
+import numpy as np
+
+def run_job():
+    start = 1
+    with open("data.txt") as f:
+        content = f.read()
+    end = 2
+`)
+		newSrc := []byte(`import os
+import numpy as np
+
+def run_job():
+    start = 1
+    with open("data.txt") as f:
+        header = f.readline()
+        content = f.read()
+    end = 2
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.py")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.py")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("python")
+
+		var aliasedImportSrc, aliasedImportDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("numpy as np")) {
+				aliasedImportSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("numpy as np")) {
+				aliasedImportDst = n
+				break
+			}
+		}
+		if aliasedImportSrc == nil || aliasedImportDst == nil {
+			t.Fatalf("aliased_import missing: src=%v dst=%v", aliasedImportSrc, aliasedImportDst)
+		}
+		if m.Src()[aliasedImportSrc] != aliasedImportDst {
+			t.Errorf("expected aliased_import to map in place, got %v", m.Src()[aliasedImportSrc])
+		}
+
+		var withClauseSrc, withClauseDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				withClauseSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				withClauseDst = n
+				break
+			}
+		}
+		if withClauseSrc == nil || withClauseDst == nil {
+			t.Fatalf("with_clause missing: src=%v dst=%v", withClauseSrc, withClauseDst)
+		}
+		if m.Src()[withClauseSrc] != withClauseDst {
+			t.Errorf("expected with_clause to map in place, got %v", m.Src()[withClauseSrc])
+		}
+	})
+
+	t.Run("Lua_ElseStatement_And_FunctionCall", func(t *testing.T) {
+		oldSrc := []byte(`function handle(val)
+    local start = 1
+    track_event(val)
+    if val > 10 then
+        process(val)
+    else
+        fallback(val)
+    end
+    local end_val = 2
+end
+`)
+		newSrc := []byte(`function handle(val)
+    local start = 1
+    track_event(val)
+    if val > 10 then
+        process(val)
+    else
+        log_fallback()
+        fallback(val)
+    end
+    local end_val = 2
+end
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.lua")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.lua")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("lua")
+
+		var callSrc, callDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("track_event")) {
+				callSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("track_event")) {
+				callDst = n
+				break
+			}
+		}
+		if callSrc == nil || callDst == nil {
+			t.Fatalf("function_call statement missing: src=%v dst=%v", callSrc, callDst)
+		}
+		if m.Src()[callSrc] != callDst {
+			t.Errorf("expected function_call statement to map in place, got %v", m.Src()[callSrc])
+		}
+
+		var elseSrc, elseDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				elseSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				elseDst = n
+				break
+			}
+		}
+		if elseSrc == nil || elseDst == nil {
+			t.Fatalf("else_statement clause missing: src=%v dst=%v", elseSrc, elseDst)
+		}
+		if m.Src()[elseSrc] != elseDst {
+			t.Errorf("expected else_statement clause to map in place, got %v", m.Src()[elseSrc])
 		}
 	})
 }
