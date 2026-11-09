@@ -180,6 +180,8 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		m.Add(pair[0], pair[1])
 		Recover(pair[0], pair[1], m)
 	}
+
+	recoverBlockWrappedStatements(t1, t2, m, r)
 }
 
 // recoverDelimitedSiblingSequences aligns unmatched children inside non-block
@@ -742,6 +744,117 @@ func uniqueTypePairs(
 		}
 	}
 	return pairs
+}
+
+// recoverBlockWrappedStatements pairs unmatched statements across block braces inside
+// matched case clauses (like `pat => expr` vs `pat => { expr }`).
+func recoverBlockWrappedStatements(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if t1 == nil || t2 == nil || m == nil {
+		return
+	}
+	if r == nil {
+		r = rulesFor(t1)
+	}
+
+	isCaseClause := (r != nil && (r.IsCaseClause(t1.Type) || r.IsCaseClause(t2.Type))) ||
+		(r == nil && (rules.IsCaseClause(t1.Type) || rules.IsCaseClause(t2.Type)))
+	if !isCaseClause {
+		return
+	}
+
+	uc1 := unmatchedSubstantiveChildren(t1, m.Has, r)
+	uc2 := unmatchedSubstantiveChildren(t2, m.HasDst, r)
+	if len(uc1) == 0 || len(uc2) == 0 {
+		return
+	}
+
+	// Old side is a bare statement, new side wraps it in a block.
+	for _, c1 := range uc1 {
+		if isBlockNode(c1, r) || m.Has(c1) {
+			continue
+		}
+		for _, c2 := range uc2 {
+			if !isBlockNode(c2, r) || m.HasDst(c2) {
+				continue
+			}
+			inner2 := unwrapSingleStatementBlock(c2, r)
+			if inner2 == nil || m.HasDst(inner2) {
+				continue
+			}
+			target2 := inner2
+			if r != nil && (r.IsExpressionStatement(inner2.Type) || r.IsWrapper(inner2.Type)) && len(inner2.Children) > 0 {
+				first := inner2.Children[0]
+				if TypesMatch(c1.Type, first.Type, r) {
+					target2 = first
+				}
+			}
+			if m.HasDst(target2) {
+				continue
+			}
+			if (TypesMatch(c1.Type, target2.Type, r) || CompatiblePairRoles(c1, target2)) &&
+				(LeafSimilarity(c1, target2) >= 0.40 || m.DiceSrc(c1, target2) >= 0.40) {
+				m.Add(c1, target2)
+				Recover(c1, target2, m)
+				break
+			}
+		}
+	}
+
+	// Old side has a block, new side unwrapped it into a bare statement.
+	for _, c1 := range uc1 {
+		if !isBlockNode(c1, r) || m.Has(c1) {
+			continue
+		}
+		inner1 := unwrapSingleStatementBlock(c1, r)
+		if inner1 == nil || m.Has(inner1) {
+			continue
+		}
+		target1 := inner1
+		for _, c2 := range uc2 {
+			if isBlockNode(c2, r) || m.HasDst(c2) {
+				continue
+			}
+			currTarget := target1
+			if r != nil && (r.IsExpressionStatement(inner1.Type) || r.IsWrapper(inner1.Type)) && len(inner1.Children) > 0 {
+				first := inner1.Children[0]
+				if TypesMatch(first.Type, c2.Type, r) {
+					currTarget = first
+				}
+			}
+			if m.Has(currTarget) {
+				continue
+			}
+			if (TypesMatch(currTarget.Type, c2.Type, r) || CompatiblePairRoles(currTarget, c2)) &&
+				(LeafSimilarity(currTarget, c2) >= 0.40 || m.DiceSrc(currTarget, c2) >= 0.40) {
+				m.Add(currTarget, c2)
+				Recover(currTarget, c2, m)
+				break
+			}
+		}
+	}
+}
+
+// unwrapSingleStatementBlock returns the single substantive statement or expression
+// inside block b, or nil if b contains zero or multiple substantive children.
+func unwrapSingleStatementBlock(b *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if b == nil {
+		return nil
+	}
+	var target *treesitter.ASTNode
+	for _, c := range b.Children {
+		if c.IsKeyword || isGlueToken(c, r) {
+			continue
+		}
+		if (r != nil && (r.IsPunctuation(c.Type) || r.IsOperatorLiteral(c.Type))) ||
+			(r == nil && (rules.IsPunctuation(c.Type) || rules.IsOperatorLiteral(c.Type))) {
+			continue
+		}
+		if target != nil {
+			return nil // More than one substantive child.
+		}
+		target = c
+	}
+	return target
 }
 
 // hasBlockDescendant reports whether n or any descendant in its subtree is a block node.

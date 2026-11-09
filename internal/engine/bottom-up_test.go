@@ -2355,3 +2355,404 @@ func process(x, y int) int {
 		}
 	})
 }
+
+func TestBlockWrappedCaseClauseMatching(t *testing.T) {
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		oldSrc := []byte(`fn foo() -> Vec<String> {
+    let mut ansi_strings = Vec::new();
+    match placeholder.placeholder {
+        Some("nm") => ansi_strings.push(minus_number_style.paint(format_line_number(
+            minus_number,
+            alignment_spec,
+            width,
+            None,
+            config,
+        ))),
+        Some("np") => ansi_strings.push(plus_number_style.paint(format_line_number(
+            plus_number,
+            alignment_spec,
+            width,
+            Some(plus_file),
+            config,
+        ))),
+        None => {}
+        Some(_) => unreachable!(),
+    }
+    ansi_strings
+}
+`)
+		newSrc := []byte(`fn foo() -> Vec<String> {
+    let mut ansi_strings = Vec::new();
+    match placeholder.placeholder {
+        Some(Placeholder::NumberMinus) => ansi_strings.push(styles[Minus].paint(
+            format_line_number(line_numbers[Minus], alignment_spec, width, None, config),
+        )),
+        Some(Placeholder::NumberPlus) => {
+            ansi_strings.push(styles[Plus].paint(format_line_number(
+                line_numbers[Plus],
+                alignment_spec,
+                width,
+                Some(plus_file),
+                config,
+            )))
+        }
+        None => {}
+        _ => unreachable!("Invalid placeholder"),
+    }
+    ansi_strings
+}
+`)
+		oldTree, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse old tree: %v", err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse new tree: %v", err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(oldTree, newTree)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil result")
+		}
+
+		r := rulesFor(oldTree)
+		m := mr.Mappings
+
+		// 1. Enclosing Context: Function declaration maps in place
+		var oldFn, newFn *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				oldFn = n
+				break
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				newFn = n
+				break
+			}
+		}
+		if oldFn == nil || newFn == nil || m.Src()[oldFn] != newFn {
+			t.Fatalf("expected function declaration to map in place, got %v", m.Src()[oldFn])
+		}
+
+		// 2. Surrounding Sequence: let binding and return statement map in place
+		for _, n1 := range oldFn.Descendants() {
+			if r.IsStatement(n1.Type) && bytes.Contains(oldSrc[n1.StartByte:n1.EndByte], []byte("let mut ansi_strings")) {
+				n2 := m.Src()[n1]
+				if n2 == nil || !bytes.Contains(newSrc[n2.StartByte:n2.EndByte], []byte("let mut ansi_strings")) {
+					t.Errorf("let mut ansi_strings failed to map in place")
+				}
+			}
+		}
+
+		// Collect match arms declaratively
+		var oldArms, newArms []*treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				oldArms = append(oldArms, n)
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				newArms = append(newArms, n)
+			}
+		}
+		if len(oldArms) != 4 || len(newArms) != 4 {
+			t.Fatalf("expected 4 arms on both sides, got old=%d new=%d", len(oldArms), len(newArms))
+		}
+
+		// 3. Target & Containers:
+		// Arm 0 (Minus) must map in place
+		if m.Src()[oldArms[0]] != newArms[0] {
+			t.Errorf("expected Arm 0 (Minus) to map in place, got %v", m.Src()[oldArms[0]])
+		}
+		// Arm 1 (Plus - wrapped in block in new) must map in place!
+		if m.Src()[oldArms[1]] != newArms[1] {
+			t.Errorf("expected Arm 1 (Plus) to map in place across intermediate block, got %v", m.Src()[oldArms[1]])
+		}
+		// Arm 2 (None) must map in place
+		if m.Src()[oldArms[2]] != newArms[2] {
+			t.Errorf("expected Arm 2 (None) to map in place, got %v", m.Src()[oldArms[2]])
+		}
+		// Arm 3 (Wildcard / unreachable) must map in place!
+		if m.Src()[oldArms[3]] != newArms[3] {
+			t.Errorf("expected Arm 3 (Wildcard) to map in place, got %v", m.Src()[oldArms[3]])
+		}
+
+		// 4. Stationary Operands inside Arm 1: alignment_spec, width, plus_file, config
+		for _, name := range []string{"alignment_spec", "width", "plus_file", "config"} {
+			var oldIdent, newIdent *treesitter.ASTNode
+			for _, n := range oldArms[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					oldIdent = n
+					break
+				}
+			}
+			for _, n := range newArms[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					newIdent = n
+					break
+				}
+			}
+			if oldIdent == nil || newIdent == nil {
+				t.Fatalf("failed to locate identifier %s in Arm 1", name)
+			}
+			if m.Src()[oldIdent] != newIdent {
+				t.Errorf("expected stationary operand %s in Arm 1 to map in place, got %v", name, m.Src()[oldIdent])
+			}
+		}
+	})
+
+	t.Run("FullEngine_Zig", func(t *testing.T) {
+		oldSrc := []byte(`fn testZig(x: u32) void {
+    switch (x) {
+        1 => push(format(1)),
+        2 => push(paint(format(num2, spec, width, opt, config))),
+        else => unreachable,
+    }
+}
+`)
+		newSrc := []byte(`fn testZig(x: u32) void {
+    switch (x) {
+        1 => push(format(1)),
+        2 => {
+            push(paint(format(new_num2, spec, width, opt, config)));
+        },
+        else => unreachable,
+    }
+}
+`)
+		oldTree, err := treesitter.Parse(oldSrc, "test.zig")
+		if err != nil {
+			t.Fatal(err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "test.zig")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(oldTree, newTree)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil result")
+		}
+
+		r := rulesFor(oldTree)
+		m := mr.Mappings
+
+		var oldCases, newCases []*treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				oldCases = append(oldCases, n)
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				newCases = append(newCases, n)
+			}
+		}
+		if len(oldCases) != 3 || len(newCases) != 3 {
+			t.Fatalf("expected 3 cases, got old=%d new=%d", len(oldCases), len(newCases))
+		}
+
+		if m.Src()[oldCases[1]] != newCases[1] {
+			t.Errorf("expected Zig Case 2 to map in place across block, got %v", m.Src()[oldCases[1]])
+		}
+
+		for _, name := range []string{"spec", "width", "opt", "config"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range oldCases[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range newCases[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil {
+				t.Fatalf("failed to locate identifier %s in Zig Case 2: sNode=%v, dNode=%v", name, sNode, dNode)
+			}
+			if m.Src()[sNode] != dNode {
+				t.Errorf("expected Zig stationary arg %s to map in place, got %v", name, m.Src()[sNode])
+			}
+		}
+	})
+
+	t.Run("FullEngine_Java", func(t *testing.T) {
+		oldSrc := []byte(`class Test {
+    void testJava(int x) {
+        switch (x) {
+            case 1 -> push(format(1));
+            case 2 -> push(paint(format(num2, spec, width, opt, config)));
+            default -> unreachable();
+        }
+    }
+}
+`)
+		newSrc := []byte(`class Test {
+    void testJava(int x) {
+        switch (x) {
+            case 1 -> push(format(1));
+            case 2 -> {
+                push(paint(format(new_num2, spec, width, opt, config)));
+            }
+            default -> unreachable();
+        }
+    }
+}
+`)
+		oldTree, err := treesitter.Parse(oldSrc, "test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(oldTree, newTree)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil result")
+		}
+
+		r := rulesFor(oldTree)
+		m := mr.Mappings
+
+		var oldRules, newRules []*treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				oldRules = append(oldRules, n)
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				newRules = append(newRules, n)
+			}
+		}
+		if len(oldRules) != 3 || len(newRules) != 3 {
+			t.Fatalf("expected 3 switch rules, got old=%d new=%d", len(oldRules), len(newRules))
+		}
+
+		if m.Src()[oldRules[1]] != newRules[1] {
+			t.Errorf("expected Java Case 2 to map in place across block, got %v", m.Src()[oldRules[1]])
+		}
+
+		for _, name := range []string{"spec", "width", "opt", "config"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range oldRules[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range newRules[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil {
+				t.Fatalf("failed to locate identifier %s in Java Case 2: sNode=%v, dNode=%v", name, sNode, dNode)
+			}
+			if m.Src()[sNode] != dNode {
+				t.Errorf("expected Java stationary arg %s to map in place, got %v", name, m.Src()[sNode])
+			}
+		}
+	})
+
+	t.Run("FullEngine_TypeScript", func(t *testing.T) {
+		oldSrc := []byte(`function testTS(x: number) {
+    switch (x) {
+        case 1:
+            return push(format(1));
+        case 2:
+            return push(paint(format(num2, spec, width, opt, config)));
+        default:
+            return unreachable();
+    }
+}
+`)
+		newSrc := []byte(`function testTS(x: number) {
+    switch (x) {
+        case 1:
+            return push(format(1));
+        case 2: {
+            return push(paint(format(new_num2, spec, width, opt, config)));
+        }
+        default:
+            return unreachable();
+    }
+}
+`)
+		oldTree, err := treesitter.Parse(oldSrc, "test.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "test.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(oldTree, newTree)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil result")
+		}
+
+		r := rulesFor(oldTree)
+		m := mr.Mappings
+
+		var oldCases, newCases []*treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				oldCases = append(oldCases, n)
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				newCases = append(newCases, n)
+			}
+		}
+		if len(oldCases) != 3 || len(newCases) != 3 {
+			t.Fatalf("expected 3 switch cases, got old=%d new=%d", len(oldCases), len(newCases))
+		}
+
+		if m.Src()[oldCases[1]] != newCases[1] {
+			t.Errorf("expected TS Case 2 to map in place across block, got %v", m.Src()[oldCases[1]])
+		}
+
+		for _, name := range []string{"spec", "width", "opt", "config"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range oldCases[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range newCases[1].Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil {
+				t.Fatalf("failed to locate identifier %s in TS Case 2: sNode=%v, dNode=%v", name, sNode, dNode)
+			}
+			if m.Src()[sNode] != dNode {
+				t.Errorf("expected TS stationary arg %s to map in place, got %v", name, m.Src()[sNode])
+			}
+		}
+	})
+}

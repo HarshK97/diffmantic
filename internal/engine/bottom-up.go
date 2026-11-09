@@ -607,31 +607,52 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		var bestParent *treesitter.ASTNode
 		bestCount := 0
 		isWrapper := (r != nil && r.IsWrapper(t1.Type)) || (r == nil && rules.IsWrapper(t1.Type))
+		children := t1.Children
+		// When a branch or arm body gets wrapped in braces, look inside the block so inner expressions still vote for t1.
 		for _, c := range t1.Children {
+			if !m.Has(c) && isBlockNode(c, r) {
+				children = append(slices.Clone(children), c.Children...)
+				break
+			}
+		}
+
+		for _, c := range children {
 			if isGlueToken(c, r) {
 				continue
 			}
-			if c2, ok := m.Src()[c]; ok &&
-				c2.Parent != nil &&
-				!m.HasDst(c2.Parent) &&
-				TypesMatch(t1.Type, c2.Parent.Type, r) &&
-				!hasForeignBodyOwner(t1, c2.Parent, m, r) &&
-				!hasForeignHeaderOwner(t1, c2.Parent, m, r) {
-				if hasDisjointAssignmentTargets(t1, c2.Parent, r) {
+			c2, ok := m.Src()[c]
+			if !ok || c2 == nil || c2.Parent == nil {
+				continue
+			}
+
+			targetParent := c2.Parent
+			if !TypesMatch(t1.Type, targetParent.Type, r) {
+				if targetParent.Parent != nil &&
+					isBlockNode(targetParent, r) &&
+					TypesMatch(t1.Type, targetParent.Parent.Type, r) {
+					targetParent = targetParent.Parent
+				}
+			}
+
+			if !m.HasDst(targetParent) &&
+				TypesMatch(t1.Type, targetParent.Type, r) &&
+				!hasForeignBodyOwner(t1, targetParent, m, r) &&
+				!hasForeignHeaderOwner(t1, targetParent, m, r) {
+				if hasDisjointAssignmentTargets(t1, targetParent, r) {
 					continue
 				}
-				if hasAsymmetricOperatorOperands(t1, c2.Parent, c, m, r) {
+				if hasAsymmetricOperatorOperands(t1, targetParent, c, m, r) {
 					continue
 				}
-				if isWrapper && hasForeignMappedDescendants(t1, c2.Parent, m) {
+				if isWrapper && hasForeignMappedDescendants(t1, targetParent, m) {
 					continue
 				}
 				weight := c.Size()
-				cnt := parentCounts[c2.Parent] + weight
-				parentCounts[c2.Parent] = cnt
-				if cnt > bestCount || (cnt == bestCount && isSuperiorCandidate(c2.Parent, bestParent, t1, m, r)) {
+				cnt := parentCounts[targetParent] + weight
+				parentCounts[targetParent] = cnt
+				if cnt > bestCount || (cnt == bestCount && isSuperiorCandidate(targetParent, bestParent, t1, m, r)) {
 					bestCount = cnt
-					bestParent = c2.Parent
+					bestParent = targetParent
 				}
 			}
 		}

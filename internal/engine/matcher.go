@@ -43,6 +43,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
 	RollupMatchedContainers(t1, t2, mappings)
+	recoverPostRollupSiblings(t1, mappings)
 	RecoverCohortSiblings(t1, t2, mappings)
 	MatchContainerKeywords(t1, t2, mappings)
 
@@ -232,6 +233,23 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			continue
 		}
 		m.Add(cand.t1, cand.t2)
+	}
+}
+
+// recoverPostRollupSiblings pairs remaining siblings (like trailing match arms or case clauses)
+// in containers whose identity was established during rollup.
+func recoverPostRollupSiblings(t1Root *treesitter.ASTNode, m *Mapping) {
+	if t1Root == nil || m == nil {
+		return
+	}
+	for _, t1 := range t1Root.PostOrder() {
+		if !m.Has(t1) {
+			continue
+		}
+		t2 := m.Src()[t1]
+		if t2 != nil && hasUnmappedChild(t1, m.Has) && hasUnmappedChild(t2, m.HasDst) {
+			Recover(t1, t2, m)
+		}
 	}
 }
 

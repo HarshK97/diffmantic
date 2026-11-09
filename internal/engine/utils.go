@@ -649,7 +649,45 @@ func isStatementOrBranch(n *treesitter.ASTNode, r *rules.Rules) bool {
 	isBlock := func(t string) bool {
 		return (r != nil && r.IsBlock(t)) || (r == nil && rules.IsBlock(t))
 	}
-	return n.Parent != nil && !isBlock(n.Type) && isBlock(n.Parent.Type)
+	isCase := func(t string) bool {
+		return (r != nil && r.IsCaseClause(t)) || (r == nil && rules.IsCaseClause(t))
+	}
+	if n.Parent != nil && !isBlock(n.Type) {
+		if isBlock(n.Parent.Type) {
+			return true
+		}
+		if isCase(n.Parent.Type) && isCaseClauseBody(n, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCaseClauseBody reports whether n is an expression or statement acting as the body of an enclosing case clause.
+func isCaseClauseBody(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || n.Parent == nil {
+		return false
+	}
+	isPunct := n.IsKeyword ||
+		(r != nil && (r.IsPunctuation(n.Type) || r.IsOperatorLiteral(n.Type) || r.IsKeyword(n.Type, n.Label))) ||
+		(r == nil && (rules.IsPunctuation(n.Type) || rules.IsOperatorLiteral(n.Type) || rules.IsKeyword(n.Type, n.Label)))
+	if isPunct {
+		return false
+	}
+	idx := slices.Index(n.Parent.Children, n)
+	if idx < 0 {
+		return false
+	}
+	if idx == len(n.Parent.Children)-1 {
+		return true
+	}
+	isSep := func(c *treesitter.ASTNode) bool {
+		if r != nil {
+			return r.IsTrailingSeparator(c.Type)
+		}
+		return rules.IsTrailingSeparator(c.Type)
+	}
+	return slices.ContainsFunc(n.Parent.Children[:idx], isSep)
 }
 
 // findActualEnclosingStatement walks strictly up from n's parent to find an
