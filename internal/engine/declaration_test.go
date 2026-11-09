@@ -2070,19 +2070,20 @@ pub fn helper_omega(y: usize) -> usize {
 		}
 
 		// Delimited parameters container and individual parameters must map in place without sibling theft
-		var srcParams, dstParams *treesitter.ASTNode
-		for _, child := range srcRightPad.Children {
-			if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
-				srcParams = child
-				break
+		findParams := func(fn *treesitter.ASTNode) *treesitter.ASTNode {
+			for _, child := range fn.Children {
+				if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
+					for _, c := range child.Children {
+						if r.IsDeclaration(c.Type) {
+							return child
+						}
+					}
+				}
 			}
+			return nil
 		}
-		for _, child := range dstPadPanel.Children {
-			if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
-				dstParams = child
-				break
-			}
-		}
+		srcParams := findParams(srcRightPad)
+		dstParams := findParams(dstPadPanel)
 		if srcParams == nil || dstParams == nil {
 			t.Fatalf("missing parameters container: srcParams=%v, dstParams=%v", srcParams, dstParams)
 		}
@@ -2798,6 +2799,198 @@ end
 		}
 		if m.Src()[elseSrc] != elseDst {
 			t.Errorf("expected else_statement clause to map in place, got %v", m.Src()[elseSrc])
+		}
+	})
+
+	t.Run("Rust_MacroDefinition_Renamed", func(t *testing.T) {
+		oldSrc := []byte(`macro_rules! say_hello {
+    () => { println!("hello"); };
+}
+
+macro_rules! empty [
+    () => {};
+];
+
+macro_rules! say_bye {
+    () => { println!("bye"); };
+}
+`)
+		newSrc := []byte(`macro_rules! say_hello {
+    () => { println!("hello"); };
+}
+
+macro_rules! empty_evolved [
+    () => {};
+];
+
+macro_rules! say_bye {
+    () => { println!("bye"); };
+}
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("rust")
+
+		// Surrounding macros must map in place.
+		var helloSrc, helloDst, byeSrc, byeDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("say_hello")) {
+					helloSrc = n
+				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("say_bye")) {
+					byeSrc = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("say_hello")) {
+					helloDst = n
+				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("say_bye")) {
+					byeDst = n
+				}
+			}
+		}
+		if helloSrc == nil || helloDst == nil || byeSrc == nil || byeDst == nil {
+			t.Fatalf("surrounding macros missing: helloSrc=%v helloDst=%v byeSrc=%v byeDst=%v", helloSrc, helloDst, byeSrc, byeDst)
+		}
+		if m.Src()[helloSrc] != helloDst {
+			t.Errorf("expected say_hello to map in place, got %v", m.Src()[helloSrc])
+		}
+		if m.Src()[byeSrc] != byeDst {
+			t.Errorf("expected say_bye to map in place, got %v", m.Src()[byeSrc])
+		}
+
+		// The renamed macro_definition must map in place.
+		var emptySrc, emptyDst, ruleSrc, ruleDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("empty")) {
+				emptySrc = n
+			}
+			if n.Type == "macro_rule" && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("() => {}")) {
+				ruleSrc = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("empty_evolved")) {
+				emptyDst = n
+			}
+			if n.Type == "macro_rule" && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("() => {}")) {
+				ruleDst = n
+			}
+		}
+		if emptySrc == nil || emptyDst == nil {
+			t.Fatalf("macro_definition missing: emptySrc=%v emptyDst=%v", emptySrc, emptyDst)
+		}
+		if m.Src()[emptySrc] != emptyDst {
+			t.Errorf("expected renamed macro_definition to map in place, got %v", m.Src()[emptySrc])
+		}
+		if ruleSrc == nil || ruleDst == nil {
+			t.Fatalf("macro_rule missing: ruleSrc=%v ruleDst=%v", ruleSrc, ruleDst)
+		}
+		if m.Src()[ruleSrc] != ruleDst {
+			t.Errorf("expected inner macro_rule to map in place, got %v", m.Src()[ruleSrc])
+		}
+	})
+
+	t.Run("Rust_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
+		oldSrc := []byte(`trait T: for<'a> AddAssign<&'a usize> {
+}
+
+type FnObject<'b> = dyn for<'a> FnLike<&'a isize, &'a isize> + 'b;
+`)
+		newSrc := []byte(`trait T: for<'a> AddAssign<&'a usize> {
+}
+
+type FnObject<'b> = dyn for<'a> FnLike<&'a isize_evolved, &'a isize> + 'b;
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("rust")
+
+		// Surrounding trait declaration must map in place.
+		var traitSrc, traitDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("AddAssign")) {
+				traitSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("AddAssign")) {
+				traitDst = n
+				break
+			}
+		}
+		if traitSrc == nil || traitDst == nil {
+			t.Fatalf("trait missing: traitSrc=%v traitDst=%v", traitSrc, traitDst)
+		}
+		if m.Src()[traitSrc] != traitDst {
+			t.Errorf("expected trait declaration to map in place, got %v", m.Src()[traitSrc])
+		}
+
+		// Locate the two &'a isize references in oldSrc.
+		var oldRef0, oldRef1, newRef0, newRef1 *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if n.Type == "reference_type" && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("&'a isize")) {
+				if oldRef0 == nil {
+					oldRef0 = n
+				} else if oldRef1 == nil {
+					oldRef1 = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if n.Type == "reference_type" {
+				if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("&'a isize_evolved")) {
+					newRef0 = n
+				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("&'a isize")) {
+					newRef1 = n
+				}
+			}
+		}
+		if oldRef0 == nil || oldRef1 == nil || newRef0 == nil || newRef1 == nil {
+			t.Fatalf("reference_types missing: oldRef0=%v oldRef1=%v newRef0=%v newRef1=%v", oldRef0, oldRef1, newRef0, newRef1)
+		}
+
+		// Sibling invariant: the identical second reference_type MUST map to the second reference_type
+		// without crossing over or stealing the first slot.
+		if m.Src()[oldRef1] != newRef1 {
+			t.Errorf("expected second reference_type to map to second slot, got %v", m.Src()[oldRef1])
 		}
 	})
 }

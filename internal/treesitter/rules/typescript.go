@@ -331,6 +331,8 @@ var typescriptRules = &Rules{
 		"object",
 		"object_pattern",
 		"object_type",
+		"type_arguments",
+		"type_parameters",
 	},
 	Clauses: []string{
 		"else_clause",

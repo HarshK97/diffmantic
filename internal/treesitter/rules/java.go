@@ -282,6 +282,8 @@ var javaRules = &Rules{
 		"array_initializer",
 		"enum_body",
 		"formal_parameters",
+		"type_arguments",
+		"type_parameters",
 	},
 	Clauses: []string{
 		"catch_clause",

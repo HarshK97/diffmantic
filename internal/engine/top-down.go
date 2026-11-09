@@ -299,6 +299,19 @@ func TopDown(
 			if c := cmp.Compare(a.drift, b.drift); c != 0 {
 				return c
 			}
+			// When row drift is tied, compare horizontal column distance so same-line siblings
+			// map to their stationary column rather than crossing over.
+			colDistA := int(a.pair[0].StartCol) - int(a.pair[1].StartCol)
+			if colDistA < 0 {
+				colDistA = -colDistA
+			}
+			colDistB := int(b.pair[0].StartCol) - int(b.pair[1].StartCol)
+			if colDistB < 0 {
+				colDistB = -colDistB
+			}
+			if c := cmp.Compare(colDistA, colDistB); c != 0 {
+				return c
+			}
 		}
 
 		// If still tied, keep source document order so statements in the same function don't swap places.
