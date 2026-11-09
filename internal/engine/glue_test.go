@@ -1132,3 +1132,572 @@ func renderTest(left, right, lastSrcLineIdx, lastDstLineIdx int, sText, dText st
 		}
 	})
 }
+
+// TestRevokeOrphanedGlue_NestedPathPayloadPreservedAcrossLineDrift verifies that trimming
+// or expanding import paths (like Rust `use`, C++ `using`, Zig `usingnamespace`, or Java `import`)
+// keeps the declaration mapped in place when upstream lines drift, rather than revoking it into
+// delete and insert.
+func TestRevokeOrphanedGlue_NestedPathPayloadPreservedAcrossLineDrift(t *testing.T) {
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		src := `fn top_helper() {
+    let a = 1;
+    let b = 2;
+}
+
+mod test_utils {
+    use std::fs::remove_file;
+
+    use crate::tests::integration_test_utils::integration_test_utils;
+
+    #[test]
+    fn test_diff_highlight_defaults() {
+        let opt = 42;
+    }
+}
+`
+		dst := `fn top_helper() {
+    let a = 1;
+    let b = 2;
+    let c = 3;
+    let d = 4;
+    let e = 5;
+    let f = 6;
+}
+
+mod test_utils {
+    use std::fs::remove_file;
+
+    use crate::tests::integration_test_utils;
+
+    #[test]
+    fn test_diff_highlight_defaults() {
+        let opt = 42;
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.ParseErrorCount != 0 || dstAST.ParseErrorCount != 0 {
+			t.Fatalf("expected zero parse errors, got src=%d, dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+
+		// Enclosing function, module, and declaration list must stay mapped in place.
+		var srcTopFn, dstTopFn, srcMod, dstMod, srcDeclList, dstDeclList *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(src[n.StartByte:n.EndByte], "top_helper") {
+				srcTopFn = n
+			}
+			if n.Type == "mod_item" {
+				srcMod = n
+			}
+			if n.Type == "declaration_list" && n.Parent == srcMod {
+				srcDeclList = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(dst[n.StartByte:n.EndByte], "top_helper") {
+				dstTopFn = n
+			}
+			if n.Type == "mod_item" {
+				dstMod = n
+			}
+			if n.Type == "declaration_list" && n.Parent == dstMod {
+				dstDeclList = n
+			}
+		}
+		if srcTopFn == nil || dstTopFn == nil || mr.Mappings.Src()[srcTopFn] != dstTopFn {
+			t.Errorf("expected top_helper function to map in place, got %v", mr.Mappings.Src()[srcTopFn])
+		}
+		if srcMod == nil || dstMod == nil || mr.Mappings.Src()[srcMod] != dstMod {
+			t.Errorf("expected mod_item to map in place, got %v", mr.Mappings.Src()[srcMod])
+		}
+		if srcDeclList == nil || dstDeclList == nil || mr.Mappings.Src()[srcDeclList] != dstDeclList {
+			t.Errorf("expected declaration_list to map in place, got %v", mr.Mappings.Src()[srcDeclList])
+		}
+
+		// Surrounding statements must stay mapped without disruption.
+		var srcStdUse, dstStdUse, srcTestFn, dstTestFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "remove_file") {
+				srcStdUse = n
+			}
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(src[n.StartByte:n.EndByte], "test_diff_highlight_defaults") {
+				srcTestFn = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "remove_file") {
+				dstStdUse = n
+			}
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(dst[n.StartByte:n.EndByte], "test_diff_highlight_defaults") {
+				dstTestFn = n
+			}
+		}
+		if srcStdUse == nil || dstStdUse == nil || mr.Mappings.Src()[srcStdUse] != dstStdUse {
+			t.Errorf("expected use std::fs::remove_file to map in place, got %v", mr.Mappings.Src()[srcStdUse])
+		}
+		if srcTestFn == nil || dstTestFn == nil || mr.Mappings.Src()[srcTestFn] != dstTestFn {
+			t.Errorf("expected test function to map in place, got %v", mr.Mappings.Src()[srcTestFn])
+		}
+
+		// Target use declaration must stay mapped despite upstream line drift.
+		var srcTargetUse, dstTargetUse *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "integration_test_utils") {
+				srcTargetUse = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "integration_test_utils") {
+				dstTargetUse = n
+				break
+			}
+		}
+		if srcTargetUse == nil || dstTargetUse == nil {
+			t.Fatalf("failed to locate target use_declaration: src=%v, dst=%v", srcTargetUse, dstTargetUse)
+		}
+		if mr.Mappings.Src()[srcTargetUse] != dstTargetUse {
+			t.Errorf("expected target use_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcTargetUse])
+		}
+
+		// Shared path prefix must stay mapped in place.
+		var srcInnerScope, dstInnerScope *treesitter.ASTNode
+		for _, n := range srcTargetUse.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && src[n.StartByte:n.EndByte] == "crate::tests::integration_test_utils" {
+				srcInnerScope = n
+				break
+			}
+		}
+		for _, n := range dstTargetUse.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && dst[n.StartByte:n.EndByte] == "crate::tests::integration_test_utils" {
+				dstInnerScope = n
+				break
+			}
+		}
+		if srcInnerScope == nil || dstInnerScope == nil {
+			t.Fatalf("failed to locate inner scoped_identifier: src=%v, dst=%v", srcInnerScope, dstInnerScope)
+		}
+		if mr.Mappings.Src()[srcInnerScope] != dstInnerScope {
+			t.Errorf("expected inner scoped_identifier to map in place, got %v", mr.Mappings.Src()[srcInnerScope])
+		}
+	})
+
+	t.Run("FullEngine_CPP", func(t *testing.T) {
+		src := `void setup() {
+    int a = 1;
+    int b = 2;
+}
+
+namespace test_env {
+    void init() {}
+    using foo::bar::baz;
+    void teardown() {}
+}
+`
+		dst := `void setup() {
+    int a = 1;
+    int b = 2;
+    int c = 3;
+    int d = 4;
+    int e = 5;
+    int f = 6;
+}
+
+namespace test_env {
+    void init() {}
+    using bar::baz;
+    void teardown() {}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.ParseErrorCount != 0 || dstAST.ParseErrorCount != 0 {
+			t.Fatalf("expected zero parse errors, got src=%d, dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+
+		// Enclosing function, namespace, and declaration list must stay mapped.
+		var srcSetupFn, dstSetupFn, srcNs, dstNs, srcDeclList, dstDeclList *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(src[n.StartByte:n.EndByte], "setup") {
+				srcSetupFn = n
+			}
+			if n.Type == "namespace_definition" {
+				srcNs = n
+			}
+			if n.Type == "declaration_list" && n.Parent == srcNs {
+				srcDeclList = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(dst[n.StartByte:n.EndByte], "setup") {
+				dstSetupFn = n
+			}
+			if n.Type == "namespace_definition" {
+				dstNs = n
+			}
+			if n.Type == "declaration_list" && n.Parent == dstNs {
+				dstDeclList = n
+			}
+		}
+		if srcSetupFn == nil || dstSetupFn == nil || mr.Mappings.Src()[srcSetupFn] != dstSetupFn {
+			t.Errorf("expected setup function to map in place, got %v", mr.Mappings.Src()[srcSetupFn])
+		}
+		if srcNs == nil || dstNs == nil || mr.Mappings.Src()[srcNs] != dstNs {
+			t.Errorf("expected namespace_definition to map in place, got %v", mr.Mappings.Src()[srcNs])
+		}
+		if srcDeclList == nil || dstDeclList == nil || mr.Mappings.Src()[srcDeclList] != dstDeclList {
+			t.Errorf("expected declaration_list to map in place, got %v", mr.Mappings.Src()[srcDeclList])
+		}
+
+		// Surrounding statements must stay mapped.
+		var srcInitFn, dstInitFn, srcTeardownFn, dstTeardownFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(src[n.StartByte:n.EndByte], "init") {
+				srcInitFn = n
+			}
+			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(src[n.StartByte:n.EndByte], "teardown") {
+				srcTeardownFn = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(dst[n.StartByte:n.EndByte], "init") {
+				dstInitFn = n
+			}
+			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(dst[n.StartByte:n.EndByte], "teardown") {
+				dstTeardownFn = n
+			}
+		}
+		if srcInitFn == nil || dstInitFn == nil || mr.Mappings.Src()[srcInitFn] != dstInitFn {
+			t.Errorf("expected init function to map in place, got %v", mr.Mappings.Src()[srcInitFn])
+		}
+		if srcTeardownFn == nil || dstTeardownFn == nil || mr.Mappings.Src()[srcTeardownFn] != dstTeardownFn {
+			t.Errorf("expected teardown function to map in place, got %v", mr.Mappings.Src()[srcTeardownFn])
+		}
+
+		// Target using declaration must stay mapped despite upstream line drift.
+		var srcUsing, dstUsing *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "baz") {
+				srcUsing = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "baz") {
+				dstUsing = n
+				break
+			}
+		}
+		if srcUsing == nil || dstUsing == nil {
+			t.Fatalf("failed to locate target using_declaration: src=%v, dst=%v", srcUsing, dstUsing)
+		}
+		if mr.Mappings.Src()[srcUsing] != dstUsing {
+			t.Errorf("expected target using_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcUsing])
+		}
+
+		// Shared qualified identifier must stay mapped.
+		var srcInnerQual, dstInnerQual *treesitter.ASTNode
+		for _, n := range srcUsing.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Type == "qualified_identifier" && src[n.StartByte:n.EndByte] == "bar::baz" {
+				srcInnerQual = n
+				break
+			}
+		}
+		for _, n := range dstUsing.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Type == "qualified_identifier" && dst[n.StartByte:n.EndByte] == "bar::baz" {
+				dstInnerQual = n
+				break
+			}
+		}
+		if srcInnerQual == nil || dstInnerQual == nil {
+			t.Fatalf("failed to locate inner qualified_identifier: src=%v, dst=%v", srcInnerQual, dstInnerQual)
+		}
+		if mr.Mappings.Src()[srcInnerQual] != dstInnerQual {
+			t.Errorf("expected inner qualified_identifier to map in place, got %v", mr.Mappings.Src()[srcInnerQual])
+		}
+	})
+
+	t.Run("FullEngine_Zig", func(t *testing.T) {
+		src := `fn setup() void {
+    const a = 1;
+    const b = 2;
+}
+
+const test_mod = struct {
+    fn before() void {}
+    pub usingnamespace foo.bar.baz;
+    fn after() void {}
+};
+`
+		dst := `fn setup() void {
+    const a = 1;
+    const b = 2;
+    const c = 3;
+    const d = 4;
+    const e = 5;
+    const f = 6;
+}
+
+const test_mod = struct {
+    fn before() void {}
+    pub usingnamespace foo.bar;
+    fn after() void {}
+};
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.zig")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.zig")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.ParseErrorCount != 0 || dstAST.ParseErrorCount != 0 {
+			t.Fatalf("expected zero parse errors, got src=%d, dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+
+		// Enclosing function and module struct must stay mapped.
+		var srcSetupFn, dstSetupFn, srcTestMod, dstTestMod *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "fn setup") {
+				srcSetupFn = n
+			}
+			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "const test_mod") {
+				srcTestMod = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "fn setup") {
+				dstSetupFn = n
+			}
+			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "const test_mod") {
+				dstTestMod = n
+			}
+		}
+		if srcSetupFn == nil || dstSetupFn == nil || mr.Mappings.Src()[srcSetupFn] != dstSetupFn {
+			t.Errorf("expected setup function to map in place, got %v", mr.Mappings.Src()[srcSetupFn])
+		}
+		if srcTestMod == nil || dstTestMod == nil || mr.Mappings.Src()[srcTestMod] != dstTestMod {
+			t.Errorf("expected test_mod declaration to map in place, got %v", mr.Mappings.Src()[srcTestMod])
+		}
+
+		// Surrounding functions must stay mapped.
+		var srcBeforeFn, dstBeforeFn, srcAfterFn, dstAfterFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "fn before") {
+				srcBeforeFn = n
+			}
+			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "fn after") {
+				srcAfterFn = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "fn before") {
+				dstBeforeFn = n
+			}
+			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "fn after") {
+				dstAfterFn = n
+			}
+		}
+		if srcBeforeFn == nil || dstBeforeFn == nil || mr.Mappings.Src()[srcBeforeFn] != dstBeforeFn {
+			t.Errorf("expected before function to map in place, got %v", mr.Mappings.Src()[srcBeforeFn])
+		}
+		if srcAfterFn == nil || dstAfterFn == nil || mr.Mappings.Src()[srcAfterFn] != dstAfterFn {
+			t.Errorf("expected after function to map in place, got %v", mr.Mappings.Src()[srcAfterFn])
+		}
+
+		// Target usingnamespace declaration must stay mapped despite upstream line drift.
+		var srcUsing, dstUsing *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "usingnamespace") {
+				srcUsing = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "usingnamespace") {
+				dstUsing = n
+				break
+			}
+		}
+		if srcUsing == nil || dstUsing == nil {
+			t.Fatalf("failed to locate target using_namespace_declaration: src=%v, dst=%v", srcUsing, dstUsing)
+		}
+		if mr.Mappings.Src()[srcUsing] != dstUsing {
+			t.Errorf("expected target using_namespace_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcUsing])
+		}
+
+		// Shared field expression must stay mapped.
+		var srcInnerField, dstInnerField *treesitter.ASTNode
+		for _, n := range srcUsing.Descendants() {
+			if r.IsExpression(n.Type) && n.Type == "field_expression" && src[n.StartByte:n.EndByte] == "foo.bar" {
+				srcInnerField = n
+				break
+			}
+		}
+		for _, n := range dstUsing.Descendants() {
+			if r.IsExpression(n.Type) && n.Type == "field_expression" && dst[n.StartByte:n.EndByte] == "foo.bar" {
+				dstInnerField = n
+				break
+			}
+		}
+		if srcInnerField == nil || dstInnerField == nil {
+			t.Fatalf("failed to locate inner field_expression: src=%v, dst=%v", srcInnerField, dstInnerField)
+		}
+		if mr.Mappings.Src()[srcInnerField] != dstInnerField {
+			t.Errorf("expected inner field_expression to map in place, got %v", mr.Mappings.Src()[srcInnerField])
+		}
+	})
+
+	t.Run("FullEngine_Java", func(t *testing.T) {
+		src := `// header comment 1
+// header comment 2
+
+package test_pkg;
+
+import com.example.foo.Bar;
+
+class TargetTest {
+    void run() {}
+}
+`
+		dst := `// header comment 1
+// header comment 2
+// header comment 3
+// header comment 4
+// header comment 5
+// header comment 6
+
+package test_pkg;
+
+import com.example.foo;
+
+class TargetTest {
+    void run() {}
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.java")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.java")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.ParseErrorCount != 0 || dstAST.ParseErrorCount != 0 {
+			t.Fatalf("expected zero parse errors, got src=%d, dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		r := rulesFor(srcAST)
+
+		// Enclosing package and class declarations must stay mapped.
+		var srcPkg, dstPkg, srcClass, dstClass *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "package_declaration" {
+				srcPkg = n
+			}
+			if r.IsDeclaration(n.Type) && n.Type == "class_declaration" {
+				srcClass = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "package_declaration" {
+				dstPkg = n
+			}
+			if r.IsDeclaration(n.Type) && n.Type == "class_declaration" {
+				dstClass = n
+			}
+		}
+		if srcPkg == nil || dstPkg == nil || mr.Mappings.Src()[srcPkg] != dstPkg {
+			t.Errorf("expected package_declaration to map in place, got %v", mr.Mappings.Src()[srcPkg])
+		}
+		if srcClass == nil || dstClass == nil || mr.Mappings.Src()[srcClass] != dstClass {
+			t.Errorf("expected class_declaration to map in place, got %v", mr.Mappings.Src()[srcClass])
+		}
+
+		// Target import declaration must stay mapped despite upstream line drift.
+		var srcImport, dstImport *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "com.example.foo") {
+				srcImport = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "com.example.foo") {
+				dstImport = n
+				break
+			}
+		}
+		if srcImport == nil || dstImport == nil {
+			t.Fatalf("failed to locate target import_declaration: src=%v, dst=%v", srcImport, dstImport)
+		}
+		if mr.Mappings.Src()[srcImport] != dstImport {
+			t.Errorf("expected target import_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcImport])
+		}
+
+		// Shared scoped identifier must stay mapped.
+		var srcInnerScope, dstInnerScope *treesitter.ASTNode
+		for _, n := range srcImport.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && src[n.StartByte:n.EndByte] == "com.example.foo" {
+				srcInnerScope = n
+				break
+			}
+		}
+		for _, n := range dstImport.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && dst[n.StartByte:n.EndByte] == "com.example.foo" {
+				dstInnerScope = n
+				break
+			}
+		}
+		if srcInnerScope == nil || dstInnerScope == nil {
+			t.Fatalf("failed to locate inner scoped_identifier: src=%v, dst=%v", srcInnerScope, dstInnerScope)
+		}
+		if mr.Mappings.Src()[srcInnerScope] != dstInnerScope {
+			t.Errorf("expected inner scoped_identifier to map in place, got %v", mr.Mappings.Src()[srcInnerScope])
+		}
+	})
+}

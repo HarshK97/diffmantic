@@ -478,7 +478,7 @@ func isBoilerplateCondition(c *treesitter.ASTNode, r *rules.Rules) bool {
 }
 
 // hasAnyMatchedNonGlueChild reports whether srcParent and dstParent share at least one
-// matched non-glue child, peeling single-child wrappers if needed.
+// matched non-glue child, including single-child wrappers and nested path qualifiers.
 func hasAnyMatchedNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
 	if srcParent == nil || dstParent == nil || m == nil {
 		return false
@@ -495,6 +495,40 @@ func hasAnyMatchedNonGlueChild(srcParent, dstParent *treesitter.ASTNode, m *Mapp
 			inner := c.Children[0]
 			if dstInner, ok := m.Src()[inner]; ok {
 				if dstInner.Parent == dstParent || (dstInner.Parent != nil && dstInner.Parent.Parent == dstParent) {
+					return true
+				}
+			}
+		}
+	}
+	return hasNestedMatchedChild(srcParent, dstParent, m.Src(), r) ||
+		hasNestedMatchedChild(dstParent, srcParent, m.Dst(), r)
+}
+
+// hasNestedMatchedChild checks whether a declaration or import has a nested, non-glue
+// child (such as a shared path prefix) that maps into targetParent. This keeps modified
+// imports like `use a::b::c;` -> `use a::b;` matched across line drift.
+func hasNestedMatchedChild(parent, targetParent *treesitter.ASTNode, mapping map[*treesitter.ASTNode]*treesitter.ASTNode, r *rules.Rules) bool {
+	if parent == nil || targetParent == nil || mapping == nil {
+		return false
+	}
+	isDeclOrImport := (r != nil && (r.IsImport(parent.Type) || r.IsDeclaration(parent.Type))) ||
+		(r == nil && (rules.IsImport(parent.Type) || rules.IsDeclaration(parent.Type)))
+	if !isDeclOrImport {
+		return false
+	}
+	for _, c := range parent.Children {
+		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
+		if isGlueToken(c, r) || isBlock {
+			continue
+		}
+		for _, d := range c.Descendants() {
+			isDescBlock := (r != nil && r.IsBlock(d.Type)) || (r == nil && rules.IsBlock(d.Type))
+			isDescStmt := (r != nil && r.IsStatement(d.Type)) || (r == nil && rules.IsStatement(d.Type))
+			if isGlueToken(d, r) || isDescBlock || isDescStmt {
+				continue
+			}
+			if targetD, ok := mapping[d]; ok && !isGlueToken(targetD, r) {
+				if targetD.Parent == targetParent || (targetD.Parent != nil && targetD.Parent.Parent == targetParent) {
 					return true
 				}
 			}
