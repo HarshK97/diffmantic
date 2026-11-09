@@ -20,6 +20,8 @@ type ASTIndex struct {
 	PostOrder    []*ASTNode
 	LabelIndex   map[string][]int32
 	SyntaxTrivia []SyntaxTriviaBlock // Indexed by ASTNode.ID; kept out of ASTNode to protect its 240-byte cache footprint.
+	ChildFields  []uint16            // Indexed by ASTNode.ID; zero means an unknown or unfielded parent edge.
+	Fields       []string            // Read-only language field names indexed by Tree-sitter field ID; Fields[0] is empty.
 }
 
 // EnsureIndex indexes the tree if it hasn't been indexed yet.
@@ -30,6 +32,9 @@ func EnsureIndex(root *ASTNode) *ASTIndex {
 	if root.Index != nil && root.PreSize > 0 {
 		if root.Index.SyntaxTrivia == nil {
 			root.Index.SyntaxTrivia = make([]SyntaxTriviaBlock, len(root.Index.Nodes))
+		}
+		if root.Index.ChildFields == nil {
+			root.Index.ChildFields = make([]uint16, len(root.Index.Nodes))
 		}
 		return root.Index
 	}
@@ -55,6 +60,7 @@ func EnsureIndex(root *ASTNode) *ASTIndex {
 	walkPre(root)
 	idx.Nodes = preOrder
 	idx.SyntaxTrivia = make([]SyntaxTriviaBlock, len(preOrder))
+	idx.ChildFields = make([]uint16, len(preOrder))
 
 	// 2. Assign PostOrder
 	var postOrder []*ASTNode
@@ -77,6 +83,19 @@ func EnsureIndex(root *ASTNode) *ASTIndex {
 	}
 
 	return idx
+}
+
+// FieldName returns the Tree-sitter field name on n's parent edge, or "" if
+// the node is nil, synthetic, unindexed, or has no known field.
+func (n *ASTNode) FieldName() string {
+	if n == nil || n.Index == nil || n.ID < 0 || int(n.ID) >= len(n.Index.ChildFields) {
+		return ""
+	}
+	id := n.Index.ChildFields[n.ID]
+	if id == 0 || int(id) >= len(n.Index.Fields) {
+		return ""
+	}
+	return n.Index.Fields[id]
 }
 
 // Contains returns true if candidate is a descendant of n.

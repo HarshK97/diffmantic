@@ -1433,21 +1433,21 @@ func process(cleanLine string) {
 		env := runPipeline(t, oldSrc, newSrc)
 
 		moves := collectMoves(env)
-		if len(moves) != 7 {
-			t.Fatalf("expected 7 moves across the 4 unnested branches, got %d: %+v", len(moves), moves)
+		if len(moves) != 6 {
+			t.Fatalf("expected 6 moves across the first 3 unnested branches, got %d: %+v", len(moves), moves)
 		}
 
 		// Find the first unnested branch (p := ... and current.oldPath = p).
 		// Both should share MoveColorIndex 0 (Cyan) instead of current.oldPath = p taking Magenta (slot 1).
 		var firstVarMove, firstAssignMove *Action
-		seenBranches := make(map[string]bool, 4)
+		seenBranches := make(map[string]bool, 3)
 		for i := range moves {
 			m := &moves[i]
 			if m.Node == nil {
 				continue
 			}
 			srcText := oldSrc[m.Node.StartByte:m.Node.EndByte]
-			for _, marker := range []string{"rename from ", "rename to ", "--- ", "+++ "} {
+			for _, marker := range []string{"rename from ", "rename to ", "--- "} {
 				if strings.Contains(srcText, marker) {
 					seenBranches[marker] = true
 				}
@@ -1461,8 +1461,8 @@ func process(cleanLine string) {
 				}
 			}
 		}
-		if firstVarMove == nil || firstAssignMove == nil || len(seenBranches) != 4 {
-			t.Fatalf("expected moves across all 4 branches (got var=%v, assign=%v, branches=%v)",
+		if firstVarMove == nil || firstAssignMove == nil || len(seenBranches) != 3 {
+			t.Fatalf("expected moves across the first 3 branches (got var=%v, assign=%v, branches=%v)",
 				firstVarMove, firstAssignMove, seenBranches)
 		}
 
@@ -1628,6 +1628,10 @@ func process(cleanLine string) {
 		if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
 			current.newPath = p
 		}
+	} else if strings.HasPrefix(cleanLine, "+++ ") {
+		if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+			current.newPath = p
+		}
 	}
 	finish()
 }
@@ -1646,6 +1650,8 @@ func process(cleanLine string) {
 		current.oldPath = p
 	} else if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
 		current.newPath = p
+	} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+		current.newPath = p
 	}
 	finish()
 }
@@ -1653,8 +1659,8 @@ func process(cleanLine string) {
 		env := runPipeline(t, oldSrc, newSrc)
 
 		moves := collectMoves(env)
-		if len(moves) != 3 {
-			t.Fatalf("expected 3 downward lockstep moves across both branches, got %d: %+v", len(moves), moves)
+		if len(moves) != 4 {
+			t.Fatalf("expected 4 downward lockstep moves across the first 2 unnested branches, got %d: %+v", len(moves), moves)
 		}
 		seenBranches := make(map[string]bool, 2)
 		for _, m := range moves {
@@ -1669,7 +1675,7 @@ func process(cleanLine string) {
 			}
 		}
 		if len(seenBranches) != 2 {
-			t.Fatalf("expected moves across both downward branches, got %v", seenBranches)
+			t.Fatalf("expected moves across both downward lockstep branches, got %v", seenBranches)
 		}
 
 		for _, m := range moves {
@@ -1693,7 +1699,7 @@ func process(cleanLine string) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-		assertContextLinesPure(t, env.LeftHighlights, []int{5, 6, 7, 8, 9, 10, 11, 12, 13})
+		assertContextLinesPure(t, env.LeftHighlights, []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17})
 		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 6, 7, 10, 11, 12, 13, 14})
 	})
 

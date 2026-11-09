@@ -44,6 +44,7 @@ static int flatten_subtree(TSTreeCursor* cursor, FlatNodeList* list, uint32_t pa
     FlatNode fn;
     fn.type_id = ts_node_symbol(node);
     fn.flags = flags;
+    fn.field_id = ts_tree_cursor_current_field_id(cursor);
     fn.start_byte = ts_node_start_byte(node);
     fn.end_byte = ts_node_end_byte(node);
     fn.start_row = start_pt.row;
