@@ -154,6 +154,7 @@ var rustRules = &Rules{
 		"field_declaration",
 		"enum_variant",
 		"use_declaration",
+		"parameter",
 	},
 	Imports: []string{
 		"use_declaration",

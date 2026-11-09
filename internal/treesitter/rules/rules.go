@@ -37,6 +37,7 @@ type Rules struct {
 	Statements            []string // Standalone statement and statement-level declaration node types.
 	Imports               []string // Import and include declaration node types.
 	Attributes            []string // Decorators, attributes, and annotations on declarations (e.g. attribute_item).
+	Declarators           []string // Declarator node types holding declaration identifiers and parameters (e.g. function_declarator).
 	OpeningDelimiters     []string // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
 	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
 	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
@@ -75,6 +76,7 @@ type Rules struct {
 	separatorsSet            map[string]struct{}
 	importsSet               map[string]struct{}
 	attributesSet            map[string]struct{}
+	declaratorsSet           map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -133,6 +135,7 @@ func (r *Rules) CompileSets() {
 	r.statementsSet = sliceToSet(r.Statements)
 	r.importsSet = sliceToSet(r.Imports)
 	r.attributesSet = sliceToSet(r.Attributes)
+	r.declaratorsSet = sliceToSet(r.Declarators)
 	if len(r.OpeningDelimiters) > 0 {
 		r.openingDelimitersSet = sliceToSet(r.OpeningDelimiters)
 	} else {
@@ -204,6 +207,18 @@ func (r *Rules) IsComment(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Comments, nodeType)
+}
+
+// IsDeclarator reports whether nodeType is a declarator holding declaration identifiers and parameters.
+func (r *Rules) IsDeclarator(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.declaratorsSet) > 0 {
+		_, ok := r.declaratorsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Declarators, nodeType)
 }
 
 // IsDeclaration reports whether nodeType is a declaration.
@@ -588,6 +603,16 @@ func (r *Rules) DefaultRootType() string {
 func IsComment(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsComment(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDeclarator reports whether nodeType is configured as a declarator in any language rule set.
+func IsDeclarator(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsDeclarator(nodeType) {
 			return true
 		}
 	}

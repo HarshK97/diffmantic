@@ -186,6 +186,8 @@ var typescriptRules = &Rules{
 		"variable_declaration",
 		"lexical_declaration",
 		"enum_assignment",
+		"required_parameter",
+		"optional_parameter",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -240,6 +242,7 @@ var typescriptRules = &Rules{
 		{"pair", "shorthand_property_identifier"},
 		{"pair_pattern", "shorthand_property_identifier_pattern"},
 		{"enum_assignment", "property_identifier"},
+		{"required_parameter", "optional_parameter"},
 	},
 	Comments: []string{
 		"comment",

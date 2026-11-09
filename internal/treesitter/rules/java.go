@@ -178,6 +178,8 @@ var javaRules = &Rules{
 		"local_variable_declaration",
 		"field_declaration",
 		"enum_constant",
+		"formal_parameter",
+		"spread_parameter",
 	},
 	Imports: []string{
 		"import_declaration",
@@ -212,6 +214,7 @@ var javaRules = &Rules{
 		{"method_declaration", "constructor_declaration", "compact_constructor_declaration"},
 		{"class_declaration", "interface_declaration", "record_declaration", "enum_declaration", "annotation_type_declaration"},
 		{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
+		{"formal_parameter", "spread_parameter"},
 	},
 	Comments: []string{
 		"line_comment",

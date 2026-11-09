@@ -159,6 +159,9 @@ var pythonRules = &Rules{
 		"class_definition",
 		"type_alias_statement",
 		"decorated_definition",
+		"default_parameter",
+		"typed_default_parameter",
+		"typed_parameter",
 	},
 	Imports: []string{
 		"import_statement",
@@ -197,6 +200,7 @@ var pythonRules = &Rules{
 	EquivalentTypes: [][]string{
 		{"for_statement", "for_in_clause", "while_statement"},
 		{"if_statement", "elif_clause"},
+		{"default_parameter", "typed_default_parameter", "typed_parameter"},
 	},
 	Comments: []string{
 		"comment",

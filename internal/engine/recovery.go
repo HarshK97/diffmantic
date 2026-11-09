@@ -38,6 +38,10 @@ func shouldBypassZS(t1, t2 *treesitter.ASTNode, r *rules.Rules) bool {
 		(r == nil && (rules.IsWrapper(t1.Type) || rules.IsWrapper(t2.Type))) {
 		return true
 	}
+	if (r != nil && (r.IsDeclarator(t1.Type) || r.IsDeclarator(t2.Type))) ||
+		(r == nil && (rules.IsDeclarator(t1.Type) || rules.IsDeclarator(t2.Type))) {
+		return true
+	}
 	if findBodyBlock(t1, r) != nil || findBodyBlock(t2, r) != nil {
 		return true
 	}

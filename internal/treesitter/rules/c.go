@@ -148,6 +148,7 @@ var cRules = &Rules{
 		"type_definition",
 		"field_declaration",
 		"enumerator",
+		"parameter_declaration",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -166,6 +167,12 @@ var cRules = &Rules{
 		"cast_expression",
 		"pointer_expression",
 		"subscript_expression",
+	},
+	Declarators: []string{
+		"function_declarator",
+		"init_declarator",
+		"pointer_declarator",
+		"array_declarator",
 	},
 	Pairs: []string{
 		"field_designator",
