@@ -317,6 +317,16 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		return false
 	}
 
+	// Case clause body wrapped in or unwrapped from a block under the same mapped case clause.
+	if src.Parent != nil && dst.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
+		if r.IsCaseClause(src.Parent.Type) && ms.Src()[src.Parent] != nil && ms.Src()[src.Parent].Contains(dst) {
+			return false
+		}
+		if r.IsCaseClause(dst.Parent.Type) && ms.Dst()[dst.Parent] != nil && ms.Dst()[dst.Parent].Contains(src) {
+			return false
+		}
+	}
+
 	// One-hop container reparent: a value was wrapped in a new node (like a key-value pair) under the same container.
 	if src.Parent != nil && dst.Parent != nil && sameScopeDeclaration(src, dst, ms, r) {
 		mappedSrcParent := ms.Src()[src.Parent]

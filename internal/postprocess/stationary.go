@@ -112,11 +112,38 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		if isDst {
 			hasMapping = ms.HasDst(base)
 		}
+		if !hasMapping && ((br != nil && br.IsBlock(base.Type)) || (br == nil && rules.IsBlock(base.Type))) {
+			substantive := 0
+			for _, bc := range base.Children {
+				isPunct := (br != nil && (br.IsPunctuation(bc.Type) || br.IsOperatorLiteral(bc.Type))) ||
+					(br == nil && (rules.IsPunctuation(bc.Type) || rules.IsOperatorLiteral(bc.Type)))
+				if !isPunct {
+					substantive++
+					if substantive > 1 {
+						break
+					}
+				}
+			}
+			if substantive <= 1 {
+				if isDst {
+					return ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
+				}
+				return ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
+			}
+		}
 		if !hasMapping && canUnwrapSubExpression(base) {
 			if isDst {
-				return base.ChildIndex() == 0 || ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
+				isFirstChild := base.ChildIndex() == 0
+				if !isFirstChild && base.Parent != nil && ((br != nil && br.IsBlock(base.Parent.Type)) || (br == nil && rules.IsBlock(base.Parent.Type))) {
+					isFirstChild = isSoleSubstantiveChild(base.Parent, base, br)
+				}
+				return isFirstChild || ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
 			}
-			return base.ChildIndex() == 0 || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
+			isFirstChild := base.ChildIndex() == 0
+			if !isFirstChild && base.Parent != nil && ((br != nil && br.IsBlock(base.Parent.Type)) || (br == nil && rules.IsBlock(base.Parent.Type))) {
+				isFirstChild = isSoleSubstantiveChild(base.Parent, base, br)
+			}
+			return isFirstChild || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
 		}
 		if canUnwrapSubExpression(base) {
 			if isDst {
@@ -575,6 +602,27 @@ func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 		}
 	}
 	return true
+}
+
+// isSoleSubstantiveChild reports whether target is the only non-punctuation, non-keyword child of parent.
+func isSoleSubstantiveChild(parent, target *treesitter.ASTNode, r *rules.Rules) bool {
+	if parent == nil || target == nil {
+		return false
+	}
+	substantive := 0
+	var sole *treesitter.ASTNode
+	for _, c := range parent.Children {
+		isPunct := (r != nil && (r.IsPunctuation(c.Type) || r.IsOperatorLiteral(c.Type))) ||
+			(r == nil && (rules.IsPunctuation(c.Type) || rules.IsOperatorLiteral(c.Type)))
+		if !isPunct && !c.IsKeyword {
+			substantive++
+			if substantive > 1 {
+				return false
+			}
+			sole = c
+		}
+	}
+	return substantive == 1 && sole == target
 }
 
 // normalizeWrapperDelimiterChanges emits non-subtree Insert or Delete actions when a mapped
