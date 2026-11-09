@@ -162,6 +162,8 @@ var pythonRules = &Rules{
 		"default_parameter",
 		"typed_default_parameter",
 		"typed_parameter",
+		"aliased_import",
+		"relative_import",
 	},
 	Attributes: []string{
 		"decorator",
@@ -169,6 +171,8 @@ var pythonRules = &Rules{
 	Imports: []string{
 		"import_statement",
 		"import_from_statement",
+		"aliased_import",
+		"relative_import",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -266,6 +270,8 @@ var pythonRules = &Rules{
 		"elif_clause",
 		"except_clause",
 		"finally_clause",
+		"with_clause",
+		"except_group_clause",
 	},
 	CaseClauses: []string{
 		"case_clause",

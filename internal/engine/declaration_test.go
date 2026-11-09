@@ -1045,7 +1045,7 @@ std::string format_items() { return ""; }
 Vec<int> *ptr;
 template<typename T> void foo(T x);
 `,
-				want: []string{"get_items", "format_items", "ptr", "foo", "x"},
+				want: []string{"get_items", "format_items", "ptr", "T", "foo", "x"},
 			},
 			{
 				name:     "Java_ReturnAndFieldTypeNames",
@@ -2351,6 +2351,243 @@ pub fn execute_app() -> bool {
 		}
 		if dst := m.Src()[envVarSrc]; dst == nil || dst.Label != "get_args_from_env_vars" {
 			t.Errorf("expected get_args_from_env_var to map to get_args_from_env_vars, got %v", dst)
+		}
+	})
+}
+
+func TestFullEngine_LanguageGrammarConstructs(t *testing.T) {
+	t.Run("Lua_ElseStatement_ClauseRollup", func(t *testing.T) {
+		oldSrc := []byte(`function check(x)
+    local start = 1
+    if x > 0 then
+        print("positive")
+    else
+        do_old_thing_one()
+        do_old_thing_two()
+        do_old_thing_three()
+    end
+    local end_val = 2
+end
+`)
+		newSrc := []byte(`function check(x)
+    local start = 1
+    if x > 0 then
+        print("positive")
+    else
+        do_completely_different_new_action()
+        another_unrelated_call()
+    end
+    local end_val = 2
+end
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.lua")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.lua")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("lua")
+
+		// 1. Enclosing Context: check function declaration must map in place
+		var fnSrc, fnDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "check" {
+				fnSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "check" {
+				fnDst = n
+				break
+			}
+		}
+		if fnSrc == nil || fnDst == nil || m.Src()[fnSrc] != fnDst {
+			t.Fatalf("expected function check to map in place, got src=%v dst=%v", fnSrc, fnDst)
+		}
+
+		// 2. Surrounding Sequence: local start and local end_val must map in place
+		needleStart := []byte("start")
+		needleEnd := []byte("end_val")
+		var startSrc, startDst, endSrc, endDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleStart) {
+					startSrc = n
+				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleEnd) {
+					endSrc = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleStart) {
+					startDst = n
+				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleEnd) {
+					endDst = n
+				}
+			}
+		}
+		if startSrc == nil || startDst == nil || m.Src()[startSrc] != startDst {
+			t.Errorf("expected preceding start declaration to map in place")
+		}
+		if endSrc == nil || endDst == nil || m.Src()[endSrc] != endDst {
+			t.Errorf("expected succeeding end_val declaration to map in place")
+		}
+
+		// 3. Target: else_statement clause must map in place when body changes
+		// On unpatched main, missing else_statement from r.Clauses caused reconcileClauseWrappers
+		// to fail and drop the else clause into keyword deletion/insertion (<del>else</del>/<ins>else</ins>).
+		var elseSrc, elseDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				elseSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsClause(n.Type) {
+				elseDst = n
+				break
+			}
+		}
+		if elseSrc == nil || elseDst == nil {
+			t.Fatalf("else_statement clause missing: src=%v dst=%v", elseSrc, elseDst)
+		}
+		if m.Src()[elseSrc] != elseDst {
+			t.Errorf("expected else_statement clause to map in place when body changes, got %v", m.Src()[elseSrc])
+		}
+	})
+
+	t.Run("Lua_FunctionCall_StatementBoundary", func(t *testing.T) {
+		oldSrc := []byte(`function test()
+    local start = 1
+    poke_eventloop()
+    eq(true, exec_capture('messages'):find('incorrect password', 1, true) ~= nil)
+    local end_val = 2
+end
+`)
+		newSrc := []byte(`function test()
+    local start = 1
+    eq(true, reported)
+    local end_val = 2
+end
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.lua")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.lua")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("lua")
+
+		// 1. Enclosing Context: test function declaration must map in place
+		var fnSrc, fnDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test" {
+				fnSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test" {
+				fnDst = n
+				break
+			}
+		}
+		if fnSrc == nil || fnDst == nil || m.Src()[fnSrc] != fnDst {
+			t.Fatalf("expected function test to map in place, got src=%v dst=%v", fnSrc, fnDst)
+		}
+
+		// 2. Surrounding Sequence: local start and local end_val must map in place
+		needleStart := []byte("start")
+		needleEnd := []byte("end_val")
+		var startSrc, startDst, endSrc, endDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleStart) {
+					startSrc = n
+				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleEnd) {
+					endSrc = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleStart) {
+					startDst = n
+				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleEnd) {
+					endDst = n
+				}
+			}
+		}
+		if startSrc == nil || startDst == nil || m.Src()[startSrc] != startDst {
+			t.Errorf("expected preceding start declaration to map in place")
+		}
+		if endSrc == nil || endDst == nil || m.Src()[endSrc] != endDst {
+			t.Errorf("expected succeeding end_val declaration to map in place")
+		}
+
+		// 3. Target Statement Classification:
+		// Standalone Lua function calls must be recognized as statements (r.IsStatement).
+		needlePoke := []byte("poke_eventloop")
+		needleEq := []byte("eq(true")
+		var pokeSrc, oldEqSrc, newEqDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) {
+				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needlePoke) {
+					pokeSrc = n
+				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleEq) {
+					oldEqSrc = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], needleEq) {
+				newEqDst = n
+				break
+			}
+		}
+		if pokeSrc == nil {
+			t.Fatalf("poke_eventloop function_call statement missing from src")
+		}
+		if oldEqSrc == nil {
+			t.Fatalf("old eq function_call statement missing from src")
+		}
+		if newEqDst == nil {
+			t.Fatalf("new eq function_call statement missing from dst")
+		}
+		if !r.IsStatement(pokeSrc.Type) || !r.IsStatement(oldEqSrc.Type) || !r.IsStatement(newEqDst.Type) {
+			t.Errorf("expected function_call to be classified as a statement")
+		}
+		if m.Src()[oldEqSrc] == newEqDst {
+			t.Errorf("expected statement boundary to prevent cross-statement callee dredging of eq")
 		}
 	})
 }
