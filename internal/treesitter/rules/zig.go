@@ -125,6 +125,7 @@ var zigRules = &Rules{
 		"test_declaration",
 		"using_namespace_declaration",
 		"container_field",
+		"parameter",
 	},
 	Identifiers: []string{
 		"identifier",

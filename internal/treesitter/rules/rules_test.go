@@ -251,6 +251,7 @@ func TestRulesHelperMethods(t *testing.T) {
 			Calls:       []string{"call_expression"},
 			Indexed:     []string{"subscript_expression", "index_expression"},
 			Tags:        []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
+			Declarators: []string{"function_declarator", "init_declarator"},
 			EquivalentTypes: [][]string{
 				{"function_declaration", "function_definition", "variable_declaration"},
 				{"assignment_statement", "variable_declaration"},
@@ -324,6 +325,10 @@ func TestRulesHelperMethods(t *testing.T) {
 			t.Errorf("IsTag failed in compiled sets")
 		}
 
+		if !r.IsDeclarator("function_declarator") || !r.IsDeclarator("init_declarator") || r.IsDeclarator("other") {
+			t.Errorf("IsDeclarator failed in compiled sets")
+		}
+
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent(function_declaration, variable_declaration) = false, want true")
 		}
@@ -372,6 +377,9 @@ func TestRulesHelperMethods(t *testing.T) {
 		if !r.IsTag("element") || !r.IsTag("jsx_element") || !r.IsTag("start_tag") || !r.IsTag("jsx_opening_element") || r.IsTag("other") {
 			t.Errorf("IsTag uncompiled fallback failed")
 		}
+		if !r.IsDeclarator("function_declarator") || !r.IsDeclarator("init_declarator") || r.IsDeclarator("other") {
+			t.Errorf("IsDeclarator uncompiled fallback failed")
+		}
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent uncompiled fallback failed")
 		}
@@ -400,6 +408,9 @@ func TestRulesHelperMethods(t *testing.T) {
 		if r.IsCall("a") {
 			t.Errorf("nil.IsCall returned true")
 		}
+		if r.IsDeclarator("a") {
+			t.Errorf("nil.IsDeclarator returned true")
+		}
 		if r.IsIndexed("a") {
 			t.Errorf("nil.IsIndexed returned true")
 		}
@@ -418,6 +429,9 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if r.IsDeclaration("func") {
 			t.Errorf("defaultRules.IsDeclaration returned true")
+		}
+		if r.IsDeclarator("func") {
+			t.Errorf("defaultRules.IsDeclarator returned true")
 		}
 		if !r.AreTypesEquivalent("a", "a") {
 			t.Errorf("defaultRules.AreTypesEquivalent(a, a) returned false")
@@ -442,6 +456,12 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if IsCall("nonexistent_call_xyz") {
 			t.Errorf("IsCall(nonexistent_call_xyz) = true, want false")
+		}
+		if !IsDeclarator("function_declarator") {
+			t.Errorf("IsDeclarator(function_declarator) = false, want true")
+		}
+		if IsDeclarator("nonexistent_declarator_xyz") {
+			t.Errorf("IsDeclarator(nonexistent_declarator_xyz) = true, want false")
 		}
 		if !IsIndexed("subscript_expression") || !IsIndexed("index_expression") {
 			t.Errorf("IsIndexed(subscript_expression) = false, want true")

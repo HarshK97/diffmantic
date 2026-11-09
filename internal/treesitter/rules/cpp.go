@@ -203,6 +203,8 @@ var cppRules = &Rules{
 		"field_declaration",
 		"friend_declaration",
 		"enumerator",
+		"parameter_declaration",
+		"optional_parameter_declaration",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -230,6 +232,13 @@ var cppRules = &Rules{
 		"friend_declaration",
 		"template_declaration",
 	},
+	Declarators: []string{
+		"function_declarator",
+		"init_declarator",
+		"pointer_declarator",
+		"array_declarator",
+		"reference_declarator",
+	},
 	Pairs: []string{
 		"field_designator",
 		"initializer_pair",
@@ -238,6 +247,7 @@ var cppRules = &Rules{
 		{"function_definition", "declaration"},
 		{"class_specifier", "struct_specifier", "union_specifier", "enum_specifier"},
 		{"for_statement", "for_range_loop", "while_statement", "do_statement"},
+		{"parameter_declaration", "optional_parameter_declaration"},
 	},
 	Comments: []string{
 		"comment",

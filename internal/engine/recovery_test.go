@@ -3202,3 +3202,437 @@ pub enum State {
 		}
 	})
 }
+
+func TestParameterDeclarationEvolution_NoFalseMatch(t *testing.T) {
+	findParam := func(root *treesitter.ASTNode, name string) *treesitter.ASTNode {
+		for _, n := range root.PreOrder() {
+			switch n.Type {
+			case "parameter", "parameter_declaration", "variadic_parameter_declaration", "formal_parameter", "spread_parameter",
+				"required_parameter", "optional_parameter", "typed_parameter", "default_parameter", "typed_default_parameter":
+				for _, c := range n.Children {
+					if c.Label == name {
+						return n
+					}
+					for _, sub := range c.Children {
+						if sub.Label == name {
+							return n
+						}
+					}
+				}
+			}
+		}
+		return nil
+	}
+
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		oldSrc := `#[allow(clippy::too_many_arguments)]
+fn format_and_paint_line_number_field<'a>(
+    format_data: &[LineNumberPlaceholderData<'a>],
+    style: &Style,
+    minus_number: Option<usize>,
+    plus_number: Option<usize>,
+    min_field_width: usize,
+    minus_number_style: &Style,
+    plus_number_style: &Style,
+    plus_file: &str,
+    config: &config::Config,
+) -> Vec<String> {
+    let mut ansi_strings = Vec::new();
+    let mut suffix = "";
+    ansi_strings.push(suffix.to_string());
+    ansi_strings
+}
+`
+		newSrc := `#[allow(clippy::too_many_arguments)]
+fn format_and_paint_line_number_field<'a>(
+    line_numbers_data: &'a LineNumbersData,
+    side: MinusPlusIndex,
+    styles: &MinusPlus<Style>,
+    line_numbers: &MinusPlus<Option<usize>>,
+    config: &config::Config,
+) -> Vec<String> {
+    let min_field_width = line_numbers_data.hunk_max_line_number_width;
+    let mut ansi_strings = Vec::new();
+    let mut suffix = "";
+    ansi_strings.push(suffix.to_string());
+    ansi_strings
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Unchanged parameter maps in place
+		sConfig := findParam(srcAST, "config")
+		dConfig := findParam(dstAST, "config")
+		if sConfig == nil || dConfig == nil || mr.Mappings.Src()[sConfig] != dConfig {
+			t.Errorf("expected config parameter to map in place, got src=%v dst=%v mapped=%v", sConfig, dConfig, mr.Mappings.Src()[sConfig])
+		}
+
+		// 2. Differing parameters with different names and types must NOT cross-match
+		sPlus := findParam(srcAST, "plus_number")
+		dLineNumbers := findParam(dstAST, "line_numbers")
+		if sPlus == nil || dLineNumbers == nil {
+			t.Fatalf("parameters not found: sPlus=%v, dLineNumbers=%v", sPlus, dLineNumbers)
+		}
+		if mapped := mr.Mappings.Src()[sPlus]; mapped != nil {
+			t.Errorf("expected plus_number to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dLineNumbers]; mappedSrc != nil {
+			t.Errorf("expected line_numbers to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+
+		sMinusStyle := findParam(srcAST, "minus_number_style")
+		dSide := findParam(dstAST, "side")
+		if sMinusStyle == nil || dSide == nil {
+			t.Fatalf("parameters not found: sMinusStyle=%v, dSide=%v", sMinusStyle, dSide)
+		}
+		if mr.Mappings.Src()[sMinusStyle] == dSide {
+			t.Errorf("expected minus_number_style to not match side, got mapped to %v", dSide)
+		}
+	})
+
+	t.Run("FullEngine_Go", func(t *testing.T) {
+		oldSrc := `package main
+
+func processItems(
+	totalCount int,
+	oldLimit int,
+	items []string,
+) int {
+	count := len(items)
+	return count
+}
+`
+		newSrc := `package main
+
+func processItems(
+	batchSize float64,
+	newLimit bool,
+	items []string,
+) int {
+	count := len(items)
+	return count
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Unchanged parameter maps in place
+		sItems := findParam(srcAST, "items")
+		dItems := findParam(dstAST, "items")
+		if sItems == nil || dItems == nil || mr.Mappings.Src()[sItems] != dItems {
+			t.Errorf("expected items parameter to map in place, got src=%v dst=%v mapped=%v", sItems, dItems, mr.Mappings.Src()[sItems])
+		}
+
+		// 2. Disjoint parameter names must not match across non-identical identifiers
+		sTotal := findParam(srcAST, "totalCount")
+		dBatch := findParam(dstAST, "batchSize")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected totalCount to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batchSize to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Go_VariadicEvolution", func(t *testing.T) {
+		oldSrc := `package main
+
+func processItems(
+	totalCount int,
+	items []string,
+) int {
+	count := len(items)
+	return count
+}
+`
+		newSrc := `package main
+
+func processItems(
+	batchSize float64,
+	items ...string,
+) int {
+	count := len(items)
+	return count
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		sItems := findParam(srcAST, "items")
+		dItems := findParam(dstAST, "items")
+		if sItems == nil || dItems == nil || mr.Mappings.Src()[sItems] != dItems {
+			t.Errorf("expected items parameter to map in place across variadic evolution, got src=%v dst=%v mapped=%v", sItems, dItems, mr.Mappings.Src()[sItems])
+		}
+
+		sTotal := findParam(srcAST, "totalCount")
+		dBatch := findParam(dstAST, "batchSize")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected totalCount to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batchSize to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Cpp", func(t *testing.T) {
+		oldSrc := `int process(int totalCount, double oldLimit, const char* name) {
+    int res = 0;
+    return res;
+}
+`
+		newSrc := `int process(long batchSize, float newLimit, const char* name) {
+    int res = 0;
+    return res;
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		sName := findParam(srcAST, "name")
+		dName := findParam(dstAST, "name")
+		if sName == nil || dName == nil || mr.Mappings.Src()[sName] != dName {
+			t.Errorf("expected name parameter to map in place, got src=%v dst=%v mapped=%v", sName, dName, mr.Mappings.Src()[sName])
+		}
+
+		sTotal := findParam(srcAST, "totalCount")
+		dBatch := findParam(dstAST, "batchSize")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected totalCount to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batchSize to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Java", func(t *testing.T) {
+		oldSrc := `class Service {
+    int process(int totalCount, double oldLimit, String name) {
+        int res = 0;
+        return res;
+    }
+}
+`
+		newSrc := `class Service {
+    int process(long batchSize, float newLimit, String name) {
+        int res = 0;
+        return res;
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		sName := findParam(srcAST, "name")
+		dName := findParam(dstAST, "name")
+		if sName == nil || dName == nil || mr.Mappings.Src()[sName] != dName {
+			t.Errorf("expected name parameter to map in place, got src=%v dst=%v mapped=%v", sName, dName, mr.Mappings.Src()[sName])
+		}
+
+		sTotal := findParam(srcAST, "totalCount")
+		dBatch := findParam(dstAST, "batchSize")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected totalCount to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batchSize to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_TypeScript", func(t *testing.T) {
+		oldSrc := `function process(totalCount: number, oldLimit: number, name: string): number {
+    let res = 0;
+    return res;
+}
+`
+		newSrc := `function process(batchSize: string, newLimit: boolean, name: string): number {
+    let res = 0;
+    return res;
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		sName := findParam(srcAST, "name")
+		dName := findParam(dstAST, "name")
+		if sName == nil || dName == nil || mr.Mappings.Src()[sName] != dName {
+			t.Errorf("expected name parameter to map in place, got src=%v dst=%v mapped=%v", sName, dName, mr.Mappings.Src()[sName])
+		}
+
+		sTotal := findParam(srcAST, "totalCount")
+		dBatch := findParam(dstAST, "batchSize")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected totalCount to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batchSize to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Python", func(t *testing.T) {
+		oldSrc := `def process(total_count: int, old_limit: int, name: str):
+    res = 0
+    return res
+`
+		newSrc := `def process(batch_size: str, new_limit: float, name: str):
+    res = 0
+    return res
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.py")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.py")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		sName := findParam(srcAST, "name")
+		dName := findParam(dstAST, "name")
+		if sName == nil || dName == nil || mr.Mappings.Src()[sName] != dName {
+			t.Errorf("expected name parameter to map in place, got src=%v dst=%v mapped=%v", sName, dName, mr.Mappings.Src()[sName])
+		}
+
+		sTotal := findParam(srcAST, "total_count")
+		dBatch := findParam(dstAST, "batch_size")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected total_count to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batch_size to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+
+	t.Run("FullEngine_Zig", func(t *testing.T) {
+		oldSrc := `fn process(totalCount: i32, oldLimit: i32, name: []const u8) i32 {
+    var res: i32 = 0;
+    return res;
+}
+`
+		newSrc := `fn process(batchSize: f64, newLimit: bool, name: []const u8) i32 {
+    var res: i32 = 0;
+    return res;
+}
+`
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "test.zig")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "test.zig")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		sName := findParam(srcAST, "name")
+		dName := findParam(dstAST, "name")
+		if sName == nil || dName == nil || mr.Mappings.Src()[sName] != dName {
+			t.Errorf("expected name parameter to map in place, got src=%v dst=%v mapped=%v", sName, dName, mr.Mappings.Src()[sName])
+		}
+
+		sTotal := findParam(srcAST, "totalCount")
+		dBatch := findParam(dstAST, "batchSize")
+		if sTotal == nil || dBatch == nil {
+			t.Fatalf("parameters not found: sTotal=%v, dBatch=%v", sTotal, dBatch)
+		}
+		if mapped := mr.Mappings.Src()[sTotal]; mapped != nil {
+			t.Errorf("expected totalCount to remain unmapped, got mapped to %v", mapped)
+		}
+		if mappedSrc := mr.Mappings.Dst()[dBatch]; mappedSrc != nil {
+			t.Errorf("expected batchSize to be unmapped in src, got mapped from %v", mappedSrc)
+		}
+	})
+}

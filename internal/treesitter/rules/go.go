@@ -117,6 +117,8 @@ var golangRules = &Rules{
 		"var_declaration",
 		"import_declaration",
 		"import_spec",
+		"parameter_declaration",
+		"variadic_parameter_declaration",
 	},
 	Imports: []string{
 		"import_declaration",
@@ -159,6 +161,7 @@ var golangRules = &Rules{
 	EquivalentTypes: [][]string{
 		{"function_declaration", "method_declaration"},
 		{"short_var_declaration", "assignment_statement", "var_spec", "var_declaration"},
+		{"parameter_declaration", "variadic_parameter_declaration"},
 	},
 	Comments: []string{
 		"comment",
