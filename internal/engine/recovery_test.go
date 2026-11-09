@@ -2137,3 +2137,746 @@ pub fn parse_color() {}
 		}
 	})
 }
+
+func TestDelimitedPairKeyAffinity_NoDisjointPairTheft(t *testing.T) {
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		oldSrc := `fn make_config(opt: Opt) -> Config {
+    let _flag = true;
+    Config {
+        commit_style,
+        color_only: opt.color_only,
+        line_numbers_left_format: opt.line_numbers_left_format,
+        line_numbers_left_style,
+        line_numbers_minus_style,
+        line_numbers_plus_style,
+        line_numbers_right_format: opt.line_numbers_right_format,
+        line_numbers_right_style,
+        line_numbers_zero_style,
+        line_buffer_size: opt.line_buffer_size,
+    }
+}
+`
+		newSrc := `fn make_config(opt: Opt) -> Config {
+    let _flag = true;
+    Config {
+        commit_style,
+        color_only: opt.color_only,
+        default_language: opt.default_language,
+        hunk_label,
+        inline_hint_style,
+        line_numbers_format: LeftRight::new(
+            opt.line_numbers_left_format,
+            opt.line_numbers_right_format,
+        ),
+        line_numbers_style_leftright: LeftRight::new(
+            line_numbers_left_style,
+            line_numbers_right_style,
+        ),
+        line_numbers_style_minusplus: MinusPlus::new(
+            line_numbers_minus_style,
+            line_numbers_plus_style,
+        ),
+        line_numbers_zero_style,
+        line_buffer_size: opt.line_buffer_size,
+    }
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "config.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "config.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: fn make_config maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_config" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_config" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected fn make_config to map in place")
+		}
+
+		// 2. Surrounding sequence: commit_style, color_only, line_numbers_zero_style, line_buffer_size map in place.
+		findPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key {
+					return n
+				}
+			}
+			return nil
+		}
+
+		for _, stableKey := range []string{"commit_style", "color_only", "line_numbers_zero_style", "line_buffer_size"} {
+			srcNode := findPairByKey(srcAST, stableKey)
+			dstNode := findPairByKey(dstAST, stableKey)
+			if srcNode == nil || dstNode == nil {
+				t.Fatalf("stable pair %q not found: src=%v, dst=%v", stableKey, srcNode, dstNode)
+			}
+			if mr.Mappings.Src()[srcNode] != dstNode {
+				t.Errorf("expected stable pair %q to map in place, got %v", stableKey, mr.Mappings.Src()[srcNode])
+			}
+		}
+
+		// 3. Newly added disjoint fields in dst must NOT be stolen by old fields.
+		for _, addedKey := range []string{"default_language", "hunk_label", "inline_hint_style"} {
+			dstNode := findPairByKey(dstAST, addedKey)
+			if dstNode == nil {
+				t.Fatalf("added pair %q not found in dst", addedKey)
+			}
+			if mr.Mappings.Dst()[dstNode] != nil {
+				t.Errorf("expected added pair %q to remain unmapped, got mapped from %v (%s)",
+					addedKey, mr.Mappings.Dst()[dstNode], getKeyLabel(mr.Mappings.Dst()[dstNode]))
+			}
+		}
+
+		// 4. Evolving line numbers pairs:
+		// line_numbers_left_format -> line_numbers_format
+		// line_numbers_left_style -> line_numbers_style_leftright
+		// line_numbers_minus_style -> line_numbers_style_minusplus
+		leftFormatSrc := findPairByKey(srcAST, "line_numbers_left_format")
+		formatDst := findPairByKey(dstAST, "line_numbers_format")
+		if leftFormatSrc == nil || formatDst == nil || mr.Mappings.Src()[leftFormatSrc] != formatDst {
+			t.Errorf("expected line_numbers_left_format to map to line_numbers_format, got %v", mr.Mappings.Src()[leftFormatSrc])
+		}
+
+		leftStyleSrc := findPairByKey(srcAST, "line_numbers_left_style")
+		styleLeftRightDst := findPairByKey(dstAST, "line_numbers_style_leftright")
+		if leftStyleSrc == nil || styleLeftRightDst == nil || mr.Mappings.Src()[leftStyleSrc] != styleLeftRightDst {
+			t.Errorf("expected line_numbers_left_style to map to line_numbers_style_leftright, got %v", mr.Mappings.Src()[leftStyleSrc])
+		}
+
+		minusStyleSrc := findPairByKey(srcAST, "line_numbers_minus_style")
+		styleMinusPlusDst := findPairByKey(dstAST, "line_numbers_style_minusplus")
+		if minusStyleSrc == nil || styleMinusPlusDst == nil || mr.Mappings.Src()[minusStyleSrc] != styleMinusPlusDst {
+			t.Errorf("expected line_numbers_minus_style to map to line_numbers_style_minusplus, got %v", mr.Mappings.Src()[minusStyleSrc])
+		}
+
+		// 5. Consolidated trailing fields in src must be cleanly unmapped (deleted):
+		for _, delKey := range []string{"line_numbers_plus_style", "line_numbers_right_format", "line_numbers_right_style"} {
+			srcNode := findPairByKey(srcAST, delKey)
+			if srcNode == nil {
+				t.Fatalf("deleted pair %q not found in src", delKey)
+			}
+			if mr.Mappings.Src()[srcNode] != nil {
+				t.Errorf("expected deleted pair %q to remain unmapped, got mapped to %v (%s)",
+					delKey, mr.Mappings.Src()[srcNode], getKeyLabel(mr.Mappings.Src()[srcNode]))
+			}
+		}
+	})
+
+	t.Run("FullEngine_JavaScript", func(t *testing.T) {
+		oldSrc := `function buildConfig(opt) {
+    const { lineNumbers, sideBySide } = opt;
+    return {
+        commitStyle,
+        colorOnly: opt.colorOnly,
+        lineNumbersLeftFormat: opt.lineNumbersLeftFormat,
+        lineNumbersLeftStyle,
+        lineNumbersMinusStyle,
+        lineNumbersPlusStyle,
+        lineNumbersRightFormat: opt.lineNumbersRightFormat,
+        lineNumbersRightStyle,
+        lineNumbersZeroStyle,
+        lineBufferSize: opt.lineBufferSize,
+    };
+}
+`
+		newSrc := `function buildConfig(opt) {
+    const { lineNumbers, sideBySide } = opt;
+    return {
+        commitStyle,
+        colorOnly: opt.colorOnly,
+        defaultLanguage: opt.defaultLanguage,
+        hunkLabel,
+        inlineHintStyle,
+        lineNumbersFormat: formatLeftRight(
+            opt.lineNumbersLeftFormat,
+            opt.lineNumbersRightFormat,
+        ),
+        lineNumbersStyleLeftRight: styleLeftRight(
+            lineNumbersLeftStyle,
+            lineNumbersRightStyle,
+        ),
+        lineNumbersStyleMinusPlus: styleMinusPlus(
+            lineNumbersMinusStyle,
+            lineNumbersPlusStyle,
+        ),
+        lineNumbersZeroStyle,
+        lineBufferSize: opt.lineBufferSize,
+    };
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "config.js")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "config.js")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: function buildConfig maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "buildConfig" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "buildConfig" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function buildConfig to map in place")
+		}
+
+		// 2. Destructuring pattern: lineNumbers and sideBySide map in place.
+		findPatternPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key && n.Parent != nil && n.Parent.Type == "object_pattern" {
+					return n
+				}
+			}
+			return nil
+		}
+		for _, key := range []string{"lineNumbers", "sideBySide"} {
+			sNode := findPatternPairByKey(srcAST, key)
+			dNode := findPatternPairByKey(dstAST, key)
+			if sNode == nil || dNode == nil || mr.Mappings.Src()[sNode] != dNode {
+				t.Errorf("expected pattern pair %q to map in place, got %v", key, mr.Mappings.Src()[sNode])
+			}
+		}
+
+		// 3. Surrounding sequence: commitStyle, colorOnly, lineNumbersZeroStyle, lineBufferSize map in place.
+		findPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key && n.Parent != nil && n.Parent.Type == "object" {
+					return n
+				}
+			}
+			return nil
+		}
+
+		for _, stableKey := range []string{"commitStyle", "colorOnly", "lineNumbersZeroStyle", "lineBufferSize"} {
+			srcNode := findPairByKey(srcAST, stableKey)
+			dstNode := findPairByKey(dstAST, stableKey)
+			if srcNode == nil || dstNode == nil {
+				t.Fatalf("stable pair %q not found: src=%v, dst=%v", stableKey, srcNode, dstNode)
+			}
+			if mr.Mappings.Src()[srcNode] != dstNode {
+				t.Errorf("expected stable pair %q to map in place, got %v", stableKey, mr.Mappings.Src()[srcNode])
+			}
+		}
+
+		// 4. Newly added disjoint fields in dst must NOT be stolen by old fields.
+		for _, addedKey := range []string{"defaultLanguage", "hunkLabel", "inlineHintStyle"} {
+			dstNode := findPairByKey(dstAST, addedKey)
+			if dstNode == nil {
+				t.Fatalf("added pair %q not found in dst", addedKey)
+			}
+			if mr.Mappings.Dst()[dstNode] != nil {
+				t.Errorf("expected added pair %q to remain unmapped, got mapped from %v (%s)",
+					addedKey, mr.Mappings.Dst()[dstNode], getKeyLabel(mr.Mappings.Dst()[dstNode]))
+			}
+		}
+
+		// 5. Evolving line numbers pairs:
+		leftFormatSrc := findPairByKey(srcAST, "lineNumbersLeftFormat")
+		formatDst := findPairByKey(dstAST, "lineNumbersFormat")
+		if leftFormatSrc == nil || formatDst == nil || mr.Mappings.Src()[leftFormatSrc] != formatDst {
+			t.Errorf("expected lineNumbersLeftFormat to map to lineNumbersFormat, got %v", mr.Mappings.Src()[leftFormatSrc])
+		}
+
+		leftStyleSrc := findPairByKey(srcAST, "lineNumbersLeftStyle")
+		styleLeftRightDst := findPairByKey(dstAST, "lineNumbersStyleLeftRight")
+		if leftStyleSrc == nil || styleLeftRightDst == nil || mr.Mappings.Src()[leftStyleSrc] != styleLeftRightDst {
+			t.Errorf("expected lineNumbersLeftStyle to map to lineNumbersStyleLeftRight, got %v", mr.Mappings.Src()[leftStyleSrc])
+		}
+
+		minusStyleSrc := findPairByKey(srcAST, "lineNumbersMinusStyle")
+		styleMinusPlusDst := findPairByKey(dstAST, "lineNumbersStyleMinusPlus")
+		if minusStyleSrc == nil || styleMinusPlusDst == nil || mr.Mappings.Src()[minusStyleSrc] != styleMinusPlusDst {
+			t.Errorf("expected lineNumbersMinusStyle to map to lineNumbersStyleMinusPlus, got %v", mr.Mappings.Src()[minusStyleSrc])
+		}
+
+		// 6. Consolidated trailing fields in src must be cleanly unmapped (deleted):
+		for _, delKey := range []string{"lineNumbersPlusStyle", "lineNumbersRightFormat", "lineNumbersRightStyle"} {
+			srcNode := findPairByKey(srcAST, delKey)
+			if srcNode == nil {
+				t.Fatalf("deleted pair %q not found in src", delKey)
+			}
+			if mr.Mappings.Src()[srcNode] != nil {
+				t.Errorf("expected deleted pair %q to remain unmapped, got mapped to %v (%s)",
+					delKey, mr.Mappings.Src()[srcNode], getKeyLabel(mr.Mappings.Src()[srcNode]))
+			}
+		}
+	})
+
+	t.Run("FullEngine_TypeScript", func(t *testing.T) {
+		oldSrc := `interface Opts {
+    colorOnly: boolean;
+    lineBufferSize: number;
+}
+
+function configure(opt: Opts) {
+    const { flag, mode } = opt;
+    return {
+        commitStyle,
+        colorOnly: opt.colorOnly,
+        lineNumbersLeftFormat: opt.lineNumbersLeftFormat,
+        lineNumbersLeftStyle,
+        lineNumbersMinusStyle,
+        lineNumbersPlusStyle,
+        lineNumbersRightFormat: opt.lineNumbersRightFormat,
+        lineNumbersRightStyle,
+        lineNumbersZeroStyle,
+        lineBufferSize: opt.lineBufferSize,
+    };
+}
+`
+		newSrc := `interface Opts {
+    colorOnly: boolean;
+    lineBufferSize: number;
+}
+
+function configure(opt: Opts) {
+    const { flag, mode } = opt;
+    return {
+        commitStyle,
+        colorOnly: opt.colorOnly,
+        defaultLanguage: opt.defaultLanguage,
+        hunkLabel,
+        inlineHintStyle,
+        lineNumbersFormat: formatLeftRight(
+            opt.lineNumbersLeftFormat,
+            opt.lineNumbersRightFormat,
+        ),
+        lineNumbersStyleLeftRight: styleLeftRight(
+            lineNumbersLeftStyle,
+            lineNumbersRightStyle,
+        ),
+        lineNumbersStyleMinusPlus: styleMinusPlus(
+            lineNumbersMinusStyle,
+            lineNumbersPlusStyle,
+        ),
+        lineNumbersZeroStyle,
+        lineBufferSize: opt.lineBufferSize,
+    };
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "config.ts")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "config.ts")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: function configure maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function configure to map in place")
+		}
+
+		// 2. Destructuring pattern: flag and mode map in place.
+		findPatternPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key && n.Parent != nil && n.Parent.Type == "object_pattern" {
+					return n
+				}
+			}
+			return nil
+		}
+		for _, key := range []string{"flag", "mode"} {
+			sNode := findPatternPairByKey(srcAST, key)
+			dNode := findPatternPairByKey(dstAST, key)
+			if sNode == nil || dNode == nil || mr.Mappings.Src()[sNode] != dNode {
+				t.Errorf("expected pattern pair %q to map in place, got %v", key, mr.Mappings.Src()[sNode])
+			}
+		}
+
+		// 3. Surrounding sequence: commitStyle, colorOnly, lineNumbersZeroStyle, lineBufferSize map in place.
+		findPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key && n.Parent != nil && n.Parent.Type == "object" {
+					return n
+				}
+			}
+			return nil
+		}
+
+		for _, stableKey := range []string{"commitStyle", "colorOnly", "lineNumbersZeroStyle", "lineBufferSize"} {
+			srcNode := findPairByKey(srcAST, stableKey)
+			dstNode := findPairByKey(dstAST, stableKey)
+			if srcNode == nil || dstNode == nil {
+				t.Fatalf("stable pair %q not found: src=%v, dst=%v", stableKey, srcNode, dstNode)
+			}
+			if mr.Mappings.Src()[srcNode] != dstNode {
+				t.Errorf("expected stable pair %q to map in place, got %v", stableKey, mr.Mappings.Src()[srcNode])
+			}
+		}
+
+		// 4. Newly added disjoint fields in dst must NOT be stolen by old fields.
+		for _, addedKey := range []string{"defaultLanguage", "hunkLabel", "inlineHintStyle"} {
+			dstNode := findPairByKey(dstAST, addedKey)
+			if dstNode == nil {
+				t.Fatalf("added pair %q not found in dst", addedKey)
+			}
+			if mr.Mappings.Dst()[dstNode] != nil {
+				t.Errorf("expected added pair %q to remain unmapped, got mapped from %v (%s)",
+					addedKey, mr.Mappings.Dst()[dstNode], getKeyLabel(mr.Mappings.Dst()[dstNode]))
+			}
+		}
+
+		// 5. Evolving line numbers pairs:
+		leftFormatSrc := findPairByKey(srcAST, "lineNumbersLeftFormat")
+		formatDst := findPairByKey(dstAST, "lineNumbersFormat")
+		if leftFormatSrc == nil || formatDst == nil || mr.Mappings.Src()[leftFormatSrc] != formatDst {
+			t.Errorf("expected lineNumbersLeftFormat to map to lineNumbersFormat, got %v", mr.Mappings.Src()[leftFormatSrc])
+		}
+
+		leftStyleSrc := findPairByKey(srcAST, "lineNumbersLeftStyle")
+		styleLeftRightDst := findPairByKey(dstAST, "lineNumbersStyleLeftRight")
+		if leftStyleSrc == nil || styleLeftRightDst == nil || mr.Mappings.Src()[leftStyleSrc] != styleLeftRightDst {
+			t.Errorf("expected lineNumbersLeftStyle to map to lineNumbersStyleLeftRight, got %v", mr.Mappings.Src()[leftStyleSrc])
+		}
+
+		minusStyleSrc := findPairByKey(srcAST, "lineNumbersMinusStyle")
+		styleMinusPlusDst := findPairByKey(dstAST, "lineNumbersStyleMinusPlus")
+		if minusStyleSrc == nil || styleMinusPlusDst == nil || mr.Mappings.Src()[minusStyleSrc] != styleMinusPlusDst {
+			t.Errorf("expected lineNumbersMinusStyle to map to lineNumbersStyleMinusPlus, got %v", mr.Mappings.Src()[minusStyleSrc])
+		}
+
+		// 6. Consolidated trailing fields in src must be cleanly unmapped (deleted):
+		for _, delKey := range []string{"lineNumbersPlusStyle", "lineNumbersRightFormat", "lineNumbersRightStyle"} {
+			srcNode := findPairByKey(srcAST, delKey)
+			if srcNode == nil {
+				t.Fatalf("deleted pair %q not found in src", delKey)
+			}
+			if mr.Mappings.Src()[srcNode] != nil {
+				t.Errorf("expected deleted pair %q to remain unmapped, got mapped to %v (%s)",
+					delKey, mr.Mappings.Src()[srcNode], getKeyLabel(mr.Mappings.Src()[srcNode]))
+			}
+		}
+	})
+
+	t.Run("FullEngine_TSX", func(t *testing.T) {
+		oldSrc := `export function ConfigPanel(props: ConfigProps) {
+    const { visible, theme } = props;
+    const options = {
+        commitStyle,
+        colorOnly: props.colorOnly,
+        lineNumbersLeftFormat: props.lineNumbersLeftFormat,
+        lineNumbersLeftStyle,
+        lineNumbersMinusStyle,
+        lineNumbersPlusStyle,
+        lineNumbersZeroStyle,
+        lineBufferSize: props.lineBufferSize,
+    };
+    return <div data-options={options} />;
+}
+`
+		newSrc := `export function ConfigPanel(props: ConfigProps) {
+    const { visible, theme } = props;
+    const options = {
+        commitStyle,
+        colorOnly: props.colorOnly,
+        defaultLanguage: props.defaultLanguage,
+        hunkLabel,
+        inlineHintStyle,
+        lineNumbersFormat: formatLeftRight(
+            props.lineNumbersLeftFormat,
+        ),
+        lineNumbersStyleLeftRight: styleLeftRight(
+            lineNumbersLeftStyle,
+        ),
+        lineNumbersStyleMinusPlus: styleMinusPlus(
+            lineNumbersMinusStyle,
+        ),
+        lineNumbersZeroStyle,
+        lineBufferSize: props.lineBufferSize,
+    };
+    return <div data-options={options} />;
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "component.tsx")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "component.tsx")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: function ConfigPanel maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "ConfigPanel" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "ConfigPanel" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function ConfigPanel to map in place")
+		}
+
+		// 2. Destructuring pattern: visible and theme map in place.
+		findPatternPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key && n.Parent != nil && n.Parent.Type == "object_pattern" {
+					return n
+				}
+			}
+			return nil
+		}
+		for _, key := range []string{"visible", "theme"} {
+			sNode := findPatternPairByKey(srcAST, key)
+			dNode := findPatternPairByKey(dstAST, key)
+			if sNode == nil || dNode == nil || mr.Mappings.Src()[sNode] != dNode {
+				t.Errorf("expected pattern pair %q to map in place, got %v", key, mr.Mappings.Src()[sNode])
+			}
+		}
+
+		// 3. Surrounding sequence: commitStyle, colorOnly, lineNumbersZeroStyle, lineBufferSize map in place.
+		findPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key && n.Parent != nil && n.Parent.Type == "object" {
+					return n
+				}
+			}
+			return nil
+		}
+
+		for _, stableKey := range []string{"commitStyle", "colorOnly", "lineNumbersZeroStyle", "lineBufferSize"} {
+			srcNode := findPairByKey(srcAST, stableKey)
+			dstNode := findPairByKey(dstAST, stableKey)
+			if srcNode == nil || dstNode == nil {
+				t.Fatalf("stable pair %q not found: src=%v, dst=%v", stableKey, srcNode, dstNode)
+			}
+			if mr.Mappings.Src()[srcNode] != dstNode {
+				t.Errorf("expected stable pair %q to map in place, got %v", stableKey, mr.Mappings.Src()[srcNode])
+			}
+		}
+
+		// 4. Newly added disjoint fields in dst must NOT be stolen by old fields.
+		for _, addedKey := range []string{"defaultLanguage", "hunkLabel", "inlineHintStyle"} {
+			dstNode := findPairByKey(dstAST, addedKey)
+			if dstNode == nil {
+				t.Fatalf("added pair %q not found in dst", addedKey)
+			}
+			if mr.Mappings.Dst()[dstNode] != nil {
+				t.Errorf("expected added pair %q to remain unmapped, got mapped from %v (%s)",
+					addedKey, mr.Mappings.Dst()[dstNode], getKeyLabel(mr.Mappings.Dst()[dstNode]))
+			}
+		}
+
+		// 5. Evolving line numbers pairs:
+		leftFormatSrc := findPairByKey(srcAST, "lineNumbersLeftFormat")
+		formatDst := findPairByKey(dstAST, "lineNumbersFormat")
+		if leftFormatSrc == nil || formatDst == nil || mr.Mappings.Src()[leftFormatSrc] != formatDst {
+			t.Errorf("expected lineNumbersLeftFormat to map to lineNumbersFormat, got %v", mr.Mappings.Src()[leftFormatSrc])
+		}
+
+		leftStyleSrc := findPairByKey(srcAST, "lineNumbersLeftStyle")
+		styleLeftRightDst := findPairByKey(dstAST, "lineNumbersStyleLeftRight")
+		if leftStyleSrc == nil || styleLeftRightDst == nil || mr.Mappings.Src()[leftStyleSrc] != styleLeftRightDst {
+			t.Errorf("expected lineNumbersLeftStyle to map to lineNumbersStyleLeftRight, got %v", mr.Mappings.Src()[leftStyleSrc])
+		}
+
+		minusStyleSrc := findPairByKey(srcAST, "lineNumbersMinusStyle")
+		styleMinusPlusDst := findPairByKey(dstAST, "lineNumbersStyleMinusPlus")
+		if minusStyleSrc == nil || styleMinusPlusDst == nil || mr.Mappings.Src()[minusStyleSrc] != styleMinusPlusDst {
+			t.Errorf("expected lineNumbersMinusStyle to map to lineNumbersStyleMinusPlus, got %v", mr.Mappings.Src()[minusStyleSrc])
+		}
+
+		// 6. Consolidated trailing fields in src must be cleanly unmapped (deleted):
+		for _, delKey := range []string{"lineNumbersPlusStyle"} {
+			srcNode := findPairByKey(srcAST, delKey)
+			if srcNode == nil {
+				t.Fatalf("deleted pair %q not found in src", delKey)
+			}
+			if mr.Mappings.Src()[srcNode] != nil {
+				t.Errorf("expected deleted pair %q to remain unmapped, got mapped to %v (%s)",
+					delKey, mr.Mappings.Src()[srcNode], getKeyLabel(mr.Mappings.Src()[srcNode]))
+			}
+		}
+	})
+
+	t.Run("FullEngine_Java_Annotation", func(t *testing.T) {
+		oldSrc := `class ConfigService {
+    @ConfigMapping(
+        prefix = "app.config",
+        lineNumbersLeftFormat = "left",
+        lineNumbersLeftStyle = "style",
+        lineNumbersZeroStyle = "zero",
+        lineBufferSize = "1024"
+    )
+    public void configure() {}
+}
+`
+		newSrc := `class ConfigService {
+    @ConfigMapping(
+        prefix = "app.config",
+        defaultLanguage = "rust",
+        hunkLabel = "label",
+        lineNumbersFormat = "leftRight",
+        lineNumbersZeroStyle = "zero",
+        lineBufferSize = "1024"
+    )
+    public void configure() {}
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(oldSrc), "ConfigService.java")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(newSrc), "ConfigService.java")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(oldSrc), []byte(newSrc))
+		mr := Match(srcAST, dstAST, []byte(oldSrc), []byte(newSrc), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing class and method map in place.
+		var srcClass, dstClass *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "ConfigService" {
+				srcClass = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "ConfigService" {
+				dstClass = n
+				break
+			}
+		}
+		if srcClass == nil || dstClass == nil || mr.Mappings.Src()[srcClass] != dstClass {
+			t.Fatalf("expected class ConfigService to map in place")
+		}
+
+		// 2. Surrounding sequence: prefix, lineNumbersZeroStyle, and lineBufferSize map in place.
+		findPairByKey := func(root *treesitter.ASTNode, key string) *treesitter.ASTNode {
+			for _, n := range root.PreOrder() {
+				if r.IsPair(n.Type) && getKeyLabel(n) == key {
+					return n
+				}
+			}
+			return nil
+		}
+
+		for _, stableKey := range []string{"prefix", "lineNumbersZeroStyle", "lineBufferSize"} {
+			srcNode := findPairByKey(srcAST, stableKey)
+			dstNode := findPairByKey(dstAST, stableKey)
+			if srcNode == nil || dstNode == nil {
+				t.Fatalf("stable pair %q not found: src=%v, dst=%v", stableKey, srcNode, dstNode)
+			}
+			if mr.Mappings.Src()[srcNode] != dstNode {
+				t.Errorf("expected stable pair %q to map in place, got %v", stableKey, mr.Mappings.Src()[srcNode])
+			}
+		}
+
+		// 3. Newly added disjoint fields in dst must NOT be stolen by old fields.
+		for _, addedKey := range []string{"defaultLanguage", "hunkLabel"} {
+			dstNode := findPairByKey(dstAST, addedKey)
+			if dstNode == nil {
+				t.Fatalf("added pair %q not found in dst", addedKey)
+			}
+			if mr.Mappings.Dst()[dstNode] != nil {
+				t.Errorf("expected added pair %q to remain unmapped, got mapped from %v (%s)",
+					addedKey, mr.Mappings.Dst()[dstNode], getKeyLabel(mr.Mappings.Dst()[dstNode]))
+			}
+		}
+
+		// 4. Evolving line numbers pairs:
+		leftFormatSrc := findPairByKey(srcAST, "lineNumbersLeftFormat")
+		formatDst := findPairByKey(dstAST, "lineNumbersFormat")
+		if leftFormatSrc == nil || formatDst == nil || mr.Mappings.Src()[leftFormatSrc] != formatDst {
+			t.Errorf("expected lineNumbersLeftFormat to map to lineNumbersFormat, got %v", mr.Mappings.Src()[leftFormatSrc])
+		}
+
+		// 5. Consolidated trailing fields in src must be cleanly unmapped (deleted):
+		for _, delKey := range []string{"lineNumbersLeftStyle"} {
+			srcNode := findPairByKey(srcAST, delKey)
+			if srcNode == nil {
+				t.Fatalf("deleted pair %q not found in src", delKey)
+			}
+			if mr.Mappings.Src()[srcNode] != nil {
+				t.Errorf("expected deleted pair %q to remain unmapped, got mapped to %v (%s)",
+					delKey, mr.Mappings.Src()[srcNode], getKeyLabel(mr.Mappings.Src()[srcNode]))
+			}
+		}
+	})
+}

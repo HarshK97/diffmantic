@@ -138,14 +138,21 @@ func getTagName(n *treesitter.ASTNode) string {
 	return ""
 }
 
+// getKeyLabel extracts the field or property identifier name from a pair, call, or shorthand property node.
 func getKeyLabel(n *treesitter.ASTNode) string {
-	if n == nil || len(n.Children) == 0 {
+	if n == nil {
+		return ""
+	}
+	r := rulesFor(n)
+	if len(n.Children) == 0 {
+		if r != nil && r.IsPair(n.Type) && n.Label != "" {
+			return n.Label
+		}
 		return ""
 	}
 	if tag := getTagName(n); tag != "" {
 		return tag
 	}
-	r := rulesFor(n)
 	isCall := (r != nil && r.IsCall(n.Type)) || (r == nil && rules.IsCall(n.Type))
 	if isCall {
 		for _, ch := range n.Children {

@@ -265,6 +265,7 @@ var javaRules = &Rules{
 		"System.exit",
 	},
 	DelimitedContainers: []string{
+		"annotation_argument_list",
 		"argument_list",
 		"array_initializer",
 		"formal_parameters",
