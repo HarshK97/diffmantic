@@ -193,6 +193,7 @@ var tsxRules = &Rules{
 		"public_field_definition",
 		"variable_declaration",
 		"lexical_declaration",
+		"enum_assignment",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -251,6 +252,7 @@ var tsxRules = &Rules{
 		{"jsx_element", "jsx_self_closing_element"},
 		{"pair", "shorthand_property_identifier"},
 		{"pair_pattern", "shorthand_property_identifier_pattern"},
+		{"enum_assignment", "property_identifier"},
 	},
 	Comments: []string{
 		"comment",
@@ -328,6 +330,7 @@ var tsxRules = &Rules{
 	DelimitedContainers: []string{
 		"arguments",
 		"array",
+		"enum_body",
 		"formal_parameters",
 		"object",
 		"object_pattern",

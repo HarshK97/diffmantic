@@ -185,6 +185,7 @@ var typescriptRules = &Rules{
 		"public_field_definition",
 		"variable_declaration",
 		"lexical_declaration",
+		"enum_assignment",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -238,6 +239,7 @@ var typescriptRules = &Rules{
 		{"for_statement", "for_in_statement"},
 		{"pair", "shorthand_property_identifier"},
 		{"pair_pattern", "shorthand_property_identifier_pattern"},
+		{"enum_assignment", "property_identifier"},
 	},
 	Comments: []string{
 		"comment",
@@ -315,6 +317,7 @@ var typescriptRules = &Rules{
 	DelimitedContainers: []string{
 		"arguments",
 		"array",
+		"enum_body",
 		"formal_parameters",
 		"object",
 		"object_pattern",

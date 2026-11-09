@@ -152,6 +152,7 @@ var rustRules = &Rules{
 		"const_item",
 		"static_item",
 		"field_declaration",
+		"enum_variant",
 		"use_declaration",
 	},
 	Imports: []string{
@@ -267,6 +268,7 @@ var rustRules = &Rules{
 	DelimitedContainers: []string{
 		"arguments",
 		"array_expression",
+		"enum_variant_list",
 		"field_initializer_list",
 		"parameters",
 		"token_tree",

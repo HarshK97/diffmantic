@@ -177,6 +177,7 @@ var javaRules = &Rules{
 		"package_declaration",
 		"local_variable_declaration",
 		"field_declaration",
+		"enum_constant",
 	},
 	Imports: []string{
 		"import_declaration",
@@ -268,6 +269,7 @@ var javaRules = &Rules{
 		"annotation_argument_list",
 		"argument_list",
 		"array_initializer",
+		"enum_body",
 		"formal_parameters",
 	},
 	CaseClauses: []string{

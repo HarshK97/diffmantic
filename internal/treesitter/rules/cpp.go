@@ -202,6 +202,7 @@ var cppRules = &Rules{
 		"concept_definition",
 		"field_declaration",
 		"friend_declaration",
+		"enumerator",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -297,6 +298,7 @@ var cppRules = &Rules{
 	},
 	DelimitedContainers: []string{
 		"argument_list",
+		"enumerator_list",
 		"initializer_list",
 		"parameter_list",
 		"template_argument_list",
