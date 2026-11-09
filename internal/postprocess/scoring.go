@@ -458,13 +458,13 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 				}
 			}
 		}
-		// If the statement itself didn't move, measure line drift relative to the
-		// statement so earlier edits in the file don't inflate the move threshold.
-		if src != srcStmt && dst != dstStmt && isStatementStationary(srcStmt, dstStmt, ms, r) {
-			stmtLineDist := (int(src.StartRow) - int(srcStmt.StartRow)) - (int(dst.StartRow) - int(dstStmt.StartRow))
-			if stmtLineDist < 0 {
-				stmtLineDist = -stmtLineDist
-			}
+		// When expressions stay inside the same statement without jumping containers,
+		// measure line drift relative to the statement so reordering sibling statements
+		// doesn't inflate the move threshold.
+		if src != srcStmt && dst != dstStmt && hasStationaryAncestorContainers(srcStmt, dstStmt, ms, r) {
+			srcRel := int(src.StartRow) - int(srcStmt.StartRow)
+			dstRel := int(dst.StartRow) - int(dstStmt.StartRow)
+			stmtLineDist := max(srcRel-dstRel, dstRel-srcRel)
 			return 4 + stmtLineDist/5
 		}
 		// Statements or reorders inside the same statement use mild distance scaling.

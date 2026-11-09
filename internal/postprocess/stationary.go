@@ -207,7 +207,7 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 
 	srcStmt := engine.FindEnclosingStatement(src, r)
 	dstStmt := engine.FindEnclosingStatement(dst, r)
-	isStatStmt := isStatementStationary(srcStmt, dstStmt, ms, r)
+	isStatStmt := hasStationaryAncestorContainers(srcStmt, dstStmt, ms, r)
 	isSlotEq := !isStatStmt && isStatementSlotEquivalent(srcStmt, dstStmt, src, dst, ms, r)
 	if !isStatStmt && !isSlotEq {
 		return false
@@ -217,7 +217,11 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	dstRel := int(dst.StartRow) - int(dstStmt.StartRow)
 	rowDiff := max(srcRel-dstRel, dstRel-srcRel)
 	// For slot-equivalent statements, allow minor multi-line formatting shift (<= 2 lines).
-	if (!isSlotEq && rowDiff != 0) || (isSlotEq && rowDiff > 2) {
+	maxAllowedDiff := 0
+	if isSlotEq {
+		maxAllowedDiff = 2
+	}
+	if rowDiff > maxAllowedDiff {
 		return false
 	}
 
@@ -314,9 +318,9 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	return true
 }
 
-// isStatementStationary reports whether a matched statement stayed in place
-// structurally within its enclosing scope (ignoring line drift from edits above it).
-func isStatementStationary(srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+// hasStationaryAncestorContainers reports whether srcStmt and dstStmt are mapped to each other
+// and stay inside the same enclosing containers up to their declaration.
+func hasStationaryAncestorContainers(srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
 	if srcStmt == nil || dstStmt == nil || ms == nil || ms.Src()[srcStmt] != dstStmt {
 		return false
 	}
@@ -333,6 +337,26 @@ func isStatementStationary(srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapp
 		}
 		if srcParent == nil || dstParent == nil || ms.Src()[srcParent] != dstParent {
 			return false
+		}
+		curSrc = srcParent
+		curDst = dstParent
+	}
+	return true
+}
+
+// isStatementStationary reports whether a matched statement stayed in place
+// structurally within its enclosing scope (ignoring line drift from edits above it).
+func isStatementStationary(srcStmt, dstStmt *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if !hasStationaryAncestorContainers(srcStmt, dstStmt, ms, r) {
+		return false
+	}
+	srcDecl := srcStmt.EnclosingContainerDeclaration(r)
+	curSrc, curDst := srcStmt, dstStmt
+	for curSrc != nil && curDst != nil && curSrc != srcDecl {
+		srcParent := curSrc.Parent
+		dstParent := curDst.Parent
+		if srcParent == nil || dstParent == nil {
+			break
 		}
 		for _, sib := range srcParent.Children {
 			if sib == curSrc {
