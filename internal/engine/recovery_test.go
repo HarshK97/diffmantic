@@ -3789,3 +3789,176 @@ fn t() {
 		}
 	})
 }
+
+func TestBareIdentifierLastResortPairing(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn format_commit_line_captures_with_osc8_commit_hyperlink(
+    captures: &Captures,
+    github_repo: &str,
+) -> String {
+    let commit = captures.get(2).unwrap().as_str();
+    format!(
+        "{prefix}{osc}8;;{url}{st}{commit}{osc}8;;{st}{suffix}",
+        url = format_github_commit_url(commit, github_repo),
+        commit = commit,
+        prefix = captures.get(1).unwrap().as_str(),
+        suffix = captures.get(3).unwrap().as_str(),
+        osc = "\x1b]",
+        st = "\x1b\\"
+    )
+}
+`
+		newSrc := `fn format_commit_line_captures_with_osc8_commit_hyperlink(
+    captures: &Captures,
+    github_repo: &str,
+) -> String {
+    let commit = captures.get(2).unwrap().as_str();
+    format!(
+        "{prefix}{osc}8;;{url}{st}{commit}{osc}8;;{st}{suffix}",
+        url = format_github_commit_url(commit, github_repo),
+        commit = commit,
+        prefix = captures.get(1).map(|m| m.as_str()).unwrap_or(""),
+        suffix = captures.get(3).unwrap().as_str(),
+        osc = "\x1b]",
+        st = "\x1b\\"
+    )
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: function item, format! macro invocation, and let statement map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Errorf("expected enclosing function to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		var srcMacro, dstMacro *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "macro_invocation" {
+				srcMacro = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "macro_invocation" {
+				dstMacro = n
+				break
+			}
+		}
+		if srcMacro == nil || dstMacro == nil || mapped[srcMacro] != dstMacro {
+			t.Errorf("expected format! macro invocation to map in place, got src=%v dst=%v mapped=%v", srcMacro, dstMacro, mapped[srcMacro])
+		}
+
+		// 2. Surrounding Sequence: surrounding tokens and stationary arguments map in place.
+		for _, want := range []string{"url", "commit", "suffix", "osc", "st"} {
+			var srcN, dstN *treesitter.ASTNode
+			for _, n := range srcMacro.Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == want {
+					srcN = n
+					break
+				}
+			}
+			for _, n := range dstMacro.Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == want {
+					dstN = n
+					break
+				}
+			}
+			if srcN == nil || dstN == nil || mapped[srcN] != dstN {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", want, srcN, dstN, mapped[srcN])
+			}
+		}
+
+		// 3. Target & Containers (the defect invariant):
+		// Locate target nodes on Row 9 (prefix = captures.get(1)...):
+		//   oldUnwrap: identifier "unwrap" on Row 9
+		//   oldAsStr: identifier "as_str" on Row 9
+		//   newMap: identifier "map" on Row 9
+		//   newAsStr: identifier "as_str" inside the closure on Row 9
+		//   newUnwrapOr: identifier "unwrap_or" on Row 9
+		var oldUnwrap, oldAsStr *treesitter.ASTNode
+		for _, n := range srcMacro.Descendants() {
+			if n.StartRow == 9 && r.IsIdentifier(n.Type) {
+				switch n.Label {
+				case "unwrap":
+					oldUnwrap = n
+				case "as_str":
+					oldAsStr = n
+				}
+			}
+		}
+		var newMap, newAsStr, newUnwrapOr *treesitter.ASTNode
+		for _, n := range dstMacro.Descendants() {
+			if n.StartRow == 9 && r.IsIdentifier(n.Type) {
+				switch n.Label {
+				case "map":
+					newMap = n
+				case "as_str":
+					newAsStr = n
+				case "unwrap_or":
+					newUnwrapOr = n
+				}
+			}
+		}
+		if oldUnwrap == nil || oldAsStr == nil || newMap == nil || newAsStr == nil || newUnwrapOr == nil {
+			t.Fatalf("failed to locate target nodes: oldUnwrap=%v oldAsStr=%v newMap=%v newAsStr=%v newUnwrapOr=%v",
+				oldUnwrap, oldAsStr, newMap, newAsStr, newUnwrapOr)
+		}
+
+		// Unrelated identifiers like as_str and map must never pair.
+		if got := mapped[oldAsStr]; got == newMap {
+			t.Errorf("uniqueTypePairs glued bare identifier as_str to unrelated map: mapped=%v", got)
+		}
+		if got := mr.Mappings.Dst()[newMap]; got != nil {
+			t.Errorf("expected new map identifier to remain unmapped, got %v", got)
+		}
+		// unwrap pairs with unwrap_or in place.
+		if mapped[oldUnwrap] != newUnwrapOr {
+			t.Errorf("expected unwrap to pair with unwrap_or, got %v", mapped[oldUnwrap])
+		}
+		// as_str pairs with the closure's as_str.
+		if mapped[oldAsStr] != newAsStr {
+			t.Errorf("expected old as_str to pair with closure as_str, got %v", mapped[oldAsStr])
+		}
+	})
+}

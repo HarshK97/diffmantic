@@ -699,6 +699,17 @@ func uniqueTypePairs(
 					continue
 				}
 			}
+			// Don't pair solitary identifiers with completely different names;
+			// otherwise rewritten chains glue unrelated methods together.
+			isID := (r != nil && r.IsIdentifier(n1.Type)) || (r == nil && rules.IsIdentifier(n1.Type))
+			if isID && len(n1.Children) == 0 && len(n2.Children) == 0 {
+				if n1.Label == "" || n2.Label == "" {
+					continue
+				}
+				if n1.Label != n2.Label && identifierWordOverlap(splitIdentifierWords(n1.Label), splitIdentifierWords(n2.Label)) == 0 {
+					continue
+				}
+			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {
 				labels1 := n1.LeafLabels()
 				labels2 := n2.LeafLabels()
