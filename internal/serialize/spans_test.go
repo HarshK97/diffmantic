@@ -2878,4 +2878,158 @@ func bar() {
 			}
 		}
 	})
+
+	t.Run("FullEngine/Rust macro token tree does not bleed insert span over stationary children", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules for rust not found")
+		}
+
+		oldSrc := `fn print_trailing() -> Result<()> {
+    let cursor_max = 100;
+    let cursor = 10;
+    write!(
+        handle,
+        "{}",
+        ansi_style.paint(" ".repeat(cursor_max - cursor))
+    )?;
+    Ok(())
+}
+`
+		newSrc := `fn print_trailing() -> Result<()> {
+    let cursor_max = 100;
+    let cursor = 10;
+    write!(
+        handle,
+        "{}",
+        ansi_style.paint(" ".repeat(cursor_max.saturating_sub(cursor)))
+    )?;
+    Ok(())
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 {
+			t.Fatalf("oldAST has syntax errors: %d", oldAST.ParseErrorCount)
+		}
+		if newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("newAST has syntax errors: %d", newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Whole-Snippet Verification:
+		// 1. Enclosing function declaration maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatal("failed to find function declaration nodes")
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. Surrounding sequence: let declarations and macro invocation identifiers map in place
+		var srcMax, dstMax, srcCur, dstCur *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsIdentifier(n.Type) {
+				switch string(srcBytes[n.StartByte:n.EndByte]) {
+				case "cursor_max":
+					srcMax = n
+				case "cursor":
+					srcCur = n
+				}
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsIdentifier(n.Type) {
+				switch string(dstBytes[n.StartByte:n.EndByte]) {
+				case "cursor_max":
+					dstMax = n
+				case "cursor":
+					dstCur = n
+				}
+			}
+		}
+		if srcMax == nil || dstMax == nil || srcCur == nil || dstCur == nil {
+			t.Fatal("failed to find cursor identifiers")
+		}
+		if mr.Mappings.Src()[srcMax] != dstMax {
+			t.Errorf("expected cursor_max to map in place, got %v", mr.Mappings.Src()[srcMax])
+		}
+		if mr.Mappings.Src()[srcCur] != dstCur {
+			t.Errorf("expected cursor to map in place, got %v", mr.Mappings.Src()[srcCur])
+		}
+
+		// 3. Right highlights on line 6 (0-indexed: ansi_style.paint(...))
+		// The inserted token_tree delimiters must be carved out so `cursor` is NOT engulfed in an insert span.
+		// `cursor` is at column 58..64 in line 6: `        ansi_style.paint(" ".repeat(cursor_max.saturating_sub(cursor)))`
+		line6 := "        ansi_style.paint(\" \".repeat(cursor_max.saturating_sub(cursor)))"
+		cursorColStart := strings.Index(line6, "cursor)")
+		cursorColEnd := cursorColStart + len("cursor")
+		foundEngulfing := false
+		for _, h := range env.RightHighlights {
+			if h.Line == 6 && h.Action == "insert" {
+				if h.StartCol <= cursorColStart && h.EndCol >= cursorColEnd {
+					foundEngulfing = true
+					t.Errorf("found insert highlight span [%d, %d] engulfing stationary child 'cursor' [%d, %d]: %+v",
+						h.StartCol, h.EndCol, cursorColStart, cursorColEnd, h)
+				}
+			}
+		}
+		if !foundEngulfing {
+			// Verify that the opening and closing delimiters ARE highlighted
+			hasOpener := false
+			hasCloser := false
+			for _, h := range env.RightHighlights {
+				if h.Line == 6 && h.Action == "insert" {
+					if strings.Contains(line6[h.StartCol:h.EndCol], ".saturating_sub(") {
+						hasOpener = true
+					}
+					if line6[h.StartCol:h.EndCol] == ")" {
+						hasCloser = true
+					}
+				}
+			}
+			if !hasOpener {
+				t.Errorf("expected insert highlight covering .saturating_sub(, but none found")
+			}
+			if !hasCloser {
+				t.Errorf("expected insert highlight covering closing delimiter ), but none found")
+			}
+		}
+	})
 }
