@@ -2634,3 +2634,249 @@ fn stationary_two() {}
 		}
 	})
 }
+
+func TestBuildHighlightSpans_MultilineStatementInsertCarveout_FullEngine(t *testing.T) {
+	t.Run("Rust multiline macro invocation preserves stationary string literal", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules for rust not found")
+		}
+
+		oldSrc := `fn set_terminal_title_to(new_terminal_title: String) {
+    let osc_command = "\x1b]0;";
+    let osc_end = "\x07";
+    let safe_title = bat::sanitize(&new_terminal_title);
+    print!("{osc_command}{safe_title}{osc_end}");
+    io::stdout().flush().unwrap();
+}
+`
+		newSrc := `fn set_terminal_title_to(new_terminal_title: String) -> Result<()> {
+    let osc_command = "\x1b]0;";
+    let osc_end = "\x07";
+    let safe_title = bat::sanitize(&new_terminal_title);
+    write!(
+        io::stdout(),
+        "{osc_command}{safe_title}{osc_end}"
+    )?;
+    io::stdout().flush()?;
+    Ok(())
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 {
+			t.Fatalf("oldAST has syntax errors: %d", oldAST.ParseErrorCount)
+		}
+		if newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("newAST has syntax errors: %d", newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Whole-Snippet Verification:
+		// 1. Enclosing function maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatal("failed to find function declarations")
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. String literal is mapped in place
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if n.Label == `"{osc_command}{safe_title}{osc_end}"` {
+				srcStr = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if n.Label == `"{osc_command}{safe_title}{osc_end}"` {
+				dstStr = n
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil {
+			t.Fatal("failed to find string literal nodes")
+		}
+		if mr.Mappings.Src()[srcStr] != dstStr {
+			t.Fatalf("expected string literal to be mapped, got %v", mr.Mappings.Src()[srcStr])
+		}
+
+		// 3. Highlight span check on line containing the string literal:
+		// Destination line 7 (0-indexed: line 7): `        "{osc_command}{safe_title}{osc_end}"`
+		// It MUST NOT have an "insert" highlight covering the stationary string literal!
+		for _, h := range env.RightHighlights {
+			if h.Line == 7 && h.Action == "insert" {
+				t.Errorf("found spurious insert highlight covering stationary string literal on line %d: %+v", h.Line, h)
+			}
+		}
+	})
+
+	t.Run("Go multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func bar() {
+	foo(
+		"arg1",
+		"arg2",
+	)
+}
+`
+		newSrc := `package main
+
+func bar() {
+	result := foo(
+		"arg1",
+		"arg2",
+	)
+	_ = result
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 {
+			t.Fatalf("oldAST has syntax errors: %d", oldAST.ParseErrorCount)
+		}
+		if newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("newAST has syntax errors: %d", newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Source lines 4 and 5 (0-indexed: "arg1", "arg2") must NOT be painted with "delete".
+		for _, line := range []int{4, 5} {
+			for _, h := range env.LeftHighlights {
+				if h.Line == line && h.Action == "delete" {
+					t.Errorf("found spurious delete highlight on stationary line %d: %+v", line, h)
+				}
+			}
+		}
+	})
+
+	t.Run("Rust let declaration wrapping match expression does not bleed insert over stationary match arms", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules for rust not found")
+		}
+
+		oldSrc := `fn main() {
+    match shell.as_str() {
+        "bash" => println!("{}", completions::BASH_COMPLETION),
+        _ => unreachable!("No completion for shell '{shell}' available."),
+    }
+}
+`
+		newSrc := `fn main() {
+    let completion = match shell.as_str() {
+        "bash" => completions::BASH_COMPLETION,
+        _ => unreachable!("No completion for shell '{shell}' available."),
+    };
+    writeln!(io::stdout(), "{completion}")?;
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 {
+			t.Fatalf("oldAST has syntax errors: %d", oldAST.ParseErrorCount)
+		}
+		if newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("newAST has syntax errors: %d", newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// Destination line 3 (0-indexed: line 3: `        _ => unreachable!...`)
+		// The unreachable arm is 100% stationary and must NOT have a spurious insert highlight at StartCol == 0.
+		for _, h := range env.RightHighlights {
+			if h.Line == 3 && h.Action == "insert" && h.StartCol <= 8 {
+				t.Errorf("found spurious insert highlight covering stationary match arm on line %d: %+v", h.Line, h)
+			}
+		}
+	})
+}
+
