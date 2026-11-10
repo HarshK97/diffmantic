@@ -2039,3 +2039,86 @@ func TestBuildHighlightSpans_PythonPatternWrapperHighlight_FullEngine(t *testing
 		t.Errorf("expected insert highlight on '(a, b)' on line 8")
 	}
 }
+
+func TestBuildHighlightSpans_MoveWithDeletedChildAdjacentToSiblingDelete(t *testing.T) {
+	fileBytes := []byte("\tif rErr := getReaderErr(); rErr != nil {\n")
+	subtree := true
+
+	// Move short_var_declaration (bytes 4 to 26)
+	actMove := Action{
+		Action: "move",
+		Node: &NodeRef{
+			Tree:      "before",
+			Type:      "short_var_declaration",
+			StartByte: 4,
+			EndByte:   26,
+		},
+		DestNode: &NodeRef{
+			Tree:      "after",
+			Type:      "assignment_statement",
+			StartByte: 2,
+			EndByte:   11,
+		},
+		Subtree: &subtree,
+	}
+
+	// Update := to = (bytes 9 to 11)
+	actUpdate := Action{
+		Action: "update",
+		Node: &NodeRef{
+			Tree:      "before",
+			Type:      "assignment_operator_literal",
+			StartByte: 9,
+			EndByte:   11,
+		},
+		DestNode: &NodeRef{
+			Tree:      "after",
+			Type:      "assignment_operator_literal",
+			StartByte: 7,
+			EndByte:   8,
+		},
+	}
+
+	// Delete getReaderErr() (bytes 12 to 26, AST length 14)
+	actDelChild := Action{
+		Action: "delete",
+		Node: &NodeRef{
+			Tree:      "before",
+			Type:      "call_expression",
+			StartByte: 12,
+			EndByte:   26,
+		},
+		Subtree: &subtree,
+	}
+
+	// Delete sibling condition (bytes 28 to 39, AST length 78 in real AST)
+	actDelSibling := Action{
+		Action: "delete",
+		Node: &NodeRef{
+			Tree:      "before",
+			Type:      "binary_expression",
+			StartByte: 28,
+			EndByte:   39,
+		},
+		OrigStartByte: 28,
+		OrigEndByte:   106, // wider multi-clause AST node length
+		Subtree:       &subtree,
+	}
+
+	actions := []Action{actMove, actUpdate, actDelChild, actDelSibling}
+	spans := BuildHighlightSpans(fileBytes, actions, "left")
+
+	var foundCallDelete bool
+	for _, s := range spans {
+		if s.StartCol >= 12 && s.EndCol <= 26 {
+			if s.Action != "delete" {
+				t.Errorf("expected getReaderErr() [cols 12..26] to have action delete, got %s (span [%d..%d])", s.Action, s.StartCol, s.EndCol)
+			} else {
+				foundCallDelete = true
+			}
+		}
+	}
+	if !foundCallDelete {
+		t.Errorf("expected delete highlight on getReaderErr() [cols 12..26]")
+	}
+}

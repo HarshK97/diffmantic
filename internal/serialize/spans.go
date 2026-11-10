@@ -349,8 +349,11 @@ func addSpan(spans map[int][]internalSpan, lineIndex []int, fileBytes []byte, st
 	})
 }
 
+// isOnlyNonCharacters reports whether b consists exclusively of ignorable
+// gap trivia (spaces, commas) that may be bridged between highlight spans,
+// rejecting word tokens, operators, and statement terminators (;).
 func isOnlyNonCharacters(b []byte) bool {
-	if bytes.ContainsAny(b, "<>=+-*/%!&|^~?") {
+	if bytes.ContainsAny(b, "<>=+-*/%!&|^~?;") {
 		return false
 	}
 	for _, c := range b {
