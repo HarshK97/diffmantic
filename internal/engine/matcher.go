@@ -1185,6 +1185,13 @@ func canMatchDeclarations(src, dst *treesitter.ASTNode, m *Mapping, r *rules.Rul
 		return true
 	}
 
+	// Bare identifiers need word overlap so rewritten calls don't pair unrelated names.
+	isID := (r != nil && (r.IsIdentifier(src.Type) || r.IsIdentifier(dst.Type))) ||
+		(r == nil && (rules.IsIdentifier(src.Type) || rules.IsIdentifier(dst.Type)))
+	if isID {
+		return identifierWordOverlap(splitIdentifierWords(name1), splitIdentifierWords(name2)) > 0
+	}
+
 	return name1 == "" && name2 == ""
 }
 
