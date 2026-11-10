@@ -93,7 +93,7 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 	})
 
 	// Tier 1: Unchanged lines (declarations, comments, and identical text).
-	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched, stmtIdx)
+	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched, stmtIdx, inPlaceStatements)
 
 	// Tier 2: Stationary AST statements with surviving structural content.
 	tier2 := collectStationaryStatementAnchors(srcLines, dstLines, stationaryStatements, tier1)
@@ -366,12 +366,14 @@ func collectMappedStatements(srcLines, dstLines []string, ms *engine.Mapping, al
 		if r != nil {
 			isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
 				r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
-				r.IsWrapper(n1.Type) || r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+				(r.IsWrapper(n1.Type) && !r.IsStatement(n1.Type) && !r.IsDeclaration(n1.Type)) ||
+				r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
 				r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
 		} else {
 			isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
 				rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
-				rules.IsWrapper(n1.Type) || rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+				(rules.IsWrapper(n1.Type) && !rules.IsStatement(n1.Type) && !rules.IsDeclaration(n1.Type)) ||
+				rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
 				rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
 		}
 		if isIgnored {
@@ -483,6 +485,7 @@ func collectUnchangedAnchors(
 	stationaryStatements map[int]int,
 	matched map[int]int,
 	stmtIdx *stationaryIndex,
+	inPlaceStatements map[int]int,
 ) []anchor {
 	primary := collectDeclarationAndCommentAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings)
 	cands := make([]anchor, 0, len(primary)+len(stationaryStatements))
@@ -511,6 +514,12 @@ func collectUnchangedAnchors(
 		// If already handled as a stationary statement, skip to avoid duplicate or conflicting candidates.
 		if _, isStationary := stationaryStatements[s]; isStationary {
 			continue
+		}
+		// Stationary in-place moves belong to Tier 3, not Tier 1.
+		if inPlaceStatements != nil {
+			if _, isInPlace := inPlaceStatements[s]; isInPlace {
+				continue
+			}
 		}
 		sTrim := strings.TrimSpace(srcLines[s])
 		dTrim := strings.TrimSpace(dstLines[d])

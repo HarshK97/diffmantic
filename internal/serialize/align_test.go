@@ -1,6 +1,7 @@
 package serialize
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestAlignLines(t *testing.T) {
@@ -1125,6 +1127,150 @@ func TestFilterMonotonicPatienceLIS(t *testing.T) {
 		res := filterMonotonic(input)
 		if len(res) != 1 {
 			t.Fatalf("expected len 1, got %d (%v)", len(res), res)
+		}
+	})
+}
+
+func TestLineAlignment_StationaryDeclarationOverMovePriority(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `package streamdiff
+
+import (
+	"bytes"
+	"context"
+)
+
+func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
+	if err := ctx.Err(); err != nil {
+		job.err = err
+		return
+	}
+
+	var buf bytes.Buffer
+	if bytes.Equal(job.srcBytes, job.dstBytes) && cfg.Format != "json" {
+		job.out = buf.Bytes()
+		return
+	}
+
+	dr, err := pipeline.Run(job.srcBytes, job.dstBytes, job.hunk.oldPath, job.hunk.newPath, cfg.DiffOpts)
+	if err != nil || dr == nil {
+		_ = dumpLines(&buf, job.hunk.lines)
+		job.out = buf.Bytes()
+		return
+	}
+}
+`
+		newSrc := `package streamdiff
+
+import (
+	"bytes"
+	"context"
+)
+
+func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
+	if err := ctx.Err(); err != nil {
+		job.err = err
+		return
+	}
+
+	if bytes.Equal(job.srcBytes, job.dstBytes) && cfg.Format != "json" {
+		return
+	}
+
+	var buf bytes.Buffer
+
+	dr, err := pipeline.Run(job.srcBytes, job.dstBytes, job.hunk.oldPath, job.hunk.newPath, cfg.DiffOpts)
+	if err != nil || dr == nil {
+		_ = dumpLines(&buf, job.hunk.lines)
+		job.out = buf.Bytes()
+		return
+	}
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "stream_old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "stream_new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("oldSrc has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("newSrc has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, srcAST, dstAST)
+
+		// 1. Whole-Snippet Verification: Assert enclosing context maps in place
+		r := rules.Get("go")
+		var funcMapped bool
+		for _, p := range mr.Mappings.Pairs {
+			if p.Src != nil && p.Dst != nil && r.IsDeclaration(p.Src.Type) && p.Src.Type == p.Dst.Type {
+				funcMapped = true
+				break
+			}
+		}
+		if !funcMapped {
+			t.Fatalf("expected enclosing function declaration to map in place")
+		}
+
+		// 2. Alignment Verification
+		grid := AlignLines(srcBytes, dstBytes, mr.Mappings, es)
+
+		srcLines := strings.Split(oldSrc, "\n")
+		dstLines := strings.Split(newSrc, "\n")
+
+		oldVarLine, newVarLine := -1, -1
+		for i, l := range srcLines {
+			if strings.TrimSpace(l) == "var buf bytes.Buffer" {
+				oldVarLine = i
+				break
+			}
+		}
+		for j, l := range dstLines {
+			if strings.TrimSpace(l) == "var buf bytes.Buffer" {
+				newVarLine = j
+				break
+			}
+		}
+
+		if oldVarLine < 0 || newVarLine < 0 {
+			t.Fatalf("could not find 'var buf bytes.Buffer' in test snippets (old:%d, new:%d)", oldVarLine, newVarLine)
+		}
+
+		// Verify alignment: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor.
+		var foundVarBufPair bool
+		for _, p := range grid {
+			if p.LeftLine == oldVarLine && p.RightLine == newVarLine {
+				foundVarBufPair = true
+				break
+			}
+		}
+
+		if !foundVarBufPair {
+			var alignDump strings.Builder
+			for _, p := range grid {
+				var lText, rText string
+				if p.LeftLine >= 0 && p.LeftLine < len(srcLines) {
+					lText = srcLines[p.LeftLine]
+				}
+				if p.RightLine >= 0 && p.RightLine < len(dstLines) {
+					rText = dstLines[p.RightLine]
+				}
+				fmt.Fprintf(&alignDump, "L:%2d %-35s | R:%2d %-35s\n", p.LeftLine+1, lText, p.RightLine+1, rText)
+			}
+			t.Fatalf("expected var buf bytes.Buffer (old L:%d, new R:%d) to be aligned, but it was displaced by an in-place move:\n%s",
+				oldVarLine+1, newVarLine+1, alignDump.String())
 		}
 	})
 }
