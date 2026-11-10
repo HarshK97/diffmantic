@@ -379,6 +379,15 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 		}
 	}
 
+	// Empty delimited containers should only pair with other empty ones.
+	// Otherwise sibling LCS can match an unrelated empty frame (like `()`
+	// in `"".into()`) with a rewritten payload, stealing its highlights.
+	if (r != nil && r.IsDelimitedContainer(u1.Type)) || (r == nil && rules.IsDelimitedContainer(u1.Type)) {
+		if (len(u1.Children) == 0) != (len(u2.Children) == 0) {
+			return false, 0.0
+		}
+	}
+
 	leafSim := substantiveLeafSimilarity(u1, u2, r)
 	compositeScore := 0.50*score + 0.50*leafSim
 	if compositeScore < minThreshold {
@@ -681,6 +690,13 @@ func uniqueTypePairs(
 							continue
 						}
 					}
+				}
+			}
+			// Only pair empty delimited containers with other empty ones;
+			// otherwise the check below lets one-sided empties slip through.
+			if (r != nil && r.IsDelimitedContainer(n1.Type)) || (r == nil && rules.IsDelimitedContainer(n1.Type)) {
+				if (len(n1.Children) == 0) != (len(n2.Children) == 0) {
+					continue
 				}
 			}
 			if len(n1.Children) > 0 && len(n2.Children) > 0 {
