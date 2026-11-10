@@ -3636,3 +3636,156 @@ func processItems(
 		}
 	})
 }
+
+// TestCanPairDelimitedSiblings_EmptyDelimitedContainerGuard ensures empty
+// delimited containers only match other empty containers.
+// Without this check, the empty `()` of `"".into()` inside a Rust macro can steal
+// the delimiter frame from `Some("nm")` instead of letting the rewritten payload
+// `Some(Placeholder::NumberMinus)` pair with it.
+func TestCanPairDelimitedSiblings_EmptyDelimitedContainerGuard(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `struct D;
+
+fn t() {
+    assert_eq!(
+        parse_line_number_format("{nm}"),
+        vec![LinePlaceholderData {
+            prefix: "",
+            placeholder: Some("nm"),
+            suffix: "",
+        }]
+    )
+}
+`
+		newSrc := `struct D;
+
+fn t() {
+    assert_eq!(
+        parse_line_number_format_with_default_regex("{nm}"),
+        vec![FormatStringPlaceholderData {
+            prefix: "".into(),
+            placeholder: Some(Placeholder::NumberMinus),
+            suffix: "".into(),
+        }]
+    )
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// Locate target nodes:
+		//   srcArgs: ("nm") token_tree inside the brace body
+		//   dstArgs: (Placeholder::NumberMinus) token_tree inside the brace body
+		//   srcFmtArgs / dstFmtArgs: ("{nm}") payload container in the format call
+		//   dstEmpty: the empty () token_tree nodes from `"".into()`
+		var srcArgs, srcFmtArgs *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if !r.IsDelimitedContainer(n.Type) {
+				continue
+			}
+			if len(n.Children) == 1 && n.Children[0].Label == `"nm"` {
+				srcArgs = n
+			}
+			if len(n.Children) == 1 && n.Children[0].Label == `"{nm}"` {
+				srcFmtArgs = n
+			}
+		}
+
+		var dstArgs, dstFmtArgs *treesitter.ASTNode
+		dstEmptyByRow := make(map[uint32]*treesitter.ASTNode)
+		for _, n := range dstAST.Descendants() {
+			if !r.IsDelimitedContainer(n.Type) {
+				continue
+			}
+			if len(n.Children) == 2 && n.Children[0].Label == "Placeholder" {
+				dstArgs = n
+			}
+			if len(n.Children) == 1 && n.Children[0].Label == `"{nm}"` {
+				dstFmtArgs = n
+			}
+			if len(n.Children) == 0 {
+				dstEmptyByRow[n.StartRow] = n
+			}
+		}
+		dstEmptyPrefix := dstEmptyByRow[6]
+		dstEmptySuffix := dstEmptyByRow[8]
+		if srcArgs == nil || dstArgs == nil || srcFmtArgs == nil || dstFmtArgs == nil || dstEmptyPrefix == nil || dstEmptySuffix == nil {
+			t.Fatalf("failed to locate token_tree nodes: srcArgs=%v dstArgs=%v srcFmtArgs=%v dstFmtArgs=%v dstEmptyPrefix=%v dstEmptySuffix=%v",
+				srcArgs, dstArgs, srcFmtArgs, dstFmtArgs, dstEmptyPrefix, dstEmptySuffix)
+		}
+		srcBrace := srcArgs.Parent
+		dstBrace := dstArgs.Parent
+		if srcBrace == nil || dstBrace == nil || srcBrace.Type != dstBrace.Type {
+			t.Fatalf("failed to locate brace bodies: srcBrace=%v dstBrace=%v", srcBrace, dstBrace)
+		}
+
+		// 1. Enclosing context: brace bodies of vec![Struct { ... }] map in place.
+		if mapped[srcBrace] != dstBrace {
+			t.Errorf("expected brace field body to map in place, got %v", mapped[srcBrace])
+		}
+
+		// 2. Surrounding sequence: format payload container and unchanged field names
+		// map in place without order disruption.
+		if mapped[srcFmtArgs] != dstFmtArgs {
+			t.Errorf(`expected the ("{nm}") payload container to map in place, got %v`, mapped[srcFmtArgs])
+		}
+		for _, want := range []string{"prefix", "placeholder", "suffix", "Some"} {
+			var srcN, dstN *treesitter.ASTNode
+			for _, n := range srcBrace.Children {
+				if n.Label == want {
+					srcN = n
+				}
+			}
+			for _, n := range dstBrace.Children {
+				if n.Label == want {
+					dstN = n
+				}
+			}
+			if srcN == nil || dstN == nil || mapped[srcN] != dstN {
+				t.Errorf("expected %s to map in place, got src=%v dst=%v mapped=%v", want, srcN, dstN, mapped[srcN])
+			}
+		}
+
+		// 3. Target & containers: neither empty `.into()` frame can steal ("nm");
+		// the rewritten payload container pairs instead.
+		if got := mapped[srcArgs]; got == dstEmptyPrefix || got == dstEmptySuffix {
+			t.Errorf("empty `.into()` token_tree stole the (\"nm\") delimiter frame: srcArgs mapped to %v", got)
+		}
+		if mapped[srcArgs] != dstArgs {
+			t.Errorf(`expected srcArgs ("nm") to pair with the rewritten payload container, got %v`, mapped[srcArgs])
+		}
+		if got := mr.Mappings.Dst()[dstEmptyPrefix]; got != nil {
+			t.Errorf("expected prefix into() empty token_tree to remain unmapped, got %v", got)
+		}
+		if got := mr.Mappings.Dst()[dstEmptySuffix]; got != nil {
+			t.Errorf("expected suffix into() empty token_tree to remain unmapped, got %v", got)
+		}
+	})
+}
