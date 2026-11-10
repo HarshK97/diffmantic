@@ -721,9 +721,9 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		bestCount := 0
 		isWrapper := (r != nil && r.IsWrapper(t1.Type)) || (r == nil && rules.IsWrapper(t1.Type))
 		children := t1.Children
-		// When a branch or arm body gets wrapped in braces, look inside the block so inner expressions still vote for t1.
+		// When a branch or arm body gets wrapped in braces or wrappers, look inside so inner expressions still vote for t1.
 		for _, c := range t1.Children {
-			if !m.Has(c) && isBlockNode(c, r) {
+			if !m.Has(c) && (isBlockNode(c, r) || ((r != nil && r.IsWrapper(c.Type)) || (r == nil && rules.IsWrapper(c.Type)))) {
 				children = append(slices.Clone(children), c.Children...)
 				break
 			}
@@ -740,9 +740,12 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 			targetParent := c2.Parent
 			if !TypesMatch(t1.Type, targetParent.Type, r) {
-				if targetParent.Parent != nil &&
-					isBlockNode(targetParent, r) &&
-					TypesMatch(t1.Type, targetParent.Parent.Type, r) {
+				for targetParent.Parent != nil &&
+					(isBlockNode(targetParent, r) || ((r != nil && r.IsWrapper(targetParent.Type)) || (r == nil && rules.IsWrapper(targetParent.Type)))) {
+					if TypesMatch(t1.Type, targetParent.Parent.Type, r) {
+						targetParent = targetParent.Parent
+						break
+					}
 					targetParent = targetParent.Parent
 				}
 			}

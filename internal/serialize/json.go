@@ -1305,12 +1305,38 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {
-					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
-						return true, lastChild.EndByte, origEnd
+					if !isIndentationConstruct(n, nil) {
+						if isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
+							return true, lastChild.EndByte, origEnd
+						}
+						if isStatementTerminator(fileBytes, lastChild.EndByte, origEnd) {
+							termStart := lastChild.EndByte
+							for termStart < origEnd && (fileBytes[termStart] == ' ' || fileBytes[termStart] == '\t' || fileBytes[termStart] == '\r' || fileBytes[termStart] == '\n') {
+								termStart++
+							}
+							return true, termStart, origEnd
+						}
 					}
 				}
 				return false, 0, 0
 			}
+		}
+
+		if r != nil && r.IsExpressionStatement(n.Type) && len(n.Children) > 0 {
+			origEnd := *end
+			*end = *start
+			if trivia := n.SyntaxTrivia(); trivia != nil && trivia.TrailingEnd > trivia.TrailingStart && trivia.TrailingEnd <= origEnd {
+				return true, trivia.TrailingStart, trivia.TrailingEnd
+			}
+			lastChild := n.Children[len(n.Children)-1]
+			if lastChild.EndByte < origEnd && isStatementTerminator(fileBytes, lastChild.EndByte, origEnd) {
+				termStart := lastChild.EndByte
+				for termStart < origEnd && (fileBytes[termStart] == ' ' || fileBytes[termStart] == '\t' || fileBytes[termStart] == '\r' || fileBytes[termStart] == '\n') {
+					termStart++
+				}
+				return true, termStart, origEnd
+			}
+			return false, 0, 0
 		}
 	}
 	return false, 0, 0
@@ -1396,6 +1422,14 @@ func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
 	tok := bytes.Trim(trimmed, ",; \t\r\n")
 	return bytes.Equal(tok, []byte("}")) || bytes.Equal(tok, []byte("]")) ||
 		bytes.Equal(tok, []byte(")")) || bytes.Equal(tok, []byte("end"))
+}
+
+func isStatementTerminator(fileBytes []byte, start, end uint32) bool {
+	if fileBytes == nil || start >= end || end > uint32(len(fileBytes)) {
+		return false
+	}
+	trimmed := bytes.TrimSpace(fileBytes[start:end])
+	return bytes.Equal(trimmed, []byte(";")) || bytes.Equal(trimmed, []byte(","))
 }
 
 // collectMappedTrailingDelimiters compares syntax trivia trailing separators across

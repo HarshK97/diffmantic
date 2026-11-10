@@ -2739,10 +2739,10 @@ func TestBuildHighlightSpans_MultilineStatementInsertCarveout_FullEngine(t *test
 		}
 
 		// 3. Highlight span check on line containing the string literal:
-		// Destination line 7 (0-indexed: line 7): `        "{osc_command}{safe_title}{osc_end}"`
+		// Destination line 6 (0-indexed: line 6): `        "{osc_command}{safe_title}{osc_end}"`
 		// It MUST NOT have an "insert" highlight covering the stationary string literal!
 		for _, h := range env.RightHighlights {
-			if h.Line == 7 && h.Action == "insert" {
+			if h.Line == 6 && h.Action == "insert" {
 				t.Errorf("found spurious insert highlight covering stationary string literal on line %d: %+v", h.Line, h)
 			}
 		}
@@ -2879,4 +2879,3 @@ func bar() {
 		}
 	})
 }
-
