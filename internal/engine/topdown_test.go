@@ -3167,3 +3167,178 @@ func configureApp() {
 		}
 	})
 }
+
+func TestTopDown_LinePartitionAmbiguityFilter(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rust rules not found")
+		}
+
+		oldSrc := []byte(`#[test]
+fn test_unchanged() {
+    let alpha = 1;
+    assert_eq!(alpha, 1);
+}
+
+#[test]
+fn test_modified() {
+    let beta = 2;
+    assert_eq!(beta, 2);
+}
+`)
+
+		newSrc := []byte(`#[test]
+fn test_inserted() {
+    let gamma = 3;
+    assert_eq!(gamma, 3);
+}
+
+#[test]
+fn test_unchanged() {
+    let alpha = 1;
+    assert_eq!(alpha, 1);
+}
+
+#[test]
+fn test_modified() {
+    let beta = 2;
+    let extra = 99;
+    assert_eq!(beta, 2);
+    assert_eq!(extra, 99);
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.rs")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.rs")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+
+		// 1. Direct TopDown mapping inspection:
+		// Untouched #[test] attribute must map directly without false ambiguity delay.
+		tdMappings := NewMapping()
+		TopDown(srcAST, dstAST, 2, tdMappings, part)
+
+		var (
+			srcUnchangedAttr, dstUnchangedAttr *treesitter.ASTNode
+			srcModifiedAttr, dstModifiedAttr   *treesitter.ASTNode
+			dstInsertedAttr                    *treesitter.ASTNode
+
+			srcUnchangedFn, dstUnchangedFn *treesitter.ASTNode
+			srcModifiedFn, dstModifiedFn   *treesitter.ASTNode
+			dstInsertedFn                  *treesitter.ASTNode
+		)
+
+		for _, n := range srcAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				switch n.StartRow {
+				case 0:
+					srcUnchangedAttr = n
+				case 6:
+					srcModifiedAttr = n
+				}
+			}
+			if r.IsDeclaration(n.Type) {
+				name := getDeclarationName(n)
+				switch name {
+				case "test_unchanged":
+					srcUnchangedFn = n
+				case "test_modified":
+					srcModifiedFn = n
+				}
+			}
+		}
+
+		for _, n := range dstAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				switch n.StartRow {
+				case 0:
+					dstInsertedAttr = n
+				case 6:
+					dstUnchangedAttr = n
+				case 12:
+					dstModifiedAttr = n
+				}
+			}
+			if r.IsDeclaration(n.Type) {
+				name := getDeclarationName(n)
+				switch name {
+				case "test_inserted":
+					dstInsertedFn = n
+				case "test_unchanged":
+					dstUnchangedFn = n
+				case "test_modified":
+					dstModifiedFn = n
+				}
+			}
+		}
+
+		if srcUnchangedAttr == nil || dstUnchangedAttr == nil {
+			t.Fatalf("failed to locate test_unchanged attribute: src=%v dst=%v", srcUnchangedAttr, dstUnchangedAttr)
+		}
+		if srcModifiedAttr == nil || dstModifiedAttr == nil {
+			t.Fatalf("failed to locate test_modified attribute: src=%v dst=%v", srcModifiedAttr, dstModifiedAttr)
+		}
+		if dstInsertedAttr == nil || dstInsertedFn == nil {
+			t.Fatalf("failed to locate inserted test_inserted construct: attr=%v fn=%v", dstInsertedAttr, dstInsertedFn)
+		}
+
+		// 2. Direct TopDown assertion: unchanged attribute must map directly to dstUnchangedAttr
+		if tdPartner := tdMappings.Src()[srcUnchangedAttr]; tdPartner != dstUnchangedAttr {
+			t.Errorf("TopDown: expected srcUnchangedAttr to map to dstUnchangedAttr, got %v", tdPartner)
+		}
+
+		// 3. FullEngine Match verification
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// Enclosing declarations map in place
+		if mr.Mappings.Src()[srcUnchangedFn] != dstUnchangedFn {
+			t.Errorf("test_unchanged function must map in place, got %v", mr.Mappings.Src()[srcUnchangedFn])
+		}
+		if mr.Mappings.Src()[srcModifiedFn] != dstModifiedFn {
+			t.Errorf("test_modified function must map in place, got %v", mr.Mappings.Src()[srcModifiedFn])
+		}
+
+		// Target attribute items map in place
+		if mr.Mappings.Src()[srcUnchangedAttr] != dstUnchangedAttr {
+			t.Errorf("test_unchanged attribute must map in place, got %v", mr.Mappings.Src()[srcUnchangedAttr])
+		}
+
+		// Inserted declaration and attribute must remain unmapped in dst
+		if mr.Mappings.Dst()[dstInsertedFn] != nil {
+			t.Errorf("inserted function test_inserted must be unmapped in dst, got %v", mr.Mappings.Dst()[dstInsertedFn])
+		}
+		if mr.Mappings.Dst()[dstInsertedAttr] != nil {
+			t.Errorf("inserted attribute must be unmapped in dst, got %v", mr.Mappings.Dst()[dstInsertedAttr])
+		}
+
+		// Stationary body statements inside test_unchanged map in place
+		for _, s := range srcUnchangedFn.Descendants() {
+			if r.IsStatement(s.Type) {
+				partner := mr.Mappings.Src()[s]
+				if partner == nil {
+					t.Errorf("unchanged statement %s (row %d) must map in place, got nil", s.Type, s.StartRow)
+				} else if !dstUnchangedFn.Contains(partner) {
+					t.Errorf("unchanged statement %s mapped outside enclosing dst function: %v", s.Type, partner)
+				}
+			}
+		}
+	})
+}
