@@ -1044,6 +1044,9 @@ func hasEnclosingConstructWithMappedDescendant(t1, c *treesitter.ASTNode, m *Map
 	isDecl := func(t string) bool {
 		return (r != nil && r.IsDeclaration(t)) || (r == nil && rules.IsDeclaration(t))
 	}
+	isWrapper := func(t string) bool {
+		return (r != nil && r.IsWrapper(t)) || (r == nil && rules.IsWrapper(t))
+	}
 
 	areConstructsCompatible := func(outer, target *treesitter.ASTNode) bool {
 		if !TypesMatch(outer.Type, target.Type, r) {
@@ -1068,7 +1071,7 @@ func hasEnclosingConstructWithMappedDescendant(t1, c *treesitter.ASTNode, m *Map
 			n2 := getDeclarationName(target)
 			return n1 != "" && n2 != "" && n1 == n2
 		}
-		return isBlock(outer.Type)
+		return isBlock(outer.Type) || isWrapper(outer.Type)
 	}
 
 	inSubtree := func(root, n *treesitter.ASTNode) bool {
