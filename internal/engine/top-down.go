@@ -110,14 +110,14 @@ func TopDown(
 						ambiguous := false
 
 						for _, ta := range candidates {
-							if ta != t2 && Isomorphic(t1, ta) {
+							if ta != t2 && (part == nil || part.CanMatch(t1, ta)) && Isomorphic(t1, ta) {
 								ambiguous = true
 								break
 							}
 						}
 						if !ambiguous {
 							for _, ta := range H1 {
-								if ta != t1 && Isomorphic(ta, t2) {
+								if ta != t1 && (part == nil || part.CanMatch(ta, t2)) && Isomorphic(ta, t2) {
 									ambiguous = true
 									break
 								}
@@ -142,6 +142,36 @@ func TopDown(
 	}
 
 	scored := make([]scoredPair, 0, len(A))
+	type nodePair struct{ n1, n2 *treesitter.ASTNode }
+	diceCache := make(map[nodePair]float64)
+	leafSimCache := make(map[nodePair]float64)
+
+	getDice := func(n1, n2 *treesitter.ASTNode) float64 {
+		if n1 == nil || n2 == nil {
+			return 0
+		}
+		p := nodePair{n1, n2}
+		if v, ok := diceCache[p]; ok {
+			return v
+		}
+		v := Dice(n1, n2, m.Src())
+		diceCache[p] = v
+		return v
+	}
+
+	getLeafSim := func(n1, n2 *treesitter.ASTNode) float64 {
+		if n1 == nil || n2 == nil {
+			return 0
+		}
+		p := nodePair{n1, n2}
+		if v, ok := leafSimCache[p]; ok {
+			return v
+		}
+		v := LeafSimilarity(n1, n2)
+		leafSimCache[p] = v
+		return v
+	}
+
 	for _, pair := range A {
 		t1, t2 := pair[0], pair[1]
 
@@ -151,7 +181,7 @@ func TopDown(
 		nameMatched := name1 != "" && name2 != "" && name1 == name2
 		mismatched := name1 != "" && name2 != "" && name1 != name2
 
-		di := Dice(t1.Parent, t2.Parent, m.Src())
+		di := getDice(t1.Parent, t2.Parent)
 		isFallback := false
 		r1 := rulesFor(t1)
 		r2 := rulesFor(t2)
@@ -159,7 +189,7 @@ func TopDown(
 		c2 := getEnclosingConstruct(t2, r2)
 		if di == 0 && nameMatched {
 			if c1 != nil && c2 != nil && (c1 != t1.Parent || c2 != t2.Parent) {
-				if f := Dice(c1, c2, m.Src()) * 0.5; f > 0 {
+				if f := getDice(c1, c2) * 0.5; f > 0 {
 					di = f
 					isFallback = true
 				}
@@ -168,16 +198,16 @@ func TopDown(
 
 		s1 := FindImmediateStatement(t1, r1)
 		s2 := FindImmediateStatement(t2, r2)
-		stmtSim := LeafSimilarity(s1, s2)
+		stmtSim := getLeafSim(s1, s2)
 		constructSim := stmtSim
 		if s1 != c1 || s2 != c2 {
-			constructSim = LeafSimilarity(c1, c2)
+			constructSim = getLeafSim(c1, c2)
 		}
 		stmtAffinity := 0.5*stmtSim + 0.5*constructSim
 
 		si := AncestorNameSimilarity(t1, t2)
 		li := parentLineageSimilarity(t1, t2)
-		pls := LeafSimilarity(t1.Parent, t2.Parent)
+		pls := getLeafSim(t1.Parent, t2.Parent)
 		drift := m.AdjustedLineDistance(t1, t2)
 
 		anchor1 := resolveDriftAnchor(t1, c1)
@@ -191,7 +221,7 @@ func TopDown(
 
 		if nameMatched && anchor1 != nil && anchor2 != nil {
 			isCompatible := anchor1.Type == anchor2.Type &&
-				(LeafSimilarity(anchor1, anchor2) >= 0.30 || Dice(anchor1, anchor2, m.Src()) >= 0.30)
+				(getLeafSim(anchor1, anchor2) >= 0.30 || getDice(anchor1, anchor2) >= 0.30)
 
 			if !isCompatible {
 				d1 := GetEnclosingDeclaration(t1)
