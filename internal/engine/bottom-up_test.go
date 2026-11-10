@@ -2756,3 +2756,212 @@ func TestBlockWrappedCaseClauseMatching(t *testing.T) {
 		}
 	})
 }
+
+func TestWrapperEnclosingConstructTheft(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`mod tests {
+    use regex::Captures;
+    use crate::ansi::strip_ansi_codes;
+    use crate::tests::integration_test_utils::integration_test_utils::{
+        make_config_from_args, run_delta,
+    };
+    use super::*;
+
+    fn test_helper() -> bool {
+        let _ = make_config_from_args();
+        let _ = run_delta();
+        true
+    }
+}
+`)
+		newSrc := []byte(`mod tests {
+    use regex::Captures;
+    use crate::ansi::strip_ansi_codes;
+    use crate::features::side_by_side::ansifill::ODD_PAD_CHAR;
+    use crate::format::FormatStringData;
+    use crate::tests::integration_test_utils::{make_config_from_args, run_delta};
+    use super::*;
+
+    fn test_helper() -> bool {
+        let _ = make_config_from_args();
+        let _ = run_delta();
+        true
+    }
+}
+`)
+
+		oldTree, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse old tree: %v", err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse new tree: %v", err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(oldTree, newTree)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil result")
+		}
+
+		r := rulesFor(oldTree)
+		m := mr.Mappings
+
+		// 1. Enclosing Context: Both mod tests and fn test_helper must map in place
+		var oldMod, newMod, oldFn, newFn *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "tests":
+					oldMod = n
+				case "test_helper":
+					oldFn = n
+				}
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "tests":
+					newMod = n
+				case "test_helper":
+					newFn = n
+				}
+			}
+		}
+		if oldMod == nil || newMod == nil || m.Src()[oldMod] != newMod {
+			t.Fatalf("expected mod tests to map in place, got %v", m.Src()[oldMod])
+		}
+		if oldFn == nil || newFn == nil || m.Src()[oldFn] != newFn {
+			t.Fatalf("expected fn test_helper to map in place, got %v", m.Src()[oldFn])
+		}
+
+		// 2. Surrounding Sequence: Preceding and succeeding use declarations and statements must map in place
+		var oldRegex, newRegex, oldStrip, newStrip, oldSuper, newSuper *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				txt := oldSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("regex")):
+					oldRegex = n
+				case bytes.Contains(txt, []byte("strip_ansi_codes")):
+					oldStrip = n
+				case bytes.Contains(txt, []byte("super")):
+					oldSuper = n
+				}
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				txt := newSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("regex")):
+					newRegex = n
+				case bytes.Contains(txt, []byte("strip_ansi_codes")):
+					newStrip = n
+				case bytes.Contains(txt, []byte("super")):
+					newSuper = n
+				}
+			}
+		}
+		if oldRegex == nil || newRegex == nil || m.Src()[oldRegex] != newRegex {
+			t.Fatalf("expected regex use_declaration to map in place, got %v", m.Src()[oldRegex])
+		}
+		if oldStrip == nil || newStrip == nil || m.Src()[oldStrip] != newStrip {
+			t.Fatalf("expected strip_ansi_codes use_declaration to map in place, got %v", m.Src()[oldStrip])
+		}
+		if oldSuper == nil || newSuper == nil || m.Src()[oldSuper] != newSuper {
+			t.Fatalf("expected super use_declaration to map in place, got %v", m.Src()[oldSuper])
+		}
+
+		// Verify statements inside fn test_helper map in place
+		for _, name := range []string{"make_config_from_args", "run_delta"} {
+			var sCall, dCall *treesitter.ASTNode
+			for _, n := range oldFn.Descendants() {
+				if r.IsCall(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte(name)) {
+					sCall = n
+					break
+				}
+			}
+			for _, n := range newFn.Descendants() {
+				if r.IsCall(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte(name)) {
+					dCall = n
+					break
+				}
+			}
+			if sCall == nil || dCall == nil {
+				t.Fatalf("failed to locate call %s in test_helper: sCall=%v, dCall=%v", name, sCall, dCall)
+			}
+			if m.Src()[sCall] != dCall {
+				t.Errorf("expected call %s in test_helper to map in place, got %v", name, m.Src()[sCall])
+			}
+		}
+
+		// 3. Target Construct: Target use_declaration and scoped_use_list must map in place
+		var oldTargetUse, newTargetUse *treesitter.ASTNode
+		for _, n := range oldTree.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("integration_test_utils")) {
+				oldTargetUse = n
+				break
+			}
+		}
+		for _, n := range newTree.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("integration_test_utils")) {
+				newTargetUse = n
+				break
+			}
+		}
+		if oldTargetUse == nil || newTargetUse == nil {
+			t.Fatalf("failed to locate target use_declaration: old=%v, new=%v", oldTargetUse, newTargetUse)
+		}
+		if m.Src()[oldTargetUse] != newTargetUse {
+			t.Errorf("expected target use_declaration to map in place, got %v", m.Src()[oldTargetUse])
+		}
+
+		// Verify outer scoped_use_list maps in place
+		var oldScopedUseList, newScopedUseList *treesitter.ASTNode
+		for _, n := range oldTargetUse.Descendants() {
+			if r.IsWrapper(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("integration_test_utils")) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("make_config_from_args")) {
+				oldScopedUseList = n
+				break
+			}
+		}
+		for _, n := range newTargetUse.Descendants() {
+			if r.IsWrapper(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("integration_test_utils")) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("make_config_from_args")) {
+				newScopedUseList = n
+				break
+			}
+		}
+		if oldScopedUseList == nil || newScopedUseList == nil {
+			t.Fatalf("failed to locate scoped_use_list: old=%v, new=%v", oldScopedUseList, newScopedUseList)
+		}
+		if m.Src()[oldScopedUseList] != newScopedUseList {
+			t.Errorf("expected scoped_use_list to map in place, got %v", m.Src()[oldScopedUseList])
+		}
+
+		// 4. Stationary Operands: Identifiers in use_list map in place
+		for _, id := range []string{"make_config_from_args", "run_delta"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range oldScopedUseList.Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == id {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range newScopedUseList.Descendants() {
+				if r.IsIdentifier(n.Type) && n.Label == id {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil {
+				t.Fatalf("failed to locate identifier %s in use_list: sNode=%v, dNode=%v", id, sNode, dNode)
+			}
+			if m.Src()[sNode] != dNode {
+				t.Errorf("expected stationary identifier %s in use_list to map in place, got %v", id, m.Src()[sNode])
+			}
+		}
+	})
+}
