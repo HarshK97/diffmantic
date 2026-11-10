@@ -201,6 +201,7 @@ var rustRules = &Rules{
 		"tuple_pattern",
 		"tuple_struct_pattern",
 		"lifetime_parameter",
+		"try_expression",
 	},
 	Pairs: []string{
 		"field_initializer",

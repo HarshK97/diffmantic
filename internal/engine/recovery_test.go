@@ -5092,3 +5092,410 @@ func setWidths() {
 		}
 	})
 }
+
+func TestRustSandwichedStatementTryWrapperRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn write_assets(target_dir: &Path, current_version: &str) -> Result<()> {
+    let _ = std::fs::create_dir_all(target_dir);
+    print!("Writing metadata to folder {} ... ", target_dir.to_string_lossy());
+    crate::assets_metadata::AssetsMetadata::new(current_version).save_to_folder(target_dir)?;
+    println!("okay");
+    Ok(())
+}
+`
+		newSrc := `fn write_assets(target_dir: &Path, current_version: &str) -> Result<()> {
+    let _ = std::fs::create_dir_all(target_dir);
+    write!(io::stdout(), "Writing metadata to folder {} ... ", target_dir.to_string_lossy())?;
+    crate::assets_metadata::AssetsMetadata::new(current_version).save_to_folder(target_dir)?;
+    writeln!(io::stdout(), "okay")?;
+    Ok(())
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: enclosing function, its parameters, and body block map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "write_assets") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "write_assets") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected write_assets fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: anchor statements map in place.
+		var srcCreateDir, dstCreateDir *treesitter.ASTNode
+		var srcSave, dstSave *treesitter.ASTNode
+		var srcOk, dstOk *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "create_dir_all") {
+					srcCreateDir = n
+				} else if strings.Contains(text, "save_to_folder") {
+					srcSave = n
+				}
+			} else if r.IsCall(n.Type) && strings.Contains(text, "Ok(())") {
+				srcOk = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "create_dir_all") {
+					dstCreateDir = n
+				} else if strings.Contains(text, "save_to_folder") {
+					dstSave = n
+				}
+			} else if r.IsCall(n.Type) && strings.Contains(text, "Ok(())") {
+				dstOk = n
+			}
+		}
+
+		if srcCreateDir == nil || dstCreateDir == nil || mapped[srcCreateDir] != dstCreateDir {
+			t.Errorf("expected create_dir_all statement to map in place, got %v", mapped[srcCreateDir])
+		}
+		if srcSave == nil || dstSave == nil || mapped[srcSave] != dstSave {
+			t.Errorf("expected save_to_folder statement to map in place, got %v", mapped[srcSave])
+		}
+		if srcOk == nil || dstOk == nil || mapped[srcOk] != dstOk {
+			t.Errorf("expected Ok(()) statement to map in place, got %v", mapped[srcOk])
+		}
+
+		// 3. Target Sandwiched Statements:
+		// Statement 1: print! -> write!
+		// Statement 2: println! -> writeln!
+		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
+		var srcPrintlnStmt, dstWritelnStmt *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(strings.TrimSpace(text), "print!") {
+					srcPrintStmt = n
+				} else if strings.HasPrefix(strings.TrimSpace(text), "println!") {
+					srcPrintlnStmt = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(strings.TrimSpace(text), "write!") {
+					dstWriteStmt = n
+				} else if strings.HasPrefix(strings.TrimSpace(text), "writeln!") {
+					dstWritelnStmt = n
+				}
+			}
+		}
+
+		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
+			t.Fatalf("expected print! expression_statement to map to write! expression_statement, got %v", mapped[srcPrintStmt])
+		}
+		if srcPrintlnStmt == nil || dstWritelnStmt == nil || mapped[srcPrintlnStmt] != dstWritelnStmt {
+			t.Fatalf("expected println! expression_statement to map to writeln! expression_statement, got %v", mapped[srcPrintlnStmt])
+		}
+
+		// 4. Transparent Wrapper Unwrapping:
+		// The inner macro_invocations must map across the try_expression wrapper.
+		var srcPrintMacro, dstWriteMacro *treesitter.ASTNode
+		var srcPrintlnMacro, dstWritelnMacro *treesitter.ASTNode
+		var dstTry1, dstTry2 *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "print!") {
+					srcPrintMacro = n
+				} else if strings.HasPrefix(text, "println!") {
+					srcPrintlnMacro = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "write!") {
+					dstWriteMacro = n
+				} else if strings.HasPrefix(text, "writeln!") {
+					dstWritelnMacro = n
+				}
+			} else if r.IsWrapper(n.Type) && n.Type == "try_expression" {
+				if dstTry1 == nil {
+					dstTry1 = n
+				} else {
+					dstTry2 = n
+				}
+			}
+		}
+
+		if srcPrintMacro == nil || dstWriteMacro == nil || mapped[srcPrintMacro] != dstWriteMacro {
+			t.Errorf("expected print! macro_invocation to map to write! macro_invocation, got %v", mapped[srcPrintMacro])
+		}
+		if srcPrintlnMacro == nil || dstWritelnMacro == nil || mapped[srcPrintlnMacro] != dstWritelnMacro {
+			t.Errorf("expected println! macro_invocation to map to writeln! macro_invocation, got %v", mapped[srcPrintlnMacro])
+		}
+
+		// Outer try_expressions must remain unmapped so they become inserted wrappers.
+		if dstTry1 != nil && revMapped[dstTry1] != nil {
+			t.Errorf("expected dst try_expression 1 to remain unmapped, got %v", revMapped[dstTry1])
+		}
+		if dstTry2 != nil && revMapped[dstTry2] != nil {
+			t.Errorf("expected dst try_expression 2 to remain unmapped, got %v", revMapped[dstTry2])
+		}
+
+		// 5. Stationary Operands:
+		// String literals "Writing metadata to folder {} ... " and "okay" must map in place.
+		var srcOkayStr, dstOkayStr *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "string_literal" && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "okay") {
+				srcOkayStr = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "string_literal" && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "okay") {
+				dstOkayStr = n
+				break
+			}
+		}
+		if srcOkayStr == nil || dstOkayStr == nil || mapped[srcOkayStr] != dstOkayStr {
+			t.Errorf("expected 'okay' string_literal to map in place, got %v", mapped[srcOkayStr])
+		}
+	})
+}
+
+func TestRustMultiStatementIntervalRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn generate_config_file() -> Result<()> {
+    let config_file = config_file();
+    if config_file.is_file() {
+        println!("A config file already exists at: {}", config_file.to_string_lossy());
+        print!("Overwrite? (y/N): ");
+        io::stdout().flush()?;
+        let mut decision = String::new();
+        io::stdin().read_line(&mut decision)?;
+    }
+    Ok(())
+}
+`
+		newSrc := `fn generate_config_file() -> Result<()> {
+    let config_file = config_file();
+    if config_file.is_file() {
+        writeln!(io::stdout(), "A config file already exists at: {}", config_file.to_string_lossy())?;
+        write!(io::stdout(), "Overwrite? (y/N): ")?;
+        io::stdout().flush()?;
+        let mut decision = String::new();
+        io::stdin().read_line(&mut decision)?;
+    }
+    Ok(())
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: fn generate_config_file maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "generate_config_file") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "generate_config_file") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected generate_config_file to map in place, got %v", mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: if_statement and inner statements map in place.
+		var srcIf, dstIf *treesitter.ASTNode
+		var srcFlush, dstFlush *treesitter.ASTNode
+		var srcDecision, dstDecision *treesitter.ASTNode
+		var srcReadLine, dstReadLine *treesitter.ASTNode
+		var srcOk, dstOk *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.HasPrefix(text, "if ") {
+					srcIf = n
+				} else if strings.Contains(text, "flush") {
+					srcFlush = n
+				} else if strings.Contains(text, "decision =") {
+					srcDecision = n
+				} else if strings.Contains(text, "read_line") {
+					srcReadLine = n
+				}
+			} else if r.IsCall(n.Type) && strings.HasPrefix(text, "Ok(") {
+				srcOk = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.HasPrefix(text, "if ") {
+					dstIf = n
+				} else if strings.Contains(text, "flush") {
+					dstFlush = n
+				} else if strings.Contains(text, "decision =") {
+					dstDecision = n
+				} else if strings.Contains(text, "read_line") {
+					dstReadLine = n
+				}
+			} else if r.IsCall(n.Type) && strings.HasPrefix(text, "Ok(") {
+				dstOk = n
+			}
+		}
+
+		if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
+			t.Fatalf("expected if_statement to map in place, got %v", mapped[srcIf])
+		}
+		if srcFlush == nil || dstFlush == nil || mapped[srcFlush] != dstFlush {
+			t.Fatalf("expected flush() to map in place, got %v", mapped[srcFlush])
+		}
+		if srcDecision == nil || dstDecision == nil || mapped[srcDecision] != dstDecision {
+			t.Fatalf("expected decision let to map in place, got %v", mapped[srcDecision])
+		}
+		if srcReadLine == nil || dstReadLine == nil || mapped[srcReadLine] != dstReadLine {
+			t.Fatalf("expected read_line() to map in place, got %v", mapped[srcReadLine])
+		}
+		if srcOk == nil || dstOk == nil || mapped[srcOk] != dstOk {
+			t.Fatalf("expected Ok(()) to map in place, got %v", mapped[srcOk])
+		}
+
+		// 3. Multi-statement Leading Interval Pairing:
+		// println! and print! statements in the leading interval must map 1:1 to writeln! and write!.
+		var srcPrintlnStmt, dstWritelnStmt *treesitter.ASTNode
+		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "println!") {
+					srcPrintlnStmt = n
+				} else if strings.HasPrefix(text, "print!") {
+					srcPrintStmt = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "writeln!") {
+					dstWritelnStmt = n
+				} else if strings.HasPrefix(text, "write!") {
+					dstWriteStmt = n
+				}
+			}
+		}
+
+		if srcPrintlnStmt == nil || dstWritelnStmt == nil || mapped[srcPrintlnStmt] != dstWritelnStmt {
+			t.Fatalf("expected println! expression_statement to map to writeln! expression_statement, got %v", mapped[srcPrintlnStmt])
+		}
+		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
+			t.Fatalf("expected print! expression_statement to map to write! expression_statement, got %v", mapped[srcPrintStmt])
+		}
+
+		// 4. Stationary Operands: format string literals map in place without disruption.
+		var srcExistsStr, dstExistsStr *treesitter.ASTNode
+		var srcOverwriteStr, dstOverwriteStr *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "string_literal" {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.Contains(text, "already exists") {
+					srcExistsStr = n
+				} else if strings.Contains(text, "Overwrite?") {
+					srcOverwriteStr = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "string_literal" {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.Contains(text, "already exists") {
+					dstExistsStr = n
+				} else if strings.Contains(text, "Overwrite?") {
+					dstOverwriteStr = n
+				}
+			}
+		}
+
+		if srcExistsStr == nil || dstExistsStr == nil || mapped[srcExistsStr] != dstExistsStr {
+			t.Errorf("expected 'already exists' string_literal to map in place, got %v", mapped[srcExistsStr])
+		}
+		if srcOverwriteStr == nil || dstOverwriteStr == nil || mapped[srcOverwriteStr] != dstOverwriteStr {
+			t.Errorf("expected 'Overwrite?' string_literal to map in place, got %v", mapped[srcOverwriteStr])
+		}
+	})
+}

@@ -519,7 +519,8 @@ func effectiveDepthTo(node, anc *treesitter.ASTNode, r *rules.Rules) int {
 }
 
 // isTransparentWrapper reports whether n is a transparent wrapper containing exactly
-// one substantive child (ignoring surrounding punctuation like parentheses or brackets).
+// one substantive child (ignoring surrounding punctuation like parentheses or brackets,
+// and operator literals like `?`).
 // Never treats declarations or blocks as transparent.
 func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
@@ -538,8 +539,9 @@ func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
 	}
 	substantiveCount := 0
 	for _, c := range n.Children {
-		isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
-		if !isPunct {
+		isIgnored := (r != nil && (r.IsPunctuation(c.Type) || r.IsOperatorLiteral(c.Type) || r.IsIgnored(c.Type, c.Label))) ||
+			(r == nil && (rules.IsPunctuation(c.Type) || rules.IsOperatorLiteral(c.Type)))
+		if !isIgnored {
 			substantiveCount++
 			if substantiveCount > 1 {
 				return false
@@ -547,6 +549,36 @@ func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
 		}
 	}
 	return substantiveCount == 1
+}
+
+// unwrapTransparentWrapper unwraps single-child transparent wrappers (e.g. try_expression,
+// parenthesized_expression, expression_list) down to the substantive inner expression.
+func unwrapTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	curr := n
+	for isTransparentWrapper(curr, r) {
+		var substantive *treesitter.ASTNode
+		count := 0
+		for _, c := range curr.Children {
+			if c == nil {
+				continue
+			}
+			isIgnored := (r != nil && (r.IsPunctuation(c.Type) || r.IsOperatorLiteral(c.Type) || r.IsIgnored(c.Type, c.Label))) ||
+				(r == nil && (rules.IsPunctuation(c.Type) || rules.IsOperatorLiteral(c.Type)))
+			if !isIgnored {
+				substantive = c
+				count++
+				if count > 1 {
+					break
+				}
+			}
+		}
+		if count == 1 && substantive != nil {
+			curr = substantive
+		} else {
+			break
+		}
+	}
+	return curr
 }
 
 // areSiblingsMatched reports whether sibling nodes s1 and s2 are matched directly

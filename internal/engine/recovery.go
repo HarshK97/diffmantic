@@ -130,40 +130,7 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	reconcileDeclarationSignatures(t1, t2, m, rulesFor(t1))
 
 	r := rulesFor(t1)
-	// Pair up unmatched nodes sandwiched between matched neighbors at the same index, or trailing at the end.
-	for idx, c1 := range t1.Children {
-		if m.Has(c1) || idx == 0 || idx >= len(t2.Children) {
-			continue
-		}
-		c2 := t2.Children[idx]
-		if m.HasDst(c2) || !TypesMatch(c1.Type, c2.Type, r) {
-			continue
-		}
-		left1, left2 := t1.Children[idx-1], t2.Children[idx-1]
-		leftMatched := m.Src()[left1] == left2
-
-		var rightMatched bool
-		if idx+1 < min(len(t1.Children), len(t2.Children)) {
-			right1, right2 := t1.Children[idx+1], t2.Children[idx+1]
-			rightMatched = m.Src()[right1] == right2
-		} else if idx == len(t1.Children)-1 && idx == len(t2.Children)-1 {
-			rightMatched = true
-		}
-
-		if leftMatched && rightMatched {
-			if c1.Label != "" && Isomorphic(c1, c2) {
-				addIsomorphicPairs(c1, c2, m)
-			} else if (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type)) {
-				m.Add(c1, c2)
-				Recover(c1, c2, m)
-			} else if (r != nil && r.IsCaseClause(c1.Type)) || (r == nil && rules.IsCaseClause(c1.Type)) {
-				if hasHeaderMatch(c1, c2, m, r) || m.DiceSrc(c1, c2) > 0 {
-					m.Add(c1, c2)
-					Recover(c1, c2, m)
-				}
-			}
-		}
-	}
+	recoverSandwichedNodes(t1, t2, m, r)
 
 	matchIntroducingKeywords(t1, t2, m)
 
@@ -191,6 +158,8 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 
 	recoverBlockStatements(t1, t2, m, r)
 
+	recoverTransparentWrappers(t1, t2, m, r)
+
 	uc1 = unmatchedChildren(t1, m.Has)
 	uc2 = unmatchedChildren(t2, m.HasDst)
 
@@ -200,6 +169,317 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	}
 
 	recoverBlockWrappedStatements(t1, t2, m, r)
+}
+
+// recoverSandwichedNodes pairs up unmatched nodes sandwiched between consecutive
+// mapped child anchors, replacing index-coupled matching with anchor-relative interval matching.
+func recoverSandwichedNodes(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if t1 == nil || t2 == nil || len(t1.Children) == 0 || len(t2.Children) == 0 {
+		return
+	}
+
+	type anchor struct {
+		i, j int
+	}
+	var anchors []anchor
+	for i, c1 := range t1.Children {
+		c2 := m.Src()[c1]
+		if c2 == nil {
+			continue
+		}
+		for j, ch2 := range t2.Children {
+			if ch2 == c2 {
+				anchors = append(anchors, anchor{i: i, j: j})
+				break
+			}
+		}
+	}
+
+	n := len(anchors)
+	if n == 0 {
+		return
+	}
+
+	// Filter to strictly increasing j using LIS to preserve relative order across anchors.
+	dp := make([]int, n)
+	prev := make([]int, n)
+	for i := range dp {
+		dp[i] = 1
+		prev[i] = -1
+	}
+	bestLen := 0
+	bestEnd := 0
+	for i := 0; i < n; i++ {
+		for k := 0; k < i; k++ {
+			if anchors[k].j < anchors[i].j && dp[k]+1 > dp[i] {
+				dp[i] = dp[k] + 1
+				prev[i] = k
+			}
+		}
+		if dp[i] > bestLen {
+			bestLen = dp[i]
+			bestEnd = i
+		}
+	}
+	var monotonicAnchors []anchor
+	for curr := bestEnd; curr != -1; curr = prev[curr] {
+		monotonicAnchors = append(monotonicAnchors, anchors[curr])
+	}
+	slices.Reverse(monotonicAnchors)
+	if len(monotonicAnchors) == 0 {
+		return
+	}
+
+	type interval struct {
+		iStart, iEnd int
+		jStart, jEnd int
+	}
+	var intervals []interval
+
+	// Leading interval before the first anchor
+	first := monotonicAnchors[0]
+	if first.i > 0 && first.j > 0 {
+		intervals = append(intervals, interval{
+			iStart: 0, iEnd: first.i,
+			jStart: 0, jEnd: first.j,
+		})
+	}
+
+	// Intermediate intervals between consecutive mapped anchors (a_k, a_{k+1})
+	for k := 0; k < len(monotonicAnchors)-1; k++ {
+		curr := monotonicAnchors[k]
+		next := monotonicAnchors[k+1]
+		if next.i > curr.i+1 && next.j > curr.j+1 {
+			intervals = append(intervals, interval{
+				iStart: curr.i + 1, iEnd: next.i,
+				jStart: curr.j + 1, jEnd: next.j,
+			})
+		}
+	}
+
+	// Trailing interval after the last anchor
+	last := monotonicAnchors[len(monotonicAnchors)-1]
+	if last.i < len(t1.Children)-1 && last.j < len(t2.Children)-1 {
+		intervals = append(intervals, interval{
+			iStart: last.i + 1, iEnd: len(t1.Children),
+			jStart: last.j + 1, jEnd: len(t2.Children),
+		})
+	}
+
+	for _, span := range intervals {
+		var unmapped1 []*treesitter.ASTNode
+		for idx := span.iStart; idx < span.iEnd; idx++ {
+			c := t1.Children[idx]
+			if !m.Has(c) && isSubstantiveChild(c, r) {
+				unmapped1 = append(unmapped1, c)
+			}
+		}
+
+		var unmapped2 []*treesitter.ASTNode
+		for idx := span.jStart; idx < span.jEnd; idx++ {
+			c := t2.Children[idx]
+			if !m.HasDst(c) && isSubstantiveChild(c, r) {
+				unmapped2 = append(unmapped2, c)
+			}
+		}
+
+		if len(unmapped1) == 0 || len(unmapped2) == 0 {
+			continue
+		}
+
+		// Strictly require 1:1 correspondence for sandwiched intervals.
+		if len(unmapped1) != len(unmapped2) {
+			continue
+		}
+
+		// Verify every corresponding pair satisfies pairing criteria before committing.
+		allValid := true
+		for k := 0; k < len(unmapped1); k++ {
+			c1, c2 := unmapped1[k], unmapped2[k]
+			if !canPairSandwichedNode(c1, c2, t1, m, r) {
+				allValid = false
+				break
+			}
+		}
+		if allValid {
+			for k := 0; k < len(unmapped1); k++ {
+				pairSandwichedNodes(unmapped1[k], unmapped2[k], m, r)
+			}
+		}
+	}
+}
+
+func canPairSandwichedNode(c1, c2, parent *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if c1 == nil || c2 == nil || m == nil {
+		return false
+	}
+	if m.Has(c1) || m.HasDst(c2) {
+		return false
+	}
+	if !TypesMatch(c1.Type, c2.Type, r) {
+		return false
+	}
+
+	if c1.Label != "" && Isomorphic(c1, c2) {
+		return true
+	}
+
+	isBlock := (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type))
+	if isBlock {
+		return true
+	}
+
+	isCase := (r != nil && r.IsCaseClause(c1.Type)) || (r == nil && rules.IsCaseClause(c1.Type))
+	if isCase {
+		return hasHeaderMatch(c1, c2, m, r) || m.DiceSrc(c1, c2) > 0 ||
+			substantiveLeafSimilarity(c1, c2, r) >= 0.15 || hasSharedSubstantiveLeaf(c1, c2, r)
+	}
+
+	isParentBlock := parent != nil && ((r != nil && r.IsBlock(parent.Type)) || (r == nil && rules.IsBlock(parent.Type)))
+	isStatement := (r != nil && r.IsStatement(c1.Type)) || (r == nil && rules.IsStatement(c1.Type))
+
+	if isParentBlock && isStatement {
+		// Strictly prohibit pairing body-bearing statements in sandwiched recovery
+		// (if, for, while, switch, etc.), as their body blocks must be matched via
+		// structural container affinity and not anchor adjacency.
+		if findBodyBlock(c1, r) != nil || findBodyBlock(c2, r) != nil {
+			return false
+		}
+
+		// Non-body-bearing scalar statements (e.g. expression_statement, macro invocation):
+		w1 := unwrapTransparentWrapper(statementPrimaryChild(c1), r)
+		w2 := unwrapTransparentWrapper(statementPrimaryChild(c2), r)
+
+		typesMatch := TypesMatch(c1.Type, c2.Type, r) && TypesMatch(w1.Type, w2.Type, r)
+		if !typesMatch {
+			return false
+		}
+
+		sim := max(substantiveLeafSimilarity(c1, c2, r), substantiveLeafSimilarity(w1, w2, r))
+		hasShared := hasSharedSubstantiveLeaf(c1, c2, r) || hasSharedSubstantiveLeaf(w1, w2, r)
+		var dice float64
+		if m != nil {
+			dice = max(m.DiceSrc(c1, c2), m.DiceSrc(w1, w2))
+		}
+		return sim >= 0.15 || hasShared || dice > 0
+	}
+
+	return false
+}
+
+func statementPrimaryChild(n *treesitter.ASTNode) *treesitter.ASTNode {
+	if n == nil || len(n.Children) == 0 {
+		return n
+	}
+	for _, c := range n.Children {
+		if c.IsKeyword || c.Label == ";" || c.Label == "," {
+			continue
+		}
+		return c
+	}
+	return n.Children[0]
+}
+
+func pairSandwichedNodes(c1, c2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if c1.Label != "" && Isomorphic(c1, c2) {
+		addIsomorphicPairs(c1, c2, m)
+	} else {
+		m.Add(c1, c2)
+		Recover(c1, c2, m)
+	}
+}
+
+// recoverTransparentWrappers pairs unmatched children where one or both sides
+// are enclosed in single-child transparent wrappers (e.g. try_expression, parenthesized_expression).
+func recoverTransparentWrappers(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	uc1 := unmatchedChildren(t1, m.Has)
+	uc2 := unmatchedChildren(t2, m.HasDst)
+	if len(uc1) == 0 || len(uc2) == 0 {
+		return
+	}
+
+	for _, u1 := range uc1 {
+		if m.Has(u1) {
+			continue
+		}
+		w1 := unwrapTransparentWrapper(u1, r)
+
+		var bestU2 *treesitter.ASTNode
+		var bestW2 *treesitter.ASTNode
+		bestScore := 0.0
+
+		for _, u2 := range uc2 {
+			if m.HasDst(u2) {
+				continue
+			}
+			w2 := unwrapTransparentWrapper(u2, r)
+			if w1 == u1 && w2 == u2 {
+				continue
+			}
+			if m.Has(w1) || m.HasDst(w2) {
+				continue
+			}
+			if !TypesMatch(w1.Type, w2.Type, r) {
+				continue
+			}
+
+			sim := substantiveLeafSimilarity(w1, w2, r)
+			hasShared := hasSharedSubstantiveLeaf(w1, w2, r)
+			var dice float64
+			if m != nil {
+				dice = m.DiceSrc(w1, w2)
+			}
+
+			if sim >= 0.15 || hasShared || dice > 0 {
+				score := sim
+				if hasShared {
+					score += 0.5
+				}
+				if dice > 0 {
+					score += dice
+				}
+				if score > bestScore {
+					bestScore = score
+					bestU2 = u2
+					bestW2 = w2
+				}
+			}
+		}
+
+		if bestU2 != nil && bestW2 != nil {
+			if w1.Label != "" && Isomorphic(w1, bestW2) {
+				addIsomorphicPairs(w1, bestW2, m)
+			} else {
+				m.Add(w1, bestW2)
+				Recover(w1, bestW2, m)
+			}
+		}
+	}
+}
+
+func isSubstantiveChild(c *treesitter.ASTNode, r *rules.Rules) bool {
+	if c == nil {
+		return false
+	}
+	isPunct := (r != nil && (r.IsPunctuation(c.Type) || r.IsPunctuation(c.Label))) ||
+		(r == nil && (rules.IsPunctuation(c.Type) || rules.IsPunctuation(c.Label)))
+	return !c.IsKeyword && !isGlueToken(c, r) && !isPunct
+}
+
+func hasSharedSubstantiveLeaf(a, b *treesitter.ASTNode, r *rules.Rules) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	l1, l2 := a.LeafLabels(), b.LeafLabels()
+	for label := range l1 {
+		if !isSubstantiveLeaf(label, r) {
+			continue
+		}
+		if _, ok := l2[label]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // recoverDelimitedSiblingSequences aligns unmatched children inside non-block
