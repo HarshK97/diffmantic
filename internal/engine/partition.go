@@ -218,3 +218,27 @@ func (p *LinePartition) CanMatch(n1, n2 *treesitter.ASTNode) bool {
 	}
 	return true
 }
+
+// CalibratedDrift returns the absolute line distance between rowA and rowB,
+// adjusted for upstream line shifts using the nearest unchanged line anchor within a
+// ±200-line window. Falls back to raw row distance if p is nil or no anchors exist.
+func (p *LinePartition) CalibratedDrift(rowA, rowB int) int {
+	if p != nil && len(p.matchedA) > 0 {
+		if dst, ok := p.matchedA[rowA]; ok {
+			return max(rowB-dst, dst-rowB)
+		}
+		for d := 1; d <= 200; d++ {
+			if r := rowA - d; r >= 0 {
+				if dst, ok := p.matchedA[r]; ok {
+					expectedB := dst + d
+					return max(rowB-expectedB, expectedB-rowB)
+				}
+			}
+			if dst, ok := p.matchedA[rowA+d]; ok {
+				expectedB := dst - d
+				return max(rowB-expectedB, expectedB-rowB)
+			}
+		}
+	}
+	return max(rowA-rowB, rowB-rowA)
+}

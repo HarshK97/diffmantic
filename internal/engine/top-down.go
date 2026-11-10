@@ -497,6 +497,11 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 		return false
 	}
 
+	// Same statement type with high similarity means the statement is evolving in place, not dredging.
+	if s1.Type == s2.Type && LeafSimilarity(s1, s2) >= 0.50 {
+		return false
+	}
+
 	// Gate 1: Phase 0 LinePartition Untouched Line Lock
 	if part != nil {
 		isG1A, _ := part.IsGroup1A(s1)
@@ -514,23 +519,81 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 			return true // Incompatible statement types, and this isn't an extraction.
 		}
 	}
+
+	// Don't pair LHS target variables across different assignment types (like := vs =)
+	// unless their values actually match.
+	if s1.Type != s2.Type {
+		lhs1, rhs1 := getAssignmentSides(s1, r)
+		if isNodeInLHS(t1, lhs1) {
+			lhs2, rhs2 := getAssignmentSides(s2, r)
+			if isNodeInLHS(t2, lhs2) && len(rhs1) > 0 && len(rhs2) > 0 {
+				hasOverlap := slices.ContainsFunc(rhs1, func(r1 *treesitter.ASTNode) bool {
+					return slices.ContainsFunc(rhs2, func(r2 *treesitter.ASTNode) bool {
+						return (m != nil && m.DiceSrc(r1, r2) > 0) || LeafSimilarity(r1, r2) >= 0.30
+					})
+				})
+				if !hasOverlap {
+					return true // Target variables pair across assignments with disjoint values
+				}
+			}
+		}
+	}
+
 	hasMappedOverlap := m != nil && m.DiceSrc(s1, s2) > 0
-	if !hasMappedOverlap && !hasIdentifier(t1, r) && LeafSimilarity(s1, s2) < 0.30 {
+	if !hasMappedOverlap && LeafSimilarity(s1, s2) < 0.30 {
 		return true // Not enough statement-level lexical overlap.
 	}
 
 	// Gate 3: Relative Drift Boundedness (Case 79)
-	anchor1 := resolveDriftAnchor(s1, getEnclosingConstruct(s1, r))
-	anchor2 := resolveDriftAnchor(s2, getEnclosingConstruct(s2, r))
-	row1, row2 := int(s1.StartRow), int(s2.StartRow)
-	if anchor1 != nil {
-		row1 -= int(anchor1.StartRow)
+	c1 := getEnclosingConstruct(s1, r)
+	c2 := getEnclosingConstruct(s2, r)
+
+	// If s1 and s2 sit in different constructs (like separate if/for blocks), make sure the constructs themselves match.
+	if c1 != nil && c2 != nil && c1 != s1 && c2 != s2 {
+		// If either construct is already mapped to something else, don't dredge across them.
+		if m != nil {
+			if mappedC1 := m.Src()[c1]; mappedC1 != nil && mappedC1 != c2 && !mappedC1.Contains(s2) {
+				return true // s1's enclosing construct is already mapped elsewhere
+			}
+			if mappedC2 := m.Dst()[c2]; mappedC2 != nil && mappedC2 != c1 && !mappedC2.Contains(s1) {
+				return true // s2's enclosing construct is already mapped elsewhere
+			}
+		}
+		if m == nil || m.Src()[c1] != c2 {
+			isCompatConstruct := TypesMatch(c1.Type, c2.Type, r) && LeafSimilarity(c1, c2) >= 0.30
+			if !isCompatConstruct {
+				return true // Dredging across incompatible enclosing control constructs
+			}
+		}
 	}
-	if anchor2 != nil {
-		row2 -= int(anchor2.StartRow)
+
+	// Calibrate drift against Phase 0 LineDiff anchors so upstream deletions don't inflate distance.
+	var calibratedDrift int
+	if part != nil {
+		calibratedDrift = part.CalibratedDrift(int(s1.StartRow), int(s2.StartRow))
+	} else {
+		// Without line partitions, fall back to relative distance from the enclosing construct.
+		anchor1 := resolveDriftAnchor(s1, c1)
+		anchor2 := resolveDriftAnchor(s2, c2)
+		if anchor1 != nil && anchor2 != nil && (m == nil || m.Src()[anchor1] != anchor2) {
+			calibratedDrift = max(int(s1.StartRow)-int(s2.StartRow), int(s2.StartRow)-int(s1.StartRow))
+		} else {
+			row1, row2 := int(s1.StartRow), int(s2.StartRow)
+			if anchor1 != nil {
+				row1 -= int(anchor1.StartRow)
+			}
+			if anchor2 != nil {
+				row2 -= int(anchor2.StartRow)
+			}
+			calibratedDrift = max(row1-row2, row2-row1)
+		}
 	}
-	drift := row1 - row2
-	return drift < -10 || drift > 10
+
+	if calibratedDrift > 10 {
+		return true // Relative drift exceeds the 10-line limit.
+	}
+
+	return false
 }
 
 // isCallNode reports whether n is a function or method invocation node.
@@ -596,6 +659,34 @@ func getEnclosingConstruct(n *treesitter.ASTNode, r *rules.Rules) *treesitter.AS
 		curr = p
 	}
 	return curr
+}
+
+// getAssignmentSides splits an assignment or declaration statement into its LHS (targets)
+// and RHS (values) child nodes.
+func getAssignmentSides(n *treesitter.ASTNode, r *rules.Rules) (lhs, rhs []*treesitter.ASTNode) {
+	if n == nil {
+		return nil, nil
+	}
+	r = cmp.Or(r, rulesFor(n))
+	isAssign := (r != nil && r.IsAssignment(n.Type)) || (r == nil && rules.IsAssignment(n.Type))
+	isDecl := (r != nil && r.IsLocalVarDeclaration(n.Type)) || (r == nil && rules.IsLocalVarDeclaration(n.Type))
+	if !isAssign && !isDecl {
+		return nil, nil
+	}
+	opIdx := slices.IndexFunc(n.Children, func(child *treesitter.ASTNode) bool {
+		return isOperatorGlue(child, r)
+	})
+	if opIdx < 0 {
+		return nil, nil
+	}
+	return n.Children[:opIdx], n.Children[opIdx+1:]
+}
+
+// isNodeInLHS reports whether node t sits within the LHS target list of an assignment or declaration.
+func isNodeInLHS(t *treesitter.ASTNode, lhs []*treesitter.ASTNode) bool {
+	return slices.ContainsFunc(lhs, func(l *treesitter.ASTNode) bool {
+		return l == t || l.Contains(t)
+	})
 }
 
 // resolveDriftAnchor returns the baseline node used to measure relative line drift.

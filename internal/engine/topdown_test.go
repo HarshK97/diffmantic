@@ -2065,3 +2065,182 @@ func run(in chan string) {
 		}
 	})
 }
+
+func TestEvolvingIfStatementWithDrift_Case89(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+
+		oldSrc := []byte(`package stream
+
+func runPipeline() error {
+	// Upstream deletions to create line drift (> 10 lines)
+	step1()
+	step2()
+	step3()
+	step4()
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+
+	if flusherErr != nil && !isBrokenPipe(flusherErr) {
+		return flusherErr
+	}
+	if rErr := getReaderErr(); rErr != nil && !isBrokenPipe(rErr) && !isCanceled(rErr) {
+		return rErr
+	}
+	return nil
+}
+`)
+
+		newSrc := []byte(`package stream
+
+func runPipeline() error {
+	if flusherErr != nil && !isBrokenPipe(flusherErr) {
+		return flusherErr
+	}
+	var rErr error
+	if p := readerErr.Load(); p != nil {
+		rErr = *p
+	}
+	if rErr != nil && !isBrokenPipe(rErr) && !isCanceled(rErr) && !isDeadline(rErr) {
+		return rErr
+	}
+	return nil
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "stream_old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "stream_new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: runPipeline function maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "runPipeline" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "runPipeline" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected runPipeline function to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: flusherErr if_statement maps in place
+		var srcFlushIf, dstFlushIf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" && len(n.Children) > 1 {
+				for _, c := range n.Children {
+					if c.Type == "binary_expression" {
+						for _, leaf := range c.Leaves() {
+							if leaf.Label == "flusherErr" {
+								srcFlushIf = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.Type == "if_statement" && len(n.Children) > 1 {
+				for _, c := range n.Children {
+					if c.Type == "binary_expression" {
+						for _, leaf := range c.Leaves() {
+							if leaf.Label == "flusherErr" {
+								dstFlushIf = n
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if srcFlushIf == nil || dstFlushIf == nil || mr.Mappings.Src()[srcFlushIf] != dstFlushIf {
+			t.Fatalf("expected flusherErr if_statement to map in place, got src=%v dst=%v", srcFlushIf, dstFlushIf)
+		}
+
+		// 3. Target Construct: Evolving if_statement (with rErr) maps in place to the new rErr check
+		var srcRErrIf, dstRErrIf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if n.Type == "if_statement" && n != srcFlushIf {
+				srcRErrIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if n.Type == "if_statement" && n != dstFlushIf {
+				// The second non-flush if_statement is the check (rErr != nil && ...)
+				for _, leaf := range n.Leaves() {
+					if leaf.Label == "isDeadline" {
+						dstRErrIf = n
+						break
+					}
+				}
+			}
+		}
+		if srcRErrIf == nil || dstRErrIf == nil {
+			t.Fatalf("failed to locate rErr if statements: src=%v dst=%v", srcRErrIf, dstRErrIf)
+		}
+		if mr.Mappings.Src()[srcRErrIf] != dstRErrIf {
+			t.Fatalf("expected old rErr if_statement to map to new rErr if_statement, got %v", mr.Mappings.Src()[srcRErrIf])
+		}
+
+		// 4. Initializer short_var_declaration must NOT map to rErr = *p inside the intermediate if
+		var srcShortVar *treesitter.ASTNode
+		for _, n := range srcRErrIf.Children {
+			if r.IsLocalVarDeclaration(n.Type) {
+				srcShortVar = n
+				break
+			}
+		}
+		if srcShortVar != nil && mr.Mappings.Src()[srcShortVar] != nil {
+			t.Errorf("expected short_var_declaration rErr := getReaderErr() to be unmapped (deleted), but mapped to %v", mr.Mappings.Src()[srcShortVar])
+		}
+
+		// 5. Stationary Operands: return rErr inside body block maps in place
+		var srcReturn, dstReturn *treesitter.ASTNode
+		for _, n := range srcRErrIf.PreOrder() {
+			if r.IsJumpStatement(n.Type) {
+				srcReturn = n
+				break
+			}
+		}
+		for _, n := range dstRErrIf.PreOrder() {
+			if r.IsJumpStatement(n.Type) {
+				dstReturn = n
+				break
+			}
+		}
+		if srcReturn == nil || dstReturn == nil || mr.Mappings.Src()[srcReturn] != dstReturn {
+			t.Errorf("expected return rErr to map in place, got src=%v dst=%v", srcReturn, dstReturn)
+		}
+	})
+}
