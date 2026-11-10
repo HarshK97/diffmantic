@@ -3962,3 +3962,156 @@ func TestBareIdentifierLastResortPairing(t *testing.T) {
 		}
 	})
 }
+
+// TestCanPairDelimitedSiblings_CallerAffinityGuard guards against pairing disjoint
+// delimited containers across unmapped or incompatible callers. When a function call
+// in a macro is replaced by an unrelated call (e.g. Regex::new replaced by format::make_placeholder_regex),
+// the old container and its delimiters must be deleted and the new container inserted,
+// rather than falsely pairing the unrelated delimiter frames.
+func TestCanPairDelimitedSiblings_CallerAffinityGuard(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `lazy_static! {
+    static ref LINE_NUMBERS_PLACEHOLDER_REGEX: Regex = Regex::new(
+        "abc"
+    )
+    .unwrap();
+}
+`
+		newSrc := `lazy_static! {
+    static ref LINE_NUMBERS_PLACEHOLDER_REGEX: Regex = format::make_placeholder_regex(&["nm", "np"]);
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: macro_invocation and the outer macro token_tree map in place.
+		var srcMacro, dstMacro *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "macro_invocation" {
+				srcMacro = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "macro_invocation" {
+				dstMacro = n
+				break
+			}
+		}
+		if srcMacro == nil || dstMacro == nil || mapped[srcMacro] != dstMacro {
+			t.Fatalf("expected macro_invocation to map in place, got src=%v dst=%v mapped=%v", srcMacro, dstMacro, mapped[srcMacro])
+		}
+
+		var srcOuterTree, dstOuterTree *treesitter.ASTNode
+		for _, c := range srcMacro.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				srcOuterTree = c
+				break
+			}
+		}
+		for _, c := range dstMacro.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				dstOuterTree = c
+				break
+			}
+		}
+		if srcOuterTree == nil || dstOuterTree == nil || mapped[srcOuterTree] != dstOuterTree {
+			t.Fatalf("expected outer macro token_tree to map in place, got src=%v dst=%v mapped=%v", srcOuterTree, dstOuterTree, mapped[srcOuterTree])
+		}
+
+		// 2. Surrounding Sequence: static, ref, LINE_NUMBERS_PLACEHOLDER_REGEX, and Regex (type) map in place.
+		for _, want := range []string{"static", "ref", "LINE_NUMBERS_PLACEHOLDER_REGEX", "Regex"} {
+			var srcN, dstN *treesitter.ASTNode
+			for _, n := range srcOuterTree.Children {
+				if n.Label == want {
+					srcN = n
+					break
+				}
+			}
+			for _, n := range dstOuterTree.Children {
+				if n.Label == want {
+					dstN = n
+					break
+				}
+			}
+			if srcN == nil || dstN == nil || mapped[srcN] != dstN {
+				t.Errorf("expected %q to map in place, got src=%v dst=%v mapped=%v", want, srcN, dstN, mapped[srcN])
+			}
+		}
+
+		// 3. Target & Containers (defect invariant):
+		// The old token_tree of Regex::new ("abc") MUST NOT pair with the new token_tree of format::make_placeholder_regex.
+		var oldRegexArgs, newFormatArgs *treesitter.ASTNode
+		for _, n := range srcOuterTree.Children {
+			if r.IsDelimitedContainer(n.Type) && n.StartRow >= 1 && n.StartRow <= 3 {
+				oldRegexArgs = n
+				break
+			}
+		}
+		for _, n := range dstOuterTree.Children {
+			if r.IsDelimitedContainer(n.Type) && n.StartRow == 1 {
+				newFormatArgs = n
+				break
+			}
+		}
+		if oldRegexArgs == nil || newFormatArgs == nil {
+			t.Fatalf("failed to locate target delimiter frames: oldRegexArgs=%v newFormatArgs=%v", oldRegexArgs, newFormatArgs)
+		}
+
+		if got := mapped[oldRegexArgs]; got != nil {
+			t.Errorf("expected old Regex::new argument token_tree to remain unmapped, but it mapped to %v", got)
+		}
+		if got := mr.Mappings.Dst()[newFormatArgs]; got != nil {
+			t.Errorf("expected new format::make_placeholder_regex argument token_tree to remain unmapped, but it mapped from %v", got)
+		}
+
+		// Old Regex, new, and unwrap identifiers must remain unmapped (destined for deletion).
+		for _, name := range []string{"new", "unwrap"} {
+			for _, n := range srcOuterTree.Children {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					if got := mapped[n]; got != nil {
+						t.Errorf("expected old %q to remain unmapped, got %v", name, got)
+					}
+				}
+			}
+		}
+
+		// New format and make_placeholder_regex identifiers must remain unmapped (destined for insertion).
+		for _, name := range []string{"format", "make_placeholder_regex"} {
+			for _, n := range dstOuterTree.Children {
+				if r.IsIdentifier(n.Type) && n.Label == name {
+					if got := mr.Mappings.Dst()[n]; got != nil {
+						t.Errorf("expected new %q to remain unmapped, got %v", name, got)
+					}
+				}
+			}
+		}
+	})
+}
