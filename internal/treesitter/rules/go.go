@@ -177,6 +177,8 @@ var golangRules = &Rules{
 		"var_declaration",
 		"const_declaration",
 		"short_var_declaration",
+		"var_spec",
+		"const_spec",
 	},
 	Assignments: []string{
 		"assignment_statement",

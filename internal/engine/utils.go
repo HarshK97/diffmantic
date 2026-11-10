@@ -762,8 +762,8 @@ func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
 		r = rulesFor(n)
 	}
 	for curr := n.Parent; curr != nil; curr = curr.Parent {
-		isContainer := (r != nil && r.IsContainerDeclaration(curr.Type)) ||
-			(r == nil && rules.IsContainerDeclaration(curr.Type))
+		isContainer := (r != nil && (r.IsContainerDeclaration(curr.Type) || r.IsClosure(curr.Type))) ||
+			(r == nil && (rules.IsContainerDeclaration(curr.Type) || rules.IsClosure(curr.Type)))
 		if isContainer {
 			body := findBodyBlock(curr, r)
 			if body == nil {

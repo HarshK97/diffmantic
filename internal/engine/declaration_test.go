@@ -781,10 +781,10 @@ func buildNode(declaration Declaration) string {
 				}
 			}
 			for _, n := range dstAST.PreOrder() {
-				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 3 {
+				if dstFirstVar == nil && r.IsLocalVarDeclaration(n.Type) && n.StartRow == 3 {
 					dstFirstVar = n
 				}
-				if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 5 {
+				if dstSecondVar == nil && r.IsLocalVarDeclaration(n.Type) && n.StartRow == 5 {
 					dstSecondVar = n
 				}
 			}
