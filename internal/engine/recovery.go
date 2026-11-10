@@ -379,13 +379,34 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 		}
 	}
 
-	// Empty delimited containers should only pair with other empty ones.
-	// Otherwise sibling LCS can match an unrelated empty frame (like `()`
-	// in `"".into()`) with a rewritten payload, stealing its highlights.
-	if (r != nil && r.IsDelimitedContainer(u1.Type)) || (r == nil && rules.IsDelimitedContainer(u1.Type)) {
+	isDelim1 := (r != nil && r.IsDelimitedContainer(u1.Type)) || (r == nil && rules.IsDelimitedContainer(u1.Type))
+	isDelim2 := (r != nil && r.IsDelimitedContainer(u2.Type)) || (r == nil && rules.IsDelimitedContainer(u2.Type))
+	if isDelim1 != isDelim2 {
+		return false, 0.0
+	}
+	if isDelim1 {
+		// Empty delimited containers should only pair with other empty ones.
+		// Otherwise sibling LCS can match an unrelated empty frame (like `()`
+		// in `"".into()`) with a rewritten payload, stealing its highlights.
 		if (len(u1.Children) == 0) != (len(u2.Children) == 0) {
 			return false, 0.0
 		}
+		if len(u1.Children) == 0 && len(u2.Children) == 0 {
+			return true, 1.0
+		}
+
+		leafSim := substantiveLeafSimilarity(u1, u2, r)
+		if leafSim >= 0.40 {
+			return true, leafSim
+		}
+
+		// When two containers share no tokens, only pair their delimiter frames
+		// if their callers match (like Some("a") -> Some(b)). If the callers
+		// differ completely, delete the old call and insert the new one.
+		if hasMappedPrecedingCaller(u1, u2, m, r) {
+			return true, 0.50 + 0.50*leafSim
+		}
+		return false, 0.0
 	}
 
 	leafSim := substantiveLeafSimilarity(u1, u2, r)
@@ -394,6 +415,41 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 		return false, 0.0
 	}
 	return true, compositeScore
+}
+
+// precedingCallerCandidate returns the closest preceding sibling of node that is neither
+// punctuation nor an operator literal, or nil if none exists.
+func precedingCallerCandidate(node *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if node == nil || node.Parent == nil {
+		return nil
+	}
+	idx := node.ChildIndex()
+	if idx <= 0 {
+		return nil
+	}
+	for i := idx - 1; i >= 0; i-- {
+		sib := node.Parent.Children[i]
+		if sib == nil {
+			continue
+		}
+		if (r != nil && (r.IsPunctuation(sib.Type) || r.IsOperatorLiteral(sib.Type))) ||
+			(r == nil && (rules.IsPunctuation(sib.Type) || rules.IsOperatorLiteral(sib.Type))) {
+			continue
+		}
+		return sib
+	}
+	return nil
+}
+
+// hasMappedPrecedingCaller reports whether u1 and u2 have preceding caller/anchor siblings
+// that are mapped to each other in m.
+func hasMappedPrecedingCaller(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	prev1 := precedingCallerCandidate(u1, r)
+	prev2 := precedingCallerCandidate(u2, r)
+	if prev1 == nil || prev2 == nil || m == nil {
+		return false
+	}
+	return m.Src()[prev1] == prev2
 }
 
 func hasUnmappedPeerWithName(parent *treesitter.ASTNode, name string, hasFn func(*treesitter.ASTNode) bool) bool {
