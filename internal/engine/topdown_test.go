@@ -2,12 +2,14 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestTopDown(t *testing.T) {
@@ -1855,6 +1857,211 @@ fn validate(pattern: []const u8) void {
 		}
 		if mr.Mappings.Src()[srcExit] != nil {
 			t.Errorf("expected exit call to be unmapped (deleted), got mapped to %v", mr.Mappings.Src()[srcExit])
+		}
+	})
+}
+
+// TestTopDown_GroupedVarAndClosureMatching verifies that grouped var blocks retain
+// their surviving specs across leading deletions, and shifted closures match in place
+// without cross-statement dredging rejection or closure parameter list theft.
+func TestTopDown_GroupedVarAndClosureMatching(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+
+		oldSrc := []byte(`package stream
+
+import "sync"
+
+func run(in chan string) {
+	var wg sync.WaitGroup
+
+	var (
+		errMu     sync.Mutex
+		workerErr error
+		readerErr error
+	)
+	setErr := func(err error) {
+		errMu.Lock()
+		if readerErr == nil {
+			readerErr = err
+		}
+		errMu.Unlock()
+	}
+	getErr := func() error {
+		errMu.Lock()
+		defer errMu.Unlock()
+		return readerErr
+	}
+	failReader := func(err error) {
+		setErr(err)
+		cancel()
+	}
+
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
+	_ = in
+}
+`)
+
+		newSrc := []byte(`package stream
+
+import "sync"
+
+func run(in chan string) {
+	var wg sync.WaitGroup
+
+	var (
+		workerErr error
+		readerErr error
+	)
+	failReader := func(err error) {
+		readerErr = err
+		cancel()
+	}
+
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
+	_ = in
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "stream_old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "stream_new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: run function maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "run" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "run" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected run to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: preceding wg declaration maps in place
+		var srcWg, dstWg *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && getDeclarationName(n) == "wg" {
+				srcWg = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && getDeclarationName(n) == "wg" {
+				dstWg = n
+				break
+			}
+		}
+		if srcWg == nil || dstWg == nil || mr.Mappings.Src()[srcWg] != dstWg {
+			t.Fatalf("expected wg declaration to map in place, got src=%v dst=%v", srcWg, dstWg)
+		}
+
+		// 3. Target & Containers: grouped var_declaration and surviving specs (workerErr, readerErr)
+		var srcVarBlock, dstVarBlock *treesitter.ASTNode
+		var srcWorker, dstWorker *treesitter.ASTNode
+		var srcReader, dstReader *treesitter.ASTNode
+		var srcErrMu *treesitter.ASTNode
+
+		for _, n := range srcAST.PreOrder() {
+			if n.Type == "var_declaration" && len(n.Children) > 1 {
+				srcVarBlock = n
+			}
+			if r.IsLocalVarDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "errMu":
+					srcErrMu = n
+				case "workerErr":
+					srcWorker = n
+				case "readerErr":
+					srcReader = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if n.Type == "var_declaration" && len(n.Children) > 1 {
+				dstVarBlock = n
+			}
+			if r.IsLocalVarDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "workerErr":
+					dstWorker = n
+				case "readerErr":
+					dstReader = n
+				}
+			}
+		}
+
+		if srcVarBlock == nil || dstVarBlock == nil || mr.Mappings.Src()[srcVarBlock] != dstVarBlock {
+			t.Fatalf("expected grouped var_declaration to map in place, got src=%v dst=%v", srcVarBlock, dstVarBlock)
+		}
+		if srcWorker == nil || dstWorker == nil || mr.Mappings.Src()[srcWorker] != dstWorker {
+			t.Fatalf("expected workerErr var_spec to map in place, got src=%v dst=%v", srcWorker, dstWorker)
+		}
+		if srcReader == nil || dstReader == nil || mr.Mappings.Src()[srcReader] != dstReader {
+			t.Fatalf("expected readerErr var_spec to map in place, got src=%v dst=%v", srcReader, dstReader)
+		}
+		if srcErrMu != nil && mr.Mappings.Src()[srcErrMu] != nil {
+			t.Errorf("expected deleted errMu var_spec to be unmapped, got %v", mr.Mappings.Src()[srcErrMu])
+		}
+
+		// 4. Target Closure: failReader closure matches in place across deleted sibling closures
+		var srcFailReader, dstFailReader *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && cmp.Or(getDeclarationName(n), getClosureDeclarationName(n, r)) == "failReader" {
+				srcFailReader = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && cmp.Or(getDeclarationName(n), getClosureDeclarationName(n, r)) == "failReader" {
+				dstFailReader = n
+				break
+			}
+		}
+		if srcFailReader == nil || dstFailReader == nil || mr.Mappings.Src()[srcFailReader] != dstFailReader {
+			t.Fatalf("expected failReader closure to map in place, got src=%v dst=%v", srcFailReader, dstFailReader)
+		}
+
+		// 5. Stationary Operands: cancel() inside failReader maps in place
+		var srcCancel, dstCancel *treesitter.ASTNode
+		for _, n := range srcFailReader.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "cancel" {
+				srcCancel = n
+				break
+			}
+		}
+		for _, n := range dstFailReader.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "cancel" {
+				dstCancel = n
+				break
+			}
+		}
+		if srcCancel == nil || dstCancel == nil || mr.Mappings.Src()[srcCancel] != dstCancel {
+			t.Errorf("expected cancel() call to map in place, got src=%v dst=%v", srcCancel, dstCancel)
 		}
 	})
 }

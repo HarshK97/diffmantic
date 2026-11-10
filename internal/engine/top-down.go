@@ -485,6 +485,18 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 		return false
 	}
 
+	r = cmp.Or(r, rulesFor(t1))
+	scope1 := getScopeName(s1.Parent)
+	scope2 := getScopeName(s2.Parent)
+	sameScope := (scope1 == "" && scope2 == "") || (scope1 != "" && scope2 != "" && scope1 == scope2)
+
+	// Matching declarations with the same name belong together; don't reject them as dredging.
+	name1 := cmp.Or(getDeclarationName(s1), getClosureDeclarationName(s1, r))
+	name2 := cmp.Or(getDeclarationName(s2), getClosureDeclarationName(s2, r))
+	if sameScope && name1 != "" && name2 != "" && name1 == name2 && TypesMatch(s1.Type, s2.Type, r) {
+		return false
+	}
+
 	// Gate 1: Phase 0 LinePartition Untouched Line Lock
 	if part != nil {
 		isG1A, _ := part.IsGroup1A(s1)
