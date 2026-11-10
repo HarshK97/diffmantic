@@ -9,13 +9,23 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // DiffResult holds actions produced from diffing comments.
 type DiffResult struct {
 	Actions      []actions.Action
 	LineMappings map[int]int
+}
+
+// isAnchorCompatible checks whether both comments attach to statements that mapped to each other.
+func isAnchorCompatible(sc, dc *CommentBlock, mappings *engine.Mapping) bool {
+	if mappings == nil || mappings.Src() == nil {
+		return true
+	}
+	if sc == nil || dc == nil || sc.AnchorNode == nil || dc.AnchorNode == nil {
+		return true
+	}
+	return mappings.Src()[sc.AnchorNode] == dc.AnchorNode
 }
 
 func canonicalScopeKey(c *CommentBlock, mappings *engine.Mapping, isSource bool) string {
@@ -205,7 +215,7 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 			si := srcIdxs[i-1]
 			for j := 1; j <= m; j++ {
 				dj := dstIdxs[j-1]
-				if srcComments[si].Text == dstComments[dj].Text {
+				if srcComments[si].Text == dstComments[dj].Text && isAnchorCompatible(&srcComments[si], &dstComments[dj], mappings) {
 					dp[i][j] = dp[i-1][j-1] + 1
 				} else {
 					dp[i][j] = max(dp[i-1][j], dp[i][j-1])
@@ -218,7 +228,7 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 		for i > 0 && j > 0 {
 			si := srcIdxs[i-1]
 			dj := dstIdxs[j-1]
-			if srcComments[si].Text == dstComments[dj].Text && dp[i][j] == dp[i-1][j-1]+1 {
+			if srcComments[si].Text == dstComments[dj].Text && isAnchorCompatible(&srcComments[si], &dstComments[dj], mappings) && dp[i][j] == dp[i-1][j-1]+1 {
 				srcMatched[si] = true
 				dstMatched[dj] = true
 				sc := &srcComments[si]
@@ -251,7 +261,7 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 				continue
 			}
 			dc := &dstComments[j]
-			if sc.Text == dc.Text {
+			if sc.Text == dc.Text && isAnchorCompatible(sc, dc, mappings) {
 				dist := max(sc.StartRow, dc.StartRow) - min(sc.StartRow, dc.StartRow)
 				if dist < bestDist {
 					bestDist = dist
@@ -307,28 +317,10 @@ func DiffComments(srcComments, dstComments []CommentBlock, mappings *engine.Mapp
 				continue
 			}
 
-			exactAnchor := false
-			if mappings != nil && mappings.Src() != nil && sc.AnchorNode != nil && dc.AnchorNode != nil {
-				if mappings.Src()[sc.AnchorNode] == dc.AnchorNode {
-					exactAnchor = true
-				} else {
-					srcBlock := findEnclosingBlock(sc.AnchorNode, sc.EnclosingDecl)
-					dstBlock := findEnclosingBlock(dc.AnchorNode, dc.EnclosingDecl)
-					if srcBlock != nil && dstBlock != nil {
-						if mappedDstBlock, ok := mappings.Src()[srcBlock]; ok && mappedDstBlock != nil {
-							if mappedDstBlock != dstBlock {
-								continue
-							}
-						} else if mappings.Dst() != nil {
-							if mappedSrcBlock, ok := mappings.Dst()[dstBlock]; ok && mappedSrcBlock != nil {
-								if mappedSrcBlock != srcBlock {
-									continue
-								}
-							}
-						}
-					}
-				}
+			if !isAnchorCompatible(sc, dc, mappings) {
+				continue
 			}
+			exactAnchor := sc.AnchorNode != nil && dc.AnchorNode != nil && mappings != nil && mappings.Src() != nil && mappings.Src()[sc.AnchorNode] == dc.AnchorNode
 
 			srcIsMulti := strings.Contains(strings.TrimRight(sc.Text, "\r\n"), "\n")
 			dstIsMulti := strings.Contains(strings.TrimRight(dc.Text, "\r\n"), "\n")
@@ -685,20 +677,4 @@ func commentLineCount(c *CommentBlock) int {
 		return 1
 	}
 	return strings.Count(t, "\n") + 1
-}
-
-func findEnclosingBlock(n *treesitter.ASTNode, decl *treesitter.ASTNode) *treesitter.ASTNode {
-	if n == nil {
-		return nil
-	}
-	r := rules.Get(n.GetLanguage())
-	if r == nil {
-		return decl
-	}
-	for curr := n; curr != nil && curr != decl; curr = curr.Parent {
-		if r.IsBlock(curr.Type) || r.IsCaseClause(curr.Type) {
-			return curr
-		}
-	}
-	return decl
 }

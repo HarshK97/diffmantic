@@ -639,8 +639,8 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 			continue
 		}
 
-		// Attach leading doc comments as visual move spans so they share the moved block's highlight.
-		if ja.ASTNode != nil {
+		// Let leading doc comments share the block's move highlight if both sides have them.
+		if ja.ASTNode != nil && ja.DestASTNode != nil && len(ja.ASTNode.LeadingTrivia) > 0 && len(ja.DestASTNode.LeadingTrivia) > 0 {
 			for _, tr := range ja.ASTNode.LeadingTrivia {
 				if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) && !deletedCommentBytes[tr.StartByte] {
 					leftDelims = append(leftDelims, DelimiterSpan{
@@ -651,9 +651,7 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 					})
 				}
 			}
-		}
 
-		if ja.DestASTNode != nil {
 			for _, tr := range ja.DestASTNode.LeadingTrivia {
 				if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) && !insertedCommentBytes[tr.StartByte] {
 					rightDelims = append(rightDelims, DelimiterSpan{

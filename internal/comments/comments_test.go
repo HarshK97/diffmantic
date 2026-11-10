@@ -1606,3 +1606,153 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
 		})
 	})
 }
+
+func TestDiffCommentsAnchorIsolation(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func checkRecovery(u1, u2 *Node, r *Rules) bool {
+	before()
+
+	// An empty delimited container must only pair with an empty counterpart;
+	// otherwise the sibling LCS tie-break assigns its frame to an unrelated
+	// empty sibling.
+	if r != nil && r.IsDelimited(u1) {
+		if len(u1) != len(u2) {
+			return false
+		}
+	}
+
+	after()
+	return true
+}
+`)
+		newSrc := []byte(`package main
+
+func checkRecovery(u1, u2 *Node, r *Rules) bool {
+	before()
+
+	isDelim1 := r != nil && r.IsDelimited(u1)
+	isDelim2 := r != nil && r.IsDelimited(u2)
+	if isDelim1 != isDelim2 {
+		return false
+	}
+	if isDelim1 && isDelim2 {
+		// An empty delimited container must only pair with an empty counterpart;
+		// otherwise the sibling LCS tie-break assigns its frame to an unrelated
+		// empty sibling.
+		if len(u1) != len(u2) {
+			return false
+		}
+	}
+
+	after()
+	return true
+}
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.ParseErrorCount != 0 || newAST.ParseErrorCount != 0 {
+			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("missing Go rules")
+		}
+
+		findAtRow := func(root *treesitter.ASTNode, row uint32, matches func(string) bool) *treesitter.ASTNode {
+			var found *treesitter.ASTNode
+			var visit func(*treesitter.ASTNode)
+			visit = func(node *treesitter.ASTNode) {
+				if node == nil || found != nil {
+					return
+				}
+				if node.StartRow == row && matches(node.Type) {
+					found = node
+					return
+				}
+				for _, child := range node.Children {
+					visit(child)
+				}
+			}
+			visit(root)
+			return found
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+
+		assertMapped := func(name string, src, dst *treesitter.ASTNode) {
+			t.Helper()
+			if src == nil || dst == nil {
+				t.Fatalf("missing %s node: src=%v dst=%v", name, src, dst)
+			}
+			if got := match.Mappings.Src()[src]; got != dst {
+				t.Errorf("%s did not map in place: got %v, want %v", name, got, dst)
+			}
+		}
+
+		// 1. Enclosing context
+		assertMapped("function declaration", findAtRow(oldAST, 2, r.IsDeclaration), findAtRow(newAST, 2, r.IsDeclaration))
+		assertMapped("function block", findAtRow(oldAST, 2, r.IsBlock), findAtRow(newAST, 2, r.IsBlock))
+
+		// 2. Surrounding sequence
+		assertMapped("preceding statement", findAtRow(oldAST, 3, r.IsStatement), findAtRow(newAST, 3, r.IsStatement))
+		assertMapped("following statement", findAtRow(oldAST, 14, r.IsStatement), findAtRow(newAST, 19, r.IsStatement))
+
+		// 3. Inner if moved into the new block
+		innerIfSrc := findAtRow(oldAST, 9, r.IsStatement)
+		innerIfDst := findAtRow(newAST, 14, r.IsStatement)
+		assertMapped("inner if statement", innerIfSrc, innerIfDst)
+
+		// 4. Verify comments extraction & diffing
+		srcComments := ExtractComments(oldAST)
+		dstComments := ExtractComments(newAST)
+		if len(srcComments) != 3 || len(dstComments) != 3 {
+			t.Fatalf("expected 3 comment blocks on each side, got src=%d dst=%d", len(srcComments), len(dstComments))
+		}
+
+		// In source, comments attach to outer if (row 8)
+		outerIfSrc := findAtRow(oldAST, 8, r.IsStatement)
+		for i, c := range srcComments {
+			if c.AnchorNode != outerIfSrc {
+				t.Errorf("expected srcComments[%d] anchor to be outer if (row 8), got %+v", i, c.AnchorNode)
+			}
+		}
+		// In dest, comments attach to inner if (row 14)
+		for i, c := range dstComments {
+			if c.AnchorNode != innerIfDst {
+				t.Errorf("expected dstComments[%d] anchor to be inner if (row 14), got %+v", i, c.AnchorNode)
+			}
+		}
+
+		result := DiffComments(srcComments, dstComments, match.Mappings)
+		if len(result.Actions) != 6 {
+			t.Fatalf("expected 6 actions (3 Delete, 3 Insert), got %d actions: %+v", len(result.Actions), result.Actions)
+		}
+
+		var deleteCount, insertCount int
+		for _, act := range result.Actions {
+			if act.Type == actions.Delete && strings.Contains(act.Node.Label, "delimited container") {
+				deleteCount++
+			}
+			if act.Type == actions.Insert && strings.Contains(act.Node.Label, "delimited container") {
+				insertCount++
+			}
+		}
+		if deleteCount != 1 || insertCount != 1 {
+			t.Errorf("expected 1 Delete and 1 Insert action for header comment, got del=%d ins=%d", deleteCount, insertCount)
+		}
+		if len(result.LineMappings) != 0 {
+			t.Errorf("expected 0 line mappings for comment attaching to different AST, got: %v", result.LineMappings)
+		}
+	})
+}
