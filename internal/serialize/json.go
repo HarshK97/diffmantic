@@ -693,20 +693,12 @@ func BuildEnvelopeWithOptions(es *actions.EditScript, ms *engine.Mapping, srcRoo
 	return &env, nil
 }
 
-// AssignMoveColors assigns a color (0: Cyan, 1: Magenta) to each move:
-//   - Grouped moves (siblings moving together between the same parents) share one color.
-//   - Children moving along inside a moving container inherit their parent's color.
-//   - Moves within 2 lines of each other get different colors so they don't blend together,
-//     whether they start close and diverge, or converge near the same destination lines.
+// AssignMoveColors assigns move colors (0: Cyan, 1: Magenta) to moved actions:
+//   - Descendants moving with a parent inherit that parent's color.
+//   - Adjacent moves shifting together in the same order share a color so lines don't alternate colors for no reason.
+//   - Swaps, reordered moves, or moves nested inside another take different colors so they stand out.
+//   - Moves diverging from the same parent or converging near the same destination take different colors, unless one moved into the other's body block.
 func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
-	type moveInterval struct {
-		actIdx int
-		sStart int
-		sEnd   int
-		dStart int
-		dEnd   int
-	}
-
 	var moves []moveInterval
 	for i := range actions {
 		a := &actions[i]
@@ -714,16 +706,13 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			continue
 		}
 		var sStart, sEnd, dStart, dEnd int
-		if a.Node != nil {
-			sStart, _ = ByteToLineCol(srcOffsets, a.Node.StartByte)
-			sEnd, _ = ByteToLineCol(srcOffsets, a.Node.EndByte)
+		if sStartByte, sEndByte, ok := getSrcBytes(a); ok {
+			sStart, _ = ByteToLineCol(srcOffsets, sStartByte)
+			sEnd, _ = ByteToLineCol(srcOffsets, sEndByte)
 		}
-		if a.DestStartByte != nil && a.DestEndByte != nil {
-			dStart, _ = ByteToLineCol(dstOffsets, *a.DestStartByte)
-			dEnd, _ = ByteToLineCol(dstOffsets, *a.DestEndByte)
-		} else if a.DestNode != nil {
-			dStart, _ = ByteToLineCol(dstOffsets, a.DestNode.StartByte)
-			dEnd, _ = ByteToLineCol(dstOffsets, a.DestNode.EndByte)
+		if dStartByte, dEndByte, ok := getDestBytes(a); ok {
+			dStart, _ = ByteToLineCol(dstOffsets, dStartByte)
+			dEnd, _ = ByteToLineCol(dstOffsets, dEndByte)
 		}
 		moves = append(moves, moveInterval{
 			actIdx: i,
@@ -796,9 +785,7 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 					if isHierarchicalCoMover(curAct, otherAct) {
 						continue
 					}
-					sOverlap := max(m.sStart, otherM.sStart) <= min(m.sEnd, otherM.sEnd)+2
-					dOverlap := max(m.dStart, otherM.dStart) <= min(m.dEnd, otherM.dEnd)+2
-					if sOverlap || dOverlap {
+					if movesInterfere(m, otherM, curAct, otherAct) {
 						if otherColor < len(used) {
 							used[otherColor] = true
 						}
@@ -827,7 +814,9 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 
 		// If an action moved along with a parent or container, match its color.
 		if pIdx := slices.IndexFunc(moves, func(prev moveInterval) bool {
-			return isColored[prev.actIdx] && isHierarchicalCoMover(curAct, &actions[prev.actIdx])
+			return isColored[prev.actIdx] &&
+				(isHierarchicalCoMover(curAct, &actions[prev.actIdx]) ||
+					isDestinationContainerBodyCoMover(curAct, &actions[prev.actIdx]))
 		}); pIdx >= 0 {
 			c := actions[moves[pIdx].actIdx].MoveColorIndex
 			curAct.MoveColorIndex = c
@@ -848,11 +837,7 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 				continue
 			}
 
-			// Treat moves within 2 lines of each other as interfering so they get distinct colors.
-			sOverlap := max(cur.sStart, prev.sStart) <= min(cur.sEnd, prev.sEnd)+2
-			dOverlap := max(cur.dStart, prev.dStart) <= min(cur.dEnd, prev.dEnd)+2
-
-			if sOverlap || dOverlap {
+			if movesInterfere(cur, prev, curAct, prevAct) {
 				if prevAct.MoveColorIndex < len(used) {
 					used[prevAct.MoveColorIndex] = true
 				}
@@ -866,6 +851,182 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 		curAct.MoveColorIndex = slot
 		isColored[cur.actIdx] = true
 	}
+}
+
+type moveInterval struct {
+	actIdx int
+	sStart int
+	sEnd   int
+	dStart int
+	dEnd   int
+}
+
+// movesInterfere determines whether two moves should take distinct colors.
+func movesInterfere(cur, prev moveInterval, curAct, prevAct *Action) bool {
+	sOverlap := max(cur.sStart, prev.sStart) <= min(cur.sEnd, prev.sEnd)+2
+	dOverlap := max(cur.dStart, prev.dStart) <= min(cur.dEnd, prev.dEnd)+2
+
+	if !sOverlap && !dOverlap {
+		return false
+	}
+
+	// Case 1: Both source and destination overlap within 2 lines.
+	if sOverlap && dOverlap {
+		// When one move wraps around another, give them contrasting colors.
+		if isEnclosingMove(curAct, prevAct) || isEnclosingMove(prevAct, curAct) {
+			return true
+		}
+
+		// Disjoint moves: check relative ordering.
+		sOrder := moveStartsBefore(getSrcBytes, curAct, prevAct, cur.sStart, prev.sStart)
+		dOrder := moveStartsBefore(getDestBytes, curAct, prevAct, cur.dStart, prev.dStart)
+		// If their relative order flipped, they swapped positions.
+		if sOrder != dOrder {
+			return true
+		}
+		// Parallel moves shifting together in the same order share a color.
+		return false
+	}
+
+	// Case 2: Diverging moves (nearby source lines, but distant destination lines).
+	// They only clash if they diverge from the same parent or container.
+	if sOverlap && !dOverlap {
+		return sameSourceParent(curAct, prevAct)
+	}
+
+	// Case 3: Converging moves (distant source lines, but nearby destination lines).
+	// They clash so converging moves don't look like one chunk, unless one moved into the other's body block.
+	if !sOverlap && dOverlap {
+		if isDestinationContainerBodyCoMover(curAct, prevAct) || isDestinationContainerBodyCoMover(prevAct, curAct) {
+			return false
+		}
+		return true
+	}
+
+	return false
+}
+
+// isEnclosingMove reports whether outer encloses inner in source or destination bytes.
+func isEnclosingMove(outer, inner *Action) bool {
+	if outer == nil || inner == nil {
+		return false
+	}
+	if sOuterStart, sOuterEnd, okOuter := getSrcBytes(outer); okOuter {
+		if sInnerStart, sInnerEnd, okInner := getSrcBytes(inner); okInner {
+			if sOuterStart <= sInnerStart && sOuterEnd >= sInnerEnd && (sOuterStart < sInnerStart || sOuterEnd > sInnerEnd) {
+				return true
+			}
+		}
+	}
+	if dOuterStart, dOuterEnd, okOuter := getDestBytes(outer); okOuter {
+		if dInnerStart, dInnerEnd, okInner := getDestBytes(inner); okInner {
+			if dOuterStart <= dInnerStart && dOuterEnd >= dInnerEnd && (dOuterStart < dInnerStart || dOuterEnd > dInnerEnd) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// getSrcBytes returns the source byte span for a, keeping OrigEndByte for clipped containers.
+func getSrcBytes(a *Action) (uint32, uint32, bool) {
+	if a == nil || a.Node == nil {
+		return 0, 0, false
+	}
+	start := a.Node.StartByte
+	end := a.Node.EndByte
+	if a.OrigEndByte > start {
+		end = max(end, a.OrigEndByte)
+	}
+	return start, end, true
+}
+
+// getDestBytes returns the destination byte span for a, keeping DestOrigEndByte for clipped containers.
+func getDestBytes(a *Action) (uint32, uint32, bool) {
+	if a == nil {
+		return 0, 0, false
+	}
+	var start, end uint32
+	found := false
+	if a.DestStartByte != nil && a.DestEndByte != nil {
+		start = *a.DestStartByte
+		end = *a.DestEndByte
+		found = true
+	} else if a.DestNode != nil {
+		start = a.DestNode.StartByte
+		end = a.DestNode.EndByte
+		found = true
+	}
+	if !found {
+		return 0, 0, false
+	}
+	if a.DestOrigEndByte > start {
+		end = max(end, a.DestOrigEndByte)
+	}
+	return start, end, true
+}
+
+// moveStartsBefore reports whether actA starts before actB using byte offsets when available, or line indices otherwise.
+func moveStartsBefore(getBytes func(*Action) (uint32, uint32, bool), actA, actB *Action, lineA, lineB int) bool {
+	if aStart, _, okA := getBytes(actA); okA {
+		if bStart, _, okB := getBytes(actB); okB {
+			return aStart < bStart
+		}
+	}
+	return lineA < lineB
+}
+
+// canonicalMoveParentNode skips wrapper and expression statement nodes to find the enclosing block or construct parent.
+func canonicalMoveParentNode(n *treesitter.ASTNode) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	p := n.Parent
+	r := rules.Get(n.GetLanguage())
+	for p != nil && r != nil && (r.IsWrapper(p.Type) || r.IsExpressionStatement(p.Type)) && !r.IsBlock(p.Type) && !r.IsDeclaration(p.Type) {
+		p = p.Parent
+	}
+	return p
+}
+
+// sameSourceParent reports whether actA and actB share the same enclosing parent in the source tree.
+func sameSourceParent(actA, actB *Action) bool {
+	if actA == nil || actB == nil {
+		return true
+	}
+	if actA.ASTNode != nil && actB.ASTNode != nil {
+		pA := canonicalMoveParentNode(actA.ASTNode)
+		pB := canonicalMoveParentNode(actB.ASTNode)
+		return pA != nil && pA == pB
+	}
+	if actA.OldParent != nil && actB.OldParent != nil {
+		return actA.OldParent.StartByte == actB.OldParent.StartByte &&
+			actA.OldParent.Type == actB.OldParent.Type
+	}
+	return true
+}
+
+// isDestinationContainerBodyCoMover reports whether child moved into parent's body block in the destination tree.
+func isDestinationContainerBodyCoMover(child, parent *Action) bool {
+	if child == nil || parent == nil || parent.DestASTNode == nil {
+		return false
+	}
+	dstParent := parent.DestASTNode
+	r := rules.Get(dstParent.GetLanguage())
+	if r == nil {
+		return false
+	}
+	dstBlock := getDirectOrEnclosedBlock(dstParent, r)
+	if dstBlock == nil {
+		return false
+	}
+	if child.DestASTNode != nil {
+		return dstBlock.Contains(child.DestASTNode)
+	}
+	if child.DestStartByte != nil && child.DestEndByte != nil {
+		return dstBlock.StartByte <= *child.DestStartByte && dstBlock.EndByte >= *child.DestEndByte
+	}
+	return false
 }
 
 // isHierarchicalCoMover reports whether either action is a child or body descendant of the other in both trees.
@@ -886,22 +1047,7 @@ func isContainerBodyCoMover(child, parent *Action) bool {
 	if srcBlock == nil || !srcBlock.Contains(child.ASTNode) {
 		return false
 	}
-
-	dstParent := parent.DestASTNode
-	if dstParent == nil {
-		return false
-	}
-	dstBlock := getDirectOrEnclosedBlock(dstParent, r)
-	if dstBlock == nil {
-		return false
-	}
-	if child.DestASTNode != nil {
-		return dstBlock.Contains(child.DestASTNode)
-	}
-	if child.DestStartByte != nil && child.DestEndByte != nil {
-		return dstBlock.StartByte <= *child.DestStartByte && dstBlock.EndByte >= *child.DestEndByte
-	}
-	return false
+	return isDestinationContainerBodyCoMover(child, parent)
 }
 
 // getDirectOrEnclosedBlock returns n if it is already a block, or searches for an enclosed block child.
