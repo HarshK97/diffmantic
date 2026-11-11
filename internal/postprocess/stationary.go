@@ -183,7 +183,8 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 	}
 
 	isStationaryPos := srcChild.ChildIndex() == dstChild.ChildIndex() ||
-		(srcChild.ChildIndex() == len(srcBase.Children)-1 && dstChild.ChildIndex() == len(dstBase.Children)-1)
+		(srcChild.ChildIndex() == len(srcBase.Children)-1 && dstChild.ChildIndex() == len(dstBase.Children)-1) ||
+		isMonotonicContainerChild(srcBase, dstBase, srcChild, dstChild, ms)
 	if (srcBase != srcParent || dstBase != dstParent) && ms.Src()[srcBase] == dstBase {
 		if isStationaryPos {
 			return true
@@ -706,4 +707,60 @@ func sameScopeDeclaration(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *r
 		return false
 	}
 	return ms.Src()[srcDecl] == dstDecl
+}
+
+// isMonotonicContainerChild checks if the child keeps its relative position
+// among surviving siblings in the matched container.
+func isMonotonicContainerChild(srcBase, dstBase, srcChild, dstChild *treesitter.ASTNode, ms *engine.Mapping) bool {
+	if srcBase == nil || dstBase == nil || srcChild == nil || dstChild == nil || ms == nil {
+		return false
+	}
+
+	findEnclosingChild := func(parent, node *treesitter.ASTNode) *treesitter.ASTNode {
+		curr := node
+		for curr != nil && curr.Parent != parent {
+			curr = curr.Parent
+		}
+		return curr
+	}
+
+	findMappedSibling := func(base, sib *treesitter.ASTNode, mapping map[*treesitter.ASTNode]*treesitter.ASTNode) *treesitter.ASTNode {
+		if target := mapping[sib]; target != nil && base.Contains(target) {
+			return findEnclosingChild(base, target)
+		}
+		for _, d := range sib.Descendants() {
+			if target := mapping[d]; target != nil && base.Contains(target) {
+				if c := findEnclosingChild(base, target); c != nil {
+					return c
+				}
+			}
+		}
+		return nil
+	}
+
+	checkedSiblings := 0
+	checkOrder := func(baseA, baseB, childA, childB *treesitter.ASTNode, mapping map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+		idxA := childA.ChildIndex()
+		idxB := childB.ChildIndex()
+		for _, sibA := range baseA.Children {
+			if sibA == childA {
+				continue
+			}
+			sibB := findMappedSibling(baseB, sibA, mapping)
+			if sibB == nil || sibB == childB {
+				continue
+			}
+			if (sibA.ChildIndex() < idxA) != (sibB.ChildIndex() < idxB) {
+				return false
+			}
+			checkedSiblings++
+		}
+		return true
+	}
+
+	if !checkOrder(srcBase, dstBase, srcChild, dstChild, ms.Src()) ||
+		!checkOrder(dstBase, srcBase, dstChild, srcChild, ms.Dst()) {
+		return false
+	}
+	return checkedSiblings > 0
 }
