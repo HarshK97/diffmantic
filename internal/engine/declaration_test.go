@@ -1544,3 +1544,319 @@ type Bar struct {
 		})
 	})
 }
+
+func TestDeclarationContainerScoping(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust_ImplMethodScopingAndRenameInPlace", func(t *testing.T) {
+			src := `struct SideBySideData;
+
+impl SideBySideData {
+    pub fn new(decorations_width: usize, available_terminal_width: usize) -> Self {
+        let panel_width = decorations_width / 2;
+        Self
+    }
+    pub fn other_helper(&self) -> bool {
+        true
+    }
+}
+`
+			dst := `struct SideBySideData;
+
+impl SideBySideData {
+    pub fn new_sbs(decorations_width: usize, available_terminal_width: usize) -> Self {
+        let panel_width = decorations_width / 2;
+        Self
+    }
+    pub fn other_helper(&self) -> bool {
+        true
+    }
+}
+
+pub struct UseFullPanelWidth(pub bool);
+
+impl UseFullPanelWidth {
+    pub fn new(enabled: bool) -> Self {
+        Self(enabled)
+    }
+}
+`
+			srcAST, err := treesitter.Parse([]byte(src), "sbs.rs")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(dst), "sbs.rs")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+			}
+			if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+			}
+
+			r := rulesFor(srcAST)
+			part := NewLinePartition([]byte(src), []byte(dst))
+			mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+			m := mr.Mappings
+
+			var srcNewFn, dstNewSbsFn, dstUseFullNewFn *treesitter.ASTNode
+			var srcHelperFn, dstHelperFn *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+					switch getDeclarationName(n) {
+					case "new":
+						srcNewFn = n
+					case "other_helper":
+						srcHelperFn = n
+					}
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+					switch getDeclarationName(n) {
+					case "new_sbs":
+						dstNewSbsFn = n
+					case "new":
+						dstUseFullNewFn = n
+					case "other_helper":
+						dstHelperFn = n
+					}
+				}
+			}
+
+			if srcNewFn == nil || dstNewSbsFn == nil || dstUseFullNewFn == nil {
+				t.Fatalf("missing target functions: srcNew=%v dstNewSbs=%v dstUseFullNew=%v", srcNewFn, dstNewSbsFn, dstUseFullNewFn)
+			}
+			if srcHelperFn == nil || dstHelperFn == nil {
+				t.Fatalf("missing other_helper: src=%v dst=%v", srcHelperFn, dstHelperFn)
+			}
+
+			// other_helper is unchanged, so it should map in place.
+			if m.Src()[srcHelperFn] != dstHelperFn {
+				t.Errorf("expected other_helper to map in place, got %v", m.Src()[srcHelperFn])
+			}
+
+			if m.Src()[srcNewFn] == dstUseFullNewFn {
+				t.Errorf("SideBySideData::new was stolen by UseFullPanelWidth::new across containers")
+			}
+
+			if m.Src()[srcNewFn] != dstNewSbsFn {
+				t.Errorf("expected SideBySideData::new to map to new_sbs in place, got %v", m.Src()[srcNewFn])
+			}
+
+			if m.Dst()[dstUseFullNewFn] != nil {
+				t.Errorf("expected UseFullPanelWidth::new to be unmapped, got %v", m.Dst()[dstUseFullNewFn])
+			}
+		})
+
+		t.Run("Zig_AnonymousStructScopingAndRenameInPlace", func(t *testing.T) {
+			src := `const Alpha = struct {
+    fn make(x: u32) u32 {
+        return x + 1;
+    }
+
+    fn helper() void {}
+};
+`
+			dst := `const Alpha = struct {
+    fn make_renamed(x: u32) u32 {
+        return x + 1;
+    }
+
+    fn helper() void {}
+};
+
+const Beta = struct {
+    fn make(x: u32) u32 {
+        return x + 2;
+    }
+};
+`
+			srcAST, err := treesitter.Parse([]byte(src), "sbs.zig")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(dst), "sbs.zig")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+			}
+			if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+			}
+
+			r := rulesFor(srcAST)
+			part := NewLinePartition([]byte(src), []byte(dst))
+			mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+			m := mr.Mappings
+
+			var srcMakeFn, dstMakeRenamedFn, dstBetaMakeFn *treesitter.ASTNode
+			var srcHelperFn, dstHelperFn *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+					switch getDeclarationName(n) {
+					case "make":
+						srcMakeFn = n
+					case "helper":
+						srcHelperFn = n
+					}
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+					switch getDeclarationName(n) {
+					case "make_renamed":
+						dstMakeRenamedFn = n
+					case "make":
+						if getEnclosingContainerName(n, r) == "Beta" {
+							dstBetaMakeFn = n
+						}
+					case "helper":
+						dstHelperFn = n
+					}
+				}
+			}
+
+			if srcMakeFn == nil || dstMakeRenamedFn == nil || dstBetaMakeFn == nil {
+				t.Fatalf("missing target functions: srcMake=%v dstMakeRenamed=%v dstBetaMake=%v", srcMakeFn, dstMakeRenamedFn, dstBetaMakeFn)
+			}
+			if srcHelperFn == nil || dstHelperFn == nil {
+				t.Fatalf("missing helper: src=%v dst=%v", srcHelperFn, dstHelperFn)
+			}
+
+			// helper is unchanged, so it should map in place.
+			if m.Src()[srcHelperFn] != dstHelperFn {
+				t.Errorf("expected helper to map in place, got %v", m.Src()[srcHelperFn])
+			}
+
+			if m.Src()[srcMakeFn] == dstBetaMakeFn {
+				t.Errorf("Alpha.make was stolen by Beta.make across anonymous struct containers")
+			}
+
+			if m.Src()[srcMakeFn] != dstMakeRenamedFn {
+				t.Errorf("expected Alpha.make to map to make_renamed in place, got %v", m.Src()[srcMakeFn])
+			}
+
+			if m.Dst()[dstBetaMakeFn] != nil {
+				t.Errorf("expected Beta.make to be an unmapped insertion, got %v", m.Dst()[dstBetaMakeFn])
+			}
+		})
+
+		t.Run("Go_MethodScopingAndRenameInPlace", func(t *testing.T) {
+			src := `package main
+
+type SideBySideData struct{}
+
+func (s *SideBySideData) New(width int) *SideBySideData {
+	panelWidth := width / 2
+	_ = panelWidth
+	return s
+}
+
+func (s *SideBySideData) OtherHelper() bool {
+	return true
+}
+`
+			dst := `package main
+
+type SideBySideData struct{}
+
+func (s *SideBySideData) NewSBS(width int) *SideBySideData {
+	panelWidth := width / 2
+	_ = panelWidth
+	return s
+}
+
+func (s *SideBySideData) OtherHelper() bool {
+	return true
+}
+
+type UseFullPanelWidth struct{}
+
+func (u *UseFullPanelWidth) New(enabled bool) *UseFullPanelWidth {
+	return u
+}
+`
+			srcAST, err := treesitter.Parse([]byte(src), "sbs.go")
+			if err != nil {
+				t.Fatalf("parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse([]byte(dst), "sbs.go")
+			if err != nil {
+				t.Fatalf("parse dst: %v", err)
+			}
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+			}
+			if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+			}
+
+			r := rulesFor(srcAST)
+			part := NewLinePartition([]byte(src), []byte(dst))
+			mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+			m := mr.Mappings
+
+			var srcNewFn, dstNewSbsFn, dstUseFullNewFn *treesitter.ASTNode
+			var srcHelperFn, dstHelperFn *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+					switch getDeclarationName(n) {
+					case "New":
+						srcNewFn = n
+					case "OtherHelper":
+						srcHelperFn = n
+					}
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+					switch getDeclarationName(n) {
+					case "NewSBS":
+						dstNewSbsFn = n
+					case "New":
+						dstUseFullNewFn = n
+					case "OtherHelper":
+						dstHelperFn = n
+					}
+				}
+			}
+
+			if srcNewFn == nil || dstNewSbsFn == nil || dstUseFullNewFn == nil {
+				t.Fatalf("missing target functions: srcNew=%v dstNewSbs=%v dstUseFullNew=%v", srcNewFn, dstNewSbsFn, dstUseFullNewFn)
+			}
+			if srcHelperFn == nil || dstHelperFn == nil {
+				t.Fatalf("missing OtherHelper: src=%v dst=%v", srcHelperFn, dstHelperFn)
+			}
+
+			// OtherHelper is unchanged, so it should map in place.
+			if m.Src()[srcHelperFn] != dstHelperFn {
+				t.Errorf("expected OtherHelper to map in place, got %v", m.Src()[srcHelperFn])
+			}
+
+			if m.Src()[srcNewFn] == dstUseFullNewFn {
+				t.Errorf("SideBySideData.New was stolen by UseFullPanelWidth.New across receivers")
+			}
+
+			if m.Src()[srcNewFn] != dstNewSbsFn {
+				t.Errorf("expected SideBySideData.New to map to NewSBS in place, got %v", m.Src()[srcNewFn])
+			}
+
+			if m.Dst()[dstUseFullNewFn] != nil {
+				t.Errorf("expected UseFullPanelWidth.New to be unmapped, got %v", m.Dst()[dstUseFullNewFn])
+			}
+		})
+	})
+}

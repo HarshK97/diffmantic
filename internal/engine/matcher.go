@@ -762,11 +762,87 @@ func FprintMappings(w io.Writer, r *MatchResult) error {
 }
 
 type decKey struct {
-	name string
+	name      string
+	container string
+}
+
+// getEnclosingContainerName returns the name of the nearest enclosing container
+// declaration (class, impl, struct, ...) above n, so same-named methods in
+// different containers don't cross-match. Go has no impl block to walk up to,
+// so for a method_declaration it instead extracts the receiver type from the
+// first parameter_list (the method's own args are the second one). Returns ""
+// when n has no enclosing container.
+func getEnclosingContainerName(n *treesitter.ASTNode, r *rules.Rules) string {
+	if n == nil {
+		return ""
+	}
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		if matchRule(r, curr.Type, (*rules.Rules).IsContainerDeclaration, rules.IsContainerDeclaration) {
+			rl := ruleLookup{r: rulesFor(curr)}
+			if name := directIdentifierName(curr, rl); name != "" {
+				return name
+			}
+			// Anonymous container bound to a named variable (Zig
+			// `const Alpha = struct { ... }`): the name lives on the
+			// wrapping declaration one level up.
+			if name := directIdentifierName(curr.Parent, rl); name != "" {
+				return name
+			}
+			// shortcut: unnamed wrapper containers (C++ template_declaration,
+			// Go standalone type_declaration) resolve to "", so a renamed
+			// template can collide with a same-named free-function overload
+			// and drop to the ambiguity guard — upgrade if later phases
+			// ever cross-pair those shapes.
+			return ""
+		}
+	}
+	// Go: a method's receiver type lives in the first parameter_list (the
+	// method's own args are the second one).
+	if r != nil && r.IsContainerDeclaration(n.Type) {
+		var paramLists []*treesitter.ASTNode
+		for _, child := range n.Children {
+			if r.IsDelimitedContainer(child.Type) {
+				paramLists = append(paramLists, child)
+			}
+		}
+		if len(paramLists) >= 2 {
+			for _, sub := range paramLists[0].Leaves() {
+				if r.IsType(sub.Type) && sub.Label != "" {
+					return sub.Label
+				}
+			}
+		}
+	}
+	return ""
 }
 
 type ruleLookup struct {
 	r *rules.Rules
+}
+
+// directIdentifierName returns the container's name from its own identifier
+// children, or "". Lookup never descends into nested declarations (a struct's
+// first method is not the struct's name). Java and C put the return type before
+// the method name, so non-type identifiers win over type identifiers.
+func directIdentifierName(n *treesitter.ASTNode, rl ruleLookup) string {
+	if n == nil {
+		return ""
+	}
+	for _, child := range n.Children {
+		if rl.isID(child.Type) && !rl.isType(child.Type) {
+			if txt := identifierText(child); txt != "" {
+				return txt
+			}
+		}
+	}
+	for _, child := range n.Children {
+		if rl.isID(child.Type) {
+			if txt := identifierText(child); txt != "" {
+				return txt
+			}
+		}
+	}
+	return ""
 }
 
 func matchRule(r *rules.Rules, t string, method func(*rules.Rules, string) bool, fallback func(string) bool) bool {
@@ -854,34 +930,39 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 	t1Map := make(map[decKey][]*treesitter.ASTNode, len(u1))
 	for _, d1 := range u1 {
-		key := decKey{name: getDeclarationName(d1)}
+		key := decKey{name: getDeclarationName(d1), container: getEnclosingContainerName(d1, r)}
 		if key.name != "" {
 			t1Map[key] = append(t1Map[key], d1)
 		}
 	}
 	t2Map := make(map[decKey][]*treesitter.ASTNode, len(u2))
 	for _, d2 := range u2 {
-		key := decKey{name: getDeclarationName(d2)}
+		key := decKey{name: getDeclarationName(d2), container: getEnclosingContainerName(d2, r)}
 		if key.name != "" {
 			t2Map[key] = append(t2Map[key], d2)
 		}
 	}
 
-	visited := make(map[decKey]bool, len(t2Map))
 	for _, d2 := range t2Decs {
 		if m.HasDst(d2) {
 			continue
 		}
-		key := decKey{name: getDeclarationName(d2)}
-		if key.name == "" || visited[key] {
+		key := decKey{name: getDeclarationName(d2), container: getEnclosingContainerName(d2, r)}
+		if key.name == "" {
 			continue
 		}
-		visited[key] = true
 
 		d2List := t2Map[key]
-		if len(d2List) != 1 {
+		var matchingD2s []*treesitter.ASTNode
+		for _, cand2 := range d2List {
+			if TypesMatch(cand2.Type, d2.Type, r) {
+				matchingD2s = append(matchingD2s, cand2)
+			}
+		}
+		if len(matchingD2s) != 1 {
 			continue
 		}
+
 		d1List, ok := t1Map[key]
 		if !ok || len(d1List) == 0 {
 			continue
