@@ -1818,3 +1818,132 @@ func TestNormalize_BinaryChainOperandStationaryProtection(t *testing.T) {
 		}
 	})
 }
+
+func TestAttributeMoveDemotion(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`#[allow(clippy::comparison_chain)]
+fn foo() {}
+`)
+		dst := []byte(`#[derive(Debug)]
+struct Bar;
+`)
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		var srcAttr, dstAttr *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsAttribute(n.Type) {
+				srcAttr = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsAttribute(n.Type) {
+				dstAttr = n
+				break
+			}
+		}
+		if srcAttr == nil || dstAttr == nil {
+			t.Fatalf("failed to locate attributes in ASTs")
+		}
+
+		ms := engine.NewMapping()
+		ms.Add(srcAST.Root(), dstAST.Root())
+
+		if !shouldDemoteMove(srcAttr, dstAttr, ms, r) {
+			t.Errorf("expected cross-scope attribute move to be demoted by shouldDemoteMove")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust_AttributeDoesNotMoveAcrossDeclarations", func(t *testing.T) {
+			src := []byte(`pub struct Panel {
+    pub width: usize,
+}
+
+#[allow(clippy::comparison_chain)]
+fn helper_old(x: usize) -> usize {
+    x + 1
+}
+`)
+			dst := []byte(`#[derive(Debug)]
+pub struct Panel {
+    pub width: usize,
+}
+
+fn helper_new(y: usize) -> usize {
+    y + 1
+}
+`)
+
+			srcAST, err := treesitter.Parse(src, "test.rs")
+			if err != nil {
+				t.Fatalf("failed to parse src: %v", err)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.rs")
+			if err != nil {
+				t.Fatalf("failed to parse dst: %v", err)
+			}
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+			}
+			if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+			ms := matchResult.Mappings
+			r := rules.Get("rust")
+
+			// 1. Surrounding context: Panel struct maps in place
+			var srcPanel, dstPanel *treesitter.ASTNode
+			var srcAttr, dstAttr *treesitter.ASTNode
+
+			for _, n := range srcAST.Root().PreOrder() {
+				if r.IsDeclaration(n.Type) && n.Type == "struct_item" {
+					srcPanel = n
+				}
+				if r.IsAttribute(n.Type) {
+					srcAttr = n
+				}
+			}
+			for _, n := range dstAST.Root().PreOrder() {
+				if r.IsDeclaration(n.Type) && n.Type == "struct_item" {
+					dstPanel = n
+				}
+				if r.IsAttribute(n.Type) {
+					dstAttr = n
+				}
+			}
+
+			if srcPanel == nil || dstPanel == nil {
+				t.Fatalf("failed to locate Panel struct in ASTs")
+			}
+			if ms.Src()[srcPanel] != dstPanel {
+				t.Errorf("expected Panel struct to map in place")
+			}
+
+			if srcAttr == nil || dstAttr == nil {
+				t.Fatalf("failed to locate attributes in ASTs")
+			}
+
+			// 2. The attribute on helper_old must not move over to Panel
+			script := actions.GenerateEditScript(srcAST, dstAST, ms)
+			normalized := Run(script, ms, srcAST, dstAST)
+
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move && (a.Node == srcAttr || a.Node == dstAttr) {
+					t.Errorf("expected attribute NOT to be a move across declarations, got Move on %s", a.Node.Type)
+				}
+			}
+		})
+	})
+}

@@ -702,6 +702,12 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 
+			// Require 40% Dice so hollow attribute shells do not roll up across unrelated declarations.
+			isAttr := (r != nil && r.IsAttribute(t1.Type)) || (r == nil && rules.IsAttribute(t1.Type))
+			if isAttr && m.DiceSrc(t1, bestParent) < 0.40 {
+				continue
+			}
+
 			m.Add(t1, bestParent)
 			reconcileDeclarationSignatures(t1, bestParent, m, r)
 			if hasUnmappedChild(t1, m.Has) && hasUnmappedChild(bestParent, m.HasDst) {
