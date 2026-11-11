@@ -765,6 +765,60 @@ type decKey struct {
 	name string
 }
 
+type ruleLookup struct {
+	r *rules.Rules
+}
+
+func matchRule(r *rules.Rules, t string, method func(*rules.Rules, string) bool, fallback func(string) bool) bool {
+	if r != nil {
+		return method(r, t)
+	}
+	return fallback(t)
+}
+
+func (l ruleLookup) isDecl(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsDeclaration, rules.IsDeclaration)
+}
+
+func (l ruleLookup) isLocalVar(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsLocalVarDeclaration, rules.IsLocalVarDeclaration)
+}
+
+func (l ruleLookup) isID(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsIdentifier, rules.IsIdentifier)
+}
+
+func (l ruleLookup) isType(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsType, rules.IsType)
+}
+
+func (l ruleLookup) isDeclarator(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsDeclarator, rules.IsDeclarator)
+}
+
+func (l ruleLookup) isWrapper(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsWrapper, rules.IsWrapper)
+}
+
+func (l ruleLookup) isContainer(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsContainerDeclaration, rules.IsContainerDeclaration) ||
+		matchRule(l.r, t, (*rules.Rules).IsClosure, rules.IsClosure)
+}
+
+func (l ruleLookup) isSkip(node *treesitter.ASTNode) bool {
+	if l.isDeclarator(node.Type) {
+		return false
+	}
+	if l.r != nil {
+		return l.r.IsBlock(node.Type) || l.r.IsAttribute(node.Type) || l.r.IsDeclaration(node.Type) ||
+			l.r.IsContainerDeclaration(node.Type) || l.r.IsDelimitedContainer(node.Type) ||
+			(l.r.IsWrapper(node.Type) && !l.r.IsType(node.Type))
+	}
+	return rules.IsBlock(node.Type) || rules.IsAttribute(node.Type) || rules.IsDeclaration(node.Type) ||
+		rules.IsContainerDeclaration(node.Type) || rules.IsDelimitedContainer(node.Type) ||
+		(rules.IsWrapper(node.Type) && !rules.IsType(node.Type))
+}
+
 func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	t1Decs := findDeclarations(t1Root)
 	if len(t1Decs) == 0 {
@@ -795,7 +849,8 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		return
 	}
 
-	rules := rulesFor(t1Root)
+	r := rulesFor(t1Root)
+	rl := ruleLookup{r: r}
 
 	t1Map := make(map[decKey][]*treesitter.ASTNode, len(u1))
 	for _, d1 := range u1 {
@@ -834,7 +889,7 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 		var matchingD1s []*treesitter.ASTNode
 		for _, d1 := range d1List {
-			if TypesMatch(d1.Type, d2.Type, rules) {
+			if TypesMatch(d1.Type, d2.Type, r) {
 				matchingD1s = append(matchingD1s, d1)
 			}
 		}
@@ -854,14 +909,34 @@ func matchDeclarations(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				}
 			}
 			m.Add(bestD1, d2)
-			matchDeclarationBodies(bestD1, d2, m, rules)
+			matchDeclarationBodies(bestD1, d2, m, r)
 		}
+	}
+
+	countInnerDecls := func(parent *treesitter.ASTNode) int {
+		count := 0
+		for _, child := range parent.Children {
+			if rl.isDecl(child.Type) && (rl.isWrapper(parent.Type) || !rl.isLocalVar(child.Type)) {
+				count++
+			}
+		}
+		return count
 	}
 
 	for _, p := range slices.Clone(m.Pairs) {
 		d1, d2 := p.Src, p.Dst
-		if rules != nil && rules.IsDeclaration(d1.Type) {
-			matchDeclarationBodies(d1, d2, m, rules)
+		if !rl.isDecl(d1.Type) {
+			continue
+		}
+		matchDeclarationBodies(d1, d2, m, r)
+		// findDeclarations skips outer wrappers like Python's decorated_definition, so pair matching single-decl parents here.
+		if d1.Parent == nil || d2.Parent == nil || m.Has(d1.Parent) || m.HasDst(d2.Parent) {
+			continue
+		}
+		if d1.Parent.Type == d2.Parent.Type && rl.isDecl(d1.Parent.Type) &&
+			countInnerDecls(d1.Parent) == 1 && countInnerDecls(d2.Parent) == 1 &&
+			getDeclarationName(d1.Parent) == getDeclarationName(d1) {
+			m.Add(d1.Parent, d2.Parent)
 		}
 	}
 }
@@ -921,25 +996,7 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 	if root == nil {
 		return nil
 	}
-	r := rulesFor(root)
-	isDecl := func(t string) bool {
-		if r != nil {
-			return r.IsDeclaration(t)
-		}
-		return rules.IsDeclaration(t)
-	}
-	isLocalVar := func(t string) bool {
-		if r != nil {
-			return r.IsLocalVarDeclaration(t)
-		}
-		return rules.IsLocalVarDeclaration(t)
-	}
-	isContainer := func(t string) bool {
-		if r != nil {
-			return r.IsContainerDeclaration(t) || r.IsClosure(t)
-		}
-		return rules.IsContainerDeclaration(t) || rules.IsClosure(t)
-	}
+	rl := ruleLookup{r: rulesFor(root)}
 
 	var decs []*treesitter.ASTNode
 	var traverse func(*treesitter.ASTNode)
@@ -947,21 +1004,31 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 		if n == nil {
 			return
 		}
-		if isDecl(n.Type) {
-			topLevel := true
-			if isLocalVar(n.Type) {
-				// Only match file- or module-level variables here. Locals inside
-				// functions should match as regular statements so we don't steal
-				// variables across scopes or misalign renames.
-				for curr := n.Parent; curr != nil; curr = curr.Parent {
-					if isContainer(curr.Type) {
-						topLevel = false
-						break
+		if rl.isDecl(n.Type) {
+			// Skip outer wrappers like Python's decorated_definition, since returning both the
+			// wrapper and the wrapped declaration gives matchDeclarations duplicate keys.
+			hasDirectName := slices.ContainsFunc(n.Children, func(child *treesitter.ASTNode) bool {
+				return rl.isID(child.Type) || rl.isDeclarator(child.Type)
+			})
+			hasInnerDecl := !rl.isLocalVar(n.Type) && !hasDirectName && slices.ContainsFunc(n.Children, func(child *treesitter.ASTNode) bool {
+				return rl.isDecl(child.Type) && (rl.isWrapper(n.Type) || !rl.isLocalVar(child.Type))
+			})
+			if !hasInnerDecl {
+				topLevel := true
+				if rl.isLocalVar(n.Type) {
+					// Only match file- or module-level variables here. Locals inside
+					// functions should match as regular statements so we don't steal
+					// variables across scopes or misalign renames.
+					for curr := n.Parent; curr != nil; curr = curr.Parent {
+						if rl.isContainer(curr.Type) && !rl.isWrapper(curr.Type) {
+							topLevel = false
+							break
+						}
 					}
 				}
-			}
-			if topLevel {
-				decs = append(decs, n)
+				if topLevel {
+					decs = append(decs, n)
+				}
 			}
 		}
 		for _, child := range n.Children {
@@ -991,44 +1058,76 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
 	}
-	r := rulesFor(n)
-	isDec := (r != nil && (r.IsDeclaration(n.Type) || r.IsLocalVarDeclaration(n.Type))) ||
-		(r == nil && (rules.IsDeclaration(n.Type) || rules.IsLocalVarDeclaration(n.Type)))
-	if !isDec {
-		isID := (r != nil && r.IsIdentifier(n.Type)) || (r == nil && rules.IsIdentifier(n.Type))
-		if isID {
+	rl := ruleLookup{r: rulesFor(n)}
+
+	if !rl.isDecl(n.Type) && !rl.isLocalVar(n.Type) {
+		if rl.isID(n.Type) {
 			return identifierText(n)
 		}
 		return ""
 	}
-	// First check direct children for an identifier.
+
+	var findIdentifier func(*treesitter.ASTNode, int) string
+	findIdentifier = func(node *treesitter.ASTNode, depth int) string {
+		if depth <= 0 || rl.isSkip(node) {
+			return ""
+		}
+		if rl.isID(node.Type) {
+			if txt := identifierText(node); txt != "" {
+				return txt
+			}
+		}
+		for _, child := range node.Children {
+			if txt := findIdentifier(child, depth-1); txt != "" {
+				return txt
+			}
+		}
+		return ""
+	}
+
+	// Walk nested declarators (like C pointers or Java variable_declarator) before return/field types.
 	for _, child := range n.Children {
-		isID := (r != nil && r.IsIdentifier(child.Type)) || (r == nil && rules.IsIdentifier(child.Type))
-		if isID {
+		if rl.isDeclarator(child.Type) {
+			if txt := findIdentifier(child, 5); txt != "" {
+				return txt
+			}
+		}
+	}
+	// Prefer non-type direct identifiers over return/field type identifiers (e.g. Java method_declaration).
+	for _, child := range n.Children {
+		if rl.isID(child.Type) && !rl.isType(child.Type) {
 			if txt := identifierText(child); txt != "" {
 				return txt
 			}
 		}
 	}
-	// If not found directly on n, look in declarator children (skipping blocks, wrappers, etc.).
+	// Delegate wrappers like Python's decorated_definition to the wrapped declaration before scanning children.
 	for _, child := range n.Children {
-		if (r != nil && (r.IsBlock(child.Type) || r.IsWrapper(child.Type))) || (r == nil && (rules.IsBlock(child.Type) || rules.IsWrapper(child.Type))) {
-			continue
-		}
-		for _, sub := range child.Children {
-			isSubID := (r != nil && r.IsIdentifier(sub.Type)) || (r == nil && rules.IsIdentifier(sub.Type))
-			if isSubID {
-				if txt := identifierText(sub); txt != "" {
-					return txt
-				}
+		if rl.isDecl(child.Type) && (rl.isWrapper(n.Type) || !rl.isLocalVar(child.Type)) {
+			if name := getDeclarationName(child); name != "" {
+				return name
 			}
-			for _, subSub := range sub.Children {
-				isSubSubID := (r != nil && r.IsIdentifier(subSub.Type)) || (r == nil && rules.IsIdentifier(subSub.Type))
-				if isSubSubID {
-					if txt := identifierText(subSub); txt != "" {
-						return txt
-					}
-				}
+		}
+	}
+	for _, child := range n.Children {
+		if rl.isID(child.Type) {
+			if txt := identifierText(child); txt != "" {
+				return txt
+			}
+		}
+	}
+	// Search non-type nested declarators (like Lua assignment_statement -> variable_list) before type wrappers (like Rust generic_type).
+	for _, child := range n.Children {
+		if !rl.isType(child.Type) {
+			if txt := findIdentifier(child, 3); txt != "" {
+				return txt
+			}
+		}
+	}
+	for _, child := range n.Children {
+		if rl.isType(child.Type) {
+			if txt := findIdentifier(child, 3); txt != "" {
+				return txt
 			}
 		}
 	}

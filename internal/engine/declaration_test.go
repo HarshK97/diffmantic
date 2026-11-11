@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -941,6 +943,604 @@ end
 			if srcParam == nil || dstParam == nil || mr.Mappings.Src()[srcParam] != dstParam {
 				t.Errorf("expected parameter declaration identifier to map in place")
 			}
+		})
+	})
+}
+
+func parseSnippetForDeclTest(t *testing.T, src, filename string) *treesitter.ASTNode {
+	t.Helper()
+	ast, err := treesitter.Parse([]byte(src), filename)
+	if err != nil {
+		t.Fatalf("parse %s: %v", filename, err)
+	}
+	if ast.HasError || ast.ParseErrorCount > 0 {
+		t.Fatalf("%s has %d syntax parse errors", filename, ast.ParseErrorCount)
+	}
+	return ast
+}
+
+func runMatchForDeclTest(t *testing.T, src, dst, filename string) (*treesitter.ASTNode, *treesitter.ASTNode, *Mapping) {
+	t.Helper()
+	srcAST := parseSnippetForDeclTest(t, src, filename)
+	dstAST := parseSnippetForDeclTest(t, dst, filename)
+	part := NewLinePartition([]byte(src), []byte(dst))
+	mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+	return srcAST, dstAST, mr.Mappings
+}
+
+func findFirstNode(root *treesitter.ASTNode, pred func(*treesitter.ASTNode) bool) *treesitter.ASTNode {
+	for _, n := range root.PreOrder() {
+		if pred(n) {
+			return n
+		}
+	}
+	return nil
+}
+
+func assertMapped(t *testing.T, label string, m *Mapping, srcAST, dstAST *treesitter.ASTNode, srcPred, dstPred func(*treesitter.ASTNode) bool) (*treesitter.ASTNode, *treesitter.ASTNode) {
+	t.Helper()
+	s := findFirstNode(srcAST, srcPred)
+	d := findFirstNode(dstAST, dstPred)
+	if s == nil || d == nil {
+		t.Fatalf("missing %s: src=%v dst=%v", label, s, d)
+	}
+	if m.Src()[s] != d {
+		t.Errorf("expected %s to map in place, got %v", label, m.Src()[s])
+	}
+	return s, d
+}
+
+func assertMappedPair(t *testing.T, label string, m *Mapping, srcAST, dstAST *treesitter.ASTNode, pred func(*treesitter.ASTNode) bool) (*treesitter.ASTNode, *treesitter.ASTNode) {
+	t.Helper()
+	return assertMapped(t, label, m, srcAST, dstAST, pred, pred)
+}
+
+func TestDeclarationNameTheft(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			filename string
+			src      string
+			want     []string
+		}{
+			{
+				name:     "Lua_ModuleVariableDeclarationNames",
+				filename: "vars.lua",
+				src: `local uv = vim.uv
+local M = {}
+local iswin = uv.os_uname().version:match("Windows")
+`,
+				want: []string{"uv", "M", "iswin"},
+			},
+			{
+				name:     "Rust_GenericImplName",
+				filename: "line_numbers.rs",
+				src: `impl<'a> LineNumbersData<'a> {
+    pub fn from_format_strings(s: &'a str) -> LineNumbersData<'a> {
+        Self {}
+    }
+}
+`,
+				want: []string{"LineNumbersData", "from_format_strings", "s"},
+			},
+			{
+				name:     "Python_DecoratedFunctionName",
+				filename: "handlers.py",
+				src: `@route("/users")
+def get_users(req):
+    return req
+`,
+				want: []string{"get_users"},
+			},
+			{
+				name:     "Cpp_TemplateAndQualifiedReturnNames",
+				filename: "render.cpp",
+				src: `Vec<int> get_items() { return {}; }
+std::string format_items() { return ""; }
+Vec<int> *ptr;
+template<typename T> void foo(T x);
+`,
+				want: []string{"get_items", "format_items", "ptr", "foo", "x"},
+			},
+			{
+				name:     "Java_ReturnAndFieldTypeNames",
+				filename: "UserController.java",
+				src: `class UserController {
+    private final List<Entry<String, Integer>> entries;
+    private UserService svc;
+    @GetMapping("/users")
+    public UserResponse getUsers(Request req) { return null; }
+}
+`,
+				want: []string{"UserController", "entries", "svc", "getUsers", "req"},
+			},
+			{
+				name:     "C_StructReturnFunctionName",
+				filename: "nodes.c",
+				src: `struct Node { int id; };
+static struct Node *build_node(int id) { return 0; }
+`,
+				want: []string{"Node", "id", "build_node", "Node", "id"},
+			},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				ast := parseSnippetForDeclTest(t, tc.src, tc.filename)
+				decs := findDeclarations(ast)
+				var names []string
+				for _, d := range decs {
+					names = append(names, getDeclarationName(d))
+				}
+				if !slices.Equal(names, tc.want) {
+					t.Errorf("got declaration names %v, want %v", names, tc.want)
+				}
+			})
+		}
+
+		t.Run("Go_GroupedTypeSplitDoesNotPairMultiDecl", func(t *testing.T) {
+			src := `package config
+
+type (
+	Foo struct {
+		A int
+	}
+	Bar struct {
+		B int
+	}
+)
+`
+			dst := `package config
+
+type Foo struct {
+	X string
+}
+`
+			srcAST := parseSnippetForDeclTest(t, src, "config.go")
+			dstAST := parseSnippetForDeclTest(t, dst, "config.go")
+			r := rulesFor(srcAST)
+
+			m := NewMapping()
+			matchDeclarations(srcAST, dstAST, m)
+
+			isInnerTypeSpec := func(n *treesitter.ASTNode, name string) bool {
+				return r.IsDeclaration(n.Type) && getDeclarationName(n) == name &&
+					!slices.ContainsFunc(n.Children, func(c *treesitter.ASTNode) bool { return r.IsDeclaration(c.Type) })
+			}
+			assertMappedPair(t, "Foo type_spec", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return isInnerTypeSpec(n, "Foo")
+			})
+
+			srcGrouped := findFirstNode(srcAST, func(n *treesitter.ASTNode) bool {
+				return r.IsContainerDeclaration(n.Type) && len(n.Children) > 2
+			})
+			if srcGrouped == nil {
+				t.Fatal("missing grouped type_declaration in src")
+			}
+			if mapped := m.Src()[srcGrouped]; mapped != nil {
+				t.Errorf("expected multi-spec grouped type_declaration to stay unmapped in matchDeclarations, got %v", mapped)
+			}
+		})
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust_ImplMethodMatch", func(t *testing.T) {
+			src := `impl<'a> LineNumbersData<'a> {
+    pub fn from_format_strings(left_format: &'a str, right_format: &'a str) -> LineNumbersData<'a> {
+        Self {
+            left_format_data: parse_line_number_format(left_format),
+            right_format_data: parse_line_number_format(right_format),
+            hunk_minus_line_number: 0,
+            hunk_plus_line_number: 0,
+            hunk_max_line_number_width: 0,
+            plus_file: "".to_string(),
+        }
+    }
+
+    pub fn initialize_hunk(&mut self, line_numbers: &[(usize, usize)], plus_file: String) {
+        self.plus_file = plus_file;
+    }
+}
+`
+			dst := `impl<'a> LineNumbersData<'a> {
+    pub fn from_format_strings(
+        format: &'a MinusPlus<String>,
+        use_full_width: ansifill::UseFullPanelWidth,
+    ) -> LineNumbersData<'a> {
+        let insert_center_space_on_odd_width = use_full_width.pad_width();
+        Self {
+            format_data: MinusPlus::new(
+                format::parse_line_number_format(
+                    &format[Left],
+                    &*LINE_NUMBERS_PLACEHOLDER_REGEX,
+                    false,
+                ),
+                format::parse_line_number_format(
+                    &format[Right],
+                    &*LINE_NUMBERS_PLACEHOLDER_REGEX,
+                    insert_center_space_on_odd_width,
+                ),
+            ),
+            ..Self::default()
+        }
+    }
+
+    pub fn initialize_hunk(&mut self, line_numbers: &[(usize, usize)], plus_file: String) {
+        self.plus_file = plus_file;
+    }
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "line_numbers.rs")
+			r := rulesFor(srcAST)
+
+			// 1. Enclosing Context: impl block
+			assertMappedPair(t, "LineNumbersData impl", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsContainerDeclaration(n.Type) && !r.IsBlock(n.Type) && getDeclarationName(n) == "LineNumbersData"
+			})
+
+			// 2 & 3. Surrounding Sequence + Target methods and body block
+			var srcTarget, dstTarget *treesitter.ASTNode
+			for _, name := range []string{"initialize_hunk", "from_format_strings"} {
+				s, d := assertMappedPair(t, name, m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsDeclaration(n.Type) && getDeclarationName(n) == name
+				})
+				if name == "from_format_strings" {
+					srcTarget, dstTarget = s, d
+				}
+			}
+
+			srcBody := findFirstNode(srcTarget, func(n *treesitter.ASTNode) bool { return r.IsBlock(n.Type) })
+			dstBody := findFirstNode(dstTarget, func(n *treesitter.ASTNode) bool { return r.IsBlock(n.Type) })
+			if srcBody == nil || dstBody == nil || m.Src()[srcBody] != dstBody {
+				t.Fatalf("expected from_format_strings body block to map in place, got %v", m.Src()[srcBody])
+			}
+
+			// 4. Stationary Operands: unchanged assignment in initialize_hunk and LineNumbersData return type
+			assertMappedPair(t, "self.plus_file = plus_file", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsAssignment(n.Type)
+			})
+			assertMapped(t, "LineNumbersData return type identifier", m, srcAST, dstAST,
+				func(n *treesitter.ASTNode) bool {
+					return r.IsIdentifier(n.Type) && n.Label == "LineNumbersData" && n.StartRow == 1
+				},
+				func(n *treesitter.ASTNode) bool {
+					return r.IsIdentifier(n.Type) && n.Label == "LineNumbersData" && n.StartRow == 4
+				},
+			)
+		})
+
+		t.Run("Python_DecoratedFunctionMatch", func(t *testing.T) {
+			src := `def health_check():
+    return {"status": "ok"}
+
+@route("/users")
+def get_users(req):
+    for u in database.query("SELECT * FROM users WHERE active = 1"):
+        yield u
+
+@route("/posts")
+def get_posts(req):
+    for p in database.query("SELECT * FROM posts WHERE visible = 1"):
+        yield p
+`
+			dst := `def health_check():
+    return {"status": "ok"}
+
+@route("/v2/users")
+async def get_users(ctx: Context, db: AsyncSession) -> Response:
+    res = await db.execute(select(UserModel).filter_by(status=Status.ACTIVE))
+    return JSONResponse([row.to_dict() for row in res.scalars().all()])
+
+@route("/v2/posts")
+async def get_posts(ctx: Context, db: AsyncSession) -> Response:
+    res = await db.execute(select(PostModel).filter_by(status=Status.PUBLISHED))
+    return JSONResponse([row.to_dict() for row in res.scalars().all()])
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "handlers.py")
+			r := rulesFor(srcAST)
+
+			// 1. Surrounding Sequence: unchanged health_check function
+			assertMappedPair(t, "health_check", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == "health_check"
+			})
+
+			// 2 & 3. Targets: both decorated functions and their outer decorated_definition wrappers
+			for _, name := range []string{"get_users", "get_posts"} {
+				assertMappedPair(t, name+" wrapper", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsDeclaration(n.Type) && !r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == name
+				})
+				assertMappedPair(t, name+" function", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == name
+				})
+			}
+
+			// 4. Stationary Operands: route call identifier inside decorators
+			assertMappedPair(t, "route decorator identifier", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsIdentifier(n.Type) && n.Label == "route"
+			})
+		})
+
+		t.Run("Lua_ModuleVariableAndMethodMatch", func(t *testing.T) {
+			src := `local uv = vim.uv
+local M = {}
+local iswin = uv.os_uname().version:match("Windows")
+
+function M.slug(path, opts)
+    local s = path
+    if iswin then
+        s = s:gsub("/", "\\")
+    end
+    return s
+end
+
+function M.normalize(path)
+    return vim.fs.normalize(path)
+end
+`
+			dst := `local uv = vim.uv
+local M = {}
+local iswin = uv.os_uname().version:match("Windows")
+
+function M.slug(path, opts)
+    local s = path
+    if iswin then
+        s = s:gsub("/", "\\")
+    end
+    return s
+end
+
+function M.normalize(path)
+    local p = vim.fs.normalize(path)
+    return p
+end
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "fs.lua")
+			r := rulesFor(srcAST)
+
+			// 1. Module-level variable declarations
+			for _, varName := range []string{"uv", "M", "iswin"} {
+				assertMappedPair(t, varName, m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsLocalVarDeclaration(n.Type) && getDeclarationName(n) == varName
+				})
+			}
+
+			// 2 & 3. Surrounding Sequence + Target functions
+			for _, target := range []struct {
+				row  uint32
+				name string
+			}{
+				{4, "M.slug"},
+				{12, "M.normalize"},
+			} {
+				assertMappedPair(t, target.name, m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsContainerDeclaration(n.Type) && n.StartRow == target.row
+				})
+			}
+
+			// 4. Stationary Operands: local s = path and normalize identifier inside vim.fs.normalize(path)
+			assertMappedPair(t, "local s = path", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsLocalVarDeclaration(n.Type) && getDeclarationName(n) == "s"
+			})
+			assertMapped(t, "vim.fs.normalize call", m, srcAST, dstAST,
+				func(n *treesitter.ASTNode) bool {
+					return r.IsCall(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "vim.fs.normalize")
+				},
+				func(n *treesitter.ASTNode) bool {
+					return r.IsCall(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "vim.fs.normalize")
+				},
+			)
+		})
+
+		t.Run("Cpp_TemplateAndQualifiedReturnMatch", func(t *testing.T) {
+			src := `template<typename T>
+Vec<int> get_items(const Buffer<T>& buf) {
+    return buf.items();
+}
+
+template<typename T>
+std::string format_items(const Buffer<T>& buf) {
+    std::string out = buf.header();
+    for (const auto& item : buf) {
+        out += item.label();
+    }
+    return out;
+}
+`
+			dst := `template<typename T>
+Vec<int> get_items(const Buffer<T>& buf) {
+    return buf.items();
+}
+
+template<typename T>
+std::string format_items(const Buffer<T>& buf, bool pretty) {
+    std::string out = buf.title();
+    if (pretty) {
+        out += "\n";
+    }
+    return out;
+}
+
+template<typename T>
+std::string render_report(const Summary<T>& sum) {
+    return sum.text();
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "render.cpp")
+			r := rulesFor(srcAST)
+
+			// 1 & 2. Surrounding context + Target functions must map to themselves (no stdstring collision)
+			for _, name := range []string{"get_items", "format_items"} {
+				assertMappedPair(t, name, m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsContainerDeclaration(n.Type) && !r.IsWrapper(n.Type) && getDeclarationName(n) == name
+				})
+			}
+
+			// 3 & 4. Stationary Operands inside format_items: return out
+			assertMapped(t, "return out", m, srcAST, dstAST,
+				func(n *treesitter.ASTNode) bool {
+					return r.IsJumpStatement(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "return out")
+				},
+				func(n *treesitter.ASTNode) bool {
+					return r.IsJumpStatement(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "return out")
+				},
+			)
+		})
+
+		t.Run("Java_ReturnAndFieldTypeMatch", func(t *testing.T) {
+			src := `package api;
+
+public class UserController {
+    private final List<Entry<String, Integer>> entries;
+    private UserService svc;
+
+    @GetMapping("/users")
+    public UserResponse getUsers(Request req) {
+        List<User> rows = svc.listActive(req.orgId());
+        return UserResponse.ok(rows);
+    }
+}
+`
+			dst := `package api;
+
+public class UserController {
+    private final List<Entry<String, Integer>> entries;
+    private UserService svc;
+
+    @GetMapping("/v2/users")
+    public UserResponse getUsers(Context ctx, Filter filter) {
+        List<User> rows = svc.fetchByFilter(ctx.tenant(), filter);
+        return UserResponse.paged(rows, filter.cursor());
+    }
+
+    @PostMapping("/teams")
+    public UserResponse createTeam(Context ctx) {
+        return UserResponse.created(ctx.body());
+    }
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "UserController.java")
+			r := rulesFor(srcAST)
+
+			// 1. Enclosing Context: UserController
+			assertMappedPair(t, "UserController", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == "UserController"
+			})
+
+			// 2. Surrounding Sequence: fields (must resolve to entries/svc, not List/UserService)
+			for _, fieldName := range []string{"entries", "svc"} {
+				assertMappedPair(t, fieldName, m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsDeclaration(n.Type) && !r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == fieldName
+				})
+			}
+
+			// 3. Target: getUsers must map to getUsers (not collide with createTeam on UserResponse)
+			assertMappedPair(t, "getUsers", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == "getUsers"
+			})
+
+			// 4. Stationary Operands: rows variable declaration
+			assertMappedPair(t, "rows declaration", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsLocalVarDeclaration(n.Type) && getDeclarationName(n) == "rows"
+			})
+		})
+
+		t.Run("C_StructReturnFunctionMatch", func(t *testing.T) {
+			src := `struct Node { int id; };
+
+static struct Node *build_node(int id, const char *name) {
+    struct Node *n = alloc_node(id);
+    n->name = name;
+    return n;
+}
+
+void init_all(void) {
+    struct Node *root = build_node(1, "root");
+    register_node(root);
+}
+`
+			dst := `struct Node { int id; };
+
+static struct Node *build_node(int id, const char *label, int flags) {
+    struct Node *n = alloc_node_flagged(id, flags);
+    n->label = label;
+    return n;
+}
+
+void init_all(void) {
+    struct Node *root = build_node(1, "root");
+    register_node(root);
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "nodes.c")
+			r := rulesFor(srcAST)
+
+			// 1 & 2. Surrounding Sequence + Target functions
+			for _, name := range []string{"init_all", "build_node"} {
+				assertMappedPair(t, name, m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == name
+				})
+			}
+
+			// 3 & 4. Stationary Operands inside build_node: return n
+			assertMapped(t, "return n", m, srcAST, dstAST,
+				func(n *treesitter.ASTNode) bool {
+					return r.IsJumpStatement(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "return n")
+				},
+				func(n *treesitter.ASTNode) bool {
+					return r.IsJumpStatement(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "return n")
+				},
+			)
+		})
+
+		t.Run("Go_GroupedTypeSplitMatch", func(t *testing.T) {
+			src := `package config
+
+type (
+	Foo struct {
+		A int
+	}
+	Bar struct {
+		B int
+		C string
+	}
+)
+`
+			dst := `package config
+
+type Foo struct {
+	A int
+	X string
+}
+
+type Bar struct {
+	B int
+	C string
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "config.go")
+			r := rulesFor(srcAST)
+
+			isInnerTypeSpec := func(n *treesitter.ASTNode, name string) bool {
+				return r.IsDeclaration(n.Type) && getDeclarationName(n) == name &&
+					!slices.ContainsFunc(n.Children, func(c *treesitter.ASTNode) bool { return r.IsDeclaration(c.Type) })
+			}
+			for _, name := range []string{"Foo", "Bar"} {
+				assertMappedPair(t, name+" type_spec", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+					return isInnerTypeSpec(n, name)
+				})
+			}
+			assertMappedPair(t, "package config identifier", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsIdentifier(n.Type) && n.Label == "config"
+			})
+			assertMappedPair(t, "Foo field A", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsIdentifier(n.Type) && n.Label == "A"
+			})
+			assertMappedPair(t, "Bar field B", m, srcAST, dstAST, func(n *treesitter.ASTNode) bool {
+				return r.IsIdentifier(n.Type) && n.Label == "B"
+			})
 		})
 	})
 }

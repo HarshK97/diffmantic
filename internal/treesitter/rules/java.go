@@ -204,6 +204,9 @@ var javaRules = &Rules{
 		"generic_type",
 		"cast_expression",
 	},
+	Declarators: []string{
+		"variable_declarator",
+	},
 	Pairs: []string{
 		"element_value_pair",
 	},
