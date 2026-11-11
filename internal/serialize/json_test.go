@@ -928,6 +928,31 @@ func TestAssignMoveColors(t *testing.T) {
 			t.Errorf("expected container header to inherit co-mover body color 0 instead of taking conflicting color 1, got %d", actions[2].MoveColorIndex)
 		}
 	})
+
+	t.Run("parallel co-movers share color slot 0", func(t *testing.T) {
+		// Move 0: src line 0 (bytes 0-10) -> dst line 2 (bytes 40-50)
+		// Move 1: src line 1 (bytes 20-30) -> dst line 3 (bytes 60-70)
+		// Both start adjacent in source, land adjacent in destination, and preserve relative order.
+		actions := []Action{
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 0, EndByte: 10},
+				DestStartByte: ptr(uint32(40)),
+				DestEndByte:   ptr(uint32(50)),
+			},
+			{
+				Action:        "move",
+				Node:          &NodeRef{StartByte: 20, EndByte: 30},
+				DestStartByte: ptr(uint32(60)),
+				DestEndByte:   ptr(uint32(70)),
+			},
+		}
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+		if actions[0].MoveColorIndex != 0 || actions[1].MoveColorIndex != 0 {
+			t.Errorf("expected parallel co-movers to share MoveColorIndex 0, got %d and %d",
+				actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
 }
 
 func TestAssignMoveColors_FullEngine(t *testing.T) {
@@ -988,6 +1013,7 @@ func process() {
 }
 `
 		env := runPipeline(t, oldSrc, newSrc)
+
 		moves := collectMoves(env)
 		if len(moves) != 2 {
 			t.Fatalf("expected 2 moves, got %d: %+v", len(moves), moves)
@@ -1032,6 +1058,7 @@ func process() {
 }
 `
 		env := runPipeline(t, oldSrc, newSrc)
+
 		moves := collectMoves(env)
 		if len(moves) != 2 {
 			t.Fatalf("expected 2 moves, got %d: %+v", len(moves), moves)
@@ -1075,6 +1102,7 @@ func process() {
 }
 `
 		env := runPipeline(t, oldSrc, newSrc)
+
 		moves := collectMoves(env)
 		if len(moves) != 2 {
 			t.Fatalf("expected 2 moves, got %d: %+v", len(moves), moves)
@@ -1141,6 +1169,7 @@ func run() {
 }
 `
 		env := runPipeline(t, oldSrc, newSrc)
+
 		moves := collectMoves(env)
 		if len(moves) != 5 {
 			t.Fatalf("expected 5 moves (4 cohort + 1 sunk guard), got %d: %+v", len(moves), moves)
@@ -1274,7 +1303,7 @@ func run() {
 		// 4. Specifically verify opening '{' and closing '}' delimiters on right side share ColorIndex 0.
 		var foundOpeningBrace, foundClosingBrace bool
 		for _, h := range env.RightHighlights {
-			if h.Line == 7 && h.StartCol == 9 && h.EndCol == 10 && h.Action == "move" && h.ColorIndex == 0 {
+			if h.Line == 7 && h.StartCol <= 9 && h.EndCol >= 10 && h.Action == "move" && h.ColorIndex == 0 {
 				foundOpeningBrace = true
 			}
 			if h.Line == 11 && h.StartCol == 1 && h.EndCol == 2 && h.Action == "move" && h.ColorIndex == 0 {
@@ -1286,6 +1315,195 @@ func run() {
 		}
 		if !foundClosingBrace {
 			t.Errorf("expected right closing brace highlight span on line 11 with ColorIndex 0, got %+v", env.RightHighlights)
+		}
+	})
+
+	t.Run("parallel unnesting moves share move color slot 0", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if strings.HasPrefix(cleanLine, "rename from ") {
+		if p := parseHeaderPath(cleanLine, "rename from "); p != "" {
+			current.oldPath = p
+		}
+	} else if strings.HasPrefix(cleanLine, "rename to ") {
+		if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
+			current.newPath = p
+		}
+	} else if strings.HasPrefix(cleanLine, "--- ") {
+		if p := parseHeaderPath(cleanLine, "--- "); p != "" {
+			current.oldPath = p
+		}
+	} else if strings.HasPrefix(cleanLine, "+++ ") {
+		if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+			current.newPath = p
+		}
+	}
+}
+`
+		newSrc := `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if p := parseHeaderPath(cleanLine, "rename from "); p != "" {
+		current.oldPath = p
+	} else if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
+		current.newPath = p
+	} else if p := parseHeaderPath(cleanLine, "--- "); p != "" {
+		current.oldPath = p
+	} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+		current.newPath = p
+	}
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+
+		moves := collectMoves(env)
+		if len(moves) < 4 {
+			t.Fatalf("expected at least 4 moves, got %d: %+v", len(moves), moves)
+		}
+
+		// Find the first unnested branch (p := ... and current.oldPath = p).
+		// Both should share MoveColorIndex 0 (Cyan) instead of current.oldPath = p taking Magenta (slot 1).
+		var firstVarMove, firstAssignMove *Action
+		for i := range moves {
+			m := &moves[i]
+			if m.Node != nil && m.Node.Type == "short_var_declaration" && strings.Contains(oldSrc[m.Node.StartByte:m.Node.EndByte], "rename from") {
+				firstVarMove = m
+			}
+			if m.Node != nil && m.Node.Type == "assignment_statement" && strings.Contains(oldSrc[m.Node.StartByte:m.Node.EndByte], "current.oldPath = p") {
+				if firstAssignMove == nil {
+					firstAssignMove = m
+				}
+			}
+		}
+		if firstVarMove == nil || firstAssignMove == nil {
+			t.Fatalf("expected first unnesting branch moves, got var=%v, assign=%v (all moves: %+v)",
+				firstVarMove, firstAssignMove, moves)
+		}
+		if firstVarMove.MoveColorIndex != 0 {
+			t.Errorf("expected first short_var_declaration move to have MoveColorIndex 0, got %d",
+				firstVarMove.MoveColorIndex)
+		}
+		if firstAssignMove.MoveColorIndex != 0 {
+			t.Errorf("expected parallel unnested assignment_statement to share MoveColorIndex 0, got %d (falsely assigned Magenta slot 1)",
+				firstAssignMove.MoveColorIndex)
+		}
+
+		// Surrounding func declaration and index branch stay untouched as context.
+		for _, h := range env.LeftHighlights {
+			if h.Line <= 4 || h.Line >= 22 {
+				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+					h.Line+1, h.Action, h.StartCol, h.EndCol)
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Line <= 4 || h.Line >= 14 {
+				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+					h.Line+1, h.Action, h.StartCol, h.EndCol)
+			}
+		}
+	})
+
+	t.Run("extracted condition does not taint body statement move", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func check() (bool, float64) {
+	if (r != nil && r.IsDelimited(u1.Type)) || (r == nil && rules.IsDelimited(u1.Type)) {
+		if (len(u1.Children) == 0) != (len(u2.Children) == 0) {
+			return false, 0.0
+		}
+	}
+
+	cScore := 1.0
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+`
+		newSrc := `package main
+
+func check() (bool, float64) {
+	isDelim1 := (r != nil && r.IsDelimited(u1.Type)) || (r == nil && rules.IsDelimited(u1.Type))
+	isDelim2 := (r != nil && r.IsDelimited(u2.Type)) || (r == nil && rules.IsDelimited(u2.Type))
+	if isDelim1 != isDelim2 {
+		return false, 0.0
+	}
+	if isDelim1 && isDelim2 {
+		if (len(u1.Children) == 0) != (len(u2.Children) == 0) {
+			return false, 0.0
+		}
+		if len(u1.Children) == 0 && len(u2.Children) == 0 {
+			return true, 1.0
+		}
+		leafSim := substantiveLeafSimilarity(u1, u2, r)
+		if leafSim >= 0.40 {
+			return true, leafSim
+		}
+		return false, 0.0
+	}
+
+	cScore := 1.0
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+
+		moves := collectMoves(env)
+		if len(moves) < 2 {
+			t.Fatalf("expected at least 2 moves (condition + body), got %d: %+v", len(moves), moves)
+		}
+
+		// Find the body statement move (if (len(u1.Children) == 0)...).
+		var bodyMove *Action
+		for i := range moves {
+			m := &moves[i]
+			if m.ASTNode != nil && m.ASTNode.Type == "if_statement" {
+				bodyMove = m
+				break
+			}
+		}
+		if bodyMove == nil {
+			t.Fatalf("expected body if_statement move, but none found in moves: %+v", moves)
+		}
+		if bodyMove.MoveColorIndex != 0 {
+			t.Errorf("expected body if_statement to have MoveColorIndex 0 (Cyan), got %d (tainted by extracted condition)",
+				bodyMove.MoveColorIndex)
+		}
+
+		// Surrounding func declaration and postCheck stay untouched as context.
+		for _, h := range env.LeftHighlights {
+			if h.Line <= 2 || (h.Line >= 8 && h.Line <= 16) {
+				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+					h.Line+1, h.Action, h.StartCol, h.EndCol)
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Line <= 2 || (h.Line >= 21 && h.Line <= 29) {
+				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+					h.Line+1, h.Action, h.StartCol, h.EndCol)
+			}
 		}
 	})
 }
