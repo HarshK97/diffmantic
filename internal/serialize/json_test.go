@@ -1367,48 +1367,84 @@ func process(cleanLine string) {
 		env := runPipeline(t, oldSrc, newSrc)
 
 		moves := collectMoves(env)
-		if len(moves) < 4 {
-			t.Fatalf("expected at least 4 moves, got %d: %+v", len(moves), moves)
+		if len(moves) != 7 {
+			t.Fatalf("expected 7 moves across the 4 unnested branches, got %d: %+v", len(moves), moves)
 		}
 
 		// Find the first unnested branch (p := ... and current.oldPath = p).
 		// Both should share MoveColorIndex 0 (Cyan) instead of current.oldPath = p taking Magenta (slot 1).
 		var firstVarMove, firstAssignMove *Action
+		seenBranches := make(map[string]bool, 4)
 		for i := range moves {
 			m := &moves[i]
-			if m.Node != nil && m.Node.Type == "short_var_declaration" && strings.Contains(oldSrc[m.Node.StartByte:m.Node.EndByte], "rename from") {
+			if m.Node == nil {
+				continue
+			}
+			srcText := oldSrc[m.Node.StartByte:m.Node.EndByte]
+			for _, marker := range []string{"rename from ", "rename to ", "--- ", "+++ "} {
+				if strings.Contains(srcText, marker) {
+					seenBranches[marker] = true
+				}
+			}
+			if r.IsLocalVarDeclaration(m.Node.Type) && strings.Contains(srcText, "rename from") {
 				firstVarMove = m
 			}
-			if m.Node != nil && m.Node.Type == "assignment_statement" && strings.Contains(oldSrc[m.Node.StartByte:m.Node.EndByte], "current.oldPath = p") {
+			if r.IsAssignment(m.Node.Type) && strings.Contains(srcText, "current.oldPath = p") {
 				if firstAssignMove == nil {
 					firstAssignMove = m
 				}
 			}
 		}
-		if firstVarMove == nil || firstAssignMove == nil {
-			t.Fatalf("expected first unnesting branch moves, got var=%v, assign=%v (all moves: %+v)",
-				firstVarMove, firstAssignMove, moves)
+		if firstVarMove == nil || firstAssignMove == nil || len(seenBranches) != 4 {
+			t.Fatalf("expected moves across all 4 branches (got var=%v, assign=%v, branches=%v)",
+				firstVarMove, firstAssignMove, seenBranches)
 		}
-		if firstVarMove.MoveColorIndex != 0 {
-			t.Errorf("expected first short_var_declaration move to have MoveColorIndex 0, got %d",
-				firstVarMove.MoveColorIndex)
+
+		for _, m := range moves {
+			if m.MoveColorIndex != 0 {
+				nodeType := "<nil>"
+				var startByte, endByte uint32
+				if m.Node != nil {
+					nodeType = m.Node.Type
+					startByte = m.Node.StartByte
+					endByte = m.Node.EndByte
+				}
+				t.Errorf("expected all parallel unnested branch moves to share MoveColorIndex 0, got %d for %s (bytes %d..%d)",
+					m.MoveColorIndex, nodeType, startByte, endByte)
+			}
 		}
-		if firstAssignMove.MoveColorIndex != 0 {
-			t.Errorf("expected parallel unnested assignment_statement to share MoveColorIndex 0, got %d (falsely assigned Magenta slot 1)",
-				firstAssignMove.MoveColorIndex)
+
+		for _, h := range env.LeftHighlights {
+			if h.Action == "move" && h.ColorIndex != 0 {
+				t.Errorf("expected left move span on line %d [%d..%d] to have ColorIndex 0, got %d",
+					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Action == "move" && h.ColorIndex != 0 {
+				t.Errorf("expected right move span on line %d [%d..%d] to have ColorIndex 0, got %d",
+					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
+			}
+		}
+
+		// Whole-snippet verification: enclosing package and func declarations have no edit actions.
+		for _, a := range env.Actions {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
 		}
 
 		// Surrounding func declaration and index branch stay untouched as context.
 		for _, h := range env.LeftHighlights {
 			if h.Line <= 4 || h.Line >= 22 {
 				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line+1, h.Action, h.StartCol, h.EndCol)
+					h.Line, h.Action, h.StartCol, h.EndCol)
 			}
 		}
 		for _, h := range env.RightHighlights {
 			if h.Line <= 4 || h.Line >= 14 {
 				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line+1, h.Action, h.StartCol, h.EndCol)
+					h.Line, h.Action, h.StartCol, h.EndCol)
 			}
 		}
 	})
@@ -1503,6 +1539,180 @@ func check() (bool, float64) {
 			if h.Line <= 2 || (h.Line >= 21 && h.Line <= 29) {
 				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
 					h.Line+1, h.Action, h.StartCol, h.EndCol)
+			}
+		}
+	})
+
+	t.Run("downward lockstep cohort moves share move color slot 0", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if strings.HasPrefix(cleanLine, "rename from ") {
+		if p := parseHeaderPath(cleanLine, "rename from "); p != "" {
+			current.oldPath = p
+		}
+	} else if strings.HasPrefix(cleanLine, "rename to ") {
+		if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
+			current.newPath = p
+		}
+	}
+	finish()
+}
+`
+		newSrc := `package main
+
+func process(cleanLine string) {
+	a := prepareA(cleanLine)
+	b := prepareB(a)
+	c := prepareC(b)
+	d := prepareD(c)
+	use(d)
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if p := parseHeaderPath(cleanLine, "rename from "); p != "" {
+		current.oldPath = p
+	} else if p := parseHeaderPath(cleanLine, "rename to "); p != "" {
+		current.newPath = p
+	}
+	finish()
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+
+		moves := collectMoves(env)
+		if len(moves) != 3 {
+			t.Fatalf("expected 3 downward lockstep moves across both branches, got %d: %+v", len(moves), moves)
+		}
+		seenBranches := make(map[string]bool, 2)
+		for _, m := range moves {
+			if m.Node == nil {
+				continue
+			}
+			srcText := oldSrc[m.Node.StartByte:m.Node.EndByte]
+			for _, marker := range []string{"rename from ", "rename to "} {
+				if strings.Contains(srcText, marker) {
+					seenBranches[marker] = true
+				}
+			}
+		}
+		if len(seenBranches) != 2 {
+			t.Fatalf("expected moves across both downward branches, got %v", seenBranches)
+		}
+
+		for _, m := range moves {
+			if m.MoveColorIndex != 0 {
+				t.Errorf("expected downward lockstep cohort move to share MoveColorIndex 0, got %d (%+v)", m.MoveColorIndex, m)
+			}
+		}
+		for _, h := range env.LeftHighlights {
+			if h.Action == "move" && h.ColorIndex != 0 {
+				t.Errorf("expected left move span on line %d to have ColorIndex 0, got %d", h.Line, h.ColorIndex)
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Action == "move" && h.ColorIndex != 0 {
+				t.Errorf("expected right move span on line %d to have ColorIndex 0, got %d", h.Line, h.ColorIndex)
+			}
+		}
+
+		for _, a := range env.Actions {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+		assertContextLinesPure(t, env.LeftHighlights, []int{5, 6, 7, 8, 9, 10, 11, 12, 13})
+		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 6, 7, 10, 11, 12, 13, 14})
+	})
+
+	t.Run("converging moves exceeding lockstep delta difference keep distinct colors", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func run() {
+	if skip1() {
+		logStep("1")
+		logStep("2")
+		logStep("3")
+		logStep("4")
+		logStep("5")
+	}
+	if mode == "a" {
+		first()
+	}
+	if skip2() {
+		logStep("6")
+		logStep("7")
+		logStep("8")
+		logStep("9")
+		logStep("10")
+	}
+	if mode == "b" {
+		second()
+	}
+	tail()
+}
+`
+		newSrc := `package main
+
+func run() {
+	first()
+	second()
+	tail()
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+
+		moves := collectMoves(env)
+		if len(moves) != 2 {
+			t.Fatalf("expected 2 moves (first and second), got %d: %+v", len(moves), moves)
+		}
+
+		firstColor, secondColor := -1, -1
+		for _, m := range moves {
+			if m.Node == nil {
+				continue
+			}
+			txt := strings.TrimSpace(oldSrc[m.Node.StartByte:m.Node.EndByte])
+			if strings.Contains(txt, "first()") {
+				firstColor = m.MoveColorIndex
+			}
+			if strings.Contains(txt, "second()") {
+				secondColor = m.MoveColorIndex
+			}
+		}
+		if firstColor == -1 || secondColor == -1 {
+			t.Fatalf("expected moves for first() and second(), got %+v", moves)
+		}
+		if firstColor == secondColor {
+			t.Errorf("expected non-cohort converging moves exceeding delta/gap thresholds to contrast, both got %d", firstColor)
+		}
+
+		for _, a := range env.Actions {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+		for _, h := range env.LeftHighlights {
+			if h.Line <= 2 || h.Line >= 23 {
+				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+					h.Line, h.Action, h.StartCol, h.EndCol)
+			}
+		}
+		for _, h := range env.RightHighlights {
+			if h.Line <= 2 || h.Line >= 5 {
+				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
+					h.Line, h.Action, h.StartCol, h.EndCol)
 			}
 		}
 	})
