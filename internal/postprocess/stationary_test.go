@@ -2891,3 +2891,176 @@ fn foo() {
 		})
 	}
 }
+
+func TestStationaryWrappedContainerChildWithDeletedSibling(t *testing.T) {
+	r := rules.Get("rust")
+	if r == nil {
+		t.Fatal("rust rules not found")
+	}
+
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`fn paint_lines_side_by_side() {
+    for (minus_line_index, plus_line_index) in line_alignment {
+        output_buffer.push_str(&paint_left_panel_minus_line(
+            minus_line_index,
+            &minus_syntax_style_sections,
+            &minus_diff_style_sections,
+            match minus_line_index {
+                Some(i) => minus_states[i],
+                None => &State::HunkMinus(None),
+            },
+            line_numbers_data,
+            if config.keep_plus_minus_markers {
+                Some(config.minus_style.paint("-"))
+            } else {
+                None
+            },
+            background_color_extends_to_terminal_width,
+            config,
+        ));
+    }
+}
+`)
+		dst := []byte(`fn paint_lines_side_by_side() {
+    for (minus_line_index, plus_line_index) in line_alignment {
+        output_buffer.push_str(&paint_left_panel_minus_line(
+            minus_line_index,
+            &syntax_left_right[Left],
+            &diff_left_right[Left],
+            match minus_line_index {
+                Some(i) => &states_left_right[Left][i],
+                None => &State::HunkMinus(None),
+            },
+            line_numbers_data,
+            background_color_extends_to_terminal_width[Left],
+            config,
+        ));
+    }
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has syntax errors")
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has syntax errors")
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: enclosing function paint_lines_side_by_side maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function paint_lines_side_by_side to map in place")
+		}
+
+		// 2. Surrounding sequence: call arguments minus_line_index, line_numbers_data, and config map in place.
+		var srcCallArgs, dstCallArgs *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && len(n.Children) > 0 && n.Children[0].Label == "paint_left_panel_minus_line" {
+				for _, c := range n.Children {
+					if r.IsDelimitedContainer(c.Type) {
+						srcCallArgs = c
+						break
+					}
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && len(n.Children) > 0 && n.Children[0].Label == "paint_left_panel_minus_line" {
+				for _, c := range n.Children {
+					if r.IsDelimitedContainer(c.Type) {
+						dstCallArgs = c
+						break
+					}
+				}
+			}
+		}
+		if srcCallArgs == nil || dstCallArgs == nil || matchResult.Mappings.Src()[srcCallArgs] != dstCallArgs {
+			t.Fatalf("expected arguments container of paint_left_panel_minus_line to map in place")
+		}
+
+		for _, label := range []string{"minus_line_index", "line_numbers_data", "config"} {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range srcCallArgs.Children {
+				if r.IsIdentifier(n.Type) && n.Label == label {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range dstCallArgs.Children {
+				if r.IsIdentifier(n.Type) && n.Label == label {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil || matchResult.Mappings.Src()[sNode] != dNode {
+				t.Fatalf("expected surrounding identifier %s to map in place", label)
+			}
+		}
+
+		// 3. Target: background_color_extends_to_terminal_width maps in place.
+		var srcTarget, dstTarget *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "background_color_extends_to_terminal_width" {
+				srcTarget = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "background_color_extends_to_terminal_width" {
+				dstTarget = n
+				break
+			}
+		}
+		if srcTarget == nil || dstTarget == nil || matchResult.Mappings.Src()[srcTarget] != dstTarget {
+			t.Fatalf("expected background_color_extends_to_terminal_width to map in place")
+		}
+
+		// Target must NOT have any Move action in the normalized edit script.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && (a.Node == srcTarget || a.DestNode == dstTarget) {
+				t.Errorf("unexpected Move action on stationary target: %v", a)
+			}
+		}
+
+		// 4. Stationary Operands & Wrappers: index_expression is an Insert action.
+		hasIndexInsert := false
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Insert && r.IsWrapper(a.Node.Type) && a.Node.Type == "index_expression" {
+				hasIndexInsert = true
+				break
+			}
+		}
+		if !hasIndexInsert {
+			t.Errorf("expected index_expression to be inserted")
+		}
+	})
+}
