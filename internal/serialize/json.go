@@ -706,11 +706,13 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			continue
 		}
 		var sStart, sEnd, dStart, dEnd int
-		if sStartByte, sEndByte, ok := getSrcBytes(a); ok {
+		sStartByte, sEndByte, hasSrc := getSrcBytes(a)
+		if hasSrc {
 			sStart, _ = ByteToLineCol(srcOffsets, sStartByte)
 			sEnd, _ = ByteToLineCol(srcOffsets, sEndByte)
 		}
-		if dStartByte, dEndByte, ok := getDestBytes(a); ok {
+		dStartByte, dEndByte, hasDst := getDestBytes(a)
+		if hasDst {
 			dStart, _ = ByteToLineCol(dstOffsets, dStartByte)
 			dEnd, _ = ByteToLineCol(dstOffsets, dEndByte)
 		}
@@ -720,6 +722,8 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			sEnd:   sEnd,
 			dStart: dStart,
 			dEnd:   dEnd,
+			hasSrc: hasSrc,
+			hasDst: hasDst,
 		})
 	}
 
@@ -859,6 +863,8 @@ type moveInterval struct {
 	sEnd   int
 	dStart int
 	dEnd   int
+	hasSrc bool
+	hasDst bool
 }
 
 // movesInterfere determines whether two moves should take distinct colors.
@@ -872,20 +878,8 @@ func movesInterfere(cur, prev moveInterval, curAct, prevAct *Action) bool {
 
 	// Case 1: Both source and destination overlap within 2 lines.
 	if sOverlap && dOverlap {
-		// When one move wraps around another, give them contrasting colors.
-		if isEnclosingMove(curAct, prevAct) || isEnclosingMove(prevAct, curAct) {
-			return true
-		}
-
-		// Disjoint moves: check relative ordering.
-		sOrder := moveStartsBefore(getSrcBytes, curAct, prevAct, cur.sStart, prev.sStart)
-		dOrder := moveStartsBefore(getDestBytes, curAct, prevAct, cur.dStart, prev.dStart)
-		// If their relative order flipped, they swapped positions.
-		if sOrder != dOrder {
-			return true
-		}
-		// Parallel moves shifting together in the same order share a color.
-		return false
+		// Contrasting colors highlight nested wrappers or swapped positions.
+		return movesNestedOrReordered(cur, prev, curAct, prevAct)
 	}
 
 	// Case 2: Diverging moves (nearby source lines, but distant destination lines).
@@ -895,15 +889,51 @@ func movesInterfere(cur, prev moveInterval, curAct, prevAct *Action) bool {
 	}
 
 	// Case 3: Converging moves (distant source lines, but nearby destination lines).
-	// They clash so converging moves don't look like one chunk, unless one moved into the other's body block.
+	// They clash so converging moves don't look like one chunk, unless one moved into the other's body block or both shifted together from nearby lines.
 	if !sOverlap && dOverlap {
-		if isDestinationContainerBodyCoMover(curAct, prevAct) || isDestinationContainerBodyCoMover(prevAct, curAct) {
-			return false
-		}
-		return true
+		return !isDestinationContainerBodyCoMover(curAct, prevAct) &&
+			!isDestinationContainerBodyCoMover(prevAct, curAct) &&
+			!isLockstepCohort(cur, prev, curAct, prevAct)
 	}
 
 	return false
+}
+
+// movesNestedOrReordered reports whether one move encloses the other or their relative order flipped.
+func movesNestedOrReordered(cur, prev moveInterval, curAct, prevAct *Action) bool {
+	if isEnclosingMove(curAct, prevAct) || isEnclosingMove(prevAct, curAct) {
+		return true
+	}
+	return moveStartsBefore(getSrcBytes, curAct, prevAct, cur.sStart, prev.sStart) !=
+		moveStartsBefore(getDestBytes, curAct, prevAct, cur.dStart, prev.dStart)
+}
+
+// isLockstepCohort reports whether two converging moves came from nearby lines and shifted together in order,
+// so unnested sibling branches keep the same color.
+func isLockstepCohort(cur, prev moveInterval, curAct, prevAct *Action) bool {
+	const (
+		// Allow up to 4 lines of shift difference when unnesting removes slightly different wrapper headers.
+		maxCohortDeltaDiffLines = 4
+		// Cap the source gap at 8 lines so unrelated distant moves with similar offsets don't merge.
+		maxCohortSourceGapLines = 8
+	)
+
+	if !cur.hasSrc || !cur.hasDst || !prev.hasSrc || !prev.hasDst {
+		return false
+	}
+	if movesNestedOrReordered(cur, prev, curAct, prevAct) {
+		return false
+	}
+
+	deltaCur := cur.dStart - cur.sStart
+	deltaPrev := prev.dStart - prev.sStart
+	// Reject unshifted moves so converging moves onto a stationary-line sibling still contrast.
+	if deltaCur == 0 || deltaPrev == 0 || (deltaCur > 0) != (deltaPrev > 0) {
+		return false
+	}
+
+	return max(deltaCur, deltaPrev)-min(deltaCur, deltaPrev) <= maxCohortDeltaDiffLines &&
+		max(cur.sStart, prev.sStart)-min(cur.sEnd, prev.sEnd) <= maxCohortSourceGapLines
 }
 
 // isEnclosingMove reports whether outer encloses inner in source or destination bytes.
