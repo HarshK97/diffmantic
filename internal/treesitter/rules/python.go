@@ -163,6 +163,9 @@ var pythonRules = &Rules{
 		"typed_default_parameter",
 		"typed_parameter",
 	},
+	Attributes: []string{
+		"decorator",
+	},
 	Imports: []string{
 		"import_statement",
 		"import_from_statement",
@@ -188,6 +191,7 @@ var pythonRules = &Rules{
 		"set_comprehension",
 		"class_pattern",
 		"tuple_pattern",
+		"decorated_definition",
 	},
 	Pairs: []string{
 		"pair",

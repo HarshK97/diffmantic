@@ -175,6 +175,7 @@ var rustRules = &Rules{
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
+		"type_parameters",
 		"generic_type",
 		"type_arguments",
 		"array_type",

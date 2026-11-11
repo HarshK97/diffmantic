@@ -117,6 +117,9 @@ var luaRules = &Rules{
 		"variable_list",
 		"expression_list",
 	},
+	Declarators: []string{
+		"variable_list",
+	},
 	Pairs: []string{
 		"field",
 	},
