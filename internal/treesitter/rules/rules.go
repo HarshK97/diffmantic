@@ -730,7 +730,7 @@ func IsKeyword(nodeType, label string) bool {
 // IsPunctuation reports whether a string is a structural punctuation token (braces, brackets, parentheses, delimiters).
 func (r *Rules) IsPunctuation(token string) bool {
 	switch token {
-	case "}", "};", "],", "]", ")", ");", "},", "{", "begin", "end", ";", ",", "(", "[", ":", "->", "=>", "\"", "'", "`":
+	case "}", "};", "],", "]", ")", ");", "},", "{", "begin", "end", ";", ",", "(", "[", ":", "->", "=>", "\"", "'", "`", "#", "@":
 		return true
 	}
 	if r == nil || token == "" {
@@ -742,7 +742,7 @@ func (r *Rules) IsPunctuation(token string) bool {
 // IsPunctuation reports whether a string is a structural punctuation token in any language rule set.
 func IsPunctuation(token string) bool {
 	switch token {
-	case "}", "};", "],", "]", ")", ");", "},", "{", "begin", "end", ";", ",", "(", "[", ":", "->", "=>", "\"", "'", "`":
+	case "}", "};", "],", "]", ")", ");", "},", "{", "begin", "end", ";", ",", "(", "[", ":", "->", "=>", "\"", "'", "`", "#", "@":
 		return true
 	}
 	for _, r := range registry {

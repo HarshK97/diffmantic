@@ -791,7 +791,7 @@ func getEnclosingContainerName(n *treesitter.ASTNode, r *rules.Rules) string {
 			// shortcut: unnamed wrapper containers (C++ template_declaration,
 			// Go standalone type_declaration) resolve to "", so a renamed
 			// template can collide with a same-named free-function overload
-			// and drop to the ambiguity guard — upgrade if later phases
+			// and drop to the ambiguity guard; upgrade if later phases
 			// ever cross-pair those shapes.
 			return ""
 		}

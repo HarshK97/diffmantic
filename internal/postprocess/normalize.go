@@ -277,11 +277,60 @@ func isIsolatedLeafCrossStatementMove(src, dst *treesitter.ASTNode, ms *engine.M
 	return true
 }
 
+// getDecoratedTarget finds the declaration or statement an attribute attaches to.
+// In Python, decorators sit with their target inside a wrapper; in Rust,
+// attributes are preceding siblings in the enclosing scope.
+func getDecoratedTarget(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil || n.Parent == nil || r == nil {
+		return nil
+	}
+	// Wrapper container (e.g. Python decorated_definition wrapping decorators + function).
+	if r.IsWrapper(n.Parent.Type) {
+		for _, c := range n.Parent.Children {
+			if c != n && !r.IsAttribute(c.Type) && (r.IsDeclaration(c.Type) || r.IsStatement(c.Type)) {
+				return c
+			}
+		}
+	}
+	// Prefix sibling (e.g. Rust #[derive(...)] sitting right before a struct or fn).
+	foundSelf := false
+	for _, c := range n.Parent.Children {
+		if c == n {
+			foundSelf = true
+			continue
+		}
+		if foundSelf {
+			if r.IsAttribute(c.Type) {
+				continue
+			}
+			if r.IsDeclaration(c.Type) || r.IsStatement(c.Type) {
+				return c
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 // shouldDemoteMove reports whether a Move action should be demoted to Delete+Insert
 // based on structural significance scoring and scope-aware threshold comparison.
 func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, evictedOpt ...map[*treesitter.ASTNode]struct{}) bool {
 	if src == nil || dst == nil || ms == nil || r == nil {
 		return false
+	}
+
+	// Don't move decorators or attributes across different declarations.
+	// If the annotated targets didn't match, demote the attribute move to delete+insert.
+	if r.IsAttribute(src.Type) || r.IsAttribute(dst.Type) {
+		srcTarget := getDecoratedTarget(src, r)
+		dstTarget := getDecoratedTarget(dst, r)
+		if srcTarget != nil && dstTarget != nil {
+			if ms.Src()[srcTarget] != dstTarget {
+				return true
+			}
+		} else if !sameScopeDeclaration(src, dst, ms, r) {
+			return true
+		}
 	}
 
 	var evicted map[*treesitter.ASTNode]struct{}
