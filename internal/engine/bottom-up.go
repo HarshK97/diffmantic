@@ -214,6 +214,9 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	if isCall && !hasCallCalleeOrArgMatch(t1, c, m, r) {
 		return -1.0
 	}
+	if isCall && hasHollowEnclosingCall(t1, c, m, r) {
+		return -1.0
+	}
 
 	// Reject call arguments across incompatible calls when the original callee survives in scope.
 	if t1.Parent != nil && c.Parent != nil {
@@ -1111,6 +1114,58 @@ func hasEnclosingConstructWithMappedDescendant(t1, c *treesitter.ASTNode, m *Map
 	}
 
 	return false
+}
+
+// hasHollowEnclosingCall stops an outer call from stealing a match when one of its
+// unmapped inner calls is a better fit. If every mapped child shared with the target
+// sits inside that inner call, the outer wrapper has no real claim of its own.
+func hasHollowEnclosingCall(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	isCall := func(t string) bool {
+		return (r != nil && r.IsCall(t)) || (r == nil && rules.IsCall(t))
+	}
+	if !isCall(t1.Type) || !isCall(c.Type) {
+		return false
+	}
+
+	check := func(outer, target *treesitter.ASTNode, partnerMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+		targetCallee := extractCalleeLabel(target, r)
+		if targetCallee == "" {
+			return false
+		}
+		desc := outer.Descendants()
+		for _, inner := range desc {
+			if inner == outer || !isCall(inner.Type) || partnerMap[inner] != nil {
+				continue
+			}
+			innerCallee := extractCalleeLabel(inner, r)
+			if innerCallee == "" || !calleesCompatible(targetCallee, innerCallee) {
+				continue
+			}
+			hasMappedDesc := false
+			hasOutsideDesc := false
+			for _, d := range desc {
+				partner, ok := partnerMap[d]
+				if !ok || (partner != target && !target.Contains(partner)) {
+					continue
+				}
+				if inner == d || inner.Contains(d) {
+					hasMappedDesc = true
+				} else {
+					hasOutsideDesc = true
+					break
+				}
+			}
+			if hasMappedDesc && !hasOutsideDesc {
+				return true
+			}
+		}
+		return false
+	}
+
+	return check(c, t1, m.Dst()) || check(t1, c, m.Src())
 }
 
 // hasCallCalleeOrArgMatch reports whether two call nodes share any matched tokens

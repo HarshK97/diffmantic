@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Chaining an extra method call (like adding another `.filter(...)` or `.zip_eq(...)` to a builder or pipeline) won't let the new outer call steal the identity of unchanged inner calls. Existing calls and arguments stay matched in place as context, cleanly highlighting only the new call as an insertion.
+
 ## [0.16.0] - 2026-11-12
 
 ### Added
