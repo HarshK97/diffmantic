@@ -1075,6 +1075,165 @@ func ExtractedHelper() {
 	})
 }
 
+func TestRecoverCohortSiblings_SingleAnchorClosureExtraction(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package main
+
+func processItems(items []int) {
+	precedingInit()
+	currCommon := common(items)
+	currDice := dice(items)
+	currAffinity := affinity(items)
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+		dst := []byte(`package main
+
+func processItems(items []int) {
+	precedingInit()
+	var currCommon int
+	var currDice float64
+	var currAffinity float64
+	step01()
+	step02()
+	step03()
+	step04()
+	step05()
+	step06()
+	step07()
+	step08()
+	step09()
+	step10()
+	step11()
+	ensureMetrics := func() {
+		currCommon = common(items)
+		currDice = dice(items)
+		currAffinity = affinity(items)
+	}
+	ensureMetrics()
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+		srcAST, err := treesitter.Parse(src, "main.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "main.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("snippets must parse cleanly: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		srcFunc := slices.IndexFunc(srcAST.Children, func(n *treesitter.ASTNode) bool {
+			return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == "processItems"
+		})
+		dstFunc := slices.IndexFunc(dstAST.Children, func(n *treesitter.ASTNode) bool {
+			return r.IsContainerDeclaration(n.Type) && getDeclarationName(n) == "processItems"
+		})
+		if srcFunc < 0 || dstFunc < 0 {
+			t.Fatalf("processItems not found: src index=%d dst index=%d", srcFunc, dstFunc)
+		}
+
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		if got := mr.Mappings.Src()[srcAST.Children[srcFunc]]; got != dstAST.Children[dstFunc] {
+			t.Errorf("processItems mapping = %v, want destination processItems", got)
+		}
+
+		var srcParams, dstParams *treesitter.ASTNode
+		for _, n := range srcAST.Children[srcFunc].Children {
+			if r.IsDelimitedContainer(n.Type) && srcParams == nil {
+				srcParams = n
+			}
+		}
+		for _, n := range dstAST.Children[dstFunc].Children {
+			if r.IsDelimitedContainer(n.Type) && dstParams == nil {
+				dstParams = n
+			}
+		}
+		if srcParams == nil || dstParams == nil || mr.Mappings.Src()[srcParams] != dstParams {
+			t.Errorf("parameter list mapping = %v, want destination parameter list", mr.Mappings.Src()[srcParams])
+		}
+
+		var dstClosure *treesitter.ASTNode
+		for _, n := range dstAST.Descendants() {
+			if r.IsClosure(n.Type) {
+				dstClosure = n
+				break
+			}
+		}
+		if dstClosure == nil {
+			t.Fatal("ensureMetrics closure not found")
+		}
+
+		findCall := func(root *treesitter.ASTNode, source []byte, name string) *treesitter.ASTNode {
+			for _, n := range root.Descendants() {
+				if r.IsCall(n.Type) && strings.HasPrefix(string(source[n.StartByte:n.EndByte]), name+"(") {
+					return n
+				}
+			}
+			return nil
+		}
+		for _, name := range []string{"precedingInit", "succeedingDone"} {
+			srcCall := findCall(srcAST, src, name)
+			dstCall := findCall(dstAST, dst, name)
+			if srcCall == nil || dstCall == nil {
+				t.Fatalf("%s not found: src=%v dst=%v", name, srcCall, dstCall)
+			}
+			if got := mr.Mappings.Src()[srcCall]; got != dstCall {
+				t.Errorf("%s mapping = %v, want in-place destination call", name, got)
+			}
+			if dstClosure.Contains(dstCall) {
+				t.Errorf("%s must remain outside extracted closure", name)
+			}
+		}
+
+		for _, name := range []string{"currCommon", "currDice", "currAffinity"} {
+			var srcStmt, dstStmt *treesitter.ASTNode
+			for _, n := range srcAST.Children[srcFunc].Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && slices.Contains(getAssignmentTargetNames(n, r), name) {
+					srcStmt = n
+					break
+				}
+			}
+			for _, n := range dstClosure.Descendants() {
+				if r.IsAssignment(n.Type) && slices.Contains(getAssignmentTargetNames(n, r), name) {
+					dstStmt = n
+					break
+				}
+			}
+			if srcStmt == nil || dstStmt == nil {
+				t.Fatalf("%s statement not found: src=%v dst=%v", name, srcStmt, dstStmt)
+			}
+			if got := mr.Mappings.Src()[srcStmt]; got != dstStmt {
+				t.Errorf("%s mapping = %v, want assignment inside ensureMetrics", name, got)
+			}
+			var srcRHS, dstRHS *treesitter.ASTNode
+			for _, n := range srcStmt.Descendants() {
+				if r.IsCall(n.Type) {
+					srcRHS = n
+					break
+				}
+			}
+			for _, n := range dstStmt.Descendants() {
+				if r.IsCall(n.Type) {
+					dstRHS = n
+					break
+				}
+			}
+			if srcRHS == nil || dstRHS == nil || mr.Mappings.Src()[srcRHS] != dstRHS {
+				t.Errorf("%s RHS mapping = %v, want destination call", name, mr.Mappings.Src()[srcRHS])
+			}
+		}
+	})
+}
+
 func TestGetClosureDeclarationName(t *testing.T) {
 	t.Run("Unit", func(t *testing.T) {
 		// 1. short_var_declaration with expression_list LHS and func_literal RHS

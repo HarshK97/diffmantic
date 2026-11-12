@@ -706,7 +706,24 @@ func sameScopeDeclaration(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *r
 	if srcDecl == nil || dstDecl == nil {
 		return false
 	}
-	return ms.Src()[srcDecl] == dstDecl
+	if ms.Src()[srcDecl] == dstDecl {
+		return true
+	}
+	if r.IsClosure(dstDecl.Type) {
+		p := dstDecl.EnclosingContainerDeclaration(r)
+		for p != nil && r.IsClosure(p.Type) {
+			p = p.EnclosingContainerDeclaration(r)
+		}
+		return p != nil && ms.Src()[srcDecl] == p
+	}
+	if r.IsClosure(srcDecl.Type) {
+		p := srcDecl.EnclosingContainerDeclaration(r)
+		for p != nil && r.IsClosure(p.Type) {
+			p = p.EnclosingContainerDeclaration(r)
+		}
+		return p != nil && ms.Src()[p] == dstDecl
+	}
+	return false
 }
 
 // isMonotonicContainerChild checks if the child keeps its relative position

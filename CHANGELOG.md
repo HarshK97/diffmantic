@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Moving code into or out of a closure now keeps all related statements marked as moves, even when only one statement is recognized at first. Scope checks no longer cross into another method or class, and inserted closing keywords don't carry stray move highlights on their indentation.
 - Chaining an extra method call (like adding another `.filter(...)` or `.zip_eq(...)` to a builder or pipeline) won't let the new outer call steal the identity of unchanged inner calls. Existing calls and arguments stay matched in place as context, cleanly highlighting only the new call as an insertion.
 - Pulling out variables from `:=` declarations into separate `var` lines (or the other way around) across a block of inserted code won't turn the whole assignment into a delete+insert anymore. The `:=` → `=` transition highlights just the operator, and the right-hand side stays as context.
 

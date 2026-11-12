@@ -1,6 +1,7 @@
 package serialize
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -163,6 +164,183 @@ func TestBuildHighlightSpansRightSideMoveNodeLen(t *testing.T) {
 	if nl != 26 {
 		t.Errorf("expected nodeLen=26 on right pane, got %d", nl)
 	}
+}
+
+func TestBuildHighlightSpans_LuaClosureDelimiterDoesNotMoveIndentation(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`local function processItems(items)
+    precedingInit()
+    local currTotal = total(items)
+    local currDouble = twice(currTotal)
+    local currAffinity = score(currDouble)
+    succeedingDone(currTotal, currDouble, currAffinity)
+end
+`)
+		dst := []byte(`local function processItems(items)
+    precedingInit()
+    local currTotal = 0
+    local currDouble = 0
+    local currAffinity = 0
+
+    step01()
+    step02()
+    step03()
+    step04()
+    step05()
+    step06()
+    step07()
+    step08()
+    step09()
+    step10()
+    step11()
+
+    local ensureMetrics = function()
+        currTotal = total(items)
+        currDouble = twice(currTotal)
+        currAffinity = score(currDouble)
+    end
+    ensureMetrics()
+    succeedingDone(currTotal, currDouble, currAffinity)
+end
+`)
+		srcAST, err := treesitter.Parse(src, "main.lua")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "main.lua")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("snippets must parse cleanly: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		es := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, srcAST, dstAST)
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, srcAST, dstAST, src, dst, EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions: %v", err)
+		}
+
+		r := rules.Get("lua")
+		var srcFunc, dstFunc, dstClosure *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsContainerDeclaration(n.Type) {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsContainerDeclaration(n.Type) {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Errorf("processItems mapping = %v, want destination processItems", mr.Mappings.Src()[srcFunc])
+		}
+		for _, n := range dstFunc.Descendants() {
+			if r.IsClosure(n.Type) {
+				dstClosure = n
+				break
+			}
+		}
+		if dstClosure == nil {
+			t.Fatal("ensureMetrics closure not found")
+		}
+		var srcParams, dstParams *treesitter.ASTNode
+		for _, n := range srcFunc.Children {
+			if r.IsDelimitedContainer(n.Type) {
+				srcParams = n
+			}
+		}
+		for _, n := range dstFunc.Children {
+			if r.IsDelimitedContainer(n.Type) {
+				dstParams = n
+			}
+		}
+		if srcParams == nil || dstParams == nil {
+			t.Fatalf("parameter lists not found: src=%v dst=%v", srcParams, dstParams)
+		}
+		if got := mr.Mappings.Src()[srcParams]; got != dstParams {
+			t.Errorf("parameter list mapping = %v, want destination parameters", got)
+		}
+
+		findCall := func(root *treesitter.ASTNode, source []byte, name string) *treesitter.ASTNode {
+			for _, n := range root.Descendants() {
+				if r.IsCall(n.Type) && strings.HasPrefix(string(source[n.StartByte:n.EndByte]), name+"(") {
+					return n
+				}
+			}
+			return nil
+		}
+		for _, name := range []string{"precedingInit", "succeedingDone"} {
+			srcCall := findCall(srcFunc, src, name)
+			dstCall := findCall(dstFunc, dst, name)
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
+			}
+		}
+
+		for _, name := range []string{"currTotal", "currDouble", "currAffinity"} {
+			var srcAssign, dstAssign *treesitter.ASTNode
+			for _, n := range srcFunc.Descendants() {
+				if r.IsAssignment(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), name) {
+					srcAssign = n
+					break
+				}
+			}
+			for _, n := range dstClosure.Descendants() {
+				if r.IsAssignment(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), name) {
+					dstAssign = n
+					break
+				}
+			}
+			if srcAssign == nil || dstAssign == nil || mr.Mappings.Src()[srcAssign] != dstAssign {
+				t.Errorf("%s mapping = %v, want assignment inside ensureMetrics", name, mr.Mappings.Src()[srcAssign])
+			}
+		}
+
+		dstLines := strings.Split(string(dst), "\n")
+		for _, span := range env.RightHighlights {
+			if span.Action != "move" || span.Line < 0 || span.Line >= len(dstLines) {
+				continue
+			}
+			line := dstLines[span.Line]
+			if span.StartCol < 0 || span.EndCol > len(line) || span.StartCol >= span.EndCol {
+				t.Fatalf("invalid move span: %+v", span)
+			}
+			text := line[span.StartCol:span.EndCol]
+			if strings.TrimSpace(text) == "" {
+				t.Errorf("move span contains only indentation on line %d: %+v", span.Line+1, span)
+			}
+			if strings.TrimSpace(line) == "end" && span.StartCol < len(line)-len(strings.TrimLeft(line, " \t")) {
+				t.Errorf("move span colors indentation before inserted end on line %d: %+v", span.Line+1, span)
+			}
+		}
+		var closingEnd *treesitter.ASTNode
+		for _, n := range dstClosure.Children {
+			if r.IsKeyword(n.Type, n.Label) && n.Label == "end" {
+				closingEnd = n
+			}
+		}
+		if closingEnd == nil {
+			t.Fatal("ensureMetrics closing end not found")
+		}
+		if !slices.ContainsFunc(env.Actions, func(a Action) bool {
+			return a.Action == "insert" && a.Node != nil && a.ASTNode == closingEnd
+		}) {
+			t.Error("ensureMetrics closing end has no Insert action")
+		}
+	})
 }
 
 func TestAbsorbConnectorDelimiters(t *testing.T) {

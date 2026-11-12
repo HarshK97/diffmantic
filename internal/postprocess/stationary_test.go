@@ -844,6 +844,63 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 }
 
+func findContainerDecl(root *treesitter.ASTNode, r *rules.Rules, name string) *treesitter.ASTNode {
+	if root == nil || r == nil {
+		return nil
+	}
+	for _, n := range root.PreOrder() {
+		if r.IsContainerDeclaration(n.Type) && declarationName(n) == name {
+			return n
+		}
+	}
+	return nil
+}
+
+func declarationName(n *treesitter.ASTNode) string {
+	for _, child := range n.Children {
+		if rules.Get(n.GetLanguage()).IsIdentifier(child.Type) && child.Label != "" {
+			return child.Label
+		}
+	}
+	return ""
+}
+
+func findNodeContaining(root *treesitter.ASTNode, r *rules.Rules, source []byte, fragment string, classify func(*rules.Rules, string) bool) *treesitter.ASTNode {
+	for _, n := range root.Descendants() {
+		if classify(r, n.Type) && strings.Contains(string(source[n.StartByte:n.EndByte]), fragment) {
+			return n
+		}
+	}
+	return nil
+}
+
+func findStatementByName(root *treesitter.ASTNode, r *rules.Rules, source []byte, name string) *treesitter.ASTNode {
+	return findNodeContaining(root, r, source, name, func(r *rules.Rules, nodeType string) bool {
+		return r.IsLocalVarDeclaration(nodeType) || r.IsAssignment(nodeType)
+	})
+}
+
+func findDirectDelimitedChild(root *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	for _, n := range root.Children {
+		if r.IsDelimitedContainer(n.Type) {
+			return n
+		}
+	}
+	return nil
+}
+
+func assertNoActionOn(t *testing.T, es *actions.EditScript, node *treesitter.ASTNode) {
+	t.Helper()
+	if node == nil {
+		t.Fatal("missing node for action assertion")
+	}
+	for _, a := range es.Actions() {
+		if a.Node == node {
+			t.Errorf("action on stationary node %s = %v, want none", node.Type, a)
+		}
+	}
+}
+
 func TestSameScopeDeclaration(t *testing.T) {
 	r := rules.Get("go")
 
@@ -967,7 +1024,7 @@ func TestSameScopeDeclaration(t *testing.T) {
 		}
 	})
 
-	t.Run("FullEngine", func(t *testing.T) {
+	t.Run("FullEngine/distinct sibling closures avoid cross-closure moves", func(t *testing.T) {
 		// When a closure is deleted, statements inside it must not match as cross-scope
 		// moves into an updated sibling closure inside the same outer function.
 		src := []byte(`package main
@@ -1071,6 +1128,515 @@ func execute() {
 			t.Error("expected deleted validate closure to be recorded as a Delete")
 		}
 	})
+
+	t.Run("FullEngine/closure extraction retains move actions", func(t *testing.T) {
+		src := []byte(`package main
+
+func processItems(items []int) {
+	precedingInit()
+	currCommon := common(items)
+	currDice := dice(items)
+	currAffinity := affinity(items)
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+		dst := []byte(`package main
+
+func processItems(items []int) {
+	precedingInit()
+	var currCommon int
+	var currDice float64
+	var currAffinity float64
+	step01()
+	step02()
+	step03()
+	step04()
+	step05()
+	step06()
+	step07()
+	step08()
+	step09()
+	step10()
+	step11()
+	ensureMetrics := func() {
+		currCommon = common(items)
+		currDice = dice(items)
+		currAffinity = affinity(items)
+	}
+	ensureMetrics()
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "main.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "main.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		srcFunc := findContainerDecl(srcAST, r, "processItems")
+		dstFunc := findContainerDecl(dstAST, r, "processItems")
+		assertNoActionOn(t, normalized, srcFunc)
+		assertNoActionOn(t, normalized, dstFunc)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
+				callee := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(callee, "precedingInit") || strings.Contains(callee, "succeedingDone") {
+					t.Errorf("expected stationary call to not have Move action, got %v", a)
+				}
+			}
+		}
+
+		if srcFunc == nil || dstFunc == nil || matchResult.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("processItems mapping = %v, want destination processItems", matchResult.Mappings.Src()[srcFunc])
+		}
+		assertExtractedStatements(t, srcFunc, dstFunc, r, src, dst, matchResult, normalized)
+	})
+
+	t.Run("FullEngine/typescript arrow function extraction recognizes scope", func(t *testing.T) {
+		r := rules.Get("typescript")
+
+		src := []byte(`function processItems(items: number[]) {
+    precedingInit();
+    const currTotal = items.reduce((a, b) => a + b, 0);
+    succeedingDone(currTotal);
+}
+`)
+		dst := []byte(`function processItems(items: number[]) {
+    precedingInit();
+
+    step01();
+    step02();
+    step03();
+    step04();
+    step05();
+    step06();
+    step07();
+    step08();
+    step09();
+    step10();
+    step11();
+
+    const getMetrics = () => items.reduce((a, b) => a + b, 0);
+    succeedingDone(getMetrics());
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "pipeline.ts")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "pipeline.ts")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		srcFunc := findContainerDecl(srcAST, r, "processItems")
+		dstFunc := findContainerDecl(dstAST, r, "processItems")
+		assertNoActionOn(t, normalized, srcFunc)
+		assertNoActionOn(t, normalized, dstFunc)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
+				callee := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(callee, "precedingInit") {
+					t.Errorf("expected stationary call to not have Move action, got %v", a)
+				}
+			}
+		}
+
+		var srcReduce, dstReduce *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "reduce") {
+				srcReduce = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "reduce") {
+				dstReduce = n
+				break
+			}
+		}
+		if srcReduce == nil || dstReduce == nil {
+			t.Fatalf("failed to locate reduce calls: src=%v dst=%v", srcReduce, dstReduce)
+		}
+		if matchResult.Mappings.Get(srcReduce) != dstReduce {
+			t.Errorf("expected items.reduce(...) to map across into arrow function, got %v", matchResult.Mappings.Get(srcReduce))
+		}
+
+		if !sameScopeDeclaration(srcReduce, dstReduce, matchResult.Mappings, r) {
+			t.Errorf("expected sameScopeDeclaration to return true for arrow function inside processItems")
+		}
+	})
+
+	t.Run("FullEngine/rust closure expression extraction recognizes scope", func(t *testing.T) {
+		r := rules.Get("rust")
+
+		src := []byte(`fn process_items(items: &[i32]) {
+    preceding_init();
+    let curr_total = items.iter().map(|x| x * 2).sum::<i32>();
+    succeeding_done(curr_total);
+}
+`)
+		dst := []byte(`fn process_items(items: &[i32]) {
+    preceding_init();
+
+    step01();
+    step02();
+    step03();
+    step04();
+    step05();
+    step06();
+    step07();
+    step08();
+    step09();
+    step10();
+    step11();
+
+    let get_metrics = || items.iter().map(|x| x * 2).sum::<i32>();
+    succeeding_done(get_metrics());
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "pipeline.rs")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "pipeline.rs")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		srcFunc := findContainerDecl(srcAST, r, "process_items")
+		dstFunc := findContainerDecl(dstAST, r, "process_items")
+		assertNoActionOn(t, normalized, srcFunc)
+		assertNoActionOn(t, normalized, dstFunc)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
+				callee := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(callee, "preceding_init") {
+					t.Errorf("expected stationary call to not have Move action, got %v", a)
+				}
+			}
+		}
+
+		var srcSum, dstSum *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "sum") {
+				srcSum = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "sum") {
+				dstSum = n
+				break
+			}
+		}
+		if srcSum == nil || dstSum == nil {
+			t.Fatalf("failed to locate sum calls: src=%v dst=%v", srcSum, dstSum)
+		}
+		if matchResult.Mappings.Get(srcSum) != dstSum {
+			t.Errorf("expected sum call to map across into closure_expression, got %v", matchResult.Mappings.Get(srcSum))
+		}
+
+		if !sameScopeDeclaration(srcSum, dstSum, matchResult.Mappings, r) {
+			t.Errorf("expected sameScopeDeclaration to return true for closure_expression inside process_items")
+		}
+	})
+}
+
+func TestClosureScopeBoundaries(t *testing.T) {
+	t.Run("FullEngine/java closure does not cross method and class boundaries", func(t *testing.T) {
+		r := rules.Get("java")
+		src := []byte(`class Outer {
+    int value = compute();
+    static class Inner {
+        void run() {
+            precedingInit();
+            use(value);
+            succeedingDone();
+        }
+    }
+}
+`)
+		dst := []byte(`class Outer {
+    static class Inner {
+        void run() {
+            precedingInit();
+            use(() -> compute());
+            succeedingDone();
+        }
+    }
+}
+`)
+		srcAST, err := treesitter.Parse(src, "Outer.java")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "Outer.java")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("snippets must parse cleanly: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		for _, name := range []string{"Outer", "Inner", "run"} {
+			srcDecl := findContainerDecl(srcAST, r, name)
+			dstDecl := findContainerDecl(dstAST, r, name)
+			if srcDecl == nil || dstDecl == nil || mr.Mappings.Src()[srcDecl] != dstDecl {
+				t.Errorf("%s mapping = %v, want in-place destination declaration", name, mr.Mappings.Src()[srcDecl])
+			}
+		}
+		for _, name := range []string{"precedingInit", "succeedingDone"} {
+			srcCall := findNodeContaining(srcAST, r, src, name+"(", (*rules.Rules).IsCall)
+			dstCall := findNodeContaining(dstAST, r, dst, name+"(", (*rules.Rules).IsCall)
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
+			}
+		}
+		var srcCompute, dstCompute *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && string(src[n.StartByte:n.EndByte]) == "compute()" {
+				srcCompute = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && string(dst[n.StartByte:n.EndByte]) == "compute()" {
+				dstCompute = n
+				break
+			}
+		}
+		if srcCompute == nil || dstCompute == nil {
+			t.Fatalf("compute calls not found: src=%v dst=%v", srcCompute, dstCompute)
+		}
+		srcField := srcCompute.Parent.Parent
+		dstLambda := dstCompute.Parent
+		if srcField == nil || !r.IsDeclaration(srcField.Type) || dstLambda == nil || !r.IsClosure(dstLambda.Type) {
+			t.Fatalf("unexpected parsed scopes: field=%v lambda=%v", srcField, dstLambda)
+		}
+		mr.Mappings.Add(srcField, dstLambda)
+		srcOuter := findContainerDecl(srcAST, r, "Outer")
+		if sameScopeDeclaration(srcField, dstCompute, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = true across Outer field and Inner.run lambda, want false")
+		}
+		if sameScopeDeclaration(dstCompute, srcField, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = true from Inner.run lambda to Outer field, want false")
+		}
+		if sameScopeDeclaration(srcOuter, dstCompute, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = true across mapped Outer and Inner.run lambda, want false")
+		}
+		if sameScopeDeclaration(dstCompute, srcOuter, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = true from Inner.run lambda to mapped Outer, want false")
+		}
+		mr.Mappings.Add(srcCompute, dstCompute)
+		if sameScopeDeclaration(srcCompute, dstCompute, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = true for mapped calls across Outer and Inner.run, want false")
+		}
+	})
+
+	t.Run("FullEngine/go closure inlining retains all statement moves", func(t *testing.T) {
+		r := rules.Get("go")
+		dst := []byte(`package main
+
+func processItems(items []int) {
+	precedingInit()
+	currCommon := common(items)
+	currDice := dice(items)
+	currAffinity := affinity(items)
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+		src := []byte(`package main
+
+func processItems(items []int) {
+	precedingInit()
+	var currCommon int
+	var currDice float64
+	var currAffinity float64
+	step01()
+	step02()
+	step03()
+	step04()
+	step05()
+	step06()
+	step07()
+	step08()
+	step09()
+	step10()
+	step11()
+	ensureMetrics := func() {
+		currCommon = common(items)
+		currDice = dice(items)
+		currAffinity = affinity(items)
+	}
+	ensureMetrics()
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+		srcAST, err := treesitter.Parse(src, "main.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "main.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("snippets must parse cleanly: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		srcFunc := findContainerDecl(srcAST, r, "processItems")
+		dstFunc := findContainerDecl(dstAST, r, "processItems")
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("processItems mapping = %v, want destination processItems", mr.Mappings.Src()[srcFunc])
+		}
+		assertNoActionOn(t, normalized, srcFunc)
+		assertNoActionOn(t, normalized, dstFunc)
+		for _, name := range []string{"precedingInit", "succeedingDone"} {
+			srcCall := findNodeContaining(srcFunc, r, src, name+"(", (*rules.Rules).IsCall)
+			dstCall := findNodeContaining(dstFunc, r, dst, name+"(", (*rules.Rules).IsCall)
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
+			}
+			assertNoActionOn(t, normalized, srcCall)
+			assertNoActionOn(t, normalized, dstCall)
+		}
+		var srcClosure *treesitter.ASTNode
+		for _, n := range srcFunc.Descendants() {
+			if r.IsClosure(n.Type) {
+				srcClosure = n
+				break
+			}
+		}
+		if srcClosure == nil {
+			t.Fatal("ensureMetrics closure not found")
+		}
+		for _, name := range []string{"currCommon", "currDice", "currAffinity"} {
+			srcStmt := findStatementByName(srcClosure, r, src, name)
+			dstStmt := findStatementByName(dstFunc, r, dst, name)
+			if srcStmt == nil || dstStmt == nil {
+				t.Fatalf("%s statement not found: src=%v dst=%v", name, srcStmt, dstStmt)
+			}
+			if got := mr.Mappings.Src()[srcStmt]; got != dstStmt {
+				t.Errorf("%s mapping = %v, want inlined destination declaration", name, got)
+			}
+			if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+				return a.Type == actions.Move && a.Node == srcStmt
+			}) {
+				t.Errorf("%s has no Move action, want closure inlining", name)
+			}
+			if !sameScopeDeclaration(srcStmt, dstStmt, mr.Mappings, r) {
+				t.Errorf("sameScopeDeclaration() = false for inlined %s, want true", name)
+			}
+			srcRHS := findNodeContaining(srcStmt, r, src, "(", (*rules.Rules).IsCall)
+			dstRHS := findNodeContaining(dstStmt, r, dst, "(", (*rules.Rules).IsCall)
+			if srcRHS == nil || dstRHS == nil || mr.Mappings.Src()[srcRHS] != dstRHS {
+				t.Errorf("%s RHS mapping = %v, want destination call", name, mr.Mappings.Src()[srcRHS])
+			}
+		}
+	})
+}
+
+func assertExtractedStatements(t *testing.T, srcFunc, dstFunc *treesitter.ASTNode, r *rules.Rules, src, dst []byte, mr *engine.MatchResult, normalized *actions.EditScript) {
+	t.Helper()
+	var dstClosure *treesitter.ASTNode
+	for _, n := range dstFunc.Descendants() {
+		if r.IsClosure(n.Type) {
+			dstClosure = n
+			break
+		}
+	}
+	if dstClosure == nil {
+		t.Fatal("extracted closure not found")
+	}
+	srcParams := findDirectDelimitedChild(srcFunc, r)
+	dstParams := findDirectDelimitedChild(dstFunc, r)
+	if srcParams == nil || dstParams == nil || mr.Mappings.Src()[srcParams] != dstParams {
+		t.Errorf("parameter list mapping = %v, want destination parameters", mr.Mappings.Src()[srcParams])
+	}
+	for _, name := range []string{"currCommon", "currDice", "currAffinity"} {
+		srcStmt := findStatementByName(srcFunc, r, src, name)
+		dstStmt := findStatementByName(dstClosure, r, dst, name)
+		if srcStmt == nil || dstStmt == nil {
+			t.Fatalf("%s statement not found: src=%v dst=%v", name, srcStmt, dstStmt)
+		}
+		if got := mr.Mappings.Src()[srcStmt]; got != dstStmt {
+			t.Errorf("%s mapping = %v, want assignment inside extracted closure", name, got)
+		}
+		if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && a.Node == srcStmt
+		}) {
+			t.Errorf("%s has no Move action, want extraction into closure", name)
+		}
+		srcRHS := findNodeContaining(srcStmt, r, src, "(", (*rules.Rules).IsCall)
+		dstRHS := findNodeContaining(dstStmt, r, dst, "(", (*rules.Rules).IsCall)
+		if srcRHS == nil || dstRHS == nil || mr.Mappings.Src()[srcRHS] != dstRHS {
+			t.Errorf("%s RHS mapping = %v, want destination call", name, mr.Mappings.Src()[srcRHS])
+		}
+	}
 }
 
 func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T) {
