@@ -501,6 +501,21 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 	if s1.Type == s2.Type && LeafSimilarity(s1, s2) >= 0.50 {
 		return false
 	}
+	// A short var declaration often turns into an assignment (:= to =).
+	// If the right-hand sides still match, treat this as in-place evolution, not dredging.
+	if sameScope && r != nil && s1.Type != s2.Type && TypesMatch(s1.Type, s2.Type, r) &&
+		(r.IsAssignment(s1.Type) || r.IsLocalVarDeclaration(s1.Type)) &&
+		(r.IsAssignment(s2.Type) || r.IsLocalVarDeclaration(s2.Type)) {
+		_, rhs1 := getAssignmentSides(s1, r)
+		_, rhs2 := getAssignmentSides(s2, r)
+		for _, r1 := range rhs1 {
+			for _, r2 := range rhs2 {
+				if LeafSimilarity(r1, r2) >= 0.50 {
+					return false
+				}
+			}
+		}
+	}
 
 	// Gate 1: Phase 0 LinePartition Untouched Line Lock
 	if part != nil {

@@ -2244,3 +2244,168 @@ func runPipeline() error {
 		}
 	})
 }
+
+func TestEvolvingAssignmentStatementWithDrift_Case90(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+
+		oldSrc := []byte(`package engine
+
+func ContestContainers(currentT1, t2 *ASTNode, m *Mapping) {
+	precedingInit()
+
+	currCommon, _, _ := commonMappedDescendants(currentT1, t2, m.Src())
+	currDice := m.DiceSrc(currentT1, t2)
+	currAffinity := max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+
+		newSrc := []byte(`package engine
+
+func ContestContainers(currentT1, t2 *ASTNode, m *Mapping) {
+	precedingInit()
+
+	// Five inserted lines are enough to push drift past the 10-line dredging threshold.
+	insertedLine01 := 1
+	insertedLine02 := 2
+	insertedLine03 := 3
+	insertedLine04 := 4
+	insertedLine05 := 5
+	_ = insertedLine01
+	_ = insertedLine02
+	_ = insertedLine03
+	_ = insertedLine04
+	_ = insertedLine05
+
+	var currCommon int
+	var currDice float64
+	var currAffinity float64
+
+	currCommon, _, _ = commonMappedDescendants(currentT1, t2, m.Src())
+	currDice = m.DiceSrc(currentT1, t2)
+	currAffinity = max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))
+
+	succeedingDone(currCommon, currDice, currAffinity)
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing Context: ContestContainers function maps in place
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "ContestContainers" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "ContestContainers" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected ContestContainers function to map in place, got src=%v dst=%v", srcFunc, dstFunc)
+		}
+
+		// 2. Surrounding Sequence: precedingInit and succeedingDone map in place
+		var srcPreceding, dstPreceding, srcSucceeding, dstSucceeding *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "precedingInit":
+					srcPreceding = n
+				case "succeedingDone":
+					srcSucceeding = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "precedingInit":
+					dstPreceding = n
+				case "succeedingDone":
+					dstSucceeding = n
+				}
+			}
+		}
+		if srcPreceding == nil || dstPreceding == nil || mr.Mappings.Src()[srcPreceding] != dstPreceding {
+			t.Fatalf("expected precedingInit call to map in place, got src=%v dst=%v", srcPreceding, dstPreceding)
+		}
+		if srcSucceeding == nil || dstSucceeding == nil || mr.Mappings.Src()[srcSucceeding] != dstSucceeding {
+			t.Fatalf("expected succeedingDone call to map in place, got src=%v dst=%v", srcSucceeding, dstSucceeding)
+		}
+
+		// 3. Target Statements & Calls: commonMappedDescendants, DiceSrc, and computeAffinity must map
+		targetCallees := []string{"commonMappedDescendants", "DiceSrc", "computeAffinity"}
+		for _, calleeName := range targetCallees {
+			var srcCall, dstCall *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsCall(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte(calleeName)) {
+					srcCall = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsCall(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte(calleeName)) {
+					dstCall = n
+					break
+				}
+			}
+			if srcCall == nil || dstCall == nil {
+				t.Fatalf("failed to locate call %s: src=%v dst=%v", calleeName, srcCall, dstCall)
+			}
+			if mr.Mappings.Src()[srcCall] != dstCall {
+				t.Errorf("expected call %s to map across := -> =, got src mapped to %v", calleeName, mr.Mappings.Src()[srcCall])
+			}
+		}
+
+		// 4. Evolving Assignment Statements: all 3 short_var_declarations map to assignment_statements
+		var srcStatements []*treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) {
+				for _, leaf := range n.Leaves() {
+					if leaf.Label == "currCommon" || leaf.Label == "currDice" || leaf.Label == "currAffinity" {
+						srcStatements = append(srcStatements, n)
+						break
+					}
+				}
+			}
+		}
+		if len(srcStatements) != 3 {
+			t.Fatalf("expected 3 source short_var_declarations, got %d", len(srcStatements))
+		}
+		for _, s := range srcStatements {
+			mapped := mr.Mappings.Src()[s]
+			if mapped == nil {
+				t.Errorf("expected source statement %s to be mapped, got nil", s.Type)
+			} else if !r.IsAssignment(mapped.Type) {
+				t.Errorf("expected source statement %s to map to assignment_statement, got %s", s.Type, mapped.Type)
+			}
+		}
+	})
+}
