@@ -240,6 +240,9 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 		}
 
 		lineMerged = partitionLineSpans(lineMerged, side, lineIndex, fileBytes, multiLineGroups)
+		if side == "right" {
+			lineMerged = dropBlankMoveSpans(lineMerged, fileBytes[lineIndex[line]:])
+		}
 
 		slices.SortFunc(lineMerged, func(a, b internalSpan) int {
 			return cmp.Or(
@@ -262,6 +265,12 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	}
 
 	return result
+}
+
+func dropBlankMoveSpans(spans []internalSpan, lineBytes []byte) []internalSpan {
+	return slices.DeleteFunc(spans, func(s internalSpan) bool {
+		return s.action == "move" && len(bytes.TrimSpace(lineBytes[s.startCol:s.endCol])) == 0
+	})
 }
 
 // actionLineCount counts physical lines spanned by an action, trimming trailing whitespace

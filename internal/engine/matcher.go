@@ -322,9 +322,7 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	}
 
 	// Pass 2: Pair statements moved cross-scope alongside existing anchors.
-	// When at least two statements moved from srcParent to dstParent, find
-	// any leftover siblings between them by matching assigned variables or
-	// structural shape.
+	// Find leftover siblings by matching assigned variables or structural shape.
 	type cohortGroupKey struct {
 		srcParent *treesitter.ASTNode
 		dstParent *treesitter.ASTNode
@@ -357,16 +355,14 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 	}
 
 	for _, key := range groupOrder {
-		anchors := groups[key]
-		if len(anchors) < 2 {
+		if !canRecoverCohortGroup(groups[key]) {
 			continue
 		}
-
 		srcParent := key.srcParent
 		dstParent := key.dstParent
 		r := rulesFor(srcParent)
 
-		for _, anchor := range anchors {
+		for _, anchor := range groups[key] {
 			recoverUnmappedDescendantBlocks(anchor[0], anchor[1], m, r)
 		}
 
@@ -410,7 +406,7 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 						bestDstIdx = j
 						break
 					}
-				} else if len(names1) == 0 && len(names2) == 0 {
+				} else if len(names1) == 0 && len(names2) == 0 && len(groups[key]) >= 2 {
 					sim := LeafSimilarity(sc, dc)
 					if sim >= 0.40 {
 						bestDst = dc
@@ -444,6 +440,20 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			}
 		}
 	}
+}
+
+// canRecoverCohortGroup reports whether named statements can be recovered around these anchors.
+// A single anchor is enough only for closure extraction; structural matching still needs two.
+func canRecoverCohortGroup(anchors [][2]*treesitter.ASTNode) bool {
+	if len(anchors) >= 2 {
+		return true
+	}
+	if len(anchors) == 0 || anchors[0][1] == nil {
+		return false
+	}
+	r := rulesFor(anchors[0][1])
+	dstDecl := anchors[0][1].EnclosingContainerDeclaration(r)
+	return r != nil && dstDecl != nil && r.IsClosure(dstDecl.Type)
 }
 
 // recoverUnmappedDescendantBlocks runs Recover on any mapped child blocks inside t1 and t2
