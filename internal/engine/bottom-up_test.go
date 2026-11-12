@@ -2,6 +2,8 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -2963,5 +2965,240 @@ func TestWrapperEnclosingConstructTheft(t *testing.T) {
 				t.Errorf("expected stationary identifier %s in use_list to map in place, got %v", id, m.Src()[sNode])
 			}
 		}
+	})
+}
+
+// TestBottomUp_CallChain_HollowEnclosingGuard verifies that outer enclosing calls in a
+// call chain do not steal matches from compatible unmapped inner calls.
+func TestBottomUp_CallChain_HollowEnclosingGuard(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust", func(t *testing.T) {
+			oldSrc := []byte(`fn paint() {
+    for (line_index, (syntax_sections, diff_sections)) in syntax_style_sections
+        .iter()
+        .zip_eq(diff_style_sections.iter())
+        .enumerate()
+    {
+        foo();
+    }
+}
+`)
+			newSrc := []byte(`fn paint() {
+    for (line_index, ((syntax_sections, diff_sections), state)) in syntax_style_sections
+        .into_iter()
+        .zip_eq(diff_style_sections.iter())
+        .zip_eq(states.into_iter())
+        .enumerate()
+    {
+        foo();
+    }
+}
+`)
+
+			srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+			if err != nil {
+				t.Fatalf("parse oldSrc: %v", err)
+			}
+			dstAST, err := treesitter.Parse(newSrc, "test.rs")
+			if err != nil {
+				t.Fatalf("parse newSrc: %v", err)
+			}
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("oldSrc has parse errors: %d", srcAST.ParseErrorCount)
+			}
+			if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("newSrc has parse errors: %d", dstAST.ParseErrorCount)
+			}
+
+			r := rulesFor(srcAST)
+			if r == nil {
+				t.Fatal("rulesFor returned nil")
+			}
+
+			part := NewLinePartition(oldSrc, newSrc)
+			mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil mappings")
+			}
+
+			// Enclosing function declaration mapped in place.
+			var oldFn, newFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					oldFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) {
+					newFn = n
+					break
+				}
+			}
+			if oldFn == nil || newFn == nil {
+				t.Fatalf("failed to locate function declarations: oldFn=%v, newFn=%v", oldFn, newFn)
+			}
+			if mr.Mappings.Src()[oldFn] != newFn {
+				t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[oldFn])
+			}
+
+			// Surrounding for loop mapped in place.
+			var oldFor, newFor *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsExpression(n.Type) && n.Type == "for_expression" {
+					oldFor = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsExpression(n.Type) && n.Type == "for_expression" {
+					newFor = n
+					break
+				}
+			}
+			if oldFor == nil || newFor == nil {
+				t.Fatalf("failed to locate for_expression: oldFor=%v, newFor=%v", oldFor, newFor)
+			}
+			if mr.Mappings.Src()[oldFor] != newFor {
+				t.Errorf("expected for_expression to map in place, got %v", mr.Mappings.Src()[oldFor])
+			}
+
+			// Target calls: old zip_eq should match inner zip_eq, leaving inserted outer unmapped.
+			var oldZipEqCall *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "zip_eq" {
+					oldZipEqCall = n
+					break
+				}
+			}
+			var newZipEqCalls []*treesitter.ASTNode
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "zip_eq" {
+					newZipEqCalls = append(newZipEqCalls, n)
+				}
+			}
+			if len(newZipEqCalls) != 2 {
+				t.Fatalf("expected 2 zip_eq calls in newSrc, got %d", len(newZipEqCalls))
+			}
+			slices.SortFunc(newZipEqCalls, func(a, b *treesitter.ASTNode) int {
+				return cmp.Compare(a.Size(), b.Size())
+			})
+			newInnerZipEqCall := newZipEqCalls[0]
+			newOuterZipEqCall := newZipEqCalls[1]
+
+			if oldZipEqCall == nil {
+				t.Fatal("failed to locate oldZipEqCall")
+			}
+
+			if mapped := mr.Mappings.Src()[oldZipEqCall]; mapped != newInnerZipEqCall {
+				t.Errorf("expected old zip_eq call to map to newInnerZipEqCall, got %v (outer=%v)", mapped, newOuterZipEqCall)
+			}
+
+			if srcMapped := mr.Mappings.Dst()[newOuterZipEqCall]; srcMapped != nil {
+				t.Errorf("expected inserted outer zip_eq call to be unmapped, got %v", srcMapped)
+			}
+
+			// Arguments map in place.
+			var oldArgList, newInnerArgList *treesitter.ASTNode
+			for _, c := range oldZipEqCall.Children {
+				if r.IsDelimitedContainer(c.Type) && !r.IsBlock(c.Type) {
+					oldArgList = c
+					break
+				}
+			}
+			for _, c := range newInnerZipEqCall.Children {
+				if r.IsDelimitedContainer(c.Type) && !r.IsBlock(c.Type) {
+					newInnerArgList = c
+					break
+				}
+			}
+			if oldArgList == nil || newInnerArgList == nil {
+				t.Fatalf("failed to locate arg lists: old=%v, new=%v", oldArgList, newInnerArgList)
+			}
+			if mapped := mr.Mappings.Src()[oldArgList]; mapped != newInnerArgList {
+				t.Errorf("expected argument list to map in place, got %v", mapped)
+			}
+		})
+
+		t.Run("Go", func(t *testing.T) {
+			oldSrc := []byte(`package main
+
+func paint() {
+	syntax_style_sections.
+		Iter().
+		ZipEq(diff_style_sections.Iter()).
+		Enumerate()
+}
+`)
+			newSrc := []byte(`package main
+
+func paint() {
+	syntax_style_sections.
+		IntoIter().
+		ZipEq(diff_style_sections.Iter()).
+		ZipEq(states.IntoIter()).
+		Enumerate()
+}
+`)
+
+			srcAST, err := treesitter.Parse(oldSrc, "test.go")
+			if err != nil {
+				t.Fatalf("parse oldSrc: %v", err)
+			}
+			dstAST, err := treesitter.Parse(newSrc, "test.go")
+			if err != nil {
+				t.Fatalf("parse newSrc: %v", err)
+			}
+			if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("oldSrc has parse errors: %d", srcAST.ParseErrorCount)
+			}
+			if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("newSrc has parse errors: %d", dstAST.ParseErrorCount)
+			}
+
+			r := rulesFor(srcAST)
+			if r == nil {
+				t.Fatal("rulesFor returned nil")
+			}
+
+			part := NewLinePartition(oldSrc, newSrc)
+			mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil mappings")
+			}
+
+			var oldZipEqCall *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "ZipEq" {
+					oldZipEqCall = n
+					break
+				}
+			}
+			var newZipEqCalls []*treesitter.ASTNode
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "ZipEq" {
+					newZipEqCalls = append(newZipEqCalls, n)
+				}
+			}
+			if len(newZipEqCalls) != 2 {
+				t.Fatalf("expected 2 ZipEq calls in newSrc, got %d", len(newZipEqCalls))
+			}
+			slices.SortFunc(newZipEqCalls, func(a, b *treesitter.ASTNode) int {
+				return cmp.Compare(a.Size(), b.Size())
+			})
+			newInnerZipEqCall := newZipEqCalls[0]
+			newOuterZipEqCall := newZipEqCalls[1]
+
+			if oldZipEqCall == nil {
+				t.Fatal("failed to locate oldZipEqCall")
+			}
+
+			if mapped := mr.Mappings.Src()[oldZipEqCall]; mapped != newInnerZipEqCall {
+				t.Errorf("expected old ZipEq call to map to newInnerZipEqCall, got %v (outer=%v)", mapped, newOuterZipEqCall)
+			}
+			if srcMapped := mr.Mappings.Dst()[newOuterZipEqCall]; srcMapped != nil {
+				t.Errorf("expected inserted outer ZipEq call to be unmapped, got %v", srcMapped)
+			}
+		})
 	})
 }
