@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-12
+
 ### Added
 - Show fallback banners when files exceed size or line limits: when files exceed `DIFFM_SIZE_LIMIT` / `--size-limit` or `DIFFM_LINE_LIMIT` / `--line-limit`, or contain merge conflicts, Diffmantic now badges file banners and hunk headers with the actual count (like `[1.4 MB exceeded DIFFM_SIZE_LIMIT, falling back to line diff]` or `[12,500 lines exceeded DIFFM_LINE_LIMIT, falling back to line diff]`) instead of silently dropping to line diff. JSON output now includes typed `fallback_reason` values (`"file_size_limit"`, `"line_limit"`, `"merge_conflict"`) and `fallback_annotation`.
 
@@ -467,7 +469,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Initial baseline release security check.
 
-[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/HarshK97/diffmantic/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/HarshK97/diffmantic/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/HarshK97/diffmantic/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/HarshK97/diffmantic/compare/v0.12.0...v0.13.0
