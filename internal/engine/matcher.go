@@ -112,6 +112,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			if anc1 == nil || anc2 == nil {
 				continue
 			}
+			if isContainmentInversion(t1, t2, anc1, anc2, m, r) {
+				continue
+			}
 
 			parentMatched := t1.Parent != nil && t2.Parent != nil && m.Src()[t1.Parent] == t2.Parent
 
@@ -1058,6 +1061,34 @@ func matchDeclarationBodies(d1, d2 *treesitter.ASTNode, m *Mapping, rules *rules
 		}
 		m.Add(b1, b2)
 	}
+}
+
+// isContainmentInversion reports whether a candidate leaf sits in an
+// outer wrapper around an already-mapped payload container.
+// Matching it would incorrectly claim a leaf from inside that payload.
+func isContainmentInversion(t1, t2, anc1, anc2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || t2 == nil || m == nil {
+		return false
+	}
+	p2 := FindEnclosingStatement(t2, r)
+	isBlock2 := (r != nil && r.IsBlock(p2.Type)) || (r == nil && rules.IsBlock(p2.Type))
+	for curr1 := t1.Parent; curr1 != nil && curr1 != anc1; curr1 = curr1.Parent {
+		if mappedDst, ok := m.Src()[curr1]; ok && mappedDst != nil {
+			if (t2.Parent != nil && t2.Parent.Contains(mappedDst)) || (p2 != nil && !isBlock2 && p2.Contains(mappedDst)) {
+				return true
+			}
+		}
+	}
+	p1 := FindEnclosingStatement(t1, r)
+	isBlock1 := (r != nil && r.IsBlock(p1.Type)) || (r == nil && rules.IsBlock(p1.Type))
+	for curr2 := t2.Parent; curr2 != nil && curr2 != anc2; curr2 = curr2.Parent {
+		if mappedSrc, ok := m.Dst()[curr2]; ok && mappedSrc != nil {
+			if (t1.Parent != nil && t1.Parent.Contains(mappedSrc)) || (p1 != nil && !isBlock1 && p1.Contains(mappedSrc)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isBlockNode(n *treesitter.ASTNode, r *rules.Rules) bool {

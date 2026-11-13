@@ -429,6 +429,19 @@ func hasForeignScopeConflict(t1, c *treesitter.ASTNode, m *Mapping) bool {
 		return false
 	}
 	s1 := getScopeName(t1)
+	sc := getScopeName(c)
+	t1Decl := GetEnclosingDeclaration(t1)
+	cDecl := GetEnclosingDeclaration(c)
+	sameScope := t1Decl != nil && m.Src()[t1Decl] == cDecl
+	if !sameScope && s1 != "" && sc != "" && s1 == sc {
+		r := rulesFor(t1)
+		t1Scope := cmp.Or(t1Decl, t1)
+		cScope := cmp.Or(cDecl, c)
+		sameScope = hasClosureChild(t1Scope, r) && hasClosureChild(cScope, r) && m.Src()[t1Scope] == cScope
+	}
+	if sameScope {
+		return false
+	}
 	if s1 != "" {
 		ownCount := 0
 		foreignCount := 0
@@ -448,7 +461,6 @@ func hasForeignScopeConflict(t1, c *treesitter.ASTNode, m *Mapping) bool {
 			return true
 		}
 	}
-	sc := getScopeName(c)
 	if sc != "" {
 		ownCount := 0
 		foreignCount := 0
