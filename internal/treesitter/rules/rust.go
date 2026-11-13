@@ -336,7 +336,12 @@ var rustRules = &Rules{
 	Statements: []string{
 		"empty_statement",
 		"expression_statement",
+		"for_expression",
+		"if_expression",
 		"let_declaration",
+		"loop_expression",
 		"macro_invocation",
+		"match_expression",
+		"while_expression",
 	},
 }

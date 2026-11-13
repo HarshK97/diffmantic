@@ -1755,3 +1755,271 @@ func serialize(annotation bool, t bool) bool {
 		}
 	})
 }
+
+func TestMatch_RustControlFlowStatementBoundaries(t *testing.T) {
+	source := []byte(`fn process(values: &[i32], count: i32, ready: bool) {
+    for value in values {
+        consume(*value);
+    }
+    if ready {
+        consume(count);
+    }
+    loop {
+        consume(count);
+        break;
+    }
+    while count > 0 {
+        consume(count);
+    }
+    match count {
+        0 => consume(0),
+        _ => consume(count),
+    };
+}
+`)
+	src, err := treesitter.Parse(source, "test.rs")
+	if err != nil {
+		t.Fatalf("parse source: %v", err)
+	}
+	dst, err := treesitter.Parse(source, "test.rs")
+	if err != nil {
+		t.Fatalf("parse destination: %v", err)
+	}
+	if src.HasError || dst.HasError {
+		t.Fatalf("parse errors: source=%d, destination=%d", src.ParseErrorCount, dst.ParseErrorCount)
+	}
+	mr := Match(src, dst, source, source, NewLinePartition(source, source))
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil mappings")
+	}
+	r := rulesFor(src)
+	for _, typ := range []string{"for_expression", "if_expression", "loop_expression", "while_expression", "match_expression"} {
+		t.Run(typ, func(t *testing.T) {
+			control := findFirstNode(src.Root(), func(n *treesitter.ASTNode) bool {
+				return n.Type == typ
+			})
+			if control == nil {
+				t.Fatal("control-flow expression not found")
+			}
+			if !r.IsStatement(control.Type) {
+				t.Fatal("Rust control-flow expressions are statements when used directly in a block")
+			}
+			var condition *treesitter.ASTNode
+			if typ == "loop_expression" {
+				condition = control
+			} else {
+				condition = findFirstNode(control, func(n *treesitter.ASTNode) bool {
+					return n.Label == "ready" || n.Label == "count" || n.Label == "value"
+				})
+			}
+			want := control
+			if control.Parent != nil && r.IsExpressionStatement(control.Parent.Type) {
+				want = control.Parent
+			}
+			if got := FindEnclosingStatement(condition, r); got != want {
+				t.Errorf("condition belongs to the control-flow statement, got %v (%s), want %v (%s)", got, got.Type, want, want.Type)
+			}
+			if mr.Mappings.Src()[control] == nil {
+				t.Error("unchanged control-flow statement must map in place")
+			}
+		})
+	}
+}
+
+func TestMatch_ExpressionWrappingSameScope(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    match pagerflags.split_first() {
+        Some((_, _)) => {
+            let mut process = Command::new("less");
+            process.arg("-R");
+            process.arg("-F");
+            process.arg("-X");
+            process.arg("-K");
+            process.arg("-i");
+            process.env("LESSCHARSET", "UTF-8");
+            process.env("LESSHISTFILE", "/dev/null");
+            Ok(process)
+        }
+        None => Ok(Command::new("cat")),
+    };
+    process.wait()
+}
+`)
+		newSrc := []byte(`fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    Ok(match pagerflags.split_first() {
+        Some((_, _)) => {
+            _make_process_from_less_path()
+        }
+        None => Command::new("cat"),
+    });
+    process.wait()
+}
+
+fn _make_process_from_less_path() -> Command {
+    let mut process = Command::new("less");
+    process.arg("-R");
+    process.arg("-F");
+    process.arg("-X");
+    process.arg("-K");
+    process.arg("-i");
+    process.env("LESSCHARSET", "UTF-8");
+    process.env("LESSHISTFILE", "/dev/null");
+    process
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("oldSrc has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("newSrc has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// The enclosing function must stay in place.
+		oldFn := findFirstNode(srcAST.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsDeclaration(n.Type) && getDeclarationName(n) == "try_pager"
+		})
+		newFn := findFirstNode(dstAST.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsDeclaration(n.Type) && getDeclarationName(n) == "try_pager"
+		})
+		if oldFn == nil || newFn == nil {
+			t.Fatalf("failed to locate try_pager declarations: oldFn=%v, newFn=%v", oldFn, newFn)
+		}
+		if mr.Mappings.Src()[oldFn] != newFn {
+			t.Errorf("expected try_pager function to map in place, got %v", mr.Mappings.Src()[oldFn])
+		}
+
+		// The preceding statement must stay in place.
+		var oldLet, newLet *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && n.StartRow == 1 {
+				oldLet = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && n.StartRow == 1 {
+				newLet = n
+				break
+			}
+		}
+		if oldLet == nil || newLet == nil {
+			t.Fatalf("failed to locate let statement: oldLet=%v, newLet=%v", oldLet, newLet)
+		}
+		if mr.Mappings.Src()[oldLet] != newLet {
+			t.Errorf("expected let statement to map in place, got %v", mr.Mappings.Src()[oldLet])
+		}
+
+		// The statement after the wrapped expression must stay in place.
+		oldWait := findFirstNode(srcAST.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsCall(n.Type) && n.StartRow == 16
+		})
+		newWait := findFirstNode(dstAST.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsCall(n.Type) && n.StartRow == 8
+		})
+		if oldWait == nil || newWait == nil {
+			t.Fatalf("failed to locate wait statements: oldWait=%v, newWait=%v", oldWait, newWait)
+		}
+		if mr.Mappings.Src()[oldWait] != newWait {
+			t.Errorf("expected wait statement to map in place, got %v", mr.Mappings.Src()[oldWait])
+		}
+
+		// The match expression must stay inside the new Ok wrapper.
+		oldMatch := findFirstNode(srcAST.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsStatement(n.Type) && n.StartRow == 2 && r.IsBlock(n.Parent.Type)
+		})
+		if oldMatch == nil {
+			t.Fatal("failed to locate source match expression")
+		}
+		if r.IsExpressionStatement(oldMatch.Type) && len(oldMatch.Children) == 1 {
+			oldMatch = oldMatch.Children[0]
+		}
+
+		// The new wrapper must not claim an inner Ok call or its identifier.
+		var outerOkCall *treesitter.ASTNode
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && n.StartRow == 2 {
+				outerOkCall = n
+				break
+			}
+		}
+		if outerOkCall == nil {
+			t.Fatal("failed to locate outer Ok call in dstAST")
+		}
+		var newMatch *treesitter.ASTNode
+		for _, n := range outerOkCall.Children {
+			if r.IsDelimitedContainer(n.Type) {
+				for _, arg := range n.Children {
+					if r.IsStatement(arg.Type) {
+						newMatch = arg
+					}
+					if r.IsExpressionStatement(arg.Type) && len(arg.Children) == 1 && r.IsStatement(arg.Children[0].Type) {
+						newMatch = arg.Children[0]
+					}
+				}
+			}
+		}
+		if newMatch == nil {
+			t.Fatal("failed to locate destination match expression")
+		}
+		if mr.Mappings.Src()[oldMatch] != newMatch {
+			t.Errorf("expected match expression to map in place, got %v", mr.Mappings.Src()[oldMatch])
+		}
+		if mapped := mr.Mappings.Dst()[outerOkCall]; mapped != nil {
+			t.Errorf("expected outer Ok call to remain unmapped, got %v", mapped)
+		}
+		var outerOkIdent *treesitter.ASTNode
+		for _, n := range outerOkCall.Children {
+			if r.IsIdentifier(n.Type) && n.Label == "Ok" {
+				outerOkIdent = n
+				break
+			}
+		}
+		if outerOkIdent == nil {
+			t.Fatal("failed to locate outer Ok identifier in dstAST")
+		}
+		if mapped := mr.Mappings.Dst()[outerOkIdent]; mapped != nil {
+			t.Errorf("expected outer Ok identifier to remain unmapped, got %v (old StartRow=%d)", mapped, mapped.StartRow)
+		}
+
+		// The match operand must stay in place.
+		isSplitCall := func(n *treesitter.ASTNode) bool {
+			if !r.IsCall(n.Type) || len(n.Children) == 0 {
+				return false
+			}
+			return slices.ContainsFunc(n.Children[0].Children, func(c *treesitter.ASTNode) bool {
+				return c.Label == "split_first"
+			})
+		}
+		oldSplitCall := findFirstNode(srcAST.Root(), isSplitCall)
+		newSplitCall := findFirstNode(dstAST.Root(), isSplitCall)
+		if oldSplitCall == nil || newSplitCall == nil {
+			t.Fatalf("failed to locate split_first call: oldSplitCall=%v, newSplitCall=%v", oldSplitCall, newSplitCall)
+		}
+		if mr.Mappings.Src()[oldSplitCall] != newSplitCall {
+			t.Errorf("expected split_first call to map in place, got %v", mr.Mappings.Src()[oldSplitCall])
+		}
+	})
+}

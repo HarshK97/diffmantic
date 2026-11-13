@@ -3202,3 +3202,108 @@ func paint() {
 		})
 	})
 }
+
+func TestHasForeignScopeConflict_SameScopeExemption(t *testing.T) {
+	src, err := treesitter.Parse([]byte(`fn try_pager() {
+    own(); extracted_one(); extracted_two();
+}
+fn helper() {}
+`), "test.rs")
+	if err != nil {
+		t.Fatalf("parse source: %v", err)
+	}
+	dst, err := treesitter.Parse([]byte(`fn try_pager() {
+    own();
+}
+fn helper() { extracted_one(); extracted_two(); }
+`), "test.rs")
+	if err != nil {
+		t.Fatalf("parse destination: %v", err)
+	}
+	if src.HasError || dst.HasError {
+		t.Fatalf("parse errors: source=%d, destination=%d", src.ParseErrorCount, dst.ParseErrorCount)
+	}
+
+	r := rulesFor(src)
+	m := NewMapping()
+	for _, name := range []string{"own", "extracted_one", "extracted_two"} {
+		oldCall := findFirstNode(src.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsCall(n.Type) && extractCalleeLabel(n, r) == name
+		})
+		newCall := findFirstNode(dst.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsCall(n.Type) && extractCalleeLabel(n, r) == name
+		})
+		if oldCall == nil || newCall == nil {
+			t.Fatalf("find %s calls: source=%v, destination=%v", name, oldCall, newCall)
+		}
+		m.Add(oldCall.Children[0], newCall.Children[0])
+	}
+
+	oldBlock := findFirstNode(src.Root(), func(n *treesitter.ASTNode) bool {
+		return r.IsBlock(n.Type)
+	})
+	newBlock := findFirstNode(dst.Root(), func(n *treesitter.ASTNode) bool {
+		return r.IsBlock(n.Type)
+	})
+	m.Add(GetEnclosingDeclaration(oldBlock), GetEnclosingDeclaration(newBlock))
+	if hasForeignScopeConflict(oldBlock, newBlock, m) {
+		t.Error("extracting code from the same function must not be a foreign-scope conflict")
+	}
+
+	t.Run("SameNameDifferentNamespace", func(t *testing.T) {
+		src, err := treesitter.Parse([]byte(`mod alpha {
+    fn process() {
+        own(); extracted_one(); extracted_two();
+    }
+}
+mod beta {
+    fn process() {
+        other();
+    }
+}
+`), "test.rs")
+		if err != nil {
+			t.Fatalf("parse source: %v", err)
+		}
+		dst, err := treesitter.Parse([]byte(`mod alpha {
+    fn process() {
+        own();
+    }
+}
+mod beta {
+    fn process() {
+        extracted_one(); extracted_two(); other();
+    }
+}
+`), "test.rs")
+		if err != nil {
+			t.Fatalf("parse destination: %v", err)
+		}
+		if src.HasError || dst.HasError {
+			t.Fatalf("parse errors: source=%d, destination=%d", src.ParseErrorCount, dst.ParseErrorCount)
+		}
+
+		m := NewMapping()
+		for _, name := range []string{"own", "extracted_one", "extracted_two"} {
+			oldCall := findFirstNode(src.Root(), func(n *treesitter.ASTNode) bool {
+				return r.IsCall(n.Type) && extractCalleeLabel(n, r) == name
+			})
+			newCall := findFirstNode(dst.Root(), func(n *treesitter.ASTNode) bool {
+				return r.IsCall(n.Type) && extractCalleeLabel(n, r) == name
+			})
+			if oldCall == nil || newCall == nil {
+				t.Fatalf("find %s calls: source=%v, destination=%v", name, oldCall, newCall)
+			}
+			m.Add(oldCall.Children[0], newCall.Children[0])
+		}
+		oldAlphaBlock := findFirstNode(src.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsBlock(n.Type)
+		})
+		newAlphaBlock := findFirstNode(dst.Root(), func(n *treesitter.ASTNode) bool {
+			return r.IsBlock(n.Type)
+		})
+		if !hasForeignScopeConflict(oldAlphaBlock, newAlphaBlock, m) {
+			t.Error("same-named functions in different modules are separate scopes")
+		}
+	})
+}
