@@ -179,21 +179,6 @@ func BuildMoveBadges(
 		)
 	})
 
-	// If any move in a group spans multiple lines in source OR destination,
-	// collapse all member badges to Cyan (slot 0) so they match how the spans render.
-	multiLineGroups := make(map[string]bool)
-	for _, c := range candidates {
-		if c.act.GroupID != "" {
-			lines := max(c.sEnd-c.sStart+1, c.dEnd-c.dStart+1)
-			if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
-				lines = max(c.act.SrcLineCount, c.act.DstLineCount)
-			}
-			if lines > 1 {
-				multiLineGroups[c.act.GroupID] = true
-			}
-		}
-	}
-
 	// Only badge the first statement in a contiguous run of single-line moves within the same group.
 	// Multiline compound statements (like if/for) always keep their badges as landmarks.
 	suppressFlatFollower := make(map[*moveCandidate]bool)
@@ -270,7 +255,7 @@ func BuildMoveBadges(
 				if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
 					lines = max(c.act.SrcLineCount, c.act.DstLineCount)
 				}
-				meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, lines, multiLineGroups[c.act.GroupID])
+				meta.SrcLineBadgeColors[c.sStart] = serialize.ResolveMoveColor(c.act, lines)
 				c.hasSrcBadge = true
 			}
 		}
@@ -281,7 +266,7 @@ func BuildMoveBadges(
 				if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
 					lines = max(c.act.SrcLineCount, c.act.DstLineCount)
 				}
-				meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, lines, multiLineGroups[c.act.GroupID])
+				meta.DstLineBadgeColors[c.dStart] = serialize.ResolveMoveColor(c.act, lines)
 				c.hasDstBadge = true
 			}
 		}

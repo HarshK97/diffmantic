@@ -889,9 +889,10 @@ func movesInterfere(cur, prev moveInterval, curAct, prevAct *Action) bool {
 	}
 
 	// Case 2: Diverging moves (nearby source lines, but distant destination lines).
-	// They only clash if they diverge from the same parent or container.
+	// They only clash if they diverge from the same parent or container, or if one
+	// moves out of an enclosing move.
 	if sOverlap && !dOverlap {
-		return sameSourceParent(curAct, prevAct)
+		return sameSourceParent(curAct, prevAct) || isEnclosingMove(curAct, prevAct) || isEnclosingMove(prevAct, curAct)
 	}
 
 	// Case 3: Converging moves (distant source lines, but nearby destination lines).

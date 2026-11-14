@@ -953,6 +953,72 @@ func TestAssignMoveColors(t *testing.T) {
 				actions[0].MoveColorIndex, actions[1].MoveColorIndex)
 		}
 	})
+
+	t.Run("diverging child move escaping enclosing move receives contrasting color", func(t *testing.T) {
+		actions := []Action{
+			{
+				Action: "move",
+				Node: &NodeRef{
+					Tree:      "before",
+					Type:      "match_expression",
+					StartByte: 0,
+					EndByte:   100,
+				},
+				DestNode: &NodeRef{
+					Tree:      "after",
+					Type:      "match_expression",
+					StartByte: 0,
+					EndByte:   50,
+				},
+				OrigEndByte:     100,
+				DestOrigEndByte: 50,
+				GroupID:         "group-outer",
+				OldParent: &NodeRef{
+					Tree:      "before",
+					Type:      "block",
+					StartByte: 0,
+					EndByte:   200,
+				},
+			},
+			{
+				Action: "move",
+				Node: &NodeRef{
+					Tree:      "before",
+					Type:      "let_declaration",
+					StartByte: 20,
+					EndByte:   40,
+				},
+				DestNode: &NodeRef{
+					Tree:      "after",
+					Type:      "let_declaration",
+					StartByte: 500,
+					EndByte:   550,
+				},
+				OrigEndByte:     40,
+				DestOrigEndByte: 550,
+				GroupID:         "group-inner",
+				OldParent: &NodeRef{
+					Tree:      "before",
+					Type:      "block",
+					StartByte: 10,
+					EndByte:   90,
+				},
+			},
+		}
+
+		srcOffsets := []int{0, 10, 20, 50, 80, 100}
+		dstOffsets := make([]int, 60)
+		for i := range dstOffsets {
+			dstOffsets[i] = i * 10
+		}
+
+		AssignMoveColors(actions, srcOffsets, dstOffsets)
+
+		if actions[0].MoveColorIndex == actions[1].MoveColorIndex {
+			t.Errorf("expected outer move (slot %d) and escaped child move (slot %d) to have contrasting colors",
+				actions[0].MoveColorIndex, actions[1].MoveColorIndex)
+		}
+	})
 }
 
 func TestAssignMoveColors_FullEngine(t *testing.T) {

@@ -3307,3 +3307,148 @@ mod beta {
 		}
 	})
 }
+
+func TestBottomUp_CrossScopeMatchingGuard(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `fn try_pager(config: &Config) -> Result<()> {
+    let mut replace_args = false;
+    match pagerflags.split_first() {
+        Some((name, args)) => {
+            let mut process = if is_less {
+                let mut p = Command::new(&name);
+                p.args(args);
+                p.env("UTF8");
+                Ok(p.spawn())
+            } else {
+                None
+            };
+        }
+        None => Ok(())
+    }
+}
+`
+		dst := `fn try_pager(config: &Config) -> Result<()> {
+    let mut replace_args = false;
+    Ok(match pagerflags.split_first() {
+        Some((name, args)) => {
+            let process = if is_less {
+                _make_process(name, args)
+            } else {
+                None
+            };
+        }
+        None => ()
+    })
+}
+
+fn _make_process(name: String, args: Vec<String>) -> Option<Command> {
+    if let Ok(path) = resolve_binary(name) {
+        let mut p = Command::new(&path);
+        p.args(args);
+        p.env("UTF8");
+        Some(p)
+    } else {
+        None
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: fn try_pager
+		var srcFunc, dstFunc *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "try_pager" {
+				srcFunc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "try_pager" {
+				dstFunc = n
+				break
+			}
+		}
+		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
+			t.Fatalf("expected fn try_pager to map in place, got %v", mr.Mappings.Src()[srcFunc])
+		}
+
+		// 2. Surrounding sequence: let mut replace_args
+		var srcLet, dstLet *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+				srcLet = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 1 {
+				dstLet = n
+				break
+			}
+		}
+		if srcLet == nil || dstLet == nil || mr.Mappings.Src()[srcLet] != dstLet {
+			t.Errorf("expected preceding let statement to map in place")
+		}
+
+		// 3. Target: outer expression statement in src should NOT map to
+		// outer statement of _make_process in dst.
+		var srcOuterStmt *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if n.StartRow == 2 && r.IsStatement(n.Type) {
+				srcOuterStmt = n
+				break
+			}
+		}
+		var dstHelperOuterStmt *treesitter.ASTNode
+		for _, n := range dstAST.PreOrder() {
+			if n.StartRow == 15 && r.IsStatement(n.Type) {
+				dstHelperOuterStmt = n
+				break
+			}
+		}
+		if srcOuterStmt == nil || dstHelperOuterStmt == nil {
+			t.Fatalf("expected srcOuterStmt and dstHelperOuterStmt to be found, got src=%v dst=%v", srcOuterStmt, dstHelperOuterStmt)
+		}
+		if mr.Mappings.Src()[srcOuterStmt] == dstHelperOuterStmt {
+			t.Errorf("expected srcOuterStmt in try_pager to NOT map to dstHelperOuterStmt in _make_process")
+		}
+
+		// 4. Extracted statement: let mut p = Command::new(&name) should map to let mut p = Command::new(&path)
+		var srcPStmt, dstPStmt *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 5 {
+				srcPStmt = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 16 {
+				dstPStmt = n
+				break
+			}
+		}
+		if srcPStmt == nil || dstPStmt == nil || mr.Mappings.Src()[srcPStmt] != dstPStmt {
+			t.Errorf("expected extracted statement Command::new to map across functions to helper, got %v", mr.Mappings.Src()[srcPStmt])
+		}
+	})
+}
