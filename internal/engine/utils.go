@@ -752,11 +752,11 @@ func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	return nil
 }
 
-// isDeclarationHeader reports whether n sits in a function's signature
-// (parameters, return types) rather than its body.
-func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
+// declarationHeader returns the nearest ancestor container declaration
+// if n sits in its signature/header rather than its body.
+func declarationHeader(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
-		return false
+		return nil
 	}
 	if r == nil {
 		r = rulesFor(n)
@@ -767,10 +767,13 @@ func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
 		if isContainer {
 			body := findBodyBlock(curr, r)
 			if body == nil {
-				return false
+				return nil
 			}
-			return body != n && !body.Contains(n)
+			if body != n && !body.Contains(n) {
+				return curr
+			}
+			return nil
 		}
 	}
-	return false
+	return nil
 }

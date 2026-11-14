@@ -79,7 +79,7 @@ func TopDown(
 							effectiveHeight = Height(t1.Children[0])
 						}
 						// Subtrees without identifiers (like boilerplate `{ return false }`) shouldn't match across different scopes.
-						if effectiveHeight <= 2 || isDeclarationHeader(t1, r) || !hasIdentifier(t1, r) {
+						if effectiveHeight <= 2 || declarationHeader(t1, r) != nil || !hasIdentifier(t1, r) {
 							s1 := getScopeName(t1)
 							s2 := getScopeName(t2)
 							if s1 != "" && s2 != "" && s1 != s2 {
@@ -315,7 +315,7 @@ func TopDown(
 		if m.Has(t1) || m.HasDst(t2) {
 			continue
 		}
-		if sp.mismatched && (Height(t1) <= 2 || isDeclarationHeader(t1, rulesFor(t1)) || !hasIdentifier(t1, rulesFor(t1))) {
+		if sp.mismatched && (Height(t1) <= 2 || declarationHeader(t1, rulesFor(t1)) != nil || !hasIdentifier(t1, rulesFor(t1))) {
 			continue
 		}
 		if hasDelimitedContainerConflict(t1, t2, m, rulesFor(t1)) {
@@ -417,16 +417,22 @@ func parentLineageSimilarity(t1, t2 *treesitter.ASTNode) int {
 	return score
 }
 
-// getScopeName returns the identifier of n, its enclosing declaration, or
-// the enclosing call expression for anonymous callbacks/closures.
+// getScopeName returns the enclosing declaration name for nodes inside a
+// declaration signature or header, the identifier of n, its enclosing declaration,
+// or the enclosing call expression for anonymous callbacks/closures.
 func getScopeName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
 	}
+	r := rulesFor(n)
+	if enc := declarationHeader(n, r); enc != nil {
+		if name := getDeclarationName(enc); name != "" {
+			return name
+		}
+	}
 	if name := getDeclarationName(n); name != "" {
 		return name
 	}
-	r := rulesFor(n)
 	if hasClosureChild(n, r) {
 		if name := getClosureDeclarationName(n, r); name != "" {
 			return name

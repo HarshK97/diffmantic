@@ -44,7 +44,11 @@ func RecoverGlueAnchors(m *Mapping) {
 
 			// Matched body block in a control-flow statement or declaration.
 			if m.Src()[body1] == body2 {
-				if lineDist > 10 || (isDecl && m.DiceSrc(p1, p2) < 0.30) {
+				if isDecl {
+					if m.DiceSrc(p1, p2) < 0.30 {
+						continue
+					}
+				} else if lineDist > 10 {
 					continue
 				}
 				m.Add(p1, p2)
