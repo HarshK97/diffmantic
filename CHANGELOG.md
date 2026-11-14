@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Renaming a function or method across large line shifts (or when code moves around it) won't let sibling functions steal its parameters or drop the entire function into a delete and insert. Parameters and function signatures now stay anchored to their parent function header, and functions with matching bodies stay paired in place with their unchanged code kept as context.
 - Extracting code from a function into a helper (like pulling statements out of an if-block into a new function) won't tear apart the caller's control flow anymore. The caller's surrounding statements stay matched in place as context instead of matching across functions into the helper, and extracted lines escaping an enclosing move get contrasting move colors (magenta vs cyan).
 - Reordering statements inside a moved block or function (like swapping two assignments or nested lines in a loop) now paints the out-of-order statements with a contrasting move color (magenta vs cyan) instead of painting the whole container in a single color. Containers also won't collapse into a single subtree move when inner statements swap relative positions, keeping each move clearly visible.
 - Expanding an `if` condition with extra checks (like turning `if A && B` into `if ((A && B) && C) && D`) won't let unchanged expressions get stolen by similar statements in distant functions anymore. The existing condition stays matched in place as context, highlighting only the added checks.

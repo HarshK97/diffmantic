@@ -1860,3 +1860,249 @@ func (u *UseFullPanelWidth) New(enabled bool) *UseFullPanelWidth {
 		})
 	})
 }
+
+func TestDeclarationMatching_RenamedFunctionWithSiblingParameters(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `// Top-level module
+pub fn helper_alpha(x: usize) -> usize {
+    x + 1
+}
+
+pub fn right_pad_left_panel_line(
+    panel_line: &mut String,
+    panel_line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[Vec<(Style, &str)>],
+    state: &State,
+    background_color_extends_to_terminal_width: Option<bool>,
+    config: &Config,
+) {
+    if panel_line_is_empty && line_index.is_some() {
+        match state {
+            State::HunkMinus(_) => mark_empty_line(panel_line, " "),
+            State::HunkZero => {}
+            _ => unreachable!(),
+        };
+    };
+    let text_width = measure_text_width(panel_line);
+    let panel_width = config.side_by_side_data.left_panel.width;
+    if text_width > panel_width {
+        *panel_line = truncate_str(panel_line, panel_width);
+    }
+}
+
+pub fn right_fill_right_panel_line(
+    panel_line: &mut String,
+    panel_line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[Vec<(Style, &str)>],
+    state: &State,
+    background_color_extends_to_terminal_width: Option<bool>,
+    config: &Config,
+) {
+    *panel_line = truncate_str(panel_line, config.side_by_side_data.right_panel.width);
+    let (should_right_fill_background_color, fill_style) = if let Some(index) = line_index {
+        get_fill_style(diff_style_sections, state, background_color_extends_to_terminal_width, config)
+    } else {
+        (false, config.null_style)
+    };
+    if should_right_fill_background_color {
+        right_fill_background_color(panel_line, fill_style);
+    } else if panel_line_is_empty && line_index.is_some() {
+        match state {
+            State::HunkPlus(_) => mark_empty_line(panel_line, " "),
+            State::HunkZero => {}
+            _ => unreachable!(),
+        };
+    };
+}
+
+pub fn helper_omega(y: usize) -> usize {
+    y * 2
+}
+`
+
+		// dst introduces compute_panel_style helper above pad_panel_line_to_width so:
+		// 1. lineDist from right_pad_left_panel_line (line 6) to pad_panel_line_to_width (line 27) is 21 > 10
+		// 2. deleted sibling right_fill_right_panel_line (line 31) has smaller row distance (4) to pad_panel_line_to_width
+		dst := `// Top-level module
+pub fn helper_alpha(x: usize) -> usize {
+    x + 1
+}
+
+pub fn compute_panel_style(state: &State, is_empty: bool) -> Option<&'static str> {
+    if is_empty {
+        match state {
+            State::HunkMinus(_) => Some(" "),
+            State::HunkPlus(_) => Some(" "),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+pub fn pad_panel_line_to_width<'a>(
+    panel_line: &mut String,
+    panel_line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[LineSegments<'a, Style>],
+    state: &State,
+    panel_side: PanelSide,
+    background_color_extends_to_terminal_width: BgShouldFill,
+    config: &Config,
+) {
+    if panel_line_is_empty && line_index.is_some() {
+        if let Some(mark) = compute_panel_style(state, panel_line_is_empty) {
+            mark_empty_line(panel_line, mark);
+        }
+    };
+    let text_width = measure_text_width(panel_line);
+    let panel_width = config.side_by_side_data[panel_side].width;
+    if text_width > panel_width {
+        *panel_line = truncate_str(panel_line, panel_width);
+    }
+}
+
+pub fn helper_omega(y: usize) -> usize {
+    y * 2
+}
+`
+
+		srcAST, err := treesitter.Parse([]byte(src), "side_by_side.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "side_by_side.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		m := mr.Mappings
+
+		// 1. Enclosing context & Surrounding sequence
+		var srcAlpha, dstAlpha *treesitter.ASTNode
+		var srcOmega, dstOmega *treesitter.ASTNode
+		var srcRightPad, dstPadPanel *treesitter.ASTNode
+		var srcRightFill, dstComputeStyle *treesitter.ASTNode
+
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "helper_alpha":
+					srcAlpha = n
+				case "right_pad_left_panel_line":
+					srcRightPad = n
+				case "right_fill_right_panel_line":
+					srcRightFill = n
+				case "helper_omega":
+					srcOmega = n
+				}
+			}
+		}
+
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && r.IsContainerDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "helper_alpha":
+					dstAlpha = n
+				case "compute_panel_style":
+					dstComputeStyle = n
+				case "pad_panel_line_to_width":
+					dstPadPanel = n
+				case "helper_omega":
+					dstOmega = n
+				}
+			}
+		}
+
+		if srcAlpha == nil || dstAlpha == nil {
+			t.Fatalf("missing helper_alpha: src=%v, dst=%v", srcAlpha, dstAlpha)
+		}
+		if srcOmega == nil || dstOmega == nil {
+			t.Fatalf("missing helper_omega: src=%v, dst=%v", srcOmega, dstOmega)
+		}
+		if srcRightPad == nil || dstPadPanel == nil {
+			t.Fatalf("missing target functions: src=%v, dst=%v", srcRightPad, dstPadPanel)
+		}
+		if srcRightFill == nil {
+			t.Fatal("missing srcRightFill")
+		}
+		if dstComputeStyle == nil {
+			t.Fatal("missing dstComputeStyle")
+		}
+
+		// Surrounding helpers must map in place without disruption
+		if m.Src()[srcAlpha] != dstAlpha {
+			t.Errorf("expected helper_alpha to map in place, got %v", m.Src()[srcAlpha])
+		}
+		if m.Src()[srcOmega] != dstOmega {
+			t.Errorf("expected helper_omega to map in place, got %v", m.Src()[srcOmega])
+		}
+
+		// Inserted helper compute_panel_style must be a clean insertion
+		if m.Dst()[dstComputeStyle] != nil {
+			t.Errorf("expected inserted compute_panel_style to be unmapped, got %v", m.Dst()[dstComputeStyle])
+		}
+
+		// Deleted sibling function right_fill_right_panel_line must be unmapped
+		if m.Src()[srcRightFill] != nil {
+			t.Errorf("expected deleted right_fill_right_panel_line to be unmapped, got %v", m.Src()[srcRightFill])
+		}
+
+		// Target function: right_pad_left_panel_line must map to pad_panel_line_to_width
+		if m.Src()[srcRightPad] != dstPadPanel {
+			t.Errorf("expected right_pad_left_panel_line to map to pad_panel_line_to_width, got %v", m.Src()[srcRightPad])
+		}
+
+		// Delimited parameters container and individual parameters must map in place without sibling theft
+		var srcParams, dstParams *treesitter.ASTNode
+		for _, child := range srcRightPad.Children {
+			if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
+				srcParams = child
+				break
+			}
+		}
+		for _, child := range dstPadPanel.Children {
+			if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
+				dstParams = child
+				break
+			}
+		}
+		if srcParams == nil || dstParams == nil {
+			t.Fatalf("missing parameters container: srcParams=%v, dstParams=%v", srcParams, dstParams)
+		}
+		if m.Src()[srcParams] != dstParams {
+			t.Errorf("expected parameters container to map in place, got %v", m.Src()[srcParams])
+		}
+		if len(srcParams.Children) > 0 && len(dstParams.Children) > 0 {
+			srcParam1 := srcParams.Children[0]
+			dstParam1 := dstParams.Children[0]
+			if m.Src()[srcParam1] != dstParam1 {
+				t.Errorf("expected first parameter (panel_line) to map in place, got %v", m.Src()[srcParam1])
+			}
+		}
+
+		// Stationary body statements must map in place
+		srcBody := findBodyBlock(srcRightPad, r)
+		dstBody := findBodyBlock(dstPadPanel, r)
+		if srcBody == nil || dstBody == nil {
+			t.Fatalf("missing body blocks: srcBody=%v, dstBody=%v", srcBody, dstBody)
+		}
+		if m.Src()[srcBody] != dstBody {
+			t.Errorf("expected function body block to map in place, got %v", m.Src()[srcBody])
+		}
+	})
+}
