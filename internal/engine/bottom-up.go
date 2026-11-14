@@ -252,15 +252,34 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		}
 	}
 
-	// Don't match bodies across different functions unless the functions are mapped
-	// or the bodies share at least 60% of their contents.
-	p1 := t1.Parent
-	p2 := c.Parent
-	if p1 != nil && p2 != nil && ((r != nil && r.IsDeclaration(p1.Type) && r.IsDeclaration(p2.Type)) ||
-		(r == nil && rules.IsDeclaration(p1.Type) && rules.IsDeclaration(p2.Type))) {
-		name1 := getDeclarationName(p1)
-		name2 := getDeclarationName(p2)
-		if name1 != "" && name2 != "" && name1 != name2 && m.Src()[p1] != p2 {
+	// Don't match nodes across different functions unless the functions map
+	// to each other or the nodes share >= 60% similarity.
+	decl1 := getEnclosingScopeDeclaration(t1, r)
+	decl2 := getEnclosingScopeDeclaration(c, r)
+	if decl1 != nil || decl2 != nil {
+		diffScope := false
+		if decl1 == nil || decl2 == nil {
+			diffScope = true
+		} else {
+			mappedDst := m.Src()[decl1]
+			mappedSrc := m.Dst()[decl2]
+			if mappedDst != nil && mappedDst != decl2 {
+				if !mappedDst.Contains(decl2) {
+					diffScope = true
+				}
+			} else if mappedSrc != nil && mappedSrc != decl1 {
+				if !mappedSrc.Contains(decl1) {
+					diffScope = true
+				}
+			} else {
+				name1 := getDeclarationName(decl1)
+				name2 := getDeclarationName(decl2)
+				if name1 != "" && name2 != "" && name1 != name2 && mappedDst != decl2 {
+					diffScope = true
+				}
+			}
+		}
+		if diffScope {
 			if m.DiceSrc(t1, c) < 0.60 && ChawatheSimilarity(t1, c, m.Src()) < 0.60 {
 				return -1.0
 			}

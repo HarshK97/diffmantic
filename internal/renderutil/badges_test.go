@@ -586,8 +586,8 @@ func TestBuildMoveBadges_ColorSynchronization(t *testing.T) {
 		t.Errorf("expected multiline move src badge color to collapse to 0, got %d", color)
 	}
 
-	if color, ok := badges.SrcLineBadgeColors[10]; !ok || color != 0 {
-		t.Errorf("expected single-line move in multiline group to collapse src badge color to 0, got %d", color)
+	if color, ok := badges.SrcLineBadgeColors[10]; !ok || color != 1 {
+		t.Errorf("expected move in GroupID with MoveColorIndex 1 to honor badge color 1, got %d", color)
 	}
 }
 

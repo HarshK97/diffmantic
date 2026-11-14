@@ -917,7 +917,7 @@ func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
 		{startCol: 5, endCol: 35, action: "move", actRef: &act2},
 	}
 
-	partitioned := partitionLineSpans(spans, "left", nil, nil, nil)
+	partitioned := partitionLineSpans(spans, "left", nil, nil)
 	foundColor1 := false
 	for _, p := range partitioned {
 		if p.actRef != nil && p.actRef.MoveColorIndex == 1 {
@@ -950,7 +950,7 @@ func TestPartitionLineSpans_MoveUpdateInheritsEnclosingMoveColor(t *testing.T) {
 		{startCol: 10, endCol: 15, action: "update", actRef: &actUpdate},
 	}
 
-	partitioned := partitionLineSpans(spans, "right", nil, nil, nil)
+	partitioned := partitionLineSpans(spans, "right", nil, nil)
 	if len(partitioned) != 3 {
 		t.Fatalf("expected 3 partitioned spans, got %d: %+v", len(partitioned), partitioned)
 	}
@@ -963,9 +963,8 @@ func TestPartitionLineSpans_MoveUpdateInheritsEnclosingMoveColor(t *testing.T) {
 }
 
 func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
-	// Single-line moves keep their slot color (Magenta), while multiline moves
-	// collapse to Cyan. If a group mixes both, the whole group takes Cyan so
-	// siblings stay the same color.
+	// Standalone 1-line moves keep slot 1 (Magenta). Grouped moves keep their
+	// assigned color so siblings share the same color.
 	fileBytes := []byte("foo(a, b)\nfunc MultiLine() {\n    return 42\n}\nms.Remove(d)\n")
 
 	singleLineAct := Action{
@@ -1020,15 +1019,15 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 	if multiSpan == nil {
 		t.Fatalf("expected move span on line 1")
 	}
-	if multiSpan.ColorIndex != 0 {
-		t.Errorf("expected multiline move to have adaptive ColorIndex 0 (Cyan), got %d", multiSpan.ColorIndex)
+	if multiSpan.ColorIndex != 1 {
+		t.Errorf("expected multiline move in group to honor ColorIndex 1 (Magenta), got %d", multiSpan.ColorIndex)
 	}
 
 	if groupedSingleSpan == nil {
 		t.Fatalf("expected grouped single-line move span on line 4")
 	}
-	if groupedSingleSpan.ColorIndex != 0 {
-		t.Errorf("expected single-line move in multiline GroupID to share ColorIndex 0 (Cyan), got %d", groupedSingleSpan.ColorIndex)
+	if groupedSingleSpan.ColorIndex != 1 {
+		t.Errorf("expected single-line move in GroupID to share ColorIndex 1 (Magenta), got %d", groupedSingleSpan.ColorIndex)
 	}
 
 	t.Run("single line with trailing newline", func(t *testing.T) {
@@ -1103,8 +1102,8 @@ func process() {
 		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 	}
 
-	// finish() on left line 9 and right line 11 is single-line, but grouped with
-	// multiline if check(). Verify both sides collapse finish() to ColorIndex 0.
+	// finish() is single-line on both sides, grouped with a multiline if-statement.
+	// Both sides keep ColorIndex 0 so the group shares one color.
 	for _, h := range env.LeftHighlights {
 		if h.Line == 9 && h.Action == "move" && h.ColorIndex != 0 {
 			t.Errorf("expected left finish() move highlight to have ColorIndex 0, got %d", h.ColorIndex)
@@ -1598,7 +1597,7 @@ func assertContextLinesPure(t *testing.T, spans []HighlightSpan, allowedLines []
 }
 
 func TestResolveMoveColor(t *testing.T) {
-	if got := ResolveMoveColor(nil, 0, false); got != 0 {
+	if got := ResolveMoveColor(nil, 0); got != 0 {
 		t.Errorf("expected nil action to return color 0, got %d", got)
 	}
 
@@ -1607,11 +1606,11 @@ func TestResolveMoveColor(t *testing.T) {
 		MoveColorIndex: 1,
 	}
 
-	if got := ResolveMoveColor(act, 1, false); got != 1 {
+	if got := ResolveMoveColor(act, 1); got != 1 {
 		t.Errorf("expected single-line ungrouped move to keep color 1, got %d", got)
 	}
 
-	if got := ResolveMoveColor(act, 5, false); got != 0 {
+	if got := ResolveMoveColor(act, 5); got != 0 {
 		t.Errorf("expected multi-line move to collapse to 0, got %d", got)
 	}
 
@@ -1620,12 +1619,12 @@ func TestResolveMoveColor(t *testing.T) {
 		GroupID:        "group-1",
 		MoveColorIndex: 1,
 	}
-	if got := ResolveMoveColor(actInGroup, 1, true); got != 0 {
-		t.Errorf("expected single-line move in multi-line group to collapse to 0, got %d", got)
+	if got := ResolveMoveColor(actInGroup, 1); got != 1 {
+		t.Errorf("expected move in group to honor assigned MoveColorIndex 1, got %d", got)
 	}
 
-	if got := ResolveMoveColor(actInGroup, 1, false); got != 1 {
-		t.Errorf("expected single-line move in single-line group to keep color 1, got %d", got)
+	if got := ResolveMoveColor(actInGroup, 5); got != 1 {
+		t.Errorf("expected multiline move in group to honor assigned MoveColorIndex 1, got %d", got)
 	}
 
 	// Standalone outlier moves:
@@ -1636,16 +1635,16 @@ func TestResolveMoveColor(t *testing.T) {
 
 	// Standalone move with lineCount <= MaxUngroupedHighlightLines (3) keeps slot 1 (Magenta).
 	for lines := 1; lines <= MaxUngroupedHighlightLines; lines++ {
-		if got := ResolveMoveColor(ungroupedAct, lines, false); got != 1 {
+		if got := ResolveMoveColor(ungroupedAct, lines); got != 1 {
 			t.Errorf("expected ungrouped move with %d lines to retain color 1, got %d", lines, got)
 		}
 	}
 
 	// Standalone move with lineCount > MaxUngroupedHighlightLines (e.g. 4 lines) collapses to slot 0 (Cyan).
-	if got := ResolveMoveColor(ungroupedAct, 4, false); got != 0 {
+	if got := ResolveMoveColor(ungroupedAct, 4); got != 0 {
 		t.Errorf("expected ungrouped move with 4 lines to collapse to 0, got %d", got)
 	}
-	if got := ResolveMoveColor(ungroupedAct, 10, false); got != 0 {
+	if got := ResolveMoveColor(ungroupedAct, 10); got != 0 {
 		t.Errorf("expected ungrouped move with 10 lines to collapse to 0, got %d", got)
 	}
 }
@@ -1693,7 +1692,7 @@ func TestContainerDelimiterMoveParity(t *testing.T) {
 			{startCol: 0, endCol: 1, action: "insert", actRef: insertAct},
 			{startCol: 0, endCol: 1, action: "move", actRef: moveAct},
 		}
-		partitioned := partitionLineSpans(spans, "right", lineIndex, fileBytes, nil)
+		partitioned := partitionLineSpans(spans, "right", lineIndex, fileBytes)
 		if len(partitioned) != 1 || partitioned[0].action != "move" {
 			t.Fatalf("expected child block move to beat container insert footer, got: %+v", partitioned)
 		}
