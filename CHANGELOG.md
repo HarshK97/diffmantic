@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Reordering statements inside a moved block or function (like swapping two assignments or nested lines in a loop) now paints the out-of-order statements with a contrasting move color (magenta vs cyan) instead of painting the whole container in a single color. Containers also won't collapse into a single subtree move when inner statements swap relative positions, keeping each move clearly visible.
 - Expanding an `if` condition with extra checks (like turning `if A && B` into `if ((A && B) && C) && D`) won't let unchanged expressions get stolen by similar statements in distant functions anymore. The existing condition stays matched in place as context, highlighting only the added checks.
 - Wrapping a Rust expression in `Ok(...)` now highlights only the new wrapper. Unchanged code stays matched, and same-named functions in different namespaces no longer share move matches.
 - Moving code into or out of a closure now keeps all related statements marked as moves, even when only one statement is recognized at first. Scope checks no longer cross into another method or class, and inserted closing keywords don't carry stray move highlights on their indentation.

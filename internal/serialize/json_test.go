@@ -1716,6 +1716,96 @@ func run() {
 			}
 		}
 	})
+
+	t.Run("reordered statement inside moved container takes contrasting slot 1", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		oldSrc := `package main
+
+func process() {
+	extraHeader1()
+	extraHeader2()
+	extraHeader3()
+	for i := range n1 {
+		for j := range n2 {
+			calc()
+			canPair[i][j] = ok
+			sim[i][j] = score
+		}
+	}
+	extraFooter1()
+	extraFooter2()
+	extraFooter3()
+}
+`
+		newSrc := `package main
+
+func process() {
+	extraHeader1()
+	extraHeader2()
+	extraHeader3()
+	extraFooter1()
+	extraFooter2()
+	extraFooter3()
+	for i := range n1 {
+		for j := range n2 {
+			calc()
+			if ok {
+				sim[i][j] = score
+			} else {
+				sim[i][j] = -1.0
+			}
+		}
+	}
+}
+`
+		env := runPipeline(t, oldSrc, newSrc)
+
+		// 1. Whole-snippet verification: enclosing package and func declarations have no edit actions.
+		for _, a := range env.Actions {
+			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
+				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+			}
+		}
+
+		// 2. Whole-snippet context line purity: stationary statements extraHeader1..3 and extraFooter1..3 remain unhighlighted.
+		assertContextLinesPure(t, env.LeftHighlights, []int{6, 7, 8, 9, 10, 11, 12})
+		assertContextLinesPure(t, env.RightHighlights, []int{9, 10, 11, 12, 13, 14, 15, 16, 17, 18})
+
+		// 3. Move color verification: in-order statements share container color 0 (Cyan),
+		// while the reordered statement (canPair -> sim in else branch) receives contrasting color 1 (Magenta).
+		var foundReorderedLeft, foundReorderedRight bool
+		for _, h := range env.LeftHighlights {
+			// Old line 10: canPair[i][j] = ok
+			if h.Line == 9 && h.Action == "move" {
+				if h.ColorIndex != 1 {
+					t.Errorf("expected left move span on line 10 to have contrasting ColorIndex 1 (Magenta), got %d", h.ColorIndex)
+				} else {
+					foundReorderedLeft = true
+				}
+			}
+		}
+		for _, h := range env.RightHighlights {
+			// New line 16: sim[i][j] = -1.0
+			if h.Line == 15 && h.Action == "move" {
+				if h.ColorIndex != 1 {
+					t.Errorf("expected right move span on line 16 to have contrasting ColorIndex 1 (Magenta), got %d", h.ColorIndex)
+				} else {
+					foundReorderedRight = true
+				}
+			}
+		}
+
+		if !foundReorderedLeft {
+			t.Errorf("expected to find left move span on line 10 with ColorIndex 1, got %+v", env.LeftHighlights)
+		}
+		if !foundReorderedRight {
+			t.Errorf("expected to find right move span on line 16 with ColorIndex 1, got %+v", env.RightHighlights)
+		}
+	})
 }
 
 func TestAdjustRangeForContainer_LeadingTrivia(t *testing.T) {
