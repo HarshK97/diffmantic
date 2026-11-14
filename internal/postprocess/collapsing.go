@@ -403,12 +403,25 @@ func suppressSurvivingContainers(
 	}
 }
 
-// canMoveAsSubtree reports whether every mapped descendant inside src maps into
-// dst and vice versa, so the move can stay a single subtree action.
+// canMoveAsSubtree checks if all mapped descendants stay inside the moved container
+// in their original order, so the whole subtree can move as one chunk.
 func canMoveAsSubtree(src, dst *treesitter.ASTNode, ms *engine.Mapping) bool {
-	for _, d := range src.Descendants() {
-		if dDst, ok := ms.Src()[d]; ok && !dst.Contains(dDst) && dDst != dst {
-			return false
+	type mappedDesc struct {
+		sStart, sEnd uint32
+		dStart       uint32
+	}
+	srcDescs := src.Descendants()
+	mapped := make([]mappedDesc, 0, len(srcDescs))
+	for _, d := range srcDescs {
+		if dDst, ok := ms.Src()[d]; ok {
+			if !dst.Contains(dDst) && dDst != dst {
+				return false
+			}
+			mapped = append(mapped, mappedDesc{
+				sStart: d.StartByte,
+				sEnd:   d.EndByte,
+				dStart: dDst.StartByte,
+			})
 		}
 	}
 	for _, d := range dst.Descendants() {
@@ -416,6 +429,15 @@ func canMoveAsSubtree(src, dst *treesitter.ASTNode, ms *engine.Mapping) bool {
 			return false
 		}
 	}
+
+	for i, m1 := range mapped {
+		for _, m2 := range mapped[i+1:] {
+			if m1.sEnd <= m2.sStart && m1.dStart > m2.dStart {
+				return false
+			}
+		}
+	}
+
 	return true
 }
 

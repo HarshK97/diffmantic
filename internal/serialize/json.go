@@ -816,11 +816,13 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			continue
 		}
 
-		// If an action moved along with a parent or container, match its color.
+		// Inherit the container's move color unless this statement swapped order
+		// with a sibling inside the container.
 		if pIdx := slices.IndexFunc(moves, func(prev moveInterval) bool {
+			parentAct := &actions[prev.actIdx]
 			return isColored[prev.actIdx] &&
-				(isHierarchicalCoMover(curAct, &actions[prev.actIdx]) ||
-					isDestinationContainerBodyCoMover(curAct, &actions[prev.actIdx]))
+				(isHierarchicalCoMover(curAct, parentAct) || isDestinationContainerBodyCoMover(curAct, parentAct)) &&
+				isContainerInOrderCoMover(cur, curAct, prev, parentAct, moves, actions, isColored)
 		}); pIdx >= 0 {
 			c := actions[moves[pIdx].actIdx].MoveColorIndex
 			curAct.MoveColorIndex = c
@@ -837,7 +839,11 @@ func AssignMoveColors(actions []Action, srcOffsets, dstOffsets []int) {
 			if curAct.GroupID != "" && curAct.GroupID == prevAct.GroupID {
 				continue
 			}
-			if isHierarchicalCoMover(curAct, prevAct) {
+			if isChildCoMover(curAct, prevAct) || isChildCoMover(prevAct, curAct) {
+				continue
+			}
+			if (isContainerBodyCoMover(curAct, prevAct) && isContainerInOrderCoMover(cur, curAct, prev, prevAct, moves, actions, isColored)) ||
+				(isContainerBodyCoMover(prevAct, curAct) && isContainerInOrderCoMover(prev, prevAct, cur, curAct, moves, actions, isColored)) {
 				continue
 			}
 
@@ -1078,6 +1084,40 @@ func isContainerBodyCoMover(child, parent *Action) bool {
 		return false
 	}
 	return isDestinationContainerBodyCoMover(child, parent)
+}
+
+// isContainerInOrderCoMover checks whether curAct kept its relative order with siblings
+// inside parentAct. If it swapped order, it's an outlier and shouldn't share the container's color.
+func isContainerInOrderCoMover(cur moveInterval, curAct *Action, prev moveInterval, parentAct *Action, moves []moveInterval, actions []Action, isColored []bool) bool {
+	if isChildCoMover(curAct, parentAct) || isChildCoMover(parentAct, curAct) || !isContainerBodyCoMover(curAct, parentAct) {
+		return true
+	}
+
+	for _, m := range moves {
+		if m.actIdx == cur.actIdx || m.actIdx == prev.actIdx {
+			continue
+		}
+		otherAct := &actions[m.actIdx]
+		if !isContainerBodyCoMover(otherAct, parentAct) {
+			continue
+		}
+		sOrder := moveStartsBefore(getSrcBytes, curAct, otherAct, cur.sStart, m.sStart)
+		dOrder := moveStartsBefore(getDestBytes, curAct, otherAct, cur.dStart, m.dStart)
+		if sOrder != dOrder {
+			if isColored[m.actIdx] && otherAct.MoveColorIndex == parentAct.MoveColorIndex {
+				return false
+			}
+			deltaParent := prev.dStart - prev.sStart
+			deltaCur := cur.dStart - cur.sStart
+			deltaOther := m.dStart - m.sStart
+			diffCur := max(deltaCur-deltaParent, deltaParent-deltaCur)
+			diffOther := max(deltaOther-deltaParent, deltaParent-deltaOther)
+			if diffCur > diffOther || (diffCur == diffOther && moveStartsBefore(getDestBytes, otherAct, curAct, m.dStart, cur.dStart)) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // getDirectOrEnclosedBlock returns n if it is already a block, or searches for an enclosed block child.
