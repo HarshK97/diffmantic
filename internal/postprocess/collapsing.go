@@ -298,8 +298,9 @@ func isDelimitedContainer(n *treesitter.ASTNode) bool {
 	return false
 }
 
-// Peek through single-child wrappers so we don't suppress an outer container
-// when its wrapped inner expression survived and was matched.
+// hasMappedChildOrWrapper checks if n or any nested expression/wrapper inside it has a mapped node.
+// If an inner operand survived, we drop the container action so only the removed
+// pieces get deleted, leaving the surviving expression untouched.
 func hasMappedChildOrWrapper(n *treesitter.ASTNode, m map[*treesitter.ASTNode]*treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
@@ -308,13 +309,9 @@ func hasMappedChildOrWrapper(n *treesitter.ASTNode, m map[*treesitter.ASTNode]*t
 		if _, ok := m[child]; ok {
 			return true
 		}
-		if r != nil && r.IsWrapper(child.Type) {
-			curr := child
-			for curr != nil && len(curr.Children) == 1 && r.IsWrapper(curr.Type) {
-				curr = curr.Children[0]
-				if _, ok := m[curr]; ok {
-					return true
-				}
+		if r != nil && (r.IsWrapper(child.Type) || r.IsExpression(child.Type)) {
+			if hasMappedChildOrWrapper(child, m, r) {
+				return true
 			}
 		}
 	}

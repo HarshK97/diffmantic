@@ -2299,3 +2299,85 @@ func TestBuildHighlightSpans_MoveWithDeletedChildAdjacentToSiblingDelete(t *test
 		t.Errorf("expected delete highlight on getReaderErr() [cols 12..26]")
 	}
 }
+
+func TestBuildHighlightSpans_MultilineExpressionUnwrapping_FullEngine(t *testing.T) {
+	oldSrc := `package main
+
+func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
+	if n == nil {
+		return ""
+	}
+	for _, c := range n.Children {
+		if (r != nil && (r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type))) ||
+			(r == nil && (rules.IsOperatorLiteral(c.Type) || rules.IsPunctuation(c.Type))) {
+			return c.Label
+		}
+	}
+	return ""
+}
+`
+	newSrc := `package main
+
+func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
+	if n == nil {
+		return ""
+	}
+	r = cmp.Or(r, rules.Get(""))
+	for _, c := range n.Children {
+		if r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) {
+			return c.Label
+		}
+	}
+	return ""
+}
+`
+	oldAST, err := treesitter.Parse([]byte(oldSrc), "test.go")
+	if err != nil {
+		t.Fatalf("parse oldSrc: %v", err)
+	}
+	newAST, err := treesitter.Parse([]byte(newSrc), "test.go")
+	if err != nil {
+		t.Fatalf("parse newSrc: %v", err)
+	}
+
+	part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+	mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+	es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+	es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+	env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeHighlights: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// Line 8 in oldSrc (0-indexed 7) is:
+	// `\t\tif (r != nil && (r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type))) ||`
+	// Line length is 78.
+	// Columns:
+	// \t\tif (r != nil && ( is 0..19.
+	// r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) is 19..73.
+	// )) || is 73..78.
+	var line7Left []HighlightSpan
+	for _, h := range env.LeftHighlights {
+		if h.Line == 7 {
+			line7Left = append(line7Left, h)
+		}
+	}
+
+	for _, h := range line7Left {
+		// Make sure no delete span covers the surviving operand [19..73].
+		if h.StartCol < 73 && h.EndCol > 19 {
+			t.Errorf("found spurious delete highlight over stationary operand on line 7: %+v", h)
+		}
+	}
+
+	// Destination line should be clean context with zero highlights.
+	for _, h := range env.RightHighlights {
+		if h.Line == 7 {
+			t.Errorf("found unexpected highlight on destination line 7: %+v", h)
+		}
+	}
+}
