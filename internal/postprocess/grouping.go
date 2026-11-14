@@ -86,6 +86,43 @@ type moveItem struct {
 	hasDst   bool
 }
 
+func resolveDestinationInfo(act actions.Action, ms *engine.Mapping) (dstNode *treesitter.ASTNode, newP *treesitter.ASTNode) {
+	newP = act.Parent
+	if act.DestNode != nil {
+		dstNode = act.DestNode
+		if act.DestNode.Parent != nil {
+			newP = act.DestNode.Parent
+		}
+	} else if ms != nil && ms.Src() != nil && act.Node != nil {
+		dstNode = ms.Src()[act.Node]
+		if dstNode != nil && dstNode.Parent != nil {
+			newP = dstNode.Parent
+		}
+	}
+	return dstNode, newP
+}
+
+func isDestinationCoMover(act, pAct actions.Action, ms *engine.Mapping) bool {
+	pDst, _ := resolveDestinationInfo(pAct, ms)
+	actDst, actNewP := resolveDestinationInfo(act, ms)
+
+	if pDst != nil {
+		if actDst != nil {
+			return pDst.Contains(actDst)
+		}
+		if actNewP != nil {
+			return pDst == actNewP || pDst.Contains(actNewP)
+		}
+		return false
+	}
+
+	// Fallback when destination AST mapping is unavailable (e.g. synthetic test fixtures):
+	if actNewP != nil && pAct.Node != nil {
+		return actNewP == pAct.Node || (pAct.DestNode != nil && actNewP == pAct.DestNode)
+	}
+	return false
+}
+
 // GroupMoves groups Move actions that share the same source and destination parents.
 // Swapped moves and parent-child moves get separate group IDs (and colors)
 // instead of sharing one.
@@ -104,19 +141,7 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 
 	for i, act := range actionsSlice {
 		if act.Type == actions.Move {
-			newP := act.Parent
-			var dstNode *treesitter.ASTNode
-			if act.DestNode != nil {
-				dstNode = act.DestNode
-				if act.DestNode.Parent != nil {
-					newP = act.DestNode.Parent
-				}
-			} else if ms != nil && ms.Src() != nil && act.Node != nil {
-				dstNode = ms.Src()[act.Node]
-				if dstNode != nil && dstNode.Parent != nil {
-					newP = dstNode.Parent
-				}
-			}
+			dstNode, newP := resolveDestinationInfo(act, ms)
 			if act.Node == nil || act.Node.Parent == nil || newP == nil {
 				continue
 			}
@@ -224,18 +249,34 @@ func GroupMoves(es *actions.EditScript, ms *engine.Mapping) *actions.EditScript 
 		}
 	}
 
-	// Pass the container's group ID down to child delimiter blocks.
+	// Pass the container's group ID down to child delimiter blocks if they moved together.
 	for i, act := range actionsSlice {
 		if act.Type == actions.Move && act.Node != nil && groupIDMap[i] == "" {
 			r := rules.Get(act.Node.GetLanguage())
 			if r != nil && r.IsBlock(act.Node.Type) && act.Node.Parent != nil {
 				pIdx := slices.IndexFunc(actionsSlice, func(pAct actions.Action) bool {
-					return pAct.Type == actions.Move && pAct.Node == act.Node.Parent
+					return pAct.Type == actions.Move && pAct.Node == act.Node.Parent && isDestinationCoMover(act, pAct, ms)
 				})
 				if pIdx >= 0 {
 					if parentGid := groupIDMap[pIdx]; parentGid != "" {
 						groupIDMap[i] = parentGid
 					}
+				}
+			}
+		}
+	}
+
+	// Also propagate group ID up to enclosing containers that moved together with their child delimiter blocks.
+	for i, act := range actionsSlice {
+		if act.Type == actions.Move && act.Node != nil && groupIDMap[i] == "" {
+			r := rules.Get(act.Node.GetLanguage())
+			cIdx := slices.IndexFunc(actionsSlice, func(cAct actions.Action) bool {
+				return cAct.Type == actions.Move && cAct.Node != nil && cAct.Node.Parent == act.Node &&
+					r != nil && r.IsBlock(cAct.Node.Type) && isDestinationCoMover(cAct, act, ms)
+			})
+			if cIdx >= 0 {
+				if childGid := groupIDMap[cIdx]; childGid != "" {
+					groupIDMap[i] = childGid
 				}
 			}
 		}

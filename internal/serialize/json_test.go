@@ -3035,7 +3035,7 @@ fn _make_process_from_less_path() -> Command {
 	}
 
 	// 3. Highlight span symmetry: opening '{' on line 2 and closing '}' on line 15 must both have ColorIndex == 0 (Cyan).
-	var leftOpeningBraceColor, leftClosingBraceColor = -1, -1
+	leftOpeningBraceColor, leftClosingBraceColor := -1, -1
 	for _, h := range env.LeftHighlights {
 		if h.Line == 2 && h.Action == "move" {
 			leftOpeningBraceColor = h.ColorIndex
@@ -3052,7 +3052,7 @@ fn _make_process_from_less_path() -> Command {
 	}
 
 	// 4. Highlight span symmetry on right side: opening '{' on line 2 and closing '}' on line 7 must both have ColorIndex == 0 (Cyan).
-	var rightClosingBraceColor = -1
+	rightClosingBraceColor := -1
 	for _, h := range env.RightHighlights {
 		if h.Line == 7 && h.Action == "move" {
 			rightClosingBraceColor = h.ColorIndex
@@ -3076,4 +3076,3 @@ fn _make_process_from_less_path() -> Command {
 		t.Errorf("expected right move highlights on extracted lines 12..21, got none")
 	}
 }
-

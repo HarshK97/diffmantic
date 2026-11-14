@@ -827,7 +827,7 @@ func TestNestedMoveActions_InterveningInsertionPreservesInnerMove(t *testing.T) 
 		},
 	}
 
-	skip := nestedMoveActions(actions)
+	skip, _ := nestedMoveActions(actions)
 	if skip[2] {
 		t.Errorf("expected inner move at index 2 NOT to be skipped when enclosed in intervening insertion")
 	}
@@ -855,7 +855,7 @@ func TestNestedMoveActions_BreakawayMovePreserved(t *testing.T) {
 		},
 	}
 
-	skip := nestedMoveActions(actions)
+	skip, _ := nestedMoveActions(actions)
 	if skip[1] {
 		t.Errorf("expected breakaway move at index 1 NOT to be skipped")
 	}
@@ -883,7 +883,7 @@ func TestNestedMoveActions_IntactRelocatedBlockSubsumesInnerMove(t *testing.T) {
 		},
 	}
 
-	skip := nestedMoveActions(actions)
+	skip, _ := nestedMoveActions(actions)
 	if !skip[1] {
 		t.Errorf("expected inner move at index 1 to be skipped when intact inside outer move")
 	}
