@@ -488,7 +488,7 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 	r = cmp.Or(r, rulesFor(t1))
 	scope1 := getScopeName(s1.Parent)
 	scope2 := getScopeName(s2.Parent)
-	sameScope := (scope1 == "" && scope2 == "") || (scope1 != "" && scope2 != "" && scope1 == scope2)
+	sameScope := scope1 == scope2
 
 	// Matching declarations with the same name belong together; don't reject them as dredging.
 	name1 := cmp.Or(getDeclarationName(s1), getClosureDeclarationName(s1, r))
@@ -497,8 +497,8 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 		return false
 	}
 
-	// Same statement type with high similarity means the statement is evolving in place, not dredging.
-	if s1.Type == s2.Type && LeafSimilarity(s1, s2) >= 0.50 {
+	// Similar statements in the same scope are evolving in place, not dredging across scopes.
+	if sameScope && s1.Type == s2.Type && LeafSimilarity(s1, s2) >= 0.50 {
 		return false
 	}
 	// A short var declaration often turns into an assignment (:= to =).
