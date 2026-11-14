@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Expanding an `if` condition with extra checks (like turning `if A && B` into `if ((A && B) && C) && D`) won't let unchanged expressions get stolen by similar statements in distant functions anymore. The existing condition stays matched in place as context, highlighting only the added checks.
 - Wrapping a Rust expression in `Ok(...)` now highlights only the new wrapper. Unchanged code stays matched, and same-named functions in different namespaces no longer share move matches.
 - Moving code into or out of a closure now keeps all related statements marked as moves, even when only one statement is recognized at first. Scope checks no longer cross into another method or class, and inserted closing keywords don't carry stray move highlights on their indentation.
 - Chaining an extra method call (like adding another `.filter(...)` or `.zip_eq(...)` to a builder or pipeline) won't let the new outer call steal the identity of unchanged inner calls. Existing calls and arguments stay matched in place as context, cleanly highlighting only the new call as an insertion.

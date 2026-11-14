@@ -2409,3 +2409,164 @@ func ContestContainers(currentT1, t2 *ASTNode, m *Mapping) {
 		}
 	})
 }
+
+// TestCrossScopeStatementDredging_Case91 verifies that an evolving statement's sub-expression
+// won't dredge matching subtrees out of a completely different function scope.
+func TestCrossScopeStatementDredging_Case91(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+
+		oldSrc := []byte(`package comments
+
+func TestDiffCommentsGlobal() {
+	setupFixture()
+	if act.Type == actions.Update && strings.Contains(act.Node.Type, "identifier") {
+		recordAction()
+	}
+	teardownFixture()
+}
+
+func fillerStatement01() { noop() }
+func fillerStatement02() { noop() }
+func fillerStatement03() { noop() }
+func fillerStatement04() { noop() }
+func fillerStatement05() { noop() }
+func fillerStatement06() { noop() }
+func fillerStatement07() { noop() }
+func fillerStatement08() { noop() }
+func fillerStatement09() { noop() }
+func fillerStatement10() { noop() }
+
+func TestDiffCommentsAnchorFirst() {
+	setupAnchor()
+	if act.Type == actions.Update && act.Node != nil && act.Node.Label == "// doB()" {
+		recordAnchor()
+	}
+	teardownAnchor()
+}
+`)
+
+		newSrc := []byte(`package comments
+
+func TestDiffCommentsGlobal() {
+	setupFixture()
+	if ((act.Type == actions.Update && act.Node != nil) && act.Node.StartRow == 100) && strings.Contains(act.Node.Type, "identifier") {
+		recordAction()
+	}
+	teardownFixture()
+}
+
+func fillerStatement01() { noop() }
+func fillerStatement02() { noop() }
+func fillerStatement03() { noop() }
+func fillerStatement04() { noop() }
+func fillerStatement05() { noop() }
+func fillerStatement06() { noop() }
+func fillerStatement07() { noop() }
+func fillerStatement08() { noop() }
+func fillerStatement09() { noop() }
+func fillerStatement10() { noop() }
+
+func TestDiffCommentsAnchorFirst() {
+	setupAnchor()
+	if act.Type == actions.Update && act.Node != nil && act.Node.StartRow == 100 {
+		recordAnchor()
+	}
+	teardownAnchor()
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// Both functions should map in place as enclosing context.
+		var srcGlobal, dstGlobal, srcAnchor, dstAnchor *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "TestDiffCommentsGlobal":
+					srcGlobal = n
+				case "TestDiffCommentsAnchorFirst":
+					srcAnchor = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "TestDiffCommentsGlobal":
+					dstGlobal = n
+				case "TestDiffCommentsAnchorFirst":
+					dstAnchor = n
+				}
+			}
+		}
+		if srcGlobal == nil || dstGlobal == nil || mr.Mappings.Src()[srcGlobal] != dstGlobal {
+			t.Fatalf("expected TestDiffCommentsGlobal to map in place, got src=%v dst=%v", srcGlobal, dstGlobal)
+		}
+		if srcAnchor == nil || dstAnchor == nil || mr.Mappings.Src()[srcAnchor] != dstAnchor {
+			t.Fatalf("expected TestDiffCommentsAnchorFirst to map in place, got src=%v dst=%v", srcAnchor, dstAnchor)
+		}
+
+		// Fixture setup and teardown calls around the target statements shouldn't move.
+		surroundingCalls := []string{"setupFixture", "teardownFixture", "setupAnchor", "teardownAnchor"}
+		for _, calleeName := range surroundingCalls {
+			var srcCall, dstCall *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsCall(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte(calleeName)) {
+					srcCall = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsCall(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte(calleeName)) {
+					dstCall = n
+					break
+				}
+			}
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Fatalf("expected surrounding call %s to map in place, got src=%v dst=%v", calleeName, srcCall, dstCall)
+			}
+		}
+
+		// The unchanged condition inside TestDiffCommentsGlobal should map in place.
+		var srcUpdateCond, dstUpdateCond *treesitter.ASTNode
+		for _, n := range srcGlobal.PreOrder() {
+			if bytes.Equal(bytes.TrimSpace(oldSrc[n.StartByte:n.EndByte]), []byte("act.Type == actions.Update")) {
+				srcUpdateCond = n
+				break
+			}
+		}
+		for _, n := range dstGlobal.PreOrder() {
+			if bytes.Equal(bytes.TrimSpace(newSrc[n.StartByte:n.EndByte]), []byte("act.Type == actions.Update")) {
+				dstUpdateCond = n
+				break
+			}
+		}
+		if srcUpdateCond == nil || dstUpdateCond == nil {
+			t.Fatalf("failed to locate act.Type == actions.Update in TestDiffCommentsGlobal: src=%v dst=%v", srcUpdateCond, dstUpdateCond)
+		}
+		if mr.Mappings.Src()[srcUpdateCond] != dstUpdateCond {
+			t.Errorf("expected act.Type == actions.Update in TestDiffCommentsGlobal to map in place, got mapped to %v", mr.Mappings.Src()[srcUpdateCond])
+		}
+	})
+}
