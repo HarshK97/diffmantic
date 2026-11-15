@@ -9,6 +9,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -282,24 +283,15 @@ func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
 		t.Fatal("expected right highlights for inserted line")
 	}
 
-	// Verify sub-line word-level highlights isolating "old" vs "new"
-	hLeft := env.LeftHighlights[0]
-	if hLeft.Line != 1 || hLeft.Action != "update" {
-		t.Errorf("expected left highlight on line 1 with action 'update', got %+v", hLeft)
-	}
-	srcLine1 := "\tprintln(\"old\")"
-	if srcLine1[hLeft.StartCol:hLeft.EndCol] != "old" {
-		t.Errorf("expected left highlight to isolate 'old', got %q", srcLine1[hLeft.StartCol:hLeft.EndCol])
-	}
-
-	hRight := env.RightHighlights[0]
-	if hRight.Line != 1 || hRight.Action != "update" {
-		t.Errorf("expected right highlight on line 1 with action 'update', got %+v", hRight)
-	}
-	dstLine1 := "\tprintln(\"new\")"
-	if dstLine1[hRight.StartCol:hRight.EndCol] != "new" {
-		t.Errorf("expected right highlight to isolate 'new', got %q", dstLine1[hRight.StartCol:hRight.EndCol])
-	}
+	// intentionally no postprocess.Run: isolates line diff highlight synthesis from AST matching
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `func main() {
+	println("<upd>old</upd>")
+}
+`)
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `func main() {
+	println("<upd>new</upd>")
+}
+`)
 }
 
 func TestBuildLineDiffEnvelopeWithOptions_WordDiff_AsymmetricAndSpacers(t *testing.T) {
@@ -319,58 +311,17 @@ func TestBuildLineDiffEnvelopeWithOptions_WordDiff_AsymmetricAndSpacers(t *testi
 		t.Fatal("expected non-nil envelope")
 	}
 
-	// Line 1 (foo(a) -> foo(a, b)):
-	// Left side should have NO highlights on line 1 because 'foo', '(', 'a', ')' all matched.
-	// Right side should have an 'insert' highlight on line 1 isolating ', b'.
-	for _, h := range env.LeftHighlights {
-		if h.Line == 1 {
-			t.Errorf("unexpected left highlight on line 1 for pure insertion: %+v", h)
-		}
-	}
-	var rightLine1Spans []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 1 {
-			rightLine1Spans = append(rightLine1Spans, h)
-		}
-	}
-	if len(rightLine1Spans) != 1 {
-		t.Fatalf("expected 1 right highlight on line 1, got %d: %+v", len(rightLine1Spans), rightLine1Spans)
-	}
-	if rightLine1Spans[0].Action != "insert" {
-		t.Errorf("expected action 'insert', got %q", rightLine1Spans[0].Action)
-	}
-	dstLine1 := "foo(a, b)"
-	if dstLine1[rightLine1Spans[0].StartCol:rightLine1Spans[0].EndCol] != ", b" {
-		t.Errorf("expected right highlight to isolate ', b', got %q", dstLine1[rightLine1Spans[0].StartCol:rightLine1Spans[0].EndCol])
-	}
-
-	// Line 2: spacer line "deleted_line" on left should emit whole-line delete highlight
-	var leftLine2Spans []HighlightSpan
-	for _, h := range env.LeftHighlights {
-		if h.Line == 2 {
-			leftLine2Spans = append(leftLine2Spans, h)
-		}
-	}
-	if len(leftLine2Spans) != 1 {
-		t.Fatalf("expected 1 left highlight on line 2, got %d: %+v", len(leftLine2Spans), leftLine2Spans)
-	}
-	if leftLine2Spans[0].Action != "delete" || leftLine2Spans[0].StartCol != 0 || leftLine2Spans[0].EndCol != len("deleted_line") {
-		t.Errorf("expected whole-line delete on line 2, got %+v", leftLine2Spans[0])
-	}
-
-	// Line 3 on right: spacer line "inserted_line" should emit whole-line insert highlight
-	var rightLine3Spans []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 3 {
-			rightLine3Spans = append(rightLine3Spans, h)
-		}
-	}
-	if len(rightLine3Spans) != 1 {
-		t.Fatalf("expected 1 right highlight on line 3, got %d: %+v", len(rightLine3Spans), rightLine3Spans)
-	}
-	if rightLine3Spans[0].Action != "insert" || rightLine3Spans[0].StartCol != 0 || rightLine3Spans[0].EndCol != len("inserted_line") {
-		t.Errorf("expected whole-line insert on line 3, got %+v", rightLine3Spans[0])
-	}
+	// intentionally no postprocess.Run: isolates line diff word-diff highlight synthesis
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `header
+foo(a)
+<del>deleted_line</del>
+footer
+`)
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `header
+foo(a<ins>, b</ins>)
+footer
+<ins>inserted_line</ins>
+`)
 }
 
 func TestBuildLineDiffEnvelopeWithOptions_ShowStyleChanges(t *testing.T) {
@@ -556,16 +507,15 @@ func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 		t.Errorf("expected header range 0..2, got %d..%d", env.Actions[0].Node.StartByte, env.Actions[0].Node.EndByte)
 	}
 
-	// Check that the closing brace '}' still gets highlighted on line 2.
-	var foundClosingBrace bool
-	for _, hl := range env.RightHighlights {
-		if hl.Line == 2 && hl.Action == "insert" {
-			foundClosingBrace = true
-		}
-	}
-	if !foundClosingBrace {
-		t.Errorf("expected closing brace highlight span on line 2 in RightHighlights, got %+v", env.RightHighlights)
-	}
+	// intentionally no postprocess.Run: isolates delimiter highlight synthesis from move normalization
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `{
+    x = 1
+}
+`)
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `<ins>{</ins>
+    x = 1
+<ins>}</ins>
+`)
 }
 
 func TestIndentationAndCommentFooterExclusion(t *testing.T) {
@@ -1091,9 +1041,27 @@ func process() {
 			t.Errorf("expected grouped co-movers to share MoveColorIndex 0, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 
-		// Whole-snippet context line purity
-		assertContextLinesPure(t, env.LeftHighlights, []int{4, 5})
-		assertContextLinesPure(t, env.RightHighlights, []int{5, 6, 7, 8})
+		// Whole-snippet context line purity and co-mover move highlights
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process() {
+	keep1()
+	<mov>moveA()</mov>
+	<mov>moveB()</mov>
+	keep2()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	keep1()
+	keep2()
+	<ins>if true {</ins>
+		<mov>moveA()</mov>
+		<mov>moveB()</mov>
+	<ins>}</ins>
+}
+`)
 	})
 
 	t.Run("diverging moves from nearby source get distinct colors", func(t *testing.T) {
@@ -1133,9 +1101,33 @@ func process() {
 			t.Errorf("expected diverging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 
-		// Whole-snippet context line purity
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4})
-		assertContextLinesPure(t, env.RightHighlights, []int{4, 5, 6, 10, 11, 12})
+		// Whole-snippet context line purity and contrasting move color slots
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process() {
+	<mov>moveA()</mov>
+	<mov1>moveB()</mov1>
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	keep1()
+	<ins>if cond1 {</ins>
+		<mov>moveA()</mov>
+	<ins>}</ins>
+	keep2()
+	keep3()
+	keep4()
+	<ins>if cond2 {</ins>
+		<mov1>moveB()</mov1>
+	<ins>}</ins>
+}
+`)
 	})
 
 	t.Run("converging moves to nearby destination get distinct colors", func(t *testing.T) {
@@ -1177,9 +1169,35 @@ func process() {
 			t.Errorf("expected converging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 
-		// Whole-snippet context line purity
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 10, 11, 12})
-		assertContextLinesPure(t, env.RightHighlights, []int{7, 8, 9, 10})
+		// Whole-snippet context line purity and converging moves
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process() {
+	<mov>if </mov><mUpd>cond1</mUpd><mov> {</mov>
+<mov>		moveA()</mov>
+<mov>	}</mov>
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+	<del>if cond2 {</del>
+		<mov1>moveB()</mov1>
+	<del>}</del>
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+	<mov>if </mov><mUpd>condTarget</mUpd><mov> {</mov>
+<mov>		moveA()</mov>
+<mov>	}</mov>
+	<mov1>moveB()</mov1>
+}
+`)
 	})
 
 	t.Run("dominant cohort gets slot 0 and reordered outlier gets slot 1", func(t *testing.T) {
@@ -1274,24 +1292,54 @@ func run() {
 			t.Errorf("expected sunk guard to get MoveColorIndex 1 (Magenta), got %d", color)
 		}
 
-		// 3. Highlight spans reflect their assigned color slots
-		for _, h := range env.RightHighlights {
-			if h.Action != "move" {
-				continue
-			}
-			// Lines 14..17 are step1..step4 (cohort -> slot 0 / Cyan)
-			if h.Line >= 14 && h.Line <= 17 {
-				if h.ColorIndex != 0 {
-					t.Errorf("expected cohort highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
-			// Lines 18..20 are the sunk guard (outlier -> slot 1 / Magenta)
-			if h.Line >= 18 && h.Line <= 20 {
-				if h.ColorIndex != 1 {
-					t.Errorf("expected outlier guard highlight on line %d to have ColorIndex 1, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
-		}
+		// 3. Whole-snippet tagged assertions: cohort in slot 0 (<mov>), sunk guard in slot 1 (<mov1>),
+		// and stationary statements step5..step15 remain unhighlighted context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func run() {
+	<mov1>if err != nil {</mov1>
+<mov1>		return</mov1>
+<mov1>	}</mov1>
+	<mov>step1()</mov>
+	<mov>step2()</mov>
+	<mov>step3()</mov>
+	<mov>step4()</mov>
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+	step12()
+	step13()
+	step14()
+	step15()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func run() {
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+	step12()
+	step13()
+	step14()
+	step15()
+	<mov>step1()</mov>
+	<mov>step2()</mov>
+	<mov>step3()</mov>
+	<mov>step4()</mov>
+	<mov1>if err != nil {</mov1>
+<mov1>		return</mov1>
+<mov1>	}</mov1>
+}
+`)
 
 		// 4. Whole-snippet verification: enclosing package and func declarations have no edit actions
 		for _, a := range env.Actions {
@@ -1299,10 +1347,6 @@ func run() {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-
-		// 5. Whole-snippet context line purity: stationary statements step5..step15 remain unhighlighted
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9})
-		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17, 18, 19, 20})
 	})
 
 	t.Run("container header and body co-movers share move color without fracture", func(t *testing.T) {
@@ -1348,40 +1392,36 @@ func run() {
 			}
 		}
 
-		// 2. Whole-snippet context line purity: stationary statements step1..step3 remain unhighlighted.
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8})
-		assertContextLinesPure(t, env.RightHighlights, []int{6, 7, 8, 9, 10, 11})
+		// 2. Whole-snippet tagged assertions: container header, body statements, and closing delimiter
+		// all share move ColorIndex 0 (<mov>) without fracture, and stationary statements step1..step3 stay context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// 3. Container header, body statements, and closing delimiter all share move ColorIndex 0 without fracture.
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected left move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected right move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
+func run() {
+	<mov>extra()</mov>
+	<mov>if cond {</mov>
+		<mov>body1()</mov>
+		<mov>body2()</mov>
+	<mov>}</mov>
+	<mov>workMovedIn()</mov>
+	step1()
+	step2()
+	step3()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
 
-		// 4. Specifically verify opening '{' and closing '}' delimiters on right side share ColorIndex 0.
-		var foundOpeningBrace, foundClosingBrace bool
-		for _, h := range env.RightHighlights {
-			if h.Line == 7 && h.StartCol <= 9 && h.EndCol >= 10 && h.Action == "move" && h.ColorIndex == 0 {
-				foundOpeningBrace = true
-			}
-			if h.Line == 11 && h.StartCol == 1 && h.EndCol == 2 && h.Action == "move" && h.ColorIndex == 0 {
-				foundClosingBrace = true
-			}
-		}
-		if !foundOpeningBrace {
-			t.Errorf("expected right opening brace highlight span on line 7 with ColorIndex 0, got %+v", env.RightHighlights)
-		}
-		if !foundClosingBrace {
-			t.Errorf("expected right closing brace highlight span on line 11 with ColorIndex 0, got %+v", env.RightHighlights)
-		}
+func run() {
+	step1()
+	step2()
+	step3()
+	<mov>extra()</mov>
+	<mov>if cond {</mov>
+		<mov>workMovedIn()</mov>
+		<mov>body1()</mov>
+		<mov>body2()</mov>
+	<mov>}</mov>
+}
+`)
 	})
 
 	t.Run("parallel unnesting moves share move color slot 0", func(t *testing.T) {
@@ -1480,19 +1520,6 @@ func process(cleanLine string) {
 			}
 		}
 
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected left move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected right move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
-
 		// Whole-snippet verification: enclosing package and func declarations have no edit actions.
 		for _, a := range env.Actions {
 			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
@@ -1500,19 +1527,48 @@ func process(cleanLine string) {
 			}
 		}
 
-		// Surrounding func declaration and index branch stay untouched as context.
-		for _, h := range env.LeftHighlights {
-			if h.Line <= 4 || h.Line >= 22 {
-				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
+		// Whole-snippet tagged assertions: parallel unnested branches share MoveColorIndex 0 (<mov>),
+		// and enclosing func declaration and index branch stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <del>strings.HasPrefix(cleanLine, "rename from ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><del>; p != "" {</del>
+			<mov>current.oldPath = p</mov>
+		<del>}</del>
+	} else if <del>strings.HasPrefix(cleanLine, "rename to ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><del>; p != "" {</del>
+			<mov>current.newPath = p</mov>
+		<del>}</del>
+	} else if <del>strings.HasPrefix(cleanLine, "--- ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "--- ")</mov><del>; p != "" {</del>
+			<mov>current.oldPath = p</mov>
+		<del>}</del>
+	} else <del>if strings.HasPrefix(cleanLine, "+++ ") {</del>
+		if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+			current.newPath = p
 		}
-		for _, h := range env.RightHighlights {
-			if h.Line <= 4 || h.Line >= 14 {
-				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
-		}
+	<del>}</del>
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><ins>; p != ""</ins> {
+		<mov>current.oldPath = p</mov>
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><ins>; p != ""</ins> {
+		<mov>current.newPath = p</mov>
+	} else if <mov>p := parseHeaderPath(cleanLine, "--- ")</mov><ins>; p != ""</ins> {
+		<mov>current.oldPath = p</mov>
+	} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+		current.newPath = p
+	}
+}
+`)
 	})
 
 	t.Run("extracted condition does not taint body statement move", func(t *testing.T) {
@@ -1594,19 +1650,57 @@ func check() (bool, float64) {
 				bodyMove.MoveColorIndex)
 		}
 
-		// Surrounding func declaration and postCheck stay untouched as context.
-		for _, h := range env.LeftHighlights {
-			if h.Line <= 2 || (h.Line >= 8 && h.Line <= 16) {
-				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line+1, h.Action, h.StartCol, h.EndCol)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Line <= 2 || (h.Line >= 21 && h.Line <= 29) {
-				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line+1, h.Action, h.StartCol, h.EndCol)
-			}
-		}
+		// Whole-snippet tagged assertions: extracted condition and body statement both share MoveColorIndex 0 (<mov>),
+		// and post-check statements stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func check() (bool, float64) {
+	<del>if</del> <mov>(r != nil && r.IsDelimited(u1.Type)) || (r == nil && rules.IsDelimited(u1.Type))</mov> <del>{</del>
+		<mov>if (len(u1.Children) == 0) != (len(u2.Children) == 0) {</mov>
+<mov>			return false, 0.0</mov>
+<mov>		}</mov>
+	<del>}</del>
+
+	cScore := 1.0
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func check() (bool, float64) {
+	<ins>isDelim1 :=</ins> <mov>(r != nil && r.IsDelimited(u1.Type)) || (r == nil && rules.IsDelimited(u1.Type))</mov>
+	<ins>isDelim2 := (r != nil && r.IsDelimited(u2.Type)) || (r == nil && rules.IsDelimited(u2.Type))</ins>
+	<ins>if isDelim1 != isDelim2 {</ins>
+<ins>		return false, 0.0</ins>
+<ins>	}</ins>
+	<ins>if isDelim1 && isDelim2 {</ins>
+		<mov>if (len(u1.Children) == 0) != (len(u2.Children) == 0) {</mov>
+<mov>			return false, 0.0</mov>
+<mov>		}</mov>
+		<ins>if len(u1.Children) == 0 && len(u2.Children) == 0 {</ins>
+<ins>			return true, 1.0</ins>
+<ins>		}</ins>
+		<ins>leafSim := substantiveLeafSimilarity(u1, u2, r)</ins>
+		<ins>if leafSim >= 0.40 {</ins>
+<ins>			return true, leafSim</ins>
+<ins>		}</ins>
+		<ins>return false, 0.0</ins>
+	<ins>}</ins>
+
+	cScore := 1.0
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+`)
 	})
 
 	t.Run("downward lockstep cohort moves share move color slot 0", func(t *testing.T) {
@@ -1699,8 +1793,50 @@ func process(cleanLine string) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-		assertContextLinesPure(t, env.LeftHighlights, []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17})
-		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 6, 7, 10, 11, 12, 13, 14})
+
+		// Whole-snippet tagged assertions: downward lockstep cohort moves share MoveColorIndex 0 (<mov>),
+		// and preamble/trailing statements stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <del>strings.HasPrefix(cleanLine, "rename from ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><del>; p != "" {</del>
+			<mov>current.oldPath = p</mov>
+		<del>}</del>
+	} else if <del>strings.HasPrefix(cleanLine, "rename to ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><del>; p != "" {</del>
+			<mov>current.newPath = p</mov>
+		<del>}</del>
+	} else <del>if strings.HasPrefix(cleanLine, "+++ ") {</del>
+		if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+			current.newPath = p
+		}
+	<del>}</del>
+	finish()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process(cleanLine string) {
+	<ins>a := prepareA(cleanLine)</ins>
+	<ins>b := prepareB(a)</ins>
+	<ins>c := prepareC(b)</ins>
+	<ins>d := prepareD(c)</ins>
+	<ins>use(d)</ins>
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><ins>; p != ""</ins> {
+		<mov>current.oldPath = p</mov>
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><ins>; p != ""</ins> {
+		<mov>current.newPath = p</mov>
+	} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+		current.newPath = p
+	}
+	finish()
+}
+`)
 	})
 
 	t.Run("converging moves exceeding lockstep delta difference keep distinct colors", func(t *testing.T) {
@@ -1775,18 +1911,43 @@ func run() {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-		for _, h := range env.LeftHighlights {
-			if h.Line <= 2 || h.Line >= 23 {
-				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Line <= 2 || h.Line >= 5 {
-				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
-		}
+
+		// Whole-snippet tagged assertions: converging moves keep distinct color slots (<mov> and <mov1>),
+		// and enclosing func declaration and tail() stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func run() {
+	<del>if skip1() {</del>
+<del>		logStep("1")</del>
+<del>		logStep("2")</del>
+<del>		logStep("3")</del>
+<del>		logStep("4")</del>
+<del>		logStep("5")</del>
+<del>	}</del>
+	<del>if mode == "a" {</del>
+		<mov>first()</mov>
+	<del>}</del>
+	<del>if skip2() {</del>
+<del>		logStep("6")</del>
+<del>		logStep("7")</del>
+<del>		logStep("8")</del>
+<del>		logStep("9")</del>
+<del>		logStep("10")</del>
+<del>	}</del>
+	<del>if mode == "b" {</del>
+		<mov1>second()</mov1>
+	<del>}</del>
+	tail()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func run() {
+	<mov>first()</mov>
+	<mov1>second()</mov1>
+	tail()
+}
+`)
 	})
 
 	t.Run("reordered statement inside moved container takes contrasting slot 1", func(t *testing.T) {
@@ -1843,40 +2004,48 @@ func process() {
 			}
 		}
 
-		// 2. Whole-snippet context line purity: stationary statements extraHeader1..3 and extraFooter1..3 remain unhighlighted.
-		assertContextLinesPure(t, env.LeftHighlights, []int{6, 7, 8, 9, 10, 11, 12})
-		assertContextLinesPure(t, env.RightHighlights, []int{9, 10, 11, 12, 13, 14, 15, 16, 17, 18})
+		// 2. Whole-snippet tagged assertions: in-order container and statements share slot 0 (<mov>),
+		// while the reordered statement takes contrasting slot 1 (<mov1>/<mUpd1>),
+		// and extraHeader/extraFooter statements stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// 3. Move color verification: in-order statements share container color 0 (Cyan),
-		// while the reordered statement (canPair -> sim in else branch) receives contrasting color 1 (Magenta).
-		var foundReorderedLeft, foundReorderedRight bool
-		for _, h := range env.LeftHighlights {
-			// Old line 10: canPair[i][j] = ok
-			if h.Line == 9 && h.Action == "move" {
-				if h.ColorIndex != 1 {
-					t.Errorf("expected left move span on line 10 to have contrasting ColorIndex 1 (Magenta), got %d", h.ColorIndex)
-				} else {
-					foundReorderedLeft = true
-				}
-			}
-		}
-		for _, h := range env.RightHighlights {
-			// New line 16: sim[i][j] = -1.0
-			if h.Line == 15 && h.Action == "move" {
-				if h.ColorIndex != 1 {
-					t.Errorf("expected right move span on line 16 to have contrasting ColorIndex 1 (Magenta), got %d", h.ColorIndex)
-				} else {
-					foundReorderedRight = true
-				}
-			}
-		}
+func process() {
+	extraHeader1()
+	extraHeader2()
+	extraHeader3()
+	<mov>for i := range n1 {</mov>
+		<mov>for j := range n2 {</mov>
+			<mov>calc()</mov>
+			<mUpd1>canPair</mUpd1><mov1>[i][j] = </mov1><del>ok</del>
+			<mov>sim[i][j] = score</mov>
+		<mov>}</mov>
+	<mov>}</mov>
+	extraFooter1()
+	extraFooter2()
+	extraFooter3()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
 
-		if !foundReorderedLeft {
-			t.Errorf("expected to find left move span on line 10 with ColorIndex 1, got %+v", env.LeftHighlights)
-		}
-		if !foundReorderedRight {
-			t.Errorf("expected to find right move span on line 16 with ColorIndex 1, got %+v", env.RightHighlights)
-		}
+func process() {
+	extraHeader1()
+	extraHeader2()
+	extraHeader3()
+	extraFooter1()
+	extraFooter2()
+	extraFooter3()
+	<mov>for i := range n1 {</mov>
+		<mov>for j := range n2 {</mov>
+			<mov>calc()</mov>
+			<ins>if ok {</ins>
+				<mov>sim[i][j] = score</mov>
+			<ins>} else {</ins>
+				<mUpd1>sim</mUpd1><mov1>[i][j] = </mov1><ins>-1.0</ins>
+			<ins>}</ins>
+		<mov>}</mov>
+	<mov>}</mov>
+}
+`)
 	})
 }
 
@@ -2207,16 +2376,24 @@ func TestAdjustRangeForContainer_FullEngine(t *testing.T) {
 		t.Errorf("expected else_clause prologue to clamp to byte 54, got %d", elseAct.Node.EndByte)
 	}
 
-	// 2. Verify right highlights on moved lines inside else block have no phantom insert spans.
-	for _, h := range env.RightHighlights {
-		if h.Line >= 4 && h.Line <= 6 && h.Action == "insert" && h.StartCol == 0 {
-			t.Errorf("found spurious insert highlight on moved line %d: %+v", h.Line, h)
-		}
-	}
-
-	// 3. Whole-snippet context line purity: fn f() void { and closing } must have zero highlights
-	assertContextLinesPure(t, env.LeftHighlights, []int{1, 2, 3})
-	assertContextLinesPure(t, env.RightHighlights, []int{1, 2, 3, 4, 5, 6, 7})
+	// 2. Whole-snippet tagged assertions: else_clause prologue and new branches are inserted (<ins>),
+	// moved lines inside else block have no phantom insert spans (<mov>), and enclosing function stays context.
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn f() void {
+    <mov>a();</mov>
+    <mov>b();</mov>
+    <mov>c();</mov>
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn f() void {
+    <ins>if (cond) {</ins>
+<ins>        x();</ins>
+<ins>    } else {</ins>
+        <mov>a();</mov>
+        <mov>b();</mov>
+        <mov>c();</mov>
+    <ins>}</ins>
+}
+`)
 }
 
 func TestCollectMappedTrailingDelimiters(t *testing.T) {
@@ -2357,25 +2534,21 @@ func TestCollectMappedTrailingDelimiters_FullEngine(t *testing.T) {
 			t.Errorf("expected 0 AST actions for stationary elements, got %d", len(env.Actions))
 		}
 
-		// 2. Verify right highlights contain the inserted comma on line 4 (0-indexed).
-		var commaSpan *HighlightSpan
-		for i := range env.RightHighlights {
-			h := &env.RightHighlights[i]
-			if h.Line == 4 && h.Action == "insert" {
-				commaSpan = h
-				break
-			}
-		}
-		if commaSpan == nil {
-			t.Fatalf("expected insert highlight span for added trailing comma on line 4, got %+v", env.RightHighlights)
-		}
-		if commaSpan.StartCol != 2 || commaSpan.EndCol != 3 {
-			t.Errorf("expected comma highlight at cols 2..3, got %d..%d", commaSpan.StartCol, commaSpan.EndCol)
-		}
+		// 2. Whole-snippet tagged assertions: line 4 is the only edited line with inserted comma.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package p
 
-		// Whole-snippet context line purity: line 4 is the only edited line
-		assertContextLinesPure(t, env.LeftHighlights, nil)
-		assertContextLinesPure(t, env.RightHighlights, []int{4})
+var x = []int{
+	1,
+	2
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package p
+
+var x = []int{
+	1,
+	2<ins>,</ins>
+}
+`)
 	})
 
 	t.Run("binary expression refactored to call highlights inserted comma between stationary args", func(t *testing.T) {
@@ -2404,22 +2577,19 @@ func TestCollectMappedTrailingDelimiters_FullEngine(t *testing.T) {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Verify line 3 has an insert highlight covering the comma after a.Type (cols 25..26).
-		var commaSpan *HighlightSpan
-		for i := range env.RightHighlights {
-			h := &env.RightHighlights[i]
-			if h.Line == 3 && h.Action == "insert" && h.StartCol == 25 && h.EndCol == 26 {
-				commaSpan = h
-				break
-			}
-		}
-		if commaSpan == nil {
-			t.Fatalf("expected insert highlight span for comma after a.Type at cols 25..26 on line 3, got %+v", env.RightHighlights)
-		}
+		// Whole-snippet tagged assertions: inserted comma and call wrapper around stationary args a.Type and b.Type.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package p
 
-		// Whole-snippet context line purity: only line 3 has highlights
-		assertContextLinesPure(t, env.LeftHighlights, []int{3})
-		assertContextLinesPure(t, env.RightHighlights, []int{3})
+func f() bool {
+	return a.Type <del>==</del> b.Type
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package p
+
+func f() bool {
+	return <ins>TypesMatch(</ins>a.Type<ins>,</ins> b.Type<ins>, r)</ins>
+}
+`)
 	})
 }
 
@@ -2522,57 +2692,46 @@ func CalculateTax(subtotal int) int {
 			t.Errorf("expected 1:1 AST action purity (len == 1), got %d: %+v", len(env.Actions), env.Actions)
 		}
 
-		// The doc comment on line 2 must move along with the function on line 3 using the same color.
-		var leftCommentSpans, leftFuncSpans []HighlightSpan
-		for _, h := range env.LeftHighlights {
-			switch h.Line {
-			case 2:
-				leftCommentSpans = append(leftCommentSpans, h)
-			case 3:
-				leftFuncSpans = append(leftFuncSpans, h)
-			}
-		}
-		if len(leftCommentSpans) == 0 {
-			t.Fatalf("expected move highlight on left doc comment line 2, got none (highlights: %+v)", env.LeftHighlights)
-		}
-		if leftCommentSpans[0].Action != "move" {
-			t.Errorf("expected left comment action to be 'move', got %q", leftCommentSpans[0].Action)
-		}
-		if len(leftFuncSpans) == 0 {
-			t.Fatalf("expected move highlight on left function line 3, got none")
-		}
-		if leftCommentSpans[0].ColorIndex != leftFuncSpans[0].ColorIndex {
-			t.Errorf("expected left comment ColorIndex (%d) to match function ColorIndex (%d)",
-				leftCommentSpans[0].ColorIndex, leftFuncSpans[0].ColorIndex)
-		}
+		// Whole-snippet tagged assertions: doc comment moves along with function (<mov>),
+		// and surrounding stationary functions remain untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// On the right side, the doc comment on line 14 should also take the move highlight.
-		var rightCommentSpans, rightFuncSpans []HighlightSpan
-		for _, h := range env.RightHighlights {
-			switch h.Line {
-			case 14:
-				rightCommentSpans = append(rightCommentSpans, h)
-			case 15:
-				rightFuncSpans = append(rightFuncSpans, h)
-			}
-		}
-		if len(rightCommentSpans) == 0 {
-			t.Fatalf("expected move highlight on right doc comment line 14, got none (highlights: %+v)", env.RightHighlights)
-		}
-		if rightCommentSpans[0].Action != "move" {
-			t.Errorf("expected right comment action to be 'move', got %q", rightCommentSpans[0].Action)
-		}
-		if len(rightFuncSpans) == 0 {
-			t.Fatalf("expected move highlight on right function line 15, got none")
-		}
-		if rightCommentSpans[0].ColorIndex != rightFuncSpans[0].ColorIndex {
-			t.Errorf("expected right comment ColorIndex (%d) to match function ColorIndex (%d)",
-				rightCommentSpans[0].ColorIndex, rightFuncSpans[0].ColorIndex)
-		}
+<mov>// CalculateTax computes order tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
 
-		// Surrounding stationary functions shouldn't have any highlights.
-		assertContextLinesPure(t, env.LeftHighlights, []int{2, 3, 4, 5})
-		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>// CalculateTax computes order tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 	})
 
 	t.Run("MovedFunctionWithInsertedDocCommentWord", func(t *testing.T) {
@@ -2656,35 +2815,46 @@ func CalculateTax(subtotal int) int {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Left comment moved as-is; the added word on the right is an insert.
-		hasMoveLeft := false
-		for _, h := range env.LeftHighlights {
-			if h.Line == 2 && h.Action == "move" {
-				hasMoveLeft = true
-			}
-		}
-		if !hasMoveLeft {
-			t.Errorf("expected left comment line 2 to contain a move span, got: %+v", env.LeftHighlights)
-		}
+		// Whole-snippet tagged assertions: unchanged comment words move (<mov>), inserted word is <ins>,
+		// and untouched functions stay unhighlighted context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		hasInsertRight := false
-		hasMoveRight := false
-		for _, h := range env.RightHighlights {
-			if h.Line == 14 {
-				hasInsertRight = hasInsertRight || h.Action == "insert"
-				hasMoveRight = hasMoveRight || h.Action == "move"
-			}
-		}
-		if !hasInsertRight {
-			t.Errorf("expected right comment line 14 to contain 'insert' span, got: %+v", env.RightHighlights)
-		}
-		if !hasMoveRight {
-			t.Errorf("expected right comment line 14 to contain 'move' span, got: %+v", env.RightHighlights)
-		}
+<mov>// CalculateTax computes standard tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
 
-		// Untouched functions stay unhighlighted.
-		assertContextLinesPure(t, env.LeftHighlights, []int{2, 3, 4, 5})
-		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>// CalculateTax computes standard </mov><ins>regional</ins><mov> tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 	})
 
 	t.Run("DeletedCommentOnMovedFunction", func(t *testing.T) {
@@ -2767,31 +2937,45 @@ func CalculateTax(subtotal int) int {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// The deleted comment on line 2 should take delete, not move.
-		var leftCommentSpans []HighlightSpan
-		for _, h := range env.LeftHighlights {
-			if h.Line == 2 {
-				leftCommentSpans = append(leftCommentSpans, h)
-			}
-		}
-		if len(leftCommentSpans) == 0 {
-			t.Fatalf("expected delete highlight on left doc comment line 2, got none")
-		}
-		for _, s := range leftCommentSpans {
-			if s.Action == "move" {
-				t.Errorf("deleted comment must NOT take 'move' highlight, got %+v", s)
-			}
-			if s.Action != "delete" {
-				t.Errorf("expected deleted comment to take 'delete' highlight, got %q", s.Action)
-			}
-		}
+		// Whole-snippet tagged assertions: deleted doc comment takes <del> (not <mov>),
+		// moved function takes <mov>, and line 13 on right stays pure unadorned context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// Make sure line 13 on the right stays pure context since no comment was added there.
-		for _, h := range env.RightHighlights {
-			if h.Line == 13 {
-				t.Errorf("expected line 13 on right to be pure context, got highlight %+v", h)
-			}
-		}
+<del>// CalculateTax computes order tax.</del>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 	})
 
 	t.Run("LineAlignmentCommentInversionShielding", func(t *testing.T) {
@@ -3030,45 +3214,49 @@ fn _make_process_from_less_path() -> Command {
 		t.Errorf("extracted block leaked parent match_arm GroupID %q", extractedBlockGid)
 	}
 
-	// Opening and closing braces on the left should both get color 0 (cyan).
-	leftOpeningBraceColor, leftClosingBraceColor := -1, -1
-	for _, h := range env.LeftHighlights {
-		if h.Line == 2 && h.Action == "move" {
-			leftOpeningBraceColor = h.ColorIndex
-		}
-		if h.Line == 15 && h.Action == "move" {
-			leftClosingBraceColor = h.ColorIndex
-		}
-	}
-	if leftOpeningBraceColor != 0 {
-		t.Errorf("expected left opening brace on line 2 to have ColorIndex 0 (Cyan), got %d", leftOpeningBraceColor)
-	}
-	if leftClosingBraceColor != 0 {
-		t.Errorf("expected left closing brace on line 15 to have ColorIndex 0 (Cyan), got %d", leftClosingBraceColor)
-	}
+	// 3. Whole-snippet tagged assertions: match expression moves with color slot 0 (<mov>),
+	// extracted block statements in _make_process_from_less_path have contrasting color slot 1 (<mov1>),
+	// delimiter symmetry on opening and closing braces is maintained, and try_pager preamble/tail stay context.
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    <mov>match pagerflags.split_first() {</mov>
+        <mov>Some((_, _)) =></mov> <mov1>{</mov1>
+<mov1>            let mut process = Command::new("less");</mov1>
+<mov1>            process.arg("-R");</mov1>
+<mov1>            process.arg("-F");</mov1>
+<mov1>            process.arg("-X");</mov1>
+<mov1>            process.arg("-K");</mov1>
+<mov1>            process.arg("-i");</mov1>
+<mov1>            process.env("LESSCHARSET", "UTF-8");</mov1>
+<mov1>            process.env("LESSHISTFILE", "/dev/null");</mov1>
+<mov1>            </mov1><del>Ok(process)</del>
+<mov1>        }</mov1>
+        <mov>None => </mov><del>Ok(</del><mov>Command::new("cat")</mov><del>)</del><mov>,</mov>
+    <mov>}</mov><del>;</del>
+    process.wait()
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    <ins>Ok(</ins><mov>match pagerflags.split_first() {</mov>
+        <mov>Some((_, _)) =></mov> <ins>{</ins>
+<ins>            _make_process_from_less_path()</ins>
+<ins>        }</ins>
+        <mov>None => Command::new("cat"),</mov>
+    <mov>}</mov><ins>)</ins>;
+    process.wait()
+}
 
-	// Same on the right: the braces around match should match each other in color 0.
-	rightClosingBraceColor := -1
-	for _, h := range env.RightHighlights {
-		if h.Line == 7 && h.Action == "move" {
-			rightClosingBraceColor = h.ColorIndex
-		}
-	}
-	if rightClosingBraceColor != 0 {
-		t.Errorf("expected right closing brace on line 7 to have ColorIndex 0 (Cyan), got %d", rightClosingBraceColor)
-	}
-
-	// Statements moved into the helper function should get the contrasting color (magenta/mauve).
-	var foundExtractedMoveHighlights bool
-	for _, h := range env.RightHighlights {
-		if h.Line >= 12 && h.Line <= 21 && h.Action == "move" {
-			foundExtractedMoveHighlights = true
-			if h.ColorIndex != 1 {
-				t.Errorf("expected extracted statement highlight on right line %d to have contrasting ColorIndex 1 (Mauve), got %d", h.Line, h.ColorIndex)
-			}
-		}
-	}
-	if !foundExtractedMoveHighlights {
-		t.Errorf("expected right move highlights on extracted lines 12..21, got none")
-	}
+<ins>fn _make_process_from_less_path() -> Command</ins> <mov1>{</mov1>
+<mov1>    let mut process = Command::new("less");</mov1>
+<mov1>    process.arg("-R");</mov1>
+<mov1>    process.arg("-F");</mov1>
+<mov1>    process.arg("-X");</mov1>
+<mov1>    process.arg("-K");</mov1>
+<mov1>    process.arg("-i");</mov1>
+<mov1>    process.env("LESSCHARSET", "UTF-8");</mov1>
+<mov1>    process.env("LESSHISTFILE", "/dev/null");</mov1>
+    <ins>process</ins>
+<mov1>}</mov1>
+`)
 }
