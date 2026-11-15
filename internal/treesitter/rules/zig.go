@@ -151,12 +151,15 @@ var zigRules = &Rules{
 		{"struct_declaration", "enum_declaration", "union_declaration", "error_set_declaration", "opaque_declaration"},
 		{"variable_declaration", "comptime_declaration"},
 		{"for_statement", "while_statement"},
+		{"builtin_function", "call_expression"},
+		{"builtin_identifier", "identifier"},
 	},
 	Comments: []string{
 		"comment",
 	},
 	Calls: []string{
 		"call_expression",
+		"builtin_function",
 	},
 	Indexed: []string{
 		"index_expression",
@@ -211,6 +214,7 @@ var zigRules = &Rules{
 		"binary_expression",
 		"block_expression",
 		"break_expression",
+		"builtin_function",
 		"call_expression",
 		"catch_expression",
 		"comptime_expression",

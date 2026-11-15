@@ -204,6 +204,8 @@ var rustRules = &Rules{
 		{"for_expression", "while_expression", "loop_expression"},
 		{"scoped_identifier", "scoped_use_list"},
 		{"field_initializer", "shorthand_field_initializer"},
+		{"call_expression", "macro_invocation"},
+		{"arguments", "token_tree"},
 	},
 	Comments: []string{
 		"line_comment",

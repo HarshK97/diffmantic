@@ -46,8 +46,8 @@ func shouldBypassZS(t1, t2 *treesitter.ASTNode, r *rules.Rules) bool {
 	if findBodyBlock(t1, r) != nil || findBodyBlock(t2, r) != nil {
 		return true
 	}
-	// Single-child nodes don't need tree edit distance; let recovery match the child directly.
-	if len(t1.Children) == 1 && len(t2.Children) == 1 {
+	// If both nodes have a single child with the same type, skip tree edit distance and let recovery match them directly.
+	if len(t1.Children) == 1 && len(t2.Children) == 1 && t1.Children[0].Type == t2.Children[0].Type {
 		return true
 	}
 	// Keep argument alignment sequential for calls to the same function.
