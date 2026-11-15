@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
+	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -2380,4 +2381,176 @@ func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
 			t.Errorf("found unexpected highlight on destination line 7: %+v", h)
 		}
 	}
+}
+
+func TestInsertedCommentInMovedBlock_PreservesInsert(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules for rust not found")
+		}
+
+		oldSrc := `fn stationary_one() {}
+fn stationary_two() {}
+
+fn main() -> std::io::Result<()> {
+    let exit_code = run_app()?;
+    // when you call process::exit, no destructors are called
+    process::exit(exit_code);
+}
+`
+		newSrc := `fn main() -> std::io::Result<()> {
+    // Ignore ctrl-c (SIGINT) to avoid leaving an orphaned pager process.
+    // See https://github.com/dandavison/delta/issues/681
+    ctrlc::set_handler(|| {});
+    let exit_code = run_app()?;
+    // when you call process::exit, no destructors are called
+    process::exit(exit_code);
+}
+
+fn stationary_one() {}
+fn stationary_two() {}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		oldAST, err := treesitter.Parse(srcBytes, "old.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		newAST, err := treesitter.Parse(dstBytes, "new.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 {
+			t.Fatalf("oldAST has syntax errors: %d", oldAST.ParseErrorCount)
+		}
+		if newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("newAST has syntax errors: %d", newAST.ParseErrorCount)
+		}
+
+		srcComments := comments.ExtractComments(oldAST)
+		dstComments := comments.ExtractComments(newAST)
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(oldAST, newAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+
+		var commentLineMappings map[int]int
+		if len(srcComments) > 0 || len(dstComments) > 0 {
+			cRes := comments.DiffComments(srcComments, dstComments, mr.Mappings)
+			if cRes != nil {
+				for _, act := range cRes.Actions {
+					es.Add(act)
+				}
+				commentLineMappings = cRes.LineMappings
+			}
+		}
+
+		es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, srcBytes, dstBytes, EnvelopeOptions{
+			IncludeActions:      true,
+			IncludeHighlights:   true,
+			IncludeAlignment:    true,
+			CommentLineMappings: commentLineMappings,
+		})
+		if err != nil {
+			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+		}
+
+		// 1. Stationary functions shouldn't drift.
+		var srcS1, dstS1, srcMain, dstMain *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				for _, ch := range n.Children {
+					if r.IsIdentifier(ch.Type) {
+						switch string(srcBytes[ch.StartByte:ch.EndByte]) {
+						case "stationary_one":
+							srcS1 = n
+						case "main":
+							srcMain = n
+						}
+					}
+				}
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				for _, ch := range n.Children {
+					if r.IsIdentifier(ch.Type) {
+						switch string(dstBytes[ch.StartByte:ch.EndByte]) {
+						case "stationary_one":
+							dstS1 = n
+						case "main":
+							dstMain = n
+						}
+					}
+				}
+			}
+		}
+
+		if srcS1 == nil || dstS1 == nil || srcMain == nil || dstMain == nil {
+			t.Fatal("failed to find declaration nodes")
+		}
+		if mr.Mappings.Src()[srcS1] != dstS1 {
+			t.Errorf("expected stationary_one to map in place, got %v", mr.Mappings.Src()[srcS1])
+		}
+		if mr.Mappings.Src()[srcMain] != dstMain {
+			t.Errorf("expected main to map to destination main, got %v", mr.Mappings.Src()[srcMain])
+		}
+
+		// 2. Lines 1-2 are new comments: they should highlight as insert, not move_update.
+		for _, line := range []int{1, 2} {
+			var lineSpans []HighlightSpan
+			for _, h := range env.RightHighlights {
+				if h.Line == line && h.StartCol >= 4 {
+					lineSpans = append(lineSpans, h)
+				}
+			}
+			if len(lineSpans) == 0 {
+				t.Fatalf("expected comment highlight on destination line %d, got none", line)
+			}
+			for _, s := range lineSpans {
+				if s.Action == "move_update" {
+					t.Errorf("comment on line %d incorrectly took 'move_update' instead of 'insert': %+v", line, s)
+				} else if s.Action != "insert" {
+					t.Errorf("expected comment on line %d to have 'insert' action, got %q", line, s.Action)
+				}
+			}
+		}
+
+		// 3. New statement inside the moved block is an insert.
+		var line3Spans []HighlightSpan
+		for _, h := range env.RightHighlights {
+			if h.Line == 3 && h.StartCol >= 4 {
+				line3Spans = append(line3Spans, h)
+			}
+		}
+		if len(line3Spans) == 0 {
+			t.Fatalf("expected inserted statement highlight on destination line 3, got none")
+		}
+		for _, s := range line3Spans {
+			if s.Action != "insert" {
+				t.Errorf("expected inserted statement on line 3 to have 'insert' action, got %q", s.Action)
+			}
+		}
+
+		// 4. The comment that moved with main() stays a move.
+		var line5Spans []HighlightSpan
+		for _, h := range env.RightHighlights {
+			if h.Line == 5 {
+				line5Spans = append(line5Spans, h)
+			}
+		}
+		if len(line5Spans) == 0 {
+			t.Fatalf("expected moved comment highlight on destination line 5, got none")
+		}
+		for _, s := range line5Spans {
+			if s.Action != "move" {
+				t.Errorf("expected moved comment on line 5 to have 'move' action, got %q", s.Action)
+			}
+		}
+	})
 }
