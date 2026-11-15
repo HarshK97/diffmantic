@@ -9,6 +9,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -1446,47 +1447,21 @@ func process(target string) {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// On left line 3 (`\toldHelper("first", target)`):
-		// oldHelper (1..10) is updated, "first", (11..18) is updated,
-		// and '(' at column 10 must NOT be swallowed into an update span.
-		var leftLine3 []HighlightSpan
-		for _, h := range env.LeftHighlights {
-			if h.Line == 3 {
-				leftLine3 = append(leftLine3, h)
-			}
-		}
-		if len(leftLine3) != 2 {
-			t.Fatalf("expected 2 separate update spans on left line 3, got %d: %+v", len(leftLine3), leftLine3)
-		}
-		if leftLine3[0].StartCol != 1 || leftLine3[0].EndCol != 10 {
-			t.Errorf("expected left callee span [1..10], got [%d..%d]", leftLine3[0].StartCol, leftLine3[0].EndCol)
-		}
-		if leftLine3[1].StartCol != 11 || leftLine3[1].EndCol != 18 {
-			t.Errorf("expected left arg span [11..18], got [%d..%d]", leftLine3[1].StartCol, leftLine3[1].EndCol)
-		}
+		// Whole-snippet tagged assertions: callee and first arg updated, '(' and 'target' silent context,
+		// and all other lines (package, func declaration, closing brace) completely silent.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// On right line 3 (`\tnewHelper("second", target)`):
-		// newHelper (1..10) is updated, "second", (11..19) is updated,
-		// and '(' at column 10 must remain unhighlighted context.
-		var rightLine3 []HighlightSpan
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 {
-				rightLine3 = append(rightLine3, h)
-			}
-		}
-		if len(rightLine3) != 2 {
-			t.Fatalf("expected 2 separate update spans on right line 3, got %d: %+v", len(rightLine3), rightLine3)
-		}
-		if rightLine3[0].StartCol != 1 || rightLine3[0].EndCol != 10 {
-			t.Errorf("expected right callee span [1..10], got [%d..%d]", rightLine3[0].StartCol, rightLine3[0].EndCol)
-		}
-		if rightLine3[1].StartCol != 11 || rightLine3[1].EndCol != 19 {
-			t.Errorf("expected right arg span [11..19], got [%d..%d]", rightLine3[1].StartCol, rightLine3[1].EndCol)
-		}
+func process(target string) {
+	<upd>oldHelper</upd>(<upd>"first"</upd>, target)
+}
+`)
 
-		// Whole-snippet context line purity: unchanged lines (0, 1, 2, 4) must have zero highlights
-		assertContextLinesPure(t, env.LeftHighlights, []int{3})
-		assertContextLinesPure(t, env.RightHighlights, []int{3})
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process(target string) {
+	<upd>newHelper</upd>(<upd>"second"</upd>, target)
+}
+`)
 	})
 }
 
@@ -1503,6 +1478,20 @@ func assertContextLinesPure(t *testing.T, spans []HighlightSpan, allowedLines []
 				s.Line, s.Action, s.StartCol, s.EndCol)
 		}
 	}
+}
+
+func toTestSpans(spans []HighlightSpan) []testutil.Span {
+	res := make([]testutil.Span, len(spans))
+	for i, s := range spans {
+		res[i] = testutil.Span{
+			Line:       s.Line,
+			StartCol:   s.StartCol,
+			EndCol:     s.EndCol,
+			Action:     s.Action,
+			ColorIndex: s.ColorIndex,
+		}
+	}
+	return res
 }
 
 func TestResolveMoveColor(t *testing.T) {
