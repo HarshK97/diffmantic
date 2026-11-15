@@ -76,6 +76,8 @@ func computeKeyRoots(nodes []*treesitter.ASTNode, lld []int) []int {
 			kr = append(kr, i+1) // 1-based index
 		}
 	}
+	// Reverse to keep key roots in ascending post-order.
+	slices.Reverse(kr)
 	return kr
 }
 

@@ -4283,3 +4283,378 @@ fn test_two_plus_lines() {
 		}
 	})
 }
+
+func TestRustMacroCallEquivalenceRecovery(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules.Get(rust) returned nil")
+		}
+
+		if !r.AreTypesEquivalent("call_expression", "macro_invocation") {
+			t.Errorf("expected call_expression and macro_invocation to match in rust rules")
+		}
+		if !r.AreTypesEquivalent("arguments", "token_tree") {
+			t.Errorf("expected arguments and token_tree to match in rust rules")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn parse_options() {
+    let x = 1;
+    if condition {
+        eprintln!("Invalid command-line option: --foo");
+        process::exit(1);
+    }
+    let y = 2;
+}
+`
+		newSrc := `fn parse_options() {
+    let x = 1;
+    if condition {
+        fatal("Invalid command-line option: --foo");
+    }
+    let y = 2;
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing context: the function and if expression should stay mapped in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "parse_options") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "parse_options") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected parse_options fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "if_expression" {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "if_expression" {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
+			t.Fatalf("expected if_expression to map in place, got src=%v dst=%v mapped=%v", srcIf, dstIf, mapped[srcIf])
+		}
+
+		// 2. Surrounding statements: let statements around the if block shouldn't drift.
+		for _, varName := range []string{"x", "y"} {
+			var srcLet, dstLet *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) {
+					for _, c := range n.Children {
+						if r.IsIdentifier(c.Type) && c.Label == varName {
+							srcLet = n
+							break
+						}
+					}
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) {
+					for _, c := range n.Children {
+						if r.IsIdentifier(c.Type) && c.Label == varName {
+							dstLet = n
+							break
+						}
+					}
+				}
+			}
+			if srcLet == nil || dstLet == nil || mapped[srcLet] != dstLet {
+				t.Fatalf("expected let %s statement to map in place, got src=%v dst=%v mapped=%v", varName, srcLet, dstLet, mapped[srcLet])
+			}
+		}
+
+		// 3. Target & containers: eprintln! should map to fatal(), token_tree should map to arguments, and process::exit should stay unmapped (deleted).
+		var srcMacro, dstCall, srcExitCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) {
+				if n.Type == "macro_invocation" {
+					srcMacro = n
+				} else if strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "process::exit") {
+					srcExitCall = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fatal") {
+				dstCall = n
+				break
+			}
+		}
+		if srcMacro == nil || dstCall == nil || srcExitCall == nil {
+			t.Fatalf("failed to locate target calls: srcMacro=%v dstCall=%v srcExitCall=%v", srcMacro, dstCall, srcExitCall)
+		}
+
+		if mapped[srcMacro] != dstCall {
+			t.Errorf("expected macro_invocation to map to fatal call_expression, got %v", mapped[srcMacro])
+		}
+		if got := mapped[srcExitCall]; got != nil {
+			t.Errorf("expected process::exit to remain unmapped, got %v", got)
+		}
+
+		var srcArgs, dstArgs *treesitter.ASTNode
+		for _, c := range srcMacro.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				srcArgs = c
+				break
+			}
+		}
+		for _, c := range dstCall.Children {
+			if r.IsDelimitedContainer(c.Type) {
+				dstArgs = c
+				break
+			}
+		}
+		if srcArgs == nil || dstArgs == nil {
+			t.Fatalf("failed to locate argument containers: srcArgs=%v dstArgs=%v", srcArgs, dstArgs)
+		}
+		if mapped[srcArgs] != dstArgs {
+			t.Errorf("expected macro token_tree to map to call arguments container, got %v", mapped[srcArgs])
+		}
+
+		// 4. Stationary operands: the error message string literal should map in place across the macro and call.
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, n := range srcArgs.Children {
+			if n.Type == "string_literal" {
+				srcStr = n
+				break
+			}
+		}
+		for _, n := range dstArgs.Children {
+			if n.Type == "string_literal" {
+				dstStr = n
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil {
+			t.Fatalf("failed to locate string literals: srcStr=%v dstStr=%v", srcStr, dstStr)
+		}
+		if mapped[srcStr] != dstStr {
+			t.Errorf("expected string_literal to map in place, got %v", mapped[srcStr])
+		}
+	})
+}
+
+func TestZigBuiltinCallEquivalenceRecovery(t *testing.T) {
+	t.Run("Unit", func(t *testing.T) {
+		r := rules.Get("zig")
+		if r == nil {
+			t.Fatal("rules.Get(zig) returned nil")
+		}
+
+		if !r.AreTypesEquivalent("builtin_function", "call_expression") {
+			t.Errorf("expected builtin_function and call_expression to match in zig rules")
+		}
+		if !r.AreTypesEquivalent("builtin_identifier", "identifier") {
+			t.Errorf("expected builtin_identifier and identifier to match in zig rules")
+		}
+		if !r.IsCall("builtin_function") {
+			t.Errorf("expected builtin_function to be recognized as a call in zig rules")
+		}
+	})
+
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `pub fn parse_options() void {
+    const x = 1;
+    if (condition) {
+        @panic("Invalid command-line option: --foo");
+        process.exit(1);
+    }
+    const y = 2;
+}
+`
+		newSrc := `pub fn parse_options() void {
+    const x = 1;
+    if (condition) {
+        fatal("Invalid command-line option: --foo");
+    }
+    const y = 2;
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.zig")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.zig")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing context: the function and if statement should stay mapped in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "parse_options") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "parse_options") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected parse_options fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "if_statement" {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "if_statement" {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
+			t.Fatalf("expected if_statement to map in place, got src=%v dst=%v mapped=%v", srcIf, dstIf, mapped[srcIf])
+		}
+
+		// 2. Surrounding statements: const statements around the if block shouldn't drift.
+		for _, varName := range []string{"x", "y"} {
+			var srcLet, dstLet *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) {
+					for _, c := range n.Children {
+						if r.IsIdentifier(c.Type) && c.Label == varName {
+							srcLet = n
+							break
+						}
+					}
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) {
+					for _, c := range n.Children {
+						if r.IsIdentifier(c.Type) && c.Label == varName {
+							dstLet = n
+							break
+						}
+					}
+				}
+			}
+			if srcLet == nil || dstLet == nil || mapped[srcLet] != dstLet {
+				t.Fatalf("expected const %s statement to map in place, got src=%v dst=%v mapped=%v", varName, srcLet, dstLet, mapped[srcLet])
+			}
+		}
+
+		// 3. Target & containers: @panic should map to fatal(), while process.exit stays unmapped (deleted).
+		var srcBuiltin, dstCall, srcExitCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "@panic") && r.IsCall(n.Type) {
+				srcBuiltin = n
+			} else if strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "process.exit") && r.IsCall(n.Type) {
+				srcExitCall = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fatal") {
+				dstCall = n
+				break
+			}
+		}
+		if srcBuiltin == nil || dstCall == nil || srcExitCall == nil {
+			t.Fatalf("failed to locate target calls: srcBuiltin=%v dstCall=%v srcExitCall=%v", srcBuiltin, dstCall, srcExitCall)
+		}
+
+		if mapped[srcBuiltin] != dstCall {
+			t.Errorf("expected builtin_function to map to fatal call_expression, got %v", mapped[srcBuiltin])
+		}
+		if got := mapped[srcExitCall]; got != nil {
+			t.Errorf("expected process.exit to remain unmapped, got %v", got)
+		}
+
+		// 4. Stationary operands: the panic message string should map in place across @panic and fatal.
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, n := range srcBuiltin.Descendants() {
+			if n.Type == "string" {
+				srcStr = n
+				break
+			}
+		}
+		for _, n := range dstCall.Descendants() {
+			if n.Type == "string" {
+				dstStr = n
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil {
+			t.Fatalf("failed to locate string literals: srcStr=%v dstStr=%v", srcStr, dstStr)
+		}
+		if mapped[srcStr] != dstStr {
+			t.Errorf("expected string to map in place, got %v", mapped[srcStr])
+		}
+	})
+}
