@@ -707,11 +707,13 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 			if srcBody != nil && dstBody != nil {
-				if !isDecl && !hasHeaderMatch(t1, bestParent, m, r) && m.DiceSrc(t1, bestParent) < 0.30 {
-					continue
-				}
-				if !isDecl && !IsScopePreserved(m, t1, bestParent, r, r) && m.DiceSrc(t1, bestParent) < 0.60 {
-					continue
+				if !isDecl && !hasHeaderMatch(t1, bestParent, m, r) {
+					if m.DiceSrc(t1, bestParent) < 0.30 {
+						continue
+					}
+					if !IsScopePreserved(m, t1, bestParent, r, r) && m.DiceSrc(t1, bestParent) < 0.60 {
+						continue
+					}
 				}
 				if m.Src()[srcBody] != dstBody && m.DiceSrc(srcBody, dstBody) == 0 {
 					if isDecl || lineDist >= 10 {

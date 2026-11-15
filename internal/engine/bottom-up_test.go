@@ -3452,3 +3452,165 @@ fn _make_process(name: String, args: Vec<String>) -> Option<Command> {
 		}
 	})
 }
+
+func TestRollupMatchedContainers_HeaderMatchUnmappedScope(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `fn outer_helper() -> usize {
+    42
+}
+
+fn get_right_fill_style_for_left_panel(
+    line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[Vec<(usize, &str)>],
+    config: &Config,
+) -> usize {
+    match (line_is_empty, line_index) {
+        (true, _) => config.null_style,
+        (false, None) => config.null_style,
+        (false, Some(index)) => {
+            let (should_fill, fill_style) =
+                compute_fill(
+                    &diff_style_sections[index],
+                    config,
+                );
+            if should_fill {
+                fill_style
+            } else {
+                config.null_style
+            }
+        }
+    }
+}
+`
+		dst := `fn outer_helper() -> usize {
+    42
+}
+
+fn get_right_fill_style_for_panel<'a>(
+    line_is_empty: bool,
+    line_index: Option<usize>,
+    diff_style_sections: &[Vec<(usize, &str)>],
+    config: &Config,
+) -> (Option<usize>, usize) {
+    let none_or_override = None;
+    match (line_is_empty, line_index) {
+        (true, _) => (none_or_override, config.null_style),
+        (false, None) => (none_or_override, config.null_style),
+        (false, Some(index)) => {
+            let (bg_fill_mode, fill_style) =
+                compute_fill(
+                    &diff_style_sections[index],
+                    config,
+                );
+
+            match bg_fill_mode {
+                None => (none_or_override, config.null_style),
+                Some(1) => (Some(1), fill_style),
+                _ => (bg_fill_mode, fill_style),
+            }
+        }
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Enclosing context: outer_helper shouldn't be affected by changes inside the match.
+		var srcHelper, dstHelper *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "outer_helper" {
+				srcHelper = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "outer_helper" {
+				dstHelper = n
+				break
+			}
+		}
+		if srcHelper == nil || dstHelper == nil || mr.Mappings.Src()[srcHelper] != dstHelper {
+			t.Fatalf("expected fn outer_helper to map in place, got %v", mr.Mappings.Src()[srcHelper])
+		}
+
+		// Surrounding sequence: arm 0 and arm 1 are untouched, so they stay mapped in place.
+		var srcArm0, dstArm0, srcArm1, dstArm1, srcArm2, dstArm2 *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				chunk := []byte(src)[n.StartByte:n.EndByte]
+				if bytes.Contains(chunk, []byte("true, _")) {
+					srcArm0 = n
+				} else if bytes.Contains(chunk, []byte("false, None")) {
+					srcArm1 = n
+				} else if bytes.Contains(chunk, []byte("Some(index)")) {
+					srcArm2 = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCaseClause(n.Type) {
+				chunk := []byte(dst)[n.StartByte:n.EndByte]
+				if bytes.Contains(chunk, []byte("true, _")) {
+					dstArm0 = n
+				} else if bytes.Contains(chunk, []byte("false, None")) {
+					dstArm1 = n
+				} else if bytes.Contains(chunk, []byte("Some(index)")) {
+					dstArm2 = n
+				}
+			}
+		}
+
+		if srcArm0 == nil || dstArm0 == nil || mr.Mappings.Src()[srcArm0] != dstArm0 {
+			t.Errorf("expected arm 0 (true, _) to map in place, got %v", mr.Mappings.Src()[srcArm0])
+		}
+		if srcArm1 == nil || dstArm1 == nil || mr.Mappings.Src()[srcArm1] != dstArm1 {
+			t.Errorf("expected arm 1 (false, None) to map in place, got %v", mr.Mappings.Src()[srcArm1])
+		}
+
+		// Target construct: arm 2 (false, Some(index)) should map in place despite the nested match rewrite.
+		if srcArm2 == nil || dstArm2 == nil {
+			t.Fatalf("expected srcArm2 and dstArm2 to be found, got src=%v dst=%v", srcArm2, dstArm2)
+		}
+		if mr.Mappings.Src()[srcArm2] != dstArm2 {
+			t.Errorf("expected arm 2 (false, Some(index)) to map in place, got %v", mr.Mappings.Src()[srcArm2])
+		}
+
+		// Stationary operands: compute_fill call inside arm 2 maps in place.
+		var srcComputeCall, dstComputeCall *treesitter.ASTNode
+		for _, n := range srcArm2.PreOrder() {
+			if r.IsCall(n.Type) && bytes.Contains([]byte(src)[n.StartByte:n.EndByte], []byte("compute_fill")) {
+				srcComputeCall = n
+				break
+			}
+		}
+		for _, n := range dstArm2.PreOrder() {
+			if r.IsCall(n.Type) && bytes.Contains([]byte(dst)[n.StartByte:n.EndByte], []byte("compute_fill")) {
+				dstComputeCall = n
+				break
+			}
+		}
+		if srcComputeCall == nil || dstComputeCall == nil || mr.Mappings.Src()[srcComputeCall] != dstComputeCall {
+			t.Errorf("expected inner compute_fill call to map in place, got %v", mr.Mappings.Src()[srcComputeCall])
+		}
+	})
+}
