@@ -1,7 +1,6 @@
 package serialize
 
 import (
-	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -1224,53 +1224,29 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 			t.Fatalf("expected enclosing function declaration to map in place")
 		}
 
-		// 2. Alignment Verification
+		// 2. Alignment Verification: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor,
+		// and NOT displaced by the moved if-block.
 		grid := AlignLines(srcBytes, dstBytes, mr.Mappings, es)
+		testPairs := toTestPairs(grid)
 
-		srcLines := strings.Split(oldSrc, "\n")
-		dstLines := strings.Split(newSrc, "\n")
-
-		oldVarLine, newVarLine := -1, -1
-		for i, l := range srcLines {
-			if strings.TrimSpace(l) == "var buf bytes.Buffer" {
-				oldVarLine = i
-				break
-			}
-		}
-		for j, l := range dstLines {
-			if strings.TrimSpace(l) == "var buf bytes.Buffer" {
-				newVarLine = j
-				break
-			}
-		}
-
-		if oldVarLine < 0 || newVarLine < 0 {
-			t.Fatalf("could not find 'var buf bytes.Buffer' in test snippets (old:%d, new:%d)", oldVarLine, newVarLine)
-		}
-
-		// Verify alignment: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor.
-		var foundVarBufPair bool
-		for _, p := range grid {
-			if p.LeftLine == oldVarLine && p.RightLine == newVarLine {
-				foundVarBufPair = true
-				break
-			}
-		}
-
-		if !foundVarBufPair {
-			var alignDump strings.Builder
-			for _, p := range grid {
-				var lText, rText string
-				if p.LeftLine >= 0 && p.LeftLine < len(srcLines) {
-					lText = srcLines[p.LeftLine]
-				}
-				if p.RightLine >= 0 && p.RightLine < len(dstLines) {
-					rText = dstLines[p.RightLine]
-				}
-				fmt.Fprintf(&alignDump, "L:%2d %-35s | R:%2d %-35s\n", p.LeftLine+1, lText, p.RightLine+1, rText)
-			}
-			t.Fatalf("expected var buf bytes.Buffer (old L:%d, new R:%d) to be aligned, but it was displaced by an in-place move:\n%s",
-				oldVarLine+1, newVarLine+1, alignDump.String())
-		}
+		testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("var buf bytes.Buffer"),
+			testutil.Line("var buf bytes.Buffer"),
+		)
+		testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("var buf bytes.Buffer"),
+			testutil.Line("if bytes.Equal(job.srcBytes, job.dstBytes) && cfg.Format != \"json\" {"),
+		)
 	})
+}
+
+func toTestPairs(grid []LineAlignmentPair) []testutil.LineAlignmentPair {
+	res := make([]testutil.LineAlignmentPair, len(grid))
+	for i, p := range grid {
+		res[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
+	return res
 }
