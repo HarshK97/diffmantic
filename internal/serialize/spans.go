@@ -41,10 +41,6 @@ type internalSpan struct {
 	moveColorIndex int
 }
 
-func isCommentAction(a *Action) bool {
-	return a != nil && a.ASTNode != nil && a.ASTNode.IsComment()
-}
-
 // DelimiterSpan tracks a closing delimiter (like a brace or bracket) for UI highlights.
 type DelimiterSpan struct {
 	StartByte uint32
@@ -656,7 +652,7 @@ checkOverlap:
 			colorIdx := 0
 			if action == "move" {
 				colorIdx = resolveMoveColor(winner.actRef)
-			} else if moveSpan != nil && (action == "update" || (isCommentAction(winner.actRef) && (action == "insert" || action == "delete"))) {
+			} else if action == "update" && moveSpan != nil {
 				action = "move_update"
 				colorIdx = resolveMoveColor(moveSpan.actRef)
 			}

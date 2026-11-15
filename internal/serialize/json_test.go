@@ -2650,7 +2650,7 @@ func CalculateTax(subtotal int) int {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// The unchanged source comment stays a move; the inserted destination word is a move_update.
+		// Left comment moved as-is; the added word on the right is an insert.
 		hasMoveLeft := false
 		for _, h := range env.LeftHighlights {
 			if h.Line == 2 && h.Action == "move" {
@@ -2661,14 +2661,19 @@ func CalculateTax(subtotal int) int {
 			t.Errorf("expected left comment line 2 to contain a move span, got: %+v", env.LeftHighlights)
 		}
 
-		hasMoveUpdateRight := false
+		hasInsertRight := false
+		hasMoveRight := false
 		for _, h := range env.RightHighlights {
-			if h.Line == 14 && h.Action == "move_update" {
-				hasMoveUpdateRight = true
+			if h.Line == 14 {
+				hasInsertRight = hasInsertRight || h.Action == "insert"
+				hasMoveRight = hasMoveRight || h.Action == "move"
 			}
 		}
-		if !hasMoveUpdateRight {
-			t.Errorf("expected right comment line 14 to contain 'move_update' span, got: %+v", env.RightHighlights)
+		if !hasInsertRight {
+			t.Errorf("expected right comment line 14 to contain 'insert' span, got: %+v", env.RightHighlights)
+		}
+		if !hasMoveRight {
+			t.Errorf("expected right comment line 14 to contain 'move' span, got: %+v", env.RightHighlights)
 		}
 
 		// Untouched functions stay unhighlighted.
