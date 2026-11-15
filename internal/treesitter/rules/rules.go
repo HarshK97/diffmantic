@@ -479,6 +479,16 @@ func (r *Rules) IsPair(nodeType string) bool {
 	return slices.Contains(r.Pairs, nodeType)
 }
 
+// IsPair reports whether nodeType is configured as a pair in any language rule set.
+func IsPair(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsPair(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsUnordered checks if child order doesn't matter for this container.
 func (r *Rules) IsUnordered(nodeType string) bool {
 	if r == nil {

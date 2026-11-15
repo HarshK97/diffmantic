@@ -273,6 +273,12 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Don't let an outer binary expression steal an inner binary expression
+	// when their operators differ and one encloses an unmapped expression with the other's operator.
+	if hasEnclosingOperatorMismatch(t1, c, m, r) {
+		return -1.0
+	}
+
 	// Don't let an inner binary expression steal a match when its unmapped parent
 	// already has the shared operand on the same side.
 	if hasCrossSideOperatorMismatch(t1, c, m, r) {
@@ -416,8 +422,11 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	lblScore := LeafSimilarity(t1, c)
 
 	keyBonus := 0.0
-	if t1Key, cKey := getKeyLabel(t1), getKeyLabel(c); t1Key != "" && t1Key == cKey {
-		keyBonus = w.KeyBonus
+	isPair := (r != nil && r.IsPair(t1.Type)) || (r == nil && rules.IsPair(t1.Type))
+	if isPair {
+		if t1Key, cKey := getKeyLabel(t1), getKeyLabel(c); t1Key != "" && t1Key == cKey {
+			keyBonus = w.KeyBonus
+		}
 	}
 
 	depthPenalty := 0.0
@@ -1196,6 +1205,15 @@ func hasEnclosingConstructWithMappedDescendant(t1, c *treesitter.ASTNode, m *Map
 			n2 := getDeclarationName(target)
 			return n1 != "" && n2 != "" && n1 == n2
 		}
+		isExpr := (r != nil && r.IsExpression(outer.Type)) || (r == nil && rules.IsExpression(outer.Type))
+		if isExpr {
+			op1 := findOperatorGlue(outer, r)
+			op2 := findOperatorGlue(target, r)
+			if op1 != nil && op2 != nil {
+				return op1.Label == op2.Label
+			}
+			return true
+		}
 		return isBlock(outer.Type) || isWrapper(outer.Type)
 	}
 
@@ -1662,6 +1680,49 @@ func hasCrossSideOperatorMismatch(t1, c *treesitter.ASTNode, m *Mapping, r *rule
 		if parentOp2 := findOperatorGlue(c.Parent, r); parentOp2 != nil {
 			if (c.StartByte < parentOp2.StartByte) == crossLeftToRight {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasEnclosingOperatorMismatch reports whether t1 and c have different operators while one
+// encloses an unmapped expression with the other's operator.
+func hasEnclosingOperatorMismatch(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(t1.GetLanguage()), rules.Get(c.GetLanguage()))
+	isExpr1 := (r != nil && r.IsExpression(t1.Type)) || (r == nil && rules.IsExpression(t1.Type))
+	isExpr2 := (r != nil && r.IsExpression(c.Type)) || (r == nil && rules.IsExpression(c.Type))
+	if !isExpr1 || !isExpr2 {
+		return false
+	}
+	op1 := findOperatorGlue(t1, r)
+	op2 := findOperatorGlue(c, r)
+	if op1 == nil || op2 == nil || op1.Label == op2.Label {
+		return false
+	}
+	// If c has a different operator from t1, but c contains an unmapped expression with t1's operator,
+	// t1 must not steal the outer wrapper c.
+	for _, d2 := range c.Descendants() {
+		if !m.HasDst(d2) {
+			isD2Expr := (r != nil && r.IsExpression(d2.Type)) || (r == nil && rules.IsExpression(d2.Type))
+			if isD2Expr {
+				if opD2 := findOperatorGlue(d2, r); opD2 != nil && opD2.Label == op1.Label {
+					return true
+				}
+			}
+		}
+	}
+	// Symmetrically, if t1 has a different operator from c, but t1 contains an unmapped expression with c's operator.
+	for _, d1 := range t1.Descendants() {
+		if !m.Has(d1) {
+			isD1Expr := (r != nil && r.IsExpression(d1.Type)) || (r == nil && rules.IsExpression(d1.Type))
+			if isD1Expr {
+				if opD1 := findOperatorGlue(d1, r); opD1 != nil && opD1.Label == op2.Label {
+					return true
+				}
 			}
 		}
 	}
