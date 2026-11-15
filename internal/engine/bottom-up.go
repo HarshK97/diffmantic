@@ -1347,30 +1347,54 @@ func getAssignmentTargetNames(n *treesitter.ASTNode, r *rules.Rules) []string {
 	isAssign := (r != nil && r.IsAssignment(n.Type)) || (r == nil && rules.IsAssignment(n.Type))
 	isDecl := (r != nil && r.IsLocalVarDeclaration(n.Type)) || (r == nil && rules.IsLocalVarDeclaration(n.Type))
 	if !isAssign && !isDecl {
+		if len(n.Children) == 1 {
+			child := n.Children[0]
+			isChildAssign := (r != nil && r.IsAssignment(child.Type)) || (r == nil && rules.IsAssignment(child.Type))
+			isChildDecl := (r != nil && r.IsLocalVarDeclaration(child.Type)) || (r == nil && rules.IsLocalVarDeclaration(child.Type))
+			if isChildAssign || isChildDecl {
+				return getAssignmentTargetNames(child, r)
+			}
+		}
 		return nil
 	}
 	opIdx := slices.IndexFunc(n.Children, func(child *treesitter.ASTNode) bool {
 		return isOperatorGlue(child, r)
 	})
-	if opIdx < 0 && !isDecl {
-		return nil
-	}
-	limit := 0
 	if opIdx >= 0 {
-		limit = opIdx
-	} else if len(n.Children) > 0 {
-		limit = 1
+		var names []string
+		for _, child := range n.Children[:opIdx] {
+			for _, desc := range child.PreOrder() {
+				isID := (r != nil && r.IsIdentifier(desc.Type)) || (r == nil && rules.IsIdentifier(desc.Type))
+				if isID && desc.Label != "" {
+					names = append(names, desc.Label)
+				}
+			}
+		}
+		if len(names) > 0 {
+			return names
+		}
 	}
+	// Look inside declarators when `=` lives on an inner node (like init_declarator in C or var_spec in Go).
 	var names []string
-	for _, child := range n.Children[:limit] {
-		for _, desc := range child.PreOrder() {
-			isID := (r != nil && r.IsIdentifier(desc.Type)) || (r == nil && rules.IsIdentifier(desc.Type))
-			if isID && desc.Label != "" {
-				names = append(names, desc.Label)
+	for _, child := range n.Children {
+		opChildIdx := slices.IndexFunc(child.Children, func(gc *treesitter.ASTNode) bool {
+			return isOperatorGlue(gc, r)
+		})
+		if opChildIdx >= 0 {
+			for _, gc := range child.Children[:opChildIdx] {
+				for _, desc := range gc.PreOrder() {
+					isID := (r != nil && r.IsIdentifier(desc.Type)) || (r == nil && rules.IsIdentifier(desc.Type))
+					if isID && desc.Label != "" {
+						names = append(names, desc.Label)
+					}
+				}
 			}
 		}
 	}
-	return names
+	if len(names) > 0 {
+		return names
+	}
+	return nil
 }
 
 // hasCrossSideOperatorMismatch reports whether an inner binary expression

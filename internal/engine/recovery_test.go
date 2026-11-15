@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -4112,6 +4113,173 @@ func TestCanPairDelimitedSiblings_CallerAffinityGuard(t *testing.T) {
 					}
 				}
 			}
+		}
+	})
+}
+
+func TestBlockStatementRecovery_MultipleTypedSiblings(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `#[test]
+fn test_two_plus_lines() {
+    let config = make_config_from_args(&["--side-by-side", "--width", "40"]);
+    let output = run_delta(TWO_PLUS_LINES_DIFF, &config);
+    let mut lines = output.lines().skip(7);
+    let (line_1, line_2) = (lines.next().unwrap(), lines.next().unwrap());
+    assert_eq!("│    │              │ 1  │a = 1", strip_ansi_codes(line_1));
+    assert_eq!("│    │              │ 2  │b = 2", strip_ansi_codes(line_2));
+}
+`
+		newSrc := `#[test]
+fn test_two_plus_lines() {
+    let config = make_config_from_args(&[
+        "--side-by-side",
+        "--width",
+        "41",
+        "--line-fill-method=spaces",
+    ]);
+    let output = run_delta(TWO_PLUS_LINES_DIFF, &config);
+    let mut lines = output.lines().skip(crate::config::HEADER_LEN);
+    let (line_1, line_2) = (lines.next().unwrap(), lines.next().unwrap());
+    let sac = strip_ansi_codes; // alias to help with cargo fmt-ing:
+    assert_eq!("│    │              │ 1  │a = 1         ", sac(line_1));
+    assert_eq!("│    │              │ 2  │b = 234567    ", sac(line_2));
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing context: the function and body block should map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected function_item to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		var srcBlock, dstBlock *treesitter.ASTNode
+		for _, c := range srcFn.Children {
+			if r.IsBlock(c.Type) {
+				srcBlock = c
+				break
+			}
+		}
+		for _, c := range dstFn.Children {
+			if r.IsBlock(c.Type) {
+				dstBlock = c
+				break
+			}
+		}
+		if srcBlock == nil || dstBlock == nil || mapped[srcBlock] != dstBlock {
+			t.Fatalf("expected block to map in place, got src=%v dst=%v mapped=%v", srcBlock, dstBlock, mapped[srcBlock])
+		}
+
+		// 2. Surrounding sequence: following statements should keep their mapping.
+		var srcOutputStmt, dstOutputStmt *treesitter.ASTNode
+		for _, c := range srcBlock.Children {
+			if r.IsStatement(c.Type) && slices.Contains(getAssignmentTargetNames(c, r), "output") {
+				srcOutputStmt = c
+				break
+			}
+		}
+		for _, c := range dstBlock.Children {
+			if r.IsStatement(c.Type) && slices.Contains(getAssignmentTargetNames(c, r), "output") {
+				dstOutputStmt = c
+				break
+			}
+		}
+		if srcOutputStmt == nil || dstOutputStmt == nil || mapped[srcOutputStmt] != dstOutputStmt {
+			t.Fatalf("expected output statement to map in place, got src=%v dst=%v mapped=%v", srcOutputStmt, dstOutputStmt, mapped[srcOutputStmt])
+		}
+
+		// 3. Target construct: let config = make_config_from_args(...) should map across versions.
+		var srcConfigStmt, dstConfigStmt *treesitter.ASTNode
+		for _, c := range srcBlock.Children {
+			if r.IsStatement(c.Type) && slices.Contains(getAssignmentTargetNames(c, r), "config") {
+				srcConfigStmt = c
+				break
+			}
+		}
+		for _, c := range dstBlock.Children {
+			if r.IsStatement(c.Type) && slices.Contains(getAssignmentTargetNames(c, r), "config") {
+				dstConfigStmt = c
+				break
+			}
+		}
+		if srcConfigStmt == nil || dstConfigStmt == nil {
+			t.Fatalf("failed to locate config statements: srcConfig=%v dstConfig=%v", srcConfigStmt, dstConfigStmt)
+		}
+		if mapped[srcConfigStmt] != dstConfigStmt {
+			t.Fatalf("expected let config statement to map in place, got mapped=%v", mapped[srcConfigStmt])
+		}
+
+		// 4. Stationary operands: the config identifier should stay mapped.
+		var srcConfigIdent, dstConfigIdent *treesitter.ASTNode
+		for _, n := range srcConfigStmt.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "config" {
+				srcConfigIdent = n
+				break
+			}
+		}
+		for _, n := range dstConfigStmt.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "config" {
+				dstConfigIdent = n
+				break
+			}
+		}
+		if srcConfigIdent == nil || dstConfigIdent == nil || mapped[srcConfigIdent] != dstConfigIdent {
+			t.Fatalf("expected config identifier to map in place, got src=%v dst=%v mapped=%v", srcConfigIdent, dstConfigIdent, mapped[srcConfigIdent])
+		}
+
+		// 5. Inserted statement: new let sac shouldn't map back to anything in old code.
+		var dstSacStmt *treesitter.ASTNode
+		for _, c := range dstBlock.Children {
+			if r.IsStatement(c.Type) && slices.Contains(getAssignmentTargetNames(c, r), "sac") {
+				dstSacStmt = c
+				break
+			}
+		}
+		if dstSacStmt == nil {
+			t.Fatalf("failed to locate inserted sac statement in dstBlock")
+		}
+		if srcFrom := mr.Mappings.Dst()[dstSacStmt]; srcFrom != nil {
+			t.Fatalf("expected inserted sac statement to remain unmapped, got srcFrom=%v", srcFrom)
 		}
 	})
 }

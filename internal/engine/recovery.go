@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -172,6 +173,8 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 			addIsomorphicPairs(pair[0], pair[1], m)
 		}
 	}
+
+	recoverBlockStatements(t1, t2, m, r)
 
 	uc1 = unmatchedChildren(t1, m.Has)
 	uc2 = unmatchedChildren(t2, m.HasDst)
@@ -827,6 +830,122 @@ func uniqueTypePairs(
 		}
 	}
 	return pairs
+}
+
+// recoverBlockStatements pairs unmatched statements in the same block by matching
+// the variables they assign to.
+func recoverBlockStatements(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if t1 == nil || t2 == nil || m == nil {
+		return
+	}
+	if r == nil {
+		r = rulesFor(t1)
+	}
+	isBlock1 := (r != nil && r.IsBlock(t1.Type)) || (r == nil && rules.IsBlock(t1.Type))
+	isBlock2 := (r != nil && r.IsBlock(t2.Type)) || (r == nil && rules.IsBlock(t2.Type))
+	if !isBlock1 || !isBlock2 {
+		return
+	}
+
+	unmappedSrc := make([]*treesitter.ASTNode, 0, len(t1.Children))
+	for _, c := range t1.Children {
+		if !m.Has(c) && isStatementOrDecl(c, r) {
+			unmappedSrc = append(unmappedSrc, c)
+		}
+	}
+
+	unmappedDst := make([]*treesitter.ASTNode, 0, len(t2.Children))
+	for _, c := range t2.Children {
+		if !m.HasDst(c) && isStatementOrDecl(c, r) {
+			unmappedDst = append(unmappedDst, c)
+		}
+	}
+
+	if len(unmappedSrc) == 0 || len(unmappedDst) == 0 {
+		return
+	}
+
+	// Cache extracted assignment target names per statement to avoid quadratic re-traversal.
+	targetNames := make(map[*treesitter.ASTNode][]string, len(unmappedSrc)+len(unmappedDst))
+	srcByTarget := make(map[string][]*treesitter.ASTNode)
+	for _, sc := range unmappedSrc {
+		names := getAssignmentTargetNames(sc, r)
+		targetNames[sc] = names
+		for _, name := range names {
+			srcByTarget[name] = append(srcByTarget[name], sc)
+		}
+	}
+	dstByTarget := make(map[string][]*treesitter.ASTNode)
+	for _, dc := range unmappedDst {
+		names := getAssignmentTargetNames(dc, r)
+		targetNames[dc] = names
+		for _, name := range names {
+			dstByTarget[name] = append(dstByTarget[name], dc)
+		}
+	}
+
+	// Pass 1: match statements that assign to the same variable, as long as that name is unique in the block.
+	// Sort target names deterministically to prevent randomized Go map iteration order from altering pairings.
+	for _, name := range slices.Sorted(maps.Keys(srcByTarget)) {
+		srcList := srcByTarget[name]
+		dstList := dstByTarget[name]
+		if len(srcList) == 1 && len(dstList) == 1 {
+			sc, dc := srcList[0], dstList[0]
+			if !m.Has(sc) && !m.HasDst(dc) && TypesMatch(sc.Type, dc.Type, r) {
+				m.Add(sc, dc)
+				Recover(sc, dc, m)
+			}
+		}
+	}
+
+	remainingSrc := slices.DeleteFunc(unmappedSrc, m.Has)
+	remainingDst := slices.DeleteFunc(unmappedDst, m.HasDst)
+
+	if len(remainingSrc) == 0 || len(remainingDst) == 0 {
+		return
+	}
+
+	// Pass 2: pair any remaining statements in order if they write to the same variable.
+	dstIdx := 0
+	for _, sc := range remainingSrc {
+		if m.Has(sc) {
+			continue
+		}
+		names1 := targetNames[sc]
+		if len(names1) == 0 {
+			continue
+		}
+		var bestDst *treesitter.ASTNode
+		bestDstIdx := -1
+		bestScore := 0.0
+
+		for j := dstIdx; j < len(remainingDst); j++ {
+			dc := remainingDst[j]
+			if m.HasDst(dc) || !TypesMatch(sc.Type, dc.Type, r) {
+				continue
+			}
+
+			names2 := targetNames[dc]
+			if len(names2) == 0 {
+				continue
+			}
+
+			if slices.ContainsFunc(names1, func(n1 string) bool { return slices.Contains(names2, n1) }) {
+				score := 10.0 + LeafSimilarity(sc, dc)
+				if score > bestScore {
+					bestScore = score
+					bestDst = dc
+					bestDstIdx = j
+				}
+			}
+		}
+
+		if bestDst != nil {
+			m.Add(sc, bestDst)
+			Recover(sc, bestDst, m)
+			dstIdx = bestDstIdx + 1
+		}
+	}
 }
 
 // recoverBlockWrappedStatements pairs unmatched statements across block braces inside
