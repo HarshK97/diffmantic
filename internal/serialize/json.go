@@ -1326,6 +1326,9 @@ func findDirectOrEnclosedBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitte
 		if r.IsBlock(child.Type) {
 			return child
 		}
+		if len(child.Children) == 1 && r.IsBlock(child.Children[0].Type) {
+			return child.Children[0]
+		}
 	}
 	if n.StartRow != n.EndRow && isCallOrCallStatement(n, r) {
 		for curr := n; curr != nil && len(curr.Children) > 0; {
