@@ -1532,6 +1532,7 @@ func process(target string) {
 		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
 		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
 
+		// intentionally no postprocess.Run: isolates serialization bracket gap merging from move normalization
 		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
 			IncludeHighlights: true,
 		})
@@ -1734,6 +1735,7 @@ func handleCondition() error {
 		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
 		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
 
+		// intentionally no postprocess.Run: isolates container footer delimiter move serialization from move normalization
 		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
 			IncludeHighlights: true,
 			IncludeActions:    true,
@@ -1742,31 +1744,57 @@ func handleCondition() error {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Line 16 is handleCondition's closing brace; it should highlight as a move matching line 9's opening brace.
-		var closingBraceSpans []HighlightSpan
+		// Preserve explicit closing brace span count to guard against touching span fragmentation.
+		closingBraceCount := 0
 		for _, h := range env.RightHighlights {
 			if h.Line == 16 {
-				closingBraceSpans = append(closingBraceSpans, h)
+				closingBraceCount++
 			}
 		}
-		if len(closingBraceSpans) != 1 {
-			t.Fatalf("expected exactly 1 highlight span on right line 16, got %d: %+v", len(closingBraceSpans), closingBraceSpans)
-		}
-		if closingBraceSpans[0].Action != "move" {
-			t.Errorf("expected closing brace to have action 'move', got %q: %+v", closingBraceSpans[0].Action, closingBraceSpans[0])
-		}
-		if closingBraceSpans[0].StartCol != 0 || closingBraceSpans[0].EndCol != 1 {
-			t.Errorf("expected closing brace span [0..1], got [%d..%d]", closingBraceSpans[0].StartCol, closingBraceSpans[0].EndCol)
+		if closingBraceCount != 1 {
+			t.Fatalf("expected exactly 1 highlight span on right line 16, got %d", closingBraceCount)
 		}
 
-		// Untouched lines (package declaration, outer return) shouldn't get stray highlights.
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
-		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16})
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func Process(condition bool) error {
+	<del>if condition</del> <mov>{</mov>
+<mov>		step1 := validate()</mov>
+<mov>		step2 := transform(step1)</mov>
+<mov>		step3 := persist(step2)</mov>
+<mov>		notify(step3)</mov>
+<mov>		logAudit(step3)</mov>
+<mov>		return nil</mov>
+<mov>	}</mov>
+	return nil
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func Process(condition bool) error {
+	<ins>if condition {</ins>
+		<ins>return handleCondition()</ins>
+	<ins>}</ins>
+	return nil
+}
+
+<ins>func handleCondition() error</ins> <mov>{</mov>
+<mov>	step1 := validate()</mov>
+<mov>	step2 := transform(step1)</mov>
+<mov>	step3 := persist(step2)</mov>
+<mov>	notify(step3)</mov>
+<mov>	logAudit(step3)</mov>
+<mov>	return nil</mov>
+<mov>}</mov>
+`)
 
 		// Inlined back: closing brace on line 10 should stay a move instead of taking a delete footer.
 		partRev := engine.NewLinePartition([]byte(newSrc), []byte(oldSrc))
 		mrRev := engine.Match(newAST, oldAST, []byte(newSrc), []byte(oldSrc), partRev)
 		esRev := actions.GenerateEditScript(newAST, oldAST, mrRev.Mappings)
+
+		// intentionally no postprocess.Run: isolates reverse container footer delimiter move serialization from move normalization
 		envRev, err := BuildEnvelopeWithOptions(esRev, mrRev.Mappings, newAST, oldAST, []byte(newSrc), []byte(oldSrc), EnvelopeOptions{
 			IncludeHighlights: true,
 		})
@@ -1774,21 +1802,49 @@ func handleCondition() error {
 			t.Fatalf("BuildEnvelopeWithOptions reverse failed: %v", err)
 		}
 
-		var revRightLine10 []HighlightSpan
+		revClosingCount := 0
 		for _, h := range envRev.RightHighlights {
 			if h.Line == 10 {
-				revRightLine10 = append(revRightLine10, h)
+				revClosingCount++
 			}
 		}
-		if len(revRightLine10) != 1 {
-			t.Fatalf("expected exactly 1 highlight span on reverse right line 10, got %d: %+v", len(revRightLine10), revRightLine10)
-		}
-		if revRightLine10[0].Action != "move" {
-			t.Errorf("expected reverse inlined closing brace to have action 'move', got %q: %+v", revRightLine10[0].Action, revRightLine10[0])
+		if revClosingCount != 1 {
+			t.Fatalf("expected exactly 1 highlight span on reverse right line 10, got %d", revClosingCount)
 		}
 
-		assertContextLinesPure(t, envRev.LeftHighlights, []int{3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16})
-		assertContextLinesPure(t, envRev.RightHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
+		testutil.AssertTagged(t, newSrc, toTestSpans(envRev.LeftHighlights), `package main
+
+func Process(condition bool) error {
+	<del>if condition {</del>
+		<del>return handleCondition()</del>
+	<del>}</del>
+	return nil
+}
+
+<del>func handleCondition() error</del> <mov>{</mov>
+<mov>	step1 := validate()</mov>
+<mov>	step2 := transform(step1)</mov>
+<mov>	step3 := persist(step2)</mov>
+<mov>	notify(step3)</mov>
+<mov>	logAudit(step3)</mov>
+<mov>	return nil</mov>
+<mov>}</mov>
+`)
+
+		testutil.AssertTagged(t, oldSrc, toTestSpans(envRev.RightHighlights), `package main
+
+func Process(condition bool) error {
+	<ins>if condition</ins> <mov>{</mov>
+<mov>		step1 := validate()</mov>
+<mov>		step2 := transform(step1)</mov>
+<mov>		step3 := persist(step2)</mov>
+<mov>		notify(step3)</mov>
+<mov>		logAudit(step3)</mov>
+<mov>		return nil</mov>
+<mov>	}</mov>
+	return nil
+}
+`)
 	})
 }
 
@@ -1999,40 +2055,33 @@ func process() error {
 		if err != nil {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
-		var srcPrepare, dstPrepare *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string([]byte(oldSrc)[n.StartByte:n.EndByte]), "prepare") {
-				srcPrepare = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string([]byte(newSrc)[n.StartByte:n.EndByte]), "prepare") {
-				dstPrepare = n
-				break
-			}
-		}
-		if srcPrepare == nil || dstPrepare == nil {
-			t.Fatal("failed to find prepare() call nodes")
-		}
-		if mr.Mappings.Src()[srcPrepare] != dstPrepare {
-			t.Errorf("expected stationary prepare() to map in place, got %v", mr.Mappings.Src()[srcPrepare])
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		leftCountColor, rightCountColor := -1, -1
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.Line == 4 {
-				leftCountColor = h.ColorIndex
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.Line == 9 {
-				rightCountColor = h.ColorIndex
-			}
-		}
-		if leftCountColor != 1 || rightCountColor != 1 {
-			t.Errorf("expected count++ to get ColorIndex 1 (Magenta) symmetrically, got left=%d right=%d", leftCountColor, rightCountColor)
-		}
+func process() error {
+	prepare()
+	<mov1>count++</mov1>
+	<mov>if count > limit {</mov>
+<mov>		return flush()</mov>
+<mov>	}</mov>
+	<mov>return nil</mov>
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() error {
+	prepare()
+	<ins>if checkCondition() {</ins>
+		<mov>if count > limit {</mov>
+<mov>			return flush(</mov>
+<mov>			)</mov>
+<mov>		}</mov>
+		<mov1>count++</mov1>
+		<mov>return nil</mov>
+	<ins>}</ins>
+	<ins>return nil</ins>
+}
+`)
 
 		var movedIf *Action
 		for i := range env.Actions {
@@ -2044,21 +2093,6 @@ func process() error {
 		}
 		if movedIf == nil {
 			t.Fatal("expected a move that grows from three lines to four")
-		}
-
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.Line >= 5 && h.Line <= 7 {
-				if h.ColorIndex != 0 {
-					t.Errorf("expected dominant if statement left highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.Line >= 5 && h.Line <= 8 {
-				if h.ColorIndex != 0 {
-					t.Errorf("expected dominant if statement right highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
 		}
 	})
 }
@@ -2532,95 +2566,28 @@ fn stationary_two() {}
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Whole-Snippet Verification:
-		// 1. Stationary functions map in place
-		var srcS1, dstS1, srcMain, dstMain *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				for _, ch := range n.Children {
-					if r.IsIdentifier(ch.Type) {
-						switch string(srcBytes[ch.StartByte:ch.EndByte]) {
-						case "stationary_one":
-							srcS1 = n
-						case "main":
-							srcMain = n
-						}
-					}
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				for _, ch := range n.Children {
-					if r.IsIdentifier(ch.Type) {
-						switch string(dstBytes[ch.StartByte:ch.EndByte]) {
-						case "stationary_one":
-							dstS1 = n
-						case "main":
-							dstMain = n
-						}
-					}
-				}
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn stationary_one() {}
+fn stationary_two() {}
 
-		if srcS1 == nil || dstS1 == nil || srcMain == nil || dstMain == nil {
-			t.Fatal("failed to find declaration nodes")
-		}
-		if mr.Mappings.Src()[srcS1] != dstS1 {
-			t.Errorf("expected stationary_one to map in place, got %v", mr.Mappings.Src()[srcS1])
-		}
-		if mr.Mappings.Src()[srcMain] != dstMain {
-			t.Errorf("expected main to map to destination main, got %v", mr.Mappings.Src()[srcMain])
-		}
+<mov>fn main() -> std::io::Result<()> {</mov>
+<mov>    let exit_code = run_app()?;</mov>
+<mov>    // when you call process::exit, no destructors are called</mov>
+<mov>    process::exit(exit_code);</mov>
+<mov>}</mov>
+`)
 
-		// 2. Lines 1 and 2 in destination (0-indexed: line 1 and 2) are inserted comments.
-		// They must take "insert" highlight, NEVER "move_update" or "move".
-		for _, line := range []int{1, 2} {
-			var lineSpans []HighlightSpan
-			for _, h := range env.RightHighlights {
-				if h.Line == line && h.StartCol >= 4 {
-					lineSpans = append(lineSpans, h)
-				}
-			}
-			if len(lineSpans) == 0 {
-				t.Fatalf("expected comment highlight on destination line %d, got none", line)
-			}
-			for _, s := range lineSpans {
-				if s.Action == "move_update" {
-					t.Errorf("comment on line %d incorrectly took 'move_update' instead of 'insert': %+v", line, s)
-				}
-				if s.Action != "insert" {
-					t.Errorf("expected comment on line %d to have 'insert' action, got %q", line, s.Action)
-				}
-			}
-		}
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `<mov>fn main() -> std::io::Result<()> {</mov>
+    <ins>// Ignore ctrl-c (SIGINT) to avoid leaving an orphaned pager process.</ins>
+    <ins>// See https://github.com/dandavison/delta/issues/681</ins>
+    <ins>ctrlc::set_handler(|| {});</ins>
+<mov>    let exit_code = run_app()?;</mov>
+<mov>    // when you call process::exit, no destructors are called</mov>
+<mov>    process::exit(exit_code);</mov>
+<mov>}</mov>
 
-		// 3. Line 3 in destination is inserted statement (ctrlc::set_handler).
-		var line3Spans []HighlightSpan
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 && h.StartCol >= 4 {
-				line3Spans = append(line3Spans, h)
-			}
-		}
-		for _, s := range line3Spans {
-			if s.Action != "insert" {
-				t.Errorf("expected inserted statement on line 3 to have 'insert' action, got %q", s.Action)
-			}
-		}
-
-		// 4. Line 5 in destination is moved comment (// when you call process::exit...)
-		var line5Spans []HighlightSpan
-		for _, h := range env.RightHighlights {
-			if h.Line == 5 && h.StartCol >= 4 {
-				line5Spans = append(line5Spans, h)
-			}
-		}
-		for _, s := range line5Spans {
-			if s.Action != "move" {
-				t.Errorf("expected moved comment on line 5 to have 'move' action, got %q", s.Action)
-			}
-		}
+fn stationary_one() {}
+fn stationary_two() {}
+`)
 	})
 }
 
@@ -2727,14 +2694,27 @@ func TestBuildHighlightSpans_MultilineStatementInsertCarveout_FullEngine(t *test
 			t.Fatalf("expected string literal to be mapped, got %v", mr.Mappings.Src()[srcStr])
 		}
 
-		// 3. Highlight span check on line containing the string literal:
-		// Destination line 6 (0-indexed: line 6): `        "{osc_command}{safe_title}{osc_end}"`
-		// It MUST NOT have an "insert" highlight covering the stationary string literal!
-		for _, h := range env.RightHighlights {
-			if h.Line == 6 && h.Action == "insert" {
-				t.Errorf("found spurious insert highlight covering stationary string literal on line %d: %+v", h.Line, h)
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn set_terminal_title_to(new_terminal_title: String) {
+    let osc_command = "\x1b]0;";
+    let osc_end = "\x07";
+    let safe_title = bat::sanitize(&new_terminal_title);
+    <upd>print</upd>!("{osc_command}{safe_title}{osc_end}");
+    io::stdout().flush()<del>.unwrap()</del>;
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn set_terminal_title_to(new_terminal_title: String) <ins>-> Result<()></ins> {
+    let osc_command = "\x1b]0;";
+    let osc_end = "\x07";
+    let safe_title = bat::sanitize(&new_terminal_title);
+    <upd>write</upd>!(
+        <ins>io::stdout(),</ins>
+        "{osc_command}{safe_title}{osc_end}"
+    )<ins>?</ins>;
+    io::stdout().flush()<ins>?</ins>;
+    <ins>Ok(())</ins>
+}
+`)
 	})
 
 	t.Run("Go multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
@@ -2795,14 +2775,26 @@ func bar() {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Source lines 4 and 5 (0-indexed: "arg1", "arg2") must NOT be painted with "delete".
-		for _, line := range []int{4, 5} {
-			for _, h := range env.LeftHighlights {
-				if h.Line == line && h.Action == "delete" {
-					t.Errorf("found spurious delete highlight on stationary line %d: %+v", line, h)
-				}
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func bar() {
+	foo(
+		"arg1",
+		"arg2",
+	)
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func bar() {
+	<ins>result :=</ins> foo(
+		"arg1",
+		"arg2",
+	)
+	<ins>_ = result</ins>
+}
+`)
 	})
 
 	t.Run("Rust let declaration wrapping match expression does not bleed insert over stationary match arms", func(t *testing.T) {
@@ -2859,13 +2851,22 @@ func bar() {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Destination line 3 (0-indexed: line 3: `        _ => unreachable!...`)
-		// The unreachable arm is 100% stationary and must NOT have a spurious insert highlight at StartCol == 0.
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 && h.Action == "insert" && h.StartCol <= 8 {
-				t.Errorf("found spurious insert highlight covering stationary match arm on line %d: %+v", h.Line, h)
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn main() {
+    match shell.as_str() {
+        "bash" => <del>println!("{}", completions::BASH_COMPLETION),</del>
+        _ => unreachable!("No completion for shell '{shell}' available."),
+    }
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn main() {
+    <ins>let completion =</ins> match shell.as_str() {
+        "bash" => <ins>completions::BASH_COMPLETION,</ins>
+        _ => unreachable!("No completion for shell '{shell}' available."),
+    }<ins>;</ins>
+    <ins>writeln!(io::stdout(), "{completion}")?;</ins>
+}
+`)
 	})
 
 	t.Run("FullEngine/Rust macro token tree does not bleed insert span over stationary children", func(t *testing.T) {
@@ -2983,42 +2984,28 @@ func bar() {
 			t.Errorf("expected cursor to map in place, got %v", mr.Mappings.Src()[srcCur])
 		}
 
-		// 3. Right highlights on line 6 (0-indexed: ansi_style.paint(...))
-		// The inserted token_tree delimiters must be carved out so `cursor` is NOT engulfed in an insert span.
-		// `cursor` is at column 58..64 in line 6: `        ansi_style.paint(" ".repeat(cursor_max.saturating_sub(cursor)))`
-		line6 := "        ansi_style.paint(\" \".repeat(cursor_max.saturating_sub(cursor)))"
-		cursorColStart := strings.Index(line6, "cursor)")
-		cursorColEnd := cursorColStart + len("cursor")
-		foundEngulfing := false
-		for _, h := range env.RightHighlights {
-			if h.Line == 6 && h.Action == "insert" {
-				if h.StartCol <= cursorColStart && h.EndCol >= cursorColEnd {
-					foundEngulfing = true
-					t.Errorf("found insert highlight span [%d, %d] engulfing stationary child 'cursor' [%d, %d]: %+v",
-						h.StartCol, h.EndCol, cursorColStart, cursorColEnd, h)
-				}
-			}
-		}
-		if !foundEngulfing {
-			// Verify that the opening and closing delimiters ARE highlighted
-			hasOpener := false
-			hasCloser := false
-			for _, h := range env.RightHighlights {
-				if h.Line == 6 && h.Action == "insert" {
-					if strings.Contains(line6[h.StartCol:h.EndCol], ".saturating_sub(") {
-						hasOpener = true
-					}
-					if line6[h.StartCol:h.EndCol] == ")" {
-						hasCloser = true
-					}
-				}
-			}
-			if !hasOpener {
-				t.Errorf("expected insert highlight covering .saturating_sub(, but none found")
-			}
-			if !hasCloser {
-				t.Errorf("expected insert highlight covering closing delimiter ), but none found")
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn print_trailing() -> Result<()> {
+    let cursor_max = 100;
+    let cursor = 10;
+    write!(
+        handle,
+        "{}",
+        ansi_style.paint(" ".repeat(cursor_max <del>-</del> cursor))
+    )?;
+    Ok(())
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn print_trailing() -> Result<()> {
+    let cursor_max = 100;
+    let cursor = 10;
+    write!(
+        handle,
+        "{}",
+        ansi_style.paint(" ".repeat(cursor_max<ins>.saturating_sub(</ins>cursor<ins>)</ins>))
+    )?;
+    Ok(())
+}
+`)
 	})
 }
