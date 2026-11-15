@@ -4956,3 +4956,251 @@ func renderLines() {
 		}
 	})
 }
+
+func TestBottomUpNestedBinaryExpressionOperatorInversion(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `package test
+
+func isCaseClauseBody(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || n.Parent == nil {
+		return false
+	}
+	isPunct := (r != nil && (r.IsPunctuation(n.Type) || r.IsOperatorLiteral(n.Type) || r.IsKeyword(n.Type, n.Type))) ||
+		(r == nil && (rules.IsPunctuation(n.Type) || rules.IsOperatorLiteral(n.Type) || rules.IsKeyword(n.Type, n.Type)))
+	if isPunct {
+		return false
+	}
+	return true
+}
+`
+		newSrc := `package test
+
+func isCaseClauseBody(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || n.Parent == nil {
+		return false
+	}
+	isPunct := n.IsKeyword ||
+		(r != nil && (r.IsPunctuation(n.Type) || r.IsOperatorLiteral(n.Type) || r.IsKeyword(n.Type, n.Label))) ||
+		(r == nil && (rules.IsPunctuation(n.Type) || rules.IsOperatorLiteral(n.Type) || rules.IsKeyword(n.Type, n.Label)))
+	if isPunct {
+		return false
+	}
+	return true
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil || srcAST == nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil || dstAST == nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has %d parse errors", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has %d parse errors", dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("missing rules for Go")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: function declaration maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("isCaseClauseBody")) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("isCaseClauseBody")) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing target function: src=%v dst=%v", srcFn, dstFn)
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. Surrounding sequence: preceding nil guard and succeeding statements map in place
+		var srcPre, dstPre *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("n == nil")) {
+				srcPre = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("n == nil")) {
+				dstPre = n
+				break
+			}
+		}
+		if srcPre == nil || dstPre == nil || mr.Mappings.Src()[srcPre] != dstPre {
+			t.Errorf("expected preceding nil-guard statement to map in place, got %v", mr.Mappings.Src()[srcPre])
+		}
+
+		var srcPost1, dstPost1 *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("if isPunct")) {
+				srcPost1 = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("if isPunct")) {
+				dstPost1 = n
+				break
+			}
+		}
+		if srcPost1 == nil || dstPost1 == nil || mr.Mappings.Src()[srcPost1] != dstPost1 {
+			t.Errorf("expected succeeding if isPunct statement to map in place, got %v", mr.Mappings.Src()[srcPost1])
+		}
+
+		var srcPost2, dstPost2 *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("return true")) {
+				srcPost2 = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("return true")) {
+				dstPost2 = n
+				break
+			}
+		}
+		if srcPost2 == nil || dstPost2 == nil || mr.Mappings.Src()[srcPost2] != dstPost2 {
+			t.Errorf("expected succeeding return true statement to map in place, got %v", mr.Mappings.Src()[srcPost2])
+		}
+
+		// 3. Target construct: short var declaration isPunct := ...
+		var srcStmt, dstStmt *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("isPunct :=")) {
+				srcStmt = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("isPunct :=")) {
+				dstStmt = n
+				break
+			}
+		}
+		if srcStmt == nil || dstStmt == nil {
+			t.Fatalf("missing isPunct declaration: srcStmt=%v dstStmt=%v", srcStmt, dstStmt)
+		}
+		if mr.Mappings.Src()[srcStmt] != dstStmt {
+			t.Errorf("expected isPunct declaration to map in place, got %v", mr.Mappings.Src()[srcStmt])
+		}
+
+		// 4. Expression mappings: outerAnd (&&) and innerOr (||)
+		// srcOuterAnd: r != nil && (...)
+		var srcOuterAnd, dstOuterAnd *treesitter.ASTNode
+		for _, n := range srcStmt.Descendants() {
+			if r.IsExpression(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("r != nil")) &&
+				bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("IsPunctuation")) {
+				if op := findOperatorGlue(n, r); op != nil && op.Label == "&&" {
+					srcOuterAnd = n
+					break
+				}
+			}
+		}
+		for _, n := range dstStmt.Descendants() {
+			if r.IsExpression(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("r != nil")) &&
+				bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("IsPunctuation")) {
+				if op := findOperatorGlue(n, r); op != nil && op.Label == "&&" {
+					dstOuterAnd = n
+					break
+				}
+			}
+		}
+		if srcOuterAnd == nil || dstOuterAnd == nil {
+			t.Fatalf("missing outerAnd (&&) expression: srcOuterAnd=%v dstOuterAnd=%v", srcOuterAnd, dstOuterAnd)
+		}
+
+		// srcInnerOr: r.IsPunctuation(n.Type) || r.IsOperatorLiteral(n.Type)
+		var srcInnerOr, dstInnerOr *treesitter.ASTNode
+		for _, n := range srcOuterAnd.Descendants() {
+			if r.IsExpression(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("IsPunctuation")) &&
+				bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte("IsOperatorLiteral")) {
+				if op := findOperatorGlue(n, r); op != nil && op.Label == "||" {
+					srcInnerOr = n
+					break
+				}
+			}
+		}
+		for _, n := range dstOuterAnd.Descendants() {
+			if r.IsExpression(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("IsPunctuation")) &&
+				bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte("IsOperatorLiteral")) {
+				if op := findOperatorGlue(n, r); op != nil && op.Label == "||" {
+					dstInnerOr = n
+					break
+				}
+			}
+		}
+		if srcInnerOr == nil || dstInnerOr == nil {
+			t.Fatalf("missing innerOr (||) expression: srcInnerOr=%v dstInnerOr=%v", srcInnerOr, dstInnerOr)
+		}
+
+		srcOuterAndOp := findOperatorGlue(srcOuterAnd, r)
+		dstOuterAndOp := findOperatorGlue(dstOuterAnd, r)
+		if srcOuterAndOp == nil || dstOuterAndOp == nil {
+			t.Fatalf("missing outerAnd operator glue: src=%v dst=%v", srcOuterAndOp, dstOuterAndOp)
+		}
+
+		srcInnerOrOp := findOperatorGlue(srcInnerOr, r)
+		dstInnerOrOp := findOperatorGlue(dstInnerOr, r)
+		if srcInnerOrOp == nil || dstInnerOrOp == nil {
+			t.Fatalf("missing innerOr operator glue: src=%v dst=%v", srcInnerOrOp, dstInnerOrOp)
+		}
+
+		mappedOuterAnd := mr.Mappings.Src()[srcOuterAnd]
+		if mappedOuterAnd != dstOuterAnd {
+			t.Errorf("expected outerAnd (&&) to map to dstOuterAnd (&&), got %v", mappedOuterAnd)
+		}
+
+		mappedInnerOr := mr.Mappings.Src()[srcInnerOr]
+		if mappedInnerOr != dstInnerOr {
+			t.Errorf("expected innerOr (||) to map to dstInnerOr (||), got %v", mappedInnerOr)
+		}
+
+		mappedOuterAndOp := mr.Mappings.Src()[srcOuterAndOp]
+		if mappedOuterAndOp != dstOuterAndOp {
+			t.Errorf("expected operator literal && to map to operator literal &&, got %v (label %q)",
+				mappedOuterAndOp, func() string {
+					if mappedOuterAndOp != nil {
+						return mappedOuterAndOp.Label
+					}
+					return "<nil>"
+				}())
+		}
+
+		mappedInnerOrOp := mr.Mappings.Src()[srcInnerOrOp]
+		if mappedInnerOrOp != dstInnerOrOp {
+			t.Errorf("expected operator literal || to map to operator literal ||, got %v (label %q)",
+				mappedInnerOrOp, func() string {
+					if mappedInnerOrOp != nil {
+						return mappedInnerOrOp.Label
+					}
+					return "<nil>"
+				}())
+		}
+	})
+}
