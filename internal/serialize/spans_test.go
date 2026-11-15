@@ -2478,46 +2478,16 @@ func TestBuildHighlightSpans_MultilineStatementInsertCarveout_FullEngine(t *test
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMapped(t, oldAST, newAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_item", Line: 1},
+			testutil.NodeQuery{Type: "function_item", Line: 1},
+		)
 
 		// 2. String literal is mapped in place
-		var srcStr, dstStr *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"{osc_command}{safe_title}{osc_end}"` {
-				srcStr = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"{osc_command}{safe_title}{osc_end}"` {
-				dstStr = n
-				break
-			}
-		}
-		if srcStr == nil || dstStr == nil {
-			t.Fatal("failed to find string literal nodes")
-		}
-		if mr.Mappings.Src()[srcStr] != dstStr {
-			t.Fatalf("expected string literal to be mapped, got %v", mr.Mappings.Src()[srcStr])
-		}
+		testutil.AssertMapped(t, oldAST, newAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "string_literal", Line: 5},
+			testutil.NodeQuery{Type: "string_literal", Line: 7},
+		)
 
 		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn set_terminal_title_to(new_terminal_title: String) {
     let osc_command = "\x1b]0;";
@@ -3063,57 +3033,20 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function declaration maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declaration nodes")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMapped(t, oldAST, newAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_item", Line: 1},
+			testutil.NodeQuery{Type: "function_item", Line: 1},
+		)
 
-		// 2. Surrounding sequence: let declarations and macro invocation identifiers map in place
-		var srcMax, dstMax, srcCur, dstCur *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsIdentifier(n.Type) {
-				switch string(srcBytes[n.StartByte:n.EndByte]) {
-				case "cursor_max":
-					srcMax = n
-				case "cursor":
-					srcCur = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsIdentifier(n.Type) {
-				switch string(dstBytes[n.StartByte:n.EndByte]) {
-				case "cursor_max":
-					dstMax = n
-				case "cursor":
-					dstCur = n
-				}
-			}
-		}
-		if srcMax == nil || dstMax == nil || srcCur == nil || dstCur == nil {
-			t.Fatal("failed to find cursor identifiers")
-		}
-		if mr.Mappings.Src()[srcMax] != dstMax {
-			t.Errorf("expected cursor_max to map in place, got %v", mr.Mappings.Src()[srcMax])
-		}
-		if mr.Mappings.Src()[srcCur] != dstCur {
-			t.Errorf("expected cursor to map in place, got %v", mr.Mappings.Src()[srcCur])
-		}
+		// 2. Surrounding sequence: let declarations map in place
+		testutil.AssertMapped(t, oldAST, newAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "identifier", Line: 2},
+			testutil.NodeQuery{Type: "identifier", Line: 2},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "identifier", Line: 3},
+			testutil.NodeQuery{Type: "identifier", Line: 3},
+		)
 
 		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn print_trailing() -> Result<()> {
     let cursor_max = 100;

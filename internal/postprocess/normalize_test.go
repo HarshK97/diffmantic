@@ -7,6 +7,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -1994,71 +1995,20 @@ func TestNormalizeMoves_RustLifetimeDoesNotMoveAcrossParameters(t *testing.T) {
 		r := rules.Get("rust")
 
 		// 1. Enclosing Context: Function declaration maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Root().PreOrder() {
-			if r.IsContainerDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Root().PreOrder() {
-			if r.IsContainerDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatalf("failed to locate function declaration in ASTs")
-		}
-		if ms.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place")
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "function_item", Line: 1},
+			testutil.NodeQuery{Type: "function_item", Line: 1},
+		)
 
 		// 2. Surrounding Sequence: style and min_field_width parameters map in place
-		var srcStyleParam, dstStyleParam *treesitter.ASTNode
-		var srcWidthParam, dstWidthParam *treesitter.ASTNode
-		var srcParam1Lifetime *treesitter.ASTNode
-
-		for _, n := range srcAST.Root().PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				for _, c := range n.Children {
-					if c.Label == "style" {
-						srcStyleParam = n
-					}
-					if c.Label == "min_field_width" {
-						srcWidthParam = n
-					}
-				}
-			}
-			if n.StartRow == 1 && r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "'a" {
-				srcParam1Lifetime = n
-			}
-		}
-		for _, n := range dstAST.Root().PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				for _, c := range n.Children {
-					if c.Label == "style" {
-						dstStyleParam = n
-					}
-					if c.Label == "min_field_width" {
-						dstWidthParam = n
-					}
-				}
-			}
-		}
-
-		if srcStyleParam == nil || dstStyleParam == nil {
-			t.Fatalf("failed to locate style parameter in ASTs")
-		}
-		if ms.Src()[srcStyleParam] != dstStyleParam {
-			t.Errorf("expected style parameter to map in place")
-		}
-		if srcWidthParam == nil || dstWidthParam == nil {
-			t.Fatalf("failed to locate min_field_width parameter in ASTs")
-		}
-		if ms.Src()[srcWidthParam] != dstWidthParam {
-			t.Errorf("expected min_field_width parameter to map in place")
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "parameter", Line: 3},
+			testutil.NodeQuery{Type: "parameter", Line: 3},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "parameter", Line: 4},
+			testutil.NodeQuery{Type: "parameter", Line: 4},
+		)
 
 		// 3. Body statements map in place without order disruption
 		for _, sn := range srcAST.Root().PreOrder() {
@@ -2071,8 +2021,9 @@ func TestNormalizeMoves_RustLifetimeDoesNotMoveAcrossParameters(t *testing.T) {
 		}
 
 		// 4. Target: srcParam1Lifetime must NOT be emitted as a Move across rewritten parameters
-		if srcParam1Lifetime == nil {
-			t.Fatalf("failed to locate parameter lifetime in AST")
+		srcParam1Lifetime, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "lifetime", Line: 2})
+		if err != nil {
+			t.Fatalf("failed to locate src lifetime: %v", err)
 		}
 
 		script := actions.GenerateEditScript(srcAST, dstAST, ms)

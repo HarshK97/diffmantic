@@ -8,6 +8,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -1801,22 +1802,15 @@ use crate::cli;
 		}
 
 		// Surviving use declarations map in place
-		var oldClap, newClap *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("clap")) {
-				oldClap = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("clap")) {
-				newClap = n
-				break
-			}
-		}
-		if oldClap == nil || newClap == nil || matchResult.Mappings.Src()[oldClap] != newClap {
-			t.Errorf("expected use structopt::clap to map in place")
-		}
+		// Surviving use declarations map in place
+		testutil.AssertMapped(t, oldAST, newAST, matchResult.Mappings.Src(),
+			testutil.NodeQuery{Type: "use_declaration", Line: 7},
+			testutil.NodeQuery{Type: "use_declaration", Line: 5},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, matchResult.Mappings.Src(),
+			testutil.NodeQuery{Type: "use_declaration", Line: 8},
+			testutil.NodeQuery{Type: "use_declaration", Line: 6},
+		)
 
 		oldComments := ExtractComments(oldAST)
 		newComments := ExtractComments(newAST)

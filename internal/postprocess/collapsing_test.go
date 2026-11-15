@@ -2,14 +2,12 @@ package postprocess
 
 import (
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestCollapseDivergence(t *testing.T) {
@@ -1709,72 +1707,36 @@ func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
 		part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
 		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
 		ms := mr.Mappings
-		r := rules.Get("go")
 
 		// 1. Enclosing function declaration mapped
-		if ms.Src()[oldAST.Root()] != newAST.Root() {
-			t.Errorf("expected root to map in place")
-		}
+		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		)
 
 		// 2. Surrounding statements mapped in place
-		var oldFor, newFor *treesitter.ASTNode
-		var oldReturn, newReturn *treesitter.ASTNode
-		var oldTargetCond, newTargetCond *treesitter.ASTNode
-		var oldOuterCond *treesitter.ASTNode
-
-		for _, n := range oldAST.Root().PreOrder() {
-			if r.IsStatement(n.Type) && n.Type == "for_statement" {
-				oldFor = n
-			}
-			if r.IsStatement(n.Type) && n.Type == "return_statement" && oldSrc[n.StartByte:n.EndByte] == "return c.Label" {
-				oldReturn = n
-			}
-			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
-				text := oldSrc[n.StartByte:n.EndByte]
-				if text == "r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type)" {
-					oldTargetCond = n
-				} else if strings.HasPrefix(text, "(r != nil &&") {
-					oldOuterCond = n
-				}
-			}
-		}
-
-		for _, n := range newAST.Root().PreOrder() {
-			if r.IsStatement(n.Type) && n.Type == "for_statement" {
-				newFor = n
-			}
-			if r.IsStatement(n.Type) && n.Type == "return_statement" && newSrc[n.StartByte:n.EndByte] == "return c.Label" {
-				newReturn = n
-			}
-			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
-				text := newSrc[n.StartByte:n.EndByte]
-				if text == "r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type)" {
-					newTargetCond = n
-				}
-			}
-		}
-
-		if oldFor == nil || newFor == nil || ms.Src()[oldFor] != newFor {
-			t.Errorf("expected for_statement to map in place")
-		}
-		if oldReturn == nil || newReturn == nil || ms.Src()[oldReturn] != newReturn {
-			t.Errorf("expected return_statement to map in place")
-		}
+		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
+			testutil.NodeQuery{Type: "for_statement", Line: 7},
+			testutil.NodeQuery{Type: "for_statement", Line: 8},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
+			testutil.NodeQuery{Type: "return_statement", Line: 10},
+			testutil.NodeQuery{Type: "return_statement", Line: 10},
+		)
 
 		// 3. Target stationary condition mapped
-		if oldTargetCond == nil || newTargetCond == nil {
-			t.Fatalf("failed to locate target binary expression")
-		}
-		if ms.Src()[oldTargetCond] != newTargetCond {
-			t.Errorf("expected target condition to map to newTargetCond")
-		}
+		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
+			testutil.NodeQuery{Type: "binary_expression", Line: 8, Nth: 4},
+			testutil.NodeQuery{Type: "binary_expression", Line: 9},
+		)
 
 		// 4. Edit script postprocessing must suppress the outer binary_expression delete
 		es := actions.GenerateEditScript(oldAST, newAST, ms)
 		postprocessed := Run(es, ms, oldAST, newAST)
 
-		if oldOuterCond == nil {
-			t.Fatalf("failed to locate old outer binary_expression")
+		oldOuterCond, err := testutil.FindNode(oldAST, testutil.NodeQuery{Type: "binary_expression", Line: 8, Nth: 1})
+		if err != nil {
+			t.Fatalf("failed to locate old outer binary_expression: %v", err)
 		}
 		for _, a := range postprocessed.Actions() {
 			if a.Node == oldOuterCond && a.Type == actions.Delete {
