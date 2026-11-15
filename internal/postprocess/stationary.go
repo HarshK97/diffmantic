@@ -82,6 +82,20 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 	}
 
 	sameLine := node.StartRow == dstNode.StartRow
+	if !sameLine {
+		// When edits earlier in the file cause line drift, check if the
+		// node kept its relative position inside its enclosing statement
+		// or declaration.
+		srcAnchor := engine.FindEnclosingStatement(node, r)
+		dstAnchor := engine.FindEnclosingStatement(dstNode, r)
+		if srcAnchor == nil || dstAnchor == nil || (ms.Src()[srcAnchor] != dstAnchor && ms.Dst()[dstAnchor] != srcAnchor) {
+			srcAnchor = node.EnclosingContainerDeclaration(r)
+			dstAnchor = dstNode.EnclosingContainerDeclaration(r)
+		}
+		if srcAnchor != nil && dstAnchor != nil && (ms.Src()[srcAnchor] == dstAnchor || ms.Dst()[dstAnchor] == srcAnchor) {
+			sameLine = (int(node.StartRow) - int(srcAnchor.StartRow)) == (int(dstNode.StartRow) - int(dstAnchor.StartRow))
+		}
+	}
 
 	// Walk up past transparent wrappers to find the enclosing container.
 	srcBase := srcParent
@@ -131,25 +145,50 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 				return ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
 			}
 		}
+
+		isScaffolding := func(n *treesitter.ASTNode) bool {
+			if n == nil {
+				return false
+			}
+			if br != nil {
+				return br.IsScaffolding(n.Type)
+			}
+			return rules.IsScaffolding(n.Type)
+		}
+
 		if !hasMapping && canUnwrapSubExpression(base) {
-			if isDst {
-				isFirstChild := base.ChildIndex() == 0
-				if !isFirstChild && base.Parent != nil && ((br != nil && br.IsBlock(base.Parent.Type)) || (br == nil && rules.IsBlock(base.Parent.Type))) {
-					isFirstChild = isSoleSubstantiveChild(base.Parent, base, br)
-				}
-				return isFirstChild || ms.Dst()[base.Parent] == srcBase || ms.Dst()[base.Parent] == srcParent
-			}
+			parent := base.Parent
 			isFirstChild := base.ChildIndex() == 0
-			if !isFirstChild && base.Parent != nil && ((br != nil && br.IsBlock(base.Parent.Type)) || (br == nil && rules.IsBlock(base.Parent.Type))) {
-				isFirstChild = isSoleSubstantiveChild(base.Parent, base, br)
+			if !isFirstChild && parent != nil && ((br != nil && br.IsBlock(parent.Type)) || (br == nil && rules.IsBlock(parent.Type))) {
+				isFirstChild = isSoleSubstantiveChild(parent, base, br)
 			}
-			return isFirstChild || ms.Src()[base.Parent] == dstBase || ms.Src()[base.Parent] == dstParent
+			if isDst {
+				matches := ms.Dst()[parent] == srcBase || ms.Dst()[parent] == srcParent
+				if !matches && isScaffolding(parent) {
+					matches = ms.Dst()[parent.Parent] == srcBase || ms.Dst()[parent.Parent] == srcParent
+				}
+				return isFirstChild || matches
+			}
+			matches := ms.Src()[parent] == dstBase || ms.Src()[parent] == dstParent
+			if !matches && isScaffolding(parent) {
+				matches = ms.Src()[parent.Parent] == dstBase || ms.Src()[parent.Parent] == dstParent
+			}
+			return isFirstChild || matches
 		}
 		if canUnwrapSubExpression(base) {
+			parent := base.Parent
 			if isDst {
-				return ms.Dst()[base] != srcBase && ms.Dst()[base.Parent] == srcBase
+				matches := ms.Dst()[parent] == srcBase
+				if !matches && isScaffolding(parent) {
+					matches = ms.Dst()[parent.Parent] == srcBase
+				}
+				return ms.Dst()[base] != srcBase && matches
 			}
-			return ms.Src()[base] != dstBase && ms.Src()[base.Parent] == dstBase
+			matches := ms.Src()[parent] == dstBase
+			if !matches && isScaffolding(parent) {
+				matches = ms.Src()[parent.Parent] == dstBase
+			}
+			return ms.Src()[base] != dstBase && matches
 		}
 		return false
 	}
@@ -567,10 +606,22 @@ func areChainedStatements(base, parent *treesitter.ASTNode, r *rules.Rules) bool
 	if !isStmt {
 		return false
 	}
-	if r != nil {
-		return r.AreTypesEquivalent(base.Type, parent.Type)
+	if r != nil && r.AreTypesEquivalent(base.Type, parent.Type) {
+		return true
 	}
-	return base.Type == parent.Type
+	if r == nil && base.Type == parent.Type {
+		return true
+	}
+	effectiveParent := parent
+	if (r != nil && r.IsScaffolding(effectiveParent.Type)) || (r == nil && rules.IsScaffolding(effectiveParent.Type)) {
+		if effectiveParent.Parent != nil {
+			effectiveParent = effectiveParent.Parent
+		}
+	}
+	if r != nil {
+		return r.AreTypesEquivalent(base.Type, effectiveParent.Type)
+	}
+	return base.Type == effectiveParent.Type
 }
 
 // canUnwrapSubExpression reports whether n is a lightweight wrapper (like parens
@@ -588,7 +639,8 @@ func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 			return false
 		}
 		if r.IsStatement(n.Type) && !r.IsWrapper(n.Type) && !r.IsExpressionStatement(n.Type) {
-			if !areChainedStatements(n, n.Parent, r) {
+			isExprContext := r.IsExpression(n.Type) && !r.IsBlock(n.Parent.Type) && !r.IsCaseClause(n.Parent.Type)
+			if !isExprContext && !areChainedStatements(n, n.Parent, r) {
 				return false
 			}
 		}
@@ -597,7 +649,8 @@ func canUnwrapSubExpression(n *treesitter.ASTNode) bool {
 			return false
 		}
 		if rules.IsStatement(n.Type) && !rules.IsExpressionStatement(n.Type) {
-			if !areChainedStatements(n, n.Parent, nil) {
+			isExprContext := rules.IsExpression(n.Type) && !rules.IsBlock(n.Parent.Type) && !rules.IsCaseClause(n.Parent.Type)
+			if !isExprContext && !areChainedStatements(n, n.Parent, nil) {
 				return false
 			}
 		}

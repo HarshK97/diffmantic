@@ -68,6 +68,7 @@ var zigRules = &Rules{
 		"block",
 		"statement",
 		"expression_statement",
+		"else_clause",
 		"function_declaration",
 		"variable_declaration",
 		"parameter",

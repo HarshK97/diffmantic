@@ -3630,3 +3630,714 @@ func TestStationaryWrappedContainerChildWithDeletedSibling(t *testing.T) {
 		}
 	})
 }
+
+func TestStationaryIfElseIfLadderMoves(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust", func(t *testing.T) {
+			r := rules.Get("rust")
+			src := []byte(`fn paint_line() {
+    let prefix = painted_prefix.clone();
+    if should_right_fill_background_color {
+        right_fill(&mut line, fill_style);
+    } else if line_is_empty {
+        mark_empty_line(&mut line);
+    };
+    output_buffer.push_str(&line);
+}
+`)
+			dst := []byte(`fn paint_line() {
+    let prefix = painted_prefix.clone();
+    if let Some(BgFillMethod::TryAnsiSequence) = bg_fill_mode {
+        right_fill(&mut line, fill_style);
+    } else if let Some(BgFillMethod::Spaces) = bg_fill_mode {
+        line.push_str(" ");
+    } else if line_is_empty {
+        mark_empty_line(&mut line);
+    };
+    output_buffer.push_str(&line);
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.rs")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.rs")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: enclosing function paint_line maps in place.
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "paint_line") {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "paint_line") {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected function paint_line to map in place")
+			}
+
+			// 2. Surrounding sequence: prefix declaration and output_buffer call map in place.
+			var srcPrefix, dstPrefix, srcPush, dstPush *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prefix") {
+					srcPrefix = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "push_str") {
+					srcPush = n
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prefix") {
+					dstPrefix = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "push_str") {
+					dstPush = n
+				}
+			}
+			if srcPrefix == nil || dstPrefix == nil || mr.Mappings.Src()[srcPrefix] != dstPrefix {
+				t.Fatalf("expected prefix declaration to map in place")
+			}
+			if srcPush == nil || dstPush == nil || mr.Mappings.Src()[srcPush] != dstPush {
+				t.Fatalf("expected output_buffer.push_str to map in place")
+			}
+
+			// 3. Target: surviving else if line_is_empty branch must NOT take Move action.
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving else branch: %v", a)
+				}
+			}
+		})
+
+		t.Run("C", func(t *testing.T) {
+			src := []byte(`void evaluate_option() {
+    do_init();
+    if (x == 1) {
+        do_one();
+    } else if (x == 3) {
+        do_three();
+    }
+    do_done();
+}
+`)
+			dst := []byte(`void evaluate_option() {
+    do_init();
+    if (x == 1) {
+        do_one();
+    } else if (x == 2) {
+        do_two();
+    } else if (x == 3) {
+        do_three();
+    }
+    do_done();
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.c")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.c")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving C else_clause: %v", a)
+				}
+			}
+		})
+
+		t.Run("Python", func(t *testing.T) {
+			src := []byte(`def evaluate_option():
+    do_init()
+    if x == 1:
+        do_one()
+    elif x == 3:
+        do_three()
+    do_done()
+`)
+			dst := []byte(`def evaluate_option():
+    do_init()
+    if x == 1:
+        do_one()
+    elif x == 2:
+        do_two()
+    elif x == 3:
+        do_three()
+    do_done()
+`)
+			srcAST, err := treesitter.Parse(src, "test.py")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.py")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving Python elif_clause: %v", a)
+				}
+			}
+		})
+
+		t.Run("TypeScript", func(t *testing.T) {
+			src := []byte(`function evaluateOption() {
+    doInit();
+    if (x === 1) {
+        doOne();
+    } else if (x === 3) {
+        doThree();
+    }
+    doDone();
+}
+`)
+			dst := []byte(`function evaluateOption() {
+    doInit();
+    if (x === 1) {
+        doOne();
+    } else if (x === 2) {
+        doTwo();
+    } else if (x === 3) {
+        doThree();
+    }
+    doDone();
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.ts")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.ts")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving TypeScript else_clause: %v", a)
+				}
+			}
+		})
+
+		t.Run("Go", func(t *testing.T) {
+			r := rules.Get("go")
+			src := []byte(`package main
+
+func handleStatus(code int) {
+	msg := "status"
+	if code == 1 {
+		processInitial()
+	} else if code == 3 {
+		processFinal()
+	}
+	finalize(msg)
+}
+`)
+			dst := []byte(`package main
+
+func handleStatus(code int) {
+	msg := "status"
+	if code == 1 {
+		processInitial()
+	} else if code == 2 {
+		processPending()
+	} else if code == 3 {
+		processFinal()
+	}
+	finalize(msg)
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.go")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.go")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: enclosing function handleStatus maps in place.
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handleStatus") {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handleStatus") {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected function handleStatus to map in place")
+			}
+
+			// 2. Surrounding sequence: msg assignment and finalize call map in place.
+			var srcMsg, dstMsg, srcFinalize, dstFinalize *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "msg") {
+					srcMsg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finalize") {
+					srcFinalize = n
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "msg") {
+					dstMsg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finalize") {
+					dstFinalize = n
+				}
+			}
+			if srcMsg == nil || dstMsg == nil || mr.Mappings.Src()[srcMsg] != dstMsg {
+				t.Fatalf("expected msg declaration to map in place")
+			}
+			if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
+				t.Fatalf("expected finalize call to map in place")
+			}
+
+			// 3. Target: surviving else if code == 3 branch must NOT take Move action.
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving else branch in Go: %v", a)
+				}
+			}
+
+			// 4. Stationary Operands: processFinal call maps in place.
+			var srcCall, dstCall *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "processFinal") {
+					srcCall = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "processFinal") {
+					dstCall = n
+					break
+				}
+			}
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Fatalf("expected processFinal call to map in place")
+			}
+		})
+
+		t.Run("Java", func(t *testing.T) {
+			r := rules.Get("java")
+			src := []byte(`class StatusHandler {
+    void handleStatus(int code) {
+        String msg = "status";
+        if (code == 1) {
+            processInitial();
+        } else if (code == 3) {
+            processFinal();
+        }
+        finalize(msg);
+    }
+}
+`)
+			dst := []byte(`class StatusHandler {
+    void handleStatus(int code) {
+        String msg = "status";
+        if (code == 1) {
+            processInitial();
+        } else if (code == 2) {
+            processPending();
+        } else if (code == 3) {
+            processFinal();
+        }
+        finalize(msg);
+    }
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.java")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.java")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: enclosing method handleStatus maps in place.
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handleStatus") {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handleStatus") {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected method handleStatus to map in place")
+			}
+
+			// 2. Surrounding sequence: msg local var declaration and finalize call map in place.
+			var srcMsg, dstMsg, srcFinalize, dstFinalize *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "msg") {
+					srcMsg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finalize") {
+					srcFinalize = n
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "msg") {
+					dstMsg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finalize") {
+					dstFinalize = n
+				}
+			}
+			if srcMsg == nil || dstMsg == nil || mr.Mappings.Src()[srcMsg] != dstMsg {
+				t.Fatalf("expected msg declaration to map in place")
+			}
+			if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
+				t.Fatalf("expected finalize call to map in place")
+			}
+
+			// 3. Target: surviving else if (code == 3) branch must NOT take Move action.
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving else branch in Java: %v", a)
+				}
+			}
+
+			// 4. Stationary Operands: processFinal call maps in place.
+			var srcCall, dstCall *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "processFinal") {
+					srcCall = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "processFinal") {
+					dstCall = n
+					break
+				}
+			}
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Fatalf("expected processFinal call to map in place")
+			}
+		})
+
+		t.Run("Zig", func(t *testing.T) {
+			r := rules.Get("zig")
+			src := []byte(`pub fn handleStatus(code: i32) void {
+    const msg = "status";
+    if (code == 1) {
+        processInitial();
+    } else if (code == 3) {
+        processFinal();
+    }
+    finalize(msg);
+}
+`)
+			dst := []byte(`pub fn handleStatus(code: i32) void {
+    const msg = "status";
+    if (code == 1) {
+        processInitial();
+    } else if (code == 2) {
+        processPending();
+    } else if (code == 3) {
+        processFinal();
+    }
+    finalize(msg);
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.zig")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.zig")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			// 1. Enclosing context: enclosing function handleStatus maps in place.
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handleStatus") {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handleStatus") {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected function handleStatus to map in place")
+			}
+
+			// 2. Surrounding sequence: msg variable declaration and finalize call map in place.
+			var srcMsg, dstMsg, srcFinalize, dstFinalize *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "msg") {
+					srcMsg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finalize") {
+					srcFinalize = n
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "msg") {
+					dstMsg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finalize") {
+					dstFinalize = n
+				}
+			}
+			if srcMsg == nil || dstMsg == nil || mr.Mappings.Src()[srcMsg] != dstMsg {
+				t.Fatalf("expected msg declaration to map in place")
+			}
+			if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
+				t.Fatalf("expected finalize call to map in place")
+			}
+
+			// 3. Target: surviving else if (code == 3) branch must NOT take Move action.
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on surviving else branch in Zig: %v", a)
+				}
+			}
+
+			// 4. Stationary Operands: processFinal call maps in place.
+			var srcCall, dstCall *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "processFinal") {
+					srcCall = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "processFinal") {
+					dstCall = n
+					break
+				}
+			}
+			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
+				t.Fatalf("expected processFinal call to map in place")
+			}
+		})
+	})
+}
+
+func TestStationaryWrappedMacroArguments(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`fn rewrite_options(element_name: &str) {
+    let mode = get_mode();
+    match mode {
+        Some(1) => {
+            let config = 10;
+        }
+        Some(2) => {
+            eprintln!(
+                "--{name}-color cannot be used with --{name}-style. \
+                 Use --{name}-style=\"fg bg attr1 attr2 ...\" to set \
+                 foreground color, background color, and style attributes. \
+                 --{name}-color can only be used to set the background color. \
+                 (It is still available for backwards-compatibility.)",
+                name = element_name,
+            );
+            process::exit(1);
+        }
+        _ => {}
+    }
+}
+`)
+		// Trim two lines at the top of dst so line drift kicks in.
+		dst := []byte(`fn rewrite_options(element_name: &str) {
+    match get_mode() {
+        Some(1) => {
+            let config = 10;
+        }
+        Some(2) => {
+            fatal(format!(
+                "--{name}-color cannot be used with --{name}-style. \
+                 Use --{name}-style=\"fg bg attr1 attr2 ...\" to set \
+                 foreground color, background color, and style attributes. \
+                 --{name}-color can only be used to set the background color. \
+                 (It is still available for backwards-compatibility.)",
+                name = element_name,
+            ));
+        }
+        _ => {}
+    }
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: enclosing function rewrite_options and match_expression map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "rewrite_options") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "rewrite_options") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function rewrite_options to map in place")
+		}
+
+		// 2. Surrounding sequence: Some(1) arm and Some(2) arm map in place without disruption.
+		var srcArm1, dstArm1, srcArm2, dstArm2 *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCaseClause(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "Some(1)") {
+				srcArm1 = n
+			} else if r.IsCaseClause(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "Some(2)") {
+				srcArm2 = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCaseClause(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "Some(1)") {
+				dstArm1 = n
+			} else if r.IsCaseClause(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "Some(2)") {
+				dstArm2 = n
+			}
+		}
+		if srcArm1 == nil || dstArm1 == nil || mr.Mappings.Src()[srcArm1] != dstArm1 {
+			t.Fatalf("expected match arm Some(1) to map in place")
+		}
+		if srcArm2 == nil || dstArm2 == nil || mr.Mappings.Src()[srcArm2] != dstArm2 {
+			t.Fatalf("expected match arm Some(2) to map in place")
+		}
+
+		// 3. Target: token_tree and operands within the macro invocation must NOT take Move actions.
+		var srcTokenTree *treesitter.ASTNode
+		for _, n := range srcArm2.Descendants() {
+			if r.IsDelimitedContainer(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "--{name}-color") {
+				srcTokenTree = n
+				break
+			}
+		}
+		if srcTokenTree == nil {
+			t.Fatalf("failed to locate srcTokenTree")
+		}
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcTokenTree {
+				t.Fatalf("unexpected Move action on stationary token_tree: %v", a)
+			}
+		}
+
+		// 4. Stationary Operands: string literal and name = element_name map in place.
+		var srcStr, dstStr *treesitter.ASTNode
+		for _, n := range srcTokenTree.Descendants() {
+			if n.Type == "string_literal" {
+				srcStr = n
+				break
+			}
+		}
+		for _, n := range dstArm2.Descendants() {
+			if n.Type == "string_literal" && strings.Contains(string(dst[n.StartByte:n.EndByte]), "--{name}-color") {
+				dstStr = n
+				break
+			}
+		}
+		if srcStr == nil || dstStr == nil || mr.Mappings.Src()[srcStr] != dstStr {
+			t.Fatalf("expected format string literal to map in place")
+		}
+	})
+}
