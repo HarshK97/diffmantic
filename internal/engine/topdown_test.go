@@ -2570,3 +2570,365 @@ func TestDiffCommentsAnchorFirst() {
 		}
 	})
 }
+
+func TestAttributeUnnestingAndInnerOuterEquivalence(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rust rules not found")
+		}
+
+		oldSrc := []byte(`#[cfg(test)]
+pub mod test_utils {
+    use std::fs::File;
+
+    pub fn make_options() -> bool {
+        true
+    }
+
+    #[allow(dead_code)]
+    pub fn make_config() -> bool {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    pub fn run_test() {}
+}
+`)
+
+		newSrc := []byte(`#![cfg(test)]
+
+use std::fs::File;
+
+pub fn make_options() -> bool {
+    true
+}
+
+#[allow(dead_code)]
+pub fn make_config() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    pub fn run_test() {}
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.rs")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.rs")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		var (
+			srcCfgTest, dstCfgTest         *treesitter.ASTNode
+			srcAllowDead, dstAllowDead     *treesitter.ASTNode
+			srcTestModAttr, dstTestModAttr *treesitter.ASTNode
+		)
+
+		for _, n := range srcAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				txt := oldSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow == 0:
+					srcCfgTest = n
+				case bytes.Contains(txt, []byte("allow(dead_code)")):
+					srcAllowDead = n
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow > 0:
+					srcTestModAttr = n
+				}
+			}
+		}
+
+		for _, n := range dstAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				txt := newSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow == 0:
+					dstCfgTest = n
+				case bytes.Contains(txt, []byte("allow(dead_code)")):
+					dstAllowDead = n
+				case bytes.Contains(txt, []byte("cfg(test)")) && n.StartRow > 0:
+					dstTestModAttr = n
+				}
+			}
+		}
+
+		if srcCfgTest == nil || dstCfgTest == nil {
+			t.Fatalf("failed to locate cfg(test) attribute at line 1: src=%v dst=%v", srcCfgTest, dstCfgTest)
+		}
+		if srcAllowDead == nil || dstAllowDead == nil {
+			t.Fatalf("failed to locate allow(dead_code) attribute: src=%v dst=%v", srcAllowDead, dstAllowDead)
+		}
+		if srcTestModAttr == nil || dstTestModAttr == nil {
+			t.Fatalf("failed to locate tests mod cfg(test) attribute: src=%v dst=%v", srcTestModAttr, dstTestModAttr)
+		}
+
+		// Outer #[cfg(test)] on the module should map to inner #![cfg(test)] on the file.
+		if mapped := mr.Mappings.Src()[srcCfgTest]; mapped != dstCfgTest {
+			t.Errorf("mapped #[cfg(test)] = %v, want %v", mapped, dstCfgTest)
+		}
+
+		// #[allow(dead_code)] on make_config stays mapped in place.
+		if mapped := mr.Mappings.Src()[srcAllowDead]; mapped != dstAllowDead {
+			t.Errorf("mapped #[allow(dead_code)] = %v, want %v", mapped, dstAllowDead)
+		}
+
+		// Sibling tests mod's #[cfg(test)] shouldn't get stolen across scopes.
+		if mapped := mr.Mappings.Src()[srcTestModAttr]; mapped != dstTestModAttr {
+			t.Errorf("mapped tests mod #[cfg(test)] = %v, want %v", mapped, dstTestModAttr)
+		}
+
+		// Surrounding declarations stay mapped in place.
+		var (
+			srcMakeOpts, dstMakeOpts *treesitter.ASTNode
+			srcMakeCfg, dstMakeCfg   *treesitter.ASTNode
+			srcTestsMod, dstTestsMod *treesitter.ASTNode
+		)
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "make_options":
+					srcMakeOpts = n
+				case "make_config":
+					srcMakeCfg = n
+				case "tests":
+					srcTestsMod = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "make_options":
+					dstMakeOpts = n
+				case "make_config":
+					dstMakeCfg = n
+				case "tests":
+					dstTestsMod = n
+				}
+			}
+		}
+
+		if srcMakeOpts == nil || dstMakeOpts == nil {
+			t.Fatalf("failed to locate make_options declaration: src=%v dst=%v", srcMakeOpts, dstMakeOpts)
+		}
+		if srcMakeCfg == nil || dstMakeCfg == nil {
+			t.Fatalf("failed to locate make_config declaration: src=%v dst=%v", srcMakeCfg, dstMakeCfg)
+		}
+		if srcTestsMod == nil || dstTestsMod == nil {
+			t.Fatalf("failed to locate tests mod declaration: src=%v dst=%v", srcTestsMod, dstTestsMod)
+		}
+		if mr.Mappings.Src()[srcMakeOpts] != dstMakeOpts {
+			t.Errorf("mapped make_options = %v, want %v", mr.Mappings.Src()[srcMakeOpts], dstMakeOpts)
+		}
+		if mr.Mappings.Src()[srcMakeCfg] != dstMakeCfg {
+			t.Errorf("mapped make_config = %v, want %v", mr.Mappings.Src()[srcMakeCfg], dstMakeCfg)
+		}
+		if mr.Mappings.Src()[srcTestsMod] != dstTestsMod {
+			t.Errorf("mapped tests mod = %v, want %v", mr.Mappings.Src()[srcTestsMod], dstTestsMod)
+		}
+	})
+
+	t.Run("JavaFullEngine", func(t *testing.T) {
+		r := rules.Get("java")
+		if r == nil {
+			t.Fatal("java rules not found")
+		}
+
+		oldSrc := []byte(`class Service {
+    @Deprecated
+    class Worker {
+        public void execute() {}
+
+        @SuppressWarnings("rawtypes")
+        public boolean isBusy() {
+            return false;
+        }
+    }
+
+    @Deprecated
+    class TaskManager {
+        public void process() {}
+    }
+}
+`)
+
+		newSrc := []byte(`@Deprecated(since = "1.2")
+class Worker {
+    public void execute() {}
+
+    @SuppressWarnings("rawtypes")
+    public boolean isBusy() {
+        return false;
+    }
+}
+
+@Deprecated
+class TaskManager {
+    public void process() {}
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.java")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.java")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		var (
+			srcDepMarker, dstDepAnnot        *treesitter.ASTNode
+			srcSuppressWarn, dstSuppressWarn *treesitter.ASTNode
+			srcTaskDep, dstTaskDep           *treesitter.ASTNode
+		)
+
+		for _, n := range srcAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				txt := oldSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("Deprecated")) && n.StartRow == 1:
+					srcDepMarker = n
+				case bytes.Contains(txt, []byte("SuppressWarnings")):
+					srcSuppressWarn = n
+				case bytes.Contains(txt, []byte("Deprecated")) && n.StartRow > 1:
+					srcTaskDep = n
+				}
+			}
+		}
+
+		for _, n := range dstAST.PreOrder() {
+			if r.IsAttribute(n.Type) {
+				txt := newSrc[n.StartByte:n.EndByte]
+				switch {
+				case bytes.Contains(txt, []byte("Deprecated")) && n.StartRow == 0:
+					dstDepAnnot = n
+				case bytes.Contains(txt, []byte("SuppressWarnings")):
+					dstSuppressWarn = n
+				case bytes.Contains(txt, []byte("Deprecated")) && n.StartRow > 0:
+					dstTaskDep = n
+				}
+			}
+		}
+
+		if srcDepMarker == nil || dstDepAnnot == nil {
+			t.Fatalf("failed to locate Deprecated annotation: src=%v dst=%v", srcDepMarker, dstDepAnnot)
+		}
+		if srcSuppressWarn == nil || dstSuppressWarn == nil {
+			t.Fatalf("failed to locate SuppressWarnings annotation: src=%v dst=%v", srcSuppressWarn, dstSuppressWarn)
+		}
+		if srcTaskDep == nil || dstTaskDep == nil {
+			t.Fatalf("failed to locate TaskManager Deprecated annotation: src=%v dst=%v", srcTaskDep, dstTaskDep)
+		}
+
+		// Outer marker_annotation @Deprecated on inner class maps to unnested annotation @Deprecated(since = "1.2").
+		if mapped := mr.Mappings.Src()[srcDepMarker]; mapped != dstDepAnnot {
+			t.Errorf("mapped @Deprecated = %v, want %v", mapped, dstDepAnnot)
+		}
+
+		// @SuppressWarnings on isBusy stays mapped in place.
+		if mapped := mr.Mappings.Src()[srcSuppressWarn]; mapped != dstSuppressWarn {
+			t.Errorf("mapped @SuppressWarnings = %v, want %v", mapped, dstSuppressWarn)
+		}
+
+		// Sibling TaskManager's @Deprecated shouldn't get stolen across scopes.
+		if mapped := mr.Mappings.Src()[srcTaskDep]; mapped != dstTaskDep {
+			t.Errorf("mapped TaskManager @Deprecated = %v, want %v", mapped, dstTaskDep)
+		}
+
+		// Surrounding declarations stay mapped in place.
+		var (
+			srcWorker, dstWorker   *treesitter.ASTNode
+			srcTaskMgr, dstTaskMgr *treesitter.ASTNode
+			srcExec, dstExec       *treesitter.ASTNode
+			srcIsBusy, dstIsBusy   *treesitter.ASTNode
+		)
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "Worker":
+					srcWorker = n
+				case "TaskManager":
+					srcTaskMgr = n
+				case "execute":
+					srcExec = n
+				case "isBusy":
+					srcIsBusy = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				switch getDeclarationName(n) {
+				case "Worker":
+					dstWorker = n
+				case "TaskManager":
+					dstTaskMgr = n
+				case "execute":
+					dstExec = n
+				case "isBusy":
+					dstIsBusy = n
+				}
+			}
+		}
+
+		if srcWorker == nil || dstWorker == nil {
+			t.Fatalf("failed to locate Worker declaration: src=%v dst=%v", srcWorker, dstWorker)
+		}
+		if srcTaskMgr == nil || dstTaskMgr == nil {
+			t.Fatalf("failed to locate TaskManager declaration: src=%v dst=%v", srcTaskMgr, dstTaskMgr)
+		}
+		if srcExec == nil || dstExec == nil {
+			t.Fatalf("failed to locate execute declaration: src=%v dst=%v", srcExec, dstExec)
+		}
+		if srcIsBusy == nil || dstIsBusy == nil {
+			t.Fatalf("failed to locate isBusy declaration: src=%v dst=%v", srcIsBusy, dstIsBusy)
+		}
+		if mr.Mappings.Src()[srcWorker] != dstWorker {
+			t.Errorf("mapped Worker = %v, want %v", mr.Mappings.Src()[srcWorker], dstWorker)
+		}
+		if mr.Mappings.Src()[srcTaskMgr] != dstTaskMgr {
+			t.Errorf("mapped TaskManager = %v, want %v", mr.Mappings.Src()[srcTaskMgr], dstTaskMgr)
+		}
+		if mr.Mappings.Src()[srcExec] != dstExec {
+			t.Errorf("mapped execute = %v, want %v", mr.Mappings.Src()[srcExec], dstExec)
+		}
+		if mr.Mappings.Src()[srcIsBusy] != dstIsBusy {
+			t.Errorf("mapped isBusy = %v, want %v", mr.Mappings.Src()[srcIsBusy], dstIsBusy)
+		}
+	})
+}
