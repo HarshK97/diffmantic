@@ -4052,3 +4052,234 @@ end
 		}
 	})
 }
+
+func TestBottomUp_HollowEnclosingCall_WrappedMacroEvolution(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`pub fn parse_color(s: &str) {
+    let die = || {
+        eprintln!("Invalid color or style attribute: {}", s);
+        process::exit(1);
+    };
+    println!("color: {}", s);
+}
+`)
+		dst := []byte(`pub fn parse_color(s: &str) {
+    let die = || {
+        fatal(format!("Invalid color or style attribute: {}", s));
+    };
+    println!("color: {}", s);
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing context: outer parse_color and die closure
+		var srcFn, dstFn, srcClosure, dstClosure *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "parse_color" {
+				srcFn = n
+			} else if n.Type == "closure_expression" {
+				srcClosure = n
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "parse_color" {
+				dstFn = n
+			} else if n.Type == "closure_expression" {
+				dstClosure = n
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("parse_color function mapping got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
+		}
+		if srcClosure == nil || dstClosure == nil || mr.Mappings.Src()[srcClosure] != dstClosure {
+			t.Fatalf("closure die mapping got %v, want %v", mr.Mappings.Src()[srcClosure], dstClosure)
+		}
+
+		// 2. Surrounding sequence: succeeding println!
+		var srcPrint, dstPrint *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				srcPrint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				dstPrint = n
+				break
+			}
+		}
+		if srcPrint == nil || dstPrint == nil || mr.Mappings.Src()[srcPrint] != dstPrint {
+			t.Errorf("println! mapping got %v, want %v", mr.Mappings.Src()[srcPrint], dstPrint)
+		}
+
+		// 3. Target: eprintln! must map to format!, not the enclosing fatal call
+		var srcEprint, dstFatal, dstFormat *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "eprintln" {
+				srcEprint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "fatal" {
+				dstFatal = n
+			} else if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "format" {
+				dstFormat = n
+			}
+		}
+		if srcEprint == nil || dstFatal == nil || dstFormat == nil {
+			t.Fatalf("failed to locate target calls: srcEprint=%v, dstFatal=%v, dstFormat=%v", srcEprint, dstFatal, dstFormat)
+		}
+
+		if mapped := mr.Mappings.Src()[srcEprint]; mapped != dstFormat {
+			t.Fatalf("eprintln! mapping got %v, want %v (fatal=%v)", mapped, dstFormat, dstFatal)
+		}
+
+		// 4. Stationary operands: token_tree and argument literals
+		var srcTree, dstTree *treesitter.ASTNode
+		for _, c := range srcEprint.Children {
+			if r.IsDelimitedContainer(c.Type) && !r.IsBlock(c.Type) {
+				srcTree = c
+				break
+			}
+		}
+		for _, c := range dstFormat.Children {
+			if r.IsDelimitedContainer(c.Type) && !r.IsBlock(c.Type) {
+				dstTree = c
+				break
+			}
+		}
+		if srcTree == nil || dstTree == nil || mr.Mappings.Src()[srcTree] != dstTree {
+			t.Errorf("token_tree mapping got %v, want %v", mr.Mappings.Src()[srcTree], dstTree)
+		}
+	})
+}
+
+func TestBottomUp_HollowEnclosingCall_WrappedCallEvolution_Go(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package main
+
+func process(s string) {
+	render("Invalid attribute: " + s)
+	println(s)
+}
+`)
+		dst := []byte(`package main
+
+func process(s string) {
+	die(format("Invalid attribute: " + s))
+	println(s)
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		r := rulesFor(srcAST)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing context: package clause and process function
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "process" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "process" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("process function mapping got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
+		}
+
+		// 2. Surrounding sequence: succeeding println statement
+		var srcPrint, dstPrint *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				srcPrint = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
+				dstPrint = n
+				break
+			}
+		}
+		if srcPrint == nil || dstPrint == nil || mr.Mappings.Src()[srcPrint] != dstPrint {
+			t.Errorf("println mapping got %v, want %v", mr.Mappings.Src()[srcPrint], dstPrint)
+		}
+
+		// 3. Target: render call must map to format, not outer wrapper die
+		var srcRender, dstDie, dstFormat *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "render" {
+				srcRender = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "die":
+					dstDie = n
+				case "format":
+					dstFormat = n
+				}
+			}
+		}
+		if srcRender == nil || dstDie == nil || dstFormat == nil {
+			t.Fatalf("failed to locate target calls: srcRender=%v, dstDie=%v, dstFormat=%v", srcRender, dstDie, dstFormat)
+		}
+
+		if mapped := mr.Mappings.Src()[srcRender]; mapped != dstFormat {
+			t.Fatalf("render mapping got %v, want %v (die=%v)", mapped, dstFormat, dstDie)
+		}
+
+		// 4. Stationary operands: binary expression argument
+		var srcArg, dstArg *treesitter.ASTNode
+		for _, d := range srcRender.Descendants() {
+			if d.Type == "binary_expression" {
+				srcArg = d
+				break
+			}
+		}
+		for _, d := range dstFormat.Descendants() {
+			if d.Type == "binary_expression" {
+				dstArg = d
+				break
+			}
+		}
+		if srcArg == nil || dstArg == nil || mr.Mappings.Src()[srcArg] != dstArg {
+			t.Errorf("binary_expression argument mapping got %v, want %v", mr.Mappings.Src()[srcArg], dstArg)
+		}
+	})
+}

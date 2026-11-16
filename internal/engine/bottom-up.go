@@ -1188,16 +1188,33 @@ func hasHollowEnclosingCall(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rule
 
 	check := func(outer, target *treesitter.ASTNode, partnerMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
 		targetCallee := extractCalleeLabel(target, r)
-		if targetCallee == "" {
-			return false
-		}
+		outerCallee := extractCalleeLabel(outer, r)
 		desc := outer.Descendants()
+		diceOuter := -1.0
+		getDiceOuter := func() float64 {
+			if diceOuter < 0 {
+				diceOuter = Dice(outer, target, partnerMap)
+			}
+			return diceOuter
+		}
+
 		for _, inner := range desc {
 			if inner == outer || !isCall(inner.Type) || partnerMap[inner] != nil {
 				continue
 			}
 			innerCallee := extractCalleeLabel(inner, r)
-			if innerCallee == "" || !calleesCompatible(targetCallee, innerCallee) {
+
+			isInnerBetter := false
+			if targetCallee != "" && innerCallee != "" && calleesCompatible(targetCallee, innerCallee) {
+				isInnerBetter = true
+			} else if inner.Type == target.Type && outer.Type != target.Type {
+				isInnerBetter = true
+			} else if !calleesCompatible(outerCallee, targetCallee) {
+				if Dice(inner, target, partnerMap) > getDiceOuter() {
+					isInnerBetter = true
+				}
+			}
+			if !isInnerBetter {
 				continue
 			}
 			hasMappedDesc := false
