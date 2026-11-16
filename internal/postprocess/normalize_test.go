@@ -2013,71 +2013,20 @@ func TestNormalizeMoves_TypeScriptTypeDoesNotMoveAcrossParameters(t *testing.T) 
 		r := rules.Get("typescript")
 
 		// 1. Enclosing Context: Function declaration maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Root().PreOrder() {
-			if r.IsContainerDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Root().PreOrder() {
-			if r.IsContainerDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatalf("failed to locate function declaration in ASTs")
-		}
-		if ms.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place")
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		)
 
 		// 2. Surrounding Sequence: style and minFieldWidth parameters map in place
-		var srcStyleParam, dstStyleParam *treesitter.ASTNode
-		var srcWidthParam, dstWidthParam *treesitter.ASTNode
-		var srcParam1String *treesitter.ASTNode
-
-		for _, n := range srcAST.Root().PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				for _, c := range n.Children {
-					if c.Label == "style" {
-						srcStyleParam = n
-					}
-					if c.Label == "minFieldWidth" {
-						srcWidthParam = n
-					}
-				}
-			}
-			if n.StartRow == 1 && r.IsType(n.Type) && string(src[n.StartByte:n.EndByte]) == "string" {
-				srcParam1String = n
-			}
-		}
-		for _, n := range dstAST.Root().PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				for _, c := range n.Children {
-					if c.Label == "style" {
-						dstStyleParam = n
-					}
-					if c.Label == "minFieldWidth" {
-						dstWidthParam = n
-					}
-				}
-			}
-		}
-
-		if srcStyleParam == nil || dstStyleParam == nil {
-			t.Fatalf("failed to locate style parameter in ASTs")
-		}
-		if ms.Src()[srcStyleParam] != dstStyleParam {
-			t.Errorf("expected style parameter to map in place")
-		}
-		if srcWidthParam == nil || dstWidthParam == nil {
-			t.Fatalf("failed to locate minFieldWidth parameter in ASTs")
-		}
-		if ms.Src()[srcWidthParam] != dstWidthParam {
-			t.Errorf("expected minFieldWidth parameter to map in place")
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "required_parameter", Line: 3},
+			testutil.NodeQuery{Type: "required_parameter", Line: 3},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "required_parameter", Line: 4},
+			testutil.NodeQuery{Type: "required_parameter", Line: 4},
+		)
 
 		// 3. Body statements map in place without order disruption
 		for _, sn := range srcAST.Root().PreOrder() {
@@ -2090,8 +2039,9 @@ func TestNormalizeMoves_TypeScriptTypeDoesNotMoveAcrossParameters(t *testing.T) 
 		}
 
 		// 4. Target: string type in parameter 1 must NOT be emitted as a Move across rewritten parameters
-		if srcParam1String == nil {
-			t.Fatalf("failed to locate string type in parameter 1")
+		srcParam1String, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "predefined_type", Line: 2})
+		if err != nil {
+			t.Fatalf("failed to locate string type in parameter 1: %v", err)
 		}
 
 		script := actions.GenerateEditScript(srcAST, dstAST, ms)
@@ -2100,6 +2050,172 @@ func TestNormalizeMoves_TypeScriptTypeDoesNotMoveAcrossParameters(t *testing.T) 
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Move && a.Node == srcParam1String {
 				t.Fatalf("expected type 'string' NOT to be a spurious move across rewritten parameters, got Move on %s [%d-%d]",
+					a.Node.Type, a.Node.StartByte, a.Node.EndByte)
+			}
+		}
+	})
+}
+
+func TestNormalizeMoves_JavaTypeDoesNotMoveAcrossParameters(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`class StatusHandler {
+    void formatAndPaint(
+        List<String> formatData,
+        Style style,
+        int minFieldWidth
+    ) {
+        String msg = "status";
+        doInitial();
+        finalize(msg);
+    }
+}
+`)
+		dst := []byte(`class StatusHandler {
+    void formatAndPaint(
+        String lineNumbersData,
+        Style style,
+        int minFieldWidth
+    ) {
+        String msg = "status";
+        doInitial();
+        finalize(msg);
+    }
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.java")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.java")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		ms := matchResult.Mappings
+		r := rules.Get("java")
+
+		// 1. Enclosing Context: method declaration maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "method_declaration", Line: 2},
+			testutil.NodeQuery{Type: "method_declaration", Line: 2},
+		)
+
+		// 2. Surrounding Sequence: style and minFieldWidth parameters map in place
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "formal_parameter", Line: 4},
+			testutil.NodeQuery{Type: "formal_parameter", Line: 4},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "formal_parameter", Line: 5},
+			testutil.NodeQuery{Type: "formal_parameter", Line: 5},
+		)
+
+		// 3. Body statements map in place without order disruption
+		for _, sn := range srcAST.Root().PreOrder() {
+			if sn.StartRow >= 6 && sn.EndRow <= 9 && r.IsStatement(sn.Type) {
+				dn := ms.Src()[sn]
+				if dn == nil {
+					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
+				}
+			}
+		}
+
+		// 4. Target: String type in parameter 1 must NOT be emitted as a Move across rewritten parameters
+		srcParam1String, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "type_identifier", Line: 3, Nth: 2})
+		if err != nil {
+			t.Fatalf("failed to locate String type in parameter 1: %v", err)
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, ms)
+		normalized := Run(script, ms, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcParam1String {
+				t.Fatalf("expected type 'String' NOT to be a spurious move across rewritten parameters, got Move on %s [%d-%d]",
+					a.Node.Type, a.Node.StartByte, a.Node.EndByte)
+			}
+		}
+	})
+}
+
+func TestNormalizeMoves_ZigTypeDoesNotMoveAcrossParameters(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`pub fn formatAndPaint(
+    format_data: []const u8,
+    style: Style,
+    min_field_width: usize,
+) usize {
+    const x = 1;
+    doInitial();
+    return min_field_width;
+}
+`)
+		dst := []byte(`pub fn formatAndPaint(
+    line_numbers_data: u8,
+    style: Style,
+    min_field_width: usize,
+) usize {
+    const x = 1;
+    doInitial();
+    return min_field_width;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.zig")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.zig")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		ms := matchResult.Mappings
+		r := rules.Get("zig")
+
+		// 1. Enclosing Context: function declaration maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		)
+
+		// 2. Surrounding Sequence: style and min_field_width parameters map in place
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "parameter", Line: 3},
+			testutil.NodeQuery{Type: "parameter", Line: 3},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
+			testutil.NodeQuery{Type: "parameter", Line: 4},
+			testutil.NodeQuery{Type: "parameter", Line: 4},
+		)
+
+		// 3. Body statements map in place without order disruption
+		for _, sn := range srcAST.Root().PreOrder() {
+			if sn.StartRow >= 5 && sn.EndRow <= 8 && r.IsStatement(sn.Type) {
+				dn := ms.Src()[sn]
+				if dn == nil {
+					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
+				}
+			}
+		}
+
+		// 4. Target: u8 primitive type in parameter 1 must NOT be emitted as a Move across rewritten parameters
+		srcParam1U8, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "builtin_type", Line: 2})
+		if err != nil {
+			t.Fatalf("failed to locate u8 type in parameter 1: %v", err)
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, ms)
+		normalized := Run(script, ms, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcParam1U8 {
+				t.Fatalf("expected type 'u8' NOT to be a spurious move across rewritten parameters, got Move on %s [%d-%d]",
 					a.Node.Type, a.Node.StartByte, a.Node.EndByte)
 			}
 		}

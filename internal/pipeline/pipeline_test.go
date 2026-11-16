@@ -1231,3 +1231,137 @@ func TestPipeline_PairValueReplacement(t *testing.T) {
 `)
 	})
 }
+
+func TestPipeline_SameLineParameterDeclarationMoves(t *testing.T) {
+	t.Run("Rust", func(t *testing.T) {
+		src := `fn format_and_paint<'a>(
+    format_data: &[PlaceholderData<'a>],
+    style: &Style,
+) {}
+`
+		dst := `fn format_and_paint<'a>(
+    line_numbers_data: &'a NumbersData,
+    style: &Style,
+) {}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn format_and_paint<'a>(
+    <del>format_data: &[PlaceholderData<'a>],</del>
+    style: &Style,
+) {}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn format_and_paint<'a>(
+    <ins>line_numbers_data: &'a NumbersData,</ins>
+    style: &Style,
+) {}
+`)
+	})
+
+	t.Run("TypeScript", func(t *testing.T) {
+		src := `function formatAndPaint(
+    formatData: Array<string>,
+    style: Style,
+) {}
+`
+		dst := `function formatAndPaint(
+    lineNumbersData: string,
+    style: Style,
+) {}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.ts", "test.ts", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `function formatAndPaint(
+    <del>formatData: Array<string>,</del>
+    style: Style,
+) {}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `function formatAndPaint(
+    <ins>lineNumbersData: string,</ins>
+    style: Style,
+) {}
+`)
+	})
+
+	t.Run("Java", func(t *testing.T) {
+		src := `class Test {
+    void formatAndPaint(
+        List<String> formatData,
+        Style style
+    ) {}
+}
+`
+		dst := `class Test {
+    void formatAndPaint(
+        String lineNumbersData,
+        Style style
+    ) {}
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.java", "test.java", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `class Test {
+    void formatAndPaint(
+        <del>List<String> formatData,</del>
+        Style style
+    ) {}
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `class Test {
+    void formatAndPaint(
+        <ins>String lineNumbersData,</ins>
+        Style style
+    ) {}
+}
+`)
+	})
+
+	t.Run("Zig", func(t *testing.T) {
+		src := `fn formatAndPaint(
+    format_data: []const u8,
+    style: Style,
+) void {}
+`
+		dst := `fn formatAndPaint(
+    line_numbers_data: u8,
+    style: Style,
+) void {}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.zig", "test.zig", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn formatAndPaint(
+    <del>format_data: []const u8,</del>
+    style: Style,
+) void {}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn formatAndPaint(
+    <ins>line_numbers_data: u8,</ins>
+    style: Style,
+) void {}
+`)
+	})
+}
