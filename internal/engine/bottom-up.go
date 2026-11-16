@@ -125,9 +125,32 @@ func hasUnmappedChild(t *treesitter.ASTNode, hasFn func(*treesitter.ASTNode) boo
 	return false
 }
 
+// hasMatchedChild reports whether t1 has any child or compound identifier/wrapper descendant mapped in m.
 func hasMatchedChild(t1 *treesitter.ASTNode, m *Mapping) bool {
+	if t1 == nil || len(t1.Children) == 0 {
+		return false
+	}
+	r := rulesFor(t1)
+	isIDOrWrap := func(typ string) bool {
+		if r != nil {
+			return r.IsIdentifier(typ) || r.IsWrapper(typ)
+		}
+		return rules.IsIdentifier(typ) || rules.IsWrapper(typ)
+	}
+	var hasDescendant func(*treesitter.ASTNode) bool
+	hasDescendant = func(n *treesitter.ASTNode) bool {
+		for _, ch := range n.Children {
+			if m.Has(ch) {
+				return true
+			}
+			if isIDOrWrap(ch.Type) && hasDescendant(ch) {
+				return true
+			}
+		}
+		return false
+	}
 	return slices.ContainsFunc(t1.Children, func(c *treesitter.ASTNode) bool {
-		return m.Has(c)
+		return m.Has(c) || (isIDOrWrap(c.Type) && hasDescendant(c))
 	})
 }
 

@@ -137,6 +137,7 @@ var zigRules = &Rules{
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
+		"field_expression",
 		"array_type",
 		"slice_type",
 		"pointer_type",
