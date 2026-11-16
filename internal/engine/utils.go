@@ -637,12 +637,15 @@ func FindImmediateStatement(n *treesitter.ASTNode, r *rules.Rules) *treesitter.A
 	return n
 }
 
+// isStatementOrBranch reports whether n acts as a statement boundary or branch in the language CST.
+// Attributes and decorators are treated as statements so FindImmediateStatement stops at the
+// attribute rather than climbing into enclosing declarations.
 func isStatementOrBranch(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false
 	}
-	isStmt := (r != nil && (r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type))) ||
-		(r == nil && (rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type)))
+	isStmt := (r != nil && (r.IsStatement(n.Type) || r.IsDeclaration(n.Type) || r.IsCaseClause(n.Type) || r.IsAttribute(n.Type))) ||
+		(r == nil && (rules.IsStatement(n.Type) || rules.IsDeclaration(n.Type) || rules.IsCaseClause(n.Type) || rules.IsAttribute(n.Type)))
 	if isStmt {
 		return true
 	}

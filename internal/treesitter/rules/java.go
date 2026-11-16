@@ -212,12 +212,14 @@ var javaRules = &Rules{
 	},
 	Unordered: []string{
 		"annotation",
+		"marker_annotation",
 	},
 	EquivalentTypes: [][]string{
 		{"method_declaration", "constructor_declaration", "compact_constructor_declaration"},
 		{"class_declaration", "interface_declaration", "record_declaration", "enum_declaration", "annotation_type_declaration"},
 		{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
 		{"formal_parameter", "spread_parameter"},
+		{"marker_annotation", "annotation"},
 	},
 	Comments: []string{
 		"line_comment",
@@ -345,5 +347,9 @@ var javaRules = &Rules{
 		"try_with_resources_statement",
 		"while_statement",
 		"yield_statement",
+	},
+	Attributes: []string{
+		"marker_annotation",
+		"annotation",
 	},
 }
