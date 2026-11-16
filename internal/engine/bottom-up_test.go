@@ -3220,8 +3220,8 @@ func TestBottomUp_HollowEnclosingCall_WrappedMacroEvolution(t *testing.T) {
 	})
 }
 
-func TestBottomUp_HollowEnclosingCall_WrappedCallEvolution_Go(t *testing.T) {
-	t.Run("FullEngine", func(t *testing.T) {
+func TestBottomUp_HollowEnclosingCall_WrappedCallEvolution(t *testing.T) {
+	t.Run("FullEngine/Go", func(t *testing.T) {
 		src := []byte(`package main
 
 func process(s string) {
@@ -3245,92 +3245,145 @@ func process(s string) {
 			t.Fatalf("dst AST parse error: %v", err)
 		}
 
-		r := rulesFor(srcAST)
 		part := NewLinePartition(src, dst)
 		mr := Match(srcAST, dstAST, src, dst, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil mappings")
 		}
 
-		// 1. Enclosing context: package clause and process function
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "process" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "process" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("process function mapping got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
-		}
+		// 1. Enclosing context: process function maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		)
 
-		// 2. Surrounding sequence: succeeding println statement
-		var srcPrint, dstPrint *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
-				srcPrint = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "println" {
-				dstPrint = n
-				break
-			}
-		}
-		if srcPrint == nil || dstPrint == nil || mr.Mappings.Src()[srcPrint] != dstPrint {
-			t.Errorf("println mapping got %v, want %v", mr.Mappings.Src()[srcPrint], dstPrint)
-		}
+		// 2. Surrounding sequence: succeeding println statement maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 5},
+			testutil.NodeQuery{Type: "call_expression", Line: 5},
+		)
 
 		// 3. Target: render call must map to format, not outer wrapper die
-		var srcRender, dstDie, dstFormat *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "render" {
-				srcRender = n
-				break
-			}
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+			testutil.NodeQuery{Type: "call_expression", Line: 4, Nth: 2},
+		)
+
+		// 4. Stationary operands: binary expression argument maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "binary_expression", Line: 4},
+			testutil.NodeQuery{Type: "binary_expression", Line: 4},
+		)
+	})
+
+	t.Run("FullEngine/Java", func(t *testing.T) {
+		src := []byte(`class Test {
+    void process(String s) {
+        render("Invalid attribute: " + s);
+        println(s);
+    }
+}
+`)
+		dst := []byte(`class Test {
+    void process(String s) {
+        die(format("Invalid attribute: " + s));
+        println(s);
+    }
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.java")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
 		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				switch extractCalleeLabel(n, r) {
-				case "die":
-					dstDie = n
-				case "format":
-					dstFormat = n
-				}
-			}
-		}
-		if srcRender == nil || dstDie == nil || dstFormat == nil {
-			t.Fatalf("failed to locate target calls: srcRender=%v, dstDie=%v, dstFormat=%v", srcRender, dstDie, dstFormat)
+		dstAST, err := treesitter.Parse(dst, "test.java")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
 		}
 
-		if mapped := mr.Mappings.Src()[srcRender]; mapped != dstFormat {
-			t.Fatalf("render mapping got %v, want %v (die=%v)", mapped, dstFormat, dstDie)
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
 		}
 
-		// 4. Stationary operands: binary expression argument
-		var srcArg, dstArg *treesitter.ASTNode
-		for _, d := range srcRender.Descendants() {
-			if d.Type == "binary_expression" {
-				srcArg = d
-				break
-			}
+		// 1. Enclosing context: class and method process map in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "class_declaration", Line: 1},
+			testutil.NodeQuery{Type: "class_declaration", Line: 1},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "method_declaration", Line: 2},
+			testutil.NodeQuery{Type: "method_declaration", Line: 2},
+		)
+
+		// 2. Surrounding sequence: succeeding println statement maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "method_invocation", Line: 4},
+			testutil.NodeQuery{Type: "method_invocation", Line: 4},
+		)
+
+		// 3. Target: render call maps to inner format, not outer die
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "method_invocation", Line: 3},
+			testutil.NodeQuery{Type: "method_invocation", Line: 3, Nth: 2},
+		)
+
+		// 4. Stationary operands: binary_expression maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "binary_expression", Line: 3},
+			testutil.NodeQuery{Type: "binary_expression", Line: 3},
+		)
+	})
+
+	t.Run("FullEngine/Zig", func(t *testing.T) {
+		src := []byte(`fn process(s: []const u8) void {
+    render("Invalid attribute: {s}", .{s});
+    println(s);
+}
+`)
+		dst := []byte(`fn process(s: []const u8) void {
+    die(format("Invalid attribute: {s}", .{s}));
+    println(s);
+}
+`)
+		srcAST, err := treesitter.Parse(src, "test.zig")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
 		}
-		for _, d := range dstFormat.Descendants() {
-			if d.Type == "binary_expression" {
-				dstArg = d
-				break
-			}
+		dstAST, err := treesitter.Parse(dst, "test.zig")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
 		}
-		if srcArg == nil || dstArg == nil || mr.Mappings.Src()[srcArg] != dstArg {
-			t.Errorf("binary_expression argument mapping got %v, want %v", mr.Mappings.Src()[srcArg], dstArg)
+
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
 		}
+
+		// 1. Enclosing context: process function maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		)
+
+		// 2. Surrounding sequence: succeeding println call maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 3},
+			testutil.NodeQuery{Type: "call_expression", Line: 3},
+		)
+
+		// 3. Target: render call maps to inner format, not outer die
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 2},
+			testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 2},
+		)
+
+		// 4. Stationary operands: string literal maps in place
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "string", Line: 2},
+			testutil.NodeQuery{Type: "string", Line: 2},
+		)
 	})
 }
 

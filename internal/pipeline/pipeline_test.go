@@ -941,3 +941,155 @@ end
 		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), dst)
 	})
 }
+
+func TestPipeline_HollowEnclosingCall_WrappedMacroAndCallEvolution(t *testing.T) {
+	t.Run("Rust", func(t *testing.T) {
+		src := `pub fn parse_color(s: &str) {
+    let die = || {
+        eprintln!("Invalid color or style attribute: {}", s);
+        process::exit(1);
+    };
+    println!("color: {}", s);
+}
+`
+		dst := `pub fn parse_color(s: &str) {
+    let die = || {
+        fatal(format!("Invalid color or style attribute: {}", s));
+    };
+    println!("color: {}", s);
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `pub fn parse_color(s: &str) {
+    let die = || {
+        <upd>eprintln</upd>!("Invalid color or style attribute: {}", s);
+        <del>process::exit(1);</del>
+    };
+    println!("color: {}", s);
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `pub fn parse_color(s: &str) {
+    let die = || {
+        <ins>fatal(</ins><upd>format</upd>!("Invalid color or style attribute: {}", s)<ins>)</ins>;
+    };
+    println!("color: {}", s);
+}
+`)
+	})
+
+	t.Run("Go", func(t *testing.T) {
+		src := `package main
+
+func process(s string) {
+	render("Invalid attribute: " + s)
+	println(s)
+}
+`
+		dst := `package main
+
+func process(s string) {
+	die(format("Invalid attribute: " + s))
+	println(s)
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.go", "test.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func process(s string) {
+	<upd>render</upd>("Invalid attribute: " + s)
+	println(s)
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `package main
+
+func process(s string) {
+	<ins>die(</ins><upd>format</upd>("Invalid attribute: " + s)<ins>)</ins>
+	println(s)
+}
+`)
+	})
+
+	t.Run("Java", func(t *testing.T) {
+		src := `class Test {
+    void process(String s) {
+        render("Invalid attribute: " + s);
+        println(s);
+    }
+}
+`
+		dst := `class Test {
+    void process(String s) {
+        die(format("Invalid attribute: " + s));
+        println(s);
+    }
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.java", "test.java", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `class Test {
+    void process(String s) {
+        <upd>render</upd>("Invalid attribute: " + s);
+        println(s);
+    }
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `class Test {
+    void process(String s) {
+        <ins>die(</ins><upd>format</upd>("Invalid attribute: " + s)<ins>)</ins>;
+        println(s);
+    }
+}
+`)
+	})
+
+	t.Run("Zig", func(t *testing.T) {
+		src := `fn process(s: []const u8) void {
+    render("Invalid attribute: {s}", .{s});
+    println(s);
+}
+`
+		dst := `fn process(s: []const u8) void {
+    die(format("Invalid attribute: {s}", .{s}));
+    println(s);
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.zig", "test.zig", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn process(s: []const u8) void {
+    <del>render</del>("Invalid attribute: {s}", .{s});
+    println(s);
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn process(s: []const u8) void {
+    <ins>die(format("Invalid attribute: {s}", .{s}));</ins>
+    println(s);
+}
+`)
+	})
+}
