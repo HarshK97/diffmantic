@@ -6,6 +6,7 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -260,46 +261,16 @@ func bar() {
 		}
 
 		// println("prologue") didn't move, so it maps in place.
-		var srcPrologue, dstPrologue *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "println") {
-				srcPrologue = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "println") {
-				dstPrologue = n
-				break
-			}
-		}
-		if srcPrologue == nil || dstPrologue == nil {
-			t.Fatal("failed to find println() call nodes")
-		}
-		if matchResult.Mappings.Src()[srcPrologue] != dstPrologue {
-			t.Errorf("expected stationary println() to map in place, got %v", matchResult.Mappings.Src()[srcPrologue])
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		)
 
 		// Argument literal "prologue" maps in place.
-		var srcArg, dstArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(src[n.StartByte:n.EndByte]) == `"prologue"` {
-				srcArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(dst[n.StartByte:n.EndByte]) == `"prologue"` {
-				dstArg = n
-				break
-			}
-		}
-		if srcArg == nil || dstArg == nil {
-			t.Fatal("failed to find 'prologue' literal nodes")
-		}
-		if matchResult.Mappings.Src()[srcArg] != dstArg {
-			t.Errorf("expected literal 'prologue' to map in place, got %v", matchResult.Mappings.Src()[srcArg])
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+			testutil.NodeQuery{Type: "interpreted_string_literal", Line: 4},
+			testutil.NodeQuery{Type: "interpreted_string_literal", Line: 4},
+		)
 
 		// Statements that moved in order stay in group-1; only hoisted stmtD is ungrouped.
 		groupMap := make(map[string]string)
@@ -479,69 +450,26 @@ def dest_fn():
 	}
 
 	// 2. Preceding stationary statement: print("prologue") maps in place.
-	var srcPrologue, dstPrologue *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prologue") {
-			srcPrologue = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prologue") {
-			dstPrologue = n
-			break
-		}
-	}
-	if srcPrologue == nil || dstPrologue == nil {
-		t.Fatal("failed to find prologue call nodes")
-	}
-	if matchResult.Mappings.Src()[srcPrologue] != dstPrologue {
-		t.Errorf("expected prologue call to map in place, got %v", matchResult.Mappings.Src()[srcPrologue])
-	}
+	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "call", Line: 2},
+		testutil.NodeQuery{Type: "call", Line: 2},
+	)
 
 	// 3. Succeeding stationary statement: print("epilogue") maps in place.
-	var srcEpilogue, dstEpilogue *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "epilogue") {
-			srcEpilogue = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "epilogue") {
-			dstEpilogue = n
-			break
-		}
-	}
-	if srcEpilogue == nil || dstEpilogue == nil {
-		t.Fatal("failed to find epilogue call nodes")
-	}
-	if matchResult.Mappings.Src()[srcEpilogue] != dstEpilogue {
-		t.Errorf("expected epilogue call to map in place, got %v", matchResult.Mappings.Src()[srcEpilogue])
-	}
+	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "call", Line: 5},
+		testutil.NodeQuery{Type: "call", Line: 3},
+	)
 
 	// 4. Stationary argument literals ("prologue", "epilogue") map in place.
-	for _, argName := range []string{`"prologue"`, `"epilogue"`} {
-		var sArg, dArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(src[n.StartByte:n.EndByte]) == argName {
-				sArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(dst[n.StartByte:n.EndByte]) == argName {
-				dArg = n
-				break
-			}
-		}
-		if sArg == nil || dArg == nil {
-			t.Fatalf("failed to find literal %s", argName)
-		}
-		if matchResult.Mappings.Src()[sArg] != dArg {
-			t.Errorf("expected literal %s to map in place, got %v", argName, matchResult.Mappings.Src()[sArg])
-		}
-	}
+	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "string", Line: 2},
+		testutil.NodeQuery{Type: "string", Line: 2},
+	)
+	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "string", Line: 5},
+		testutil.NodeQuery{Type: "string", Line: 3},
+	)
 
 	// 5. Target statements moved_one() and moved_two() move together and receive identical GroupID "group-1".
 	groupMap := make(map[string]string)
@@ -616,25 +544,10 @@ func process() error {
 			}
 		}
 
-		var srcPrepare, dstPrepare *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prepare") {
-				srcPrepare = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prepare") {
-				dstPrepare = n
-				break
-			}
-		}
-		if srcPrepare == nil || dstPrepare == nil {
-			t.Fatal("failed to find prepare() call nodes")
-		}
-		if matchResult.Mappings.Src()[srcPrepare] != dstPrepare {
-			t.Errorf("expected stationary prepare() to map in place, got %v", matchResult.Mappings.Src()[srcPrepare])
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		)
 
 		groupMap := make(map[string]string)
 		for _, a := range normalized.Actions() {

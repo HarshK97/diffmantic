@@ -917,48 +917,37 @@ func check() {
 			t.Fatalf("expected parseable snippets, got old=%d new=%d errors", oldAST.ParseErrorCount, newAST.ParseErrorCount)
 		}
 
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("missing Go rules")
-		}
-		findAtRow := func(root *treesitter.ASTNode, row uint32, matches func(string) bool) *treesitter.ASTNode {
-			var found *treesitter.ASTNode
-			var visit func(*treesitter.ASTNode)
-			visit = func(node *treesitter.ASTNode) {
-				if node == nil || found != nil {
-					return
-				}
-				if node.StartRow == row && matches(node.Type) {
-					found = node
-					return
-				}
-				for _, child := range node.Children {
-					visit(child)
-				}
-			}
-			visit(root)
-			return found
-		}
-
 		part := engine.NewLinePartition(oldSrc, newSrc)
 		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
-		assertMapped := func(name string, src, dst *treesitter.ASTNode) {
-			t.Helper()
-			if src == nil || dst == nil {
-				t.Fatalf("missing %s node: src=%v dst=%v", name, src, dst)
-			}
-			if got := match.Mappings.Src()[src]; got != dst {
-				t.Errorf("%s did not map in place: got %v, want %v", name, got, dst)
-			}
-		}
 
-		assertMapped("function declaration", findAtRow(oldAST, 2, r.IsDeclaration), findAtRow(newAST, 2, r.IsDeclaration))
-		assertMapped("function block", findAtRow(oldAST, 2, r.IsBlock), findAtRow(newAST, 2, r.IsBlock))
-		assertMapped("preceding statement", findAtRow(oldAST, 3, r.IsStatement), findAtRow(newAST, 3, r.IsStatement))
-		assertMapped("target statement", findAtRow(oldAST, 5, r.IsStatement), findAtRow(newAST, 5, r.IsStatement))
-		assertMapped("following statement", findAtRow(oldAST, 6, r.IsStatement), findAtRow(newAST, 6, r.IsStatement))
-		assertMapped("target call", findAtRow(oldAST, 5, r.IsCall), findAtRow(newAST, 5, r.IsCall))
-		assertMapped("target arguments", findAtRow(oldAST, 5, r.IsDelimitedContainer), findAtRow(newAST, 5, r.IsDelimitedContainer))
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "block", Line: 3},
+			testutil.NodeQuery{Type: "block", Line: 3},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "expression_statement", Line: 6},
+			testutil.NodeQuery{Type: "expression_statement", Line: 6},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "expression_statement", Line: 7},
+			testutil.NodeQuery{Type: "expression_statement", Line: 7},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 6},
+			testutil.NodeQuery{Type: "call_expression", Line: 6},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "argument_list", Line: 6},
+			testutil.NodeQuery{Type: "argument_list", Line: 6},
+		)
 
 		srcComments := ExtractComments(oldAST)
 		dstComments := ExtractComments(newAST)
@@ -968,7 +957,9 @@ func check() {
 		if srcComments[0].AnchorNode == nil || dstComments[0].AnchorNode == nil {
 			t.Fatalf("expected comments to remain anchored, got src=%+v dst=%+v", srcComments[0], dstComments[0])
 		}
-		assertMapped("comment anchor", srcComments[0].AnchorNode, dstComments[0].AnchorNode)
+		if got := match.Mappings.Src()[srcComments[0].AnchorNode]; got != dstComments[0].AnchorNode {
+			t.Errorf("comment anchor did not map in place: got %v, want %v", got, dstComments[0].AnchorNode)
+		}
 
 		result := DiffComments(srcComments, dstComments, match.Mappings)
 		if len(result.Actions) != 2 {
@@ -1665,55 +1656,34 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
 		}
 
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("missing Go rules")
-		}
-
-		findAtRow := func(root *treesitter.ASTNode, row uint32, matches func(string) bool) *treesitter.ASTNode {
-			var found *treesitter.ASTNode
-			var visit func(*treesitter.ASTNode)
-			visit = func(node *treesitter.ASTNode) {
-				if node == nil || found != nil {
-					return
-				}
-				if node.StartRow == row && matches(node.Type) {
-					found = node
-					return
-				}
-				for _, child := range node.Children {
-					visit(child)
-				}
-			}
-			visit(root)
-			return found
-		}
-
 		part := engine.NewLinePartition(oldSrc, newSrc)
 		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
 
-		assertMapped := func(name string, src, dst *treesitter.ASTNode) {
-			t.Helper()
-			if src == nil || dst == nil {
-				t.Fatalf("missing %s node: src=%v dst=%v", name, src, dst)
-			}
-			if got := match.Mappings.Src()[src]; got != dst {
-				t.Errorf("%s did not map in place: got %v, want %v", name, got, dst)
-			}
-		}
-
 		// 1. Enclosing context
-		assertMapped("function declaration", findAtRow(oldAST, 2, r.IsDeclaration), findAtRow(newAST, 2, r.IsDeclaration))
-		assertMapped("function block", findAtRow(oldAST, 2, r.IsBlock), findAtRow(newAST, 2, r.IsBlock))
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "block", Line: 3},
+			testutil.NodeQuery{Type: "block", Line: 3},
+		)
 
 		// 2. Surrounding sequence
-		assertMapped("preceding statement", findAtRow(oldAST, 3, r.IsStatement), findAtRow(newAST, 3, r.IsStatement))
-		assertMapped("following statement", findAtRow(oldAST, 14, r.IsStatement), findAtRow(newAST, 19, r.IsStatement))
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+		)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "expression_statement", Line: 15},
+			testutil.NodeQuery{Type: "expression_statement", Line: 20},
+		)
 
 		// 3. Inner if moved into the new block
-		innerIfSrc := findAtRow(oldAST, 9, r.IsStatement)
-		innerIfDst := findAtRow(newAST, 14, r.IsStatement)
-		assertMapped("inner if statement", innerIfSrc, innerIfDst)
+		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
+			testutil.NodeQuery{Type: "if_statement", Line: 10},
+			testutil.NodeQuery{Type: "if_statement", Line: 15},
+		)
 
 		// 4. Verify comments extraction & diffing
 		srcComments := ExtractComments(oldAST)
@@ -1722,17 +1692,24 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 			t.Fatalf("expected 3 comment blocks on each side, got src=%d dst=%d", len(srcComments), len(dstComments))
 		}
 
-		// In source, comments attach to outer if (row 8)
-		outerIfSrc := findAtRow(oldAST, 8, r.IsStatement)
+		// In source, comments attach to outer if (line 9)
+		outerIfSrc, err := testutil.FindNode(oldAST, testutil.NodeQuery{Type: "if_statement", Line: 9})
+		if err != nil {
+			t.Fatalf("failed to find outer if in source: %v", err)
+		}
 		for i, c := range srcComments {
 			if c.AnchorNode != outerIfSrc {
-				t.Errorf("expected srcComments[%d] anchor to be outer if (row 8), got %+v", i, c.AnchorNode)
+				t.Errorf("expected srcComments[%d] anchor to be outer if (line 9), got %+v", i, c.AnchorNode)
 			}
 		}
-		// In dest, comments attach to inner if (row 14)
+		// In dest, comments attach to inner if (line 15)
+		innerIfDst, err := testutil.FindNode(newAST, testutil.NodeQuery{Type: "if_statement", Line: 15})
+		if err != nil {
+			t.Fatalf("failed to find inner if in dest: %v", err)
+		}
 		for i, c := range dstComments {
 			if c.AnchorNode != innerIfDst {
-				t.Errorf("expected dstComments[%d] anchor to be inner if (row 14), got %+v", i, c.AnchorNode)
+				t.Errorf("expected dstComments[%d] anchor to be inner if (line 15), got %+v", i, c.AnchorNode)
 			}
 		}
 

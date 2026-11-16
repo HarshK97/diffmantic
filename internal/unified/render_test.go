@@ -7,7 +7,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/color"
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
@@ -1213,11 +1213,6 @@ func TestPython_StyleNormalization_FullEngine(t *testing.T) {
 }
 
 func TestPython_StructuralIndentationPreserved_FullEngine(t *testing.T) {
-	r := rules.Get("python")
-	if r == nil {
-		t.Fatal("rules for python not found")
-	}
-
 	src := []byte(`def execute(cond):
     init()
     if cond:
@@ -1250,36 +1245,14 @@ func TestPython_StructuralIndentationPreserved_FullEngine(t *testing.T) {
 	}
 
 	// 3. Whole-Snippet Verification: stationary statements map in place.
-	var srcInit, dstInit, srcCleanup, dstCleanup *treesitter.ASTNode
-	for _, n := range dr.SrcAST.Descendants() {
-		if r.IsCall(n.Type) {
-			text := string(src[n.StartByte:n.EndByte])
-			if strings.Contains(text, "init") {
-				srcInit = n
-			} else if strings.Contains(text, "cleanup") {
-				srcCleanup = n
-			}
-		}
-	}
-	for _, n := range dr.DstAST.Descendants() {
-		if r.IsCall(n.Type) {
-			text := string(dst[n.StartByte:n.EndByte])
-			if strings.Contains(text, "init") {
-				dstInit = n
-			} else if strings.Contains(text, "cleanup") {
-				dstCleanup = n
-			}
-		}
-	}
-	if srcInit == nil || dstInit == nil || srcCleanup == nil || dstCleanup == nil {
-		t.Fatal("failed to find init or cleanup call nodes")
-	}
-	if dr.MatchResult.Mappings.Src()[srcInit] != dstInit {
-		t.Errorf("expected stationary init() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcInit])
-	}
-	if dr.MatchResult.Mappings.Src()[srcCleanup] != dstCleanup {
-		t.Errorf("expected stationary cleanup() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcCleanup])
-	}
+	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "call", Line: 2},
+		testutil.NodeQuery{Type: "call", Line: 2},
+	)
+	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "call", Line: 5},
+		testutil.NodeQuery{Type: "call", Line: 6},
+	)
 
 	// 4. Structural change is displayed unconditionally (both with and without ShowStyleChanges).
 	outDefault := Render("exec.py", "exec.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: false})
@@ -1294,11 +1267,6 @@ func TestPython_StructuralIndentationPreserved_FullEngine(t *testing.T) {
 }
 
 func TestPython_MultilineStringWhitespace_FullEngine(t *testing.T) {
-	r := rules.Get("python")
-	if r == nil {
-		t.Fatal("rules for python not found")
-	}
-
 	src := []byte(`def describe():
     prologue()
     text = """first line
@@ -1332,36 +1300,14 @@ func TestPython_MultilineStringWhitespace_FullEngine(t *testing.T) {
 	}
 
 	// 3. Whole-Snippet Verification: stationary prologue and epilogue map in place.
-	var srcPrologue, dstPrologue, srcEpilogue, dstEpilogue *treesitter.ASTNode
-	for _, n := range dr.SrcAST.Descendants() {
-		if r.IsCall(n.Type) {
-			text := string(src[n.StartByte:n.EndByte])
-			if strings.Contains(text, "prologue") {
-				srcPrologue = n
-			} else if strings.Contains(text, "epilogue") {
-				srcEpilogue = n
-			}
-		}
-	}
-	for _, n := range dr.DstAST.Descendants() {
-		if r.IsCall(n.Type) {
-			text := string(dst[n.StartByte:n.EndByte])
-			if strings.Contains(text, "prologue") {
-				dstPrologue = n
-			} else if strings.Contains(text, "epilogue") {
-				dstEpilogue = n
-			}
-		}
-	}
-	if srcPrologue == nil || dstPrologue == nil || srcEpilogue == nil || dstEpilogue == nil {
-		t.Fatal("failed to find prologue or epilogue call nodes")
-	}
-	if dr.MatchResult.Mappings.Src()[srcPrologue] != dstPrologue {
-		t.Errorf("expected stationary prologue() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcPrologue])
-	}
-	if dr.MatchResult.Mappings.Src()[srcEpilogue] != dstEpilogue {
-		t.Errorf("expected stationary epilogue() to map in place, got %v", dr.MatchResult.Mappings.Src()[srcEpilogue])
-	}
+	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "call", Line: 2},
+		testutil.NodeQuery{Type: "call", Line: 2},
+	)
+	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
+		testutil.NodeQuery{Type: "call", Line: 6},
+		testutil.NodeQuery{Type: "call", Line: 6},
+	)
 
 	// 4. Output displays unconditionally.
 	outDefault := Render("desc.py", "desc.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: false})

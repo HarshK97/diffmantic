@@ -1647,8 +1647,6 @@ func ContestContainers(currentT1, t2 *ASTNode, m *Mapping) {
 // won't dredge matching subtrees out of a completely different function scope.
 func TestCrossScopeStatementDredging_Case91(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("go")
-
 		oldSrc := []byte(`package comments
 
 func TestDiffCommentsGlobal() {
@@ -1732,75 +1730,38 @@ func TestDiffCommentsAnchorFirst() {
 		}
 
 		// Both functions should map in place as enclosing context.
-		var srcGlobal, dstGlobal, srcAnchor, dstAnchor *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				switch getDeclarationName(n) {
-				case "TestDiffCommentsGlobal":
-					srcGlobal = n
-				case "TestDiffCommentsAnchorFirst":
-					srcAnchor = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				switch getDeclarationName(n) {
-				case "TestDiffCommentsGlobal":
-					dstGlobal = n
-				case "TestDiffCommentsAnchorFirst":
-					dstAnchor = n
-				}
-			}
-		}
-		if srcGlobal == nil || dstGlobal == nil || mr.Mappings.Src()[srcGlobal] != dstGlobal {
-			t.Fatalf("expected TestDiffCommentsGlobal to map in place, got src=%v dst=%v", srcGlobal, dstGlobal)
-		}
-		if srcAnchor == nil || dstAnchor == nil || mr.Mappings.Src()[srcAnchor] != dstAnchor {
-			t.Fatalf("expected TestDiffCommentsAnchorFirst to map in place, got src=%v dst=%v", srcAnchor, dstAnchor)
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 22},
+			testutil.NodeQuery{Type: "function_declaration", Line: 22},
+		)
 
 		// Fixture setup and teardown calls around the target statements shouldn't move.
-		surroundingCalls := []string{"setupFixture", "teardownFixture", "setupAnchor", "teardownAnchor"}
-		for _, calleeName := range surroundingCalls {
-			var srcCall, dstCall *treesitter.ASTNode
-			for _, n := range srcAST.PreOrder() {
-				if r.IsCall(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte(calleeName)) {
-					srcCall = n
-					break
-				}
-			}
-			for _, n := range dstAST.PreOrder() {
-				if r.IsCall(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte(calleeName)) {
-					dstCall = n
-					break
-				}
-			}
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Fatalf("expected surrounding call %s to map in place, got src=%v dst=%v", calleeName, srcCall, dstCall)
-			}
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 8},
+			testutil.NodeQuery{Type: "call_expression", Line: 8},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 23},
+			testutil.NodeQuery{Type: "call_expression", Line: 23},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 27},
+			testutil.NodeQuery{Type: "call_expression", Line: 27},
+		)
 
 		// The unchanged condition inside TestDiffCommentsGlobal should map in place.
-		var srcUpdateCond, dstUpdateCond *treesitter.ASTNode
-		for _, n := range srcGlobal.PreOrder() {
-			if bytes.Equal(bytes.TrimSpace(oldSrc[n.StartByte:n.EndByte]), []byte("act.Type == actions.Update")) {
-				srcUpdateCond = n
-				break
-			}
-		}
-		for _, n := range dstGlobal.PreOrder() {
-			if bytes.Equal(bytes.TrimSpace(newSrc[n.StartByte:n.EndByte]), []byte("act.Type == actions.Update")) {
-				dstUpdateCond = n
-				break
-			}
-		}
-		if srcUpdateCond == nil || dstUpdateCond == nil {
-			t.Fatalf("failed to locate act.Type == actions.Update in TestDiffCommentsGlobal: src=%v dst=%v", srcUpdateCond, dstUpdateCond)
-		}
-		if mr.Mappings.Src()[srcUpdateCond] != dstUpdateCond {
-			t.Errorf("expected act.Type == actions.Update in TestDiffCommentsGlobal to map in place, got mapped to %v", mr.Mappings.Src()[srcUpdateCond])
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "binary_expression", Line: 5, Nth: 2},
+			testutil.NodeQuery{Type: "binary_expression", Line: 5, Nth: 4},
+		)
 	})
 }
 

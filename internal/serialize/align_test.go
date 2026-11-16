@@ -11,7 +11,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/postprocess"
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestAlignLines(t *testing.T) {
@@ -1212,17 +1211,10 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 		es = postprocess.Run(es, mr.Mappings, srcAST, dstAST)
 
 		// 1. Whole-Snippet Verification: Assert enclosing context maps in place
-		r := rules.Get("go")
-		var funcMapped bool
-		for _, p := range mr.Mappings.Pairs {
-			if p.Src != nil && p.Dst != nil && r.IsDeclaration(p.Src.Type) && p.Src.Type == p.Dst.Type {
-				funcMapped = true
-				break
-			}
-		}
-		if !funcMapped {
-			t.Fatalf("expected enclosing function declaration to map in place")
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 8},
+			testutil.NodeQuery{Type: "function_declaration", Line: 8},
+		)
 
 		// 2. Alignment Verification: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor,
 		// and NOT displaced by the moved if-block.

@@ -233,82 +233,38 @@ end
 		}
 
 		r := rules.Get("lua")
-		var srcFunc, dstFunc, dstClosure *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsContainerDeclaration(n.Type) {
-				srcFunc = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsContainerDeclaration(n.Type) {
-				dstFunc = n
-				break
-			}
-		}
-		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
-			t.Errorf("processItems mapping = %v, want destination processItems", mr.Mappings.Src()[srcFunc])
-		}
-		for _, n := range dstFunc.Descendants() {
-			if r.IsClosure(n.Type) {
-				dstClosure = n
-				break
-			}
-		}
-		if dstClosure == nil {
-			t.Fatal("ensureMetrics closure not found")
-		}
-		var srcParams, dstParams *treesitter.ASTNode
-		for _, n := range srcFunc.Children {
-			if r.IsDelimitedContainer(n.Type) {
-				srcParams = n
-			}
-		}
-		for _, n := range dstFunc.Children {
-			if r.IsDelimitedContainer(n.Type) {
-				dstParams = n
-			}
-		}
-		if srcParams == nil || dstParams == nil {
-			t.Fatalf("parameter lists not found: src=%v dst=%v", srcParams, dstParams)
-		}
-		if got := mr.Mappings.Src()[srcParams]; got != dstParams {
-			t.Errorf("parameter list mapping = %v, want destination parameters", got)
-		}
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "parameters", Line: 1},
+			testutil.NodeQuery{Type: "parameters", Line: 1},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_call", Line: 2},
+			testutil.NodeQuery{Type: "function_call", Line: 2},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "function_call", Line: 6},
+			testutil.NodeQuery{Type: "function_call", Line: 25},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "assignment_statement", Line: 3},
+			testutil.NodeQuery{Type: "assignment_statement", Line: 20},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "assignment_statement", Line: 4},
+			testutil.NodeQuery{Type: "assignment_statement", Line: 21},
+		)
+		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
+			testutil.NodeQuery{Type: "assignment_statement", Line: 5},
+			testutil.NodeQuery{Type: "assignment_statement", Line: 22},
+		)
 
-		findCall := func(root *treesitter.ASTNode, source []byte, name string) *treesitter.ASTNode {
-			for _, n := range root.Descendants() {
-				if r.IsCall(n.Type) && strings.HasPrefix(string(source[n.StartByte:n.EndByte]), name+"(") {
-					return n
-				}
-			}
-			return nil
-		}
-		for _, name := range []string{"precedingInit", "succeedingDone"} {
-			srcCall := findCall(srcFunc, src, name)
-			dstCall := findCall(dstFunc, dst, name)
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
-			}
-		}
-
-		for _, name := range []string{"currTotal", "currDouble", "currAffinity"} {
-			var srcAssign, dstAssign *treesitter.ASTNode
-			for _, n := range srcFunc.Descendants() {
-				if r.IsAssignment(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), name) {
-					srcAssign = n
-					break
-				}
-			}
-			for _, n := range dstClosure.Descendants() {
-				if r.IsAssignment(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), name) {
-					dstAssign = n
-					break
-				}
-			}
-			if srcAssign == nil || dstAssign == nil || mr.Mappings.Src()[srcAssign] != dstAssign {
-				t.Errorf("%s mapping = %v, want assignment inside ensureMetrics", name, mr.Mappings.Src()[srcAssign])
-			}
+		dstClosure, err := testutil.FindNode(dstAST, testutil.NodeQuery{Type: "function_definition", Line: 19})
+		if err != nil {
+			t.Fatalf("ensureMetrics closure not found: %v", err)
 		}
 
 		dstLines := strings.Split(string(dst), "\n")
@@ -2050,27 +2006,17 @@ func TestBuildHighlightSpans_PatternWrapperHighlight_FullEngine(t *testing.T) {
 	}
 
 	// State::HunkHeader stays unhighlighted as context; only (_, _) is inserted.
-	var line5Highlights []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 5 {
-			line5Highlights = append(line5Highlights, h)
-		}
-	}
-	if len(line5Highlights) == 0 {
-		t.Fatalf("expected right highlight spans on line 5 for '(_, _)', got 0")
-	}
-	var foundParensInsert bool
-	for _, h := range line5Highlights {
-		if h.StartCol < 25 {
-			t.Errorf("expected State::HunkHeader (cols 8..25) to have no highlight, got span [%d..%d] (%s)", h.StartCol, h.EndCol, h.Action)
-		}
-		if h.StartCol >= 25 && h.Action == "insert" {
-			foundParensInsert = true
-		}
-	}
-	if !foundParensInsert {
-		t.Errorf("expected insert highlight on '(_, _)' on line 5")
-	}
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn get_style(state: State) -> &'static Style {
+    match state {
+        State::HunkPlus(_) => &self.plus_style,
+        State::CommitMeta => &self.commit_style,
+        State::FileMeta => &self.file_style,
+        State::HunkHeader<ins>(_, _)</ins> => &self.hunk_header_style,
+        <ins>State::SubmoduleLog => &self.file_style,</ins>
+        _ => unreachable!(),
+    }
+}
+`)
 }
 
 func TestBuildHighlightSpans_PythonPatternWrapperHighlight_FullEngine(t *testing.T) {
@@ -2126,27 +2072,21 @@ func TestBuildHighlightSpans_PythonPatternWrapperHighlight_FullEngine(t *testing
 
 	// Line 9 (0-indexed line 8: `        case State.HUNK_HEADER(a, b):`)
 	// State.HUNK_HEADER (cols 13..30) stays unhighlighted as context; only (a, b) is inserted.
-	var line8Highlights []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 8 {
-			line8Highlights = append(line8Highlights, h)
-		}
-	}
-	if len(line8Highlights) == 0 {
-		t.Fatalf("expected right highlight spans on line 8 for '(a, b)', got 0")
-	}
-	var foundParensInsert bool
-	for _, h := range line8Highlights {
-		if h.StartCol < 30 {
-			t.Errorf("expected State.HUNK_HEADER (cols 13..30) to have no highlight, got span [%d..%d] (%s)", h.StartCol, h.EndCol, h.Action)
-		}
-		if h.StartCol >= 30 && h.Action == "insert" {
-			foundParensInsert = true
-		}
-	}
-	if !foundParensInsert {
-		t.Errorf("expected insert highlight on '(a, b)' on line 8")
-	}
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `def get_style(state):
+    match state:
+        case State.HUNK_PLUS:
+            return self.plus_style
+        case State.COMMIT_META:
+            return self.commit_style
+        case State.FILE_META:
+            return self.file_style
+        case State.HUNK_HEADER<ins>(a, b)</ins>:
+            return self.hunk_header_style
+        <ins>case State.SUBMODULE_LOG:</ins>
+<ins>            return self.file_style</ins>
+        case _:
+            pass
+`)
 }
 
 func TestBuildHighlightSpans_MoveWithDeletedChildAdjacentToSiblingDelete(t *testing.T) {
@@ -2285,33 +2225,37 @@ func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
 		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 	}
 
-	// Line 8 in oldSrc (0-indexed 7) is:
-	// `\t\tif (r != nil && (r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type))) ||`
-	// Line length is 78.
-	// Columns:
-	// \t\tif (r != nil && ( is 0..19.
-	// r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) is 19..73.
-	// )) || is 73..78.
-	var line7Left []HighlightSpan
-	for _, h := range env.LeftHighlights {
-		if h.Line == 7 {
-			line7Left = append(line7Left, h)
-		}
-	}
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-	for _, h := range line7Left {
-		// Make sure no delete span covers the surviving operand [19..73].
-		if h.StartCol < 73 && h.EndCol > 19 {
-			t.Errorf("found spurious delete highlight over stationary operand on line 7: %+v", h)
+func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
+	if n == nil {
+		return ""
+	}
+	for _, c := range n.Children {
+		if <del>(r != nil && (</del>r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type)<del>)) ||</del>
+			<del>(r == nil && (rules.IsOperatorLiteral(c.Type) || rules.IsPunctuation(c.Type)))</del> {
+			return c.Label
 		}
 	}
+	return ""
+}
+`)
 
-	// Destination line should be clean context with zero highlights.
-	for _, h := range env.RightHighlights {
-		if h.Line == 7 {
-			t.Errorf("found unexpected highlight on destination line 7: %+v", h)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
+	if n == nil {
+		return ""
+	}
+	<ins>r = cmp.Or(r, rules.Get(""))</ins>
+	for _, c := range n.Children {
+		if r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) {
+			return c.Label
 		}
 	}
+	return ""
+}
+`)
 }
 
 func TestInsertedCommentInMovedBlock_PreservesInsert(t *testing.T) {
