@@ -765,3 +765,179 @@ func TestPipeline_ForceBinaryAndForceText(t *testing.T) {
 		}
 	})
 }
+
+func TestPipeline_ShortenedCompoundIdentifierImports(t *testing.T) {
+	t.Run("Rust", func(t *testing.T) {
+		src := `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils::integration_test_utils;
+    use crate::tests::test_utils::test_utils;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`
+		dst := `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils;
+    use crate::tests::test_utils;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils<del>::integration_test_utils</del>;
+    use crate::tests::test_utils<del>::test_utils</del>;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), dst)
+	})
+
+	t.Run("Java", func(t *testing.T) {
+		src := `package com.example;
+
+import com.example.foo.bar.baz;
+import com.example.alpha.beta.gamma;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("hello");
+    }
+}
+`
+		dst := `package com.example;
+
+import com.example.foo.bar;
+import com.example.alpha.beta;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("hello");
+    }
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "Main.java", "Main.java", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `package com.example;
+
+import com.example.foo.bar<del>.baz</del>;
+import com.example.alpha.beta<del>.gamma</del>;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("hello");
+    }
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), dst)
+	})
+
+	t.Run("Lua", func(t *testing.T) {
+		src := `function process()
+    foo.bar.baz()
+    alpha.beta.gamma()
+    local x = 1
+end
+`
+		dst := `function process()
+    foo.bar()
+    alpha.beta()
+    local x = 1
+end
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.lua", "test.lua", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `function process()
+    foo.bar<del>.baz</del>()
+    alpha.beta<del>.gamma</del>()
+    local x = 1
+end
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), dst)
+	})
+
+	t.Run("Zig", func(t *testing.T) {
+		src := `pub fn setup() void {
+    const a = @import("foo").bar.baz;
+    const b = @import("alpha").beta.gamma;
+    const c = 1;
+}
+`
+		dst := `pub fn setup() void {
+    const a = @import("foo").bar;
+    const b = @import("alpha").beta;
+    const c = 1;
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.zig", "test.zig", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `pub fn setup() void {
+    const a = @import("foo").bar<del>.baz</del>;
+    const b = @import("alpha").beta<del>.gamma</del>;
+    const c = 1;
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), dst)
+	})
+}
