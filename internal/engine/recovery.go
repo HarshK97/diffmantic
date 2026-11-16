@@ -13,7 +13,7 @@ import (
 
 // Recover aligns unmatched nodes inside a matched container pair.
 // Small subtrees (< 20 nodes) run Zhang-Shasha tree edit distance unless they
-// are structured constructs (delimited containers, wrappers, blocks, calls, or assignments),
+// are structured constructs (delimited containers, wrappers, blocks, calls, assignments, or key-value pairs),
 // which route to SimpleRecovery instead.
 func Recover(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	reclaimInParentIsomorphicChildren(t1, t2, m)
@@ -67,6 +67,12 @@ func shouldBypassZS(t1, t2 *treesitter.ASTNode, r *rules.Rules) bool {
 		lhs1 := assignmentLHSIdent(t1)
 		lhs2 := assignmentLHSIdent(t2)
 		if lhs1 != "" && lhs1 == lhs2 {
+			return true
+		}
+	}
+	// Align keys and values separately when the pair keys match.
+	if r != nil && r.IsPair(t1.Type) && r.IsPair(t2.Type) {
+		if k := getKeyLabel(t1); k != "" && k == getKeyLabel(t2) {
 			return true
 		}
 	}
