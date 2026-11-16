@@ -1631,64 +1631,36 @@ func TestNormalize_StationaryMoveProtection(t *testing.T) {
 		part := engine.NewLinePartition(src, dst)
 		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		ms := matchResult.Mappings
-		r := rules.Get("typescript")
 
 		// 1. Enclosing function declaration mapped
-		if ms.Src()[srcAST.Root()] != dstAST.Root() {
-			t.Errorf("expected root function declaration to map in place")
-		}
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		)
 
 		// 2. Surrounding statements mapped in place
-		var srcPreceding, dstPreceding *treesitter.ASTNode
-		var srcSucceeding, dstSucceeding *treesitter.ASTNode
-		var srcIf, dstIf *treesitter.ASTNode
-		var srcAnnotation, dstAnnotation *treesitter.ASTNode
-
-		for _, n := range srcAST.Root().PreOrder() {
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "const isReady = checkReady();" {
-				srcPreceding = n
-			}
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "return false;" {
-				srcSucceeding = n
-			}
-			if n.Type == "if_statement" {
-				srcIf = n
-			}
-			if r.IsIdentifier(n.Type) && n.Label == "annotation" {
-				srcAnnotation = n
-			}
-		}
-		for _, n := range dstAST.Root().PreOrder() {
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "const isReady = checkReady();" {
-				dstPreceding = n
-			}
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "return false;" {
-				dstSucceeding = n
-			}
-			if n.Type == "if_statement" {
-				dstIf = n
-			}
-			if r.IsIdentifier(n.Type) && n.Label == "annotation" {
-				dstAnnotation = n
-			}
-		}
-
-		if srcPreceding == nil || dstPreceding == nil || ms.Src()[srcPreceding] != dstPreceding {
-			t.Errorf("expected preceding statement to map in place")
-		}
-		if srcSucceeding == nil || dstSucceeding == nil || ms.Src()[srcSucceeding] != dstSucceeding {
-			t.Errorf("expected succeeding statement to map in place")
-		}
-		if srcIf == nil || dstIf == nil || ms.Src()[srcIf] != dstIf {
-			t.Errorf("expected if_statement to map in place")
-		}
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+		)
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "return_statement", Line: 6},
+			testutil.NodeQuery{Type: "return_statement", Line: 6},
+		)
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "if_statement", Line: 3},
+			testutil.NodeQuery{Type: "if_statement", Line: 3},
+		)
 
 		// 3. Target stationary operand mapped
-		if srcAnnotation == nil || dstAnnotation == nil {
-			t.Fatalf("failed to locate annotation identifier")
-		}
-		if ms.Src()[srcAnnotation] != dstAnnotation {
-			t.Errorf("expected annotation identifier to map to dstAnnotation")
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
+			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
+		)
+
+		srcAnnotation, err := testutil.FindNode(srcAST.Root(), testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+		if err != nil {
+			t.Fatalf("failed to locate annotation identifier: %v", err)
 		}
 
 		// 4. Check that postprocessing keeps annotation as context instead of turning it into a delete/insert
@@ -1744,65 +1716,40 @@ func TestNormalize_BinaryChainOperandStationaryProtection(t *testing.T) {
 		part := engine.NewLinePartition(src, dst)
 		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		ms := matchResult.Mappings
-		r := rules.Get("typescript")
 
 		// 1. Enclosing Context: Function declaration maps in place
-		if ms.Src()[srcAST.Root()] != dstAST.Root() {
-			t.Errorf("expected root function declaration to map in place")
-		}
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		)
 
 		// 2. Surrounding Sequence: Preceding and succeeding statements map in place
-		var srcPreceding, dstPreceding *treesitter.ASTNode
-		var srcSucceeding, dstSucceeding *treesitter.ASTNode
-		var srcInnerIf, dstInnerIf *treesitter.ASTNode
-		var srcAddUndefined, dstAddUndefined *treesitter.ASTNode
-
-		for _, n := range srcAST.Root().PreOrder() {
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "const originalType = type;" {
-				srcPreceding = n
-			}
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "return originalType;" {
-				srcSucceeding = n
-			}
-			if n.Type == "if_statement" && n.StartRow == 3 {
-				srcInnerIf = n
-			}
-			if r.IsIdentifier(n.Type) && n.Label == "addUndefined" && n.StartRow == 3 {
-				srcAddUndefined = n
-			}
-		}
-
-		for _, n := range dstAST.Root().PreOrder() {
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "const originalType = type;" {
-				dstPreceding = n
-			}
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "return originalType;" {
-				dstSucceeding = n
-			}
-			if n.Type == "if_statement" && n.StartRow == 4 {
-				dstInnerIf = n
-			}
-			if r.IsIdentifier(n.Type) && n.Label == "addUndefined" && n.StartRow == 4 {
-				dstAddUndefined = n
-			}
-		}
-
-		if srcPreceding == nil || dstPreceding == nil || ms.Src()[srcPreceding] != dstPreceding {
-			t.Errorf("expected preceding statement to map in place")
-		}
-		if srcSucceeding == nil || dstSucceeding == nil || ms.Src()[srcSucceeding] != dstSucceeding {
-			t.Errorf("expected succeeding statement to map in place")
-		}
-		if srcInnerIf == nil || dstInnerIf == nil || ms.Src()[srcInnerIf] != dstInnerIf {
-			t.Errorf("expected inner if_statement to map in place")
-		}
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+		)
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "return_statement", Line: 9},
+			testutil.NodeQuery{Type: "return_statement", Line: 10},
+		)
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "if_statement", Line: 4},
+			testutil.NodeQuery{Type: "if_statement", Line: 5},
+		)
 
 		// 3. Target stationary operand mapped
-		if srcAddUndefined == nil || dstAddUndefined == nil {
-			t.Fatalf("failed to locate addUndefined identifier in ASTs")
+		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+			testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 1},
+			testutil.NodeQuery{Type: "identifier", Line: 5, Nth: 1},
+		)
+
+		srcAddUndefined, err := testutil.FindNode(srcAST.Root(), testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 1})
+		if err != nil {
+			t.Fatalf("failed to locate addUndefined identifier in src: %v", err)
 		}
-		if ms.Src()[srcAddUndefined] != dstAddUndefined {
-			t.Errorf("expected addUndefined identifier to map in place")
+		dstAddUndefined, err := testutil.FindNode(dstAST.Root(), testutil.NodeQuery{Type: "identifier", Line: 5, Nth: 1})
+		if err != nil {
+			t.Fatalf("failed to locate addUndefined identifier in dst: %v", err)
 		}
 
 		// 4. Check that postprocessing keeps addUndefined as context without delete/insert/move
@@ -1902,38 +1849,20 @@ fn helper_new(y: usize) -> usize {
 			part := engine.NewLinePartition(src, dst)
 			matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 			ms := matchResult.Mappings
-			r := rules.Get("rust")
 
 			// 1. Surrounding context: Panel struct maps in place
-			var srcPanel, dstPanel *treesitter.ASTNode
-			var srcAttr, dstAttr *treesitter.ASTNode
+			testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
+				testutil.NodeQuery{Type: "struct_item", Line: 1},
+				testutil.NodeQuery{Type: "struct_item", Line: 2},
+			)
 
-			for _, n := range srcAST.Root().PreOrder() {
-				if r.IsDeclaration(n.Type) && n.Type == "struct_item" {
-					srcPanel = n
-				}
-				if r.IsAttribute(n.Type) {
-					srcAttr = n
-				}
+			srcAttr, err := testutil.FindNode(srcAST.Root(), testutil.NodeQuery{Type: "attribute_item", Line: 5})
+			if err != nil {
+				t.Fatalf("failed to locate src attribute: %v", err)
 			}
-			for _, n := range dstAST.Root().PreOrder() {
-				if r.IsDeclaration(n.Type) && n.Type == "struct_item" {
-					dstPanel = n
-				}
-				if r.IsAttribute(n.Type) {
-					dstAttr = n
-				}
-			}
-
-			if srcPanel == nil || dstPanel == nil {
-				t.Fatalf("failed to locate Panel struct in ASTs")
-			}
-			if ms.Src()[srcPanel] != dstPanel {
-				t.Errorf("expected Panel struct to map in place")
-			}
-
-			if srcAttr == nil || dstAttr == nil {
-				t.Fatalf("failed to locate attributes in ASTs")
+			dstAttr, err := testutil.FindNode(dstAST.Root(), testutil.NodeQuery{Type: "attribute_item", Line: 1})
+			if err != nil {
+				t.Fatalf("failed to locate dst attribute: %v", err)
 			}
 
 			// 2. The attribute on helper_old must not move over to Panel

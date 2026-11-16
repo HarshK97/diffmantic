@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -1897,99 +1896,37 @@ func f() {
 			t.Fatal(err)
 		}
 
-		r := rulesFor(oldTree)
 		part := NewLinePartition(oldSrc, newSrc)
 		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
 		m := mr.Mappings
 
 		// 1. Enclosing Context: Function declaration maps in place.
-		var oldFn, newFn *treesitter.ASTNode
-		for _, n := range oldTree.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				oldFn = n
-				break
-			}
-		}
-		for _, n := range newTree.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				newFn = n
-				break
-			}
-		}
-		if oldFn == nil || newFn == nil || m.Src()[oldFn] != newFn {
-			t.Fatalf("expected function f to map in place, got %v", m.Src()[oldFn])
-		}
+		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		)
 
 		// 2. Surrounding Sequence: setupContext and finalizeContext map in place.
-		var oldSetup, oldFinalize, newSetup, newFinalize *treesitter.ASTNode
-		for _, n := range oldTree.PreOrder() {
-			if r.IsCall(n.Type) {
-				switch {
-				case bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("setupContext")):
-					oldSetup = n
-				case bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("finalizeContext")):
-					oldFinalize = n
-				}
-			}
-		}
-		for _, n := range newTree.PreOrder() {
-			if r.IsCall(n.Type) {
-				switch {
-				case bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("setupContext")):
-					newSetup = n
-				case bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("finalizeContext")):
-					newFinalize = n
-				}
-			}
-		}
-		if oldSetup == nil || newSetup == nil || m.Src()[oldSetup] != newSetup {
-			t.Errorf("expected setupContext to map in place, got %v", m.Src()[oldSetup])
-		}
-		if oldFinalize == nil || newFinalize == nil || m.Src()[oldFinalize] != newFinalize {
-			t.Errorf("expected finalizeContext to map in place, got %v", m.Src()[oldFinalize])
-		}
+		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		)
+		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
+			testutil.NodeQuery{Type: "call_expression", Line: 6},
+			testutil.NodeQuery{Type: "call_expression", Line: 10},
+		)
 
 		// 3. Target Construct: Split binary expression in old statement must NOT map to destination binary expression.
-		var oldBin, newBin *treesitter.ASTNode
-		for _, n := range oldTree.PreOrder() {
-			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
-				oldBin = n
-				break
-			}
-		}
-		for _, n := range newTree.PreOrder() {
-			if r.IsExpression(n.Type) && n.Type == "binary_expression" {
-				newBin = n
-				break
-			}
-		}
-		if oldBin == nil || newBin == nil {
-			t.Fatalf("failed to locate binary expressions: old=%v new=%v", oldBin, newBin)
-		}
-		if m.Src()[oldBin] == newBin {
-			t.Errorf("expected split binary expression checkA() || checkB() not to map to newBin, got %v", m.Src()[oldBin])
-		}
+		testutil.AssertNotMapped(t, oldTree, newTree, m.Src(),
+			testutil.NodeQuery{Type: "binary_expression", Line: 5},
+			testutil.NodeQuery{Type: "binary_expression", Line: 9},
+		)
 
 		// 4. Target Statements: Statements map by variable slot (res :=), but without cross-statement operand moves.
-		var oldResDecl, newResDecl *treesitter.ASTNode
-		for _, n := range oldTree.PreOrder() {
-			if r.IsStatement(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("res :=")) {
-				oldResDecl = n
-				break
-			}
-		}
-		for _, n := range newTree.PreOrder() {
-			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("res :=")) {
-				newResDecl = n
-				break
-			}
-		}
-		if oldResDecl == nil || newResDecl == nil {
-			t.Fatalf("failed to locate res := statements: old=%v new=%v", oldResDecl, newResDecl)
-		}
-		if m.Src()[oldResDecl] != newResDecl {
-			t.Errorf("expected res := statement to match in place, got %v", m.Src()[oldResDecl])
-		}
+		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
+			testutil.NodeQuery{Type: "short_var_declaration", Line: 5},
+			testutil.NodeQuery{Type: "short_var_declaration", Line: 9},
+		)
 	})
 }
 

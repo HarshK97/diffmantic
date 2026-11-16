@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
-	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 )
 
 func TestPipeline_LineLimitFallback(t *testing.T) {
@@ -197,6 +196,20 @@ func Bar() {
 	}
 }
 
+func toTestSpans(spans []serialize.HighlightSpan) []testutil.Span {
+	res := make([]testutil.Span, len(spans))
+	for i, s := range spans {
+		res[i] = testutil.Span{
+			Line:       s.Line,
+			StartCol:   s.StartCol,
+			EndCol:     s.EndCol,
+			Action:     s.Action,
+			ColorIndex: s.ColorIndex,
+		}
+	}
+	return res
+}
+
 func TestPipeline_GoImplicitLengthArrayWrapperTrimming(t *testing.T) {
 	src := []byte("package main\n\nvar x = []string{}\n")
 	dst := []byte("package main\n\nvar x = [...]string{}\n")
@@ -210,21 +223,14 @@ func TestPipeline_GoImplicitLengthArrayWrapperTrimming(t *testing.T) {
 
 	// Changing []string to [...]string should only diff the brackets and dots,
 	// leaving the inner type "string" untouched as unchanged context.
-	if len(res.Envelope.LeftHighlights) != 1 {
-		t.Fatalf("expected 1 left highlight, got %d: %+v", len(res.Envelope.LeftHighlights), res.Envelope.LeftHighlights)
-	}
-	hLeft := res.Envelope.LeftHighlights[0]
-	if hLeft.Line != 2 || hLeft.Action != "delete" || hLeft.StartCol != 8 || hLeft.EndCol != 10 {
-		t.Errorf("expected delete [8..10] on line 2, got: %+v", hLeft)
-	}
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `package main
 
-	if len(res.Envelope.RightHighlights) != 1 {
-		t.Fatalf("expected 1 right highlight, got %d: %+v", len(res.Envelope.RightHighlights), res.Envelope.RightHighlights)
-	}
-	hRight := res.Envelope.RightHighlights[0]
-	if hRight.Line != 2 || hRight.Action != "insert" || hRight.StartCol != 8 || hRight.EndCol != 13 {
-		t.Errorf("expected insert [8..13] on line 2, got: %+v", hRight)
-	}
+var x = <del>[]</del>string{}
+`)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package main
+
+var x = <ins>[...]</ins>string{}
+`)
 }
 
 func TestPipeline_IfElseBlockArgumentAdditionRecovery(t *testing.T) {
@@ -271,15 +277,16 @@ func f() {
 	}
 
 	// Expect insert highlights for the new arguments on lines 4 and 6.
-	if len(res.Envelope.RightHighlights) != 2 {
-		t.Fatalf("expected exactly 2 right highlights, got %d: %+v", len(res.Envelope.RightHighlights), res.Envelope.RightHighlights)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package main
+
+func f() {
+	if layout == HunkLayoutDualColumn {
+		renderSideBySideHunk(w, h, filteredPairs, srcLines, dstLines, srcLineBadges, dstLineBadges, <ins>srcLineBadgeColors, dstLineBadgeColors,</ins> leftSpansByLine, rightSpansByLine, numWidth, codeWidth, opts, scratch, sep, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx)
+	} else {
+		renderSingleColumnHunk(w, h, filteredPairs, isPairChanged, srcLines, dstLines, srcLineBadges, dstLineBadges, <ins>srcLineBadgeColors, dstLineBadgeColors,</ins> leftSpansByLine, rightSpansByLine, numWidth, termWidth, opts, scratch, srcEndsWithNL, dstEndsWithNL, lastSrcLineIdx, lastDstLineIdx, layout)
 	}
-	if res.Envelope.RightHighlights[0].Line != 4 || res.Envelope.RightHighlights[0].Action != "insert" {
-		t.Errorf("expected insert highlight on line 4, got: %+v", res.Envelope.RightHighlights[0])
-	}
-	if res.Envelope.RightHighlights[1].Line != 6 || res.Envelope.RightHighlights[1].Action != "insert" {
-		t.Errorf("expected insert highlight on line 6, got: %+v", res.Envelope.RightHighlights[1])
-	}
+}
+`)
 }
 
 func TestPipeline_VarDeclToShortVarDeclInPlace(t *testing.T) {
@@ -320,12 +327,24 @@ func f() {
 	}
 
 	// Delete just the "var" keyword; keep the identifier and type slice matched in place.
-	foundVarDel := slices.ContainsFunc(res.Envelope.LeftHighlights, func(h serialize.HighlightSpan) bool {
-		return h.Line == 3 && h.Action == "delete" && h.StartCol == 1 && h.EndCol == 4
-	})
-	if !foundVarDel {
-		t.Errorf("expected 'var' to be deleted on line 3, left highlights: %+v", res.Envelope.LeftHighlights)
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func f() {
+	<del>var</del> candidates []*moveCandidate
+	for i := range actions {
+		_ = i
 	}
+}
+`)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package main
+
+func f() {
+	candidates <ins>:= make(</ins>[]*moveCandidate<ins>, 0, len(actions))</ins>
+	for i := range actions {
+		_ = i
+	}
+}
+`)
 }
 
 func TestPipeline_IfInitStatementMoveOut(t *testing.T) {
@@ -375,12 +394,26 @@ func f() {
 	}
 
 	// The now-redundant semicolon in the if header should be highlighted as deleted.
-	foundSemicolonDel := slices.ContainsFunc(res.Envelope.LeftHighlights, func(h serialize.HighlightSpan) bool {
-		return h.Line == 3 && h.StartCol == 34 && h.EndCol == 35 && h.Action == "delete"
-	})
-	if !foundSemicolonDel {
-		t.Errorf("expected trailing semicolon on line 3 to be deleted, highlights: %+v", res.Envelope.LeftHighlights)
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func f() {
+	if <mov>body </mov><mUpd>:=</mUpd><mov> findBodyBlock(node, r)</mov><del>;</del> body != nil && isTrivialJumpBody(body, r) {
+		score -= 20
 	}
+}
+`)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package main
+
+func f() {
+	<ins>body := node</ins>
+	<ins>if !r.IsBlock(node.Type) {</ins>
+		<mov>body </mov><mUpd>=</mUpd><mov> findBodyBlock(node, r)</mov>
+	<ins>}</ins>
+	if body != nil && isTrivialJumpBody(body, r) {
+		score -= 20
+	}
+}
+`)
 }
 
 func TestPipeline_ParseErrorFallbackBoundary(t *testing.T) {
@@ -531,78 +564,45 @@ int main(void) {
 		}
 
 		// Whole-snippet verification:
-		r := rules.Get("c")
 		srcMappings := res.MatchResult.Mappings.Src()
 
-		hasIdent := func(node *treesitter.ASTNode, name string) bool {
-			return slices.ContainsFunc(node.Descendants(), func(d *treesitter.ASTNode) bool {
-				return r.IsIdentifier(d.Type) && d.Label == name
-			})
-		}
-
 		// 1. Enclosing context: main function definitions must map in place
-		var mainOld, mainNew *treesitter.ASTNode
-		for _, n := range res.SrcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && hasIdent(n, "main") {
-				mainOld = n
-				break
-			}
-		}
-		for _, n := range res.DstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && hasIdent(n, "main") {
-				mainNew = n
-				break
-			}
-		}
-		if mainOld == nil || mainNew == nil {
-			t.Fatalf("expected to locate main function declarations in both ASTs")
-		}
-		if srcMappings[mainOld] != mainNew {
-			t.Errorf("expected main function declaration to map in place across ASTs")
-		}
+		testutil.AssertMapped(t, res.SrcAST, res.DstAST, srcMappings,
+			testutil.NodeQuery{Type: "function_definition", Line: 5},
+			testutil.NodeQuery{Type: "function_definition", Line: 5},
+		)
 
 		// 2. Surrounding statements: macro call and adjacent statements must map in place
-		var macroCallOld, macroCallNew *treesitter.ASTNode
-		for _, n := range mainOld.Descendants() {
-			if r.IsCall(n.Type) && hasIdent(n, "FOR_ALL_TAB_WINDOWS") {
-				macroCallOld = n
-				break
-			}
-		}
-		for _, n := range mainNew.Descendants() {
-			if r.IsCall(n.Type) && hasIdent(n, "FOR_ALL_TAB_WINDOWS") {
-				macroCallNew = n
-				break
-			}
-		}
-		if macroCallOld == nil || macroCallNew == nil {
-			t.Fatalf("expected to find FOR_ALL_TAB_WINDOWS call in both ASTs")
-		}
-		if srcMappings[macroCallOld] != macroCallNew {
-			t.Errorf("expected FOR_ALL_TAB_WINDOWS call to map in place")
-		}
+		testutil.AssertMapped(t, res.SrcAST, res.DstAST, srcMappings,
+			testutil.NodeQuery{Type: "call_expression", Line: 7},
+			testutil.NodeQuery{Type: "call_expression", Line: 7},
+		)
 
 		// 3. Highlights: only '10' -> '20' should take an update highlight
-		var leftUpdates, rightUpdates []serialize.HighlightSpan
-		for _, h := range res.Envelope.LeftHighlights {
-			if h.Action == "update" {
-				leftUpdates = append(leftUpdates, h)
-			}
-		}
-		for _, h := range res.Envelope.RightHighlights {
-			if h.Action == "update" {
-				rightUpdates = append(rightUpdates, h)
-			}
-		}
-		if len(leftUpdates) != 1 || len(rightUpdates) != 1 {
-			t.Errorf("expected exactly 1 update highlight on each side, got left=%v right=%v", leftUpdates, rightUpdates)
-		}
-		if len(leftUpdates) == 1 && (leftUpdates[0].Line != 7 || leftUpdates[0].StartCol != 17 || leftUpdates[0].EndCol != 19) {
-			t.Errorf("unexpected left update highlight bounds: %+v", leftUpdates[0])
-		}
-		if len(rightUpdates) == 1 && (rightUpdates[0].Line != 7 || rightUpdates[0].StartCol != 17 || rightUpdates[0].EndCol != 19) {
-			t.Errorf("unexpected right update highlight bounds: %+v", rightUpdates[0])
-		}
+		testutil.AssertTagged(t, string(oldC), toTestSpans(res.Envelope.LeftHighlights), `void logger(const char *msg) {
+    (void)msg;
+}
+
+int main(void) {
+    int total = 0;
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+        total += <upd>10</upd>;
+    }
+    return total;
+}
+`)
+		testutil.AssertTagged(t, string(newC), toTestSpans(res.Envelope.RightHighlights), `void logger(const char *msg) {
+    (void)msg;
+}
+
+int main(void) {
+    int total = 0;
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+        total += <upd>20</upd>;
+    }
+    return total;
+}
+`)
 	})
 }
 
@@ -666,25 +666,44 @@ func CalculateTax(subtotal int) int {
 	}
 
 	// Both sides of the attached comment should highlight as moved.
-	hasLeftCommentMove := false
-	for _, h := range env.LeftHighlights {
-		if h.Line == 2 && h.Action == "move" {
-			hasLeftCommentMove = true
-		}
-	}
-	if !hasLeftCommentMove {
-		t.Errorf("expected left comment on line 2 to have 'move' highlight, got: %+v", env.LeftHighlights)
-	}
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-	hasRightCommentMove := false
-	for _, h := range env.RightHighlights {
-		if h.Line == 14 && h.Action == "move" {
-			hasRightCommentMove = true
-		}
-	}
-	if !hasRightCommentMove {
-		t.Errorf("expected right comment on line 14 to have 'move' highlight, got: %+v", env.RightHighlights)
-	}
+<mov>// CalculateTax computes order tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>// CalculateTax computes order tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 
 	// Line alignments should stay strictly monotonic.
 	lastLeft := -1
