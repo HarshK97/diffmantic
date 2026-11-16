@@ -1093,3 +1093,141 @@ func process(s string) {
 `)
 	})
 }
+
+func TestPipeline_PairValueReplacement(t *testing.T) {
+	t.Run("Rust", func(t *testing.T) {
+		src := `fn make_config(opt: &Options) -> Config {
+    Config {
+        tab_width: opt.tab_width,
+        truncation_symbol: "→".to_string(),
+        zero_style: opt.zero_style,
+    }
+}
+`
+		dst := `fn make_config(opt: &Options) -> Config {
+    Config {
+        tab_width: opt.tab_width,
+        truncation_symbol: format!("{}→{}", 1, 2),
+        zero_style: opt.zero_style,
+    }
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn make_config(opt: &Options) -> Config {
+    Config {
+        tab_width: opt.tab_width,
+        truncation_symbol: <del>"→".to_string()</del>,
+        zero_style: opt.zero_style,
+    }
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn make_config(opt: &Options) -> Config {
+    Config {
+        tab_width: opt.tab_width,
+        truncation_symbol: <ins>format!("{}→{}", 1, 2)</ins>,
+        zero_style: opt.zero_style,
+    }
+}
+`)
+	})
+
+	t.Run("TypeScript", func(t *testing.T) {
+		src := `function makeConfig(opt: Options): Config {
+    return {
+        tabWidth: opt.tabWidth,
+        truncationSymbol: opt.getSymbol(),
+        zeroStyle: opt.zeroStyle,
+    };
+}
+`
+		dst := "function makeConfig(opt: Options): Config {\n" +
+			"    return {\n" +
+			"        tabWidth: opt.tabWidth,\n" +
+			"        truncationSymbol: `${1}→${2}`,\n" +
+			"        zeroStyle: opt.zeroStyle,\n" +
+			"    };\n" +
+			"}\n"
+
+		res, err := Run([]byte(src), []byte(dst), "test.ts", "test.ts", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `function makeConfig(opt: Options): Config {
+    return {
+        tabWidth: opt.tabWidth,
+        truncationSymbol: <del>opt.getSymbol()</del>,
+        zeroStyle: opt.zeroStyle,
+    };
+}
+`)
+		expectedDst := "function makeConfig(opt: Options): Config {\n" +
+			"    return {\n" +
+			"        tabWidth: opt.tabWidth,\n" +
+			"        truncationSymbol: <ins>`${1}→${2}`</ins>,\n" +
+			"        zeroStyle: opt.zeroStyle,\n" +
+			"    };\n" +
+			"}\n"
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedDst)
+	})
+
+	t.Run("TSX", func(t *testing.T) {
+		src := `function App() {
+    return (
+        <Button
+            variant="primary"
+            onClick={handleClick()}
+            disabled={false}
+        />
+    );
+}
+`
+		dst := `function App() {
+    return (
+        <Button
+            variant="primary"
+            onClick={() => handle()}
+            disabled={false}
+        />
+    );
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "component.tsx", "component.tsx", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `function App() {
+    return (
+        <Button
+            variant="primary"
+            onClick={<del>handleClick()</del>}
+            disabled={false}
+        />
+    );
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `function App() {
+    return (
+        <Button
+            variant="primary"
+            onClick={<ins>() => handle()</ins>}
+            disabled={false}
+        />
+    );
+}
+`)
+	})
+}
