@@ -379,13 +379,6 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		return 1
 	}
 
-	// Cross-key guard: a value sitting under one key in a key-value pair
-	// (keyed_element, pair) and a value under a *different*, unmapped key
-	// should never be treated as a trivial same-line shift, even if they
-	// happen to land on the same row. Otherwise a clamped bare token (S=1)
-	// can "move" from one struct field to an unrelated one.
-	crossKey := src.Parent != nil && dst.Parent != nil && r.IsPair(src.Parent.Type) && r.IsPair(dst.Parent.Type)
-
 	lineDist := int(src.StartRow) - int(dst.StartRow)
 	if lineDist < 0 {
 		lineDist = -lineDist
@@ -393,7 +386,17 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	// Same-line inline shifts within the same enclosing scope.
 	if lineDist == 0 && sameScopeDeclaration(src, dst, ms, r) {
+		// Don't treat same-line shifts between different struct fields (crossKey)
+		// or different declarations (crossDecl) as trivial moves. Without this,
+		// a bare token like a lifetime, type, or identifier can "move" into
+		// an unrelated parameter on the same line.
+		crossKey := src.Parent != nil && dst.Parent != nil && r.IsPair(src.Parent.Type) && r.IsPair(dst.Parent.Type)
 		if crossKey {
+			return 5
+		}
+		srcDecl := engine.GetEnclosingDeclaration(src)
+		dstDecl := engine.GetEnclosingDeclaration(dst)
+		if srcDecl != nil && dstDecl != nil && ms.Get(srcDecl) != dstDecl {
 			return 5
 		}
 		return 1

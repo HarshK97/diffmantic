@@ -1947,3 +1947,281 @@ fn helper_new(y: usize) -> usize {
 		})
 	})
 }
+
+func TestNormalizeMoves_RustLifetimeDoesNotMoveAcrossParameters(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`fn format_and_paint_line_number_field<'a>(
+    format_data: &[LineNumberPlaceholderData<'a>],
+    style: &Style,
+    min_field_width: usize,
+) -> usize {
+    let mut ansi_strings = Vec::new();
+    let mut suffix = "";
+    ansi_strings.push(suffix);
+    min_field_width
+}
+`)
+		dst := []byte(`fn format_and_paint_line_number_field<'a>(
+    line_numbers_data: &'a LineNumbersData,
+    style: &Style,
+    min_field_width: usize,
+) -> usize {
+    let mut ansi_strings = Vec::new();
+    let mut suffix = "";
+    ansi_strings.push(suffix);
+    min_field_width
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		ms := matchResult.Mappings
+		r := rules.Get("rust")
+
+		// 1. Enclosing Context: Function declaration maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("failed to locate function declaration in ASTs")
+		}
+		if ms.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place")
+		}
+
+		// 2. Surrounding Sequence: style and min_field_width parameters map in place
+		var srcStyleParam, dstStyleParam *treesitter.ASTNode
+		var srcWidthParam, dstWidthParam *treesitter.ASTNode
+		var srcParam1Lifetime *treesitter.ASTNode
+
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "style" {
+						srcStyleParam = n
+					}
+					if c.Label == "min_field_width" {
+						srcWidthParam = n
+					}
+				}
+			}
+			if n.StartRow == 1 && r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "'a" {
+				srcParam1Lifetime = n
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "style" {
+						dstStyleParam = n
+					}
+					if c.Label == "min_field_width" {
+						dstWidthParam = n
+					}
+				}
+			}
+		}
+
+		if srcStyleParam == nil || dstStyleParam == nil {
+			t.Fatalf("failed to locate style parameter in ASTs")
+		}
+		if ms.Src()[srcStyleParam] != dstStyleParam {
+			t.Errorf("expected style parameter to map in place")
+		}
+		if srcWidthParam == nil || dstWidthParam == nil {
+			t.Fatalf("failed to locate min_field_width parameter in ASTs")
+		}
+		if ms.Src()[srcWidthParam] != dstWidthParam {
+			t.Errorf("expected min_field_width parameter to map in place")
+		}
+
+		// 3. Body statements map in place without order disruption
+		for _, sn := range srcAST.Root().PreOrder() {
+			if sn.StartRow >= 5 && sn.EndRow <= 8 && r.IsStatement(sn.Type) {
+				dn := ms.Src()[sn]
+				if dn == nil {
+					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
+				}
+			}
+		}
+
+		// 4. Target: srcParam1Lifetime must NOT be emitted as a Move across rewritten parameters
+		if srcParam1Lifetime == nil {
+			t.Fatalf("failed to locate parameter lifetime in AST")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, ms)
+		normalized := Run(script, ms, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcParam1Lifetime {
+				t.Fatalf("expected lifetime 'a NOT to be a spurious move across rewritten parameters, got Move on %s [%d-%d]",
+					a.Node.Type, a.Node.StartByte, a.Node.EndByte)
+			}
+		}
+	})
+}
+
+func TestNormalizeMoves_TypeScriptTypeDoesNotMoveAcrossParameters(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`function formatAndPaint(
+    formatData: Array<string>,
+    style: Style,
+    minFieldWidth: number,
+): number {
+    let ansiStrings: string[] = [];
+    let suffix = "";
+    ansiStrings.push(suffix);
+    return minFieldWidth;
+}
+`)
+		dst := []byte(`function formatAndPaint(
+    lineNumbersData: string,
+    style: Style,
+    minFieldWidth: number,
+): number {
+    let ansiStrings: string[] = [];
+    let suffix = "";
+    ansiStrings.push(suffix);
+    return minFieldWidth;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST has %d syntax parse errors", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST has %d syntax parse errors", dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		ms := matchResult.Mappings
+		r := rules.Get("typescript")
+
+		// 1. Enclosing Context: Function declaration maps in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("failed to locate function declaration in ASTs")
+		}
+		if ms.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place")
+		}
+
+		// 2. Surrounding Sequence: style and minFieldWidth parameters map in place
+		var srcStyleParam, dstStyleParam *treesitter.ASTNode
+		var srcWidthParam, dstWidthParam *treesitter.ASTNode
+		var srcParam1String *treesitter.ASTNode
+
+		for _, n := range srcAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "style" {
+						srcStyleParam = n
+					}
+					if c.Label == "minFieldWidth" {
+						srcWidthParam = n
+					}
+				}
+			}
+			if n.StartRow == 1 && r.IsType(n.Type) && string(src[n.StartByte:n.EndByte]) == "string" {
+				srcParam1String = n
+			}
+		}
+		for _, n := range dstAST.Root().PreOrder() {
+			if r.IsDeclaration(n.Type) {
+				for _, c := range n.Children {
+					if c.Label == "style" {
+						dstStyleParam = n
+					}
+					if c.Label == "minFieldWidth" {
+						dstWidthParam = n
+					}
+				}
+			}
+		}
+
+		if srcStyleParam == nil || dstStyleParam == nil {
+			t.Fatalf("failed to locate style parameter in ASTs")
+		}
+		if ms.Src()[srcStyleParam] != dstStyleParam {
+			t.Errorf("expected style parameter to map in place")
+		}
+		if srcWidthParam == nil || dstWidthParam == nil {
+			t.Fatalf("failed to locate minFieldWidth parameter in ASTs")
+		}
+		if ms.Src()[srcWidthParam] != dstWidthParam {
+			t.Errorf("expected minFieldWidth parameter to map in place")
+		}
+
+		// 3. Body statements map in place without order disruption
+		for _, sn := range srcAST.Root().PreOrder() {
+			if sn.StartRow >= 5 && sn.EndRow <= 8 && r.IsStatement(sn.Type) {
+				dn := ms.Src()[sn]
+				if dn == nil {
+					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
+				}
+			}
+		}
+
+		// 4. Target: string type in parameter 1 must NOT be emitted as a Move across rewritten parameters
+		if srcParam1String == nil {
+			t.Fatalf("failed to locate string type in parameter 1")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, ms)
+		normalized := Run(script, ms, srcAST, dstAST)
+
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcParam1String {
+				t.Fatalf("expected type 'string' NOT to be a spurious move across rewritten parameters, got Move on %s [%d-%d]",
+					a.Node.Type, a.Node.StartByte, a.Node.EndByte)
+			}
+		}
+	})
+}
