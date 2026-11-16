@@ -3614,3 +3614,441 @@ fn get_right_fill_style_for_panel<'a>(
 		}
 	})
 }
+
+func TestBottomUpShortenedCompoundIdentifierMatching(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils::integration_test_utils;
+    use crate::tests::test_utils::test_utils;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`
+		dst := `#[cfg(test)]
+mod tests {
+    use crate::ansi::{self, strip_ansi_codes};
+    use crate::cli::InspectRawLines;
+    use crate::delta::State;
+    use crate::style;
+    use crate::tests::ansi_test_utils::ansi_test_utils;
+    use crate::tests::integration_test_utils;
+    use crate::tests::test_utils;
+
+    #[test]
+    fn test_added_file() {
+        let config = integration_test_utils::make_config_from_args(&[]);
+        let output = integration_test_utils::run_delta(ADDED_FILE_INPUT, &config);
+        let output = strip_ansi_codes(&output);
+        assert!(output.contains("\nadded: a.py\n"));
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: mod tests maps in place.
+		var srcMod, dstMod *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "tests" {
+				srcMod = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "tests" {
+				dstMod = n
+				break
+			}
+		}
+		if srcMod == nil || dstMod == nil || mr.Mappings.Src()[srcMod] != dstMod {
+			t.Fatalf("expected mod tests to map in place, got %v", mr.Mappings.Src()[srcMod])
+		}
+
+		// 2. Surrounding sequence: unchanged imports stay mapped.
+		for row := 2; row <= 6; row++ {
+			var sNode, dNode *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					sNode = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					dNode = n
+					break
+				}
+			}
+			if sNode == nil || dNode == nil || mr.Mappings.Src()[sNode] != dNode {
+				t.Fatalf("expected preceding unchanged import at row %d to map in place", row)
+			}
+		}
+
+		// test_added_file also maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test_added_file" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test_added_file" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function test_added_file to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 3. Targets: shortened use statements map in place.
+		for _, row := range []int{7, 8} {
+			var sImport, dImport *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					sImport = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					dImport = n
+					break
+				}
+			}
+			if sImport == nil || dImport == nil {
+				t.Fatalf("expected imports at row %d to be found, got src=%v dst=%v", row, sImport, dImport)
+			}
+			if mr.Mappings.Src()[sImport] != dImport {
+				t.Errorf("expected shortened use_declaration at row %d to map to destination use_declaration, got %v", row, mr.Mappings.Src()[sImport])
+			}
+		}
+
+		// 4. Operands: shared crate::tests::... prefix maps in place.
+		var sPrefix, dRoot *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && int(n.StartRow) == 7 && int(n.EndByte-n.StartByte) == 36 { // crate::tests::integration_test_utils
+				sPrefix = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && int(n.StartRow) == 7 && int(n.EndByte-n.StartByte) == 36 {
+				dRoot = n
+				break
+			}
+		}
+		if sPrefix == nil || dRoot == nil || mr.Mappings.Src()[sPrefix] != dRoot {
+			t.Errorf("expected shared scoped_identifier prefix to map in place, got %v", mr.Mappings.Src()[sPrefix])
+		}
+	})
+
+	t.Run("FullEngine_Java", func(t *testing.T) {
+		src := `package com.example;
+
+import com.example.foo.bar.baz;
+import com.example.alpha.beta.gamma;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("hello");
+    }
+}
+`
+		dst := `package com.example;
+
+import com.example.foo.bar;
+import com.example.alpha.beta;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("hello");
+    }
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "Main.java")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "Main.java")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("java")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: class Main maps in place.
+		var srcClass, dstClass *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Main" {
+				srcClass = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "Main" {
+				dstClass = n
+				break
+			}
+		}
+		if srcClass == nil || dstClass == nil || mr.Mappings.Src()[srcClass] != dstClass {
+			t.Fatalf("expected class Main to map in place, got %v", mr.Mappings.Src()[srcClass])
+		}
+
+		// 2. Targets: shortened import_declaration nodes at rows 2 and 3 must map in place.
+		for _, row := range []int{2, 3} {
+			var sImport, dImport *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					sImport = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && int(n.StartRow) == row {
+					dImport = n
+					break
+				}
+			}
+			if sImport == nil || dImport == nil {
+				t.Fatalf("expected imports at row %d to be found, got src=%v dst=%v", row, sImport, dImport)
+			}
+			if mr.Mappings.Src()[sImport] != dImport {
+				t.Errorf("expected shortened import_declaration at row %d to map in place, got %v", row, mr.Mappings.Src()[sImport])
+			}
+		}
+	})
+
+	t.Run("FullEngine_Lua", func(t *testing.T) {
+		src := `function process()
+    foo.bar.baz()
+    alpha.beta.gamma()
+    local x = 1
+end
+`
+		dst := `function process()
+    foo.bar()
+    alpha.beta()
+    local x = 1
+end
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.lua")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.lua")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("lua")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: function process maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "process" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "process" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function process to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. Surrounding sequence: local x = 1 maps in place.
+		var srcLocal, dstLocal *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && int(n.StartRow) == 3 {
+				srcLocal = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && int(n.StartRow) == 3 {
+				dstLocal = n
+				break
+			}
+		}
+		if srcLocal == nil || dstLocal == nil || mr.Mappings.Src()[srcLocal] != dstLocal {
+			t.Fatalf("expected local statement at row 3 to map in place, got %v", mr.Mappings.Src()[srcLocal])
+		}
+
+		// 3. Targets: function_call nodes at rows 1 and 2 map in place.
+		for _, row := range []int{1, 2} {
+			var sCall, dCall *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsCall(n.Type) && int(n.StartRow) == row {
+					sCall = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsCall(n.Type) && int(n.StartRow) == row {
+					dCall = n
+					break
+				}
+			}
+			if sCall == nil || dCall == nil {
+				t.Fatalf("expected call at row %d to be found, got src=%v dst=%v", row, sCall, dCall)
+			}
+			if mr.Mappings.Src()[sCall] != dCall {
+				t.Errorf("expected shortened function_call at row %d to map in place, got %v", row, mr.Mappings.Src()[sCall])
+			}
+		}
+	})
+
+	t.Run("FullEngine_Zig", func(t *testing.T) {
+		src := `pub fn setup() void {
+    const a = @import("foo").bar.baz;
+    const b = @import("alpha").beta.gamma;
+    const c = 1;
+}
+`
+		dst := `pub fn setup() void {
+    const a = @import("foo").bar;
+    const b = @import("alpha").beta;
+    const c = 1;
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.zig")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.zig")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("zig")
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: fn setup maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "setup" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "setup" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected fn setup to map in place, got %v", mr.Mappings.Src()[srcFn])
+		}
+
+		// 2. Surrounding sequence: const c = 1 maps in place.
+		var srcC, dstC *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && int(n.StartRow) == 3 {
+				srcC = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && int(n.StartRow) == 3 {
+				dstC = n
+				break
+			}
+		}
+		if srcC == nil || dstC == nil || mr.Mappings.Src()[srcC] != dstC {
+			t.Fatalf("expected const c declaration at row 3 to map in place, got %v", mr.Mappings.Src()[srcC])
+		}
+
+		// 3. Targets: variable_declaration nodes at rows 1 and 2 map in place.
+		for _, row := range []int{1, 2} {
+			var sVar, dVar *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && int(n.StartRow) == row {
+					sVar = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsDeclaration(n.Type) && int(n.StartRow) == row {
+					dVar = n
+					break
+				}
+			}
+			if sVar == nil || dVar == nil {
+				t.Fatalf("expected variable_declaration at row %d to be found, got src=%v dst=%v", row, sVar, dVar)
+			}
+			if mr.Mappings.Src()[sVar] != dVar {
+				t.Errorf("expected shortened variable_declaration at row %d to map in place, got %v", row, mr.Mappings.Src()[sVar])
+			}
+		}
+	})
+}
