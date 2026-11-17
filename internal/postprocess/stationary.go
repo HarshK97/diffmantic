@@ -289,10 +289,18 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	srcRel := int(src.StartRow) - int(srcStmt.StartRow)
 	dstRel := int(dst.StartRow) - int(dstStmt.StartRow)
 	rowDiff := max(srcRel-dstRel, dstRel-srcRel)
-	// For slot-equivalent statements, allow minor multi-line formatting shift (<= 2 lines).
+	// Multi-line formatting (like rustfmt splitting arguments) can push an expression
+	// down a line or two. As long as it stayed inside the same immediate statement,
+	// don't treat it as a move.
 	maxAllowedDiff := 0
 	if isSlotEq {
 		maxAllowedDiff = 2
+	} else if isStatStmt && rowDiff > 0 && rowDiff <= 2 {
+		srcImm := engine.FindImmediateStatement(src, r)
+		dstImm := engine.FindImmediateStatement(dst, r)
+		if isStatementStationary(srcImm, dstImm, ms, r) {
+			maxAllowedDiff = 2
+		}
 	}
 	if rowDiff > maxAllowedDiff {
 		return false

@@ -295,6 +295,7 @@ var javaRules = &Rules{
 		"cast_expression",
 		"explicit_constructor_invocation",
 		"expression",
+		"field_access",
 		"instanceof_expression",
 		"lambda_expression",
 		"method_invocation",
