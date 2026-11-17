@@ -4846,3 +4846,295 @@ func TestStationaryGenericTypeWrapperUnwrap_Java(t *testing.T) {
 		}
 	})
 }
+
+// TestNormalizeMoves_StationaryMultiLineWrappedArgument verifies that an unchanged
+// argument wrapped in a new multi-line helper call is not emitted as a false move
+// when its enclosing statement remains stationary.
+func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("missing rust rules")
+		}
+
+		src := []byte(`pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
+    let matched_lines = 1;
+    compact_gaps(&ensure_contiguous(&matched_lines));
+    finish_processing();
+}
+`)
+		dst := []byte(`pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
+    let matched_lines = 1;
+    compact_gaps(&ensure_contiguous(&match_preceding_blanks(
+        &matched_lines,
+        lhs_lines,
+        rhs_lines,
+    )));
+    finish_processing();
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "src.rs")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "dst.rs")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		// Enclosing function and surrounding statements stay mapped in place.
+		var srcFn, dstFn, srcLet, dstLet, srcFinish, dstFinish, srcCall, dstCall, srcArg, dstArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Parent == srcAST {
+				srcFn = n
+			} else if r.IsLocalVarDeclaration(n.Type) {
+				srcLet = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finish_processing") {
+				srcFinish = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "compact_gaps") {
+				srcCall = n
+			} else if string(src[n.StartByte:n.EndByte]) == "&matched_lines" {
+				srcArg = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Parent == dstAST {
+				dstFn = n
+			} else if r.IsLocalVarDeclaration(n.Type) {
+				dstLet = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finish_processing") {
+				dstFinish = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "compact_gaps") {
+				dstCall = n
+			} else if string(dst[n.StartByte:n.EndByte]) == "&matched_lines" {
+				dstArg = n
+			}
+		}
+
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing function declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place, got %v", matchResult.Mappings.Src()[srcFn])
+		}
+		if srcLet == nil || dstLet == nil {
+			t.Fatalf("missing let declaration: src=%v, dst=%v", srcLet, dstLet)
+		}
+		if matchResult.Mappings.Src()[srcLet] != dstLet {
+			t.Errorf("expected preceding let declaration to map in place, got %v", matchResult.Mappings.Src()[srcLet])
+		}
+		if srcFinish == nil || dstFinish == nil {
+			t.Fatalf("missing finish_processing call: src=%v, dst=%v", srcFinish, dstFinish)
+		}
+		if matchResult.Mappings.Src()[srcFinish] != dstFinish {
+			t.Errorf("expected following call finish_processing to map in place, got %v", matchResult.Mappings.Src()[srcFinish])
+		}
+		if srcCall == nil || dstCall == nil {
+			t.Fatalf("missing compact_gaps call: src=%v, dst=%v", srcCall, dstCall)
+		}
+		if matchResult.Mappings.Src()[srcCall] != dstCall {
+			t.Errorf("expected compact_gaps call to map in place, got %v", matchResult.Mappings.Src()[srcCall])
+		}
+
+		// Stationary operand: &matched_lines must map in place without Move or Delete actions.
+		if srcArg == nil || dstArg == nil {
+			t.Fatalf("missing &matched_lines operand: src=%v, dst=%v", srcArg, dstArg)
+		}
+		if matchResult.Mappings.Src()[srcArg] != dstArg {
+			t.Errorf("expected &matched_lines to map in place, got %v", matchResult.Mappings.Src()[srcArg])
+		}
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcArg {
+				t.Errorf("unexpected Move action on stationary argument: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcArg {
+				t.Errorf("unexpected Delete action on stationary argument: %v", a)
+			}
+		}
+	})
+}
+
+func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Go(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("missing go rules")
+		}
+
+		src := []byte(`package main
+
+func process(lhs, rhs []string) {
+	matched := 1
+	compactGaps(ensureContiguous(&matched))
+	finishProcessing()
+}
+`)
+		dst := []byte(`package main
+
+func process(lhs, rhs []string) {
+	matched := 1
+	compactGaps(ensureContiguous(matchPrecedingBlanks(
+		&matched,
+		lhs,
+		rhs,
+	)))
+	finishProcessing()
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		var srcFn, dstFn, srcFinish, dstFinish, srcArg, dstArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Parent == srcAST {
+				srcFn = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finishProcessing") {
+				srcFinish = n
+			} else if string(src[n.StartByte:n.EndByte]) == "&matched" {
+				srcArg = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && n.Parent == dstAST {
+				dstFn = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finishProcessing") {
+				dstFinish = n
+			} else if string(dst[n.StartByte:n.EndByte]) == "&matched" {
+				dstArg = n
+			}
+		}
+
+		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("expected function declaration to map in place")
+		}
+		if srcFinish == nil || dstFinish == nil || matchResult.Mappings.Src()[srcFinish] != dstFinish {
+			t.Errorf("expected finishProcessing call to map in place")
+		}
+		if srcArg == nil || dstArg == nil {
+			t.Fatalf("missing &matched operand")
+		}
+		if matchResult.Mappings.Src()[srcArg] != dstArg {
+			t.Errorf("expected &matched to map in place, got %v", matchResult.Mappings.Src()[srcArg])
+		}
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcArg {
+				t.Errorf("unexpected Move action on stationary Go argument: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcArg {
+				t.Errorf("unexpected Delete action on stationary Go argument: %v", a)
+			}
+		}
+	})
+}
+
+func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Java(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("java")
+		if r == nil {
+			t.Fatal("missing java rules")
+		}
+
+		src := []byte(`class Processor {
+    void process(String[] lhs, String[] rhs) {
+        int matched = 1;
+        compactGaps(ensureContiguous(data.matched));
+        finishProcessing();
+    }
+}
+`)
+		dst := []byte(`class Processor {
+    void process(String[] lhs, String[] rhs) {
+        int matched = 1;
+        compactGaps(ensureContiguous(matchPrecedingBlanks(
+            data.matched,
+            lhs,
+            rhs
+        )));
+        finishProcessing();
+    }
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "Processor.java")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "Processor.java")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
+		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
+
+		var srcArg, dstArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if string(src[n.StartByte:n.EndByte]) == "data.matched" {
+				srcArg = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if string(dst[n.StartByte:n.EndByte]) == "data.matched" {
+				dstArg = n
+				break
+			}
+		}
+
+		if srcArg == nil || dstArg == nil {
+			t.Fatalf("missing data.matched field_access operand")
+		}
+		if matchResult.Mappings.Src()[srcArg] != dstArg {
+			t.Errorf("expected data.matched to map in place, got %v", matchResult.Mappings.Src()[srcArg])
+		}
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcArg {
+				t.Errorf("unexpected Move action on stationary Java field_access argument: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcArg {
+				t.Errorf("unexpected Delete action on stationary Java field_access argument: %v", a)
+			}
+		}
+	})
+}
