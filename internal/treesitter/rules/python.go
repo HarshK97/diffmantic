@@ -215,6 +215,9 @@ var pythonRules = &Rules{
 	Indexed: []string{
 		"subscript",
 	},
+	Selectors: []string{
+		"attribute",
+	},
 	LocalVarDeclarations: []string{
 		"global_statement",
 		"nonlocal_statement",

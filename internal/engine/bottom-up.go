@@ -240,6 +240,9 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	if isCall && hasHollowEnclosingCall(t1, c, m, r) {
 		return -1.0
 	}
+	if hasHollowEnclosingSelector(t1, c, m, r) {
+		return -1.0
+	}
 
 	// Reject call arguments across incompatible calls when the original callee survives in scope.
 	if t1.Parent != nil && c.Parent != nil {
@@ -1239,6 +1242,93 @@ func hasHollowEnclosingCall(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rule
 	}
 
 	return check(c, t1, m.Dst()) || check(t1, c, m.Src())
+}
+
+// hasHollowEnclosingSelector stops nested field accesses (like a.b.c) from stealing
+// matches across nesting levels, ensuring an inner selector doesn't steal an outer
+// candidate while its true outer counterpart is still unmapped.
+func hasHollowEnclosingSelector(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || m == nil {
+		return false
+	}
+	isSelector := func(t string) bool {
+		return (r != nil && r.IsSelector(t)) || (r == nil && rules.IsSelector(t))
+	}
+	if !isSelector(t1.Type) || !isSelector(c.Type) {
+		return false
+	}
+
+	f1 := extractFieldLabel(t1)
+	fC := extractFieldLabel(c)
+	if f1 == fC || f1 == "" || fC == "" {
+		return false
+	}
+
+	// Don't let an inner selector claim candidate if an unmapped outer ancestor has the matching field.
+	checkAncestor := func(inner, target *treesitter.ASTNode, hasPartner func(*treesitter.ASTNode) bool) bool {
+		targetField := extractFieldLabel(target)
+		for anc := inner.Parent; anc != nil; anc = anc.Parent {
+			if isSelector(anc.Type) && !hasPartner(anc) {
+				if extractFieldLabel(anc) == targetField {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if checkAncestor(t1, c, m.Has) || checkAncestor(c, t1, m.HasDst) {
+		return true
+	}
+
+	// Don't let an outer selector swallow candidate if an unmapped inner child matches better.
+	checkDescendant := func(outer, target *treesitter.ASTNode, partnerMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+		targetField := extractFieldLabel(target)
+		desc := outer.Descendants()
+		for _, inner := range desc {
+			if inner == outer || !isSelector(inner.Type) || partnerMap[inner] != nil {
+				continue
+			}
+			if extractFieldLabel(inner) != targetField {
+				continue
+			}
+			hasMappedDesc, hasOutsideDesc := false, false
+			for _, d := range desc {
+				partner, ok := partnerMap[d]
+				if !ok || (partner != target && !target.Contains(partner)) {
+					continue
+				}
+				if inner == d || inner.Contains(d) {
+					hasMappedDesc = true
+				} else {
+					hasOutsideDesc = true
+					break
+				}
+			}
+			if hasMappedDesc && !hasOutsideDesc {
+				return true
+			}
+		}
+		return false
+	}
+
+	return checkDescendant(c, t1, m.Dst()) || checkDescendant(t1, c, m.Src())
+}
+
+// extractFieldLabel extracts the field or member identifier label from selector node n.
+func extractFieldLabel(n *treesitter.ASTNode) string {
+	if n == nil || len(n.Children) < 2 {
+		return ""
+	}
+	fieldChild := n.Children[len(n.Children)-1]
+	if fieldChild.Label != "" {
+		return fieldChild.Label
+	}
+	for _, gc := range fieldChild.Children {
+		if gc.Label != "" {
+			return gc.Label
+		}
+	}
+	return ""
 }
 
 // hasCallCalleeOrArgMatch reports whether two call nodes share any matched tokens

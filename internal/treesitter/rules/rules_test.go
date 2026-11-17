@@ -887,3 +887,74 @@ func TestRulesDelimitersAndSeparators(t *testing.T) {
 		}
 	})
 }
+
+func TestRulesIsSelector(t *testing.T) {
+	t.Run("compiled sets", func(t *testing.T) {
+		r := &Rules{
+			Selectors: []string{"selector_expression", "field_expression"},
+		}
+		r.CompileSets()
+
+		if !r.IsSelector("selector_expression") {
+			t.Errorf("expected selector_expression to be recognized")
+		}
+		if !r.IsSelector("field_expression") {
+			t.Errorf("expected field_expression to be recognized")
+		}
+		if r.IsSelector("binary_expression") {
+			t.Errorf("unexpected match for binary_expression")
+		}
+		if r.IsSelector("") {
+			t.Errorf("empty string should return false")
+		}
+	})
+
+	t.Run("uncompiled fallback", func(t *testing.T) {
+		r := &Rules{
+			Selectors: []string{"member_expression", "attribute"},
+		}
+
+		if !r.IsSelector("member_expression") {
+			t.Errorf("expected member_expression in uncompiled rules")
+		}
+		if !r.IsSelector("attribute") {
+			t.Errorf("expected attribute in uncompiled rules")
+		}
+		if r.IsSelector("subscript") {
+			t.Errorf("unexpected match for subscript")
+		}
+	})
+
+	t.Run("nil receiver safe", func(t *testing.T) {
+		var r *Rules
+		if r.IsSelector("field_expression") {
+			t.Errorf("nil receiver should return false")
+		}
+		if r.IsSelector("") {
+			t.Errorf("empty string on nil receiver should return false")
+		}
+	})
+
+	t.Run("package level IsSelector registry", func(t *testing.T) {
+		knownSelectors := []string{
+			"selector_expression",  // Go
+			"field_expression",     // C, C++, Rust, Zig
+			"member_expression",    // JS, TS, TSX
+			"field_access",         // Java
+			"attribute",            // Python
+			"dot_index_expression", // Lua
+		}
+		for _, sel := range knownSelectors {
+			if !IsSelector(sel) {
+				t.Errorf("expected package IsSelector(%q) to be true", sel)
+			}
+		}
+
+		if IsSelector("binary_expression") {
+			t.Errorf("binary_expression should not be a selector")
+		}
+		if IsSelector("") {
+			t.Errorf("empty string should return false")
+		}
+	})
+}
