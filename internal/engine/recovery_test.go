@@ -5123,3 +5123,521 @@ func TestTSXJSXAttributeValueReplacement(t *testing.T) {
 		}
 	})
 }
+
+func TestRecovery_LocalVarDeclarationTheft_FullEngine(t *testing.T) {
+	t.Run("Rust_UnrelatedLetDeclarationsAcrossStatements_Rejected", func(t *testing.T) {
+		oldSrc := `fn set_widths() {
+    opt.available_terminal_width = Term::stdout().size().1;
+    let empty_builtin_features = HashMap::new();
+}
+`
+		newSrc := `fn set_widths() {
+    let term_stdout = Term::stdout();
+    opt.available_terminal_width = term_stdout.size().1;
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: enclosing function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "set_widths") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "set_widths") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected set_widths fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: opt.available_terminal_width assignment statement maps in place.
+		var srcAssign, dstAssign *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "available_terminal_width") {
+				srcAssign = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "available_terminal_width") {
+				dstAssign = n
+				break
+			}
+		}
+		if srcAssign == nil || dstAssign == nil || mapped[srcAssign] != dstAssign {
+			t.Fatalf("expected available_terminal_width statement to map in place, got src=%v dst=%v mapped=%v", srcAssign, dstAssign, mapped[srcAssign])
+		}
+
+		// 3. Target: unrelated let declarations don't pair across statements.
+		var srcLet, dstLet *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "empty_builtin_features") {
+				srcLet = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "term_stdout") {
+				dstLet = n
+				break
+			}
+		}
+		if srcLet == nil || dstLet == nil {
+			t.Fatalf("failed to locate let_declarations: srcLet=%v dstLet=%v", srcLet, dstLet)
+		}
+
+		if got := mapped[srcLet]; got != nil {
+			t.Fatalf("expected empty_builtin_features let_declaration to remain unmapped (destined for deletion), but got mapped to %v", got)
+		}
+		if got := revMapped[dstLet]; got != nil {
+			t.Fatalf("expected term_stdout let_declaration to remain unmapped (destined for insertion), but got reverse-mapped from %v", got)
+		}
+	})
+
+	t.Run("Go_UnrelatedShortVarDeclarationsAcrossStatements_Rejected", func(t *testing.T) {
+		oldSrc := `package main
+
+func setWidths() {
+	opt.availableTerminalWidth = TermStdout().size().one
+	emptyBuiltinFeatures := HashMapNew()
+}
+`
+		newSrc := `package main
+
+func setWidths() {
+	termStdout := TermStdout()
+	opt.availableTerminalWidth = termStdout.size().one
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: func setWidths maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "setWidths") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "setWidths") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected setWidths fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: availableTerminalWidth assignment statement maps in place.
+		var srcAssign, dstAssign *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsAssignment(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "availableTerminalWidth") {
+				srcAssign = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsAssignment(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "availableTerminalWidth") {
+				dstAssign = n
+				break
+			}
+		}
+		if srcAssign == nil || dstAssign == nil || mapped[srcAssign] != dstAssign {
+			t.Fatalf("expected availableTerminalWidth statement to map in place, got src=%v dst=%v mapped=%v", srcAssign, dstAssign, mapped[srcAssign])
+		}
+
+		// 3. Target: unrelated short var declarations don't pair across statements.
+		var srcDecl, dstDecl *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "emptyBuiltinFeatures") {
+				srcDecl = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "termStdout") {
+				dstDecl = n
+				break
+			}
+		}
+		if srcDecl == nil || dstDecl == nil {
+			t.Fatalf("failed to locate short_var_declarations: srcDecl=%v dstDecl=%v", srcDecl, dstDecl)
+		}
+
+		if got := mapped[srcDecl]; got != nil {
+			t.Fatalf("expected emptyBuiltinFeatures short_var_declaration to remain unmapped (destined for deletion), but got mapped to %v", got)
+		}
+		if got := revMapped[dstDecl]; got != nil {
+			t.Fatalf("expected termStdout short_var_declaration to remain unmapped (destined for insertion), but got reverse-mapped from %v", got)
+		}
+	})
+
+	t.Run("Rust_LegitimateInPlaceLocalVarRename_Maps", func(t *testing.T) {
+		oldSrc := `fn compute() {
+    let old_value = calculate_total(a, b);
+    process(old_value);
+}
+`
+		newSrc := `fn compute() {
+    let new_value = calculate_total(a, b);
+    process(new_value);
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: enclosing function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "compute") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "compute") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected compute fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: process call statement maps in place.
+		var srcCall, dstCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "process") {
+				srcCall = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "process") {
+				dstCall = n
+				break
+			}
+		}
+		if srcCall == nil || dstCall == nil || mapped[srcCall] != dstCall {
+			t.Fatalf("expected process call to map in place, got src=%v dst=%v mapped=%v", srcCall, dstCall, mapped[srcCall])
+		}
+
+		// 3. Target: legitimate in-place renamed let_declaration maps in place.
+		var srcLet, dstLet *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "old_value") {
+				srcLet = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "new_value") {
+				dstLet = n
+				break
+			}
+		}
+		if srcLet == nil || dstLet == nil {
+			t.Fatalf("failed to locate let_declarations: srcLet=%v dstLet=%v", srcLet, dstLet)
+		}
+
+		if mapped[srcLet] != dstLet {
+			t.Fatalf("expected in-place renamed let_declaration to map in place, got %v", mapped[srcLet])
+		}
+	})
+
+	t.Run("TypeScript_UnrelatedLexicalDeclarationsAcrossStatements_Rejected", func(t *testing.T) {
+		oldSrc := `function setWidths() {
+    opt.availableTerminalWidth = Term.stdout().size().one;
+    const emptyBuiltinFeatures = HashMap.create();
+}
+`
+		newSrc := `function setWidths() {
+    const termStdout = Term.stdout();
+    opt.availableTerminalWidth = termStdout.size().one;
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: enclosing function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "setWidths") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "setWidths") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected setWidths fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: availableTerminalWidth expression statement maps in place.
+		var srcAssign, dstAssign *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "availableTerminalWidth") {
+				srcAssign = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "availableTerminalWidth") {
+				dstAssign = n
+				break
+			}
+		}
+		if srcAssign == nil || dstAssign == nil || mapped[srcAssign] != dstAssign {
+			t.Fatalf("expected availableTerminalWidth statement to map in place, got src=%v dst=%v mapped=%v", srcAssign, dstAssign, mapped[srcAssign])
+		}
+
+		// 3. Target: unrelated lexical declarations don't pair across statements.
+		var srcDecl, dstDecl *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "emptyBuiltinFeatures") {
+				srcDecl = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "termStdout") {
+				dstDecl = n
+				break
+			}
+		}
+		if srcDecl == nil || dstDecl == nil {
+			t.Fatalf("failed to locate lexical_declarations: srcDecl=%v dstDecl=%v", srcDecl, dstDecl)
+		}
+
+		if got := mapped[srcDecl]; got != nil {
+			t.Fatalf("expected emptyBuiltinFeatures lexical_declaration to remain unmapped, but got mapped to %v", got)
+		}
+		if got := revMapped[dstDecl]; got != nil {
+			t.Fatalf("expected termStdout lexical_declaration to remain unmapped, but got reverse-mapped from %v", got)
+		}
+	})
+
+	t.Run("TypeScript_LegitimateInPlaceConstRename_Maps", func(t *testing.T) {
+		oldSrc := `function compute() {
+    const oldValue = calculateTotal(a, b);
+    process(oldValue);
+}
+`
+		newSrc := `function compute() {
+    const newValue = calculateTotal(a, b);
+    process(newValue);
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: enclosing function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "compute") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "compute") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected compute fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: process call statement maps in place.
+		var srcCall, dstCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "process") {
+				srcCall = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "process") {
+				dstCall = n
+				break
+			}
+		}
+		if srcCall == nil || dstCall == nil || mapped[srcCall] != dstCall {
+			t.Fatalf("expected process call to map in place, got src=%v dst=%v mapped=%v", srcCall, dstCall, mapped[srcCall])
+		}
+
+		// 3. Target: in-place renamed lexical_declaration maps in place.
+		var srcConst, dstConst *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "oldValue") {
+				srcConst = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "newValue") {
+				dstConst = n
+				break
+			}
+		}
+		if srcConst == nil || dstConst == nil {
+			t.Fatalf("failed to locate lexical_declarations: srcConst=%v dstConst=%v", srcConst, dstConst)
+		}
+
+		if mapped[srcConst] != dstConst {
+			t.Fatalf("expected in-place renamed lexical_declaration to map in place, got %v", mapped[srcConst])
+		}
+	})
+}

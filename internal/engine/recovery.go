@@ -722,7 +722,8 @@ func uniqueTypePairs(
 				continue
 			}
 
-			isDecl := (r != nil && r.IsDeclaration(n1.Type)) || (r == nil && rules.IsDeclaration(n1.Type))
+			isDecl := (r != nil && (r.IsDeclaration(n1.Type) || r.IsLocalVarDeclaration(n1.Type))) ||
+				(r == nil && (rules.IsDeclaration(n1.Type) || rules.IsLocalVarDeclaration(n1.Type)))
 			if isDecl && !canMatchDeclarations(n1, n2, m, r) {
 				continue
 			}
