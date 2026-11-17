@@ -143,8 +143,13 @@ func bestStructuralPartner(
 
 func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, m *Mapping) int {
 	r := cmp.Or(rulesFor(src), rulesFor(dst))
-	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsDeclaration(dst.Type))) ||
-		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsDeclaration(dst.Type)))
+	isDeclType := func(t string) bool {
+		if r != nil {
+			return r.IsDeclaration(t) || r.IsLocalVarDeclaration(t)
+		}
+		return rules.IsDeclaration(t) || rules.IsLocalVarDeclaration(t)
+	}
+	isDecl := isDeclType(src.Type) || isDeclType(dst.Type)
 
 	dstChildIdx := dst.ChildIndex()
 	if isDecl {
