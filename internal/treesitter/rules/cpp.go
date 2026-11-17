@@ -258,6 +258,9 @@ var cppRules = &Rules{
 	Indexed: []string{
 		"subscript_expression",
 	},
+	Selectors: []string{
+		"field_expression",
+	},
 	LocalVarDeclarations: []string{
 		"declaration",
 		"alias_declaration",

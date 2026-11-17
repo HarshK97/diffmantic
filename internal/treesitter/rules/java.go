@@ -232,6 +232,9 @@ var javaRules = &Rules{
 	Indexed: []string{
 		"array_access",
 	},
+	Selectors: []string{
+		"field_access",
+	},
 	LocalVarDeclarations: []string{
 		"local_variable_declaration",
 	},

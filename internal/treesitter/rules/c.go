@@ -192,6 +192,9 @@ var cRules = &Rules{
 	Indexed: []string{
 		"subscript_expression",
 	},
+	Selectors: []string{
+		"field_expression",
+	},
 	LocalVarDeclarations: []string{
 		"declaration",
 	},

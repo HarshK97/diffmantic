@@ -166,6 +166,9 @@ var zigRules = &Rules{
 	Indexed: []string{
 		"index_expression",
 	},
+	Selectors: []string{
+		"field_expression",
+	},
 	LocalVarDeclarations: []string{
 		"variable_declaration",
 	},

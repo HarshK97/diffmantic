@@ -137,6 +137,9 @@ var luaRules = &Rules{
 	Indexed: []string{
 		"bracket_index_expression",
 	},
+	Selectors: []string{
+		"dot_index_expression",
+	},
 	LocalVarDeclarations: []string{
 		"variable_declaration",
 	},

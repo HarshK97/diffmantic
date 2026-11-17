@@ -173,6 +173,9 @@ var golangRules = &Rules{
 		"index_expression",
 		"slice_expression",
 	},
+	Selectors: []string{
+		"selector_expression",
+	},
 	LocalVarDeclarations: []string{
 		"var_declaration",
 		"const_declaration",

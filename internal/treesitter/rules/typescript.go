@@ -254,6 +254,9 @@ var typescriptRules = &Rules{
 	Indexed: []string{
 		"subscript_expression",
 	},
+	Selectors: []string{
+		"member_expression",
+	},
 	LocalVarDeclarations: []string{
 		"variable_declaration",
 		"lexical_declaration",

@@ -30,6 +30,7 @@ type Rules struct {
 	JumpStatements        []string // Control-flow exit statements (return, break, continue, goto, throw, raise).
 	TerminalCalls         []string // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
 	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
+	Selectors             []string // Member or field access expressions (e.g. selector_expression, field_expression, member_expression, attribute, field_access).
 	Expressions           []string // Expression container node types.
 	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
 	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
@@ -67,6 +68,7 @@ type Rules struct {
 	jumpStatementsSet        map[string]struct{}
 	terminalCallsSet         map[string]struct{}
 	delimitedContainersSet   map[string]struct{}
+	selectorsSet             map[string]struct{}
 	expressionsSet           map[string]struct{}
 	caseClausesSet           map[string]struct{}
 	tagsSet                  map[string]struct{}
@@ -128,6 +130,7 @@ func (r *Rules) CompileSets() {
 	r.jumpStatementsSet = sliceToSet(r.JumpStatements)
 	r.terminalCallsSet = sliceToSet(r.TerminalCalls)
 	r.delimitedContainersSet = sliceToSet(r.DelimitedContainers)
+	r.selectorsSet = sliceToSet(r.Selectors)
 	r.expressionsSet = sliceToSet(r.Expressions)
 	r.caseClausesSet = sliceToSet(r.CaseClauses)
 	r.tagsSet = sliceToSet(r.Tags)
@@ -195,6 +198,18 @@ func (r *Rules) IsDelimitedContainer(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.DelimitedContainers, nodeType)
+}
+
+// IsSelector reports whether nodeType is a member or field access expression.
+func (r *Rules) IsSelector(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.selectorsSet) > 0 {
+		_, ok := r.selectorsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Selectors, nodeType)
 }
 
 // IsComment reports whether nodeType is a comment in the language grammar.
@@ -905,6 +920,19 @@ func IsDelimitedContainer(nodeType string) bool {
 	}
 	for _, r := range registry {
 		if r.IsDelimitedContainer(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSelector reports whether nodeType is a selector/field access in any registered language.
+func IsSelector(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsSelector(nodeType) {
 			return true
 		}
 	}
