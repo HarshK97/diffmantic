@@ -4283,7 +4283,7 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-				// 1. Enclosing context: function_item maps in place with zero edit actions.
+		// 1. Enclosing context: function_item maps in place with zero edit actions.
 		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
 			testutil.NodeQuery{Type: "function_item", Line: 1},
 			testutil.NodeQuery{Type: "function_item", Line: 1},
