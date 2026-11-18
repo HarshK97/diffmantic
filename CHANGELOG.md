@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-18
+
 ### Fixed
 - Wrapping a function call argument in another helper and splitting it across lines (like formatting a nested call with `rustfmt` in Rust, or multi-line calls in Go, Java, TypeScript, and Python) won't paint the untouched argument with a fake move highlight or split the view into an accordion anymore. Arguments that shift down a line or two inside the same statement stay matched in place as context, cleanly highlighting only the new wrapper.
 - Borrowing an argument by reference or wrapping a type in a generic parameter (like turning `repo` into `&repo` or `&mut repo` in Rust, or `Syntax[]` into `Promise<Syntax>[]` in TypeScript and Java) won't paint the untouched variable or type with a fake move or delete-and-insert anymore. Identifiers stay matched in place as context, cleanly highlighting just the added `&`, `&mut`, or generic wrapper.
@@ -494,6 +496,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial baseline release security check.
 
 [Unreleased]: https://github.com/HarshK97/diffmantic/compare/v0.16.0...HEAD
+[0.17.0]: https://github.com/HarshK97/diffmantic/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/HarshK97/diffmantic/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/HarshK97/diffmantic/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/HarshK97/diffmantic/compare/v0.13.0...v0.14.0
