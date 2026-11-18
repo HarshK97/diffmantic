@@ -2596,6 +2596,99 @@ func TestPipeline_RollupMatchedContainers_ElseClause(t *testing.T) {
 }
 `)
 	})
+
+	t.Run("Zig", func(t *testing.T) {
+		src := `fn process_records(flag: bool, count: i32) void {
+    var total: i32 = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            handle_batch(count);
+            total += count;
+        }
+        finish_records();
+    }
+    record_metric(total);
+}
+`
+		dst := `fn process_records(flag: bool, count: i32) void {
+    var total: i32 = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            switch (as_singleton_list(count)) {
+                1 => {
+                    var split = split_records(count);
+                    if (split > 1) {
+                        process_all(&split);
+                    } else {
+                        record_fallback(count);
+                    }
+                },
+                else => {
+                    record_fallback(count);
+                },
+            }
+            handle_batch(count);
+            total += count;
+        }
+        record_unchanged(count);
+    }
+    record_metric(total);
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.zig", "test.zig", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn process_records(flag: bool, count: i32) void {
+    var total: i32 = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            handle_batch(count);
+            total += count;
+        }
+        <del>finish_records();</del>
+    }
+    record_metric(total);
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn process_records(flag: bool, count: i32) void {
+    var total: i32 = 0;
+    if (flag) {
+        total += 1;
+    } else {
+        if (count > 0) {
+            <ins>switch (as_singleton_list(count)) {</ins>
+<ins>                1 => {</ins>
+<ins>                    var split = split_records(count);</ins>
+<ins>                    if (split > 1) {</ins>
+<ins>                        process_all(&split);</ins>
+<ins>                    } else {</ins>
+<ins>                        record_fallback(count);</ins>
+<ins>                    }</ins>
+<ins>                },</ins>
+<ins>                else => {</ins>
+<ins>                    record_fallback(count);</ins>
+<ins>                },</ins>
+<ins>            }</ins>
+            handle_batch(count);
+            total += count;
+        }
+        <ins>record_unchanged(count);</ins>
+    }
+    record_metric(total);
+}
+`)
+	})
 }
 
 func TestPipeline_SameLineParameterDeclarationMoves(t *testing.T) {
