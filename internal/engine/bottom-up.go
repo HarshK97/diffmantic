@@ -59,6 +59,7 @@ func BottomUp(
 		}
 	}
 	reconcileBodyBlocks(t1Root, m)
+	reconcileClauseWrappers(t1Root, m)
 }
 
 // reconcileBodyBlocks re-aligns body blocks of matched constructs when an inner
@@ -88,6 +89,71 @@ func reconcileBodyBlocks(t1Root *treesitter.ASTNode, m *Mapping) {
 		mappedSrc2 := m.Dst()[body2]
 		if mappedSrc2 != nil && body1.Contains(mappedSrc2) && !m.Has(body1) {
 			m.Add(body1, body2)
+		}
+	}
+}
+
+// reconcileClauseWrappers pairs unmatched clause wrappers (e.g. else_clause, catch_clause)
+// under matched parent constructs when their corresponding child body blocks are mapped,
+// or when there is a unique matching clause candidate.
+func reconcileClauseWrappers(t1Root *treesitter.ASTNode, m *Mapping) {
+	if m == nil {
+		return
+	}
+	r := rulesFor(t1Root)
+	for _, p := range slices.Clone(m.Pairs) {
+		t1, t2 := p.Src, p.Dst
+		if t1 == nil || t2 == nil || m.Get(t1) != t2 || len(t1.Children) == 0 {
+			continue
+		}
+		for _, c1 := range t1.Children {
+			if m.Has(c1) {
+				continue
+			}
+			isClause := (r != nil && r.IsClause(c1.Type)) || (r == nil && rules.IsClause(c1.Type))
+			if !isClause {
+				continue
+			}
+			var candidates []*treesitter.ASTNode
+			for _, c2 := range t2.Children {
+				if !m.HasDst(c2) && TypesMatch(c1.Type, c2.Type, r) {
+					candidates = append(candidates, c2)
+				}
+			}
+			if len(candidates) == 0 {
+				continue
+			}
+			var best *treesitter.ASTNode
+			b1 := findBodyBlock(c1, r)
+			if b1 != nil && m.Has(b1) {
+				mappedB1 := m.Get(b1)
+				for _, c2 := range candidates {
+					if findBodyBlock(c2, r) == mappedB1 {
+						best = c2
+						break
+					}
+				}
+			}
+			if best == nil && len(candidates) == 1 {
+				best = candidates[0]
+			}
+			if best != nil {
+				m.Add(c1, best)
+				Recover(c1, best, m)
+				b2 := findBodyBlock(best, r)
+				if b1 != nil && b2 != nil && !m.Has(b1) && !m.HasDst(b2) && TypesMatch(b1.Type, b2.Type, r) {
+					m.Add(b1, b2)
+					Recover(b1, b2, m)
+				}
+				if b1 != nil && b2 != nil && m.Get(b1) == b2 {
+					for p1, p2 := b1.Parent, b2.Parent; p1 != nil && p2 != nil && p1 != c1 && p2 != best; p1, p2 = p1.Parent, p2.Parent {
+						if !m.Has(p1) && !m.HasDst(p2) && TypesMatch(p1.Type, p2.Type, r) {
+							m.Add(p1, p2)
+							Recover(p1, p2, m)
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -733,12 +799,15 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 				continue
 			}
 			if srcBody != nil && dstBody != nil {
-				if !isDecl && !hasHeaderMatch(t1, bestParent, m, r) {
-					if m.DiceSrc(t1, bestParent) < 0.30 {
-						continue
-					}
-					if !IsScopePreserved(m, t1, bestParent, r, r) && m.DiceSrc(t1, bestParent) < 0.60 {
-						continue
+				isSandwiched := t1.Parent != nil && bestParent.Parent != nil && m.Get(t1.Parent) == bestParent.Parent && m.Src()[srcBody] == dstBody
+				if !isSandwiched {
+					if !isDecl && !hasHeaderMatch(t1, bestParent, m, r) {
+						if m.DiceSrc(t1, bestParent) < 0.30 {
+							continue
+						}
+						if !IsScopePreserved(m, t1, bestParent, r, r) && m.DiceSrc(t1, bestParent) < 0.60 {
+							continue
+						}
 					}
 				}
 				if m.Src()[srcBody] != dstBody && m.DiceSrc(srcBody, dstBody) == 0 {

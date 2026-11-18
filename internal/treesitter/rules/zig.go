@@ -208,6 +208,9 @@ var zigRules = &Rules{
 		"initializer_list",
 		"parameters",
 	},
+	Clauses: []string{
+		"else_clause",
+	},
 	CaseClauses: []string{
 		"switch_case",
 	},

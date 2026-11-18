@@ -261,6 +261,12 @@ var pythonRules = &Rules{
 		"tuple",
 		"set",
 	},
+	Clauses: []string{
+		"else_clause",
+		"elif_clause",
+		"except_clause",
+		"finally_clause",
+	},
 	CaseClauses: []string{
 		"case_clause",
 	},
