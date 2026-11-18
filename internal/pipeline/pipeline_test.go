@@ -3153,3 +3153,103 @@ func process(lhs, rhs []string) {
 `)
 	})
 }
+
+func TestPipelineVisual_DeletedImportCommentAnchor(t *testing.T) {
+	t.Run("Rust_DocCommentAboveDeletedImport", func(t *testing.T) {
+		src := `/// This module applies rewrite rules to the command line options.
+/// 1. Express deprecated usages in the new non-deprecated form.
+use std::process;
+
+use structopt::clap;
+use crate::cli;
+`
+		dst := `/// This module applies rewrite rules to the command line options.
+/// 1. Express deprecated usages in the new non-deprecated form.
+use structopt::clap;
+use crate::cli;
+`
+		res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `/// This module applies rewrite rules to the command line options.
+/// 1. Express deprecated usages in the new non-deprecated form.
+<del>use std::process;</del>
+
+use structopt::clap;
+use crate::cli;
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `/// This module applies rewrite rules to the command line options.
+/// 1. Express deprecated usages in the new non-deprecated form.
+use structopt::clap;
+use crate::cli;
+`)
+	})
+
+	t.Run("Go_GroupedImportCommentAboveDeletedSpec", func(t *testing.T) {
+		src := `package main
+
+import (
+	// Format and I/O utilities
+	"fmt"
+	"io"
+	"os"
+)
+
+func main() {
+	_ = io.EOF
+	_ = os.Args
+}
+`
+		dst := `package main
+
+import (
+	// Format and I/O utilities
+	"io"
+	"os"
+)
+
+func main() {
+	_ = io.EOF
+	_ = os.Args
+}
+`
+		res, err := Run([]byte(src), []byte(dst), "test.go", "test.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+import (
+	// Format and I/O utilities
+	<del>"fmt"</del>
+	"io"
+	"os"
+)
+
+func main() {
+	_ = io.EOF
+	_ = os.Args
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `package main
+
+import (
+	// Format and I/O utilities
+	"io"
+	"os"
+)
+
+func main() {
+	_ = io.EOF
+	_ = os.Args
+}
+`)
+	})
+}

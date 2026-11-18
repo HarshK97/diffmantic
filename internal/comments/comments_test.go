@@ -1,7 +1,6 @@
 package comments
 
 import (
-	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -1779,7 +1778,6 @@ use crate::cli;
 		}
 
 		// Surviving use declarations map in place
-		// Surviving use declarations map in place
 		testutil.AssertMapped(t, oldAST, newAST, matchResult.Mappings.Src(),
 			testutil.NodeQuery{Type: "use_declaration", Line: 7},
 			testutil.NodeQuery{Type: "use_declaration", Line: 5},
@@ -1857,22 +1855,8 @@ func main() {
 		}
 
 		// Surviving import specs map in place
-		var oldIO, newIO *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("io")) {
-				oldIO = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("io")) {
-				newIO = n
-				break
-			}
-		}
-		if oldIO == nil || newIO == nil || matchResult.Mappings.Src()[oldIO] != newIO {
-			t.Errorf("expected io import spec to map in place")
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"io"`, `"io"`, "import_spec")
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"os"`, `"os"`, "import_spec")
 
 		oldComments := ExtractComments(oldAST)
 		newComments := ExtractComments(newAST)
@@ -1941,31 +1925,8 @@ func main() {
 		}
 
 		// Both imports survive and map to each other
-		var oldFmt, newFmt, oldOS, newOS *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsImport(n.Type) {
-				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("fmt")) {
-					oldFmt = n
-				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("os")) {
-					oldOS = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsImport(n.Type) {
-				if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("fmt")) {
-					newFmt = n
-				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("os")) {
-					newOS = n
-				}
-			}
-		}
-		if oldFmt == nil || newFmt == nil || matchResult.Mappings.Src()[oldFmt] != newFmt {
-			t.Fatalf("expected fmt import to map in place")
-		}
-		if oldOS == nil || newOS == nil || matchResult.Mappings.Src()[oldOS] != newOS {
-			t.Fatalf("expected os import to map in place")
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"fmt"`, `"fmt"`, "import_spec")
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"os"`, `"os"`, "import_spec")
 
 		oldComments := ExtractComments(oldAST)
 		newComments := ExtractComments(newAST)
