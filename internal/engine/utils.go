@@ -752,6 +752,15 @@ func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 			return c
 		}
 	}
+	if (r != nil && r.IsClause(n.Type)) || (r == nil && rules.IsClause(n.Type)) {
+		for _, c := range n.Children {
+			for _, inner := range c.Children {
+				if (r != nil && r.IsBlock(inner.Type)) || (r == nil && rules.IsBlock(inner.Type)) {
+					return inner
+				}
+			}
+		}
+	}
 	return nil
 }
 

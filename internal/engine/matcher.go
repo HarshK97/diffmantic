@@ -43,6 +43,7 @@ func Match(t1, t2 *treesitter.ASTNode, srcA, srcB []byte, part *LinePartition) *
 
 	MatchUnmatchedLeaves(t1, t2, mappings, part)
 	RollupMatchedContainers(t1, t2, mappings)
+	reconcileClauseWrappers(t1, mappings)
 	recoverPostRollupSiblings(t1, mappings)
 	RecoverCohortSiblings(t1, t2, mappings)
 	MatchContainerKeywords(t1, t2, mappings)
