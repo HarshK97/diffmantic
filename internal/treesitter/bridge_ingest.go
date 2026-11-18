@@ -292,7 +292,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 						cb.DeclStart = enc.StartByte
 						cb.DeclEnd = enc.EndByte
 						cb.RelativePath = "body"
-					} else {
+					} else if target.Parent != root && !isImportNodeOrInsideImport(target, r) {
 						cb.EnclosingDecl = target
 					}
 					cb.AnchorNode = target
@@ -338,9 +338,9 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 				}
 				isDecl := func(t string) bool {
 					if r != nil {
-						return r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t)
+						return r.IsDeclaration(t) && !r.IsLocalVarDeclaration(t) && !r.IsImport(t)
 					}
-					return rules.IsDeclaration(t)
+					return rules.IsDeclaration(t) && !rules.IsLocalVarDeclaration(t) && !rules.IsImport(t)
 				}
 				isDelim := func(t string) bool {
 					if r != nil {
@@ -393,7 +393,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 					cb.DeclStart = enc.StartByte
 					cb.DeclEnd = enc.EndByte
 					cb.RelativePath = "body"
-				} else {
+				} else if target.Parent != root && !isImportNodeOrInsideImport(target, r) {
 					cb.EnclosingDecl = target
 				}
 				cb.AnchorNode = target
@@ -414,7 +414,7 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 			cb.DeclStart = enc.StartByte
 			cb.DeclEnd = enc.EndByte
 			cb.RelativePath = "body"
-		} else {
+		} else if parentAST != root && !isImportNodeOrInsideImport(parentAST, r) {
 			cb.EnclosingDecl = parentAST
 		}
 		cb.AnchorNode = parentAST
@@ -424,15 +424,28 @@ func attachTrivia(root *ASTNode, nodes []FlatNode, symbols []string, src []byte,
 
 func findEnclosingDecl(n *ASTNode, r *rules.Rules) *ASTNode {
 	for curr := n; curr != nil; curr = curr.Parent {
-		isDecl := rules.IsDeclaration(curr.Type)
+		isDecl := rules.IsDeclaration(curr.Type) && !rules.IsLocalVarDeclaration(curr.Type) && !rules.IsImport(curr.Type)
 		if r != nil {
-			isDecl = r.IsDeclaration(curr.Type) && !r.IsLocalVarDeclaration(curr.Type)
+			isDecl = r.IsDeclaration(curr.Type) && !r.IsLocalVarDeclaration(curr.Type) && !r.IsImport(curr.Type)
 		}
 		if isDecl {
 			return curr
 		}
 	}
 	return nil
+}
+
+func isImportNodeOrInsideImport(n *ASTNode, r *rules.Rules) bool {
+	for curr := n; curr != nil; curr = curr.Parent {
+		if r != nil {
+			if r.IsImport(curr.Type) {
+				return true
+			}
+		} else if rules.IsImport(curr.Type) {
+			return true
+		}
+	}
+	return false
 }
 
 func findASTNode(idx uint32, nodes []FlatNode, flatToAST []*ASTNode) *ASTNode {
