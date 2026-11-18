@@ -279,13 +279,13 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		r := rulesFor(src)
 		srcDecl := src.EnclosingContainerDeclaration(r)
 		dstDecl := dst.EnclosingContainerDeclaration(r)
-		if srcDecl == nil || dstDecl == nil || m.Src()[srcDecl] == dstDecl {
+		if isSameEnclosingDeclaration(srcDecl, dstDecl, m) {
 			continue
 		}
 
 		srcBlock := src.Parent
 		dstBlock := dst.Parent
-		if srcBlock == nil || dstBlock == nil || !isStatementBlock(srcBlock, r) || !isStatementBlock(dstBlock, r) {
+		if !isStatementContainer(srcBlock, r) || !isStatementContainer(dstBlock, r) {
 			continue
 		}
 
@@ -345,7 +345,7 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 		}
 		srcDecl := src.EnclosingContainerDeclaration(r)
 		dstDecl := dst.EnclosingContainerDeclaration(r)
-		if srcDecl == nil || dstDecl == nil || m.Src()[srcDecl] == dstDecl {
+		if isSameEnclosingDeclaration(srcDecl, dstDecl, m) {
 			continue
 		}
 		if !isStatementContainer(src.Parent, r) || !isStatementContainer(dst.Parent, r) {
@@ -472,6 +472,15 @@ func recoverUnmappedDescendantBlocks(t1, t2 *treesitter.ASTNode, m *Mapping, r *
 			}
 		}
 	}
+}
+
+// isSameEnclosingDeclaration reports whether srcDecl and dstDecl represent the same
+// enclosing scope: either both at top level (nil) or both enclosed in mapped declarations.
+func isSameEnclosingDeclaration(srcDecl, dstDecl *treesitter.ASTNode, m *Mapping) bool {
+	if srcDecl == nil || dstDecl == nil {
+		return srcDecl == dstDecl
+	}
+	return m.Src()[srcDecl] == dstDecl
 }
 
 // isStatementContainer reports whether n is a block or contains statements or declarations.

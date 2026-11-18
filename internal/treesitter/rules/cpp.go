@@ -218,6 +218,7 @@ var cppRules = &Rules{
 	},
 	Blocks: []string{
 		"compound_statement",
+		"declaration_list",
 	},
 	Wrappers: []string{
 		"labeled_statement",
