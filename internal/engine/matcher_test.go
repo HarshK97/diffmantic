@@ -2023,3 +2023,534 @@ fn _make_process_from_less_path() -> Command {
 		}
 	})
 }
+
+func TestRecoverCohortSiblings_UnqualifiedUseDeclaration_FullEngine(t *testing.T) {
+	t.Run("FullEngine_Rust", func(t *testing.T) {
+		src := []byte(`pub mod integration_test_utils {
+    use bytelines::ByteLines;
+    use itertools;
+    use crate::ansi;
+
+    pub fn make_options() -> i32 {
+        let default_limit = 42;
+        default_limit
+    }
+}
+`)
+		dst := []byte(`use bytelines::ByteLines;
+use itertools;
+use crate::ansi;
+
+pub fn make_options() -> i32 {
+    let default_limit = 42;
+    default_limit
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("missing rust rules")
+		}
+
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing make_options declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("make_options: got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
+		}
+
+		var srcLimit, dstLimit *treesitter.ASTNode
+		for _, n := range srcFn.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("default_limit")) {
+				srcLimit = n
+				break
+			}
+		}
+		for _, n := range dstFn.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("default_limit")) {
+				dstLimit = n
+				break
+			}
+		}
+		if srcLimit == nil || dstLimit == nil {
+			t.Fatalf("missing default_limit var: src=%v, dst=%v", srcLimit, dstLimit)
+		}
+		if mr.Mappings.Src()[srcLimit] != dstLimit {
+			t.Errorf("default_limit: got %v, want %v", mr.Mappings.Src()[srcLimit], dstLimit)
+		}
+
+		var srcByteLines, dstByteLines *treesitter.ASTNode
+		var srcAnsi, dstAnsi *treesitter.ASTNode
+		var srcItertools, dstItertools *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) {
+				text := src[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("ByteLines")) {
+					srcByteLines = n
+				} else if bytes.Contains(text, []byte("ansi")) {
+					srcAnsi = n
+				} else if bytes.Contains(text, []byte("itertools")) {
+					srcItertools = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) {
+				text := dst[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("ByteLines")) {
+					dstByteLines = n
+				} else if bytes.Contains(text, []byte("ansi")) {
+					dstAnsi = n
+				} else if bytes.Contains(text, []byte("itertools")) {
+					dstItertools = n
+				}
+			}
+		}
+
+		if srcByteLines == nil || dstByteLines == nil {
+			t.Errorf("missing ByteLines: src=%v, dst=%v", srcByteLines, dstByteLines)
+		} else if mr.Mappings.Src()[srcByteLines] != dstByteLines {
+			t.Errorf("ByteLines: got %v, want %v", mr.Mappings.Src()[srcByteLines], dstByteLines)
+		}
+
+		if srcAnsi == nil || dstAnsi == nil {
+			t.Errorf("missing ansi: src=%v, dst=%v", srcAnsi, dstAnsi)
+		} else if mr.Mappings.Src()[srcAnsi] != dstAnsi {
+			t.Errorf("ansi: got %v, want %v", mr.Mappings.Src()[srcAnsi], dstAnsi)
+		}
+
+		if srcItertools == nil || dstItertools == nil {
+			t.Errorf("missing itertools: src=%v, dst=%v", srcItertools, dstItertools)
+		} else if mr.Mappings.Src()[srcItertools] != dstItertools {
+			t.Errorf("unqualified itertools: got %v, want %v", mr.Mappings.Src()[srcItertools], dstItertools)
+		}
+	})
+
+	t.Run("FullEngine_Cpp", func(t *testing.T) {
+		src := []byte(`namespace integration_test_utils {
+    using std::string;
+    using std::vector;
+    using std::map;
+
+    int make_options() {
+        int default_limit = 42;
+        return default_limit;
+    }
+}
+`)
+		dst := []byte(`using std::string;
+using std::vector;
+using std::map;
+
+int make_options() {
+    int default_limit = 42;
+    return default_limit;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.cpp")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.cpp")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("cpp")
+		if r == nil {
+			t.Fatal("missing cpp rules")
+		}
+
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing make_options declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("make_options: got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
+		}
+
+		var srcLimit, dstLimit *treesitter.ASTNode
+		for _, n := range srcFn.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("default_limit")) {
+				srcLimit = n
+				break
+			}
+		}
+		for _, n := range dstFn.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("default_limit")) {
+				dstLimit = n
+				break
+			}
+		}
+		if srcLimit == nil || dstLimit == nil {
+			t.Fatalf("missing default_limit var: src=%v, dst=%v", srcLimit, dstLimit)
+		}
+		if mr.Mappings.Src()[srcLimit] != dstLimit {
+			t.Errorf("default_limit: got %v, want %v", mr.Mappings.Src()[srcLimit], dstLimit)
+		}
+
+		var srcString, dstString *treesitter.ASTNode
+		var srcVector, dstVector *treesitter.ASTNode
+		var srcMap, dstMap *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "using_declaration" {
+				text := src[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("string")) {
+					srcString = n
+				} else if bytes.Contains(text, []byte("vector")) {
+					srcVector = n
+				} else if bytes.Contains(text, []byte("map")) {
+					srcMap = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "using_declaration" {
+				text := dst[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("string")) {
+					dstString = n
+				} else if bytes.Contains(text, []byte("vector")) {
+					dstVector = n
+				} else if bytes.Contains(text, []byte("map")) {
+					dstMap = n
+				}
+			}
+		}
+
+		if srcString == nil || dstString == nil {
+			t.Errorf("missing string using_declaration: src=%v, dst=%v", srcString, dstString)
+		} else if mr.Mappings.Src()[srcString] != dstString {
+			t.Errorf("using string: got %v, want %v", mr.Mappings.Src()[srcString], dstString)
+		}
+
+		if srcVector == nil || dstVector == nil {
+			t.Errorf("missing vector using_declaration: src=%v, dst=%v", srcVector, dstVector)
+		} else if mr.Mappings.Src()[srcVector] != dstVector {
+			t.Errorf("using vector: got %v, want %v", mr.Mappings.Src()[srcVector], dstVector)
+		}
+
+		if srcMap == nil || dstMap == nil {
+			t.Errorf("missing map using_declaration: src=%v, dst=%v", srcMap, dstMap)
+		} else if mr.Mappings.Src()[srcMap] != dstMap {
+			t.Errorf("using map: got %v, want %v", mr.Mappings.Src()[srcMap], dstMap)
+		}
+	})
+
+	t.Run("FullEngine_TypeScript", func(t *testing.T) {
+		src := []byte(`namespace integration_test_utils {
+    import ByteLines = bytelines.ByteLines;
+    import ansi = crate.ansi;
+    import itertools = crate.itertools;
+
+    export function make_options(): number {
+        let default_limit = 42;
+        return default_limit;
+    }
+}
+`)
+		dst := []byte(`import ByteLines = bytelines.ByteLines;
+import ansi = crate.ansi;
+import itertools = crate.itertools;
+
+export function make_options(): number {
+    let default_limit = 42;
+    return default_limit;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("typescript")
+		if r == nil {
+			t.Fatal("missing typescript rules")
+		}
+
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing make_options declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("make_options: got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
+		}
+
+		var srcLimit, dstLimit *treesitter.ASTNode
+		for _, n := range srcFn.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("default_limit")) {
+				srcLimit = n
+				break
+			}
+		}
+		for _, n := range dstFn.Descendants() {
+			if r.IsLocalVarDeclaration(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("default_limit")) {
+				dstLimit = n
+				break
+			}
+		}
+		if srcLimit == nil || dstLimit == nil {
+			t.Fatalf("missing default_limit var: src=%v, dst=%v", srcLimit, dstLimit)
+		}
+		if mr.Mappings.Src()[srcLimit] != dstLimit {
+			t.Errorf("default_limit: got %v, want %v", mr.Mappings.Src()[srcLimit], dstLimit)
+		}
+
+		var srcByteLines, dstByteLines *treesitter.ASTNode
+		var srcAnsi, dstAnsi *treesitter.ASTNode
+		var srcItertools, dstItertools *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "import_alias" {
+				text := src[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("ByteLines")) {
+					srcByteLines = n
+				} else if bytes.Contains(text, []byte("ansi")) {
+					srcAnsi = n
+				} else if bytes.Contains(text, []byte("itertools")) {
+					srcItertools = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "import_alias" {
+				text := dst[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("ByteLines")) {
+					dstByteLines = n
+				} else if bytes.Contains(text, []byte("ansi")) {
+					dstAnsi = n
+				} else if bytes.Contains(text, []byte("itertools")) {
+					dstItertools = n
+				}
+			}
+		}
+
+		if srcByteLines == nil || dstByteLines == nil {
+			t.Errorf("missing ByteLines import_alias: src=%v, dst=%v", srcByteLines, dstByteLines)
+		} else if mr.Mappings.Src()[srcByteLines] != dstByteLines {
+			t.Errorf("ByteLines: got %v, want %v", mr.Mappings.Src()[srcByteLines], dstByteLines)
+		}
+
+		if srcAnsi == nil || dstAnsi == nil {
+			t.Errorf("missing ansi import_alias: src=%v, dst=%v", srcAnsi, dstAnsi)
+		} else if mr.Mappings.Src()[srcAnsi] != dstAnsi {
+			t.Errorf("ansi: got %v, want %v", mr.Mappings.Src()[srcAnsi], dstAnsi)
+		}
+
+		if srcItertools == nil || dstItertools == nil {
+			t.Errorf("missing itertools import_alias: src=%v, dst=%v", srcItertools, dstItertools)
+		} else if mr.Mappings.Src()[srcItertools] != dstItertools {
+			t.Errorf("itertools: got %v, want %v", mr.Mappings.Src()[srcItertools], dstItertools)
+		}
+	})
+
+	t.Run("FullEngine_Python", func(t *testing.T) {
+		src := []byte(`class IntegrationTestUtils:
+    from os import path
+    import itertools
+    from sys import version
+
+    def make_options():
+        default_limit = 42
+        return default_limit
+`)
+		dst := []byte(`from os import path
+import itertools
+from sys import version
+
+def make_options():
+    default_limit = 42
+    return default_limit
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("python")
+		if r == nil {
+			t.Fatal("missing python rules")
+		}
+
+		part := NewLinePartition(src, dst)
+		mr := Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "make_options" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing make_options declaration: src=%v, dst=%v", srcFn, dstFn)
+		}
+		if mr.Mappings.Src()[srcFn] != dstFn {
+			t.Errorf("make_options: got %v, want %v", mr.Mappings.Src()[srcFn], dstFn)
+		}
+
+		var srcLimit, dstLimit *treesitter.ASTNode
+		for _, n := range srcFn.Descendants() {
+			if r.IsAssignment(n.Type) && bytes.Contains(src[n.StartByte:n.EndByte], []byte("default_limit")) {
+				srcLimit = n
+				break
+			}
+		}
+		for _, n := range dstFn.Descendants() {
+			if r.IsAssignment(n.Type) && bytes.Contains(dst[n.StartByte:n.EndByte], []byte("default_limit")) {
+				dstLimit = n
+				break
+			}
+		}
+		if srcLimit == nil || dstLimit == nil {
+			t.Fatalf("missing default_limit assignment: src=%v, dst=%v", srcLimit, dstLimit)
+		}
+		if mr.Mappings.Src()[srcLimit] != dstLimit {
+			t.Errorf("default_limit assignment: got %v, want %v", mr.Mappings.Src()[srcLimit], dstLimit)
+		}
+
+		var srcPath, dstPath *treesitter.ASTNode
+		var srcItertools, dstItertools *treesitter.ASTNode
+		var srcVersion, dstVersion *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsImport(n.Type) {
+				text := src[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("path")) {
+					srcPath = n
+				} else if bytes.Contains(text, []byte("itertools")) {
+					srcItertools = n
+				} else if bytes.Contains(text, []byte("version")) {
+					srcVersion = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsImport(n.Type) {
+				text := dst[n.StartByte:n.EndByte]
+				if bytes.Contains(text, []byte("path")) {
+					dstPath = n
+				} else if bytes.Contains(text, []byte("itertools")) {
+					dstItertools = n
+				} else if bytes.Contains(text, []byte("version")) {
+					dstVersion = n
+				}
+			}
+		}
+
+		if srcPath == nil || dstPath == nil {
+			t.Errorf("missing path import: src=%v, dst=%v", srcPath, dstPath)
+		} else if mr.Mappings.Src()[srcPath] != dstPath {
+			t.Errorf("path import: got %v, want %v", mr.Mappings.Src()[srcPath], dstPath)
+		}
+
+		if srcItertools == nil || dstItertools == nil {
+			t.Errorf("missing itertools import: src=%v, dst=%v", srcItertools, dstItertools)
+		} else if mr.Mappings.Src()[srcItertools] != dstItertools {
+			t.Errorf("itertools import: got %v, want %v", mr.Mappings.Src()[srcItertools], dstItertools)
+		}
+
+		if srcVersion == nil || dstVersion == nil {
+			t.Errorf("missing version import: src=%v, dst=%v", srcVersion, dstVersion)
+		} else if mr.Mappings.Src()[srcVersion] != dstVersion {
+			t.Errorf("version import: got %v, want %v", mr.Mappings.Src()[srcVersion], dstVersion)
+		}
+	})
+}
