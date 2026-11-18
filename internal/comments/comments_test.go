@@ -1,6 +1,7 @@
 package comments
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -1753,6 +1754,311 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 		}
 		if len(result.LineMappings) != 0 {
 			t.Errorf("expected 0 line mappings for comment attaching to different AST, got: %v", result.LineMappings)
+		}
+	})
+}
+
+func TestDiffCommentsAnchorDeletedOrRewritten(t *testing.T) {
+	t.Run("FullEngine_DeletedImportAnchorAtFileRoot", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("missing rust rules")
+		}
+
+		oldSrc := []byte(`/// This module applies rewrite rules to the command line options, in order to
+/// 1. Express deprecated usages in the new non-deprecated form
+/// 2. Implement options such as --raw which are defined to be equivalent to some set of
+///    other options.
+use std::process;
+
+use structopt::clap;
+use crate::cli;
+`)
+		newSrc := []byte(`/// This module applies rewrite rules to the command line options, in order to
+/// 1. Express deprecated usages in the new non-deprecated form
+/// 2. Implement options such as --raw which are defined to be equivalent to some set of
+///    other options.
+use structopt::clap;
+use crate::cli;
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.rs")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.rs")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 || newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		matchResult := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Surviving use declarations map in place
+		var oldClap, newClap *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("clap")) {
+				oldClap = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("clap")) {
+				newClap = n
+				break
+			}
+		}
+		if oldClap == nil || newClap == nil || matchResult.Mappings.Src()[oldClap] != newClap {
+			t.Errorf("expected use structopt::clap to map in place")
+		}
+
+		oldComments := ExtractComments(oldAST)
+		newComments := ExtractComments(newAST)
+		if len(oldComments) != 4 || len(newComments) != 4 {
+			t.Fatalf("expected 4 comments on each side, got old=%d new=%d", len(oldComments), len(newComments))
+		}
+
+		diffRes := DiffComments(oldComments, newComments, matchResult.Mappings)
+		if len(diffRes.Actions) != 0 {
+			t.Errorf("expected 0 actions for identical file-level doc comment above deleted import, got %d actions: %+v", len(diffRes.Actions), diffRes.Actions)
+		}
+		if len(diffRes.LineMappings) == 0 {
+			t.Errorf("expected line mappings to be populated for matching comment, got none")
+		}
+	})
+
+	t.Run("FullEngine_DeletedGroupedImportAnchor_Go", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("missing go rules")
+		}
+
+		oldSrc := []byte(`package main
+
+import (
+	// Format and I/O utilities
+	"fmt"
+	"io"
+	"os"
+)
+
+func main() {
+	_ = io.EOF
+	_ = os.Args
+}
+`)
+		newSrc := []byte(`package main
+
+import (
+	// Format and I/O utilities
+	"io"
+	"os"
+)
+
+func main() {
+	_ = io.EOF
+	_ = os.Args
+}
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 || newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		matchResult := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Surviving import specs map in place
+		var oldIO, newIO *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("io")) {
+				oldIO = n
+				break
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("io")) {
+				newIO = n
+				break
+			}
+		}
+		if oldIO == nil || newIO == nil || matchResult.Mappings.Src()[oldIO] != newIO {
+			t.Errorf("expected io import spec to map in place")
+		}
+
+		oldComments := ExtractComments(oldAST)
+		newComments := ExtractComments(newAST)
+		if len(oldComments) != 1 || len(newComments) != 1 {
+			t.Fatalf("expected 1 comment on each side, got old=%d new=%d", len(oldComments), len(newComments))
+		}
+
+		diffRes := DiffComments(oldComments, newComments, matchResult.Mappings)
+		if len(diffRes.Actions) != 0 {
+			t.Errorf("expected 0 actions for identical comment inside grouped import after deleting first spec, got %d actions: %+v", len(diffRes.Actions), diffRes.Actions)
+		}
+		if len(diffRes.LineMappings) == 0 {
+			t.Errorf("expected line mappings to be populated for matching comment, got none")
+		}
+	})
+
+	t.Run("FullEngine_CommentMovedBetweenSurvivingImports_PreservesPR356", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("missing go rules")
+		}
+
+		oldSrc := []byte(`package main
+
+import (
+	// Helpers
+	"fmt"
+	"os"
+)
+
+func main() {
+	_ = fmt.Println
+	_ = os.Args
+}
+`)
+		newSrc := []byte(`package main
+
+import (
+	"fmt"
+	// Helpers
+	"os"
+)
+
+func main() {
+	_ = fmt.Println
+	_ = os.Args
+}
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 || newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		matchResult := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Both imports survive and map to each other
+		var oldFmt, newFmt, oldOS, newOS *treesitter.ASTNode
+		for _, n := range oldAST.Descendants() {
+			if r.IsImport(n.Type) {
+				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("fmt")) {
+					oldFmt = n
+				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("os")) {
+					oldOS = n
+				}
+			}
+		}
+		for _, n := range newAST.Descendants() {
+			if r.IsImport(n.Type) {
+				if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("fmt")) {
+					newFmt = n
+				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("os")) {
+					newOS = n
+				}
+			}
+		}
+		if oldFmt == nil || newFmt == nil || matchResult.Mappings.Src()[oldFmt] != newFmt {
+			t.Fatalf("expected fmt import to map in place")
+		}
+		if oldOS == nil || newOS == nil || matchResult.Mappings.Src()[oldOS] != newOS {
+			t.Fatalf("expected os import to map in place")
+		}
+
+		oldComments := ExtractComments(oldAST)
+		newComments := ExtractComments(newAST)
+		if len(oldComments) != 1 || len(newComments) != 1 {
+			t.Fatalf("expected 1 comment on each side, got old=%d new=%d", len(oldComments), len(newComments))
+		}
+
+		diffRes := DiffComments(oldComments, newComments, matchResult.Mappings)
+		// When a comment moves between surviving imports, PR #356 mandates that it must NOT
+		// pair silently without highlights. It must emit delete + insert actions.
+		if len(diffRes.Actions) != 2 {
+			t.Errorf("expected 2 actions (delete + insert) when comment moves between surviving imports, got %d actions: %+v", len(diffRes.Actions), diffRes.Actions)
+		}
+		if len(diffRes.LineMappings) != 0 {
+			t.Errorf("expected 0 line mappings for moved comment across surviving imports, got %v", diffRes.LineMappings)
+		}
+	})
+
+	t.Run("FullEngine_FuzzyCommentNotMatchedAcrossImports", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+import (
+	// Database connection pool
+	"database/sql"
+)
+`)
+		newSrc := []byte(`package main
+
+import (
+	// Database connector pool
+	"net/http"
+)
+`)
+
+		oldAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old source: %v", err)
+		}
+		newAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new source: %v", err)
+		}
+		if oldAST.HasError || oldAST.ParseErrorCount > 0 || newAST.HasError || newAST.ParseErrorCount > 0 {
+			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(oldSrc, newSrc)
+		matchResult := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
+		if matchResult == nil || matchResult.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		oldComments := ExtractComments(oldAST)
+		newComments := ExtractComments(newAST)
+		diffRes := DiffComments(oldComments, newComments, matchResult.Mappings)
+
+		// Fuzzy comments on distinct imports must not cross-pair with false word-level update actions.
+		for _, act := range diffRes.Actions {
+			if act.Type == actions.Update {
+				t.Errorf("unexpected word-level update action across different imports: %+v", act)
+			}
+		}
+		if len(diffRes.Actions) != 2 {
+			t.Errorf("expected 2 actions (delete + insert) for edited comment on different imports, got %d", len(diffRes.Actions))
 		}
 	})
 }

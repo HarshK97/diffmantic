@@ -9,12 +9,33 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 // DiffResult holds actions produced from diffing comments.
 type DiffResult struct {
 	Actions      []actions.Action
 	LineMappings map[int]int
+}
+
+func isImportNode(node *treesitter.ASTNode, lang string) bool {
+	if node == nil {
+		return false
+	}
+	var r *rules.Rules
+	if lang != "" {
+		r = rules.Get(lang)
+	}
+	for curr := node; curr != nil; curr = curr.Parent {
+		if r != nil {
+			if r.IsImport(curr.Type) {
+				return true
+			}
+		} else if rules.IsImport(curr.Type) {
+			return true
+		}
+	}
+	return false
 }
 
 // isAnchorCompatible checks whether both comments attach to statements that mapped to each other.
@@ -25,7 +46,20 @@ func isAnchorCompatible(sc, dc *CommentBlock, mappings *engine.Mapping) bool {
 	if sc == nil || dc == nil || sc.AnchorNode == nil || dc.AnchorNode == nil {
 		return true
 	}
-	return mappings.Src()[sc.AnchorNode] == dc.AnchorNode
+	if mappings.Src()[sc.AnchorNode] == dc.AnchorNode {
+		return true
+	}
+	// If the source anchor mapped to a surviving statement elsewhere, the comment moved away from it: reject.
+	if mappings.Src()[sc.AnchorNode] != nil {
+		return false
+	}
+	// If the source anchor was deleted from under an identical comment, permit pairing only for imports at the file root.
+	if sc.Text == dc.Text && sc.EnclosingDecl == nil && dc.EnclosingDecl == nil {
+		if isImportNode(sc.AnchorNode, sc.Language) && isImportNode(dc.AnchorNode, dc.Language) {
+			return true
+		}
+	}
+	return false
 }
 
 func canonicalScopeKey(c *CommentBlock, mappings *engine.Mapping, isSource bool) string {
