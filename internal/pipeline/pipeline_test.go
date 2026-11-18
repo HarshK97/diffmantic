@@ -3346,3 +3346,203 @@ func main() {
 `)
 	})
 }
+
+func TestPipeline_RecoverCohortSiblings_UnqualifiedUseDeclaration(t *testing.T) {
+	t.Run("Rust", func(t *testing.T) {
+		src := `pub mod integration_test_utils {
+    use bytelines::ByteLines;
+    use itertools;
+    use crate::ansi;
+
+    pub fn make_options() -> i32 {
+        let default_limit = 42;
+        default_limit
+    }
+}
+`
+		dst := `use bytelines::ByteLines;
+use itertools;
+use crate::ansi;
+
+pub fn make_options() -> i32 {
+    let default_limit = 42;
+    default_limit
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `<del>pub mod integration_test_utils {</del>
+    <mov>use bytelines::ByteLines;</mov>
+    <mov>use itertools;</mov>
+    <mov>use crate::ansi;</mov>
+
+    <mov>pub fn make_options() -> i32 {</mov>
+<mov>        let default_limit = 42;</mov>
+<mov>        default_limit</mov>
+<mov>    }</mov>
+<del>}</del>
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `<mov>use bytelines::ByteLines;</mov>
+<mov>use itertools;</mov>
+<mov>use crate::ansi;</mov>
+
+<mov>pub fn make_options() -> i32 {</mov>
+<mov>    let default_limit = 42;</mov>
+<mov>    default_limit</mov>
+<mov>}</mov>
+`)
+	})
+
+	t.Run("Cpp", func(t *testing.T) {
+		src := `namespace integration_test_utils {
+    using std::string;
+    using std::vector;
+    using std::map;
+
+    int make_options() {
+        int default_limit = 42;
+        return default_limit;
+    }
+}
+`
+		dst := `using std::string;
+using std::vector;
+using std::map;
+
+int make_options() {
+    int default_limit = 42;
+    return default_limit;
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.cpp", "test.cpp", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `<del>namespace integration_test_utils {</del>
+    <mov>using std::string;</mov>
+    <mov>using std::vector;</mov>
+    <mov>using std::map;</mov>
+
+    <mov>int make_options() {</mov>
+<mov>        int default_limit = 42;</mov>
+<mov>        return default_limit;</mov>
+<mov>    }</mov>
+<del>}</del>
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `<mov>using std::string;</mov>
+<mov>using std::vector;</mov>
+<mov>using std::map;</mov>
+
+<mov>int make_options() {</mov>
+<mov>    int default_limit = 42;</mov>
+<mov>    return default_limit;</mov>
+<mov>}</mov>
+`)
+	})
+
+	t.Run("TypeScript", func(t *testing.T) {
+		src := `namespace integration_test_utils {
+    import ByteLines = bytelines.ByteLines;
+    import ansi = crate.ansi;
+    import itertools = crate.itertools;
+
+    export function make_options(): number {
+        let default_limit = 42;
+        return default_limit;
+    }
+}
+`
+		dst := `import ByteLines = bytelines.ByteLines;
+import ansi = crate.ansi;
+import itertools = crate.itertools;
+
+export function make_options(): number {
+    let default_limit = 42;
+    return default_limit;
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.ts", "test.ts", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `<del>namespace integration_test_utils {</del>
+    <mov>import ByteLines = bytelines.ByteLines;</mov>
+    <mov>import ansi = crate.ansi;</mov>
+    <mov>import itertools = crate.itertools;</mov>
+
+    <mov>export function make_options(): number {</mov>
+<mov>        let default_limit = 42;</mov>
+<mov>        return default_limit;</mov>
+<mov>    }</mov>
+<del>}</del>
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `<mov>import ByteLines = bytelines.ByteLines;</mov>
+<mov>import ansi = crate.ansi;</mov>
+<mov>import itertools = crate.itertools;</mov>
+
+<mov>export function make_options(): number {</mov>
+<mov>    let default_limit = 42;</mov>
+<mov>    return default_limit;</mov>
+<mov>}</mov>
+`)
+	})
+
+	t.Run("Python", func(t *testing.T) {
+		src := `class IntegrationTestUtils:
+    from os import path
+    import itertools
+    from sys import version
+
+    def make_options():
+        default_limit = 42
+        return default_limit
+`
+		dst := `from os import path
+import itertools
+from sys import version
+
+def make_options():
+    default_limit = 42
+    return default_limit
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.py", "test.py", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `<del>class IntegrationTestUtils:</del>
+    <mov>from os import path</mov>
+    <mov>import itertools</mov>
+    <mov>from sys import version</mov>
+
+    <mov>def make_options():</mov>
+<mov>        default_limit = 42</mov>
+<mov>        return default_limit</mov>
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `<mov>from os import path</mov>
+<mov>import itertools</mov>
+<mov>from sys import version</mov>
+
+<mov>def make_options():</mov>
+<mov>    default_limit = 42</mov>
+<mov>    return default_limit</mov>
+`)
+	})
+}
