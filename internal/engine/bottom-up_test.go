@@ -5381,3 +5381,337 @@ func TestRollupMatchedContainers_ElseClause_FullEngine(t *testing.T) {
 		})
 	}
 }
+
+func TestChainedCallWrapperUpdateTheft(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			file        string
+			oldSrc      string
+			newSrc      string
+			targetFunc  string
+			preceding   string
+			succeeding  string
+			oldMethod   string
+			innerMethod string
+			outerMethod string
+			flagMethod  string
+		}{
+			{
+				name: "Rust_ChainedMethodCall_WrapperUpdateTheft",
+				file: "app.rs",
+				oldSrc: `fn render_lines() {
+    let style = compute_style();
+    let _ = Config {
+        visible_lines: match self.matches.contains_id("diff") && self.matches.get_flag("diff") {
+            _ => None,
+        },
+    };
+    self.flush_buffer();
+}`,
+				newSrc: `fn render_lines() {
+    let style = compute_style();
+    let _ = Config {
+        visible_lines: match self.matches.try_contains_id("diff").unwrap_or_default()
+            && self.matches.get_flag("diff")
+        {
+            _ => None,
+        },
+    };
+    self.flush_buffer();
+}`,
+				targetFunc:  "render_lines",
+				preceding:   "compute_style",
+				succeeding:  "flush_buffer",
+				oldMethod:   "contains_id",
+				innerMethod: "try_contains_id",
+				outerMethod: "unwrap_or_default",
+			},
+			{
+				name: "Go_ChainedMethodCall_WrapperUpdateTheft",
+				file: "app.go",
+				oldSrc: `package main
+
+func renderLines() {
+	style := computeStyle()
+	_ = Config{
+		VisibleLines: self.Matches.ContainsID("diff") && self.Matches.GetFlag("diff"),
+	}
+	self.flushBuffer()
+}`,
+				newSrc: `package main
+
+func renderLines() {
+	style := computeStyle()
+	_ = Config{
+		VisibleLines: self.Matches.TryContainsID("diff").UnwrapOrDefault() && self.Matches.GetFlag("diff"),
+	}
+	self.flushBuffer()
+}`,
+				targetFunc:  "renderLines",
+				preceding:   "computeStyle",
+				succeeding:  "flushBuffer",
+				oldMethod:   "ContainsID",
+				innerMethod: "TryContainsID",
+				outerMethod: "UnwrapOrDefault",
+				flagMethod:  "GetFlag",
+			},
+			{
+				name: "TypeScript_ChainedMethodCall_WrapperUpdateTheft",
+				file: "app.ts",
+				oldSrc: `function renderLines() {
+    const style = computeStyle();
+    const config = {
+        visibleLines: self.matches.containsId("diff") && self.matches.getFlag("diff"),
+    };
+    self.flushBuffer();
+}`,
+				newSrc: `function renderLines() {
+    const style = computeStyle();
+    const config = {
+        visibleLines: self.matches.tryContainsId("diff").unwrapOrDefault() && self.matches.getFlag("diff"),
+    };
+    self.flushBuffer();
+}`,
+				targetFunc:  "renderLines",
+				preceding:   "computeStyle",
+				succeeding:  "flushBuffer",
+				oldMethod:   "containsId",
+				innerMethod: "tryContainsId",
+				outerMethod: "unwrapOrDefault",
+				flagMethod:  "getFlag",
+			},
+			{
+				name: "Python_ChainedMethodCall_WrapperUpdateTheft",
+				file: "app.py",
+				oldSrc: `def render_lines():
+    style = compute_style()
+    config = {
+        "visible_lines": self.matches.contains_id("diff") and self.matches.get_flag("diff"),
+    }
+    self.flush_buffer()
+`,
+				newSrc: `def render_lines():
+    style = compute_style()
+    config = {
+        "visible_lines": self.matches.try_contains_id("diff").unwrap_or_default() and self.matches.get_flag("diff"),
+    }
+    self.flush_buffer()
+`,
+				targetFunc:  "render_lines",
+				preceding:   "compute_style",
+				succeeding:  "flush_buffer",
+				oldMethod:   "contains_id",
+				innerMethod: "try_contains_id",
+				outerMethod: "unwrap_or_default",
+			},
+			{
+				name: "Lua_ChainedMethodCall_WrapperUpdateTheft",
+				file: "app.lua",
+				oldSrc: `local function render_lines()
+    local style = compute_style()
+    local config = {
+        visible_lines = self.matches:contains_id("diff") and self.matches:get_flag("diff"),
+    }
+    self:flush_buffer()
+end
+`,
+				newSrc: `local function render_lines()
+    local style = compute_style()
+    local config = {
+        visible_lines = self.matches:try_contains_id("diff"):unwrap_or_default() and self.matches:get_flag("diff"),
+    }
+    self:flush_buffer()
+end
+`,
+				targetFunc:  "render_lines",
+				preceding:   "compute_style",
+				succeeding:  "flush_buffer",
+				oldMethod:   "contains_id",
+				innerMethod: "try_contains_id",
+				outerMethod: "unwrap_or_default",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				srcBytes := []byte(tt.oldSrc)
+				dstBytes := []byte(tt.newSrc)
+				srcAST, err := treesitter.Parse(srcBytes, tt.file)
+				if err != nil || srcAST == nil {
+					t.Fatalf("failed to parse src: %v", err)
+				}
+				dstAST, err := treesitter.Parse(dstBytes, tt.file)
+				if err != nil || dstAST == nil {
+					t.Fatalf("failed to parse dst: %v", err)
+				}
+				if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+					t.Fatalf("src AST has %d parse errors", srcAST.ParseErrorCount)
+				}
+				if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+					t.Fatalf("dst AST has %d parse errors", dstAST.ParseErrorCount)
+				}
+
+				r := rulesFor(srcAST)
+				if r == nil {
+					t.Fatalf("missing rules for %s", tt.file)
+				}
+
+				part := NewLinePartition(srcBytes, dstBytes)
+				mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+				if mr == nil || mr.Mappings == nil {
+					t.Fatal("Match returned nil")
+				}
+
+				// 1. Enclosing context: function declaration maps in place
+				var srcFn, dstFn *treesitter.ASTNode
+				for _, n := range srcAST.Descendants() {
+					if r.IsDeclaration(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.targetFunc)) {
+						srcFn = n
+						break
+					}
+				}
+				for _, n := range dstAST.Descendants() {
+					if r.IsDeclaration(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.targetFunc)) {
+						dstFn = n
+						break
+					}
+				}
+				if srcFn == nil || dstFn == nil {
+					t.Fatalf("missing target function: src=%v dst=%v", srcFn, dstFn)
+				}
+				if mr.Mappings.Src()[srcFn] != dstFn {
+					t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
+				}
+
+				// 2. Surrounding sequence: preceding and succeeding statements map in place
+				var srcPre, dstPre *treesitter.ASTNode
+				for _, n := range srcAST.Descendants() {
+					if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.preceding)) && (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) {
+						srcPre = n
+						break
+					}
+				}
+				for _, n := range dstAST.Descendants() {
+					if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.preceding)) && (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) {
+						dstPre = n
+						break
+					}
+				}
+				if srcPre == nil || dstPre == nil || mr.Mappings.Src()[srcPre] != dstPre {
+					t.Errorf("expected preceding statement %q to map in place, got %v", tt.preceding, mr.Mappings.Src()[srcPre])
+				}
+
+				var srcPost, dstPost *treesitter.ASTNode
+				for _, n := range srcAST.Descendants() {
+					if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.succeeding)) && r.IsStatement(n.Type) {
+						srcPost = n
+						break
+					}
+				}
+				for _, n := range dstAST.Descendants() {
+					if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.succeeding)) && r.IsStatement(n.Type) {
+						dstPost = n
+						break
+					}
+				}
+				if srcPost == nil || dstPost == nil || mr.Mappings.Src()[srcPost] != dstPost {
+					t.Errorf("expected succeeding statement %q to map in place, got %v", tt.succeeding, mr.Mappings.Src()[srcPost])
+				}
+
+				// 3. Stationary sub-expression: sibling flag call maps in place
+				flagName := tt.flagMethod
+				if flagName == "" {
+					flagName = "get_flag"
+				}
+				var srcFlag, dstFlag *treesitter.ASTNode
+				for _, n := range srcAST.Descendants() {
+					if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(flagName)) {
+						if r.IsCall(n.Type) {
+							srcFlag = n
+							break
+						}
+					}
+				}
+				for _, n := range dstAST.Descendants() {
+					if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(flagName)) {
+						if r.IsCall(n.Type) {
+							dstFlag = n
+							break
+						}
+					}
+				}
+				if srcFlag == nil || dstFlag == nil || mr.Mappings.Src()[srcFlag] != dstFlag {
+					t.Errorf("expected stationary flag call %q to map in place, got %v", flagName, mr.Mappings.Src()[srcFlag])
+				}
+
+				// 4. Target call & selector: old method call must map to inner call, NOT to outer wrapper call
+				var srcCall, dstInnerCall, dstOuterCall *treesitter.ASTNode
+				for _, n := range srcAST.Descendants() {
+					if r.IsCall(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.oldMethod)) {
+						srcCall = n
+						break
+					}
+				}
+				for _, n := range dstAST.Descendants() {
+					if r.IsCall(n.Type) {
+						if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.outerMethod)) {
+							dstOuterCall = n
+						} else if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.innerMethod)) {
+							dstInnerCall = n
+						}
+					}
+				}
+				if srcCall == nil || dstInnerCall == nil || dstOuterCall == nil {
+					t.Fatalf("missing target call nodes: srcCall=%v dstInnerCall=%v dstOuterCall=%v", srcCall, dstInnerCall, dstOuterCall)
+				}
+
+				mappedCall := mr.Mappings.Src()[srcCall]
+				if mappedCall == dstOuterCall {
+					t.Errorf("update theft detected: old call %q mapped to outer wrapper %q instead of inner call %q",
+						string(srcBytes[srcCall.StartByte:srcCall.EndByte]),
+						string(dstBytes[dstOuterCall.StartByte:dstOuterCall.EndByte]),
+						string(dstBytes[dstInnerCall.StartByte:dstInnerCall.EndByte]))
+				}
+				if mappedCall != dstInnerCall {
+					t.Errorf("expected old call %q to map to inner call %q, got %v",
+						string(srcBytes[srcCall.StartByte:srcCall.EndByte]),
+						string(dstBytes[dstInnerCall.StartByte:dstInnerCall.EndByte]),
+						mappedCall)
+				}
+
+				// 5. Method identifier: oldMethod must map to innerMethod, NOT outerMethod
+				var srcMethodId, dstInnerMethodId, dstOuterMethodId *treesitter.ASTNode
+				for _, n := range srcCall.Descendants() {
+					if (r.IsIdentifier(n.Type) || n.Label != "") && string(srcBytes[n.StartByte:n.EndByte]) == tt.oldMethod {
+						srcMethodId = n
+						break
+					}
+				}
+				for _, n := range dstInnerCall.Descendants() {
+					if (r.IsIdentifier(n.Type) || n.Label != "") && string(dstBytes[n.StartByte:n.EndByte]) == tt.innerMethod {
+						dstInnerMethodId = n
+						break
+					}
+				}
+				for _, n := range dstOuterCall.Descendants() {
+					if (r.IsIdentifier(n.Type) || n.Label != "") && string(dstBytes[n.StartByte:n.EndByte]) == tt.outerMethod {
+						dstOuterMethodId = n
+						break
+					}
+				}
+				if srcMethodId == nil || dstInnerMethodId == nil || dstOuterMethodId == nil {
+					t.Fatalf("missing method identifiers: srcMethodId=%v dstInnerMethodId=%v dstOuterMethodId=%v", srcMethodId, dstInnerMethodId, dstOuterMethodId)
+				}
+
+				mappedMethodId := mr.Mappings.Src()[srcMethodId]
+				if mappedMethodId == dstOuterMethodId {
+					t.Errorf("update theft detected: method identifier %q mapped to outer method %q", tt.oldMethod, tt.outerMethod)
+				}
+				if mappedMethodId != dstInnerMethodId {
+					t.Errorf("expected method identifier %q to map to inner method %q, got %v", tt.oldMethod, tt.innerMethod, mappedMethodId)
+				}
+			})
+		}
+	})
+}
