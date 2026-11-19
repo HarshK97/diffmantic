@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Adding or removing a trailing semicolon on a Rust block tail expression (like turning `set_unique_id(roots, next_id)` into `set_unique_id(roots, next_id);` or changing a multiline expression into a statement) won't drop the untouched expression into a full delete and insert anymore. The expression stays matched in place as context across the transition, cleanly highlighting only the added or removed semicolon.
 - Unnesting imports or declarations from an inline module or namespace out to the file level (like pulling `use itertools;` out of a Rust `mod` block or `using std::vector;` out of a C++ `namespace`) won't drop unqualified statements into a delete and insert anymore. Sibling imports and functions moving out together are recognized as a cohort and stay cleanly highlighted as moves.
 - Deleting an import statement (like `use std::process;` in Rust or an import in Go) won't treat top-of-file doc comments as deleted and re-added anymore. Untouched comments above deleted imports stay matched in place as context.
 - Adding code inside an `else` block (like expanding an `else` branch in Rust, Python, JavaScript, TypeScript, C, C++, or Zig) won't paint the `else` keyword and braces as deleted and re-added anymore. Untouched `else` clauses stay matched in place as context when the statements inside remain matched.

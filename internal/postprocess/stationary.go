@@ -56,6 +56,10 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		return true
 	}
 
+	if isBlockTailSemicolonTransition(node, dstNode, ms, r) {
+		return true
+	}
+
 	// Can't be stationary if it hopped containers, like when dstParent mapped to an
 	// old container that never held this node.
 	if mappedDstParent := ms.Dst()[dstParent]; mappedDstParent != nil && !mappedDstParent.Contains(node) {
@@ -847,4 +851,26 @@ func isMonotonicContainerChild(srcBase, dstBase, srcChild, dstChild *treesitter.
 		return false
 	}
 	return checkedSiblings > 0
+}
+
+// isBlockTailSemicolonTransition reports whether a move between src and dst is
+// a transition between a block tail expression (directly under a block without a semicolon)
+// and an expression_statement (under the same mapped block with a semicolon).
+func isBlockTailSemicolonTransition(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if src == nil || dst == nil || src.Parent == nil || dst.Parent == nil || ms == nil || r == nil {
+		return false
+	}
+	// Direction 1: semicolon added (src in block -> dst in expression_statement in block)
+	if r.IsBlock(src.Parent.Type) && r.IsExpressionStatement(dst.Parent.Type) &&
+		dst.Parent.Parent != nil && r.IsBlock(dst.Parent.Parent.Type) &&
+		ms.Src()[src.Parent] == dst.Parent.Parent {
+		return isSoleSubstantiveChild(dst.Parent, dst, r)
+	}
+	// Direction 2: semicolon removed (src in expression_statement in block -> dst in block)
+	if r.IsExpressionStatement(src.Parent.Type) && src.Parent.Parent != nil &&
+		r.IsBlock(src.Parent.Parent.Type) && r.IsBlock(dst.Parent.Type) &&
+		ms.Src()[src.Parent.Parent] == dst.Parent {
+		return isSoleSubstantiveChild(src.Parent, src, r)
+	}
+	return false
 }
