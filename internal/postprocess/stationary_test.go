@@ -5138,3 +5138,379 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Java(t *testing.T) {
 		}
 	})
 }
+
+func TestStationaryTailExpressionSemicolonTransition(t *testing.T) {
+	t.Run("FullEngine/SingleLineWithDrift", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut u32) {
+    set_parent(roots, None);
+    set_num_ancestors(roots, 0);
+    set_unique_id(roots, next_id)
+}
+`)
+		dst := []byte(`fn added_upstream_helper() {
+    let _ = 1;
+}
+
+fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut NonZeroU32) {
+    set_parent(roots, None);
+    set_num_ancestors(roots, 0);
+    set_unique_id(roots, next_id);
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: init_info_single maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "init_info_single") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "init_info_single") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function init_info_single to map in place")
+		}
+
+		// 2. Surrounding sequence: set_parent and set_num_ancestors map in place.
+		var srcParentCall, dstParentCall, srcAncestorsCall, dstAncestorsCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_parent") {
+				srcParentCall = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_num_ancestors") {
+				srcAncestorsCall = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_parent") {
+				dstParentCall = n
+			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_num_ancestors") {
+				dstAncestorsCall = n
+			}
+		}
+		if srcParentCall == nil || dstParentCall == nil || mr.Mappings.Src()[srcParentCall] != dstParentCall {
+			t.Fatalf("expected set_parent to map in place")
+		}
+		if srcAncestorsCall == nil || dstAncestorsCall == nil || mr.Mappings.Src()[srcAncestorsCall] != dstAncestorsCall {
+			t.Fatalf("expected set_num_ancestors to map in place")
+		}
+
+		// 3. Target: set_unique_id call expression maps in place.
+		var srcUniqueCall, dstUniqueCall *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_unique_id") {
+				srcUniqueCall = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_unique_id") {
+				dstUniqueCall = n
+				break
+			}
+		}
+		if srcUniqueCall == nil || dstUniqueCall == nil {
+			t.Fatalf("expected set_unique_id calls to exist")
+		}
+		if mr.Mappings.Src()[srcUniqueCall] != dstUniqueCall {
+			t.Fatalf("expected set_unique_id to map in place, got %v", mr.Mappings.Src()[srcUniqueCall])
+		}
+
+		// 4. In edit script: set_unique_id must NOT have Delete or Move actions.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcUniqueCall {
+				t.Fatalf("unexpected Move action on stationary set_unique_id: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcUniqueCall {
+				t.Fatalf("unexpected Delete action on stationary set_unique_id: %v", a)
+			}
+		}
+	})
+
+	t.Run("FullEngine/MultilineTailCall", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`fn dedup_hunks(lhs_is_dupe: bool, rhs_is_dupe: bool, lhs_line: usize, rhs_line: usize) {
+    if lhs_is_dupe && rhs_is_dupe {
+        return;
+    }
+
+    deduped_lines.push((
+        if lhs_is_dupe { None } else { lhs_line },
+        if rhs_is_dupe { None } else { rhs_line },
+    ))
+}
+`)
+		dst := []byte(`fn dedup_hunks(lhs_is_dupe: bool, rhs_is_dupe: bool, lhs_line: usize, rhs_line: usize) {
+    if lhs_is_dupe && rhs_is_dupe {
+        return;
+    }
+
+    deduped_lines.push((
+        if lhs_is_dupe { None } else { lhs_line },
+        if rhs_is_dupe { None } else { rhs_line },
+    ));
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: dedup_hunks maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "dedup_hunks") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "dedup_hunks") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function dedup_hunks to map in place")
+		}
+
+		// 2. Surrounding sequence: if statement maps in place.
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
+			t.Fatalf("expected if statement to map in place")
+		}
+
+		// 3. Target: deduped_lines.push call expression maps in place.
+		var srcPush, dstPush *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "deduped_lines.push") {
+				srcPush = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "deduped_lines.push") {
+				dstPush = n
+				break
+			}
+		}
+		if srcPush == nil || dstPush == nil {
+			t.Fatalf("expected deduped_lines.push calls to exist")
+		}
+		if mr.Mappings.Src()[srcPush] != dstPush {
+			t.Fatalf("expected deduped_lines.push to map in place, got %v", mr.Mappings.Src()[srcPush])
+		}
+
+		// 4. Stationary Operands: argument sub-expressions map in place.
+		var srcLhsArg, dstLhsArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
+				srcLhsArg = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
+				dstLhsArg = n
+				break
+			}
+		}
+		if srcLhsArg != nil && dstLhsArg != nil && mr.Mappings.Src()[srcLhsArg] != dstLhsArg {
+			t.Fatalf("expected lhs argument if-expr to map in place")
+		}
+
+		// 5. In edit script: NO Delete or Move on deduped_lines.push, and NO Insert on expression_statement.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcPush {
+				t.Fatalf("unexpected Move action on stationary deduped_lines.push: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcPush {
+				t.Fatalf("unexpected Delete action on stationary deduped_lines.push: %v", a)
+			}
+			if a.Type == actions.Insert && a.Node != nil && r.IsExpressionStatement(a.Node.Type) {
+				t.Fatalf("unexpected Insert action on expression_statement wrapper: %v", a)
+			}
+		}
+	})
+
+	t.Run("FullEngine/MultilineTailCall_SemicolonRemoved", func(t *testing.T) {
+		r := rules.Get("rust")
+		src := []byte(`fn dedup_hunks(lhs_is_dupe: bool, rhs_is_dupe: bool, lhs_line: usize, rhs_line: usize) {
+    if lhs_is_dupe && rhs_is_dupe {
+        return;
+    }
+
+    deduped_lines.push((
+        if lhs_is_dupe { None } else { lhs_line },
+        if rhs_is_dupe { None } else { rhs_line },
+    ));
+}
+`)
+		dst := []byte(`fn dedup_hunks(lhs_is_dupe: bool, rhs_is_dupe: bool, lhs_line: usize, rhs_line: usize) {
+    if lhs_is_dupe && rhs_is_dupe {
+        return;
+    }
+
+    deduped_lines.push((
+        if lhs_is_dupe { None } else { lhs_line },
+        if rhs_is_dupe { None } else { rhs_line },
+    ))
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// 1. Enclosing context: dedup_hunks maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "dedup_hunks") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "dedup_hunks") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function dedup_hunks to map in place")
+		}
+
+		// 2. Surrounding sequence: if statement maps in place.
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
+			t.Fatalf("expected if statement to map in place")
+		}
+
+		// 3. Target: deduped_lines.push call expression maps in place.
+		var srcPush, dstPush *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "deduped_lines.push") {
+				srcPush = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "deduped_lines.push") {
+				dstPush = n
+				break
+			}
+		}
+		if srcPush == nil || dstPush == nil {
+			t.Fatalf("expected deduped_lines.push calls to exist")
+		}
+		if mr.Mappings.Src()[srcPush] != dstPush {
+			t.Fatalf("expected deduped_lines.push to map in place, got %v", mr.Mappings.Src()[srcPush])
+		}
+
+		// 4. Stationary Operands: argument sub-expressions map in place.
+		var srcLhsArg, dstLhsArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
+				srcLhsArg = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
+				dstLhsArg = n
+				break
+			}
+		}
+		if srcLhsArg != nil && dstLhsArg != nil && mr.Mappings.Src()[srcLhsArg] != dstLhsArg {
+			t.Fatalf("expected lhs argument if-expr to map in place")
+		}
+
+		// 5. In edit script: NO Delete or Move on deduped_lines.push, and NO Delete on expression_statement.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node == srcPush {
+				t.Fatalf("unexpected Move action on stationary deduped_lines.push: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node == srcPush {
+				t.Fatalf("unexpected Delete action on stationary deduped_lines.push: %v", a)
+			}
+			if a.Type == actions.Delete && a.Node != nil && r.IsExpressionStatement(a.Node.Type) {
+				t.Fatalf("unexpected Delete action on expression_statement wrapper: %v", a)
+			}
+		}
+	})
+}
