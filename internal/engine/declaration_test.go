@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestGetDeclarationName(t *testing.T) {
@@ -2103,6 +2105,252 @@ pub fn helper_omega(y: usize) -> usize {
 		}
 		if m.Src()[srcBody] != dstBody {
 			t.Errorf("expected function body block to map in place, got %v", m.Src()[srcBody])
+		}
+	})
+}
+
+func TestRustScopedUseListModification_NoWholeBlockCollapse(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+use atty::{self, Stream};
+
+use crate::{
+    clap_app,
+    config::{get_args_from_config_file, get_args_from_env_var},
+};
+use clap::ArgMatches;
+use console::Term;
+
+pub fn execute_app() -> bool {
+    clap_app();
+    true
+}
+`)
+
+		newSrc := []byte(`use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+
+use atty::{self, Stream};
+
+use crate::{
+    clap_app,
+    config::{get_args_from_config_file, get_args_from_env_opts_var, get_args_from_env_vars},
+};
+use clap::ArgMatches;
+use console::Term;
+
+pub fn execute_app() -> bool {
+    clap_app();
+    true
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "app.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "app.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has parse errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has parse errors: %d", dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get("rust")
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		m := mr.Mappings
+
+		// 1. Enclosing Context: Succeeding function execute_app must map in place
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "execute_app" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "execute_app" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil {
+			t.Fatalf("missing execute_app: srcFn=%v, dstFn=%v", srcFn, dstFn)
+		}
+		if m.Src()[srcFn] != dstFn {
+			t.Errorf("expected execute_app to map in place, got %v", m.Src()[srcFn])
+		}
+
+		// 2. Surrounding Sequence: Preceding unchanged imports map in place
+		for _, name := range []string{"collections", "env", "path", "atty"} {
+			var sImport, dImport *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte(name)) {
+					sImport = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte(name)) {
+					dImport = n
+					break
+				}
+			}
+			if sImport == nil || dImport == nil {
+				t.Fatalf("missing import for %s: sImport=%v, dImport=%v", name, sImport, dImport)
+			}
+			if m.Src()[sImport] != dImport {
+				t.Errorf("expected import for %s to map in place, got %v", name, m.Src()[sImport])
+			}
+		}
+
+		// Deleted import std::str::FromStr must be unmapped
+		var deletedImport *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("FromStr")) {
+				deletedImport = n
+				break
+			}
+		}
+		if deletedImport == nil {
+			t.Fatal("missing deleted FromStr import")
+		}
+		if m.Src()[deletedImport] != nil {
+			t.Errorf("expected deleted FromStr import to be unmapped, got %v", m.Src()[deletedImport])
+		}
+
+		// Succeeding unchanged imports clap and console must map in place
+		for _, name := range []string{"ArgMatches", "Term"} {
+			var sImport, dImport *treesitter.ASTNode
+			for _, n := range srcAST.PreOrder() {
+				if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte(name)) {
+					sImport = n
+					break
+				}
+			}
+			for _, n := range dstAST.PreOrder() {
+				if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte(name)) {
+					dImport = n
+					break
+				}
+			}
+			if sImport == nil || dImport == nil {
+				t.Fatalf("missing import for %s: sImport=%v, dImport=%v", name, sImport, dImport)
+			}
+			if m.Src()[sImport] != dImport {
+				t.Errorf("expected import for %s to map in place, got %v", name, m.Src()[sImport])
+			}
+		}
+
+		// 3. Target Construct: Target use_declaration and scoped_use_list must map in place
+		var targetUseSrc, targetUseDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("clap_app")) {
+				targetUseSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("clap_app")) {
+				targetUseDst = n
+				break
+			}
+		}
+		if targetUseSrc == nil || targetUseDst == nil {
+			t.Fatalf("missing target use_declaration: targetUseSrc=%v, targetUseDst=%v", targetUseSrc, targetUseDst)
+		}
+		if m.Src()[targetUseSrc] != targetUseDst {
+			t.Errorf("expected target use_declaration to map in place, got %v", m.Src()[targetUseSrc])
+		}
+
+		// Outer scoped_use_list must map in place
+		var scopedUseSrc, scopedUseDst *treesitter.ASTNode
+		for _, c := range targetUseSrc.Children {
+			if r.IsWrapper(c.Type) {
+				scopedUseSrc = c
+				break
+			}
+		}
+		for _, c := range targetUseDst.Children {
+			if r.IsWrapper(c.Type) {
+				scopedUseDst = c
+				break
+			}
+		}
+		if scopedUseSrc == nil || scopedUseDst == nil {
+			t.Fatalf("missing scoped_use_list: scopedUseSrc=%v, scopedUseDst=%v", scopedUseSrc, scopedUseDst)
+		}
+		if m.Src()[scopedUseSrc] != scopedUseDst {
+			t.Errorf("expected outer scoped_use_list to map in place, got %v", m.Src()[scopedUseSrc])
+		}
+
+		// 4. Stationary Operands: Unchanged imported identifiers must map in place
+		var clapAppSrc, clapAppDst *treesitter.ASTNode
+		for _, n := range scopedUseSrc.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "clap_app" {
+				clapAppSrc = n
+				break
+			}
+		}
+		for _, n := range scopedUseDst.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "clap_app" {
+				clapAppDst = n
+				break
+			}
+		}
+		if clapAppSrc == nil || clapAppDst == nil {
+			t.Fatalf("missing clap_app: clapAppSrc=%v, clapAppDst=%v", clapAppSrc, clapAppDst)
+		}
+		if m.Src()[clapAppSrc] != clapAppDst {
+			t.Errorf("expected identifier clap_app to map in place, got %v", m.Src()[clapAppSrc])
+		}
+
+		var configFileSrc, configFileDst *treesitter.ASTNode
+		for _, n := range scopedUseSrc.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "get_args_from_config_file" {
+				configFileSrc = n
+				break
+			}
+		}
+		for _, n := range scopedUseDst.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "get_args_from_config_file" {
+				configFileDst = n
+				break
+			}
+		}
+		if configFileSrc == nil || configFileDst == nil {
+			t.Fatalf("missing get_args_from_config_file: configFileSrc=%v, configFileDst=%v", configFileSrc, configFileDst)
+		}
+		if m.Src()[configFileSrc] != configFileDst {
+			t.Errorf("expected identifier get_args_from_config_file to map in place, got %v", m.Src()[configFileSrc])
+		}
+
+		// Modified item get_args_from_env_var should map to its renamed counterpart get_args_from_env_vars
+		var envVarSrc *treesitter.ASTNode
+		for _, n := range scopedUseSrc.Descendants() {
+			if r.IsIdentifier(n.Type) && n.Label == "get_args_from_env_var" {
+				envVarSrc = n
+				break
+			}
+		}
+		if envVarSrc == nil {
+			t.Fatal("missing get_args_from_env_var")
+		}
+		if dst := m.Src()[envVarSrc]; dst == nil || dst.Label != "get_args_from_env_vars" {
+			t.Errorf("expected get_args_from_env_var to map to get_args_from_env_vars, got %v", dst)
 		}
 	})
 }
