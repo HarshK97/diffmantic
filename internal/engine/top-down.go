@@ -443,6 +443,10 @@ func getScopeName(n *treesitter.ASTNode) string {
 		}
 	}
 	enc := GetEnclosingDeclaration(n)
+	// Skip imports so symbols inside them resolve their scope to the enclosing module or file.
+	for enc != nil && ((r != nil && r.IsImport(enc.Type)) || (r == nil && rules.IsImport(enc.Type))) {
+		enc = GetEnclosingDeclaration(enc)
+	}
 	if enc != nil {
 		if name := getDeclarationName(enc); name != "" {
 			return name

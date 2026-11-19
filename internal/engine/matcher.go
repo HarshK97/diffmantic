@@ -1233,6 +1233,30 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 			}
 		}
 	}
+	// Use the root path as the declaration name for scoped imports (like `use crate::{...};`),
+	// so editing inner items doesn't look like a whole-import rename.
+	r := rl.r
+	if (r != nil && r.IsImport(n.Type)) || (r == nil && rules.IsImport(n.Type)) {
+		for _, child := range n.Children {
+			if child.IsKeyword || (r != nil && r.IsKeyword(child.Type, child.Label)) || (r == nil && rules.IsKeyword(child.Type, child.Label)) {
+				continue
+			}
+			if rl.isWrapper(child.Type) && len(child.Children) >= 2 {
+				hasTrailingList := slices.ContainsFunc(child.Children[1:], func(sub *treesitter.ASTNode) bool {
+					if sub == nil {
+						return false
+					}
+					return (r != nil && (r.IsUnordered(sub.Type) || r.IsDelimitedContainer(sub.Type))) ||
+						(r == nil && rules.IsDelimitedContainer(sub.Type))
+				})
+				if hasTrailingList {
+					if txt := identifierText(child.Children[0]); txt != "" {
+						return txt
+					}
+				}
+			}
+		}
+	}
 	// Delegate wrappers like Python's decorated_definition to the wrapped declaration before scanning children.
 	for _, child := range n.Children {
 		if rl.isDecl(child.Type) && (rl.isWrapper(n.Type) || !rl.isLocalVar(child.Type)) {
