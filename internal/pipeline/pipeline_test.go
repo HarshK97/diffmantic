@@ -3130,17 +3130,17 @@ func TestPipeline_StationaryMultiLineWrappedArgument(t *testing.T) {
 
 		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
     let matched_lines = 1;
-    compact_gaps(&ensure_contiguous(&<del>matched_lines</del>));
+    compact_gaps(&ensure_contiguous(&matched_lines));
     finish_processing();
 }
 `)
 		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
     let matched_lines = 1;
-    compact_gaps(&ensure_contiguous(&<ins>match_preceding_blanks(</ins>
-<ins>        &matched_lines,</ins>
-<ins>        lhs_lines,</ins>
-<ins>        rhs_lines,</ins>
-<ins>    )</ins>));
+    compact_gaps(&ensure_contiguous(<ins>&match_preceding_blanks(</ins>
+        &matched_lines<ins>,</ins>
+        <ins>lhs_lines,</ins>
+        <ins>rhs_lines,</ins>
+    <ins>)</ins>));
     finish_processing();
 }
 `)
@@ -3178,7 +3178,7 @@ func process(lhs, rhs []string) {
 
 func process(lhs, rhs []string) {
 	matched := 1
-	compactGaps(ensureContiguous(<del>&matched</del>))
+	compactGaps(ensureContiguous(&matched))
 	finishProcessing()
 }
 `)
@@ -3187,10 +3187,10 @@ func process(lhs, rhs []string) {
 func process(lhs, rhs []string) {
 	matched := 1
 	compactGaps(ensureContiguous(<ins>matchPrecedingBlanks(</ins>
-<ins>		&matched,</ins>
-<ins>		lhs,</ins>
-<ins>		rhs,</ins>
-<ins>	)</ins>))
+		&matched<ins>,</ins>
+		<ins>lhs,</ins>
+		<ins>rhs,</ins>
+	<ins>)</ins>))
 	finishProcessing()
 }
 `)
@@ -3227,7 +3227,7 @@ func process(lhs, rhs []string) {
 		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `class Processor {
     void process(String[] lhs, String[] rhs) {
         int matched = 1;
-        compactGaps(ensureContiguous(<del>data.matched</del>));
+        compactGaps(ensureContiguous(data.matched));
         finishProcessing();
     }
 }
@@ -3236,10 +3236,10 @@ func process(lhs, rhs []string) {
     void process(String[] lhs, String[] rhs) {
         int matched = 1;
         compactGaps(ensureContiguous(<ins>matchPrecedingBlanks(</ins>
-<ins>            data.matched,</ins>
-<ins>            lhs,</ins>
-<ins>            rhs</ins>
-<ins>        )</ins>));
+            data.matched<ins>,</ins>
+            <ins>lhs,</ins>
+            <ins>rhs</ins>
+        <ins>)</ins>));
         finishProcessing();
     }
 }
