@@ -3694,3 +3694,87 @@ end
 `)
 	})
 }
+
+func TestPipeline_Rust_ScopedUseListModification(t *testing.T) {
+	src := `use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+use atty::{self, Stream};
+
+use crate::{
+    clap_app,
+    config::{get_args_from_config_file, get_args_from_env_var},
+};
+use clap::ArgMatches;
+use console::Term;
+
+pub fn execute_app() -> bool {
+    clap_app();
+    true
+}
+`
+	dst := `use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+
+use atty::{self, Stream};
+
+use crate::{
+    clap_app,
+    config::{get_args_from_config_file, get_args_from_env_opts_var, get_args_from_env_vars},
+};
+use clap::ArgMatches;
+use console::Term;
+
+pub fn execute_app() -> bool {
+    clap_app();
+    true
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "app.rs", "app.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+<del>use std::str::FromStr;</del>
+
+use atty::{self, Stream};
+
+use crate::{
+    clap_app,
+    config::{get_args_from_config_file, <upd>get_args_from_env_var</upd>},
+};
+use clap::ArgMatches;
+use console::Term;
+
+pub fn execute_app() -> bool {
+    clap_app();
+    true
+}
+`)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+
+use atty::{self, Stream};
+
+use crate::{
+    clap_app,
+    config::{get_args_from_config_file, <ins>get_args_from_env_opts_var,</ins> <upd>get_args_from_env_vars</upd>},
+};
+use clap::ArgMatches;
+use console::Term;
+
+pub fn execute_app() -> bool {
+    clap_app();
+    true
+}
+`)
+}

@@ -1747,6 +1747,7 @@ pub fn execute_app() -> bool {
 		}
 
 		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
 		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
@@ -1754,71 +1755,34 @@ pub fn execute_app() -> bool {
 		m := mr.Mappings
 
 		// 1. Enclosing Context: Succeeding function execute_app must map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 15},
-			testutil.NodeQuery{Type: "function_item", Line: 14},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "execute_app", "execute_app")
 
 		// 2. Surrounding Sequence: Preceding unchanged imports map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 1},
-			testutil.NodeQuery{Type: "use_declaration", Line: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 2},
-			testutil.NodeQuery{Type: "use_declaration", Line: 2},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 3},
-			testutil.NodeQuery{Type: "use_declaration", Line: 3},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 6},
-			testutil.NodeQuery{Type: "use_declaration", Line: 5},
-		)
+		for _, name := range []string{"std::collections::HashSet", "std::env", "std::path::{Path, PathBuf}", "atty::{self, Stream}"} {
+			testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), name, name)
+		}
 
 		// Deleted import std::str::FromStr must be unmapped
-		testutil.AssertUnmapped(t, srcAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 4},
-		)
+		testutil.AssertUnmappedText(t, srcAST, oldSrc, m.Src(), "FromStr", "use_declaration")
 
 		// Succeeding unchanged imports clap and console must map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 12},
-			testutil.NodeQuery{Type: "use_declaration", Line: 11},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 13},
-			testutil.NodeQuery{Type: "use_declaration", Line: 12},
-		)
+		for _, name := range []string{"ArgMatches", "Term"} {
+			testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), name, name)
+		}
 
 		// 3. Target Construct: Target use_declaration and scoped_use_list must map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 8},
-			testutil.NodeQuery{Type: "use_declaration", Line: 7},
-		)
-
-		// Outer scoped_use_list must map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "scoped_use_list", Line: 8},
-			testutil.NodeQuery{Type: "scoped_use_list", Line: 7},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "use crate", "use crate", "use_declaration")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "crate::{", "crate::{", "scoped_use_list")
 
 		// 4. Stationary Operands: Unchanged imported identifiers must map in place
 		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
 			testutil.NodeQuery{Type: "identifier", Line: 9},
 			testutil.NodeQuery{Type: "identifier", Line: 8},
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 10, Nth: 2},
-			testutil.NodeQuery{Type: "identifier", Line: 9, Nth: 2},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "get_args_from_config_file", "get_args_from_config_file", "identifier")
 
 		// Modified item get_args_from_env_var should map to its renamed counterpart get_args_from_env_vars
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 10, Nth: 3},
-			testutil.NodeQuery{Type: "identifier", Line: 9, Nth: 4},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "get_args_from_env_var", "get_args_from_env_vars", "identifier")
 	})
 }
 
