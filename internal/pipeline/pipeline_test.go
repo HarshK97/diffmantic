@@ -3546,3 +3546,151 @@ def make_options():
 `)
 	})
 }
+
+func TestPipeline_ChainedMethodCall_WrapperUpdateTheft(t *testing.T) {
+	t.Run("Rust", func(t *testing.T) {
+		src := `fn render_lines() {
+    let style = compute_style();
+    let _ = Config {
+        visible_lines: match self.matches.contains_id("diff") && self.matches.get_flag("diff") {
+            _ => None,
+        },
+    };
+    self.flush_buffer();
+}
+`
+		dst := `fn render_lines() {
+    let style = compute_style();
+    let _ = Config {
+        visible_lines: match self.matches.try_contains_id("diff").unwrap_or_default()
+            && self.matches.get_flag("diff")
+        {
+            _ => None,
+        },
+    };
+    self.flush_buffer();
+}
+`
+		res, err := Run([]byte(src), []byte(dst), "app.rs", "app.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn render_lines() {
+    let style = compute_style();
+    let _ = Config {
+        visible_lines: match self.matches.<upd>contains_id</upd>("diff") && self.matches.get_flag("diff") {
+            _ => None,
+        },
+    };
+    self.flush_buffer();
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn render_lines() {
+    let style = compute_style();
+    let _ = Config {
+        visible_lines: match self.matches.<upd>try_contains_id</upd>("diff")<ins>.unwrap_or_default()</ins>
+            && self.matches.get_flag("diff")
+        {
+            _ => None,
+        },
+    };
+    self.flush_buffer();
+}
+`)
+	})
+
+	t.Run("Go", func(t *testing.T) {
+		src := `package main
+
+func renderLines() {
+	style := computeStyle()
+	_ = Config{
+		VisibleLines: self.Matches.ContainsID("diff") && self.Matches.GetFlag("diff"),
+	}
+	self.flushBuffer()
+}
+`
+		dst := `package main
+
+func renderLines() {
+	style := computeStyle()
+	_ = Config{
+		VisibleLines: self.Matches.TryContainsID("diff").UnwrapOrDefault() && self.Matches.GetFlag("diff"),
+	}
+	self.flushBuffer()
+}
+`
+		res, err := Run([]byte(src), []byte(dst), "app.go", "app.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func renderLines() {
+	style := computeStyle()
+	_ = Config{
+		VisibleLines: self.Matches.<upd>ContainsID</upd>("diff") && self.Matches.GetFlag("diff"),
+	}
+	self.flushBuffer()
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `package main
+
+func renderLines() {
+	style := computeStyle()
+	_ = Config{
+		VisibleLines: self.Matches.<upd>TryContainsID</upd>("diff")<ins>.UnwrapOrDefault()</ins> && self.Matches.GetFlag("diff"),
+	}
+	self.flushBuffer()
+}
+`)
+	})
+
+	t.Run("Lua", func(t *testing.T) {
+		src := `local function render_lines()
+    local style = compute_style()
+    local config = {
+        visible_lines = self.matches:contains_id("diff") and self.matches:get_flag("diff"),
+    }
+    self:flush_buffer()
+end
+`
+		dst := `local function render_lines()
+    local style = compute_style()
+    local config = {
+        visible_lines = self.matches:try_contains_id("diff"):unwrap_or_default() and self.matches:get_flag("diff"),
+    }
+    self:flush_buffer()
+end
+`
+		res, err := Run([]byte(src), []byte(dst), "app.lua", "app.lua", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `local function render_lines()
+    local style = compute_style()
+    local config = {
+        visible_lines = self.matches:<upd>contains_id</upd>("diff") and self.matches:get_flag("diff"),
+    }
+    self:flush_buffer()
+end
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `local function render_lines()
+    local style = compute_style()
+    local config = {
+        visible_lines = self.matches:<upd>try_contains_id</upd>("diff")<ins>:unwrap_or_default()</ins> and self.matches:get_flag("diff"),
+    }
+    self:flush_buffer()
+end
+`)
+	})
+}

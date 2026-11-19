@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -4446,86 +4447,18 @@ end
 				}
 
 				// 1. Enclosing context: function declaration maps in place
-				var srcFn, dstFn *treesitter.ASTNode
-				for _, n := range srcAST.Descendants() {
-					if r.IsDeclaration(n.Type) && bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.targetFunc)) {
-						srcFn = n
-						break
-					}
-				}
-				for _, n := range dstAST.Descendants() {
-					if r.IsDeclaration(n.Type) && bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.targetFunc)) {
-						dstFn = n
-						break
-					}
-				}
-				if srcFn == nil || dstFn == nil {
-					t.Fatalf("missing target function: src=%v dst=%v", srcFn, dstFn)
-				}
-				if mr.Mappings.Src()[srcFn] != dstFn {
-					t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-				}
+				testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), tt.targetFunc, tt.targetFunc)
 
 				// 2. Surrounding sequence: preceding and succeeding statements map in place
-				var srcPre, dstPre *treesitter.ASTNode
-				for _, n := range srcAST.Descendants() {
-					if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.preceding)) && (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) {
-						srcPre = n
-						break
-					}
-				}
-				for _, n := range dstAST.Descendants() {
-					if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.preceding)) && (r.IsStatement(n.Type) || r.IsLocalVarDeclaration(n.Type)) {
-						dstPre = n
-						break
-					}
-				}
-				if srcPre == nil || dstPre == nil || mr.Mappings.Src()[srcPre] != dstPre {
-					t.Errorf("expected preceding statement %q to map in place, got %v", tt.preceding, mr.Mappings.Src()[srcPre])
-				}
-
-				var srcPost, dstPost *treesitter.ASTNode
-				for _, n := range srcAST.Descendants() {
-					if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(tt.succeeding)) && r.IsStatement(n.Type) {
-						srcPost = n
-						break
-					}
-				}
-				for _, n := range dstAST.Descendants() {
-					if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(tt.succeeding)) && r.IsStatement(n.Type) {
-						dstPost = n
-						break
-					}
-				}
-				if srcPost == nil || dstPost == nil || mr.Mappings.Src()[srcPost] != dstPost {
-					t.Errorf("expected succeeding statement %q to map in place, got %v", tt.succeeding, mr.Mappings.Src()[srcPost])
-				}
+				testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), tt.preceding, tt.preceding)
+				testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), tt.succeeding, tt.succeeding)
 
 				// 3. Stationary sub-expression: sibling flag call maps in place
 				flagName := tt.flagMethod
 				if flagName == "" {
 					flagName = "get_flag"
 				}
-				var srcFlag, dstFlag *treesitter.ASTNode
-				for _, n := range srcAST.Descendants() {
-					if bytes.Contains(srcBytes[n.StartByte:n.EndByte], []byte(flagName)) {
-						if r.IsCall(n.Type) {
-							srcFlag = n
-							break
-						}
-					}
-				}
-				for _, n := range dstAST.Descendants() {
-					if bytes.Contains(dstBytes[n.StartByte:n.EndByte], []byte(flagName)) {
-						if r.IsCall(n.Type) {
-							dstFlag = n
-							break
-						}
-					}
-				}
-				if srcFlag == nil || dstFlag == nil || mr.Mappings.Src()[srcFlag] != dstFlag {
-					t.Errorf("expected stationary flag call %q to map in place, got %v", flagName, mr.Mappings.Src()[srcFlag])
-				}
+				testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), flagName, flagName)
 
 				// 4. Target call & selector: old method call must map to inner call, NOT to outer wrapper call
 				var srcCall, dstInnerCall, dstOuterCall *treesitter.ASTNode
@@ -4547,52 +4480,16 @@ end
 				if srcCall == nil || dstInnerCall == nil || dstOuterCall == nil {
 					t.Fatalf("missing target call nodes: srcCall=%v dstInnerCall=%v dstOuterCall=%v", srcCall, dstInnerCall, dstOuterCall)
 				}
-
-				mappedCall := mr.Mappings.Src()[srcCall]
-				if mappedCall == dstOuterCall {
-					t.Errorf("update theft detected: old call %q mapped to outer wrapper %q instead of inner call %q",
-						string(srcBytes[srcCall.StartByte:srcCall.EndByte]),
-						string(dstBytes[dstOuterCall.StartByte:dstOuterCall.EndByte]),
-						string(dstBytes[dstInnerCall.StartByte:dstInnerCall.EndByte]))
+				if mr.Mappings.Src()[srcCall] == dstOuterCall {
+					t.Errorf("update theft detected: old call mapped to outer wrapper instead of inner call")
 				}
-				if mappedCall != dstInnerCall {
-					t.Errorf("expected old call %q to map to inner call %q, got %v",
-						string(srcBytes[srcCall.StartByte:srcCall.EndByte]),
-						string(dstBytes[dstInnerCall.StartByte:dstInnerCall.EndByte]),
-						mappedCall)
+				if mr.Mappings.Src()[srcCall] != dstInnerCall {
+					t.Errorf("expected old call to map to inner call, got %v", mr.Mappings.Src()[srcCall])
 				}
 
 				// 5. Method identifier: oldMethod must map to innerMethod, NOT outerMethod
-				var srcMethodId, dstInnerMethodId, dstOuterMethodId *treesitter.ASTNode
-				for _, n := range srcCall.Descendants() {
-					if (r.IsIdentifier(n.Type) || n.Label != "") && string(srcBytes[n.StartByte:n.EndByte]) == tt.oldMethod {
-						srcMethodId = n
-						break
-					}
-				}
-				for _, n := range dstInnerCall.Descendants() {
-					if (r.IsIdentifier(n.Type) || n.Label != "") && string(dstBytes[n.StartByte:n.EndByte]) == tt.innerMethod {
-						dstInnerMethodId = n
-						break
-					}
-				}
-				for _, n := range dstOuterCall.Descendants() {
-					if (r.IsIdentifier(n.Type) || n.Label != "") && string(dstBytes[n.StartByte:n.EndByte]) == tt.outerMethod {
-						dstOuterMethodId = n
-						break
-					}
-				}
-				if srcMethodId == nil || dstInnerMethodId == nil || dstOuterMethodId == nil {
-					t.Fatalf("missing method identifiers: srcMethodId=%v dstInnerMethodId=%v dstOuterMethodId=%v", srcMethodId, dstInnerMethodId, dstOuterMethodId)
-				}
-
-				mappedMethodId := mr.Mappings.Src()[srcMethodId]
-				if mappedMethodId == dstOuterMethodId {
-					t.Errorf("update theft detected: method identifier %q mapped to outer method %q", tt.oldMethod, tt.outerMethod)
-				}
-				if mappedMethodId != dstInnerMethodId {
-					t.Errorf("expected method identifier %q to map to inner method %q, got %v", tt.oldMethod, tt.innerMethod, mappedMethodId)
-				}
+				testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), tt.oldMethod, tt.innerMethod)
+				testutil.AssertNotMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), tt.oldMethod, tt.outerMethod)
 			})
 		}
 	})
