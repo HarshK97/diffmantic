@@ -139,6 +139,7 @@ var luaRules = &Rules{
 	},
 	Selectors: []string{
 		"dot_index_expression",
+		"method_index_expression",
 	},
 	LocalVarDeclarations: []string{
 		"variable_declaration",

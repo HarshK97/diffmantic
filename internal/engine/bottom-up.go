@@ -1352,12 +1352,25 @@ func hasHollowEnclosingSelector(t1, c *treesitter.ASTNode, m *Mapping, r *rules.
 	// Don't let an outer selector swallow candidate if an unmapped inner child matches better.
 	checkDescendant := func(outer, target *treesitter.ASTNode, partnerMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
 		targetField := extractFieldLabel(target)
+		outerField := extractFieldLabel(outer)
 		desc := outer.Descendants()
+		diceOuter := -1.0
+		getDiceOuter := func() float64 {
+			if diceOuter < 0 {
+				diceOuter = Dice(outer, target, partnerMap)
+			}
+			return diceOuter
+		}
+
 		for _, inner := range desc {
 			if inner == outer || !isSelector(inner.Type) || partnerMap[inner] != nil {
 				continue
 			}
-			if extractFieldLabel(inner) != targetField {
+			innerField := extractFieldLabel(inner)
+			isInnerBetter := (innerField == targetField && innerField != "" && outerField != targetField) ||
+				calleesCompatible(targetField, innerField) ||
+				(!calleesCompatible(outerField, targetField) && Dice(inner, target, partnerMap) > getDiceOuter())
+			if !isInnerBetter {
 				continue
 			}
 			hasMappedDesc, hasOutsideDesc := false, false
