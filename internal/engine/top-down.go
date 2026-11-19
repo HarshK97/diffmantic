@@ -91,13 +91,17 @@ func TopDown(
 							continue
 						}
 
-						if t1.Parent != nil && t2.Parent != nil {
-							isCall1 := (r != nil && r.IsCall(t1.Parent.Type)) || (r == nil && rules.IsCall(t1.Parent.Type))
-							isCall2 := (r != nil && r.IsCall(t2.Parent.Type)) || (r == nil && rules.IsCall(t2.Parent.Type))
-							if isCall1 && isCall2 && len(t1.Parent.Children) > 0 && len(t2.Parent.Children) > 0 {
-								if !calleeLeavesOverlap(t1.Parent, t2.Parent) && !isSubstantiveDelimitedContainer(t1, r) {
-									continue
-								}
+						p1 := t1.Parent
+						if p1 != nil && !isCallNode(p1, r) && isDelimitedContainerNode(p1, r) && isCallNode(p1.Parent, r) && !hasIdentifier(t1, r) {
+							p1 = p1.Parent
+						}
+						p2 := t2.Parent
+						if p2 != nil && !isCallNode(p2, r) && isDelimitedContainerNode(p2, r) && isCallNode(p2.Parent, r) && !hasIdentifier(t2, r) {
+							p2 = p2.Parent
+						}
+						if p1 != nil && p2 != nil && isCallNode(p1, r) && isCallNode(p2, r) {
+							if !calleeLeavesOverlap(p1, p2, r) && !isSubstantiveDelimitedContainer(t1, r) {
+								continue
 							}
 						}
 
@@ -631,6 +635,20 @@ func isCallNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	return rules.IsCall(n.Type)
 }
 
+// isDelimitedContainerNode checks if a node is an argument list or collection delimiter.
+func isDelimitedContainerNode(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	if r != nil {
+		return r.IsDelimitedContainer(n.Type)
+	}
+	return rules.IsDelimitedContainer(n.Type)
+}
+
 // hasIdentifier reports whether n or any descendant contains an identifier.
 func hasIdentifier(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
@@ -736,25 +754,55 @@ func branchSlotIndex(t, c *treesitter.ASTNode) int {
 	return curr.ChildIndex()
 }
 
-// calleeLeavesOverlap reports whether two call expressions share any callee leaf tokens.
-func calleeLeavesOverlap(call1, call2 *treesitter.ASTNode) bool {
+// extractCalleeNode pulls out the callee identifier (e.g. 'bar' in 'foo.bar()') so receiver
+// chains don't trigger false matches in method chaining.
+func extractCalleeNode(call *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if call == nil || len(call.Children) == 0 {
+		return nil
+	}
+	if r == nil {
+		r = rulesFor(call)
+	}
+
+	// For Java method_invocation: [receiver, ., identifier, argument_list].
+	// Scanning backwards locates argument_list first even if type_arguments is present.
+	for i := len(call.Children) - 1; i >= 1; i-- {
+		c := call.Children[i]
+		if (r != nil && r.IsDelimitedContainer(c.Type)) || (r == nil && rules.IsDelimitedContainer(c.Type)) {
+			prev := call.Children[i-1]
+			if (r != nil && r.IsIdentifier(prev.Type)) || (r == nil && rules.IsIdentifier(prev.Type)) {
+				return prev
+			}
+		}
+	}
+
+	fn := call.Children[0]
+	if len(fn.Children) > 0 {
+		// In member access / selector / field / attribute expressions, the callee method is the last child.
+		return fn.Children[len(fn.Children)-1]
+	}
+	return fn
+}
+
+// calleeLeavesOverlap checks if two calls invoke the same callee or compatible method names.
+func calleeLeavesOverlap(call1, call2 *treesitter.ASTNode, r *rules.Rules) bool {
 	if call1 == nil || call2 == nil || len(call1.Children) == 0 || len(call2.Children) == 0 {
 		return true
 	}
-	fn1 := call1.Children[0]
-	fn2 := call2.Children[0]
+	fn1 := extractCalleeNode(call1, r)
+	fn2 := extractCalleeNode(call2, r)
 	if fn1 == nil || fn2 == nil {
 		return true
 	}
-	leaves1 := fn1.Leaves()
-	for _, l2 := range fn2.Leaves() {
-		if l2.Label != "" && slices.ContainsFunc(leaves1, func(l1 *treesitter.ASTNode) bool {
-			return l1.Label == l2.Label
-		}) {
-			return true
-		}
+	if fn1.Label != "" && fn2.Label != "" {
+		return fn1.Label == fn2.Label || calleesCompatible(fn1.Label, fn2.Label)
 	}
-	return false
+	leaves1 := fn1.Leaves()
+	return slices.ContainsFunc(fn2.Leaves(), func(l2 *treesitter.ASTNode) bool {
+		return l2.Label != "" && slices.ContainsFunc(leaves1, func(l1 *treesitter.ASTNode) bool {
+			return l1.Label == l2.Label || calleesCompatible(l1.Label, l2.Label)
+		})
+	})
 }
 
 // isSubstantiveDelimitedContainer reports whether n is a delimited container
