@@ -344,5 +344,8 @@ var pythonRules = &Rules{
 		"attribute": RoleMember,
 		"value":     RoleAssignedValue,
 		"right":     RoleAssignedValue,
+		"left":      RoleAssignTarget,
+		"key":       RolePairKey,
+		"name":      RoleAssignTarget | RolePairKey,
 	},
 }

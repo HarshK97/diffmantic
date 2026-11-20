@@ -131,8 +131,6 @@ func IsMutuallyExclusiveField(f1, f2 string) bool {
 		return f2 == "consequence"
 	case "key":
 		return f2 == "value"
-	case "left":
-		return f2 == "right"
 	case "name":
 		return f2 == "parameters" || f2 == "value"
 	case "pattern":

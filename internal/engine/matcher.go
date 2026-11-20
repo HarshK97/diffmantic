@@ -98,12 +98,17 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 		}
 
 		t1Idx := t1.ChildIndex()
+		f1 := t1.FieldName()
 
 		for _, t2 := range candidates {
 			if m.HasDst(t2) {
 				continue
 			}
 			if !CompatiblePairRoles(t1, t2) {
+				continue
+			}
+			f2 := t2.FieldName()
+			if f1 != "" && f2 != "" && treesitter.IsMutuallyExclusiveField(f1, f2) {
 				continue
 			}
 			if part != nil && !part.CanMatch(t1, t2) {
@@ -166,6 +171,9 @@ func MatchUnmatchedLeaves(t1Root, t2Root *treesitter.ASTNode, m *Mapping, part *
 			}
 			if samePositional {
 				posScore += 10
+			}
+			if f1 != "" && f1 == f2 {
+				posScore += 50
 			}
 			posScore += siblingScore
 

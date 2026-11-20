@@ -354,5 +354,8 @@ var javascriptRules = &Rules{
 		"object":   RoleReceiver,
 		"property": RoleMember,
 		"value":    RoleAssignedValue,
+		"left":     RoleAssignTarget,
+		"key":      RolePairKey,
+		"name":     RoleAssignTarget | RolePairKey,
 	},
 }

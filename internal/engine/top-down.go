@@ -17,6 +17,7 @@ type scoredPair struct {
 	ancSim, lineageSim      int
 	drift                   int
 	relDrift                int
+	fieldScore              int
 	hasRelDrift             bool
 	slotMatch               bool
 	isFallback              bool
@@ -219,6 +220,19 @@ func TopDown(
 			}
 		}
 
+		f1 := t1.FieldName()
+		f2 := t2.FieldName()
+		fieldScore := 0
+		if f1 != "" && f2 != "" {
+			if f1 == f2 {
+				fieldScore = 2
+			} else if r1 != nil && r2 != nil && (r1.FieldRole(f1)&r2.FieldRole(f2)) != rules.RoleNone {
+				fieldScore = 1
+			} else if treesitter.IsMutuallyExclusiveField(f1, f2) {
+				fieldScore = -2
+			}
+		}
+
 		scored = append(scored, scoredPair{
 			pair:          pair,
 			dice:          di,
@@ -229,6 +243,7 @@ func TopDown(
 			lineageSim:    li,
 			drift:         drift,
 			relDrift:      relDrift,
+			fieldScore:    fieldScore,
 			hasRelDrift:   hasRelDrift,
 			slotMatch:     slotMatch,
 			nameMatched:   nameMatched,
@@ -283,6 +298,11 @@ func TopDown(
 			return 1
 		}
 
+		// Penalize conflicting slots (like key vs value) before checking line drift so same-line tokens don't falsely match.
+		if (a.fieldScore < 0 || b.fieldScore < 0) && a.fieldScore != b.fieldScore {
+			return cmp.Compare(b.fieldScore, a.fieldScore)
+		}
+
 		// Compare drift relative to the construct or function so upstream deletions don't skew line distance.
 		if a.nameMatched && b.nameMatched && a.hasRelDrift && b.hasRelDrift {
 			if c := cmp.Compare(a.relDrift, b.relDrift); c != 0 {
@@ -297,6 +317,11 @@ func TopDown(
 			if c := cmp.Compare(a.drift, b.drift); c != 0 {
 				return c
 			}
+		}
+
+		// When drift is tied, use field and role concordance before falling back to document order.
+		if c := cmp.Compare(b.fieldScore, a.fieldScore); c != 0 {
+			return c
 		}
 
 		// If still tied, keep source document order so statements in the same function don't swap places.
@@ -541,6 +566,9 @@ func isCrossStatementDredging(t1, t2 *treesitter.ASTNode, m *Mapping, part *Line
 	}
 
 	// Gate 2: Statement Boundary Affinity (Case 57 Tier 1)
+	if f1, f2 := t1.FieldName(), t2.FieldName(); f1 != "" && f2 != "" && treesitter.IsMutuallyExclusiveField(f1, f2) {
+		return true // Conflicting parent fields (e.g. key vs value, condition vs consequence) shouldn't match across statements.
+	}
 	if !TypesMatch(s1.Type, s2.Type, r) {
 		isExtractTarget := r != nil && (r.IsAssignment(s2.Type) || r.IsLocalVarDeclaration(s2.Type) || r.IsJumpStatement(s2.Type) ||
 			r.IsAssignment(s1.Type) || r.IsLocalVarDeclaration(s1.Type))

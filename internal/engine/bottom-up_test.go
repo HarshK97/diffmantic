@@ -5715,3 +5715,252 @@ end
 		}
 	})
 }
+
+func TestBottomUp_BinaryOperatorOperandSlots_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("python")
+
+		oldSrc := []byte(`def compute_scores(a, b, c, d):
+    init_context()
+    total = (a + b) + c
+    finalize_context(total)
+`)
+		newSrc := []byte(`def compute_scores(a, b, c, d):
+    init_context()
+    total = (a + d) + c
+    finalize_context(total)
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.py")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.py")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function declaration maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "compute_scores" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "compute_scores" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected compute_scores to map in place, got src=%v dst=%v", srcFn, dstFn)
+		}
+
+		// 2. Surrounding sequence (init_context, finalize_context) maps in place.
+		var srcInit, dstInit, srcFinalize, dstFinalize *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "init_context" {
+					srcInit = n
+				} else if extractCalleeLabel(n, r) == "finalize_context" {
+					srcFinalize = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "init_context" {
+					dstInit = n
+				} else if extractCalleeLabel(n, r) == "finalize_context" {
+					dstFinalize = n
+				}
+			}
+		}
+		if srcInit == nil || dstInit == nil || mr.Mappings.Src()[srcInit] != dstInit {
+			t.Errorf("expected init_context to map in place")
+		}
+		if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
+			t.Errorf("expected finalize_context to map in place")
+		}
+
+		// 3. Locate operands: a, b in src, a, d in dst, and c in both.
+		var srcA, srcB, srcC, dstA, dstD, dstC *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && n.StartRow == 2 {
+				switch n.Label {
+				case "a":
+					srcA = n
+				case "b":
+					srcB = n
+				case "c":
+					srcC = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && n.StartRow == 2 {
+				switch n.Label {
+				case "a":
+					dstA = n
+				case "d":
+					dstD = n
+				case "c":
+					dstC = n
+				}
+			}
+		}
+
+		if srcA == nil || srcC == nil || dstA == nil || dstC == nil {
+			t.Fatalf("failed to locate operands: srcA=%v srcC=%v dstA=%v dstC=%v", srcA, srcC, dstA, dstC)
+		}
+
+		// 4. Verification: Left operand a maps to dstA, right operand c maps to dstC.
+		if matched := mr.Mappings.Src()[srcA]; matched != dstA {
+			t.Errorf("expected left operand 'a' to map in place, got %v", matched)
+		}
+		if matched := mr.Mappings.Src()[srcC]; matched != dstC {
+			t.Errorf("expected right operand 'c' to map in place, got %v", matched)
+		}
+		if srcB != nil && mr.Mappings.Src()[srcB] == dstC {
+			t.Errorf("deleted operand 'b' must not steal outer operand 'c'")
+		}
+		if dstD != nil && mr.Mappings.Dst()[dstD] == srcC {
+			t.Errorf("inserted operand 'd' must not claim outer operand 'c'")
+		}
+	})
+}
+
+func TestBottomUp_AffinityFieldMutualExclusion_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("c")
+
+		oldSrc := []byte(`int evaluate(int x) {
+    setup();
+    if (x > 0)
+        printf("positive\n");
+    teardown();
+    return 0;
+}
+`)
+		newSrc := []byte(`int evaluate(int x) {
+    setup();
+    if (x < 0)
+        printf("positive\n");
+    teardown();
+    return 0;
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.c")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.c")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function declaration maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "evaluate" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "evaluate" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected evaluate function to map in place, got src=%v dst=%v", srcFn, dstFn)
+		}
+
+		// 2. Surrounding sequence (setup, teardown) maps in place.
+		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setup" {
+					srcSetup = n
+				} else if extractCalleeLabel(n, r) == "teardown" {
+					srcTeardown = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setup" {
+					dstSetup = n
+				} else if extractCalleeLabel(n, r) == "teardown" {
+					dstTeardown = n
+				}
+			}
+		}
+		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
+			t.Errorf("expected setup call to map in place")
+		}
+		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
+			t.Errorf("expected teardown call to map in place")
+		}
+
+		// 3. The if statement maps in place.
+		var srcIf, dstIf *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.ChildByFieldName("condition") != nil {
+				srcIf = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsStatement(n.Type) && n.ChildByFieldName("condition") != nil {
+				dstIf = n
+				break
+			}
+		}
+		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
+			t.Fatalf("expected if statement to map in place, got src=%v dst=%v", srcIf, dstIf)
+		}
+
+		// 4. The if condition shouldn't match the consequence body.
+		srcCond := srcIf.ChildByFieldName("condition")
+		dstBody := dstIf.ChildByFieldName("consequence")
+		if dstBody == nil {
+			dstBody = dstIf.ChildByFieldName("body")
+		}
+		if srcCond != nil && dstBody != nil {
+			if mr.Mappings.Src()[srcCond] == dstBody {
+				t.Errorf("condition node mapped to consequence body across mutually exclusive fields")
+			}
+		}
+	})
+}

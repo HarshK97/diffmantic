@@ -305,5 +305,8 @@ var golangRules = &Rules{
 		"field":    RoleMember,
 		"value":    RoleAssignedValue,
 		"right":    RoleAssignedValue,
+		"left":     RoleAssignTarget,
+		"key":      RolePairKey,
+		"name":     RoleAssignTarget | RolePairKey,
 	},
 }

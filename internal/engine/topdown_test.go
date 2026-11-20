@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -3382,6 +3383,276 @@ func configureApp() {
 		}
 		if mr.Mappings.Src()[srcTrue] == dstTrue {
 			t.Errorf("argument 'true' in takesValue must not be stolen by hideDefaultValue")
+		}
+	})
+}
+
+func TestTopDown_FieldConcordanceTieBreaking_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("python")
+
+		oldSrc := []byte(`def configure_session():
+    setup_logger()
+    options = {
+        (a + b): (c + d),
+    }
+    teardown_logger(options)
+`)
+		newSrc := []byte(`def configure_session():
+    setup_logger()
+    options = {
+        (c + d): (a + b),
+    }
+    teardown_logger(options)
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.py")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.py")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function declaration maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected configure_session to map in place, got src=%v dst=%v", srcFn, dstFn)
+		}
+
+		// 2. Surrounding sequence (setup_logger, teardown_logger) maps in place.
+		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setup_logger" {
+					srcSetup = n
+				} else if extractCalleeLabel(n, r) == "teardown_logger" {
+					srcTeardown = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setup_logger" {
+					dstSetup = n
+				} else if extractCalleeLabel(n, r) == "teardown_logger" {
+					dstTeardown = n
+				}
+			}
+		}
+		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
+			t.Errorf("expected setup_logger call to map in place")
+		}
+		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
+			t.Errorf("expected teardown_logger call to map in place")
+		}
+
+		// 3. Locate pair container and key/value expressions.
+		var srcPair, dstPair *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsPair(n.Type) {
+				srcPair = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsPair(n.Type) {
+				dstPair = n
+				break
+			}
+		}
+		if srcPair == nil || dstPair == nil {
+			t.Fatalf("failed to locate pair nodes: src=%v dst=%v", srcPair, dstPair)
+		}
+
+		// 4. Verification: The pair container must map in place so the colon stays stationary trivia.
+		if matched := mr.Mappings.Src()[srcPair]; matched != dstPair {
+			t.Errorf("expected pair container to map in place, got %v", matched)
+		}
+
+		// 5. Conflicting slots: key (a + b) must not match value (a + b) across the colon.
+		srcKey := srcPair.ChildByFieldName("key")
+		dstVal := dstPair.ChildByFieldName("value")
+		if srcKey == nil || dstVal == nil {
+			t.Fatalf("failed to locate key or value nodes: key=%v val=%v", srcKey, dstVal)
+		}
+		if matched := mr.Mappings.Src()[srcKey]; matched == dstVal {
+			t.Errorf("TopDown incorrectly paired key (a + b) across colon to value (a + b)")
+		}
+	})
+}
+
+func TestTopDown_CrossStatementDredging_FieldMutualExclusion_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+
+		oldSrc := []byte(`package main
+
+func computeMetrics() {
+	setupMetrics()
+	leftTarget := 100
+	unrelated := 200
+	rightExpr := leftTarget + 5
+	teardownMetrics(unrelated, rightExpr)
+}
+`)
+		newSrc := []byte(`package main
+
+func computeMetrics() {
+	setupMetrics()
+	discarded := 999
+	unrelated := 200
+	rightExpr := 500 + leftTarget
+	teardownMetrics(unrelated, rightExpr)
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "computeMetrics" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "computeMetrics" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected computeMetrics to map in place, got src=%v dst=%v", srcFn, dstFn)
+		}
+
+		// 2. Surrounding sequence (setupMetrics, teardownMetrics) maps in place.
+		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setupMetrics" {
+					srcSetup = n
+				} else if extractCalleeLabel(n, r) == "teardownMetrics" {
+					srcTeardown = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setupMetrics" {
+					dstSetup = n
+				} else if extractCalleeLabel(n, r) == "teardownMetrics" {
+					dstTeardown = n
+				}
+			}
+		}
+		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
+			t.Errorf("expected setupMetrics to map in place")
+		}
+		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
+			t.Errorf("expected teardownMetrics to map in place")
+		}
+
+		// 3. Middle statement unrelated := 200 maps in place.
+		var srcUnrelated, dstUnrelated *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && slices.Contains(getAssignmentTargetNames(n, r), "unrelated") {
+				srcUnrelated = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsLocalVarDeclaration(n.Type) && slices.Contains(getAssignmentTargetNames(n, r), "unrelated") {
+				dstUnrelated = n
+				break
+			}
+		}
+		if srcUnrelated == nil || dstUnrelated == nil || mr.Mappings.Src()[srcUnrelated] != dstUnrelated {
+			t.Fatalf("expected unrelated := 200 to map in place")
+		}
+
+		// 4. Locate leftTarget in old statement 1 (LHS target) and leftTarget in new statement 3 (RHS operand).
+		var srcLeftTarget, dstRhsLeftTarget *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "leftTarget" && n.StartRow == 4 {
+				srcLeftTarget = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "leftTarget" && n.StartRow == 6 {
+				dstRhsLeftTarget = n
+				break
+			}
+		}
+		if srcLeftTarget == nil || dstRhsLeftTarget == nil {
+			t.Fatalf("failed to locate leftTarget identifiers: src=%v dst=%v", srcLeftTarget, dstRhsLeftTarget)
+		}
+
+		// 5. An LHS target variable in statement 1 shouldn't dredge into an RHS operand in another statement.
+		if matched := mr.Mappings.Src()[srcLeftTarget]; matched == dstRhsLeftTarget {
+			t.Errorf("LHS target variable in statement 1 incorrectly dredged into RHS operand across statement boundaries")
+		}
+
+		// 6. Commutative operand leftTarget in statement 3 should map to dstRhsLeftTarget.
+		var srcRhsLeftTarget *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsIdentifier(n.Type) && n.Label == "leftTarget" && n.StartRow == 6 {
+				srcRhsLeftTarget = n
+				break
+			}
+		}
+		if srcRhsLeftTarget != nil {
+			if matched := mr.Mappings.Src()[srcRhsLeftTarget]; matched != dstRhsLeftTarget {
+				t.Errorf("expected commutative operand leftTarget in statement 3 to map to dstRhsLeftTarget, got %v", matched)
+			}
 		}
 	})
 }

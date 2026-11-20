@@ -292,5 +292,7 @@ var zigRules = &Rules{
 		"function": RoleCallee,
 		"object":   RoleReceiver,
 		"member":   RoleMember,
+		"left":     RoleAssignTarget,
+		"name":     RoleAssignTarget | RolePairKey,
 	},
 }

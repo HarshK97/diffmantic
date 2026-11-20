@@ -2554,3 +2554,134 @@ def make_options():
 		}
 	})
 }
+
+func TestMatchUnmatchedLeaves_FieldMutualExclusion_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("python")
+
+		oldSrc := []byte(`def configure_session():
+    setup_logger()
+    options = {
+        "token": 100,
+        "active": True,
+    }
+    teardown_logger(options)
+`)
+		newSrc := []byte(`def configure_session():
+    setup_logger()
+    options = {
+        "active": True,
+        "auth_key": "token",
+    }
+    teardown_logger(options)
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.py")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.py")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function declaration must map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected configure_session declaration to map in place, got src=%v dst=%v", srcFn, dstFn)
+		}
+
+		// 2. Surrounding sequence (setup_logger, teardown_logger) must map in place.
+		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setup_logger" {
+					srcSetup = n
+				} else if extractCalleeLabel(n, r) == "teardown_logger" {
+					srcTeardown = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsCall(n.Type) {
+				if extractCalleeLabel(n, r) == "setup_logger" {
+					dstSetup = n
+				} else if extractCalleeLabel(n, r) == "teardown_logger" {
+					dstTeardown = n
+				}
+			}
+		}
+		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
+			t.Errorf("expected setup_logger call to map in place")
+		}
+		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
+			t.Errorf("expected teardown_logger call to map in place")
+		}
+
+		// 3. Target assignment container options = { ... } must map in place.
+		var srcAssign, dstAssign *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsAssignment(n.Type) {
+				srcAssign = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsAssignment(n.Type) {
+				dstAssign = n
+				break
+			}
+		}
+		if srcAssign == nil || dstAssign == nil || mr.Mappings.Src()[srcAssign] != dstAssign {
+			t.Fatalf("expected options assignment to map in place, got src=%v dst=%v", srcAssign, dstAssign)
+		}
+
+		// 4. Locate key "token" in src and value "token" in dst.
+		var srcTokenKey, dstTokenVal *treesitter.ASTNode
+		for _, n := range srcAssign.Descendants() {
+			if n.Label == `"token"` && n.FieldName() == "key" {
+				srcTokenKey = n
+				break
+			}
+		}
+		for _, n := range dstAssign.Descendants() {
+			if n.Label == `"token"` && n.FieldName() == "value" {
+				dstTokenVal = n
+				break
+			}
+		}
+		if srcTokenKey == nil || dstTokenVal == nil {
+			t.Fatalf("failed to locate token nodes: srcKey=%v dstVal=%v", srcTokenKey, dstTokenVal)
+		}
+
+		// 5. A dictionary key named "token" shouldn't match a value named "token".
+		if matched := mr.Mappings.Src()[srcTokenKey]; matched == dstTokenVal {
+			t.Errorf("MatchUnmatchedLeaves incorrectly paired key 'token' to value 'token' across mutually exclusive fields")
+		}
+	})
+}

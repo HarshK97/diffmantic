@@ -271,6 +271,12 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 	anc2 := NearestMatchedAncestor(c, m, true)
 	cMatches := areAncestorsMatched(anc1, anc2, m)
 
+	if t1.Parent != nil && c.Parent != nil && m.Get(t1.Parent) == c.Parent {
+		if f1, fc := t1.FieldName(), c.FieldName(); f1 != "" && fc != "" && treesitter.IsMutuallyExclusiveField(f1, fc) {
+			return -1.0
+		}
+	}
+
 	// Keep small subtrees and syntactic wrappers inside their mapped scope.
 	if !cMatches && (Height(t1) <= 2 || t1.IsWrapper() || (r != nil && r.IsWrapper(t1.Type))) {
 		return -1.0
@@ -1571,6 +1577,20 @@ func getAssignmentTargetNames(n *treesitter.ASTNode, r *rules.Rules) []string {
 		}
 		return nil
 	}
+	var targetNames []string
+	for _, child := range n.Children {
+		fld := child.FieldName()
+		if fld != "" && r != nil && r.IsAssignTargetField(fld) {
+			for _, desc := range child.PreOrder() {
+				if r.IsIdentifier(desc.Type) && desc.Label != "" {
+					targetNames = append(targetNames, desc.Label)
+				}
+			}
+		}
+	}
+	if len(targetNames) > 0 {
+		return targetNames
+	}
 	opIdx := slices.IndexFunc(n.Children, func(child *treesitter.ASTNode) bool {
 		return isOperatorGlue(child, r)
 	})
@@ -1611,6 +1631,13 @@ func getAssignmentTargetNames(n *treesitter.ASTNode, r *rules.Rules) []string {
 	return nil
 }
 
+func isLeftOperand(n, op, left *treesitter.ASTNode) bool {
+	if left != nil {
+		return n == left || left.Contains(n)
+	}
+	return n.StartByte < op.StartByte
+}
+
 // hasCrossSideOperatorMismatch reports whether an inner binary expression
 // candidate crosses sides of its operator when an unmapped parent binary
 // expression has the same operator type and already places the shared operand on that side.
@@ -1626,6 +1653,8 @@ func hasCrossSideOperatorMismatch(t1, c *treesitter.ASTNode, m *Mapping, r *rule
 	sameSide := 0
 	crossSide := 0
 	var crossLeftToRight, crossRightToLeft bool
+	t1Left := t1.ChildByFieldName("left")
+	cLeft := c.ChildByFieldName("left")
 	for _, d1 := range t1.Descendants() {
 		if d1 == op1 {
 			continue
@@ -1634,8 +1663,8 @@ func hasCrossSideOperatorMismatch(t1, c *treesitter.ASTNode, m *Mapping, r *rule
 		if !ok || d2 == op2 || !c.Contains(d2) {
 			continue
 		}
-		left1 := d1.StartByte < op1.StartByte
-		left2 := d2.StartByte < op2.StartByte
+		left1 := isLeftOperand(d1, op1, t1Left)
+		left2 := isLeftOperand(d2, op2, cLeft)
 		if left1 == left2 {
 			sameSide++
 		} else {
@@ -1743,11 +1772,14 @@ func hasAsymmetricOperatorOperands(t1, c2Parent, matchedChild *treesitter.ASTNod
 		return false
 	}
 
-	cLeft := matchedChild.StartByte < op1.StartByte
+	t1Left := t1.ChildByFieldName("left")
+	p2Left := c2Parent.ChildByFieldName("left")
+
+	cLeft := isLeftOperand(matchedChild, op1, t1Left)
 	c2 := m.Src()[matchedChild]
 	c2Left := cLeft
 	if c2 != nil {
-		c2Left = c2.StartByte < op2.StartByte
+		c2Left = isLeftOperand(c2, op2, p2Left)
 	}
 	stmt1 := findActualEnclosingStatement(t1, r)
 	stmt2 := findActualEnclosingStatement(c2Parent, r)
@@ -1761,20 +1793,27 @@ func hasAsymmetricOperatorOperands(t1, c2Parent, matchedChild *treesitter.ASTNod
 		}
 	}
 
+	d2Check := func(d2 *treesitter.ASTNode) bool {
+		if d2 == nil || !c2Parent.Contains(d2) {
+			return false
+		}
+		return isLeftOperand(d2, op2, p2Left) != c2Left
+	}
+
 	hasOppositeMatch := false
 	for _, ch1 := range t1.Children {
 		if ch1 == op1 || isGlueToken(ch1, r) {
 			continue
 		}
-		if (ch1.StartByte < op1.StartByte) == cLeft {
+		if isLeftOperand(ch1, op1, t1Left) == cLeft {
 			continue // same side
 		}
-		if d2 := m.Src()[ch1]; d2 != nil && c2Parent.Contains(d2) && (d2.StartByte < op2.StartByte) != c2Left {
+		if d2 := m.Src()[ch1]; d2Check(d2) {
 			hasOppositeMatch = true
 			break
 		}
 		for _, desc1 := range ch1.Descendants() {
-			if d2 := m.Src()[desc1]; d2 != nil && c2Parent.Contains(d2) && (d2.StartByte < op2.StartByte) != c2Left {
+			if d2 := m.Src()[desc1]; d2Check(d2) {
 				hasOppositeMatch = true
 				break
 			}
@@ -1789,7 +1828,7 @@ func hasAsymmetricOperatorOperands(t1, c2Parent, matchedChild *treesitter.ASTNod
 			return true
 		}
 		for _, ch1 := range t1.Children {
-			if ch1 == op1 || isGlueToken(ch1, r) || (ch1.StartByte < op1.StartByte) == cLeft {
+			if ch1 == op1 || isGlueToken(ch1, r) || isLeftOperand(ch1, op1, t1Left) == cLeft {
 				continue
 			}
 			if d2 := m.Src()[ch1]; d2 != nil && !c2Parent.Contains(d2) {
@@ -1802,7 +1841,7 @@ func hasAsymmetricOperatorOperands(t1, c2Parent, matchedChild *treesitter.ASTNod
 			}
 		}
 		for _, ch2 := range c2Parent.Children {
-			if ch2 == op2 || isGlueToken(ch2, r) || (ch2.StartByte < op2.StartByte) == c2Left {
+			if ch2 == op2 || isGlueToken(ch2, r) || isLeftOperand(ch2, op2, p2Left) == c2Left {
 				continue
 			}
 			if s1 := m.Dst()[ch2]; s1 != nil && !t1.Contains(s1) {

@@ -361,10 +361,12 @@ var javaRules = &Rules{
 		"annotation",
 	},
 	FieldRoles: map[string]FieldRole{
-		"name":        RoleCallee,
+		"name":        RoleCallee | RoleAssignTarget | RolePairKey,
 		"constructor": RoleCallee,
 		"object":      RoleReceiver,
-		"field":       RoleMember,
+		"field":       RoleMember | RolePairKey,
 		"value":       RoleAssignedValue,
+		"left":        RoleAssignTarget,
+		"key":         RolePairKey,
 	},
 }

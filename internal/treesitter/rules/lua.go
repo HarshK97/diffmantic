@@ -216,10 +216,11 @@ var luaRules = &Rules{
 		"while_statement",
 	},
 	FieldRoles: map[string]FieldRole{
-		"name":   RoleCallee,
+		"name":   RoleCallee | RoleAssignTarget | RolePairKey,
 		"table":  RoleReceiver,
-		"field":  RoleMember,
+		"field":  RoleMember | RolePairKey,
 		"method": RoleMember,
 		"value":  RoleAssignedValue,
+		"left":   RoleAssignTarget,
 	},
 }
