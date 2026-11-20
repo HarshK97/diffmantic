@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"maps"
 	"math"
 	"slices"
@@ -106,6 +107,9 @@ func reclaimInParentIsomorphicChildren(t1, t2 *treesitter.ASTNode, m *Mapping) {
 		}
 		for _, c2 := range t2.Children {
 			if !Isomorphic(c1, c2) {
+				continue
+			}
+			if treesitter.IsMutuallyExclusiveField(c1.FieldName(), c2.FieldName()) {
 				continue
 			}
 			other1 := m.Dst()[c2]
@@ -277,6 +281,10 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 	if !TypesMatch(u1.Type, u2.Type, r) || !CompatiblePairRoles(u1, u2) {
 		return false, 0.0
 	}
+	f1, f2 := u1.FieldName(), u2.FieldName()
+	if treesitter.IsMutuallyExclusiveField(f1, f2) {
+		return false, 0.0
+	}
 	p1, p2 := u1.Parent, u2.Parent
 	if m != nil && p1 != nil {
 		hasConflict := slices.ContainsFunc(u2.Descendants(), func(d2 *treesitter.ASTNode) bool {
@@ -425,17 +433,28 @@ func canPairDelimitedSiblings(u1, u2 *treesitter.ASTNode, m *Mapping, r *rules.R
 
 	leafSim := substantiveLeafSimilarity(u1, u2, r)
 	compositeScore := 0.50*score + 0.50*leafSim
+	if f1 != "" && f1 == f2 {
+		compositeScore = min(1.0, compositeScore+0.10)
+	}
 	if compositeScore < minThreshold {
 		return false, 0.0
 	}
 	return true, compositeScore
 }
 
-// precedingCallerCandidate returns the closest preceding sibling of node that is neither
-// punctuation nor an operator literal, or nil if none exists.
+// precedingCallerCandidate returns the callee sibling or closest preceding non-punctuation
+// sibling of node under parent, or nil if none exists.
 func precedingCallerCandidate(node *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if node == nil || node.Parent == nil {
 		return nil
+	}
+	for _, c := range node.Parent.Children {
+		if c == node {
+			continue
+		}
+		if fn := c.FieldName(); r.IsCalleeField(fn) || fn == "function" || fn == "name" {
+			return c
+		}
 	}
 	idx := node.ChildIndex()
 	if idx <= 0 {
@@ -565,9 +584,60 @@ func unmatchedSubstantiveChildren(t *treesitter.ASTNode, hasFn func(*treesitter.
 	return out
 }
 
+func extractReceiverLabel(node *treesitter.ASTNode, r *rules.Rules) string {
+	if node == nil {
+		return ""
+	}
+	if node.Label != "" {
+		return node.Label
+	}
+	for _, d := range node.Descendants() {
+		if d.Label != "" && (r == nil || (!r.IsType(d.Type) && !r.IsPunctuation(d.Type) && !r.IsOperatorLiteral(d.Type))) {
+			return d.Label
+		}
+	}
+	return ""
+}
+
+// extractCalleeAndReceiver extracts the function/method name and object receiver from a call node.
 func extractCalleeAndReceiver(n *treesitter.ASTNode, r *rules.Rules) (callee string, receiver string) {
 	if n == nil || len(n.Children) == 0 {
 		return "", ""
+	}
+	if r != nil {
+		var calleeNode, recFieldNode *treesitter.ASTNode
+		for _, c := range n.Children {
+			fn := c.FieldName()
+			if calleeNode == nil && r.IsCalleeField(fn) {
+				calleeNode = c
+			}
+			if recFieldNode == nil && r.IsReceiverField(fn) {
+				recFieldNode = c
+			}
+		}
+		if recFieldNode != nil {
+			receiver = extractReceiverLabel(recFieldNode, r)
+		}
+		if calleeNode != nil {
+			var memberNode, recNode *treesitter.ASTNode
+			for _, sc := range calleeNode.Children {
+				sf := sc.FieldName()
+				if r.IsMemberField(sf) {
+					memberNode = sc
+				} else if r.IsReceiverField(sf) {
+					recNode = sc
+				}
+			}
+			if memberNode != nil {
+				callee = memberNode.Label
+			} else if calleeNode.Label != "" {
+				callee = calleeNode.Label
+			}
+			if recNode != nil && receiver == "" {
+				receiver = extractReceiverLabel(recNode, r)
+			}
+			return callee, receiver
+		}
 	}
 	argIdx := -1
 	for i, c := range n.Children {
@@ -696,6 +766,9 @@ func uniqueTypePairs(
 		nodes1 := count1[typ]
 		nodes2 := count2[typ]
 		if len(nodes1) == 1 && len(nodes2) == 1 && CompatiblePairRoles(nodes1[0], nodes2[0]) {
+			if treesitter.IsMutuallyExclusiveField(nodes1[0].FieldName(), nodes2[0].FieldName()) {
+				continue
+			}
 			n1, n2 := nodes1[0], nodes2[0]
 			p1, p2 := n1.Parent, n2.Parent
 			r := rulesFor(n1)
@@ -1281,8 +1354,24 @@ func isomorphicHeader(n1, n2 *treesitter.ASTNode, rOpt ...*rules.Rules) bool {
 	if len(rOpt) > 0 {
 		r = rOpt[0]
 	}
-	if r == nil {
-		r = rulesFor(n1)
+	r = cmp.Or(r, rulesFor(n1))
+	if !TypesMatch(n1.Type, n2.Type, r) {
+		return false
+	}
+	cond1 := n1.ChildByFieldName("condition")
+	cond2 := n2.ChildByFieldName("condition")
+	if cond1 != nil && cond2 != nil {
+		if Isomorphic(cond1, cond2) {
+			hasSemantic := slices.ContainsFunc(cond1.Leaves(), func(leaf *treesitter.ASTNode) bool {
+				if r != nil {
+					return !r.IsPunctuation(leaf.Type) && !r.IsOperatorLiteral(leaf.Type)
+				}
+				return !rules.IsPunctuation(leaf.Type) && !rules.IsOperatorLiteral(leaf.Type)
+			})
+			if hasSemantic {
+				return true
+			}
+		}
 	}
 	body1 := findBodyBlock(n1, r)
 	body2 := findBodyBlock(n2, r)

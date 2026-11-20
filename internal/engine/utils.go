@@ -70,6 +70,12 @@ func NodePairRole(n *treesitter.ASTNode) PairRole {
 	for curr := n; curr != nil && curr.Parent != nil; curr = curr.Parent {
 		p := curr.Parent
 		if slices.Contains(r.Pairs, p.Type) {
+			switch curr.FieldName() {
+			case "key", "name", "field":
+				return PairRoleKey
+			case "value":
+				return PairRoleValue
+			}
 			idx := curr.ChildIndex()
 			if idx == 0 {
 				return PairRoleKey

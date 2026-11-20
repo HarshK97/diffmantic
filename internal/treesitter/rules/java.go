@@ -360,4 +360,11 @@ var javaRules = &Rules{
 		"marker_annotation",
 		"annotation",
 	},
+	FieldRoles: map[string]FieldRole{
+		"name":        RoleCallee,
+		"constructor": RoleCallee,
+		"object":      RoleReceiver,
+		"field":       RoleMember,
+		"value":       RoleAssignedValue,
+	},
 }

@@ -349,4 +349,10 @@ var javascriptRules = &Rules{
 		"while_statement",
 		"with_statement",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function": RoleCallee,
+		"object":   RoleReceiver,
+		"property": RoleMember,
+		"value":    RoleAssignedValue,
+	},
 }

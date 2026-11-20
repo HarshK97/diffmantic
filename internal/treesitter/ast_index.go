@@ -98,6 +98,19 @@ func (n *ASTNode) FieldName() string {
 	return n.Index.Fields[id]
 }
 
+// ChildByFieldName returns the first direct child with the given field name, or nil.
+func (n *ASTNode) ChildByFieldName(field string) *ASTNode {
+	if n == nil || field == "" {
+		return nil
+	}
+	for _, child := range n.Children {
+		if child.FieldName() == field {
+			return child
+		}
+	}
+	return nil
+}
+
 // IsMutuallyExclusiveField reports whether two edge fields represent conflicting
 // branches (like consequence vs alternative).
 func IsMutuallyExclusiveField(f1, f2 string) bool {
@@ -121,7 +134,9 @@ func IsMutuallyExclusiveField(f1, f2 string) bool {
 	case "left":
 		return f2 == "right"
 	case "name":
-		return f2 == "parameters"
+		return f2 == "parameters" || f2 == "value"
+	case "pattern":
+		return f2 == "value"
 	}
 	return false
 }

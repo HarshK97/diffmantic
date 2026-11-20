@@ -288,4 +288,9 @@ var zigRules = &Rules{
 	Imports: []string{
 		"using_namespace_declaration",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function": RoleCallee,
+		"object":   RoleReceiver,
+		"member":   RoleMember,
+	},
 }
