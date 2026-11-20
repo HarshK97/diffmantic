@@ -307,4 +307,10 @@ var cRules = &Rules{
 	Attributes: []string{
 		"attribute_specifier",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function": RoleCallee,
+		"argument": RoleReceiver,
+		"field":    RoleMember,
+		"value":    RoleAssignedValue,
+	},
 }

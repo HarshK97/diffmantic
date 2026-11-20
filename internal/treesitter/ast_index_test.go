@@ -176,3 +176,114 @@ func recursiveLeafLabels(n *ASTNode) map[string]int {
 	walk(n)
 	return labels
 }
+
+func TestIsMutuallyExclusiveField(t *testing.T) {
+	mutuallyExclusive := [][2]string{
+		{"name", "value"},
+		{"name", "parameters"},
+		{"name", "body"},
+		{"pattern", "value"},
+		{"key", "value"},
+		{"left", "right"},
+		{"function", "arguments"},
+		{"function", "argument"},
+		{"condition", "consequence"},
+		{"condition", "alternative"},
+		{"condition", "body"},
+		{"consequence", "alternative"},
+		{"body", "alternative"},
+		{"consequence", "body"},
+	}
+
+	for _, pair := range mutuallyExclusive {
+		f1, f2 := pair[0], pair[1]
+		if !IsMutuallyExclusiveField(f1, f2) {
+			t.Errorf("expected IsMutuallyExclusiveField(%q, %q) = true, got false", f1, f2)
+		}
+		if !IsMutuallyExclusiveField(f2, f1) {
+			t.Errorf("expected symmetric IsMutuallyExclusiveField(%q, %q) = true, got false", f2, f1)
+		}
+	}
+
+	compatible := [][2]string{
+		{"", ""},
+		{"name", ""},
+		{"", "value"},
+		{"name", "name"},
+		{"value", "value"},
+		{"left", "left"},
+		{"name", "type"},
+		{"condition", "condition"},
+	}
+
+	for _, pair := range compatible {
+		f1, f2 := pair[0], pair[1]
+		if IsMutuallyExclusiveField(f1, f2) {
+			t.Errorf("expected IsMutuallyExclusiveField(%q, %q) = false, got true", f1, f2)
+		}
+	}
+}
+
+func TestASTNode_ChildByFieldName(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var nilNode *ASTNode
+		if got := nilNode.ChildByFieldName("condition"); got != nil {
+			t.Errorf("expected nil for nil receiver, got %v", got)
+		}
+	})
+
+	t.Run("empty field", func(t *testing.T) {
+		root, err := Parse([]byte("package main\nfunc f() {}"), "test.go")
+		if err != nil {
+			t.Fatalf("parse failed: %v", err)
+		}
+		if got := root.ChildByFieldName(""); got != nil {
+			t.Errorf("expected nil for empty field name, got %v", got)
+		}
+	})
+
+	t.Run("matched and missing field", func(t *testing.T) {
+		src := `package main
+
+func f(x int) {
+	if x > 0 {
+		return
+	}
+}
+`
+		root, err := Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse failed: %v", err)
+		}
+		var ifNode *ASTNode
+		for _, n := range root.Descendants() {
+			if n.Type == "if_statement" {
+				ifNode = n
+				break
+			}
+		}
+		if ifNode == nil {
+			t.Fatal("failed to find if_statement in parsed AST")
+		}
+
+		cond := ifNode.ChildByFieldName("condition")
+		if cond == nil {
+			t.Fatalf("expected non-nil condition child on if_statement")
+		}
+		if cond.FieldName() != "condition" {
+			t.Errorf("expected condition child FieldName() = %q, got %q", "condition", cond.FieldName())
+		}
+
+		cons := ifNode.ChildByFieldName("consequence")
+		if cons == nil {
+			t.Fatalf("expected non-nil consequence child on if_statement")
+		}
+		if cons.FieldName() != "consequence" {
+			t.Errorf("expected consequence child FieldName() = %q, got %q", "consequence", cons.FieldName())
+		}
+
+		if missing := ifNode.ChildByFieldName("non_existent_field"); missing != nil {
+			t.Errorf("expected nil for non-existent field, got %v", missing)
+		}
+	})
+}

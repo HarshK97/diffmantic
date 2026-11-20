@@ -20,10 +20,16 @@ func RecoverGlueAnchors(m *Mapping) {
 		if c1 == nil || c2 == nil {
 			continue
 		}
+		if treesitter.IsMutuallyExclusiveField(c1.FieldName(), c2.FieldName()) {
+			continue
+		}
 		r := rulesFor(c1)
 		p1 := getEffectiveParent(c1, r)
 		p2 := getEffectiveParent(c2, r)
 		if p1 == nil || p2 == nil || m.Has(p1) || m.HasDst(p2) {
+			continue
+		}
+		if treesitter.IsMutuallyExclusiveField(p1.FieldName(), p2.FieldName()) {
 			continue
 		}
 		if !TypesMatch(p1.Type, p2.Type, r) {

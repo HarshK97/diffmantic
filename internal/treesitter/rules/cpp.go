@@ -411,4 +411,10 @@ var cppRules = &Rules{
 		"attribute_specifier",
 		"attribute_declaration",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function": RoleCallee,
+		"argument": RoleReceiver,
+		"field":    RoleMember,
+		"value":    RoleAssignedValue,
+	},
 }

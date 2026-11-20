@@ -5,8 +5,24 @@ import (
 	"strings"
 )
 
+// FieldRole classifies the semantic role of an AST edge field.
+type FieldRole uint8
+
+const (
+	RoleNone FieldRole = 0
+	// RoleCallee is a callable expression or function target.
+	RoleCallee FieldRole = 1 << 0
+	// RoleReceiver is the target object in a method call or selector.
+	RoleReceiver FieldRole = 1 << 1
+	// RoleMember is a field, property, or method in a selector.
+	RoleMember FieldRole = 1 << 2
+	// RoleAssignedValue is the assigned RHS expression.
+	RoleAssignedValue FieldRole = 1 << 3
+)
+
 // Rules configures language-specific AST transformations and node matching.
 type Rules struct {
+	FieldRoles            map[string]FieldRole
 	Flattened             []string
 	Ignored               []string
 	Aliased               map[string]string
@@ -165,6 +181,34 @@ func (r *Rules) CompileSets() {
 			}
 		}
 	}
+}
+
+// FieldRole returns the role for a field name in this language.
+func (r *Rules) FieldRole(f string) FieldRole {
+	if r == nil {
+		return RoleNone
+	}
+	return r.FieldRoles[f]
+}
+
+// IsCalleeField reports if f is a callee or function edge.
+func (r *Rules) IsCalleeField(f string) bool {
+	return r.FieldRole(f)&RoleCallee != 0
+}
+
+// IsReceiverField reports if f is a receiver or operand edge.
+func (r *Rules) IsReceiverField(f string) bool {
+	return r.FieldRole(f)&RoleReceiver != 0
+}
+
+// IsMemberField reports if f is a member, property, or attribute edge.
+func (r *Rules) IsMemberField(f string) bool {
+	return r.FieldRole(f)&RoleMember != 0
+}
+
+// IsAssignedValueField reports if f is an assigned RHS value edge.
+func (r *Rules) IsAssignedValueField(f string) bool {
+	return r.FieldRole(f)&RoleAssignedValue != 0
 }
 
 // IsCall reports whether nodeType is a function, method, or macro invocation.

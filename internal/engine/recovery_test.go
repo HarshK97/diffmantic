@@ -5641,3 +5641,300 @@ func setWidths() {
 		}
 	})
 }
+
+func TestRecovery_IfInitConditionFastPath_FullEngine(t *testing.T) {
+	oldSrc := `package main
+
+func evaluate(val int) int {
+	startMetrics()
+	if val > 0 {
+		return val * 2
+	}
+	endMetrics()
+	return 0
+}
+`
+	newSrc := `package main
+
+func evaluate(val int) int {
+	startMetrics()
+	if err := validate(val); val > 0 {
+		return val * 2
+	}
+	endMetrics()
+	return 0
+}
+`
+	srcBytes := []byte(oldSrc)
+	dstBytes := []byte(newSrc)
+
+	srcAST, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+		t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+		t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+	}
+
+	r := rulesFor(srcAST)
+	if r == nil {
+		t.Fatal("rulesFor returned nil")
+	}
+
+	part := NewLinePartition(srcBytes, dstBytes)
+	mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+	mapped := mr.Mappings.Src()
+	revMapped := mr.Mappings.Dst()
+
+	// 1. Enclosing Context: evaluate function maps in place.
+	var srcFn, dstFn *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "evaluate") {
+			srcFn = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "evaluate") {
+			dstFn = n
+			break
+		}
+	}
+	if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+		t.Fatalf("expected evaluate fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+	}
+
+	// 2. Surrounding Sequence: startMetrics and endMetrics map in place.
+	var srcStart, dstStart, srcEnd, dstEnd *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsStatement(n.Type) {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "startMetrics") {
+				srcStart = n
+			} else if strings.Contains(text, "endMetrics") {
+				srcEnd = n
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsStatement(n.Type) {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "startMetrics") {
+				dstStart = n
+			} else if strings.Contains(text, "endMetrics") {
+				dstEnd = n
+			}
+		}
+	}
+	if srcStart == nil || dstStart == nil || mapped[srcStart] != dstStart {
+		t.Fatalf("expected startMetrics to map in place, got %v", mapped[srcStart])
+	}
+	if srcEnd == nil || dstEnd == nil || mapped[srcEnd] != dstEnd {
+		t.Fatalf("expected endMetrics to map in place, got %v", mapped[srcEnd])
+	}
+
+	// 3. Target: if_statement maps in place.
+	var srcIf, dstIf *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "if_statement" {
+			srcIf = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "if_statement" {
+			dstIf = n
+			break
+		}
+	}
+	if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
+		t.Fatalf("expected if_statement to map in place, got src=%v dst=%v mapped=%v", srcIf, dstIf, mapped[srcIf])
+	}
+
+	// 4. Condition: val > 0 maps in place.
+	srcCond := srcIf.ChildByFieldName("condition")
+	dstCond := dstIf.ChildByFieldName("condition")
+	if srcCond == nil || dstCond == nil || mapped[srcCond] != dstCond {
+		t.Fatalf("expected condition (val > 0) to map in place, got srcCond=%v dstCond=%v mapped=%v", srcCond, dstCond, mapped[srcCond])
+	}
+
+	// 5. Stationary inner return statement maps in place.
+	var srcRet, dstRet *treesitter.ASTNode
+	for _, n := range srcIf.Descendants() {
+		if r.IsJumpStatement(n.Type) {
+			srcRet = n
+			break
+		}
+	}
+	for _, n := range dstIf.Descendants() {
+		if r.IsJumpStatement(n.Type) {
+			dstRet = n
+			break
+		}
+	}
+	if srcRet == nil || dstRet == nil || mapped[srcRet] != dstRet {
+		t.Fatalf("expected return statement inside if to map in place, got srcRet=%v dstRet=%v mapped=%v", srcRet, dstRet, mapped[srcRet])
+	}
+
+	// 6. The newly added init statement in dstIf must not steal an existing mapping.
+	for _, n := range dstIf.Children {
+		if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "validate") {
+			if revMapped[n] != nil {
+				t.Errorf("expected inserted init statement to remain unmapped, got %v", revMapped[n])
+			}
+		}
+	}
+}
+
+func TestRecovery_CrossBranchStatementMove_FullEngine(t *testing.T) {
+	oldSrc := `package main
+
+func handleBranch(flag bool, val int) {
+	header()
+	if flag {
+		fallback()
+	} else {
+		compute(val)
+		cleanup()
+	}
+	footer()
+}
+`
+	newSrc := `package main
+
+func handleBranch(flag bool, val int) {
+	header()
+	if flag {
+		compute(val)
+	} else {
+		fallback()
+		cleanup()
+	}
+	footer()
+}
+`
+	srcBytes := []byte(oldSrc)
+	dstBytes := []byte(newSrc)
+
+	srcAST, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+		t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+	}
+	dstAST, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+		t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+	}
+
+	r := rulesFor(srcAST)
+	if r == nil {
+		t.Fatal("rulesFor returned nil")
+	}
+
+	part := NewLinePartition(srcBytes, dstBytes)
+	mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+	mapped := mr.Mappings.Src()
+
+	// 1. Enclosing function handleBranch maps in place.
+	var srcFn, dstFn *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "handleBranch") {
+			srcFn = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "handleBranch") {
+			dstFn = n
+			break
+		}
+	}
+	if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+		t.Fatalf("expected handleBranch fn to map in place, got %v", mapped[srcFn])
+	}
+
+	// 2. Surrounding Sequence: header, footer, and if_statement map in place.
+	var srcHeader, dstHeader, srcFooter, dstFooter, srcIf, dstIf *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsStatement(n.Type) {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "header") {
+				srcHeader = n
+			} else if strings.Contains(text, "footer") {
+				srcFooter = n
+			}
+		}
+		if n.Type == "if_statement" {
+			srcIf = n
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsStatement(n.Type) {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "header") {
+				dstHeader = n
+			} else if strings.Contains(text, "footer") {
+				dstFooter = n
+			}
+		}
+		if n.Type == "if_statement" {
+			dstIf = n
+		}
+	}
+	if srcHeader == nil || dstHeader == nil || mapped[srcHeader] != dstHeader {
+		t.Fatalf("expected header to map in place, got %v", mapped[srcHeader])
+	}
+	if srcFooter == nil || dstFooter == nil || mapped[srcFooter] != dstFooter {
+		t.Fatalf("expected footer to map in place, got %v", mapped[srcFooter])
+	}
+	if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
+		t.Fatalf("expected if_statement to map in place, got %v", mapped[srcIf])
+	}
+
+	// 3. Moved statements across branches map to each other (cross-branch move).
+	var srcCompute, dstCompute, srcFallback, dstFallback *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if r.IsStatement(n.Type) {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "compute") {
+				srcCompute = n
+			} else if strings.Contains(text, "fallback") {
+				srcFallback = n
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if r.IsStatement(n.Type) {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "compute") {
+				dstCompute = n
+			} else if strings.Contains(text, "fallback") {
+				dstFallback = n
+			}
+		}
+	}
+	if srcCompute == nil || dstCompute == nil || mapped[srcCompute] != dstCompute {
+		t.Fatalf("expected compute statement to map across branches, got %v", mapped[srcCompute])
+	}
+	if srcFallback == nil || dstFallback == nil || mapped[srcFallback] != dstFallback {
+		t.Fatalf("expected fallback statement to map across branches, got %v", mapped[srcFallback])
+	}
+}

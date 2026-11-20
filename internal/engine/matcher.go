@@ -314,6 +314,9 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			var matches []*treesitter.ASTNode
 			for _, dc := range candidates {
 				if !m.HasDst(dc) && Isomorphic(sc, dc) {
+					if treesitter.IsMutuallyExclusiveField(sc.FieldName(), dc.FieldName()) {
+						continue
+					}
 					matches = append(matches, dc)
 				}
 			}
@@ -397,6 +400,9 @@ func RecoverCohortSiblings(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 			for j := dstIdx; j < len(unmappedDst); j++ {
 				dc := unmappedDst[j]
 				if m.HasDst(dc) {
+					continue
+				}
+				if treesitter.IsMutuallyExclusiveField(sc.FieldName(), dc.FieldName()) {
 					continue
 				}
 				if !TypesMatch(sc.Type, dc.Type, r) {

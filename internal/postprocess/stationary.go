@@ -566,12 +566,12 @@ func primaryAssignedExpression(stmt *treesitter.ASTNode, r *rules.Rules) *treesi
 	}
 	var reflectedRHS []*treesitter.ASTNode
 	for _, child := range stmt.Children {
-		if f := child.FieldName(); f == "value" || f == "right" {
+		if r.IsAssignedValueField(child.FieldName()) {
 			reflectedRHS = append(reflectedRHS, child)
 		}
 		if r.IsDeclarator(child.Type) || r.IsLocalVarDeclaration(child.Type) {
 			for _, gc := range child.Children {
-				if gf := gc.FieldName(); gf == "value" || gf == "right" {
+				if r.IsAssignedValueField(gc.FieldName()) {
 					reflectedRHS = append(reflectedRHS, gc)
 				}
 			}
@@ -1054,13 +1054,18 @@ func isReceiverOrCalleeEdge(parent, child *treesitter.ASTNode, r *rules.Rules) b
 	}
 	f := child.FieldName()
 	if f != "" {
+		if r != nil {
+			if r.IsReceiverField(f) || r.IsCalleeField(f) {
+				return true
+			}
+			if r.IsMemberField(f) {
+				return false
+			}
+			return f == "name" && r.IsCall(parent.Type)
+		}
 		switch f {
 		case "function", "object", "value", "operand", "receiver", "table":
 			return true
-		case "arguments", "argument", "property", "field", "index", "type", "type_arguments", "type_parameters", "parameters", "parameter":
-			return false
-		case "name":
-			return r != nil && r.IsCall(parent.Type)
 		default:
 			return false
 		}
@@ -1160,7 +1165,7 @@ func isAdmissibleSpineNode(node, child, localAnchor, remoteAnchor *treesitter.AS
 				if (f == "arguments" || f == "argument") && !sameLine {
 					return false
 				}
-				if f == "function" || f == "name" || f == "object" {
+				if r.IsCalleeField(f) || r.IsReceiverField(f) || (f == "name" && r.IsCall(node.Type)) {
 					return true
 				}
 			} else if child.ChildIndex() != 0 && !sameLine {

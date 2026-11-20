@@ -215,4 +215,11 @@ var luaRules = &Rules{
 		"variable_declaration",
 		"while_statement",
 	},
+	FieldRoles: map[string]FieldRole{
+		"name":   RoleCallee,
+		"table":  RoleReceiver,
+		"field":  RoleMember,
+		"method": RoleMember,
+		"value":  RoleAssignedValue,
+	},
 }

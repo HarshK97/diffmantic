@@ -357,4 +357,10 @@ var rustRules = &Rules{
 		"match_expression",
 		"while_expression",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function": RoleCallee,
+		"macro":    RoleCallee,
+		"value":    RoleReceiver | RoleAssignedValue,
+		"field":    RoleMember,
+	},
 }

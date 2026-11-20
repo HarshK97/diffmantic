@@ -299,4 +299,11 @@ var golangRules = &Rules{
 		"type_switch_statement",
 		"var_declaration",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function": RoleCallee,
+		"operand":  RoleReceiver,
+		"field":    RoleMember,
+		"value":    RoleAssignedValue,
+		"right":    RoleAssignedValue,
+	},
 }

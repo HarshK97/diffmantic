@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/treesitter"
@@ -77,5 +78,12 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		checkField("Imports", r.Imports)
 		checkField("Attributes", r.Attributes)
 		checkField("Declarators", r.Declarators)
+
+		fields := treesitter.NativeLanguageFields(ptr)
+		for fieldName := range r.FieldRoles {
+			if !slices.Contains(fields, fieldName) {
+				t.Errorf("[%s] FieldRoles item %q does NOT exist in native grammar fields", l.name, fieldName)
+			}
+		}
 	}
 }

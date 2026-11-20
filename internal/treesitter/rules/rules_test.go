@@ -238,6 +238,76 @@ func TestRulesAreTypesEquivalent(t *testing.T) {
 	}
 }
 
+func TestRulesFieldRoles(t *testing.T) {
+	r := &Rules{
+		FieldRoles: map[string]FieldRole{
+			"function": RoleCallee,
+			"operand":  RoleReceiver,
+			"field":    RoleMember,
+			"value":    RoleAssignedValue,
+			"custom":   RoleReceiver | RoleAssignedValue,
+		},
+	}
+
+	t.Run("field roles lookup", func(t *testing.T) {
+		if got := r.FieldRole("function"); got != RoleCallee {
+			t.Errorf("FieldRole(function) = %v, want %v", got, RoleCallee)
+		}
+		if got := r.FieldRole("operand"); got != RoleReceiver {
+			t.Errorf("FieldRole(operand) = %v, want %v", got, RoleReceiver)
+		}
+		if got := r.FieldRole("field"); got != RoleMember {
+			t.Errorf("FieldRole(field) = %v, want %v", got, RoleMember)
+		}
+		if got := r.FieldRole("value"); got != RoleAssignedValue {
+			t.Errorf("FieldRole(value) = %v, want %v", got, RoleAssignedValue)
+		}
+		if got := r.FieldRole("unknown"); got != RoleNone {
+			t.Errorf("FieldRole(unknown) = %v, want %v", got, RoleNone)
+		}
+	})
+
+	t.Run("predicates", func(t *testing.T) {
+		if !r.IsCalleeField("function") {
+			t.Errorf("IsCalleeField(function) = false, want true")
+		}
+		if r.IsCalleeField("operand") {
+			t.Errorf("IsCalleeField(operand) = true, want false")
+		}
+		if !r.IsReceiverField("operand") {
+			t.Errorf("IsReceiverField(operand) = false, want true")
+		}
+		if !r.IsMemberField("field") {
+			t.Errorf("IsMemberField(field) = false, want true")
+		}
+		if !r.IsAssignedValueField("value") {
+			t.Errorf("IsAssignedValueField(value) = false, want true")
+		}
+		if !r.IsReceiverField("custom") || !r.IsAssignedValueField("custom") {
+			t.Errorf("custom should satisfy both receiver and assigned value")
+		}
+	})
+
+	t.Run("nil receiver safe", func(t *testing.T) {
+		var nilR *Rules
+		if nilR.FieldRole("function") != RoleNone {
+			t.Errorf("nil Rules FieldRole = %v, want %v", nilR.FieldRole("function"), RoleNone)
+		}
+		if nilR.IsCalleeField("function") {
+			t.Errorf("nil Rules IsCalleeField = true, want false")
+		}
+		if nilR.IsReceiverField("operand") {
+			t.Errorf("nil Rules IsReceiverField = true, want false")
+		}
+		if nilR.IsMemberField("field") {
+			t.Errorf("nil Rules IsMemberField = true, want false")
+		}
+		if nilR.IsAssignedValueField("value") {
+			t.Errorf("nil Rules IsAssignedValueField = true, want false")
+		}
+	})
+}
+
 func TestRulesHelperMethods(t *testing.T) {
 	newSampleRules := func() *Rules {
 		return &Rules{

@@ -338,4 +338,11 @@ var pythonRules = &Rules{
 		"while_statement",
 		"with_statement",
 	},
+	FieldRoles: map[string]FieldRole{
+		"function":  RoleCallee,
+		"object":    RoleReceiver,
+		"attribute": RoleMember,
+		"value":     RoleAssignedValue,
+		"right":     RoleAssignedValue,
+	},
 }
