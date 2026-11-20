@@ -184,7 +184,6 @@ func TestIsMutuallyExclusiveField(t *testing.T) {
 		{"name", "body"},
 		{"pattern", "value"},
 		{"key", "value"},
-		{"left", "right"},
 		{"function", "arguments"},
 		{"function", "argument"},
 		{"condition", "consequence"},
@@ -212,6 +211,7 @@ func TestIsMutuallyExclusiveField(t *testing.T) {
 		{"name", "name"},
 		{"value", "value"},
 		{"left", "left"},
+		{"left", "right"},
 		{"name", "type"},
 		{"condition", "condition"},
 	}

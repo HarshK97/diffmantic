@@ -61,6 +61,10 @@ func hasDelimitedContainerConflict(t1, t2 *treesitter.ASTNode, m *Mapping, r *ru
 		return false
 	}
 
+	if f1, f2 := t1.FieldName(), t2.FieldName(); f1 != "" && f2 != "" && treesitter.IsMutuallyExclusiveField(f1, f2) {
+		return true
+	}
+
 	if hasAnyMappedDescendantOutside(elem2, elem1, m.Dst()) || hasAnyMappedDescendantOutside(elem1, elem2, m.Src()) {
 		return true
 	}
@@ -131,13 +135,25 @@ func getElementContainer(node *treesitter.ASTNode, r *rules.Rules) *treesitter.A
 	return node
 }
 
+func pairValue(p *treesitter.ASTNode) *treesitter.ASTNode {
+	if p == nil {
+		return nil
+	}
+	if v := p.ChildByFieldName("value"); v != nil {
+		return v
+	}
+	if len(p.Children) >= 2 {
+		return p.Children[len(p.Children)-1]
+	}
+	return nil
+}
+
 // isPairValueMatch reports whether the values of two pairs match by text or tree isomorphism.
 func isPairValueMatch(p1, p2 *treesitter.ASTNode) bool {
-	if p1 == nil || p2 == nil || len(p1.Children) < 2 || len(p2.Children) < 2 {
+	v1, v2 := pairValue(p1), pairValue(p2)
+	if v1 == nil || v2 == nil {
 		return false
 	}
-	v1 := p1.Children[len(p1.Children)-1]
-	v2 := p2.Children[len(p2.Children)-1]
 	t1 := identifierText(v1)
 	if t1 != "" && t1 == identifierText(v2) {
 		return true
@@ -156,7 +172,7 @@ func scorePairMatch(fromPairs, toPairs []*treesitter.ASTNode) (matches, conflict
 			if getKeyLabel(p2) == k1 {
 				if isPairValueMatch(p1, p2) {
 					matches++
-					v1 := p1.Children[len(p1.Children)-1]
+					v1 := pairValue(p1)
 					matchedWeight += max(1, len(identifierText(v1)))
 				} else {
 					conflicts++

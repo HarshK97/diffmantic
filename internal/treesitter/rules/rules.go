@@ -18,6 +18,10 @@ const (
 	RoleMember FieldRole = 1 << 2
 	// RoleAssignedValue is the assigned RHS expression.
 	RoleAssignedValue FieldRole = 1 << 3
+	// RoleAssignTarget is the assignment LHS target (left, name).
+	RoleAssignTarget FieldRole = 1 << 4
+	// RolePairKey is a key, name, or designator in a pair or struct initializer.
+	RolePairKey FieldRole = 1 << 5
 )
 
 // Rules configures language-specific AST transformations and node matching.
@@ -209,6 +213,16 @@ func (r *Rules) IsMemberField(f string) bool {
 // IsAssignedValueField reports if f is an assigned RHS value edge.
 func (r *Rules) IsAssignedValueField(f string) bool {
 	return r.FieldRole(f)&RoleAssignedValue != 0
+}
+
+// IsAssignTargetField reports if f is an assignment LHS target edge.
+func (r *Rules) IsAssignTargetField(f string) bool {
+	return r.FieldRole(f)&RoleAssignTarget != 0
+}
+
+// IsPairKeyField reports if f is a key, name, or field identifier in a pair or struct initializer.
+func (r *Rules) IsPairKeyField(f string) bool {
+	return r.FieldRole(f)&RolePairKey != 0
 }
 
 // IsCall reports whether nodeType is a function, method, or macro invocation.

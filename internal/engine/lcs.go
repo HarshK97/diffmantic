@@ -163,6 +163,14 @@ func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, m *Mapping) int
 	}
 
 	score := 0
+	if f1, f2 := src.FieldName(), dst.FieldName(); f1 != "" && f2 != "" {
+		if treesitter.IsMutuallyExclusiveField(f1, f2) {
+			return -100
+		}
+		if f1 == f2 {
+			score += 150
+		}
+	}
 	if srcChildIdx == dstChildIdx {
 		score += 100
 	}

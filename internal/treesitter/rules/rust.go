@@ -361,6 +361,8 @@ var rustRules = &Rules{
 		"function": RoleCallee,
 		"macro":    RoleCallee,
 		"value":    RoleReceiver | RoleAssignedValue,
-		"field":    RoleMember,
+		"field":    RoleMember | RolePairKey,
+		"left":     RoleAssignTarget,
+		"name":     RoleAssignTarget | RolePairKey,
 	},
 }

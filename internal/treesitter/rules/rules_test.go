@@ -245,6 +245,9 @@ func TestRulesFieldRoles(t *testing.T) {
 			"operand":  RoleReceiver,
 			"field":    RoleMember,
 			"value":    RoleAssignedValue,
+			"left":     RoleAssignTarget,
+			"key":      RolePairKey,
+			"name":     RoleAssignTarget | RolePairKey,
 			"custom":   RoleReceiver | RoleAssignedValue,
 		},
 	}
@@ -261,6 +264,12 @@ func TestRulesFieldRoles(t *testing.T) {
 		}
 		if got := r.FieldRole("value"); got != RoleAssignedValue {
 			t.Errorf("FieldRole(value) = %v, want %v", got, RoleAssignedValue)
+		}
+		if got := r.FieldRole("left"); got != RoleAssignTarget {
+			t.Errorf("FieldRole(left) = %v, want %v", got, RoleAssignTarget)
+		}
+		if got := r.FieldRole("key"); got != RolePairKey {
+			t.Errorf("FieldRole(key) = %v, want %v", got, RolePairKey)
 		}
 		if got := r.FieldRole("unknown"); got != RoleNone {
 			t.Errorf("FieldRole(unknown) = %v, want %v", got, RoleNone)
@@ -282,6 +291,18 @@ func TestRulesFieldRoles(t *testing.T) {
 		}
 		if !r.IsAssignedValueField("value") {
 			t.Errorf("IsAssignedValueField(value) = false, want true")
+		}
+		if !r.IsAssignTargetField("left") {
+			t.Errorf("IsAssignTargetField(left) = false, want true")
+		}
+		if !r.IsPairKeyField("key") {
+			t.Errorf("IsPairKeyField(key) = false, want true")
+		}
+		if !r.IsAssignTargetField("name") || !r.IsPairKeyField("name") {
+			t.Errorf("name should satisfy both assign target and pair key")
+		}
+		if (r.FieldRole("name") & r.FieldRole("left")) == RoleNone {
+			t.Errorf("name and left should share RoleAssignTarget in bitmask intersection")
 		}
 		if !r.IsReceiverField("custom") || !r.IsAssignedValueField("custom") {
 			t.Errorf("custom should satisfy both receiver and assigned value")

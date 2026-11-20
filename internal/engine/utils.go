@@ -159,6 +159,16 @@ func getKeyLabel(n *treesitter.ASTNode) string {
 	if tag := getTagName(n); tag != "" {
 		return tag
 	}
+	for _, child := range n.Children {
+		fld := child.FieldName()
+		if fld != "" && r != nil && r.IsPairKeyField(fld) {
+			for _, desc := range child.PreOrder() {
+				if desc.Label != "" && !r.IsPunctuation(desc.Label) && !r.IsIgnored(desc.Type, desc.Label) {
+					return desc.Label
+				}
+			}
+		}
+	}
 	isCall := (r != nil && r.IsCall(n.Type)) || (r == nil && rules.IsCall(n.Type))
 	if isCall {
 		for _, ch := range n.Children {
