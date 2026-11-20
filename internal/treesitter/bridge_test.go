@@ -85,7 +85,7 @@ func TestIngestFlatAST_Synthetic(t *testing.T) {
 		{TypeID: 3, Flags: treesitter.FlatNodeNamed, StartByte: 11, EndByte: 13, FirstChildIdx: 0xFFFFFFFF, NextSiblingIdx: 0xFFFFFFFF, ParentIdx: 1, ChildCount: 0},
 	}
 
-	root := treesitter.IngestFlatAST(nodes, symbols, src, "go")
+	root := treesitter.IngestFlatAST(nodes, symbols, nil, src, "go")
 	if root == nil {
 		t.Fatalf("root is nil")
 	}
@@ -284,7 +284,7 @@ func TestIngestFlatAST_ErrorVsMissingSeparation(t *testing.T) {
 				ParentIdx:      0,
 			},
 		}
-		root := treesitter.IngestFlatAST(nodes, symbols, src, "c")
+		root := treesitter.IngestFlatAST(nodes, symbols, nil, src, "c")
 		if root == nil {
 			t.Fatal("expected non-nil AST root")
 		}
@@ -319,7 +319,7 @@ func TestIngestFlatAST_ErrorVsMissingSeparation(t *testing.T) {
 				ParentIdx:      0,
 			},
 		}
-		root := treesitter.IngestFlatAST(nodes, symbols, src, "c")
+		root := treesitter.IngestFlatAST(nodes, symbols, nil, src, "c")
 		if root == nil {
 			t.Fatal("expected non-nil AST root")
 		}

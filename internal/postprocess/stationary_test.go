@@ -4201,6 +4201,175 @@ func handleStatus(code int) {
 	})
 }
 
+// TestStationaryFluentMethodChains acts as a preventative non-regression suite
+// verifying that intermediate method call additions and deletions on fluent builder
+// chains remain stationary (no spurious Move actions). While statement-level
+// stationarity protects single-statement assignments, dual-plane NCMA receiver
+// unwrapping provides the architectural defense when unnesting chains.
+func TestStationaryFluentMethodChains(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("Rust/IntermediateMethodCallsDeleted", func(t *testing.T) {
+			r := rules.Get("rust")
+			src := []byte(`fn build_cli() {
+    let mut config = Config::default();
+    let app = Command::new("bat")
+        .arg(
+            Arg::new("style")
+                .long("style")
+                .value_name("components")
+                .use_value_delimiter(false)
+                .takes_value(true)
+                .overrides_with("style")
+        );
+    config.validate();
+}
+`)
+			dst := []byte(`fn build_cli() {
+    let mut config = Config::default();
+    let app = Command::new("bat")
+        .arg(
+            Arg::new("style")
+                .long("style")
+                .value_name("components")
+                .overrides_with("style")
+        );
+    config.validate();
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.rs")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.rs")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			// 1. Enclosing context: enclosing function build_cli maps in place.
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "build_cli") {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "build_cli") {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected function build_cli to map in place")
+			}
+
+			// 2. Surrounding sequence: config variable and validate call map in place.
+			var srcCfg, dstCfg, srcVal, dstVal *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "config") {
+					srcCfg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "validate") {
+					srcVal = n
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "config") {
+					dstCfg = n
+				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "validate") {
+					dstVal = n
+				}
+			}
+			if srcCfg == nil || dstCfg == nil || mr.Mappings.Src()[srcCfg] != dstCfg {
+				t.Fatalf("expected config variable to map in place")
+			}
+			if srcVal == nil || dstVal == nil || mr.Mappings.Src()[srcVal] != dstVal {
+				t.Fatalf("expected config.validate call to map in place")
+			}
+
+			// 3. Edit actions: zero Move actions on the stationary receiver chain.
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on fluent receiver chain: %v (Node=%s [%d:%d])",
+						a, a.Node.Type, a.Node.StartRow, a.Node.EndRow)
+				}
+			}
+		})
+
+		t.Run("TypeScript/IntermediateMethodCallsInserted", func(t *testing.T) {
+			r := rules.Get("typescript")
+			src := []byte(`function buildQuery() {
+    const base = new QueryBuilder("users");
+    const result = base
+        .select("id")
+        .where("active", true)
+        .execute();
+    logDone();
+}
+`)
+			dst := []byte(`function buildQuery() {
+    const base = new QueryBuilder("users");
+    const result = base
+        .select("id")
+        .limit(10)
+        .orderBy("created_at")
+        .where("active", true)
+        .execute();
+    logDone();
+}
+`)
+			srcAST, err := treesitter.Parse(src, "test.ts")
+			if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+				t.Fatalf("src AST parse error: %v, errors=%d", err, srcAST.ParseErrorCount)
+			}
+			dstAST, err := treesitter.Parse(dst, "test.ts")
+			if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+				t.Fatalf("dst AST parse error: %v, errors=%d", err, dstAST.ParseErrorCount)
+			}
+
+			part := engine.NewLinePartition(src, dst)
+			mr := engine.Match(srcAST, dstAST, src, dst, part)
+			if mr == nil || mr.Mappings == nil {
+				t.Fatal("Match returned nil")
+			}
+
+			var srcFn, dstFn *treesitter.ASTNode
+			for _, n := range srcAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "buildQuery") {
+					srcFn = n
+					break
+				}
+			}
+			for _, n := range dstAST.Descendants() {
+				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "buildQuery") {
+					dstFn = n
+					break
+				}
+			}
+			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+				t.Fatalf("expected function buildQuery to map in place")
+			}
+
+			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+			normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move {
+					t.Fatalf("unexpected Move action on TypeScript query builder: %v", a)
+				}
+			}
+		})
+	})
+}
+
 func TestStationaryWrappedMacroArguments(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		r := rules.Get("rust")
@@ -5511,6 +5680,362 @@ fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut NonZeroU32) {
 			if a.Type == actions.Delete && a.Node != nil && r.IsExpressionStatement(a.Node.Type) {
 				t.Fatalf("unexpected Delete action on expression_statement wrapper: %v", a)
 			}
+		}
+	})
+}
+
+func TestCrossBranchMoveNotStationary(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("go")
+		if r == nil {
+			t.Fatal("rules for go not found")
+		}
+
+		src := []byte(`package main
+
+func handle(ready bool) {
+	prepare()
+	if ready {
+		processTask()
+	}
+	finish()
+}
+`)
+
+		dst := []byte(`package main
+
+func handle(ready bool) {
+	prepare()
+	if ready {
+		validate()
+	} else {
+		processTask()
+	}
+	finish()
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.go")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.go")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing context: enclosing function handle maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handle") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handle") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
+			t.Fatalf("expected function handle to map in place")
+		}
+
+		// 2. Surrounding sequence: prepare() and finish() calls map in place.
+		var srcPrep, dstPrep, srcFin, dstFin *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) {
+				text := string(src[n.StartByte:n.EndByte])
+				if strings.Contains(text, "prepare") {
+					srcPrep = n
+				} else if strings.Contains(text, "finish") {
+					srcFin = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) {
+				text := string(dst[n.StartByte:n.EndByte])
+				if strings.Contains(text, "prepare") {
+					dstPrep = n
+				} else if strings.Contains(text, "finish") {
+					dstFin = n
+				}
+			}
+		}
+		if srcPrep == nil || dstPrep == nil || mr.Mappings.Src()[srcPrep] != dstPrep {
+			t.Fatalf("expected prepare call to map in place")
+		}
+		if srcFin == nil || dstFin == nil || mr.Mappings.Src()[srcFin] != dstFin {
+			t.Fatalf("expected finish call to map in place")
+		}
+
+		// 3. Edit actions: processTask statement moved across branches (consequence -> alternative),
+		// so it MUST emit a Move action and NOT be treated as stationary.
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		var foundMove bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "processTask") {
+					foundMove = true
+					break
+				}
+			}
+		}
+		if !foundMove {
+			t.Fatalf("expected Move action for processTask moving from consequence to alternative, got actions: %v", normalized.Actions())
+		}
+	})
+}
+
+func TestCrossBranchMoveNotStationary_Python(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("python")
+		if r == nil {
+			t.Fatal("rules for python not found")
+		}
+
+		src := []byte(`def handle(ready):
+    prepare()
+    if ready:
+        process_task()
+    finish()
+`)
+
+		dst := []byte(`def handle(ready):
+    prepare()
+    if ready:
+        validate()
+    else:
+        process_task()
+    finish()
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.py")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.py")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		var foundMove bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "process_task") {
+					foundMove = true
+					break
+				}
+			}
+		}
+		if !foundMove {
+			t.Fatalf("expected Move action for process_task moving across branches in Python, got actions: %v", normalized.Actions())
+		}
+	})
+}
+
+func TestCrossBranchMoveNotStationary_Java(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("java")
+		if r == nil {
+			t.Fatal("rules for java not found")
+		}
+
+		src := []byte(`class Handler {
+    void handle(boolean ready) {
+        prepare();
+        if (ready) {
+            processTask();
+        }
+        finish();
+    }
+}
+`)
+
+		dst := []byte(`class Handler {
+    void handle(boolean ready) {
+        prepare();
+        if (ready) {
+            validate();
+        } else {
+            processTask();
+        }
+        finish();
+    }
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.java")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.java")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		var foundMove bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "processTask") {
+					foundMove = true
+					break
+				}
+			}
+		}
+		if !foundMove {
+			t.Fatalf("expected Move action for processTask moving across branches in Java, got actions: %v", normalized.Actions())
+		}
+	})
+}
+
+func TestCrossBranchMoveNotStationary_Rust(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("rust")
+		if r == nil {
+			t.Fatal("rules for rust not found")
+		}
+
+		src := []byte(`fn handle(ready: bool) {
+    prepare();
+    if ready {
+        process_task();
+    }
+    finish();
+}
+`)
+		dst := []byte(`fn handle(ready: bool) {
+    prepare();
+    if ready {
+        validate();
+    } else {
+        process_task();
+    }
+    finish();
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		var foundMove bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "process_task") {
+					foundMove = true
+					break
+				}
+			}
+		}
+		if !foundMove {
+			t.Fatalf("expected Move action for process_task moving across branches in Rust, got actions: %v", normalized.Actions())
+		}
+	})
+}
+
+func TestCrossBranchMoveNotStationary_TypeScript(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		r := rules.Get("typescript")
+		if r == nil {
+			t.Fatal("rules for typescript not found")
+		}
+
+		src := []byte(`function handle(ready: boolean) {
+    prepare();
+    if (ready) {
+        processTask();
+    }
+    finish();
+}
+`)
+		dst := []byte(`function handle(ready: boolean) {
+    prepare();
+    if (ready) {
+        validate();
+    } else {
+        processTask();
+    }
+    finish();
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "test.ts")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "test.ts")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		var foundMove bool
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "processTask") {
+					foundMove = true
+					break
+				}
+			}
+		}
+		if !foundMove {
+			t.Fatalf("expected Move action for processTask moving across branches in TypeScript, got actions: %v", normalized.Actions())
 		}
 	})
 }

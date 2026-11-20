@@ -2,6 +2,7 @@ package postprocess
 
 import (
 	"cmp"
+	"slices"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
@@ -101,6 +102,10 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		}
 	}
 
+	if isStationarySpineMove(node, dstNode, ms, r, sameLine) {
+		return true
+	}
+
 	// Walk up past transparent wrappers to find the enclosing container.
 	srcBase := srcParent
 	srcChild := node
@@ -113,12 +118,16 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 		}
 		br := rules.Get(base.GetLanguage())
 		isCall := (br != nil && br.IsCall(base.Type)) || (br == nil && rules.IsCall(base.Type))
-		if isCall && child.ChildIndex() != 0 && !sameLine {
+		isArgOrNonFirst := func(n *treesitter.ASTNode) bool {
+			f := n.FieldName()
+			return f == "arguments" || f == "argument" || (f == "" && n.ChildIndex() != 0)
+		}
+		if isCall && !sameLine && isArgOrNonFirst(child) {
 			return false
 		}
 		if base.Parent != nil {
 			parentIsCall := (br != nil && br.IsCall(base.Parent.Type)) || (br == nil && rules.IsCall(base.Parent.Type))
-			if parentIsCall && base.ChildIndex() != 0 && !sameLine {
+			if parentIsCall && !sameLine && isArgOrNonFirst(base) {
 				return false
 			}
 		}
@@ -233,7 +242,14 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 			sStep := srcSteps[s]
 			dStep := dstSteps[d]
 			if ms.Src()[sStep.base] == dStep.base {
-				isStationaryPos := sStep.child.ChildIndex() == dStep.child.ChildIndex() ||
+				srcField := sStep.child.FieldName()
+				dstField := dStep.child.FieldName()
+				if treesitter.IsMutuallyExclusiveField(srcField, dstField) {
+					continue
+				}
+				slotConfirmed := srcField != "" && dstField != "" && srcField == dstField
+				isStationaryPos := slotConfirmed ||
+					sStep.child.ChildIndex() == dStep.child.ChildIndex() ||
 					(sStep.child.ChildIndex() == len(sStep.base.Children)-1 && dStep.child.ChildIndex() == len(dStep.base.Children)-1) ||
 					isMonotonicContainerChild(sStep.base, dStep.base, sStep.child, dStep.child, ms)
 				if isStationaryPos || ((node.IsKeyword || (r != nil && r.IsKeyword(node.Type, node.Label))) && sameScopeDeclaration(sStep.base, dStep.base, ms, r)) {
@@ -543,23 +559,38 @@ func primaryStatementExpression(stmt *treesitter.ASTNode, r *rules.Rules) *trees
 	return unwrapSingleChildWrapper(exprCandidates[0], r)
 }
 
-// primaryAssignedExpression locates the assignment operator in an assignment or local
-// variable declaration and resolves its single RHS evaluated expression.
+// Across tree-sitter grammars, the RHS value usually sits on the "value" or "right" field.
 func primaryAssignedExpression(stmt *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if stmt == nil || r == nil {
 		return nil
 	}
+	var reflectedRHS []*treesitter.ASTNode
+	for _, child := range stmt.Children {
+		if f := child.FieldName(); f == "value" || f == "right" {
+			reflectedRHS = append(reflectedRHS, child)
+		}
+		if r.IsDeclarator(child.Type) || r.IsLocalVarDeclaration(child.Type) {
+			for _, gc := range child.Children {
+				if gf := gc.FieldName(); gf == "value" || gf == "right" {
+					reflectedRHS = append(reflectedRHS, gc)
+				}
+			}
+		}
+	}
+	if len(reflectedRHS) == 1 {
+		return unwrapSingleChildWrapper(reflectedRHS[0], r)
+	}
+	if len(reflectedRHS) > 1 {
+		return nil
+	}
+
 	assignContext := findAssignmentOperatorContext(stmt, r)
 	if assignContext == nil {
 		return nil
 	}
-	opIdx := -1
-	for i, child := range assignContext.Children {
-		if r.IsOperatorLiteral(child.Type) || r.IsTrailingSeparator(child.Type) {
-			opIdx = i
-			break
-		}
-	}
+	opIdx := slices.IndexFunc(assignContext.Children, func(child *treesitter.ASTNode) bool {
+		return r.IsOperatorLiteral(child.Type) || r.IsTrailingSeparator(child.Type)
+	})
 	if opIdx == -1 {
 		return nil
 	}
@@ -620,24 +651,38 @@ func areChainedStatements(base, parent *treesitter.ASTNode, r *rules.Rules) bool
 	if base == nil || parent == nil {
 		return false
 	}
-	isStmt := (r != nil && r.IsStatement(base.Type)) || (r == nil && rules.IsStatement(base.Type))
+	r = cmp.Or(r, rules.Get(base.GetLanguage()))
+	isStmt := (r != nil && (r.IsStatement(base.Type) || r.IsClause(base.Type))) || (r == nil && rules.IsStatement(base.Type))
 	if !isStmt {
 		return false
 	}
-	if r != nil && r.AreTypesEquivalent(base.Type, parent.Type) {
-		return true
-	}
-	if r == nil && base.Type == parent.Type {
-		return true
+	// A chained statement in an if-else ladder must be in an alternative/clause slot,
+	// never directly nested inside a construct's body block.
+	if base.Parent != nil && r != nil && r.IsBlock(base.Parent.Type) {
+		return false
 	}
 	effectiveParent := parent
-	if (r != nil && r.IsScaffolding(effectiveParent.Type)) || (r == nil && rules.IsScaffolding(effectiveParent.Type)) {
-		if effectiveParent.Parent != nil {
-			effectiveParent = effectiveParent.Parent
-		}
+	if effectiveParent.Parent != nil && ((r != nil && (r.IsClause(effectiveParent.Type) || r.IsScaffolding(effectiveParent.Type))) || (r == nil && rules.IsScaffolding(effectiveParent.Type))) {
+		effectiveParent = effectiveParent.Parent
 	}
 	if r != nil {
-		return r.AreTypesEquivalent(base.Type, effectiveParent.Type)
+		if r.AreTypesEquivalent(base.Type, effectiveParent.Type) {
+			// In Go and similar grammars without an else_clause wrapper, the chained
+			// if_statement must sit in the alternative position (after the condition and body).
+			if base.Parent == effectiveParent {
+				if f := base.FieldName(); f != "" {
+					return f == "alternative"
+				}
+				if base.ChildIndex() <= 2 {
+					return false
+				}
+			}
+			return true
+		}
+		if r.IsClause(base.Type) && (r.IsStatement(effectiveParent.Type) || r.AreTypesEquivalent(base.Parent.Type, effectiveParent.Type)) {
+			return true
+		}
+		return false
 	}
 	return base.Type == effectiveParent.Type
 }
@@ -763,9 +808,7 @@ func sameScopeDeclaration(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *r
 	if src == nil || dst == nil || ms == nil {
 		return false
 	}
-	if r == nil {
-		r = rules.Get(src.GetLanguage())
-	}
+	r = cmp.Or(r, rules.Get(src.GetLanguage()))
 	if r == nil {
 		return false
 	}
@@ -872,5 +915,260 @@ func isBlockTailSemicolonTransition(src, dst *treesitter.ASTNode, ms *engine.Map
 		ms.Src()[src.Parent.Parent] == dst.Parent {
 		return isSoleSubstantiveChild(src.Parent, src, r)
 	}
+	return false
+}
+
+// findNearestCommonMappedAncestor finds the lowest mapped ancestor pair (srcA, dstA)
+// such that ms.Src()[srcA] == dstA, bounded by the enclosing container declaration.
+func findNearestCommonMappedAncestor(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) (*treesitter.ASTNode, *treesitter.ASTNode) {
+	if src == nil || dst == nil || ms == nil {
+		return nil, nil
+	}
+	if !sameScopeDeclaration(src, dst, ms, r) {
+		return nil, nil
+	}
+	srcDecl := src.EnclosingContainerDeclaration(r)
+	dstDecl := dst.EnclosingContainerDeclaration(r)
+
+	var srcMappedAncestorsBuf [16]*treesitter.ASTNode
+	srcMappedAncestors := srcMappedAncestorsBuf[:0]
+	for curr := src.Parent; curr != nil; curr = curr.Parent {
+		if ms.Has(curr) {
+			srcMappedAncestors = append(srcMappedAncestors, curr)
+		}
+		if curr == srcDecl {
+			break
+		}
+	}
+
+	for curr := dst.Parent; curr != nil; curr = curr.Parent {
+		if srcMatch := ms.Dst()[curr]; srcMatch != nil && slices.Contains(srcMappedAncestors, srcMatch) {
+			return srcMatch, curr
+		}
+		if curr == dstDecl {
+			break
+		}
+	}
+	return nil, nil
+}
+
+// isStationarySpineMove checks whether src and dst connect to a shared mapped ancestor
+// through wrappers or chained calls, without jumping across sibling branches.
+func isStationarySpineMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, sameLine bool) bool {
+	if src == nil || dst == nil || ms == nil || src.Parent == nil || dst.Parent == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(src.GetLanguage()))
+	anchorSrc, anchorDst := findNearestCommonMappedAncestor(src, dst, ms, r)
+	if anchorSrc == nil || anchorDst == nil {
+		return false
+	}
+
+	// If either parent mapped to a completely different container, this isn't stationary.
+	if mappedDstParent := ms.Dst()[dst.Parent]; mappedDstParent != nil && !mappedDstParent.Contains(src) && mappedDstParent != anchorSrc {
+		return false
+	}
+	if mappedSrcParent := ms.Src()[src.Parent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dst) && mappedSrcParent != anchorDst {
+		return false
+	}
+
+	srcSpine := []*treesitter.ASTNode{src}
+	for curr := src.Parent; curr != nil && curr != anchorSrc; curr = curr.Parent {
+		srcSpine = append(srcSpine, curr)
+	}
+	dstSpine := []*treesitter.ASTNode{dst}
+	for curr := dst.Parent; curr != nil && curr != anchorDst; curr = curr.Parent {
+		dstSpine = append(dstSpine, curr)
+	}
+
+	srcHops := len(srcSpine) - 1
+	dstHops := len(dstSpine) - 1
+	hasDynamicChain := hasSpineControlChain(srcSpine, anchorSrc, r) ||
+		hasSpineControlChain(dstSpine, anchorDst, r) ||
+		hasSpineReceiverChain(srcSpine, r) ||
+		hasSpineReceiverChain(dstSpine, r)
+	if !hasDynamicChain {
+		if srcHops > 3 || dstHops > 3 || max(srcHops, dstHops)-min(srcHops, dstHops) > 1 {
+			return false
+		}
+	}
+
+	for i := 1; i < len(srcSpine); i++ {
+		intermediate := srcSpine[i]
+		child := srcSpine[i-1]
+		if !isAdmissibleSpineNode(intermediate, child, anchorSrc, anchorDst, false, sameLine, ms, r) {
+			return false
+		}
+	}
+	for i := 1; i < len(dstSpine); i++ {
+		intermediate := dstSpine[i]
+		child := dstSpine[i-1]
+		if !isAdmissibleSpineNode(intermediate, child, anchorDst, anchorSrc, true, sameLine, ms, r) {
+			return false
+		}
+	}
+
+	childInAnchorSrc := srcSpine[len(srcSpine)-1]
+	childInAnchorDst := dstSpine[len(dstSpine)-1]
+
+	srcField := childInAnchorSrc.FieldName()
+	dstField := childInAnchorDst.FieldName()
+
+	if treesitter.IsMutuallyExclusiveField(srcField, dstField) {
+		return false
+	}
+
+	slotConfirmed := srcField != "" && dstField != "" && srcField == dstField
+
+	isStationaryPos := slotConfirmed ||
+		childInAnchorSrc.ChildIndex() == childInAnchorDst.ChildIndex() ||
+		(childInAnchorSrc.ChildIndex() == len(anchorSrc.Children)-1 && childInAnchorDst.ChildIndex() == len(anchorDst.Children)-1) ||
+		isMonotonicContainerChild(anchorSrc, anchorDst, childInAnchorSrc, childInAnchorDst, ms)
+
+	if isStationaryPos {
+		return true
+	}
+
+	if (src.IsKeyword || (r != nil && r.IsKeyword(src.Type, src.Label))) && sameScopeDeclaration(anchorSrc, anchorDst, ms, r) {
+		return true
+	}
+
+	return false
+}
+
+// hasSpineControlChain checks whether any intermediate step on the spine is an if-else chain or clause.
+func hasSpineControlChain(spine []*treesitter.ASTNode, anchor *treesitter.ASTNode, r *rules.Rules) bool {
+	for i := 1; i < len(spine); i++ {
+		n := spine[i]
+		if r != nil && (r.IsClause(n.Type) || areChainedStatements(n, anchor, r)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isReceiverOrCalleeEdge checks whether child occupies a callee or receiver edge under parent.
+func isReceiverOrCalleeEdge(parent, child *treesitter.ASTNode, r *rules.Rules) bool {
+	if child == nil || parent == nil {
+		return false
+	}
+	f := child.FieldName()
+	if f != "" {
+		switch f {
+		case "function", "object", "value", "operand", "receiver", "table":
+			return true
+		case "arguments", "argument", "property", "field", "index", "type", "type_arguments", "type_parameters", "parameters", "parameter":
+			return false
+		case "name":
+			return r != nil && r.IsCall(parent.Type)
+		default:
+			return false
+		}
+	}
+	return child.ChildIndex() == 0
+}
+
+// hasSpineReceiverChain checks if the chain up to the anchor is just method calls or member accesses on this receiver.
+func hasSpineReceiverChain(spine []*treesitter.ASTNode, r *rules.Rules) bool {
+	if len(spine) <= 1 {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(spine[0].GetLanguage()))
+	for i := 1; i < len(spine); i++ {
+		parent := spine[i]
+		child := spine[i-1]
+		if r != nil {
+			if !r.IsCall(parent.Type) && !r.IsExpression(parent.Type) {
+				return false
+			}
+			if r.IsDelimitedContainer(parent.Type) {
+				return false
+			}
+		}
+		if !isReceiverOrCalleeEdge(parent, child, r) {
+			return false
+		}
+	}
+	return true
+}
+
+// isAdmissibleSpineNode checks if we can safely step through an unmapped node between child and anchor.
+func isAdmissibleSpineNode(node, child, localAnchor, remoteAnchor *treesitter.ASTNode, isDst bool, sameLine bool, ms *engine.Mapping, r *rules.Rules) bool {
+	if node == nil || child == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(node.GetLanguage()))
+
+	// Bail if this node already mapped to something outside our target anchor.
+	mapping := ms.Src()
+	if isDst {
+		mapping = ms.Dst()
+	}
+	if mapped := mapping[node]; mapped != nil && mapped != remoteAnchor && !remoteAnchor.Contains(mapped) {
+		return false
+	}
+
+	// Make sure intermediate nodes don't pull in code mapped from outside the anchor.
+	if node.Index != nil && node.PreSize > 0 {
+		for i := node.ID + 1; i < node.ID+node.PreSize; i++ {
+			d := node.Index.Nodes[i]
+			if d == child || child.Contains(d) {
+				continue
+			}
+			if mapped := mapping[d]; mapped != nil && !remoteAnchor.Contains(mapped) {
+				return false
+			}
+		}
+	} else {
+		for _, d := range node.Descendants() {
+			if d == child || child.Contains(d) {
+				continue
+			}
+			if mapped := mapping[d]; mapped != nil && !remoteAnchor.Contains(mapped) {
+				return false
+			}
+		}
+	}
+
+	if node.IsWrapper() {
+		return true
+	}
+
+	if r != nil && (r.IsClause(node.Type) || areChainedStatements(node, localAnchor, r) || areChainedStatements(child, node, r)) {
+		return true
+	}
+
+	if r != nil && r.IsBlock(node.Type) {
+		substantive := 0
+		for _, bc := range node.Children {
+			if !r.IsPunctuation(bc.Type) && !r.IsOperatorLiteral(bc.Type) && !r.IsComment(bc.Type) {
+				substantive++
+			}
+		}
+		if substantive <= 1 {
+			return true
+		}
+	}
+
+	if canUnwrapSubExpression(node) {
+		return true
+	}
+
+	if r != nil && (r.IsCall(node.Type) || r.IsExpression(node.Type)) {
+		if r.IsCall(node.Type) {
+			if f := child.FieldName(); f != "" {
+				if (f == "arguments" || f == "argument") && !sameLine {
+					return false
+				}
+				if f == "function" || f == "name" || f == "object" {
+					return true
+				}
+			} else if child.ChildIndex() != 0 && !sameLine {
+				return false
+			}
+		}
+		return true
+	}
+
 	return false
 }

@@ -8,8 +8,9 @@ import (
 )
 
 // IngestFlatAST converts the flat node buffer into a full ASTNode tree,
-// applying language rules, labels, and subtree hashes.
-func IngestFlatAST(nodes []FlatNode, symbols []string, src []byte, langName string) *ASTNode {
+// applying language rules, labels, subtree hashes, and parent-edge fields.
+// The symbols and fields tables are indexed by native symbol and field IDs.
+func IngestFlatAST(nodes []FlatNode, symbols, fields []string, src []byte, langName string) *ASTNode {
 	if len(nodes) == 0 {
 		return nil
 	}
@@ -34,9 +35,16 @@ func IngestFlatAST(nodes []FlatNode, symbols []string, src []byte, langName stri
 		root.HasError = errCount > 0
 		root.ComputeHashes()
 		index := EnsureIndex(root)
+		index.Fields = fields
 		for flatIdx, astNode := range flatToAST {
-			if astNode != nil && int(astNode.ID) < len(index.SyntaxTrivia) {
-				index.SyntaxTrivia[astNode.ID] = flatTrivia[flatIdx]
+			if astNode == nil || astNode.Index != index {
+				continue
+			}
+			index.SyntaxTrivia[astNode.ID] = flatTrivia[flatIdx]
+			fn := &nodes[flatIdx]
+			// Only attach the field if the AST parent matches the raw CST parent, not when flattening promoted children.
+			if astNode.Parent != nil && fn.ParentIdx != FlatNodeNone && int(fn.ParentIdx) < len(flatToAST) && flatToAST[fn.ParentIdx] == astNode.Parent {
+				index.ChildFields[astNode.ID] = fn.FieldID
 			}
 		}
 		attachTrivia(root, nodes, symbols, src, langName, r, flatToAST)

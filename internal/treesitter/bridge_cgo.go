@@ -22,6 +22,14 @@ static uint32_t get_ts_lang_symbol_count(const void* ts_lang_ptr) {
 static const char* get_ts_lang_symbol_name(const void* ts_lang_ptr, uint16_t symbol_id) {
     return ts_language_symbol_name((const TSLanguage*)ts_lang_ptr, symbol_id);
 }
+
+static uint32_t get_ts_lang_field_count(const void* ts_lang_ptr) {
+    return ts_language_field_count((const TSLanguage*)ts_lang_ptr);
+}
+
+static const char* get_ts_lang_field_name(const void* ts_lang_ptr, uint16_t field_id) {
+    return ts_language_field_name_for_id((const TSLanguage*)ts_lang_ptr, field_id);
+}
 */
 import "C"
 
@@ -39,8 +47,9 @@ type cachedLang struct {
 }
 
 var (
-	nativeLangCache = make(map[string]cachedLang)
-	nativeLangMu    sync.RWMutex
+	nativeLangCache  = make(map[string]cachedLang)
+	nativeFieldCache = make(map[unsafe.Pointer][]string)
+	nativeLangMu     sync.RWMutex
 )
 
 func getLanguageSymbols(langName string) (unsafe.Pointer, []string, error) {
@@ -144,6 +153,36 @@ func NativeLanguageSymbols(tsLangPtr unsafe.Pointer) []string {
 	return symbols
 }
 
+// NativeLanguageFields returns cached, read-only field names indexed by native
+// Tree-sitter field ID. Index zero is empty; a nil language pointer returns nil.
+func NativeLanguageFields(tsLangPtr unsafe.Pointer) []string {
+	if tsLangPtr == nil {
+		return nil
+	}
+	nativeLangMu.RLock()
+	fields, ok := nativeFieldCache[tsLangPtr]
+	nativeLangMu.RUnlock()
+	if ok {
+		return fields
+	}
+
+	nativeLangMu.Lock()
+	defer nativeLangMu.Unlock()
+	if fields, ok := nativeFieldCache[tsLangPtr]; ok {
+		return fields
+	}
+
+	count := int(C.get_ts_lang_field_count(tsLangPtr))
+	fields = make([]string, count+1)
+	for id := 1; id <= count; id++ {
+		if name := C.get_ts_lang_field_name(tsLangPtr, C.uint16_t(id)); name != nil {
+			fields[id] = C.GoString(name)
+		}
+	}
+	nativeFieldCache[tsLangPtr] = fields
+	return fields
+}
+
 // ParseWithNativeFlatBuffer parses source code using the native Tree-sitter engine
 // and converts the resulting flat buffer into an ASTNode tree.
 func ParseWithNativeFlatBuffer(src []byte, tsLangPtr unsafe.Pointer, langName string, symbols []string) (*ASTNode, error) {
@@ -178,7 +217,7 @@ func ParseWithNativeFlatBuffer(src []byte, tsLangPtr unsafe.Pointer, langName st
 		nodes = unsafe.Slice((*FlatNode)(unsafe.Pointer(res.nodes_ptr)), int(res.node_count))
 	}
 
-	root := IngestFlatAST(nodes, symbols, src, langName)
+	root := IngestFlatAST(nodes, symbols, NativeLanguageFields(tsLangPtr), src, langName)
 
 	return root, nil
 }

@@ -1,9 +1,10 @@
 package treesitter
 
-// FlatNode defines the 44-byte cache-aligned struct matching the C bridge layout.
+// FlatNode defines the 48-byte cache-aligned struct matching the C bridge layout.
 type FlatNode struct {
 	TypeID         uint16
 	Flags          uint16
+	FieldID        uint16 // Zero means no field on the edge from the CST parent.
 	StartByte      uint32
 	EndByte        uint32
 	StartRow       uint32

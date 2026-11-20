@@ -11,6 +11,7 @@
 typedef struct {
     uint16_t type_id;
     uint16_t flags;
+    uint16_t field_id;         /* 0 if no field on the edge from the CST parent */
     uint32_t start_byte;
     uint32_t end_byte;
     uint32_t start_row;

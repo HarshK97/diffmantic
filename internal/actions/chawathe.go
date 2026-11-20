@@ -417,7 +417,9 @@ func (s *chawatheState) lcs(
 
 	for i := m - 1; i >= 0; i-- {
 		for j := n - 1; j >= 0; j-- {
-			if s.cpyDstToSrc[y[j]] == x[i] {
+			isMatch := s.cpyDstToSrc[y[j]] == x[i] &&
+				(x[i].orig == nil || y[j] == nil || !treesitter.IsMutuallyExclusiveField(x[i].orig.FieldName(), y[j].FieldName()))
+			if isMatch {
 				// Base match score is 100. Stationary siblings get +20, with extra bonuses for aligned row/column positions.
 				score := 100
 				if idxX[i] != -1 && idxX[i] == idxY[j] {
@@ -448,7 +450,9 @@ func (s *chawatheState) lcs(
 	pairs := make([]lcsPair, 0, min(m, n))
 	i, j := 0, 0
 	for i < m && j < n {
-		if s.cpyDstToSrc[y[j]] == x[i] {
+		isMatch := s.cpyDstToSrc[y[j]] == x[i] &&
+			(x[i].orig == nil || y[j] == nil || !treesitter.IsMutuallyExclusiveField(x[i].orig.FieldName(), y[j].FieldName()))
+		if isMatch {
 			pairs = append(pairs, lcsPair{x[i], y[j]})
 			i++
 			j++
