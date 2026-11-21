@@ -130,40 +130,7 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	reconcileDeclarationSignatures(t1, t2, m, rulesFor(t1))
 
 	r := rulesFor(t1)
-	// Pair up unmatched nodes sandwiched between matched neighbors at the same index, or trailing at the end.
-	for idx, c1 := range t1.Children {
-		if m.Has(c1) || idx == 0 || idx >= len(t2.Children) {
-			continue
-		}
-		c2 := t2.Children[idx]
-		if m.HasDst(c2) || !TypesMatch(c1.Type, c2.Type, r) {
-			continue
-		}
-		left1, left2 := t1.Children[idx-1], t2.Children[idx-1]
-		leftMatched := m.Src()[left1] == left2
-
-		var rightMatched bool
-		if idx+1 < min(len(t1.Children), len(t2.Children)) {
-			right1, right2 := t1.Children[idx+1], t2.Children[idx+1]
-			rightMatched = m.Src()[right1] == right2
-		} else if idx == len(t1.Children)-1 && idx == len(t2.Children)-1 {
-			rightMatched = true
-		}
-
-		if leftMatched && rightMatched {
-			if c1.Label != "" && Isomorphic(c1, c2) {
-				addIsomorphicPairs(c1, c2, m)
-			} else if (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type)) {
-				m.Add(c1, c2)
-				Recover(c1, c2, m)
-			} else if (r != nil && r.IsCaseClause(c1.Type)) || (r == nil && rules.IsCaseClause(c1.Type)) {
-				if hasHeaderMatch(c1, c2, m, r) || m.DiceSrc(c1, c2) > 0 {
-					m.Add(c1, c2)
-					Recover(c1, c2, m)
-				}
-			}
-		}
-	}
+	recoverSandwichedNodes(t1, t2, m, r)
 
 	matchIntroducingKeywords(t1, t2, m)
 
@@ -200,6 +167,255 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 	}
 
 	recoverBlockWrappedStatements(t1, t2, m, r)
+}
+
+// recoverSandwichedNodes matches unmatched children sitting between the same
+// mapped anchors in t1 and t2.
+func recoverSandwichedNodes(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if t1 == nil || t2 == nil || len(t1.Children) == 0 || len(t2.Children) == 0 {
+		return
+	}
+
+	type anchor struct {
+		i, j int
+	}
+	var anchors []anchor
+	for i, c1 := range t1.Children {
+		c2 := m.Src()[c1]
+		if c2 == nil || c2.Parent != t2 {
+			continue
+		}
+		if j := c2.ChildIndex(); j >= 0 {
+			anchors = append(anchors, anchor{i: i, j: j})
+		}
+	}
+
+	n := len(anchors)
+	if n == 0 {
+		return
+	}
+
+	// Keep anchors strictly increasing on the right so we don't cross lines.
+	dp := make([]int, n)
+	prev := make([]int, n)
+	for i := range dp {
+		dp[i] = 1
+		prev[i] = -1
+	}
+	bestLen := 0
+	bestEnd := 0
+	for i := range n {
+		for k := 0; k < i; k++ {
+			if anchors[k].j < anchors[i].j && dp[k]+1 > dp[i] {
+				dp[i] = dp[k] + 1
+				prev[i] = k
+			}
+		}
+		if dp[i] > bestLen {
+			bestLen = dp[i]
+			bestEnd = i
+		}
+	}
+	var monotonicAnchors []anchor
+	for curr := bestEnd; curr != -1; curr = prev[curr] {
+		monotonicAnchors = append(monotonicAnchors, anchors[curr])
+	}
+	slices.Reverse(monotonicAnchors)
+	if len(monotonicAnchors) == 0 {
+		return
+	}
+
+	type interval struct {
+		iStart, iEnd int
+		jStart, jEnd int
+	}
+	var intervals []interval
+
+	// Leading interval before the first anchor
+	first := monotonicAnchors[0]
+	if first.i > 0 && first.j > 0 {
+		intervals = append(intervals, interval{
+			iStart: 0, iEnd: first.i,
+			jStart: 0, jEnd: first.j,
+		})
+	}
+
+	// Gaps between consecutive mapped anchors.
+	for k := 0; k < len(monotonicAnchors)-1; k++ {
+		curr := monotonicAnchors[k]
+		next := monotonicAnchors[k+1]
+		if next.i > curr.i+1 && next.j > curr.j+1 {
+			intervals = append(intervals, interval{
+				iStart: curr.i + 1, iEnd: next.i,
+				jStart: curr.j + 1, jEnd: next.j,
+			})
+		}
+	}
+
+	// Trailing interval after the last anchor
+	last := monotonicAnchors[len(monotonicAnchors)-1]
+	if last.i < len(t1.Children)-1 && last.j < len(t2.Children)-1 {
+		intervals = append(intervals, interval{
+			iStart: last.i + 1, iEnd: len(t1.Children),
+			jStart: last.j + 1, jEnd: len(t2.Children),
+		})
+	}
+
+	for _, span := range intervals {
+		unmapped1 := make([]*treesitter.ASTNode, 0, span.iEnd-span.iStart)
+		for idx := span.iStart; idx < span.iEnd; idx++ {
+			c := t1.Children[idx]
+			if !m.Has(c) && isSubstantiveChild(c, r) {
+				unmapped1 = append(unmapped1, c)
+			}
+		}
+
+		unmapped2 := make([]*treesitter.ASTNode, 0, span.jEnd-span.jStart)
+		for idx := span.jStart; idx < span.jEnd; idx++ {
+			c := t2.Children[idx]
+			if !m.HasDst(c) && isSubstantiveChild(c, r) {
+				unmapped2 = append(unmapped2, c)
+			}
+		}
+
+		if len(unmapped1) == 0 || len(unmapped2) == 0 {
+			continue
+		}
+
+		// Strictly require 1:1 correspondence for sandwiched intervals.
+		if len(unmapped1) != len(unmapped2) {
+			continue
+		}
+
+		// Only match when both sides have the exact same number of unmapped items,
+		// and make sure every pair is valid before committing any of them.
+		allValid := true
+		for k := range unmapped1 {
+			c1, c2 := unmapped1[k], unmapped2[k]
+			if !canPairSandwichedNode(c1, c2, t1, m, r) {
+				allValid = false
+				break
+			}
+		}
+		if allValid {
+			for k := range unmapped1 {
+				pairSandwichedNodes(unmapped1[k], unmapped2[k], m, r)
+			}
+		}
+	}
+}
+
+func canPairSandwichedNode(c1, c2, parent *treesitter.ASTNode, m *Mapping, r *rules.Rules) bool {
+	if c1 == nil || c2 == nil || m == nil {
+		return false
+	}
+	if m.Has(c1) || m.HasDst(c2) {
+		return false
+	}
+	if !TypesMatch(c1.Type, c2.Type, r) {
+		return false
+	}
+
+	if c1.Label != "" && Isomorphic(c1, c2) {
+		return true
+	}
+
+	isBlock := (r != nil && r.IsBlock(c1.Type)) || (r == nil && rules.IsBlock(c1.Type))
+	if isBlock {
+		return true
+	}
+
+	isCase := (r != nil && r.IsCaseClause(c1.Type)) || (r == nil && rules.IsCaseClause(c1.Type))
+	if isCase {
+		return hasHeaderMatch(c1, c2, m, r) || m.DiceSrc(c1, c2) > 0 ||
+			substantiveLeafSimilarity(c1, c2, r) >= 0.15 || hasSharedSubstantiveLeaf(c1, c2, r)
+	}
+
+	isParentBlock := parent != nil && ((r != nil && r.IsBlock(parent.Type)) || (r == nil && rules.IsBlock(parent.Type)))
+	isStatement := (r != nil && r.IsStatement(c1.Type)) || (r == nil && rules.IsStatement(c1.Type))
+
+	if isParentBlock && isStatement {
+		// Strictly prohibit pairing body-bearing statements or declarations in sandwiched recovery.
+		// Body blocks need structural container affinity, and declarations are matched
+		// exclusively by variable name in recoverBlockStatements.
+		if (r != nil && (r.IsDeclaration(c1.Type) || r.IsLocalVarDeclaration(c1.Type))) ||
+			(r == nil && (rules.IsDeclaration(c1.Type) || rules.IsLocalVarDeclaration(c1.Type))) {
+			return false
+		}
+		if findBodyBlock(c1, r) != nil || findBodyBlock(c2, r) != nil {
+			return false
+		}
+
+		// Simple statements without bodies (expression statements, macro calls):
+		s1 := statementPrimaryChild(c1, r)
+		s2 := statementPrimaryChild(c2, r)
+		if s1 == nil || s2 == nil {
+			return false
+		}
+		if !TypesMatch(s1.Type, s2.Type, r) {
+			return false
+		}
+
+		sim := max(substantiveLeafSimilarity(c1, c2, r), substantiveLeafSimilarity(s1, s2, r))
+		if sim >= 0.15 {
+			return true
+		}
+		if hasSharedSubstantiveLeaf(c1, c2, r) || hasSharedSubstantiveLeaf(s1, s2, r) {
+			return true
+		}
+		if m != nil && (m.DiceSrc(c1, c2) > 0 || m.DiceSrc(s1, s2) > 0) {
+			return true
+		}
+		return false
+	}
+
+	return false
+}
+
+func statementPrimaryChild(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil || len(n.Children) == 0 {
+		return n
+	}
+	for _, c := range n.Children {
+		if isSubstantiveChild(c, r) {
+			return c
+		}
+	}
+	return n.Children[0]
+}
+
+func pairSandwichedNodes(c1, c2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if c1.Label != "" && Isomorphic(c1, c2) {
+		addIsomorphicPairs(c1, c2, m)
+	} else {
+		m.Add(c1, c2)
+		Recover(c1, c2, m)
+	}
+}
+
+func isSubstantiveChild(c *treesitter.ASTNode, r *rules.Rules) bool {
+	if c == nil {
+		return false
+	}
+	isPunct := (r != nil && (r.IsPunctuation(c.Type) || r.IsPunctuation(c.Label))) ||
+		(r == nil && (rules.IsPunctuation(c.Type) || rules.IsPunctuation(c.Label)))
+	return !c.IsKeyword && !isGlueToken(c, r) && !isPunct
+}
+
+func hasSharedSubstantiveLeaf(a, b *treesitter.ASTNode, r *rules.Rules) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	l1, l2 := a.LeafLabels(), b.LeafLabels()
+	for label := range l1 {
+		if !isSubstantiveLeaf(label, r) {
+			continue
+		}
+		if _, ok := l2[label]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // recoverDelimitedSiblingSequences aligns unmatched children inside non-block
