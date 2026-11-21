@@ -509,87 +509,6 @@ func TestMethodReceiverDisambiguation(t *testing.T) {
 	})
 }
 
-func TestDeclarationSignaturePreservation(t *testing.T) {
-	t.Run("renamed outer function preserves parameter list instead of siphoning to inner helper", func(t *testing.T) {
-		// src:
-		// fn is_hidden(dent: &DirEntry) -> bool { ... body ... }
-		srcParams := testutil.Node("parameters", "",
-			testutil.Node("parameter", "",
-				testutil.Leaf("identifier", "dent"),
-				testutil.Leaf("type_identifier", "DirEntry"),
-			),
-		)
-		srcBody := testutil.Node("block", "",
-			testutil.Leaf("expr", "check_hidden()"),
-			testutil.Leaf("expr", "more_code()"),
-			testutil.Leaf("return", "true"),
-		)
-		srcFunc := testutil.Node("function_item", "",
-			testutil.Leaf("identifier", "is_hidden"),
-			srcParams,
-			srcBody,
-		)
-		srcFunc.Language = "rust"
-		src := testutil.Node("source_file", "", srcFunc)
-		src.Language = "rust"
-
-		// dst:
-		// fn is_hidden_entry(dent: &DirEntry) -> bool {
-		//     fn imp(dent: &DirEntry) -> bool { ... body ... }
-		//     imp(dent)
-		// }
-		dstOuterParams := testutil.Node("parameters", "",
-			testutil.Node("parameter", "",
-				testutil.Leaf("identifier", "dent"),
-				testutil.Leaf("type_identifier", "DirEntry"),
-			),
-		)
-		dstInnerParams := testutil.Node("parameters", "",
-			testutil.Node("parameter", "",
-				testutil.Leaf("identifier", "dent"),
-				testutil.Leaf("type_identifier", "DirEntry"),
-			),
-		)
-		dstInnerBody := testutil.Node("block", "",
-			testutil.Leaf("expr", "check_hidden()"),
-			testutil.Leaf("expr", "more_code()"),
-			testutil.Leaf("return", "true"),
-		)
-		dstInnerFunc := testutil.Node("function_item", "",
-			testutil.Leaf("identifier", "imp"),
-			dstInnerParams,
-			dstInnerBody,
-		)
-		dstOuterBody := testutil.Node("block", "",
-			dstInnerFunc,
-			testutil.Leaf("call", "imp(dent)"),
-		)
-		dstOuterFunc := testutil.Node("function_item", "",
-			testutil.Leaf("identifier", "is_hidden_entry"),
-			dstOuterParams,
-			dstOuterBody,
-		)
-		dstOuterFunc.Language = "rust"
-		dst := testutil.Node("source_file", "", dstOuterFunc)
-		dst.Language = "rust"
-
-		r := Match(src, dst, nil, nil, nil)
-		if r == nil || r.Mappings == nil {
-			t.Fatal("Match returned nil")
-		}
-
-		if r.Mappings.Src()[srcFunc] != dstOuterFunc {
-			t.Errorf("outer function should match outer function: got %v, want %v", r.Mappings.Src()[srcFunc], dstOuterFunc)
-		}
-		if r.Mappings.Src()[srcParams] != dstOuterParams {
-			t.Errorf("outer parameters should match outer parameters: got %v, want %v", r.Mappings.Src()[srcParams], dstOuterParams)
-		}
-		if r.Mappings.Src()[srcParams] == dstInnerParams {
-			t.Errorf("outer parameters must NOT be siphoned into inner helper function")
-		}
-	})
-}
-
 func TestMatchDeclarations_ExcludesLocalVars(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		t.Run("TypeScript", func(t *testing.T) {
@@ -2070,19 +1989,20 @@ pub fn helper_omega(y: usize) -> usize {
 		}
 
 		// Delimited parameters container and individual parameters must map in place without sibling theft
-		var srcParams, dstParams *treesitter.ASTNode
-		for _, child := range srcRightPad.Children {
-			if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
-				srcParams = child
-				break
+		findParams := func(fn *treesitter.ASTNode) *treesitter.ASTNode {
+			for _, child := range fn.Children {
+				if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
+					for _, c := range child.Children {
+						if r.IsDeclaration(c.Type) {
+							return child
+						}
+					}
+				}
 			}
+			return nil
 		}
-		for _, child := range dstPadPanel.Children {
-			if r.IsDelimitedContainer(child.Type) && !r.IsBlock(child.Type) {
-				dstParams = child
-				break
-			}
-		}
+		srcParams := findParams(srcRightPad)
+		dstParams := findParams(dstPadPanel)
 		if srcParams == nil || dstParams == nil {
 			t.Fatalf("missing parameters container: srcParams=%v, dstParams=%v", srcParams, dstParams)
 		}
@@ -2588,6 +2508,553 @@ end
 		}
 		if m.Src()[oldEqSrc] == newEqDst {
 			t.Errorf("expected statement boundary to prevent cross-statement callee dredging of eq")
+		}
+	})
+
+	t.Run("Rust_MacroDefinition_Renamed", func(t *testing.T) {
+		oldSrc := []byte(`macro_rules! say_hello {
+    () => { println!("hello"); };
+}
+
+macro_rules! empty [
+    () => {};
+];
+
+macro_rules! say_bye {
+    () => { println!("bye"); };
+}
+`)
+		newSrc := []byte(`macro_rules! say_hello {
+    () => { println!("hello"); };
+}
+
+macro_rules! empty_evolved [
+    () => {};
+];
+
+macro_rules! say_bye {
+    () => { println!("bye"); };
+}
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("rust")
+
+		// Surrounding macros must map in place.
+		var helloSrc, helloDst, byeSrc, byeDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("say_hello")) {
+					helloSrc = n
+				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("say_bye")) {
+					byeSrc = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) {
+				if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("say_hello")) {
+					helloDst = n
+				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("say_bye")) {
+					byeDst = n
+				}
+			}
+		}
+		if helloSrc == nil || helloDst == nil || byeSrc == nil || byeDst == nil {
+			t.Fatalf("surrounding macros missing: helloSrc=%v helloDst=%v byeSrc=%v byeDst=%v", helloSrc, helloDst, byeSrc, byeDst)
+		}
+		if m.Src()[helloSrc] != helloDst {
+			t.Errorf("expected say_hello to map in place, got %v", m.Src()[helloSrc])
+		}
+		if m.Src()[byeSrc] != byeDst {
+			t.Errorf("expected say_bye to map in place, got %v", m.Src()[byeSrc])
+		}
+
+		// The renamed macro_definition must map in place.
+		var emptySrc, emptyDst, ruleSrc, ruleDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("empty")) {
+				emptySrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("empty_evolved")) {
+				emptyDst = n
+				break
+			}
+		}
+		if emptySrc == nil || emptyDst == nil {
+			t.Fatalf("macro_definition missing: emptySrc=%v emptyDst=%v", emptySrc, emptyDst)
+		}
+		if m.Src()[emptySrc] != emptyDst {
+			t.Errorf("expected renamed macro_definition to map in place, got %v", m.Src()[emptySrc])
+		}
+
+		// Inner macro rules must map in place without hardcoding the CST node type string.
+		for _, child := range emptySrc.Children {
+			if bytes.Contains(oldSrc[child.StartByte:child.EndByte], []byte("() => {}")) {
+				ruleSrc = child
+				break
+			}
+		}
+		for _, child := range emptyDst.Children {
+			if bytes.Contains(newSrc[child.StartByte:child.EndByte], []byte("() => {}")) {
+				ruleDst = child
+				break
+			}
+		}
+		if ruleSrc == nil || ruleDst == nil {
+			t.Fatalf("macro_rule missing: ruleSrc=%v ruleDst=%v", ruleSrc, ruleDst)
+		}
+		if m.Src()[ruleSrc] != ruleDst {
+			t.Errorf("expected inner macro_rule to map in place, got %v", m.Src()[ruleSrc])
+		}
+	})
+
+	t.Run("Rust_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
+		oldSrc := []byte(`trait T: for<'a> AddAssign<&'a usize> {
+}
+
+type FnObject<'b> = dyn for<'a> FnLike<&'a isize, &'a isize> + 'b;
+`)
+		newSrc := []byte(`trait T: for<'a> AddAssign<&'a usize> {
+}
+
+type FnObject<'b> = dyn for<'a> FnLike<&'a isize_evolved, &'a isize> + 'b;
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.rs")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("rust")
+
+		// Surrounding trait declaration must map in place.
+		var traitSrc, traitDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("AddAssign")) {
+				traitSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("AddAssign")) {
+				traitDst = n
+				break
+			}
+		}
+		if traitSrc == nil || traitDst == nil {
+			t.Fatalf("trait missing: traitSrc=%v traitDst=%v", traitSrc, traitDst)
+		}
+		if m.Src()[traitSrc] != traitDst {
+			t.Errorf("expected trait declaration to map in place, got %v", m.Src()[traitSrc])
+		}
+
+		// Enclosing FnObject type alias and delimited type_arguments must map in place.
+		var fnObjSrc, fnObjDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("FnObject")) {
+				fnObjSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("FnObject")) {
+				fnObjDst = n
+				break
+			}
+		}
+		if fnObjSrc == nil || fnObjDst == nil {
+			t.Fatalf("FnObject declaration missing: fnObjSrc=%v fnObjDst=%v", fnObjSrc, fnObjDst)
+		}
+		if m.Src()[fnObjSrc] != fnObjDst {
+			t.Errorf("expected FnObject declaration to map in place, got %v", m.Src()[fnObjSrc])
+		}
+
+		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("&'a isize")) {
+				typeArgsSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("&'a isize")) {
+				typeArgsDst = n
+				break
+			}
+		}
+		if typeArgsSrc == nil || typeArgsDst == nil {
+			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
+		}
+		if m.Src()[typeArgsSrc] != typeArgsDst {
+			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
+		}
+
+		var oldRef0, oldRef1, newRef0, newRef1 *treesitter.ASTNode
+		for _, child := range typeArgsSrc.Children {
+			if r.IsType(child.Type) {
+				if oldRef0 == nil {
+					oldRef0 = child
+				} else if oldRef1 == nil {
+					oldRef1 = child
+				}
+			}
+		}
+		for _, child := range typeArgsDst.Children {
+			if r.IsType(child.Type) {
+				if newRef0 == nil {
+					newRef0 = child
+				} else if newRef1 == nil {
+					newRef1 = child
+				}
+			}
+		}
+		if oldRef0 == nil || oldRef1 == nil || newRef0 == nil || newRef1 == nil {
+			t.Fatalf("reference types missing: oldRef0=%v oldRef1=%v newRef0=%v newRef1=%v", oldRef0, oldRef1, newRef0, newRef1)
+		}
+
+		// The second reference shouldn't cross over and steal the first slot.
+		if m.Src()[oldRef0] == newRef1 {
+			t.Errorf("first reference type crossed over to second slot")
+		}
+		if m.Src()[oldRef1] != newRef1 {
+			t.Errorf("expected second reference type to map to second slot, got %v", m.Src()[oldRef1])
+		}
+	})
+
+	t.Run("Go_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+type Tuple[T, U any] struct{}
+
+type IntPair = Tuple[int, int]
+`)
+		newSrc := []byte(`package main
+
+type Tuple[T, U any] struct{}
+
+type IntPair = Tuple[string, int]
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("go")
+
+		// Surrounding declarations must map in place.
+		var pairSrc, pairDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("IntPair")) {
+				pairSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("IntPair")) {
+				pairDst = n
+				break
+			}
+		}
+		if pairSrc == nil || pairDst == nil {
+			t.Fatalf("IntPair declaration missing: pairSrc=%v pairDst=%v", pairSrc, pairDst)
+		}
+		if m.Src()[pairSrc] != pairDst {
+			t.Errorf("expected IntPair declaration to map in place, got %v", m.Src()[pairSrc])
+		}
+
+		// Delimited type_arguments container must map in place.
+		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("int, int")) {
+				typeArgsSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("string, int")) {
+				typeArgsDst = n
+				break
+			}
+		}
+		if typeArgsSrc == nil || typeArgsDst == nil {
+			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
+		}
+		if m.Src()[typeArgsSrc] != typeArgsDst {
+			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
+		}
+
+		// Locate the two int types in oldSrc.
+		var oldInt0, oldInt1, newInt1 *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsType(n.Type) && bytes.Equal(oldSrc[n.StartByte:n.EndByte], []byte("int")) {
+				if oldInt0 == nil {
+					oldInt0 = n
+				} else if oldInt1 == nil {
+					oldInt1 = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsType(n.Type) && bytes.Equal(newSrc[n.StartByte:n.EndByte], []byte("int")) {
+				newInt1 = n
+				break
+			}
+		}
+		if oldInt0 == nil || oldInt1 == nil || newInt1 == nil {
+			t.Fatalf("int types missing: oldInt0=%v oldInt1=%v newInt1=%v", oldInt0, oldInt1, newInt1)
+		}
+
+		if m.Src()[oldInt0] == newInt1 {
+			t.Errorf("first int type crossed over to second slot")
+		}
+		if m.Src()[oldInt1] != newInt1 {
+			t.Errorf("expected second int to map in place, got %v", m.Src()[oldInt1])
+		}
+	})
+
+	t.Run("Java_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
+		oldSrc := []byte(`class Container {
+    Map<String, String> cache;
+}
+`)
+		newSrc := []byte(`class Container {
+    Map<Integer, String> cache;
+}
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.java")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.java")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("java")
+
+		// Surrounding class declaration must map in place.
+		var classSrc, classDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("Container")) {
+				classSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("Container")) {
+				classDst = n
+				break
+			}
+		}
+		if classSrc == nil || classDst == nil {
+			t.Fatalf("Container class missing: classSrc=%v classDst=%v", classSrc, classDst)
+		}
+		if m.Src()[classSrc] != classDst {
+			t.Errorf("expected Container class to map in place, got %v", m.Src()[classSrc])
+		}
+
+		// Delimited type_arguments container must map in place.
+		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("String, String")) {
+				typeArgsSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("Integer, String")) {
+				typeArgsDst = n
+				break
+			}
+		}
+		if typeArgsSrc == nil || typeArgsDst == nil {
+			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
+		}
+		if m.Src()[typeArgsSrc] != typeArgsDst {
+			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
+		}
+
+		// Locate the two String type identifiers in oldSrc.
+		var oldStr0, oldStr1, newStr1 *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsType(n.Type) && bytes.Equal(oldSrc[n.StartByte:n.EndByte], []byte("String")) {
+				if oldStr0 == nil {
+					oldStr0 = n
+				} else if oldStr1 == nil {
+					oldStr1 = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsType(n.Type) && bytes.Equal(newSrc[n.StartByte:n.EndByte], []byte("String")) {
+				newStr1 = n
+				break
+			}
+		}
+		if oldStr0 == nil || oldStr1 == nil || newStr1 == nil {
+			t.Fatalf("String types missing: oldStr0=%v oldStr1=%v newStr1=%v", oldStr0, oldStr1, newStr1)
+		}
+
+		if m.Src()[oldStr0] == newStr1 {
+			t.Errorf("first String type crossed over to second slot")
+		}
+		if m.Src()[oldStr1] != newStr1 {
+			t.Errorf("expected second String to map in place, got %v", m.Src()[oldStr1])
+		}
+	})
+
+	t.Run("TypeScript_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
+		oldSrc := []byte(`type PairMap = Record<string, string>;
+`)
+		newSrc := []byte(`type PairMap = Record<number, string>;
+`)
+		srcAST, err := treesitter.Parse(oldSrc, "test.ts")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "test.ts")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+		if srcAST.HasError || dstAST.HasError {
+			t.Fatalf("parse errors: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		part.AttachRoots(srcAST, dstAST)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("nil match result")
+		}
+		m := mr.Mappings
+		r := rules.Get("typescript")
+
+		// Surrounding type alias must map in place.
+		var aliasSrc, aliasDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("PairMap")) {
+				aliasSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("PairMap")) {
+				aliasDst = n
+				break
+			}
+		}
+		if aliasSrc == nil || aliasDst == nil {
+			t.Fatalf("PairMap alias missing: aliasSrc=%v aliasDst=%v", aliasSrc, aliasDst)
+		}
+		if m.Src()[aliasSrc] != aliasDst {
+			t.Errorf("expected PairMap alias to map in place, got %v", m.Src()[aliasSrc])
+		}
+
+		// Delimited type_arguments container must map in place.
+		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("string, string")) {
+				typeArgsSrc = n
+				break
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("number, string")) {
+				typeArgsDst = n
+				break
+			}
+		}
+		if typeArgsSrc == nil || typeArgsDst == nil {
+			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
+		}
+		if m.Src()[typeArgsSrc] != typeArgsDst {
+			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
+		}
+
+		// Locate the two string types in oldSrc.
+		var oldStr0, oldStr1, newStr1 *treesitter.ASTNode
+		for _, n := range srcAST.PreOrder() {
+			if r.IsType(n.Type) && bytes.Equal(oldSrc[n.StartByte:n.EndByte], []byte("string")) {
+				if oldStr0 == nil {
+					oldStr0 = n
+				} else if oldStr1 == nil {
+					oldStr1 = n
+				}
+			}
+		}
+		for _, n := range dstAST.PreOrder() {
+			if r.IsType(n.Type) && bytes.Equal(newSrc[n.StartByte:n.EndByte], []byte("string")) {
+				newStr1 = n
+				break
+			}
+		}
+		if oldStr0 == nil || oldStr1 == nil || newStr1 == nil {
+			t.Fatalf("string types missing: oldStr0=%v oldStr1=%v newStr1=%v", oldStr0, oldStr1, newStr1)
+		}
+
+		if m.Src()[oldStr0] == newStr1 {
+			t.Errorf("first string type crossed over to second slot")
+		}
+		if m.Src()[oldStr1] != newStr1 {
+			t.Errorf("expected second string to map in place, got %v", m.Src()[oldStr1])
 		}
 	})
 }

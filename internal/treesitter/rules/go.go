@@ -233,6 +233,7 @@ var golangRules = &Rules{
 		"literal_value",
 		"parameter_declaration",
 		"parameter_list",
+		"type_arguments",
 		"type_parameter_list",
 	},
 	CaseClauses: []string{

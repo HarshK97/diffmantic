@@ -317,6 +317,22 @@ func TopDown(
 			if c := cmp.Compare(a.drift, b.drift); c != 0 {
 				return c
 			}
+			// When row drift is tied, compare relative column offset within the parent
+			// so same-line siblings stay in their slot even if the line was re-indented or renamed.
+			colDist := func(p [2]*treesitter.ASTNode) int {
+				srcCol, dstCol := int(p[0].StartCol), int(p[1].StartCol)
+				if p[0].Parent != nil && p[1].Parent != nil &&
+					p[0].Parent.StartRow == p[0].StartRow &&
+					p[1].Parent.StartRow == p[1].StartRow {
+					srcCol -= int(p[0].Parent.StartCol)
+					dstCol -= int(p[1].Parent.StartCol)
+				}
+				diff := srcCol - dstCol
+				return max(diff, -diff)
+			}
+			if c := cmp.Compare(colDist(a.pair), colDist(b.pair)); c != 0 {
+				return c
+			}
 		}
 
 		// When drift is tied, use field and role concordance before falling back to document order.
