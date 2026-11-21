@@ -166,6 +166,10 @@ var luaRules = &Rules{
 		"parameters",
 		"table_constructor",
 	},
+	Clauses: []string{
+		"else_statement",
+		"elseif_statement",
+	},
 	Expressions: []string{
 		"binary_expression",
 		"bracket_index_expression",
@@ -205,6 +209,7 @@ var luaRules = &Rules{
 		"do_statement",
 		"empty_statement",
 		"for_statement",
+		"function_call",
 		"function_declaration",
 		"goto_statement",
 		"if_statement",

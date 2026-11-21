@@ -149,6 +149,7 @@ var cRules = &Rules{
 		"field_declaration",
 		"enumerator",
 		"parameter_declaration",
+		"attribute_declaration",
 	},
 	Identifiers: []string{
 		"identifier",
@@ -235,6 +236,7 @@ var cRules = &Rules{
 	},
 	Clauses: []string{
 		"else_clause",
+		"bitfield_clause",
 	},
 	CaseClauses: []string{
 		"case_statement",

@@ -107,6 +107,7 @@ var golangRules = &Rules{
 		"chan",
 	},
 	Declarations: []string{
+		"package_clause",
 		"function_declaration",
 		"method_declaration",
 		"type_declaration",
@@ -291,6 +292,7 @@ var golangRules = &Rules{
 		"if_statement",
 		"inc_statement",
 		"labeled_statement",
+		"receive_statement",
 		"return_statement",
 		"select_statement",
 		"send_statement",
