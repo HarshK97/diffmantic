@@ -6074,3 +6074,1030 @@ func TestSandwichedStatementShiftedIntervalRecovery(t *testing.T) {
 		}
 	})
 }
+
+func TestRustSandwichedStatementTryWrapperRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn write_assets(target_dir: &Path, current_version: &str) -> Result<()> {
+    let _ = std::fs::create_dir_all(target_dir);
+    print!("Writing metadata to folder {} ... ", target_dir.to_string_lossy());
+    crate::assets_metadata::AssetsMetadata::new(current_version).save_to_folder(target_dir)?;
+    println!("okay");
+    Ok(())
+}
+`
+		newSrc := `fn write_assets(target_dir: &Path, current_version: &str) -> Result<()> {
+    let _ = std::fs::create_dir_all(target_dir);
+    write!(io::stdout(), "Writing metadata to folder {} ... ", target_dir.to_string_lossy())?;
+    crate::assets_metadata::AssetsMetadata::new(current_version).save_to_folder(target_dir)?;
+    writeln!(io::stdout(), "okay")?;
+    Ok(())
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: enclosing function, its parameters, and body block map in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "write_assets") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "write_assets") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected write_assets fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: anchor statements map in place.
+		var srcCreateDir, dstCreateDir *treesitter.ASTNode
+		var srcSave, dstSave *treesitter.ASTNode
+		var srcOk, dstOk *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "create_dir_all") {
+					srcCreateDir = n
+				} else if strings.Contains(text, "save_to_folder") {
+					srcSave = n
+				}
+			} else if r.IsCall(n.Type) && strings.Contains(text, "Ok(())") {
+				srcOk = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "create_dir_all") {
+					dstCreateDir = n
+				} else if strings.Contains(text, "save_to_folder") {
+					dstSave = n
+				}
+			} else if r.IsCall(n.Type) && strings.Contains(text, "Ok(())") {
+				dstOk = n
+			}
+		}
+
+		if srcCreateDir == nil || dstCreateDir == nil || mapped[srcCreateDir] != dstCreateDir {
+			t.Errorf("expected create_dir_all statement to map in place, got %v", mapped[srcCreateDir])
+		}
+		if srcSave == nil || dstSave == nil || mapped[srcSave] != dstSave {
+			t.Errorf("expected save_to_folder statement to map in place, got %v", mapped[srcSave])
+		}
+		if srcOk == nil || dstOk == nil || mapped[srcOk] != dstOk {
+			t.Errorf("expected Ok(()) statement to map in place, got %v", mapped[srcOk])
+		}
+
+		// 3. Target Sandwiched Statements:
+		// Statement 1: print! -> write!
+		// Statement 2: println! -> writeln!
+		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
+		var srcPrintlnStmt, dstWritelnStmt *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(strings.TrimSpace(text), "print!") {
+					srcPrintStmt = n
+				} else if strings.HasPrefix(strings.TrimSpace(text), "println!") {
+					srcPrintlnStmt = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(strings.TrimSpace(text), "write!") {
+					dstWriteStmt = n
+				} else if strings.HasPrefix(strings.TrimSpace(text), "writeln!") {
+					dstWritelnStmt = n
+				}
+			}
+		}
+
+		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
+			t.Fatalf("expected print! expression_statement to map to write! expression_statement, got %v", mapped[srcPrintStmt])
+		}
+		if srcPrintlnStmt == nil || dstWritelnStmt == nil || mapped[srcPrintlnStmt] != dstWritelnStmt {
+			t.Fatalf("expected println! expression_statement to map to writeln! expression_statement, got %v", mapped[srcPrintlnStmt])
+		}
+
+		// 4. Transparent Wrapper Unwrapping:
+		// The inner macro_invocations must map across the try_expression wrapper.
+		var srcPrintMacro, dstWriteMacro *treesitter.ASTNode
+		var srcPrintlnMacro, dstWritelnMacro *treesitter.ASTNode
+		var dstTry1, dstTry2 *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsCall(n.Type) {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "print!") {
+					srcPrintMacro = n
+				} else if strings.HasPrefix(text, "println!") {
+					srcPrintlnMacro = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsCall(n.Type) {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "write!") {
+					dstWriteMacro = n
+				} else if strings.HasPrefix(text, "writeln!") {
+					dstWritelnMacro = n
+				}
+			} else if r.IsWrapper(n.Type) && n.Type == "try_expression" {
+				if dstTry1 == nil {
+					dstTry1 = n
+				} else {
+					dstTry2 = n
+				}
+			}
+		}
+
+		if srcPrintMacro == nil || dstWriteMacro == nil || mapped[srcPrintMacro] != dstWriteMacro {
+			t.Errorf("expected print! macro_invocation to map to write! macro_invocation, got %v", mapped[srcPrintMacro])
+		}
+		if srcPrintlnMacro == nil || dstWritelnMacro == nil || mapped[srcPrintlnMacro] != dstWritelnMacro {
+			t.Errorf("expected println! macro_invocation to map to writeln! macro_invocation, got %v", mapped[srcPrintlnMacro])
+		}
+
+		// Outer try_expressions must remain unmapped so they become inserted wrappers.
+		if dstTry1 != nil && revMapped[dstTry1] != nil {
+			t.Errorf("expected dst try_expression 1 to remain unmapped, got %v", revMapped[dstTry1])
+		}
+		if dstTry2 != nil && revMapped[dstTry2] != nil {
+			t.Errorf("expected dst try_expression 2 to remain unmapped, got %v", revMapped[dstTry2])
+		}
+
+		// 5. Stationary Operands:
+		// String literals "Writing metadata to folder {} ... " and "okay" must map in place.
+		var srcOkayStr, dstOkayStr *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "string_literal" && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "okay") {
+				srcOkayStr = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "string_literal" && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "okay") {
+				dstOkayStr = n
+				break
+			}
+		}
+		if srcOkayStr == nil || dstOkayStr == nil || mapped[srcOkayStr] != dstOkayStr {
+			t.Errorf("expected 'okay' string_literal to map in place, got %v", mapped[srcOkayStr])
+		}
+	})
+}
+
+func TestRustMultiStatementIntervalRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn generate_config_file() -> Result<()> {
+    let config_file = config_file();
+    if config_file.is_file() {
+        println!("A config file already exists at: {}", config_file.to_string_lossy());
+        print!("Overwrite? (y/N): ");
+        io::stdout().flush()?;
+        let mut decision = String::new();
+        io::stdin().read_line(&mut decision)?;
+    }
+    Ok(())
+}
+`
+		newSrc := `fn generate_config_file() -> Result<()> {
+    let config_file = config_file();
+    if config_file.is_file() {
+        writeln!(io::stdout(), "A config file already exists at: {}", config_file.to_string_lossy())?;
+        write!(io::stdout(), "Overwrite? (y/N): ")?;
+        io::stdout().flush()?;
+        let mut decision = String::new();
+        io::stdin().read_line(&mut decision)?;
+    }
+    Ok(())
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: fn generate_config_file maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "generate_config_file") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "generate_config_file") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected generate_config_file to map in place, got %v", mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: if_statement and inner statements map in place.
+		var srcIf, dstIf *treesitter.ASTNode
+		var srcFlush, dstFlush *treesitter.ASTNode
+		var srcDecision, dstDecision *treesitter.ASTNode
+		var srcReadLine, dstReadLine *treesitter.ASTNode
+		var srcOk, dstOk *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.HasPrefix(text, "if ") {
+					srcIf = n
+				} else if strings.Contains(text, "flush") {
+					srcFlush = n
+				} else if strings.Contains(text, "decision =") {
+					srcDecision = n
+				} else if strings.Contains(text, "read_line") {
+					srcReadLine = n
+				}
+			} else if r.IsCall(n.Type) && strings.HasPrefix(text, "Ok(") {
+				srcOk = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.HasPrefix(text, "if ") {
+					dstIf = n
+				} else if strings.Contains(text, "flush") {
+					dstFlush = n
+				} else if strings.Contains(text, "decision =") {
+					dstDecision = n
+				} else if strings.Contains(text, "read_line") {
+					dstReadLine = n
+				}
+			} else if r.IsCall(n.Type) && strings.HasPrefix(text, "Ok(") {
+				dstOk = n
+			}
+		}
+
+		if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
+			t.Fatalf("expected if_statement to map in place, got %v", mapped[srcIf])
+		}
+		if srcFlush == nil || dstFlush == nil || mapped[srcFlush] != dstFlush {
+			t.Fatalf("expected flush() to map in place, got %v", mapped[srcFlush])
+		}
+		if srcDecision == nil || dstDecision == nil || mapped[srcDecision] != dstDecision {
+			t.Fatalf("expected decision let to map in place, got %v", mapped[srcDecision])
+		}
+		if srcReadLine == nil || dstReadLine == nil || mapped[srcReadLine] != dstReadLine {
+			t.Fatalf("expected read_line() to map in place, got %v", mapped[srcReadLine])
+		}
+		if srcOk == nil || dstOk == nil || mapped[srcOk] != dstOk {
+			t.Fatalf("expected Ok(()) to map in place, got %v", mapped[srcOk])
+		}
+
+		// 3. Multi-statement Leading Interval Pairing:
+		// println! and print! statements in the leading interval must map 1:1 to writeln! and write!.
+		var srcPrintlnStmt, dstWritelnStmt *treesitter.ASTNode
+		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "println!") {
+					srcPrintlnStmt = n
+				} else if strings.HasPrefix(text, "print!") {
+					srcPrintStmt = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.HasPrefix(text, "writeln!") {
+					dstWritelnStmt = n
+				} else if strings.HasPrefix(text, "write!") {
+					dstWriteStmt = n
+				}
+			}
+		}
+
+		if srcPrintlnStmt == nil || dstWritelnStmt == nil || mapped[srcPrintlnStmt] != dstWritelnStmt {
+			t.Fatalf("expected println! expression_statement to map to writeln! expression_statement, got %v", mapped[srcPrintlnStmt])
+		}
+		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
+			t.Fatalf("expected print! expression_statement to map to write! expression_statement, got %v", mapped[srcPrintStmt])
+		}
+
+		// 4. Stationary Operands: format string literals map in place without disruption.
+		var srcExistsStr, dstExistsStr *treesitter.ASTNode
+		var srcOverwriteStr, dstOverwriteStr *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if n.Type == "string_literal" {
+				text := string(srcBytes[n.StartByte:n.EndByte])
+				if strings.Contains(text, "already exists") {
+					srcExistsStr = n
+				} else if strings.Contains(text, "Overwrite?") {
+					srcOverwriteStr = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if n.Type == "string_literal" {
+				text := string(dstBytes[n.StartByte:n.EndByte])
+				if strings.Contains(text, "already exists") {
+					dstExistsStr = n
+				} else if strings.Contains(text, "Overwrite?") {
+					dstOverwriteStr = n
+				}
+			}
+		}
+
+		if srcExistsStr == nil || dstExistsStr == nil || mapped[srcExistsStr] != dstExistsStr {
+			t.Errorf("expected 'already exists' string_literal to map in place, got %v", mapped[srcExistsStr])
+		}
+		if srcOverwriteStr == nil || dstOverwriteStr == nil || mapped[srcOverwriteStr] != dstOverwriteStr {
+			t.Errorf("expected 'Overwrite?' string_literal to map in place, got %v", mapped[srcOverwriteStr])
+		}
+	})
+}
+
+func TestZigSandwichedStatementTryWrapperRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `pub fn run(writer: anytype) !void {
+    init();
+    writer.print("foo\n", .{});
+    anchor();
+    writer.println("bar\n", .{});
+    finish();
+}
+`
+		newSrc := `pub fn run(writer: anytype) !void {
+    init();
+    try writer.write("foo\n", .{});
+    anchor();
+    try writer.writeln("bar\n", .{});
+    finish();
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.zig")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.zig")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: run function declaration maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "run") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "run") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected run fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: init, anchor, and finish statements map in place.
+		var srcInit, dstInit *treesitter.ASTNode
+		var srcAnchor, dstAnchor *treesitter.ASTNode
+		var srcFinish, dstFinish *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := strings.TrimSpace(string(srcBytes[n.StartByte:n.EndByte]))
+			if strings.HasPrefix(text, "init(") && r.IsStatement(n.Type) {
+				srcInit = n
+			} else if strings.HasPrefix(text, "anchor(") && r.IsStatement(n.Type) {
+				srcAnchor = n
+			} else if strings.HasPrefix(text, "finish(") && r.IsStatement(n.Type) {
+				srcFinish = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := strings.TrimSpace(string(dstBytes[n.StartByte:n.EndByte]))
+			if strings.HasPrefix(text, "init(") && r.IsStatement(n.Type) {
+				dstInit = n
+			} else if strings.HasPrefix(text, "anchor(") && r.IsStatement(n.Type) {
+				dstAnchor = n
+			} else if strings.HasPrefix(text, "finish(") && r.IsStatement(n.Type) {
+				dstFinish = n
+			}
+		}
+
+		if srcInit == nil || dstInit == nil || mapped[srcInit] != dstInit {
+			t.Errorf("expected init statement to map in place, got %v", mapped[srcInit])
+		}
+		if srcAnchor == nil || dstAnchor == nil || mapped[srcAnchor] != dstAnchor {
+			t.Errorf("expected anchor statement to map in place, got %v", mapped[srcAnchor])
+		}
+		if srcFinish == nil || dstFinish == nil || mapped[srcFinish] != dstFinish {
+			t.Errorf("expected finish statement to map in place, got %v", mapped[srcFinish])
+		}
+
+		// 3. Target Sandwiched Statements:
+		// writer.print statement maps to try writer.write statement.
+		// writer.println statement maps to try writer.writeln statement.
+		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
+		var srcPrintlnStmt, dstWritelnStmt *treesitter.ASTNode
+		var srcPrintCall, dstWriteCall *treesitter.ASTNode
+		var srcPrintlnCall, dstWritelnCall *treesitter.ASTNode
+		var dstTry1, dstTry2 *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "writer.print(") {
+					srcPrintStmt = n
+				} else if strings.Contains(text, "writer.println(") {
+					srcPrintlnStmt = n
+				}
+			}
+			if r.IsCall(n.Type) {
+				if strings.Contains(text, "writer.print(") {
+					srcPrintCall = n
+				} else if strings.Contains(text, "writer.println(") {
+					srcPrintlnCall = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "writer.write(") {
+					dstWriteStmt = n
+				} else if strings.Contains(text, "writer.writeln(") {
+					dstWritelnStmt = n
+				}
+			}
+			if r.IsCall(n.Type) {
+				if strings.Contains(text, "writer.write(") {
+					dstWriteCall = n
+				} else if strings.Contains(text, "writer.writeln(") {
+					dstWritelnCall = n
+				}
+			}
+			if r.IsWrapper(n.Type) && n.Type == "try_expression" {
+				if dstTry1 == nil {
+					dstTry1 = n
+				} else {
+					dstTry2 = n
+				}
+			}
+		}
+
+		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
+			t.Fatalf("expected writer.print expression_statement to map in place, got %v", mapped[srcPrintStmt])
+		}
+		if srcPrintlnStmt == nil || dstWritelnStmt == nil || mapped[srcPrintlnStmt] != dstWritelnStmt {
+			t.Fatalf("expected writer.println expression_statement to map in place, got %v", mapped[srcPrintlnStmt])
+		}
+
+		// 4. Transparent Wrapper Unwrapping:
+		// Inner call_expressions map across try_expression wrappers.
+		if srcPrintCall == nil || dstWriteCall == nil || mapped[srcPrintCall] != dstWriteCall {
+			t.Errorf("expected writer.print call_expression to map across try wrapper, got %v", mapped[srcPrintCall])
+		}
+		if srcPrintlnCall == nil || dstWritelnCall == nil || mapped[srcPrintlnCall] != dstWritelnCall {
+			t.Errorf("expected writer.println call_expression to map across try wrapper, got %v", mapped[srcPrintlnCall])
+		}
+		if dstTry1 != nil && revMapped[dstTry1] != nil {
+			t.Errorf("expected dst try_expression 1 to remain unmapped, got %v", revMapped[dstTry1])
+		}
+		if dstTry2 != nil && revMapped[dstTry2] != nil {
+			t.Errorf("expected dst try_expression 2 to remain unmapped, got %v", revMapped[dstTry2])
+		}
+
+		// 5. Stationary Operands:
+		// Format string literals "foo\n" and "bar\n" map in place.
+		var srcFoo, dstFoo *treesitter.ASTNode
+		var srcBar, dstBar *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "foo") && (n.Type == "string" || n.Type == "string_content") {
+				srcFoo = n
+			} else if strings.Contains(text, "bar") && (n.Type == "string" || n.Type == "string_content") {
+				srcBar = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "foo") && (n.Type == "string" || n.Type == "string_content") {
+				dstFoo = n
+			} else if strings.Contains(text, "bar") && (n.Type == "string" || n.Type == "string_content") {
+				dstBar = n
+			}
+		}
+
+		if srcFoo != nil && dstFoo != nil && mapped[srcFoo] != dstFoo {
+			t.Errorf("expected 'foo' string to map in place, got %v", mapped[srcFoo])
+		}
+		if srcBar != nil && dstBar != nil && mapped[srcBar] != dstBar {
+			t.Errorf("expected 'bar' string to map in place, got %v", mapped[srcBar])
+		}
+	})
+}
+
+func TestCParenthesizedStatementRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `void handle_transaction(Database* db) {
+    db_begin(db);
+    db_flush_wal(db);
+    db_commit(db);
+}
+`
+		newSrc := `void handle_transaction(Database* db) {
+    db_begin(db);
+    (db_flush_wal(db));
+    db_commit(db);
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.c")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.c")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: handle_transaction function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "handle_transaction") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "handle_transaction") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected handle_transaction fn to map in place, got %v", mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: surrounding statements map in place.
+		var srcBegin, dstBegin *treesitter.ASTNode
+		var srcCommit, dstCommit *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "db_begin") && r.IsStatement(n.Type) {
+				srcBegin = n
+			} else if strings.Contains(text, "db_commit") && r.IsStatement(n.Type) {
+				srcCommit = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if strings.Contains(text, "db_begin") && r.IsStatement(n.Type) {
+				dstBegin = n
+			} else if strings.Contains(text, "db_commit") && r.IsStatement(n.Type) {
+				dstCommit = n
+			}
+		}
+
+		if srcBegin == nil || dstBegin == nil || mapped[srcBegin] != dstBegin {
+			t.Errorf("expected db_begin statement to map in place, got %v", mapped[srcBegin])
+		}
+		if srcCommit == nil || dstCommit == nil || mapped[srcCommit] != dstCommit {
+			t.Errorf("expected db_commit statement to map in place, got %v", mapped[srcCommit])
+		}
+
+		// 3. Target Sandwiched Statement:
+		// db_flush_wal statement maps in place across parenthesized expression.
+		var srcFlushStmt, dstFlushStmt *treesitter.ASTNode
+		var srcFlushCall, dstFlushCall *treesitter.ASTNode
+		var dstParen *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
+				srcFlushStmt = n
+			}
+			if r.IsCall(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
+				srcFlushCall = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
+				dstFlushStmt = n
+			}
+			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
+				dstFlushCall = n
+			}
+			if r.IsWrapper(n.Type) && n.Type == "parenthesized_expression" {
+				dstParen = n
+			}
+		}
+
+		if srcFlushStmt == nil || dstFlushStmt == nil || mapped[srcFlushStmt] != dstFlushStmt {
+			t.Fatalf("expected db_flush_wal expression_statement to map in place, got %v", mapped[srcFlushStmt])
+		}
+
+		// 4. Transparent Wrapper Unwrapping:
+		// Inner call_expression maps across the parenthesized_expression wrapper.
+		if srcFlushCall == nil || dstFlushCall == nil || mapped[srcFlushCall] != dstFlushCall {
+			t.Errorf("expected db_flush_wal call_expression to map across paren wrapper, got %v", mapped[srcFlushCall])
+		}
+		if dstParen != nil && revMapped[dstParen] != nil {
+			t.Errorf("expected dst parenthesized_expression to remain unmapped, got %v", revMapped[dstParen])
+		}
+
+		// 5. Stationary Operands:
+		// db argument identifier maps in place.
+		var srcArg, dstArg *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsIdentifier(n.Type) && string(srcBytes[n.StartByte:n.EndByte]) == "db" && n.Parent == srcFlushCall {
+				srcArg = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsIdentifier(n.Type) && string(dstBytes[n.StartByte:n.EndByte]) == "db" && n.Parent == dstFlushCall {
+				dstArg = n
+				break
+			}
+		}
+		if srcArg != nil && dstArg != nil && mapped[srcArg] != dstArg {
+			t.Errorf("expected 'db' identifier argument to map in place, got %v", mapped[srcArg])
+		}
+	})
+}
+
+func TestJavaScriptSandwichedStatementAwaitWrapperRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `async function syncSession(client) {
+    client.connect();
+    client.fetchUpdates();
+    client.disconnect();
+}
+`
+		newSrc := `async function syncSession(client) {
+    client.connect();
+    await client.fetchUpdates();
+    client.disconnect();
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: syncSession function declaration maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "syncSession") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "syncSession") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected syncSession fn to map in place, got %v", mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: connect and disconnect statements map in place.
+		var srcConn, dstConn *treesitter.ASTNode
+		var srcDisc, dstDisc *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := strings.TrimSpace(string(srcBytes[n.StartByte:n.EndByte]))
+			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
+				srcConn = n
+			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
+				srcDisc = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := strings.TrimSpace(string(dstBytes[n.StartByte:n.EndByte]))
+			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
+				dstConn = n
+			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
+				dstDisc = n
+			}
+		}
+
+		if srcConn == nil || dstConn == nil || mapped[srcConn] != dstConn {
+			t.Errorf("expected connect statement to map in place, got %v", mapped[srcConn])
+		}
+		if srcDisc == nil || dstDisc == nil || mapped[srcDisc] != dstDisc {
+			t.Errorf("expected disconnect statement to map in place, got %v", mapped[srcDisc])
+		}
+
+		// 3. Target Sandwiched Statement:
+		// fetchUpdates statement maps across await_expression.
+		var srcFetchStmt, dstFetchStmt *treesitter.ASTNode
+		var srcFetchCall, dstFetchCall *treesitter.ASTNode
+		var dstAwait *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
+				srcFetchStmt = n
+			}
+			if r.IsCall(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
+				srcFetchCall = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
+				dstFetchStmt = n
+			}
+			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
+				dstFetchCall = n
+			}
+			if r.IsWrapper(n.Type) && n.Type == "await_expression" {
+				dstAwait = n
+			}
+		}
+
+		if srcFetchStmt == nil || dstFetchStmt == nil || mapped[srcFetchStmt] != dstFetchStmt {
+			t.Fatalf("expected fetchUpdates expression_statement to map in place, got %v", mapped[srcFetchStmt])
+		}
+
+		// 4. Transparent Wrapper Unwrapping:
+		// Inner call_expression maps across the await_expression wrapper.
+		if srcFetchCall == nil || dstFetchCall == nil || mapped[srcFetchCall] != dstFetchCall {
+			t.Errorf("expected fetchUpdates call_expression to map across await wrapper, got %v", mapped[srcFetchCall])
+		}
+		if dstAwait != nil && revMapped[dstAwait] != nil {
+			t.Errorf("expected dst await_expression to remain unmapped, got %v", revMapped[dstAwait])
+		}
+	})
+}
+
+func TestPythonSandwichedStatementAwaitWrapperRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `async def sync_session(client):
+    client.connect()
+    client.fetch_updates()
+    client.disconnect()
+`
+		newSrc := `async def sync_session(client):
+    client.connect()
+    await client.fetch_updates()
+    client.disconnect()
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.py")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.py")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+		revMapped := mr.Mappings.Dst()
+
+		// 1. Enclosing Context: sync_session function definition maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "sync_session") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "sync_session") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected sync_session fn to map in place, got %v", mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: connect and disconnect statements map in place.
+		var srcConn, dstConn *treesitter.ASTNode
+		var srcDisc, dstDisc *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := strings.TrimSpace(string(srcBytes[n.StartByte:n.EndByte]))
+			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
+				srcConn = n
+			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
+				srcDisc = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := strings.TrimSpace(string(dstBytes[n.StartByte:n.EndByte]))
+			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
+				dstConn = n
+			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
+				dstDisc = n
+			}
+		}
+
+		if srcConn == nil || dstConn == nil || mapped[srcConn] != dstConn {
+			t.Errorf("expected connect statement to map in place, got %v", mapped[srcConn])
+		}
+		if srcDisc == nil || dstDisc == nil || mapped[srcDisc] != dstDisc {
+			t.Errorf("expected disconnect statement to map in place, got %v", mapped[srcDisc])
+		}
+
+		// 3. Target Sandwiched Statement:
+		// fetch_updates statement maps across await wrapper.
+		var srcFetchStmt, dstFetchStmt *treesitter.ASTNode
+		var srcFetchCall, dstFetchCall *treesitter.ASTNode
+		var dstAwait *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetch_updates") {
+				srcFetchStmt = n
+			}
+			if r.IsCall(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetch_updates") {
+				srcFetchCall = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetch_updates") {
+				dstFetchStmt = n
+			}
+			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetch_updates") {
+				dstFetchCall = n
+			}
+			if r.IsWrapper(n.Type) && n.Type == "await" {
+				dstAwait = n
+			}
+		}
+
+		if srcFetchStmt == nil || dstFetchStmt == nil || mapped[srcFetchStmt] != dstFetchStmt {
+			t.Fatalf("expected fetch_updates expression_statement to map in place, got %v", mapped[srcFetchStmt])
+		}
+
+		// 4. Transparent Wrapper Unwrapping:
+		// Inner call maps across the await wrapper.
+		if srcFetchCall == nil || dstFetchCall == nil || mapped[srcFetchCall] != dstFetchCall {
+			t.Errorf("expected fetch_updates call to map across await wrapper, got %v", mapped[srcFetchCall])
+		}
+		if dstAwait != nil && revMapped[dstAwait] != nil {
+			t.Errorf("expected dst await to remain unmapped, got %v", revMapped[dstAwait])
+		}
+	})
+}

@@ -521,9 +521,8 @@ func isStatementOrDecl(n *treesitter.ASTNode, r *rules.Rules) bool {
 	return n.IsStatement() || (r != nil && r.IsDeclaration(n.Type)) || (r == nil && rules.IsDeclaration(n.Type))
 }
 
-// effectiveDepthTo measures the structural depth from node up to anc,
-// skipping single-child transparent wrappers (scaffolding/wrappers that are not
-// declarations or blocks) to eliminate grammar depth disparities.
+// effectiveDepthTo counts hops from node up to anc, skipping single-child
+// wrappers so different language grammars measure depth the same way.
 func effectiveDepthTo(node, anc *treesitter.ASTNode, r *rules.Rules) int {
 	if node == nil || anc == nil {
 		return 0
@@ -539,35 +538,61 @@ func effectiveDepthTo(node, anc *treesitter.ASTNode, r *rules.Rules) int {
 	return depth
 }
 
-// isTransparentWrapper reports whether n is a transparent wrapper containing exactly
-// one substantive child (ignoring surrounding punctuation like parentheses or brackets).
-// Never treats declarations or blocks as transparent.
-func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
+// substantiveChild returns n's sole expression child if n is a transparent
+// wrapper (e.g. `try_expression`, `await_expression`, or parens). Returns nil if n has
+// multiple children, is a statement/block/call, or sits under one.
+func substantiveChild(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
-		return false
+		return nil
 	}
-	if (r != nil && (r.IsDeclaration(n.Type) || r.IsBlock(n.Type))) || (r == nil && (rules.IsDeclaration(n.Type) || rules.IsBlock(n.Type))) {
-		return false
+	if (r != nil && (r.IsDeclaration(n.Type) || r.IsBlock(n.Type) || r.IsStatement(n.Type) || r.IsJumpStatement(n.Type) || r.IsCall(n.Type))) ||
+		(r == nil && (rules.IsDeclaration(n.Type) || rules.IsBlock(n.Type) || rules.IsStatement(n.Type) || rules.IsJumpStatement(n.Type) || rules.IsCall(n.Type))) {
+		return nil
+	}
+	if n.Parent != nil && ((r != nil && (r.IsCall(n.Parent.Type) || r.IsDeclaration(n.Parent.Type))) ||
+		(r == nil && (rules.IsCall(n.Parent.Type) || rules.IsDeclaration(n.Parent.Type)))) {
+		return nil
 	}
 	isWrap := (r != nil && (r.IsWrapper(n.Type) || r.IsScaffolding(n.Type))) ||
 		(r == nil && (rules.IsWrapper(n.Type) || rules.IsScaffolding(n.Type)))
 	if !isWrap {
-		return false
+		return nil
 	}
-	if len(n.Children) == 1 {
-		return true
-	}
-	substantiveCount := 0
+	var substantive *treesitter.ASTNode
+	count := 0
 	for _, c := range n.Children {
-		isPunct := (r != nil && r.IsPunctuation(c.Type)) || (r == nil && rules.IsPunctuation(c.Type))
-		if !isPunct {
-			substantiveCount++
-			if substantiveCount > 1 {
-				return false
+		if isSubstantiveChild(c, r) {
+			substantive = c
+			count++
+			if count > 1 {
+				return nil
 			}
 		}
 	}
-	return substantiveCount == 1
+	if count == 1 {
+		return substantive
+	}
+	return nil
+}
+
+// isTransparentWrapper reports whether n wraps a single expression inside
+// punctuation (like parens) or operators (like `?`, `try`, or `await`).
+func isTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
+	return substantiveChild(n, r) != nil
+}
+
+// unwrapTransparentWrapper peels off single-child wrappers (like try_expression,
+// await_expression, or parens) down to the inner expression.
+func unwrapTransparentWrapper(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	curr := n
+	for {
+		sub := substantiveChild(curr, r)
+		if sub == nil {
+			break
+		}
+		curr = sub
+	}
+	return curr
 }
 
 // areSiblingsMatched reports whether sibling nodes s1 and s2 are matched directly
