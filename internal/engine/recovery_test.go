@@ -5938,3 +5938,139 @@ func handleBranch(flag bool, val int) {
 		t.Fatalf("expected fallback statement to map across branches, got %v", mapped[srcFallback])
 	}
 }
+
+func TestSandwichedStatementShiftedIntervalRecovery(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `fn test_logging(val: &str) {
+    setup_env();
+    print!("value: {}", val);
+    cleanup_env();
+}
+`
+		newSrc := `fn test_logging(val: &str) {
+    init_tracing();
+    setup_env();
+    write!(io::stdout(), "value: {}", val);
+    cleanup_env();
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rulesFor(srcAST)
+		if r == nil {
+			t.Fatal("rulesFor returned nil")
+		}
+
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		mapped := mr.Mappings.Src()
+
+		// 1. Enclosing Context: enclosing function maps in place.
+		var srcFn, dstFn *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "test_logging") {
+				srcFn = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "test_logging") {
+				dstFn = n
+				break
+			}
+		}
+		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
+			t.Fatalf("expected test_logging fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
+		}
+
+		// 2. Surrounding Sequence: anchor statements map in place.
+		var srcSetup, dstSetup *treesitter.ASTNode
+		var srcCleanup, dstCleanup *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "setup_env") {
+					srcSetup = n
+				} else if strings.Contains(text, "cleanup_env") {
+					srcCleanup = n
+				}
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) {
+				if strings.Contains(text, "setup_env") {
+					dstSetup = n
+				} else if strings.Contains(text, "cleanup_env") {
+					dstCleanup = n
+				}
+			}
+		}
+
+		if srcSetup == nil || dstSetup == nil || mapped[srcSetup] != dstSetup {
+			t.Fatalf("expected setup_env() statement to map in place, got %v", mapped[srcSetup])
+		}
+		if srcCleanup == nil || dstCleanup == nil || mapped[srcCleanup] != dstCleanup {
+			t.Fatalf("expected cleanup_env() statement to map in place, got %v", mapped[srcCleanup])
+		}
+
+		// 3. Target Sandwiched Statement:
+		// print! statement must map to write! statement across the shifted index interval.
+		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
+
+		for _, n := range srcAST.Descendants() {
+			text := string(srcBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) && strings.HasPrefix(text, "print!") {
+				srcPrintStmt = n
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			text := string(dstBytes[n.StartByte:n.EndByte])
+			if r.IsStatement(n.Type) && strings.HasPrefix(text, "write!") {
+				dstWriteStmt = n
+			}
+		}
+
+		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
+			t.Fatalf("expected print! expression_statement to map to write! expression_statement across shifted interval, got %v", mapped[srcPrintStmt])
+		}
+
+		// 4. Stationary Operands: format string literal "value: {}" maps in place.
+		var srcFmtStr, dstFmtStr *treesitter.ASTNode
+		for _, n := range srcAST.Descendants() {
+			if strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "value: {}") {
+				srcFmtStr = n
+				break
+			}
+		}
+		for _, n := range dstAST.Descendants() {
+			if strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "value: {}") {
+				dstFmtStr = n
+				break
+			}
+		}
+		if srcFmtStr == nil || dstFmtStr == nil || mapped[srcFmtStr] != dstFmtStr {
+			t.Errorf("expected 'value: {}' format string to map in place, got %v", mapped[srcFmtStr])
+		}
+	})
+}
