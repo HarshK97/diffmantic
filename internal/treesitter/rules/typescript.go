@@ -221,6 +221,7 @@ var typescriptRules = &Rules{
 		"array",
 		"arguments",
 		"formal_parameters",
+		"await_expression",
 	},
 	Pairs: []string{
 		"pair",

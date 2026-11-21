@@ -196,6 +196,7 @@ var pythonRules = &Rules{
 		"class_pattern",
 		"tuple_pattern",
 		"decorated_definition",
+		"await",
 	},
 	Pairs: []string{
 		"pair",

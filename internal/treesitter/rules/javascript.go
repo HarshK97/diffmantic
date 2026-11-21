@@ -198,6 +198,7 @@ var javascriptRules = &Rules{
 		"arguments",
 		"formal_parameters",
 		"jsx_expression",
+		"await_expression",
 	},
 	Pairs: []string{
 		"pair",

@@ -158,6 +158,8 @@ func SimpleRecovery(t1, t2 *treesitter.ASTNode, m *Mapping) {
 
 	recoverBlockStatements(t1, t2, m, r)
 
+	recoverTransparentWrappers(t1, t2, m, r)
+
 	uc1 = unmatchedChildren(t1, m.Has)
 	uc2 = unmatchedChildren(t2, m.HasDst)
 
@@ -328,7 +330,7 @@ func canPairSandwichedNode(c1, c2, parent *treesitter.ASTNode, m *Mapping, r *ru
 	isCase := (r != nil && r.IsCaseClause(c1.Type)) || (r == nil && rules.IsCaseClause(c1.Type))
 	if isCase {
 		return hasHeaderMatch(c1, c2, m, r) || m.DiceSrc(c1, c2) > 0 ||
-			substantiveLeafSimilarity(c1, c2, r) >= 0.15 || hasSharedSubstantiveLeaf(c1, c2, r)
+			substantiveLeafSimilarity(c1, c2, r) > 0
 	}
 
 	isParentBlock := parent != nil && ((r != nil && r.IsBlock(parent.Type)) || (r == nil && rules.IsBlock(parent.Type)))
@@ -346,24 +348,21 @@ func canPairSandwichedNode(c1, c2, parent *treesitter.ASTNode, m *Mapping, r *ru
 			return false
 		}
 
-		// Simple statements without bodies (expression statements, macro calls):
-		s1 := statementPrimaryChild(c1, r)
-		s2 := statementPrimaryChild(c2, r)
-		if s1 == nil || s2 == nil {
+		// Bodyless statements (expression statements, macro calls):
+		w1 := unwrapTransparentWrapper(statementPrimaryChild(c1, r), r)
+		w2 := unwrapTransparentWrapper(statementPrimaryChild(c2, r), r)
+		if w1 == nil || w2 == nil {
 			return false
 		}
-		if !TypesMatch(s1.Type, s2.Type, r) {
+		if !TypesMatch(w1.Type, w2.Type, r) {
 			return false
 		}
 
-		sim := max(substantiveLeafSimilarity(c1, c2, r), substantiveLeafSimilarity(s1, s2, r))
-		if sim >= 0.15 {
+		sim := max(substantiveLeafSimilarity(c1, c2, r), substantiveLeafSimilarity(w1, w2, r))
+		if sim > 0 {
 			return true
 		}
-		if hasSharedSubstantiveLeaf(c1, c2, r) || hasSharedSubstantiveLeaf(s1, s2, r) {
-			return true
-		}
-		if m != nil && (m.DiceSrc(c1, c2) > 0 || m.DiceSrc(s1, s2) > 0) {
+		if m != nil && (m.DiceSrc(c1, c2) > 0 || m.DiceSrc(w1, w2) > 0) {
 			return true
 		}
 		return false
@@ -393,29 +392,80 @@ func pairSandwichedNodes(c1, c2 *treesitter.ASTNode, m *Mapping, r *rules.Rules)
 	}
 }
 
+// recoverTransparentWrappers matches sibling expressions when one side is
+// wrapped in an operator or parens (e.g. `foo()` vs `try foo()` or `await foo()`).
+func recoverTransparentWrappers(t1, t2 *treesitter.ASTNode, m *Mapping, r *rules.Rules) {
+	if t1 == nil || t2 == nil || m == nil || len(t1.Children) == 0 || len(t2.Children) == 0 {
+		return
+	}
+
+	uc1 := unmatchedChildren(t1, m.Has)
+	uc2 := unmatchedChildren(t2, m.HasDst)
+	if len(uc1) == 0 || len(uc2) == 0 {
+		return
+	}
+
+	for _, u1 := range uc1 {
+		if m.Has(u1) {
+			continue
+		}
+		w1 := unwrapTransparentWrapper(u1, r)
+		if m.Has(w1) {
+			continue
+		}
+
+		var bestW2 *treesitter.ASTNode
+		bestScore := 0.0
+
+		for _, u2 := range uc2 {
+			if m.HasDst(u2) {
+				continue
+			}
+			w2 := unwrapTransparentWrapper(u2, r)
+			if w1 == u1 && w2 == u2 {
+				continue
+			}
+			if m.HasDst(w2) {
+				continue
+			}
+			if !TypesMatch(w1.Type, w2.Type, r) {
+				continue
+			}
+
+			sim := substantiveLeafSimilarity(w1, w2, r)
+			var dice float64
+			if m != nil {
+				dice = m.DiceSrc(w1, w2)
+			}
+
+			if sim > 0 || dice > 0 {
+				score := sim + dice
+				if score > bestScore {
+					bestScore = score
+					bestW2 = w2
+				}
+			}
+		}
+
+		if bestW2 != nil {
+			if w1.Label != "" && Isomorphic(w1, bestW2) {
+				addIsomorphicPairs(w1, bestW2, m)
+			} else {
+				m.Add(w1, bestW2)
+				Recover(w1, bestW2, m)
+			}
+		}
+	}
+}
+
 func isSubstantiveChild(c *treesitter.ASTNode, r *rules.Rules) bool {
 	if c == nil {
 		return false
 	}
-	isPunct := (r != nil && (r.IsPunctuation(c.Type) || r.IsPunctuation(c.Label))) ||
-		(r == nil && (rules.IsPunctuation(c.Type) || rules.IsPunctuation(c.Label)))
-	return !c.IsKeyword && !isGlueToken(c, r) && !isPunct
-}
-
-func hasSharedSubstantiveLeaf(a, b *treesitter.ASTNode, r *rules.Rules) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	l1, l2 := a.LeafLabels(), b.LeafLabels()
-	for label := range l1 {
-		if !isSubstantiveLeaf(label, r) {
-			continue
-		}
-		if _, ok := l2[label]; ok {
-			return true
-		}
-	}
-	return false
+	isPunct := (r != nil && (r.IsPunctuation(c.Type) || r.IsPunctuation(c.Label) || r.IsOperatorLiteral(c.Type) || r.IsIgnored(c.Type, c.Label))) ||
+		(r == nil && (rules.IsPunctuation(c.Type) || rules.IsPunctuation(c.Label) || rules.IsOperatorLiteral(c.Type)))
+	isKw := c.IsKeyword || (r != nil && r.IsKeyword(c.Type, c.Label)) || (r == nil && rules.IsKeyword(c.Type, c.Label))
+	return !isKw && !isGlueToken(c, r) && !isPunct
 }
 
 // recoverDelimitedSiblingSequences aligns unmatched children inside non-block
