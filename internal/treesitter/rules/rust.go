@@ -252,6 +252,7 @@ var rustRules = &Rules{
 		"mod_item",
 		"foreign_mod_item",
 		"type_item",
+		"macro_definition",
 	},
 	Closures: []string{
 		"closure_expression",
@@ -289,11 +290,16 @@ var rustRules = &Rules{
 	DelimitedContainers: []string{
 		"arguments",
 		"array_expression",
+		"closure_parameters",
 		"enum_variant_list",
 		"field_initializer_list",
 		"parameters",
 		"token_tree",
 		"tuple_expression",
+		"tuple_pattern",
+		"tuple_type",
+		"type_arguments",
+		"type_parameters",
 	},
 	Clauses: []string{
 		"else_clause",
