@@ -283,3 +283,57 @@ func AssertUnmappedText(t testing.TB, tree *treesitter.ASTNode, src []byte, mapp
 			node.Type, text, partner)
 	}
 }
+
+// AssertMappedTextQuery asserts that the AST node matching srcQuery in srcTree maps to
+// the AST node matching dstQuery in dstTree in mappings.
+func AssertMappedTextQuery(t testing.TB, srcTree, dstTree *treesitter.ASTNode, src, dst []byte, mappings map[*treesitter.ASTNode]*treesitter.ASTNode, srcQuery, dstQuery TextQuery) {
+	t.Helper()
+	srcNode, err := FindNodeByTextQuery(srcTree, src, srcQuery)
+	if err != nil {
+		t.Fatalf("AssertMappedTextQuery: failed to find src node for %+v: %v", srcQuery, err)
+		return
+	}
+	dstNode, err := FindNodeByTextQuery(dstTree, dst, dstQuery)
+	if err != nil {
+		t.Fatalf("AssertMappedTextQuery: failed to find dst node for %+v: %v", dstQuery, err)
+		return
+	}
+	if got := mappings[srcNode]; got != dstNode {
+		t.Errorf("AssertMappedTextQuery: expected %s %q to map to %s %q, got %v",
+			srcNode.Type, srcQuery.Text, dstNode.Type, dstQuery.Text, got)
+	}
+}
+
+// AssertNotMappedTextQuery asserts that the AST node matching srcQuery in srcTree does not
+// map to the AST node matching dstQuery in dstTree in mappings.
+func AssertNotMappedTextQuery(t testing.TB, srcTree, dstTree *treesitter.ASTNode, src, dst []byte, mappings map[*treesitter.ASTNode]*treesitter.ASTNode, srcQuery, dstQuery TextQuery) {
+	t.Helper()
+	srcNode, err := FindNodeByTextQuery(srcTree, src, srcQuery)
+	if err != nil {
+		t.Fatalf("AssertNotMappedTextQuery: failed to find src node for %+v: %v", srcQuery, err)
+		return
+	}
+	dstNode, err := FindNodeByTextQuery(dstTree, dst, dstQuery)
+	if err != nil {
+		t.Fatalf("AssertNotMappedTextQuery: failed to find dst node for %+v: %v", dstQuery, err)
+		return
+	}
+	if mappings[srcNode] == dstNode {
+		t.Errorf("AssertNotMappedTextQuery: expected %s %q not to map to %s %q, but it did",
+			srcNode.Type, srcQuery.Text, dstNode.Type, dstQuery.Text)
+	}
+}
+
+// AssertUnmappedTextQuery asserts that the AST node matching query in tree is unmapped or maps to nil.
+func AssertUnmappedTextQuery(t testing.TB, tree *treesitter.ASTNode, src []byte, mappings map[*treesitter.ASTNode]*treesitter.ASTNode, query TextQuery) {
+	t.Helper()
+	node, err := FindNodeByTextQuery(tree, src, query)
+	if err != nil {
+		t.Fatalf("AssertUnmappedTextQuery: failed to find node for %+v: %v", query, err)
+		return
+	}
+	if partner, ok := mappings[node]; ok && partner != nil {
+		t.Errorf("AssertUnmappedTextQuery: expected node %s %q to be unmapped, but mapped to %v",
+			node.Type, query.Text, partner)
+	}
+}

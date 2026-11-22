@@ -1460,9 +1460,11 @@ func TestMatch_RustControlFlowStatementBoundaries(t *testing.T) {
 			if got := FindEnclosingStatement(condition, r); got != want {
 				t.Errorf("condition belongs to the control-flow statement, got %v (%s), want %v (%s)", got, got.Type, want, want.Type)
 			}
-			if mr.Mappings.Src()[control] == nil {
-				t.Error("unchanged control-flow statement must map in place")
-			}
+			testutil.AssertMappedText(t, src.Root(), dst.Root(), source, source, mr.Mappings.Src(),
+				string(source[control.StartByte:control.EndByte]),
+				string(source[control.StartByte:control.EndByte]),
+				typ,
+			)
 		})
 	}
 }
@@ -1621,32 +1623,22 @@ pub fn make_options() -> i32 {
 		}
 
 		// 1. Enclosing context / surrounding function: make_options maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 6},
-			testutil.NodeQuery{Type: "function_item", Line: 5},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"pub fn make_options() -> i32", "pub fn make_options() -> i32")
 
 		// 2. Stationary function body statement default_limit maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "let_declaration", Line: 7},
-			testutil.NodeQuery{Type: "let_declaration", Line: 6},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"let default_limit = 42;", "let default_limit = 42;")
 
 		// 3. Sibling compound imports move alongside
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 2},
-			testutil.NodeQuery{Type: "use_declaration", Line: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 4},
-			testutil.NodeQuery{Type: "use_declaration", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"use bytelines::ByteLines;", "use bytelines::ByteLines;")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"use crate::ansi;", "use crate::ansi;")
 
 		// 4. Target unqualified import: use itertools; must map across scopes
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 3},
-			testutil.NodeQuery{Type: "use_declaration", Line: 2},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"use itertools;", "use itertools;")
 	})
 
 	t.Run("FullEngine_Cpp", func(t *testing.T) {
@@ -1691,30 +1683,20 @@ int make_options() {
 		}
 
 		// 1. Enclosing context / surrounding function: make_options maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 6},
-			testutil.NodeQuery{Type: "function_definition", Line: 5},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"int make_options()", "int make_options()")
 
 		// 2. Stationary function body statement default_limit maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "declaration", Line: 7},
-			testutil.NodeQuery{Type: "declaration", Line: 6},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"int default_limit = 42;", "int default_limit = 42;")
 
 		// 3. Sibling using declarations move alongside
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "using_declaration", Line: 2},
-			testutil.NodeQuery{Type: "using_declaration", Line: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "using_declaration", Line: 3},
-			testutil.NodeQuery{Type: "using_declaration", Line: 2},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "using_declaration", Line: 4},
-			testutil.NodeQuery{Type: "using_declaration", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"using std::string;", "using std::string;")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"using std::vector;", "using std::vector;")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"using std::map;", "using std::map;")
 	})
 
 	t.Run("FullEngine_TypeScript", func(t *testing.T) {
@@ -1759,30 +1741,20 @@ export function make_options(): number {
 		}
 
 		// 1. Enclosing context / surrounding function: make_options maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 6},
-			testutil.NodeQuery{Type: "function_declaration", Line: 5},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"export function make_options(): number", "export function make_options(): number")
 
 		// 2. Stationary function body statement default_limit maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 7},
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 6},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"let default_limit = 42;", "let default_limit = 42;")
 
 		// 3. Sibling import aliases move alongside
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_alias", Line: 2},
-			testutil.NodeQuery{Type: "import_alias", Line: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_alias", Line: 3},
-			testutil.NodeQuery{Type: "import_alias", Line: 2},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_alias", Line: 4},
-			testutil.NodeQuery{Type: "import_alias", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"import ByteLines = bytelines.ByteLines;", "import ByteLines = bytelines.ByteLines;")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"import ansi = crate.ansi;", "import ansi = crate.ansi;")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"import itertools = crate.itertools;", "import itertools = crate.itertools;")
 	})
 
 	t.Run("FullEngine_Python", func(t *testing.T) {
@@ -1824,37 +1796,25 @@ def make_options():
 		}
 
 		// 1. Enclosing context / surrounding function: make_options maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 6},
-			testutil.NodeQuery{Type: "function_definition", Line: 5},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"def make_options():", "def make_options():")
 
 		// 2. Stationary function body statement default_limit maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "assignment", Line: 7},
-			testutil.NodeQuery{Type: "assignment", Line: 6},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"default_limit = 42", "default_limit = 42")
 
 		// 3. Sibling imports move alongside
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_from_statement", Line: 2},
-			testutil.NodeQuery{Type: "import_from_statement", Line: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_statement", Line: 3},
-			testutil.NodeQuery{Type: "import_statement", Line: 2},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_from_statement", Line: 4},
-			testutil.NodeQuery{Type: "import_from_statement", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"from os import path", "from os import path")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"import itertools", "import itertools")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"from sys import version", "from sys import version")
 	})
 }
 
 func TestMatchUnmatchedLeaves_FieldMutualExclusion_FullEngine(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("python")
-
 		oldSrc := []byte(`def configure_session():
     setup_logger()
     options = {
@@ -1895,89 +1855,21 @@ func TestMatchUnmatchedLeaves_FieldMutualExclusion_FullEngine(t *testing.T) {
 		}
 
 		// 1. Enclosing function declaration must map in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected configure_session declaration to map in place, got src=%v dst=%v", srcFn, dstFn)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"def configure_session():", "def configure_session():")
 
 		// 2. Surrounding sequence (setup_logger, teardown_logger) must map in place.
-		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				if extractCalleeLabel(n, r) == "setup_logger" {
-					srcSetup = n
-				} else if extractCalleeLabel(n, r) == "teardown_logger" {
-					srcTeardown = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				if extractCalleeLabel(n, r) == "setup_logger" {
-					dstSetup = n
-				} else if extractCalleeLabel(n, r) == "teardown_logger" {
-					dstTeardown = n
-				}
-			}
-		}
-		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
-			t.Errorf("expected setup_logger call to map in place")
-		}
-		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
-			t.Errorf("expected teardown_logger call to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setup_logger()", "setup_logger()")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardown_logger(options)", "teardown_logger(options)")
 
 		// 3. Target assignment container options = { ... } must map in place.
-		var srcAssign, dstAssign *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsAssignment(n.Type) {
-				srcAssign = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsAssignment(n.Type) {
-				dstAssign = n
-				break
-			}
-		}
-		if srcAssign == nil || dstAssign == nil || mr.Mappings.Src()[srcAssign] != dstAssign {
-			t.Fatalf("expected options assignment to map in place, got src=%v dst=%v", srcAssign, dstAssign)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			`"active": True`, `"active": True`)
 
-		// 4. Locate key "token" in src and value "token" in dst.
-		var srcTokenKey, dstTokenVal *treesitter.ASTNode
-		for _, n := range srcAssign.Descendants() {
-			if n.Label == `"token"` && n.FieldName() == "key" {
-				srcTokenKey = n
-				break
-			}
-		}
-		for _, n := range dstAssign.Descendants() {
-			if n.Label == `"token"` && n.FieldName() == "value" {
-				dstTokenVal = n
-				break
-			}
-		}
-		if srcTokenKey == nil || dstTokenVal == nil {
-			t.Fatalf("failed to locate token nodes: srcKey=%v dstVal=%v", srcTokenKey, dstTokenVal)
-		}
-
-		// 5. A dictionary key named "token" shouldn't match a value named "token".
-		if matched := mr.Mappings.Src()[srcTokenKey]; matched == dstTokenVal {
-			t.Errorf("MatchUnmatchedLeaves incorrectly paired key 'token' to value 'token' across mutually exclusive fields")
-		}
+		// 4. A dictionary key named "token" shouldn't match a value named "token".
+		testutil.AssertNotMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			`"token"`, `"token"`)
 	})
 }
