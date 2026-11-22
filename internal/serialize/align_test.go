@@ -587,20 +587,16 @@ func TestAlignLines_InPlaceClosureMove(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Move, Node: oldB, DestNode: newB})
 
 	alignment := AlignLines([]byte(src), []byte(dst), ms, es)
+	testPairs := toTestPairs(alignment)
 
-	alignedMap := make(map[int]int)
-	for _, p := range alignment {
-		if p.LeftLine != -1 {
-			alignedMap[p.LeftLine] = p.RightLine
-		}
-	}
-
-	if alignedMap[1] != 2 {
-		t.Errorf("expected left line 1 (let a = 1) to align with right line 2, got %d (grid: %+v)", alignedMap[1], alignment)
-	}
-	if alignedMap[2] != 3 {
-		t.Errorf("expected left line 2 (let b = 2) to align with right line 3, got %d (grid: %+v)", alignedMap[2], alignment)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("let a = 1;"),
+		testutil.Line("let a = 1;"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("let b = 2;"),
+		testutil.Line("let b = 2;"),
+	)
 }
 
 func TestAlignLines_AttachedElseClause(t *testing.T) {
@@ -691,35 +687,21 @@ func TestAlignLines_ExtractedClosureIntraMoveAlignment(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-
-	alignedMap := make(map[int]int)
-	for _, p := range alignment {
-		if p.LeftLine != -1 {
-			alignedMap[p.LeftLine] = p.RightLine
-		}
-	}
+	testPairs := toTestPairs(alignment)
 
 	// Verify that the switch header and its cases align across the closure boundary.
-	want := map[int]int{
-		1: 2, // switch format {
-		2: 3, // case "json":
-		4: 5, // case "text":
-	}
-	for left, wantRight := range want {
-		if got := alignedMap[left]; got != wantRight {
-			t.Errorf("expected left line %d to align with right line %d, got %d", left, wantRight, got)
-		}
-	}
-}
-
-func alignedLeftToRight(alignment []LineAlignmentPair) map[int]int {
-	m := make(map[int]int, len(alignment))
-	for _, p := range alignment {
-		if p.LeftLine != -1 {
-			m[p.LeftLine] = p.RightLine
-		}
-	}
-	return m
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("switch format {"),
+		testutil.Line("switch format {"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line(`case "json":`),
+		testutil.Line(`case "json":`),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line(`case "text":`),
+		testutil.Line(`case "text":`),
+	)
 }
 
 func TestAlignLines_UnchangedControlFlowAndBracePrecedence(t *testing.T) {
@@ -771,24 +753,28 @@ func TestAlignLines_UnchangedControlFlowAndBracePrecedence(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-	alignedMap := alignedLeftToRight(alignment)
+	testPairs := toTestPairs(alignment)
 
 	// Line 8 on left (`\t\t} else {`) must align with line 6 on right (`\t\t} else {`).
-	if alignedMap[8] != 6 {
-		t.Errorf("expected left line 8 (} else {) to align with right line 6, got %d", alignedMap[8])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("} else {"),
+		testutil.Line("} else {"),
+	)
 	// Line 12 on left (`\t\t}`) must align with line 11 on right (`\t\t}`).
-	if alignedMap[12] != 11 {
-		t.Errorf("expected left line 12 (closing if) to align with right line 11, got %d", alignedMap[12])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Nth("}", 3),
+		testutil.Nth("}", 3),
+	)
 	// Line 13 on left (`\t\tbreak`) must align with line 12 on right (`\t\tbreak`).
-	if alignedMap[13] != 12 {
-		t.Errorf("expected left line 13 (break) to align with right line 12, got %d", alignedMap[13])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("break"),
+		testutil.Line("break"),
+	)
 	// Line 14 on left (`\t}`) must align with line 13 on right (`\t}`).
-	if alignedMap[14] != 13 {
-		t.Errorf("expected left line 14 (closing for loop) to align with right line 13, got %d", alignedMap[14])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Nth("}", 4),
+		testutil.Nth("}", 4),
+	)
 }
 
 func TestAlignLines_StationaryStatementPrecedenceOverMove(t *testing.T) {
@@ -822,18 +808,20 @@ func TestAlignLines_StationaryStatementPrecedenceOverMove(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-	alignedMap := alignedLeftToRight(alignment)
+	testPairs := toTestPairs(alignment)
 
 	// Line 3 on left (`\tanchors := mergeAnchors(primary, text)`) must align with
 	// line 3 on right (`\tanchors := collectStationaryMoveAnchors(inPlaceStatements, tier1)`).
-	if alignedMap[3] != 3 {
-		t.Errorf("expected left line 3 (anchors :=) to align with right line 3, got %d", alignedMap[3])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("anchors := mergeAnchors(primary, text)"),
+		testutil.Line("anchors := collectStationaryMoveAnchors(inPlaceStatements, tier1)"),
+	)
 	// Line 4 on left (`\tinPlaceStatements := ...`) moved above `anchors :=` on the right,
 	// so on the left it cannot align with line 1 on right without crossing `anchors :=`.
-	if alignedMap[4] == 1 {
-		t.Errorf("expected left line 4 (inPlaceStatements) not to cross anchors := and align with right line 1")
-	}
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("inPlaceStatements := collectMappedStatements(fn)"),
+		testutil.Line("inPlaceStatements := collectMappedStatements(fn)"),
+	)
 }
 
 func TestStationaryIndex_Crosses(t *testing.T) {
@@ -945,13 +933,18 @@ func TestAlignLines_StationaryElsePrecedenceOverInsertedClause(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-	alignedMap := alignedLeftToRight(alignment)
+	testPairs := toTestPairs(alignment)
 
 	// Line 6 on left (`\t} else {`) must align with line 6 on right (`\t} else if pair.LeftLine == -1 ...`),
 	// not with line 10 on right (`\t} else {`).
-	if alignedMap[6] != 6 {
-		t.Errorf("expected left line 6 (} else {) to align with right line 6 (} else if), got %d (grid: %+v)", alignedMap[6], alignment)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("} else {"),
+		testutil.Line("} else if pair.LeftLine == -1 && pair.RightLine >= 0 {"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("} else {"),
+		testutil.Line("} else {"),
+	)
 }
 
 func TestCollectMoveRanges_MacroStructuralFilter_Tier4(t *testing.T) {
@@ -1211,9 +1204,8 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 		es = postprocess.Run(es, mr.Mappings, srcAST, dstAST)
 
 		// 1. Whole-Snippet Verification: Assert enclosing context maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 8},
-			testutil.NodeQuery{Type: "function_declaration", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"func processStreamJob", "func processStreamJob", "function_declaration",
 		)
 
 		// 2. Alignment Verification: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor,
