@@ -1232,7 +1232,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			}
 		}
 
-		if r != nil && r.IsWrapper(n.Type) && !r.IsDeclaration(n.Type) {
+		if r != nil && (r.IsWrapper(n.Type) || r.IsDelimitedContainer(n.Type)) && !r.IsDeclaration(n.Type) {
 			firstChild := n.Children[0]
 			if firstChild.StartByte > *start && firstChild.StartByte < *end {
 				origEnd := *end
@@ -1252,7 +1252,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				return false, 0, 0
 			}
 			// For wrappers starting with a prefix identifier (like tuple_struct_pattern or class_pattern), the delimiter begins after it.
-			if firstChild.StartByte == *start && firstChild.EndByte < *end {
+			if r.IsWrapper(n.Type) && firstChild.StartByte == *start && firstChild.EndByte < *end {
 				*start = firstChild.EndByte
 				if len(n.Children) <= 1 {
 					return false, 0, 0
@@ -1399,7 +1399,7 @@ func isIndentationConstruct(n, child *treesitter.ASTNode) bool {
 	if child != nil && r.IsBlock(child.Type) {
 		return true
 	}
-	if r.IsWrapper(n.Type) || r.IsIndexed(n.Type) {
+	if r.IsWrapper(n.Type) || r.IsIndexed(n.Type) || r.IsDelimitedContainer(n.Type) {
 		return false
 	}
 	return true

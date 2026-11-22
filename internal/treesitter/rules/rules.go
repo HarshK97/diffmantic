@@ -861,7 +861,7 @@ func (r *Rules) IsContainer(nodeType string) bool {
 	if r == nil || nodeType == "" {
 		return false
 	}
-	return r.IsWrapper(nodeType) || r.IsBlock(nodeType) || r.IsUnordered(nodeType) || r.IsIndexed(nodeType)
+	return r.IsWrapper(nodeType) || r.IsBlock(nodeType) || r.IsUnordered(nodeType) || r.IsIndexed(nodeType) || r.IsDelimitedContainer(nodeType)
 }
 
 // IsContainer reports whether any registered language treats nodeType as a container.
