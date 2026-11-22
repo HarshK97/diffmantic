@@ -1709,32 +1709,30 @@ func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
 		ms := mr.Mappings
 
 		// 1. Enclosing function declaration mapped
-		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, oldAST, newAST, []byte(oldSrc), []byte(newSrc), ms.Src(),
+			"func getBinaryOperatorLabel", "func getBinaryOperatorLabel", "function_declaration",
 		)
 
 		// 2. Surrounding statements mapped in place
-		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
-			testutil.NodeQuery{Type: "for_statement", Line: 7},
-			testutil.NodeQuery{Type: "for_statement", Line: 8},
+		testutil.AssertMappedText(t, oldAST, newAST, []byte(oldSrc), []byte(newSrc), ms.Src(),
+			"for _, c := range n.Children", "for _, c := range n.Children", "for_statement",
 		)
-		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 10},
-			testutil.NodeQuery{Type: "return_statement", Line: 10},
+		testutil.AssertMappedText(t, oldAST, newAST, []byte(oldSrc), []byte(newSrc), ms.Src(),
+			"return c.Label", "return c.Label", "return_statement",
 		)
 
 		// 3. Target stationary condition mapped
-		testutil.AssertMapped(t, oldAST, newAST, ms.Src(),
-			testutil.NodeQuery{Type: "binary_expression", Line: 8, Nth: 4},
-			testutil.NodeQuery{Type: "binary_expression", Line: 9},
+		testutil.AssertMappedText(t, oldAST, newAST, []byte(oldSrc), []byte(newSrc), ms.Src(),
+			"r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type)",
+			"r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type)",
+			"binary_expression",
 		)
 
 		// 4. Edit script postprocessing must suppress the outer binary_expression delete
 		es := actions.GenerateEditScript(oldAST, newAST, ms)
 		postprocessed := Run(es, ms, oldAST, newAST)
 
-		oldOuterCond, err := testutil.FindNode(oldAST, testutil.NodeQuery{Type: "binary_expression", Line: 8, Nth: 1})
+		oldOuterCond, err := testutil.FindNodeByText(oldAST, []byte(oldSrc), "(r != nil && (r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type))) ||", "binary_expression")
 		if err != nil {
 			t.Fatalf("failed to locate old outer binary_expression: %v", err)
 		}

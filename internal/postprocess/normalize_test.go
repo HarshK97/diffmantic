@@ -1633,32 +1633,28 @@ func TestNormalize_StationaryMoveProtection(t *testing.T) {
 		ms := matchResult.Mappings
 
 		// 1. Enclosing function declaration mapped
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"function validate", "function validate", "function_declaration",
 		)
 
 		// 2. Surrounding statements mapped in place
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"const isReady = checkReady();", "const isReady = checkReady();", "lexical_declaration",
 		)
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 6},
-			testutil.NodeQuery{Type: "return_statement", Line: 6},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"return false;", "return false;", "return_statement",
 		)
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 3},
-			testutil.NodeQuery{Type: "if_statement", Line: 3},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"if (annotation", "if (annotation", "if_statement",
 		)
 
 		// 3. Target stationary operand mapped
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
-			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
+		testutil.AssertMappedTextQuery(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			testutil.TextQuery{Text: "annotation", Occurrence: 2},
+			testutil.TextQuery{Text: "annotation", Occurrence: 2},
 		)
 
-		srcAnnotation, err := testutil.FindNode(srcAST.Root(), testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+		srcAnnotation, err := testutil.FindNodeByTextQuery(srcAST.Root(), src, testutil.TextQuery{Text: "annotation", Occurrence: 2})
 		if err != nil {
 			t.Fatalf("failed to locate annotation identifier: %v", err)
 		}
@@ -1718,36 +1714,32 @@ func TestNormalize_BinaryChainOperandStationaryProtection(t *testing.T) {
 		ms := matchResult.Mappings
 
 		// 1. Enclosing Context: Function declaration maps in place
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"function processTypes", "function processTypes", "function_declaration",
 		)
 
 		// 2. Surrounding Sequence: Preceding and succeeding statements map in place
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"const originalType = type;", "const originalType = type;", "lexical_declaration",
 		)
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 9},
-			testutil.NodeQuery{Type: "return_statement", Line: 10},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"return originalType;", "return originalType;", "return_statement",
 		)
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 4},
-			testutil.NodeQuery{Type: "if_statement", Line: 5},
+		testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			"if (clone)", "if (clone)", "if_statement",
 		)
 
 		// 3. Target stationary operand mapped
-		testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 1},
-			testutil.NodeQuery{Type: "identifier", Line: 5, Nth: 1},
+		testutil.AssertMappedTextQuery(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			testutil.TextQuery{Text: "addUndefined", Occurrence: 2},
+			testutil.TextQuery{Text: "addUndefined", Occurrence: 2},
 		)
 
-		srcAddUndefined, err := testutil.FindNode(srcAST.Root(), testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 1})
+		srcAddUndefined, err := testutil.FindNodeByTextQuery(srcAST.Root(), src, testutil.TextQuery{Text: "addUndefined", Occurrence: 2})
 		if err != nil {
 			t.Fatalf("failed to locate addUndefined identifier in src: %v", err)
 		}
-		dstAddUndefined, err := testutil.FindNode(dstAST.Root(), testutil.NodeQuery{Type: "identifier", Line: 5, Nth: 1})
+		dstAddUndefined, err := testutil.FindNodeByTextQuery(dstAST.Root(), dst, testutil.TextQuery{Text: "addUndefined", Occurrence: 2})
 		if err != nil {
 			t.Fatalf("failed to locate addUndefined identifier in dst: %v", err)
 		}
@@ -1851,16 +1843,15 @@ fn helper_new(y: usize) -> usize {
 			ms := matchResult.Mappings
 
 			// 1. Surrounding context: Panel struct maps in place
-			testutil.AssertMapped(t, srcAST.Root(), dstAST.Root(), ms.Src(),
-				testutil.NodeQuery{Type: "struct_item", Line: 1},
-				testutil.NodeQuery{Type: "struct_item", Line: 2},
+			testutil.AssertMappedText(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+				"pub struct Panel", "pub struct Panel", "struct_item",
 			)
 
-			srcAttr, err := testutil.FindNode(srcAST.Root(), testutil.NodeQuery{Type: "attribute_item", Line: 5})
+			srcAttr, err := testutil.FindNodeByText(srcAST.Root(), src, "#[allow(clippy::comparison_chain)]", "attribute_item")
 			if err != nil {
 				t.Fatalf("failed to locate src attribute: %v", err)
 			}
-			dstAttr, err := testutil.FindNode(dstAST.Root(), testutil.NodeQuery{Type: "attribute_item", Line: 1})
+			dstAttr, err := testutil.FindNodeByText(dstAST.Root(), dst, "#[derive(Debug)]", "attribute_item")
 			if err != nil {
 				t.Fatalf("failed to locate dst attribute: %v", err)
 			}
@@ -1921,36 +1912,37 @@ func TestNormalizeMoves_RustLifetimeDoesNotMoveAcrossParameters(t *testing.T) {
 		part := engine.NewLinePartition(src, dst)
 		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		ms := matchResult.Mappings
-		r := rules.Get("rust")
 
 		// 1. Enclosing Context: Function declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 1},
-			testutil.NodeQuery{Type: "function_item", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"fn format_and_paint_line_number_field", "fn format_and_paint_line_number_field", "function_item",
 		)
 
 		// 2. Surrounding Sequence: style and min_field_width parameters map in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "parameter", Line: 3},
-			testutil.NodeQuery{Type: "parameter", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"style: &Style", "style: &Style", "parameter",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "parameter", Line: 4},
-			testutil.NodeQuery{Type: "parameter", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"min_field_width: usize", "min_field_width: usize", "parameter",
 		)
 
 		// 3. Body statements map in place without order disruption
-		for _, sn := range srcAST.Root().PreOrder() {
-			if sn.StartRow >= 5 && sn.EndRow <= 8 && r.IsStatement(sn.Type) {
-				dn := ms.Src()[sn]
-				if dn == nil {
-					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
-				}
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"let mut ansi_strings = Vec::new();", "let mut ansi_strings = Vec::new();", "let_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			`let mut suffix = "";`, `let mut suffix = "";`, "let_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"ansi_strings.push(suffix);", "ansi_strings.push(suffix);", "expression_statement",
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, ms.Src(),
+			testutil.TextQuery{Text: "min_field_width", Occurrence: 2},
+			testutil.TextQuery{Text: "min_field_width", Occurrence: 2},
+		)
 
 		// 4. Target: srcParam1Lifetime must NOT be emitted as a Move across rewritten parameters
-		srcParam1Lifetime, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "lifetime", Line: 2})
+		srcParam1Lifetime, err := testutil.FindNodeByTextQuery(srcAST, src, testutil.TextQuery{Text: "'a", Occurrence: 2})
 		if err != nil {
 			t.Fatalf("failed to locate src lifetime: %v", err)
 		}
@@ -2010,36 +2002,36 @@ func TestNormalizeMoves_TypeScriptTypeDoesNotMoveAcrossParameters(t *testing.T) 
 		part := engine.NewLinePartition(src, dst)
 		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		ms := matchResult.Mappings
-		r := rules.Get("typescript")
 
 		// 1. Enclosing Context: Function declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"function formatAndPaint", "function formatAndPaint", "function_declaration",
 		)
 
 		// 2. Surrounding Sequence: style and minFieldWidth parameters map in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "required_parameter", Line: 3},
-			testutil.NodeQuery{Type: "required_parameter", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"style: Style", "style: Style", "required_parameter",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "required_parameter", Line: 4},
-			testutil.NodeQuery{Type: "required_parameter", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"minFieldWidth: number", "minFieldWidth: number", "required_parameter",
 		)
 
 		// 3. Body statements map in place without order disruption
-		for _, sn := range srcAST.Root().PreOrder() {
-			if sn.StartRow >= 5 && sn.EndRow <= 8 && r.IsStatement(sn.Type) {
-				dn := ms.Src()[sn]
-				if dn == nil {
-					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
-				}
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"let ansiStrings: string[] = [];", "let ansiStrings: string[] = [];", "lexical_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			`let suffix = "";`, `let suffix = "";`, "lexical_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"ansiStrings.push(suffix);", "ansiStrings.push(suffix);", "expression_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"return minFieldWidth;", "return minFieldWidth;", "return_statement",
+		)
 
 		// 4. Target: string type in parameter 1 must NOT be emitted as a Move across rewritten parameters
-		srcParam1String, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "predefined_type", Line: 2})
+		srcParam1String, err := testutil.FindNodeByTextQuery(srcAST, src, testutil.TextQuery{Text: "string", Occurrence: 1})
 		if err != nil {
 			t.Fatalf("failed to locate string type in parameter 1: %v", err)
 		}
@@ -2095,36 +2087,33 @@ func TestNormalizeMoves_JavaTypeDoesNotMoveAcrossParameters(t *testing.T) {
 		part := engine.NewLinePartition(src, dst)
 		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		ms := matchResult.Mappings
-		r := rules.Get("java")
 
 		// 1. Enclosing Context: method declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "method_declaration", Line: 2},
-			testutil.NodeQuery{Type: "method_declaration", Line: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"void formatAndPaint", "void formatAndPaint", "method_declaration",
 		)
 
 		// 2. Surrounding Sequence: style and minFieldWidth parameters map in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "formal_parameter", Line: 4},
-			testutil.NodeQuery{Type: "formal_parameter", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"Style style", "Style style", "formal_parameter",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "formal_parameter", Line: 5},
-			testutil.NodeQuery{Type: "formal_parameter", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"int minFieldWidth", "int minFieldWidth", "formal_parameter",
 		)
 
 		// 3. Body statements map in place without order disruption
-		for _, sn := range srcAST.Root().PreOrder() {
-			if sn.StartRow >= 6 && sn.EndRow <= 9 && r.IsStatement(sn.Type) {
-				dn := ms.Src()[sn]
-				if dn == nil {
-					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
-				}
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			`String msg = "status";`, `String msg = "status";`, "local_variable_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"doInitial();", "doInitial();", "expression_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"finalize(msg);", "finalize(msg);", "expression_statement",
+		)
 
 		// 4. Target: String type in parameter 1 must NOT be emitted as a Move across rewritten parameters
-		srcParam1String, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "type_identifier", Line: 3, Nth: 2})
+		srcParam1String, err := testutil.FindNodeByTextQuery(srcAST, src, testutil.TextQuery{Text: "String", Occurrence: 1})
 		if err != nil {
 			t.Fatalf("failed to locate String type in parameter 1: %v", err)
 		}
@@ -2176,36 +2165,33 @@ func TestNormalizeMoves_ZigTypeDoesNotMoveAcrossParameters(t *testing.T) {
 		part := engine.NewLinePartition(src, dst)
 		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		ms := matchResult.Mappings
-		r := rules.Get("zig")
 
 		// 1. Enclosing Context: function declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"pub fn formatAndPaint", "pub fn formatAndPaint", "function_declaration",
 		)
 
 		// 2. Surrounding Sequence: style and min_field_width parameters map in place
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "parameter", Line: 3},
-			testutil.NodeQuery{Type: "parameter", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"style: Style", "style: Style", "parameter",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, ms.Src(),
-			testutil.NodeQuery{Type: "parameter", Line: 4},
-			testutil.NodeQuery{Type: "parameter", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"min_field_width: usize", "min_field_width: usize", "parameter",
 		)
 
 		// 3. Body statements map in place without order disruption
-		for _, sn := range srcAST.Root().PreOrder() {
-			if sn.StartRow >= 5 && sn.EndRow <= 8 && r.IsStatement(sn.Type) {
-				dn := ms.Src()[sn]
-				if dn == nil {
-					t.Errorf("expected body statement on row %d to map in place, got unmapped", sn.StartRow)
-				}
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"const x = 1;", "const x = 1;", "variable_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"doInitial();", "doInitial();", "expression_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, ms.Src(),
+			"return min_field_width;", "return min_field_width;",
+		)
 
 		// 4. Target: u8 primitive type in parameter 1 must NOT be emitted as a Move across rewritten parameters
-		srcParam1U8, err := testutil.FindNode(srcAST, testutil.NodeQuery{Type: "builtin_type", Line: 2})
+		srcParam1U8, err := testutil.FindNodeByText(srcAST, src, "u8", "builtin_type")
 		if err != nil {
 			t.Fatalf("failed to locate u8 type in parameter 1: %v", err)
 		}
