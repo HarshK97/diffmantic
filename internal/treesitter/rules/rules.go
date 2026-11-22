@@ -525,9 +525,9 @@ func (r *Rules) IsKeyword(nodeType, label string) bool {
 	return slices.Contains(r.Keywords, nodeType) || (label != "" && slices.Contains(r.Keywords, label))
 }
 
-// IsPair checks if nodeType represents a key-value property pair.
+// IsPair reports whether nodeType represents a key-value property pair.
 func (r *Rules) IsPair(nodeType string) bool {
-	if r == nil {
+	if r == nil || nodeType == "" {
 		return false
 	}
 	if len(r.pairsSet) > 0 {
@@ -535,6 +535,19 @@ func (r *Rules) IsPair(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Pairs, nodeType)
+}
+
+// IsPair reports whether nodeType is configured as a pair in any language rule set.
+func IsPair(nodeType string) bool {
+	if nodeType == "" {
+		return false
+	}
+	for _, r := range registry {
+		if r.IsPair(nodeType) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsUnordered checks if child order doesn't matter for this container.
