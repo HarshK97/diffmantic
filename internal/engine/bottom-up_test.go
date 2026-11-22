@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -9,10 +11,23 @@ import (
 )
 
 func TestComputeAffinity_HardConstraints(t *testing.T) {
-	leaf1 := testutil.Leaf("id", "x")
-	leaf2 := testutil.Leaf("id", "x")
-	t1 := testutil.Node("block", "", leaf1)
-	c := testutil.Node("block", "", leaf2)
+	code1 := "package main\n\nfunc f() {\n\t{\n\t\tx := 1\n\t\t_ = x\n\t}\n}\n"
+	code2 := "package main\n\nfunc f() {\n\t{\n\t\tx := 1\n\t\t_ = x\n\t}\n\tfoo()\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+
+	blocks1 := findAllNodesByType(root1, "block")
+	blocks2 := findAllNodesByType(root2, "block")
+	if len(blocks1) < 2 || len(blocks2) < 2 {
+		t.Fatalf("expected at least 2 blocks each")
+	}
+	t1 := blocks1[1] // inner block
+	c := blocks2[1]  // inner block
+	leaf1 := findFirstNode(t1, func(n *treesitter.ASTNode) bool { return n.Label == "x" })
+	leaf2 := findFirstNode(c, func(n *treesitter.ASTNode) bool { return n.Label == "x" })
+	if leaf1 == nil || leaf2 == nil {
+		t.Fatalf("expected x leaves")
+	}
 
 	m := NewMapping()
 
@@ -25,7 +40,7 @@ func TestComputeAffinity_HardConstraints(t *testing.T) {
 	m.Add(leaf1, leaf2)
 
 	// 2. Already mapped destination candidate should return -1.0
-	cMapped := testutil.Node("block", "")
+	cMapped := blocks2[0] // outer block
 	m.Add(t1, cMapped)
 	scoreAlreadyMapped := computeAffinity(t1, cMapped, m, DefaultAffinityWeights, false)
 	if scoreAlreadyMapped != -1.0 {
@@ -35,7 +50,10 @@ func TestComputeAffinity_HardConstraints(t *testing.T) {
 	// 3. Incompatible types should return -1.0
 	m2 := NewMapping()
 	m2.Add(leaf1, leaf2)
-	cDiffType := testutil.Node("expression_statement", "", leaf2)
+	cDiffType := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "expression_statement" })
+	if cDiffType == nil {
+		t.Fatal("failed to find expression_statement")
+	}
 	scoreDiffType := computeAffinity(t1, cDiffType, m2, DefaultAffinityWeights, false)
 	if scoreDiffType != -1.0 {
 		t.Errorf("expected -1.0 for incompatible types, got %f", scoreDiffType)
@@ -43,26 +61,54 @@ func TestComputeAffinity_HardConstraints(t *testing.T) {
 }
 
 func TestComputeAffinity_ScopeProximity(t *testing.T) {
-	l1 := testutil.Leaf("id", "val")
-	l2 := testutil.Leaf("id", "val")
-	b1 := testutil.Node("block", "", l1)
-	b2 := testutil.Node("block", "", l2)
+	code1 := `package main
 
-	scopeA1 := testutil.Node("function_declaration", "", b1)
-	scopeA2 := testutil.Node("function_declaration", "", b2)
+func fnA() {
+	val := 1
+	_ = val
+}
+
+func fnB() {
+	val := 1
+	_ = val
+}
+`
+	code2 := `package main
+
+func fnA() {
+	val := 1
+	_ = val
+}
+
+func fnB() {
+	val := 1
+	_ = val
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+
+	funcs1 := findAllNodesByType(root1, "function_declaration")
+	funcs2 := findAllNodesByType(root2, "function_declaration")
+	if len(funcs1) < 2 || len(funcs2) < 2 {
+		t.Fatalf("expected 2 functions")
+	}
+	scopeA1, scopeB1 := funcs1[0], funcs1[1]
+	scopeA2, scopeB2 := funcs2[0], funcs2[1]
+
+	b1 := findFirstNode(scopeA1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	b2 := findFirstNode(scopeA2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	b3 := findFirstNode(scopeB2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	l1 := findFirstNode(b1, func(n *treesitter.ASTNode) bool { return n.Label == "val" })
+	l2 := findFirstNode(b2, func(n *treesitter.ASTNode) bool { return n.Label == "val" })
+	l3 := findFirstNode(b3, func(n *treesitter.ASTNode) bool { return n.Label == "val" })
 
 	m := NewMapping()
 	m.Add(l1, l2)
 	m.Add(scopeA1, scopeA2)
 
 	scoreInScope := computeAffinity(b1, b2, m, DefaultAffinityWeights, false)
-
-	l3 := testutil.Leaf("id", "val")
-	b3 := testutil.Node("block", "", l3)
-	scopeB2 := testutil.Node("function_declaration", "", b3)
-	scopeB1 := testutil.Node("function_declaration", "")
-	_ = testutil.Node("root", "", scopeA1, scopeB1)
-	_ = testutil.Node("root", "", scopeA2, scopeB2)
 
 	mCross := NewMapping()
 	mCross.Add(l1, l3)
@@ -77,23 +123,27 @@ func TestComputeAffinity_ScopeProximity(t *testing.T) {
 }
 
 func TestComputeAffinity_PositionalAlignment(t *testing.T) {
-	l1 := testutil.Leaf("id", "a")
-	l2 := testutil.Leaf("id", "a")
-	item1 := testutil.Node("item", "", l1)
-	item2 := testutil.Node("item", "", l2)
-	parent1 := testutil.Node("container", "", item1, testutil.Node("item", ""))
-	parent2 := testutil.Node("container", "", item2, testutil.Node("item", ""))
+	code1 := "package main\n\nfunc f() {\n\t_ = []int{a, b}\n}\n"
+	code2 := "package main\n\nfunc f() {\n\t_ = []int{a, b}\n}\n"
+	codeShifted := "package main\n\nfunc f() {\n\t_ = []int{b, a}\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+	rootShifted := parseSnippet(t, codeShifted, "test.go")
+
+	item1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	item2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	item2Shifted := findFirstNode(rootShifted, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	if item1 == nil || item2 == nil || item2Shifted == nil {
+		t.Fatalf("failed to find 'a' nodes")
+	}
 
 	m := NewMapping()
-	m.Add(l1, l2)
+	m.Add(item1, item2)
 
 	scoreSamePos := computeAffinity(item1, item2, m, DefaultAffinityWeights, false)
 
-	// Shift item2 to index 1
-	item2Shifted := testutil.Node("item", "", l2)
-	_ = testutil.Node("container", "", testutil.Node("item", ""), item2Shifted)
 	mShifted := NewMapping()
-	mShifted.Add(l1, l2)
+	mShifted.Add(item1, item2Shifted)
 
 	scoreShifted := computeAffinity(item1, item2Shifted, mShifted, DefaultAffinityWeights, false)
 	if scoreSamePos < scoreShifted {
@@ -101,26 +151,36 @@ func TestComputeAffinity_PositionalAlignment(t *testing.T) {
 	}
 
 	// Unordered parent container ignores positional differences
-	parent1.IsUnordered = true
-	parent2.IsUnordered = true
-	scoreUnordered := computeAffinity(item1, item2, m, DefaultAffinityWeights, false)
-	if scoreUnordered < scoreSamePos {
-		t.Errorf("expected unordered score (%f) to be neutral/maximal", scoreUnordered)
+	parent1 := item1.Parent
+	parent2 := item2.Parent
+	if parent1 != nil && parent2 != nil {
+		parent1.IsUnordered = true
+		parent2.IsUnordered = true
+		scoreUnordered := computeAffinity(item1, item2, m, DefaultAffinityWeights, false)
+		if scoreUnordered < scoreSamePos {
+			t.Errorf("expected unordered score (%f) to be neutral/maximal", scoreUnordered)
+		}
 	}
 }
 
 func TestComputeAffinity_KeyBonus(t *testing.T) {
-	k1 := testutil.Leaf("string", "\"name\"")
-	v1 := testutil.Leaf("string", "\"alice\"")
-	pair1 := testutil.Node("pair", "", k1, v1)
+	py1 := "d = {'name': 'alice'}\n"
+	py2 := "d = {'name': 'alice'}\n"
+	py3 := "d = {'other': 'alice'}\n"
+	root1 := parseSnippet(t, py1, "test.py")
+	root2 := parseSnippet(t, py2, "test.py")
+	root3 := parseSnippet(t, py3, "test.py")
 
-	k2 := testutil.Leaf("string", "\"name\"")
-	v2 := testutil.Leaf("string", "\"alice\"")
-	pair2 := testutil.Node("pair", "", k2, v2)
+	pair1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "pair" })
+	pair2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "pair" })
+	pair3 := findFirstNode(root3, func(n *treesitter.ASTNode) bool { return n.Type == "pair" })
+	if pair1 == nil || pair2 == nil || pair3 == nil {
+		t.Fatalf("failed to find pair nodes")
+	}
 
-	k3 := testutil.Leaf("string", "\"other\"")
-	v3 := testutil.Leaf("string", "\"alice\"")
-	pair3 := testutil.Node("pair", "", k3, v3)
+	v1 := pair1.Children[len(pair1.Children)-1]
+	v2 := pair2.Children[len(pair2.Children)-1]
+	v3 := pair3.Children[len(pair3.Children)-1]
 
 	m := NewMapping()
 	m.Add(v1, v2)
@@ -137,14 +197,32 @@ func TestComputeAffinity_KeyBonus(t *testing.T) {
 }
 
 func TestComputeAffinity_SmallSubtreeScopeGate(t *testing.T) {
-	l1 := testutil.Leaf("id", "x")
-	l2 := testutil.Leaf("id", "x")
-	sub1 := testutil.Node("binary_expression", "", l1)
-	sub2 := testutil.Node("binary_expression", "", l2)
+	code1 := "package main\n\nfunc f1() {\n\t_ = x + y\n}\n\nfunc other() {}\n"
+	code2 := "package main\n\nfunc f2() {\n\t_ = x + y\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	anc1 := testutil.Node("func", "", sub1)
-	_ = testutil.Node("func", "", sub2)
-	otherAnc := testutil.Node("func", "")
+	sub1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	sub2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	if sub1 == nil || sub2 == nil {
+		t.Fatalf("failed to find binary_expression")
+	}
+
+	anc1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool {
+		return n.Type == "function_declaration" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "f1" }) != nil
+	})
+	otherAnc := findFirstNode(root1, func(n *treesitter.ASTNode) bool {
+		return n.Type == "function_declaration" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "other" }) != nil
+	})
+	if anc1 == nil || otherAnc == nil {
+		t.Fatalf("failed to find function declarations")
+	}
+
+	l1 := findFirstNode(sub1, func(n *treesitter.ASTNode) bool { return n.Label == "x" })
+	l2 := findFirstNode(sub2, func(n *treesitter.ASTNode) bool { return n.Label == "x" })
+	if l1 == nil || l2 == nil {
+		t.Fatalf("failed to find 'x' leaves")
+	}
 
 	m := NewMapping()
 	m.Add(l1, l2)
@@ -156,40 +234,39 @@ func TestComputeAffinity_SmallSubtreeScopeGate(t *testing.T) {
 	}
 }
 
-// TestComputeAffinity_DepthPenaltyFires verifies that when both nodes have a mapped
-// ancestor in scope and their relative depths differ, the depth penalty fires and reduces
-// the cross-depth score below the same-depth score.
 func TestComputeAffinity_DepthPenaltyFires(t *testing.T) {
-	sharedLeaf1 := testutil.Leaf("id", "shared")
-	sharedLeaf2 := testutil.Leaf("id", "shared")
+	codeSame1 := "package main\n\nfunc f() {\n\t{\n\t\tshared := 1\n\t\tx := 2\n\t\t_ = shared\n\t\t_ = x\n\t}\n}\n"
+	codeSame2 := "package main\n\nfunc f() {\n\t{\n\t\tshared := 1\n\t\tx := 2\n\t\t_ = shared\n\t\t_ = x\n\t}\n}\n"
+	rootSame1 := parseSnippet(t, codeSame1, "test.go")
+	rootSame2 := parseSnippet(t, codeSame2, "test.go")
 
-	// Same-depth: both blocks are direct children of their parents (depth 1).
-	block1 := testutil.Node("block", "", sharedLeaf1, testutil.Leaf("id", "x"))
-	block2 := testutil.Node("block", "", sharedLeaf2, testutil.Leaf("id", "x"))
-	parent1 := testutil.Node("func", "", block1)
-	parent2 := testutil.Node("func", "", block2)
+	blocks1 := findAllNodesByType(rootSame1, "block")
+	blocks2 := findAllNodesByType(rootSame2, "block")
+	block1 := blocks1[1]
+	block2 := blocks2[1]
+	parent1 := findFirstNode(rootSame1, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	parent2 := findFirstNode(rootSame2, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
 
-	// Cross-depth: block1Deep is nested under an if-node inside parent1Deep (depth 2).
-	// block2Shallow is a direct child of parent2Shallow (depth 1).
-	sharedLeaf1d := testutil.Leaf("id", "shared")
-	sharedLeaf2d := testutil.Leaf("id", "shared")
-	block1Deep := testutil.Node("block", "", sharedLeaf1d, testutil.Leaf("id", "x"))
-	ifNode := testutil.Node("if", "", testutil.Leaf("id", "cond"), block1Deep) // block1Deep.Parent = ifNode
-	parent1Deep := testutil.Node("func", "", ifNode)                           // block1Deep depth = 2
-
-	block2Shallow := testutil.Node("block", "", sharedLeaf2d, testutil.Leaf("id", "x"))
-	parent2Shallow := testutil.Node("func", "", block2Shallow) // block2Shallow depth = 1
+	sharedLeaf1 := findFirstNode(block1, func(n *treesitter.ASTNode) bool { return n.Label == "shared" })
+	sharedLeaf2 := findFirstNode(block2, func(n *treesitter.ASTNode) bool { return n.Label == "shared" })
 
 	mSame := NewMapping()
 	mSame.Add(sharedLeaf1, sharedLeaf2)
 	mSame.Add(parent1, parent2)
 	scoreSameDepth := computeAffinity(block1, block2, mSame, DefaultAffinityWeights, false)
 
-	// depthPenalty = min(0.30, DepthCoeff × |2−1|) = 0.20 → cross-depth score is lower.
+	// Cross-depth: block1Deep is nested under if inside parent1Deep.
+	codeDeep := "package main\n\nfunc f() {\n\tif cond {\n\t\t{\n\t\t\tshared := 1\n\t\t\tx := 2\n\t\t\t_ = shared\n\t\t\t_ = x\n\t\t}\n\t}\n}\n"
+	rootDeep := parseSnippet(t, codeDeep, "test.go")
+	blocksDeep := findAllNodesByType(rootDeep, "block")
+	block1Deep := blocksDeep[len(blocksDeep)-1]
+	parent1Deep := findFirstNode(rootDeep, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	sharedLeaf1d := findFirstNode(block1Deep, func(n *treesitter.ASTNode) bool { return n.Label == "shared" })
+
 	mDeep := NewMapping()
-	mDeep.Add(sharedLeaf1d, sharedLeaf2d)
-	mDeep.Add(parent1Deep, parent2Shallow)
-	scoreCrossDepth := computeAffinity(block1Deep, block2Shallow, mDeep, DefaultAffinityWeights, false)
+	mDeep.Add(sharedLeaf1d, sharedLeaf2)
+	mDeep.Add(parent1Deep, parent2)
+	scoreCrossDepth := computeAffinity(block1Deep, block2, mDeep, DefaultAffinityWeights, false)
 
 	if scoreSameDepth <= scoreCrossDepth {
 		t.Errorf("depth penalty did not fire: same-depth %f should exceed cross-depth %f", scoreSameDepth, scoreCrossDepth)
@@ -197,41 +274,46 @@ func TestComputeAffinity_DepthPenaltyFires(t *testing.T) {
 }
 
 func TestContestContainers_SiblingArbitration(t *testing.T) {
-	// Root array containers
-	// T1 array: [t1Early, t1Stationary]
-	// T2 array: [t2]
+	code1 := `const a = [
+  {"name": "early", "url": "url_match"},
+  {"name": "stationary", "desc": "desc_match", "fileMatch": "file_match"}
+];
+`
+	code2 := `const b = [
+  {"name": "stationary_updated", "desc": "desc_match", "fileMatch": "file_match", "url": "url_match"}
+];
+`
+	root1 := parseSnippet(t, code1, "test.js")
+	root2 := parseSnippet(t, code2, "test.js")
 
-	leafURL1 := testutil.Leaf("string", "\"url_match\"")
-	t1Early := testutil.Node("object", "",
-		testutil.Node("pair", "", testutil.Leaf("string", "\"name\""), testutil.Leaf("string", "\"early\"")),
-		testutil.Node("pair", "", testutil.Leaf("string", "\"url\""), leafURL1),
-	)
+	array1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "array" })
+	array2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "array" })
+	if array1 == nil || array2 == nil {
+		t.Fatalf("expected arrays in root1 and root2")
+	}
 
-	leafDesc1 := testutil.Leaf("string", "\"desc_match\"")
-	leafMatch1 := testutil.Leaf("string", "\"file_match\"")
-	t1Stationary := testutil.Node("object", "",
-		testutil.Node("pair", "", testutil.Leaf("string", "\"name\""), testutil.Leaf("string", "\"stationary\"")),
-		testutil.Node("pair", "", testutil.Leaf("string", "\"desc\""), leafDesc1),
-		testutil.Node("pair", "", testutil.Leaf("string", "\"fileMatch\""), leafMatch1),
-	)
+	objects1 := findAllNodesByType(array1, "object")
+	if len(objects1) < 2 {
+		t.Fatalf("expected at least 2 objects in root1, got %d", len(objects1))
+	}
+	t1Early := objects1[0]
+	t1Stationary := objects1[1]
 
-	root1 := testutil.Node("array", "", t1Early, t1Stationary)
+	t2 := findFirstNode(array2, func(n *treesitter.ASTNode) bool { return n.Type == "object" })
+	if t2 == nil {
+		t.Fatal("failed to find object in root2")
+	}
 
-	leafURL2 := testutil.Leaf("string", "\"url_match\"")
-	leafDesc2 := testutil.Leaf("string", "\"desc_match\"")
-	leafMatch2 := testutil.Leaf("string", "\"file_match\"")
-	t2 := testutil.Node("object", "",
-		testutil.Node("pair", "", testutil.Leaf("string", "\"name\""), testutil.Leaf("string", "\"stationary_updated\"")),
-		testutil.Node("pair", "", testutil.Leaf("string", "\"desc\""), leafDesc2),
-		testutil.Node("pair", "", testutil.Leaf("string", "\"fileMatch\""), leafMatch2),
-		testutil.Node("pair", "", testutil.Leaf("string", "\"url\""), leafURL2),
-	)
-
-	root2 := testutil.Node("array", "", t2)
+	leafURL1 := findFirstNode(t1Early, func(n *treesitter.ASTNode) bool { return n.Label == `"url_match"` })
+	leafURL2 := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Label == `"url_match"` })
+	leafDesc1 := findFirstNode(t1Stationary, func(n *treesitter.ASTNode) bool { return n.Label == `"desc_match"` })
+	leafDesc2 := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Label == `"desc_match"` })
+	leafMatch1 := findFirstNode(t1Stationary, func(n *treesitter.ASTNode) bool { return n.Label == `"file_match"` })
+	leafMatch2 := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Label == `"file_match"` })
 
 	m := NewMapping()
 	m.Add(root1, root2)
-	// TopDown matches
+	m.Add(array1, array2)
 	m.Add(leafURL1, leafURL2)
 	m.Add(leafDesc1, leafDesc2)
 	m.Add(leafMatch1, leafMatch2)
@@ -254,17 +336,36 @@ func TestContestContainers_SiblingArbitration(t *testing.T) {
 }
 
 func TestContestContainers_VerticalHierarchy(t *testing.T) {
-	inner1 := testutil.Node("block", "", testutil.Leaf("id", "throw"))
-	outer1 := testutil.Node("block", "", testutil.Node("if", "", inner1))
-	root1 := testutil.Node("func", "", outer1)
+	code1 := "package main\n\nfunc f() {\n\tif true {\n\t\tpanic(\"throw\")\n\t}\n}\n"
+	code2 := "package main\n\nfunc f() {\n\tpanic(\"throw\")\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	inner2 := testutil.Leaf("id", "throw")
-	outer2 := testutil.Node("block", "", inner2)
-	root2 := testutil.Node("func", "", outer2)
+	func1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	func2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	if func1 == nil || func2 == nil {
+		t.Fatal("failed to find function_declaration")
+	}
+
+	blocks1 := findAllNodesByType(root1, "block")
+	if len(blocks1) < 2 {
+		t.Fatalf("expected at least 2 blocks in root1")
+	}
+	outer1 := blocks1[0]
+	inner1 := blocks1[1]
+
+	outer2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	if outer2 == nil {
+		t.Fatal("failed to find block in root2")
+	}
+
+	innerThrow1 := findFirstNode(inner1, func(n *treesitter.ASTNode) bool { return n.Label == `"throw"` })
+	innerThrow2 := findFirstNode(outer2, func(n *treesitter.ASTNode) bool { return n.Label == `"throw"` })
 
 	m := NewMapping()
 	m.Add(root1, root2)
-	m.Add(inner1.Children[0], inner2)
+	m.Add(func1, func2)
+	m.Add(innerThrow1, innerThrow2)
 	m.Add(inner1, outer2) // Inner block greedily stole outer function body
 
 	ContestContainers(root1, root2, m, nil)
@@ -278,25 +379,23 @@ func TestContestContainers_VerticalHierarchy(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_UnmatchedBodyGuard(t *testing.T) {
-	p1 := testutil.Node("parameter_list", "", testutil.Leaf("identifier", "t"))
-	p1.Language = "go"
-	b1 := testutil.Node("block", "", testutil.Leaf("identifier", "statementInOld"))
-	b1.Language = "go"
-	f1 := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "Foo"), p1, b1)
-	f1.Language = "go"
+	code1 := "package main\n\nfunc Foo(t int) {\n\tstatementInOld()\n}\n"
+	code2 := "package main\n\nfunc Bar(t int) {\n\tstatementInNew()\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	p2 := testutil.Node("parameter_list", "", testutil.Leaf("identifier", "t"))
-	p2.Language = "go"
-	b2 := testutil.Node("block", "", testutil.Leaf("identifier", "statementInNew"))
-	b2.Language = "go"
-	f2 := testutil.Node("function_declaration", "", testutil.Leaf("identifier", "Bar"), p2, b2)
-	f2.Language = "go"
+	f1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	f2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	p1 := findFirstNode(f1, func(n *treesitter.ASTNode) bool { return n.Type == "parameter_list" })
+	p2 := findFirstNode(f2, func(n *treesitter.ASTNode) bool { return n.Type == "parameter_list" })
 
 	m := NewMapping()
 	m.Add(p1, p2)
-	m.Add(p1.Children[0], p2.Children[0])
+	t1 := findFirstNode(p1, func(n *treesitter.ASTNode) bool { return n.Label == "t" })
+	t2 := findFirstNode(p2, func(n *treesitter.ASTNode) bool { return n.Label == "t" })
+	m.Add(t1, t2)
 
-	RollupMatchedContainers(f1, f2, m)
+	RollupMatchedContainers(root1, root2, m)
 
 	if m.Get(f1) != nil {
 		t.Errorf("expected function_declaration with unmatched body not to roll up, but got mapped to %v", m.Get(f1))
@@ -304,39 +403,34 @@ func TestRollupMatchedContainers_UnmatchedBodyGuard(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_MassWeighting(t *testing.T) {
-	// t1 (short_var_declaration) has:
-	// Child 1: operator leaf ":=" (size 1)
-	// Child 2: compound RHS expression (size 3)
-	leafOp1 := testutil.Leaf("assignment_operator_literal", ":=")
-	rhsCompound1 := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "a"),
-		testutil.Leaf("arithmetic_operator_literal", "+"),
-		testutil.Leaf("identifier", "b"),
-	)
-	t1 := testutil.Node("short_var_declaration", "", leafOp1, rhsCompound1)
-	root1 := testutil.Node("source_file", "", t1)
+	code1 := "package main\n\nfunc f() {\n\tx = a + b\n}\n"
+	code2 := "package main\n\nfunc f() {\n\tx = other\n\tx = a + b\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	// In T2:
-	// c2Wrong has a child matched to leafOp1 (1 vote)
-	leafOp2 := testutil.Leaf("assignment_operator_literal", ":=")
-	c2Wrong := testutil.Node("short_var_declaration", "", leafOp2, testutil.Leaf("identifier", "other"))
+	func1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	func2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	block1 := findFirstNode(func1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	block2 := findFirstNode(func2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
-	// c2Right has a child matched to rhsCompound1 (3 votes from subtree mass)
-	rhsCompound2 := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "a"),
-		testutil.Leaf("arithmetic_operator_literal", "+"),
-		testutil.Leaf("identifier", "b"),
-	)
-	c2Right := testutil.Node("short_var_declaration", "", testutil.Leaf("assignment_operator_literal", ":="), rhsCompound2)
-	root2 := testutil.Node("source_file", "", c2Wrong, c2Right)
+	decl1 := findAllNodesByType(root1, "assignment_statement")
+	t1 := decl1[0] // x = a + b
+	bin1 := findFirstNode(t1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+
+	decl2 := findAllNodesByType(root2, "assignment_statement")
+	c2Wrong := decl2[0] // x = other
+	c2Right := decl2[1] // x = a + b
+	bin2 := findFirstNode(c2Right, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+
+	leafOp1 := findFirstNode(t1, func(n *treesitter.ASTNode) bool { return n.Label == "=" })
+	leafOp2 := findFirstNode(c2Wrong, func(n *treesitter.ASTNode) bool { return n.Label == "=" })
 
 	m := NewMapping()
 	m.Add(root1, root2)
+	m.Add(func1, func2)
+	m.Add(block1, block2)
 	m.Add(leafOp1, leafOp2)
-	m.Add(rhsCompound1, rhsCompound2)
-	m.Add(rhsCompound1.Children[0], rhsCompound2.Children[0])
-	m.Add(rhsCompound1.Children[1], rhsCompound2.Children[1])
-	m.Add(rhsCompound1.Children[2], rhsCompound2.Children[2])
+	addIsomorphicPairs(bin1, bin2, m)
 
 	RollupMatchedContainers(root1, root2, m)
 
@@ -346,34 +440,38 @@ func TestRollupMatchedContainers_MassWeighting(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_TieBreaking_ScopeAffinity(t *testing.T) {
-	// t1 is inside func1_src
-	t1Child := testutil.Leaf("identifier", "x")
-	t1 := testutil.Node("assignment_statement", "", t1Child)
-	b1 := testutil.Node("block", "", t1)
-	func1Src := testutil.Node("function_declaration", "", b1)
-	root1 := testutil.Node("source_file", "", func1Src)
+	code1 := `package main
 
-	// T2: func1_dst (mapped to func1_src) and func2_dst (unrelated function)
-	candInScopeChild := testutil.Leaf("identifier", "x")
-	candInScope := testutil.Node("assignment_statement", "", candInScopeChild)
-	b2 := testutil.Node("block", "", candInScope)
-	func1Dst := testutil.Node("function_declaration", "", b2)
+func func1() {
+	x = 1
+}
+`
+	code2 := `package main
 
-	candForeignChild := testutil.Leaf("identifier", "x")
-	candForeign := testutil.Node("assignment_statement", "", candForeignChild)
-	b3 := testutil.Node("block", "", candForeign)
-	func2Dst := testutil.Node("function_declaration", "", b3)
+func func1() {
+	x = 1
+}
 
-	root2 := testutil.Node("source_file", "", func1Dst, func2Dst)
+func func2() {
+	x = 1
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	funcs1 := findAllNodesByType(root1, "function_declaration")
+	funcs2 := findAllNodesByType(root2, "function_declaration")
+	func1Src := funcs1[0]
+	func1Dst, func2Dst := funcs2[0], funcs2[1]
+
+	t1 := findFirstNode(func1Src, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	candInScope := findFirstNode(func1Dst, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	candForeign := findFirstNode(func2Dst, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
 
 	m := NewMapping()
 	m.Add(root1, root2)
 	m.Add(func1Src, func1Dst)
 
-	// Both candidate parents get equal votes
 	r := rules.Get("go")
 	superior := isSuperiorCandidate(candInScope, candForeign, t1, m, r)
 	if !superior {
@@ -387,22 +485,25 @@ func TestRollupMatchedContainers_TieBreaking_ScopeAffinity(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_TieBreaking_LineDistance(t *testing.T) {
-	t1Child := testutil.Leaf("identifier", "x")
-	t1 := testutil.Node("assignment_statement", "", t1Child)
-	t1.StartRow = 10
+	code1 := `package main
 
-	candCloseChild := testutil.Leaf("identifier", "x")
-	candClose := testutil.Node("assignment_statement", "", candCloseChild)
-	candClose.StartRow = 12 // distance 2
+func f() {
+	x = 1
+}
+`
+	code2 := "package main\n\nfunc f() {\n\tx = 1\n" +
+		strings.Repeat("\n", 20) +
+		"\tx = 1\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	candFarChild := testutil.Leaf("identifier", "x")
-	candFar := testutil.Node("assignment_statement", "", candFarChild)
-	candFar.StartRow = 35 // distance 25
-
-	root1 := testutil.Node("source_file", "", t1)
-	root2 := testutil.Node("source_file", "", candClose, candFar)
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	t1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	stmts2 := findAllNodesByType(root2, "assignment_statement")
+	if len(stmts2) < 2 {
+		t.Fatalf("expected 2 assignment_statements in root2")
+	}
+	candClose := stmts2[0]
+	candFar := stmts2[1]
 
 	m := NewMapping()
 	m.Add(root1, root2)
@@ -417,24 +518,29 @@ func TestRollupMatchedContainers_TieBreaking_LineDistance(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_TieBreaking_NodeID(t *testing.T) {
-	t1Child := testutil.Leaf("identifier", "x")
-	t1 := testutil.Node("assignment_statement", "", t1Child)
-	t1.StartRow = 10
+	code1 := `package main
 
-	candFirstChild := testutil.Leaf("identifier", "x")
-	candFirst := testutil.Node("assignment_statement", "", candFirstChild)
-	candFirst.StartRow = 10
+func f() {
+	x = 1
+}
+`
+	code2 := `package main
 
-	candSecondChild := testutil.Leaf("identifier", "x")
-	candSecond := testutil.Node("assignment_statement", "", candSecondChild)
-	candSecond.StartRow = 10
+func f() {
+	x = 1; x = 1
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	root1 := testutil.Node("source_file", "", t1)
-	root2 := testutil.Node("source_file", "", candFirst, candSecond)
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	t1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	stmts2 := findAllNodesByType(root2, "assignment_statement")
+	if len(stmts2) < 2 {
+		t.Fatalf("expected 2 assignment_statements in root2")
+	}
+	candFirst := stmts2[0]
+	candSecond := stmts2[1]
 
-	// Since candFirst comes before candSecond in root2, candFirst.ID < candSecond.ID
 	if candFirst.ID >= candSecond.ID {
 		t.Fatalf("expected candFirst.ID (%d) < candSecond.ID (%d)", candFirst.ID, candSecond.ID)
 	}
@@ -452,94 +558,49 @@ func TestRollupMatchedContainers_TieBreaking_NodeID(t *testing.T) {
 }
 
 func TestContestContainers_VerticalReclaim(t *testing.T) {
-	// Source tree:
-	// block1 contains:
-	//   if_stmt -> block -> currentT1 (assignment_statement "pairCount = len(pairs)")
-	//   candidate (assignment_statement "s.cpySrcToDst = make(...)")
-	lhsOld := testutil.Node("expression_list", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "s"),
-			testutil.Leaf("field_identifier", "cpySrcToDst"),
-		),
-	)
-	opOld := testutil.Leaf("assignment_operator_literal", "=")
-	rhsOld := testutil.Node("expression_list", "",
-		testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "make"),
-			testutil.Node("argument_list", "",
-				testutil.Node("map_type", "",
-					testutil.Leaf("map", "map"),
-					testutil.Leaf("type_identifier", "key"),
-					testutil.Leaf("type_identifier", "val"),
-				),
-				testutil.Leaf("identifier", "pairCount"),
-			),
-		),
-	)
-	candidate := testutil.Node("assignment_statement", "", lhsOld, opOld, rhsOld)
+	code1 := `package main
 
-	lhsDecomp := testutil.Node("expression_list", "", testutil.Leaf("identifier", "pairCount"))
-	opDecomp := testutil.Leaf("assignment_operator_literal", "=")
-	rhsDecomp := testutil.Node("expression_list", "",
-		testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "len"),
-			testutil.Node("argument_list", "", testutil.Leaf("identifier", "pairs")),
-		),
-	)
-	currentT1 := testutil.Node("assignment_statement", "", lhsDecomp, opDecomp, rhsDecomp)
-	ifBlock := testutil.Node("block", "", currentT1)
-	ifStmt := testutil.Node("if_statement", "", ifBlock)
+func f() {
+	if true {
+		pairCount = len(pairs)
+	}
+	s.cpySrcToDst = make(map[key]val, pairCount)
+}
+`
+	code2 := `package main
 
-	block1 := testutil.Node("block", "", ifStmt, candidate)
-	root1 := testutil.Node("source_file", "", block1)
-	root1.Language = "go"
+func f() {
+	s.cpySrcToDst = make(map[key]val, len(pairs))
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	// Destination tree:
-	// block2 contains:
-	//   t2 (assignment_statement "s.cpySrcToDst = make(map[...], len(pairs))")
-	lhsNew := testutil.Node("expression_list", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "s"),
-			testutil.Leaf("field_identifier", "cpySrcToDst"),
-		),
-	)
-	opNew := testutil.Leaf("assignment_operator_literal", "=")
-	rhsNew := testutil.Node("expression_list", "",
-		testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "make"),
-			testutil.Node("argument_list", "",
-				testutil.Node("map_type", "",
-					testutil.Leaf("map", "map"),
-					testutil.Leaf("type_identifier", "key"),
-					testutil.Leaf("type_identifier", "val"),
-				),
-				testutil.Node("call_expression", "",
-					testutil.Leaf("identifier", "len"),
-					testutil.Node("argument_list", "", testutil.Leaf("identifier", "pairs")),
-				),
-			),
-		),
-	)
-	t2 := testutil.Node("assignment_statement", "", lhsNew, opNew, rhsNew)
-	block2 := testutil.Node("block", "", t2)
-	root2 := testutil.Node("source_file", "", block2)
-	root2.Language = "go"
+	func1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	func2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	block1 := findFirstNode(func1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	block2 := findFirstNode(func2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	stmts1 := findAllNodesByType(block1, "assignment_statement")
+	currentT1 := stmts1[0] // pairCount = len(pairs)
+	candidate := stmts1[1] // s.cpySrcToDst = make(...)
+
+	t2 := findFirstNode(block2, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
 
 	m := NewMapping()
 	m.Add(root1, root2)
+	m.Add(func1, func2)
 	m.Add(block1, block2)
 
-	// TopDown leaf mappings
+	lhsOld := findFirstNode(candidate, func(n *treesitter.ASTNode) bool { return n.Type == "selector_expression" })
+	lhsNew := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Type == "selector_expression" })
 	m.Add(lhsOld, lhsNew)
 	for i := range lhsOld.Children {
 		m.Add(lhsOld.Children[i], lhsNew.Children[i])
 	}
-	// map_type leaves matched
-	mapTypeOld := rhsOld.Children[0].Children[1].Children[0]
-	mapTypeNew := rhsNew.Children[0].Children[1].Children[0]
+
+	mapTypeOld := findFirstNode(candidate, func(n *treesitter.ASTNode) bool { return n.Type == "map_type" })
+	mapTypeNew := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Type == "map_type" })
 	m.Add(mapTypeOld, mapTypeNew)
 	for i := range mapTypeOld.Children {
 		m.Add(mapTypeOld.Children[i], mapTypeNew.Children[i])
@@ -547,7 +608,11 @@ func TestContestContainers_VerticalReclaim(t *testing.T) {
 
 	// Simulate BottomUp greedily matching currentT1 to t2 before contest:
 	m.Add(currentT1, t2)
+	opDecomp := findFirstNode(currentT1, func(n *treesitter.ASTNode) bool { return n.Label == "=" })
+	opNew := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Label == "=" })
 	m.Add(opDecomp, opNew)
+	rhsDecomp := findFirstNode(currentT1, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
+	rhsNew := findFirstNode(t2, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
 	m.Add(rhsDecomp, rhsNew)
 
 	ContestContainers(root1, root2, m, nil)
@@ -558,44 +623,64 @@ func TestContestContainers_VerticalReclaim(t *testing.T) {
 	if got := m.Get(candidate); got != t2 {
 		t.Fatalf("m.Get(candidate) = %v, want %v", got, t2)
 	}
+	opOld := findFirstNode(candidate, func(n *treesitter.ASTNode) bool { return n.Label == "=" })
 	if got := m.Get(opOld); got != opNew {
 		t.Errorf("m.Get(opOld) = %v, want %v", got, opNew)
 	}
 }
 
 func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
-	childA1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "a"))
-	childB1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "b"))
-	cond1 := testutil.Node("binary_expression", "", childA1, childB1)
-	body1 := testutil.Node("block", "")
-	ifStmt1 := testutil.Node("if_statement", "", cond1, body1)
-	block1 := testutil.Node("block", "", ifStmt1)
-	root1 := testutil.Node("source_file", "", block1)
-	root1.Language = "go"
+	code1 := `package main
 
-	childA2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "a"))
-	childC2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "c"))
-	cond2 := testutil.Node("binary_expression", "", childA2, childC2)
-	body2 := testutil.Node("block", "")
-	ifStmt2 := testutil.Node("if_statement", "", cond2, body2)
+func f() {
+	if a && b {
+	}
+}
+`
+	code2 := `package main
 
-	childB2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "b"))
-	childD2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "d"))
-	cond3 := testutil.Node("binary_expression", "", childB2, childD2)
-	body3 := testutil.Node("block", "")
-	ifStmt3 := testutil.Node("if_statement", "", cond3, body3)
+func f() {
+	if a && c {
+	}
+	if b && d {
+	}
+}
+`
+	codeOther := `package main
 
-	block2 := testutil.Node("block", "", ifStmt2, ifStmt3)
-	root2 := testutil.Node("source_file", "", block2)
-	root2.Language = "go"
+func other() {
+	if true {
+	}
+	if true {
+	}
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+	rootOther := parseSnippet(t, codeOther, "test.go")
 
-	otherBodyA := testutil.Node("block", "")
-	otherStmtA := testutil.Node("if_statement", "", otherBodyA)
-	otherBodyB := testutil.Node("block", "")
-	otherStmtB := testutil.Node("if_statement", "", otherBodyB)
+	block1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	block2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	ifStmt1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	cond1 := findFirstNode(ifStmt1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	body1 := findFirstNode(ifStmt1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	ifStmts2 := findAllNodesByType(root2, "if_statement")
+	ifStmt2, ifStmt3 := ifStmts2[0], ifStmts2[1]
+	cond2 := findFirstNode(ifStmt2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	body2 := findFirstNode(ifStmt2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	cond3 := findFirstNode(ifStmt3, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	body3 := findFirstNode(ifStmt3, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	otherStmts := findAllNodesByType(rootOther, "if_statement")
+	otherStmtA, otherStmtB := otherStmts[0], otherStmts[1]
+	otherBodyA := findFirstNode(otherStmtA, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	otherBodyB := findFirstNode(otherStmtB, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	childA1 := findFirstNode(cond1, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	childB1 := findFirstNode(cond1, func(n *treesitter.ASTNode) bool { return n.Label == "b" })
+	childA2 := findFirstNode(cond2, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	childB2 := findFirstNode(cond3, func(n *treesitter.ASTNode) bool { return n.Label == "b" })
 
 	m := NewMapping()
 	m.Add(root1, root2)
@@ -611,7 +696,6 @@ func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
 		t.Errorf("expected hasForeignBodyOwner to reject cond1 vs cond2 across distinct statements")
 	}
 
-	// Verify reverse direction: t1's enclosing body is mapped to a construct that does not contain c.
 	mReverse := NewMapping()
 	mReverse.Add(body1, body2)
 	if !hasForeignBodyOwner(cond1, cond3, mReverse, nil) {
@@ -626,17 +710,43 @@ func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
 }
 
 func TestHasForeignBodyOwner_InitializerStatementPermitted(t *testing.T) {
-	init1 := testutil.Node("short_var_declaration", "")
-	cond1 := testutil.Node("binary_expression", "")
-	body1 := testutil.Node("block", "")
-	ifStmt1 := testutil.Node("if_statement", "", init1, cond1, body1)
-	ifStmt1.Language = "go"
+	code1 := `package main
 
-	assign2 := testutil.Node("assignment_statement", "")
-	cond2 := testutil.Node("binary_expression", "")
-	body2 := testutil.Node("block", "")
-	ifStmt2 := testutil.Node("if_statement", "", cond2, body2)
-	ifStmt2.Language = "go"
+func f() {
+	if init := 1; cond > 0 {
+		body()
+	}
+}
+`
+	code2 := `package main
+
+func f() {
+	assign = 2
+	if cond > 0 {
+		body()
+	}
+}
+`
+	codeOther := `package main
+
+func other() {
+	if otherCond > 0 {
+		otherBody()
+	}
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+	rootOther := parseSnippet(t, codeOther, "test.go")
+
+	init1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "short_var_declaration" })
+	cond1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	body1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "block" && n.Parent.Type == "if_statement" })
+
+	assign2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	body2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "block" && n.Parent.Type == "if_statement" })
+
+	otherCond := findFirstNode(rootOther, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
 
 	m := NewMapping()
 	m.Add(body1, body2)
@@ -647,29 +757,26 @@ func TestHasForeignBodyOwner_InitializerStatementPermitted(t *testing.T) {
 	}
 
 	// But condition expressions tested against an unrelated construct must still be rejected.
-	otherBody := testutil.Node("block", "")
-	otherCond := testutil.Node("binary_expression", "")
-	testutil.Node("if_statement", "", otherCond, otherBody)
 	if !hasForeignBodyOwner(cond1, otherCond, m, nil) {
 		t.Errorf("expected hasForeignBodyOwner to reject cond1 vs otherCond across foreign construct")
 	}
 }
 
 func TestComputeAffinity_BodyBlockConsistency(t *testing.T) {
-	body1 := testutil.Node("block", "")
-	cond1 := testutil.Node("identifier", "cond")
-	ifStmt1 := testutil.Node("if_statement", "", cond1, body1)
-	ifStmt1.Language = "go"
+	code1 := "package main\n\nfunc f() {\n\tif cond {\n\t\tbody1()\n\t}\n}\n"
+	code2 := "package main\n\nfunc f() {\n\tif cond {\n\t\tbody2()\n\t}\n}\n"
+	code3 := "package main\n\nfunc f() {\n\tif cond {\n\t\tbody3()\n\t}\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+	root3 := parseSnippet(t, code3, "test.go")
 
-	body2 := testutil.Node("block", "")
-	cond2 := testutil.Node("identifier", "cond")
-	ifStmt2 := testutil.Node("if_statement", "", cond2, body2)
-	ifStmt2.Language = "go"
+	ifStmt1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	body1 := findFirstNode(ifStmt1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
-	body3 := testutil.Node("block", "")
-	cond3 := testutil.Node("identifier", "cond")
-	ifStmt3 := testutil.Node("if_statement", "", cond3, body3)
-	ifStmt3.Language = "go"
+	ifStmt2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	body2 := findFirstNode(ifStmt2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	ifStmt3 := findFirstNode(root3, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
 
 	m := NewMapping()
 	m.Add(body1, body2)
@@ -687,19 +794,21 @@ func TestComputeAffinity_BodyBlockConsistency(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_WrapperForeignDescendant(t *testing.T) {
-	// Going from (a && (b)) to (a && b), the inner (b) wrapper shouldn't roll up
-	// to the outer (a && b) container since 'a' came from outside (b).
-	leafA1 := testutil.Leaf("id", "a")
-	leafB1 := testutil.Leaf("id", "b")
-	inner1 := testutil.Node("parenthesized_expression", "", leafB1)
-	inner1.Language = "go"
-	outer1 := testutil.Node("parenthesized_expression", "", leafA1, inner1)
-	outer1.Language = "go"
+	code1 := "package main\n\nfunc f() {\n\t_ = (a && (b))\n}\n"
+	code2 := "package main\n\nfunc f() {\n\t_ = (a && b)\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	leafA2 := testutil.Leaf("id", "a")
-	leafB2 := testutil.Leaf("id", "b")
-	dstParen := testutil.Node("parenthesized_expression", "", leafA2, leafB2)
-	dstParen.Language = "go"
+	parens1 := findAllNodesByType(root1, "parenthesized_expression")
+	outer1 := parens1[0]
+	inner1 := parens1[1]
+
+	dstParen := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "parenthesized_expression" })
+
+	leafA1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	leafB1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Label == "b" })
+	leafA2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	leafB2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Label == "b" })
 
 	m := NewMapping()
 	m.Add(leafA1, leafA2)
@@ -716,23 +825,11 @@ func TestRollupMatchedContainers_WrapperForeignDescendant(t *testing.T) {
 
 func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
 	makeFunc := func(name string) (*treesitter.ASTNode, *treesitter.ASTNode, []*treesitter.ASTNode) {
-		stmts := []*treesitter.ASTNode{
-			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s1")),
-			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s2")),
-			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s3")),
-			testutil.Node("expression_statement", "", testutil.Leaf("identifier", "s4")),
-		}
-		body := testutil.Node("block", "", stmts...)
-		decl := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", name),
-			body,
-		)
-		root := testutil.Node("source_file", "", decl)
-		root.Language = "go"
-		for _, n := range root.PreOrder() {
-			n.Language = "go"
-		}
-		treesitter.EnsureIndex(root)
+		code := fmt.Sprintf("package main\n\nfunc %s() {\n\ts1()\n\ts2()\n\ts3()\n\ts4()\n}\n", name)
+		root := parseSnippet(t, code, "test.go")
+		decl := findFirstNode(root, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+		body := findFirstNode(decl, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+		stmts := findAllNodesByType(body, "expression_statement")
 		return decl, body, stmts
 	}
 
@@ -742,8 +839,7 @@ func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
 
 		m := NewMapping()
 		// Map only 1 of 4 statements (~22% similarity).
-		m.Add(stmtsA[0], stmtsB[0])
-		m.Add(stmtsA[0].Children[0], stmtsB[0].Children[0])
+		addIsomorphicPairs(stmtsA[0], stmtsB[0], m)
 
 		score := computeAffinity(bodyA, bodyB, m, DefaultAffinityWeights, false)
 		if score != -1.0 {
@@ -758,8 +854,7 @@ func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
 		m := NewMapping()
 		// Map all 4 statements (>60% similarity).
 		for i := range stmtsA {
-			m.Add(stmtsA[i], stmtsB[i])
-			m.Add(stmtsA[i].Children[0], stmtsB[i].Children[0])
+			addIsomorphicPairs(stmtsA[i], stmtsB[i], m)
 		}
 
 		score := computeAffinity(bodyA, bodyB, m, DefaultAffinityWeights, false)
@@ -773,16 +868,14 @@ func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
 		declB, _, stmtsB := makeFunc("funcB")
 
 		mLow := NewMapping()
-		mLow.Add(stmtsA[0], stmtsB[0])
-		mLow.Add(stmtsA[0].Children[0], stmtsB[0].Children[0])
+		addIsomorphicPairs(stmtsA[0], stmtsB[0], mLow)
 		if score := computeAffinity(declA, declB, mLow, DefaultAffinityWeights, false); score != -1.0 {
 			t.Errorf("expected -1.0 for low-similarity declarations with different names, got %f", score)
 		}
 
 		mHigh := NewMapping()
 		for i := range stmtsA {
-			mHigh.Add(stmtsA[i], stmtsB[i])
-			mHigh.Add(stmtsA[i].Children[0], stmtsB[i].Children[0])
+			addIsomorphicPairs(stmtsA[i], stmtsB[i], mHigh)
 		}
 		if score := computeAffinity(declA, declB, mHigh, DefaultAffinityWeights, false); score <= 0.0 {
 			t.Errorf("expected positive affinity for high-similarity declarations with different names, got %f", score)
@@ -792,35 +885,23 @@ func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
 
 func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
 	buildTree := func(name string) (*treesitter.ASTNode, *treesitter.ASTNode, *treesitter.ASTNode, []*treesitter.ASTNode) {
-		leaves := []*treesitter.ASTNode{
-			testutil.Leaf("identifier", "a"),
-			testutil.Leaf("identifier", "b"),
-			testutil.Leaf("identifier", "c"),
-			testutil.Leaf("identifier", "d"),
-			testutil.Leaf("identifier", "e"),
-		}
-		body := testutil.Node("block", "", leaves...)
-		decl := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", name),
-			body,
-		)
-		root := testutil.Node("source_file", "", decl)
-		for _, n := range root.PreOrder() {
-			n.Language = "go"
-		}
-		treesitter.EnsureIndex(root)
-		return root, decl, body, leaves
+		code := fmt.Sprintf("package main\n\nfunc %s() {\n\ta()\n\tb()\n\tc()\n\td()\n\te()\n}\n", name)
+		root := parseSnippet(t, code, "test.go")
+		decl := findFirstNode(root, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+		body := findFirstNode(decl, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+		stmts := findAllNodesByType(body, "expression_statement")
+		return root, decl, body, stmts
 	}
 
 	// 2 of 5 leaves + body mapped gives ~38% Dice (< 0.60, but >= 0.30).
-	root1, declA, bodyA, leavesA := buildTree("funcA")
-	root2, _, bodyB, leavesB := buildTree("funcB")
+	root1, declA, bodyA, stmtsA := buildTree("funcA")
+	root2, _, bodyB, stmtsB := buildTree("funcB")
 
 	m := NewMapping()
 	m.Add(root1, root2)
 	m.Add(bodyA, bodyB)
-	m.Add(leavesA[0], leavesB[0])
-	m.Add(leavesA[1], leavesB[1])
+	addIsomorphicPairs(stmtsA[0], stmtsB[0], m)
+	addIsomorphicPairs(stmtsA[1], stmtsB[1], m)
 
 	RollupMatchedContainers(root1, root2, m)
 	if m.Get(declA) != nil {
@@ -828,12 +909,12 @@ func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
 	}
 
 	// Same overlap when declaration names match ("funcA" -> "funcA") should roll up (>= 30% Dice).
-	rootSame2, declSameA, bodySameA, leavesSameA := buildTree("funcA")
+	rootSame2, declSameA, bodySameA, stmtsSameA := buildTree("funcA")
 	mSame := NewMapping()
 	mSame.Add(root1, rootSame2)
 	mSame.Add(bodyA, bodySameA)
-	mSame.Add(leavesA[0], leavesSameA[0])
-	mSame.Add(leavesA[1], leavesSameA[1])
+	addIsomorphicPairs(stmtsA[0], stmtsSameA[0], mSame)
+	addIsomorphicPairs(stmtsA[1], stmtsSameA[1], mSame)
 
 	RollupMatchedContainers(root1, rootSame2, mSame)
 	if mSame.Get(declA) != declSameA {
@@ -842,32 +923,24 @@ func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing.T) {
-	// Extracting min(v1, v2) from `overlap += min(v1, v2)` into `matched := min(v1, v2)`
-	// shouldn't roll the old `overlap +=` container up into `matched :=`.
-	idOverlap1 := testutil.Node("identifier", "overlap")
-	lhsList1 := testutil.Node("expression_list", "", idOverlap1)
-	opPlus1 := testutil.Node("assignment_operator_literal", "+=")
-	callMin1 := testutil.Node("call_expression", "min")
-	rhsList1 := testutil.Node("expression_list", "", callMin1)
-	assignStmt1 := testutil.Node("assignment_statement", "", lhsList1, opPlus1, rhsList1)
-	assignStmt1.Language = "go"
+	code1 := "package main\n\nfunc f() {\n\toverlap += min(v1, v2)\n}\n"
+	code2 := "package main\n\nfunc f() {\n\tmatched := min(v1, v2)\n\t_ = matched\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	idMatched2 := testutil.Node("identifier", "matched")
-	lhsList2 := testutil.Node("expression_list", "", idMatched2)
-	opDecl2 := testutil.Node("assignment_operator_literal", ":=")
-	callMin2 := testutil.Node("call_expression", "min")
-	rhsList2 := testutil.Node("expression_list", "", callMin2)
-	shortDecl2 := testutil.Node("short_var_declaration", "", lhsList2, opDecl2, rhsList2)
-	shortDecl2.Language = "go"
+	assignStmt1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	shortDecl2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "short_var_declaration" })
 
-	root1 := testutil.Node("block", "", assignStmt1)
-	root2 := testutil.Node("block", "", shortDecl2)
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	callMin1 := findFirstNode(assignStmt1, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
+	callMin2 := findFirstNode(shortDecl2, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
 
 	m := NewMapping()
 	m.Add(callMin1, callMin2)
-	m.Add(rhsList1, rhsList2)
+	args1 := findFirstNode(callMin1, func(n *treesitter.ASTNode) bool { return n.Type == "argument_list" })
+	args2 := findFirstNode(callMin2, func(n *treesitter.ASTNode) bool { return n.Type == "argument_list" })
+	if args1 != nil && args2 != nil {
+		m.Add(args1, args2)
+	}
 
 	RollupMatchedContainers(root1, root2, m)
 
@@ -877,34 +950,19 @@ func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing
 }
 
 func TestRollupMatchedContainers_SameTypeTargetVariableMismatch(t *testing.T) {
-	// Old: dstNode = ms.Src()[a.Node]
-	// New: toDemote[a.Node] = dstNode
-	// Even though both are assignments and share dstNode across sides (LHS in old, RHS in new),
-	// they shouldn't roll up since they assign to different target variables.
-	idDst1 := testutil.Node("identifier", "dstNode")
-	lhsList1 := testutil.Node("expression_list", "", idDst1)
-	opAssign1 := testutil.Node("assignment_operator_literal", "=")
-	idMs1 := testutil.Node("identifier", "ms")
-	rhsList1 := testutil.Node("expression_list", "", idMs1)
-	assignStmt1 := testutil.Node("assignment_statement", "", lhsList1, opAssign1, rhsList1)
-	assignStmt1.Language = "go"
+	code1 := "package main\n\nfunc f() {\n\tdstNode = ms\n}\n"
+	code2 := "package main\n\nfunc f() {\n\ttoDemote = dstNode\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	idMap2 := testutil.Node("identifier", "toDemote")
-	lhsList2 := testutil.Node("expression_list", "", idMap2)
-	opAssign2 := testutil.Node("assignment_operator_literal", "=")
-	idDst2 := testutil.Node("identifier", "dstNode")
-	rhsList2 := testutil.Node("expression_list", "", idDst2)
-	assignStmt2 := testutil.Node("assignment_statement", "", lhsList2, opAssign2, rhsList2)
-	assignStmt2.Language = "go"
+	assignStmt1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
+	assignStmt2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
 
-	root1 := testutil.Node("block", "", assignStmt1)
-	root2 := testutil.Node("block", "", assignStmt2)
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+	idDst1 := findFirstNode(assignStmt1, func(n *treesitter.ASTNode) bool { return n.Label == "dstNode" })
+	idDst2 := findFirstNode(assignStmt2, func(n *treesitter.ASTNode) bool { return n.Label == "dstNode" })
 
 	m := NewMapping()
 	m.Add(idDst1, idDst2)
-	m.Add(lhsList1, rhsList2)
 
 	RollupMatchedContainers(root1, root2, m)
 
@@ -916,32 +974,36 @@ func TestRollupMatchedContainers_SameTypeTargetVariableMismatch(t *testing.T) {
 func TestHasCallCalleeOrArgMatch_UnextinguishedPeer(t *testing.T) {
 	r := rules.Get("go")
 
-	// Old: addSpan(spansByLine, lineIndex, fileBytes, a.Node.StartByte)
-	idAddSpan1 := testutil.Node("identifier", "addSpan")
-	argA1 := testutil.Node("identifier", "a")
-	args1 := testutil.Node("argument_list", "", argA1)
-	call1 := testutil.Node("call_expression", "", idAddSpan1, args1)
+	code1 := `package main
 
-	// New helper: absorbSyntacticDelimiters(fileBytes, a.Node.StartByte)
-	idAbsorb2 := testutil.Node("identifier", "absorbSyntacticDelimiters")
-	argA2 := testutil.Node("identifier", "a")
-	argsAbsorb2 := testutil.Node("argument_list", "", argA2)
-	callAbsorb2 := testutil.Node("call_expression", "", idAbsorb2, argsAbsorb2)
-	shortDecl2 := testutil.Node("short_var_declaration", "", callAbsorb2)
+func f() {
+	addSpan(spansByLine, lineIndex, fileBytes, a)
+}
+`
+	code2 := `package main
 
-	// New surviving: addSpan(spansByLine, lineIndex, fileBytes, sb)
-	idAddSpan2 := testutil.Node("identifier", "addSpan")
-	argSb2 := testutil.Node("identifier", "sb")
-	argsAddSpan2 := testutil.Node("argument_list", "", argSb2)
-	callAddSpan2 := testutil.Node("call_expression", "", idAddSpan2, argsAddSpan2)
-	exprStmt2 := testutil.Node("expression_statement", "", callAddSpan2)
+func f() {
+	_ = absorbSyntacticDelimiters(fileBytes, a)
+	addSpan(spansByLine, lineIndex, fileBytes, sb)
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	block2 := testutil.Node("block", "", shortDecl2, exprStmt2)
-	treesitter.EnsureIndex(call1)
-	treesitter.EnsureIndex(block2)
+	call1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool {
+		return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "addSpan"
+	})
+	callAbsorb2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool {
+		return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "absorbSyntacticDelimiters"
+	})
+	callAddSpan2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool {
+		return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "addSpan"
+	})
+
+	argA1 := findFirstNode(call1, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
+	argA2 := findFirstNode(callAbsorb2, func(n *treesitter.ASTNode) bool { return n.Label == "a" })
 
 	m := NewMapping()
-	// Mapped descendant: argA1 -> argA2
 	m.Add(argA1, argA2)
 
 	// callAbsorb2 shouldn't steal call1 while addSpan is still unmapped in the block.
@@ -957,30 +1019,19 @@ func TestHasCallCalleeOrArgMatch_UnextinguishedPeer(t *testing.T) {
 
 func TestReconcileBodyBlocks(t *testing.T) {
 	t.Run("forward wrapping: re-aligns body block to outer container", func(t *testing.T) {
-		s1 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
-		body1 := testutil.Node("block", "", s1)
-		cond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
-		if1 := testutil.Node("if_statement", "", cond1, body1)
-		root1 := testutil.Node("source_file", "", if1)
-		root1.Language = "go"
-		for _, n := range root1.PreOrder() {
-			n.Language = "go"
-		}
-		treesitter.EnsureIndex(root1)
+		code1 := "package main\n\nfunc f() {\n\tif a {\n\t\tx()\n\t}\n}\n"
+		code2 := "package main\n\nfunc f() {\n\tif a {\n\t\tif b {\n\t\t\tx()\n\t\t}\n\t}\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		innerS2 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
-		innerBody2 := testutil.Node("block", "", innerS2)
-		innerCond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "b"))
-		innerIf2 := testutil.Node("if_statement", "", innerCond2, innerBody2)
-		body2 := testutil.Node("block", "", innerIf2)
-		cond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
-		if2 := testutil.Node("if_statement", "", cond2, body2)
-		root2 := testutil.Node("source_file", "", if2)
-		root2.Language = "go"
-		for _, n := range root2.PreOrder() {
-			n.Language = "go"
-		}
-		treesitter.EnsureIndex(root2)
+		if1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+		body1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+		ifStmts2 := findAllNodesByType(root2, "if_statement")
+		if2 := ifStmts2[0]
+		innerIf2 := ifStmts2[1]
+		body2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+		innerBody2 := findFirstNode(innerIf2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 		m := NewMapping()
 		m.Add(if1, if2)
@@ -994,30 +1045,19 @@ func TestReconcileBodyBlocks(t *testing.T) {
 	})
 
 	t.Run("reverse unwrapping: re-aligns outer body block when inner was mapped", func(t *testing.T) {
-		innerS1 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
-		innerBody1 := testutil.Node("block", "", innerS1)
-		innerCond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "b"))
-		innerIf1 := testutil.Node("if_statement", "", innerCond1, innerBody1)
-		body1 := testutil.Node("block", "", innerIf1)
-		cond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
-		if1 := testutil.Node("if_statement", "", cond1, body1)
-		root1 := testutil.Node("source_file", "", if1)
-		root1.Language = "go"
-		for _, n := range root1.PreOrder() {
-			n.Language = "go"
-		}
-		treesitter.EnsureIndex(root1)
+		code1 := "package main\n\nfunc f() {\n\tif a {\n\t\tif b {\n\t\t\tx()\n\t\t}\n\t}\n}\n"
+		code2 := "package main\n\nfunc f() {\n\tif a {\n\t\tx()\n\t}\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		s2 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
-		body2 := testutil.Node("block", "", s2)
-		cond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
-		if2 := testutil.Node("if_statement", "", cond2, body2)
-		root2 := testutil.Node("source_file", "", if2)
-		root2.Language = "go"
-		for _, n := range root2.PreOrder() {
-			n.Language = "go"
-		}
-		treesitter.EnsureIndex(root2)
+		ifStmts1 := findAllNodesByType(root1, "if_statement")
+		if1 := ifStmts1[0]
+		innerIf1 := ifStmts1[1]
+		body1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+		innerBody1 := findFirstNode(innerIf1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+		if2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+		body2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 		m := NewMapping()
 		m.Add(if1, if2)
@@ -1037,27 +1077,18 @@ func TestReconcileBodyBlocks(t *testing.T) {
 func TestHasHeaderMatch(t *testing.T) {
 	r := rules.Get("go")
 
-	cond1 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
-	s1 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
-	body1 := testutil.Node("block", "", s1)
-	if1 := testutil.Node("if_statement", "", cond1, body1)
-	root1 := testutil.Node("source_file", "", if1)
-	root1.Language = "go"
-	for _, n := range root1.PreOrder() {
-		n.Language = "go"
-	}
-	treesitter.EnsureIndex(root1)
+	code1 := "package main\n\nfunc f() {\n\tif a > 0 {\n\t\tx()\n\t}\n}\n"
+	code2 := "package main\n\nfunc f() {\n\tif a > 0 {\n\t\tx()\n\t}\n}\n"
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	cond2 := testutil.Node("binary_expression", "", testutil.Node("identifier", "a"))
-	s2 := testutil.Node("expression_statement", "", testutil.Node("identifier", "x"))
-	body2 := testutil.Node("block", "", s2)
-	if2 := testutil.Node("if_statement", "", cond2, body2)
-	root2 := testutil.Node("source_file", "", if2)
-	root2.Language = "go"
-	for _, n := range root2.PreOrder() {
-		n.Language = "go"
-	}
-	treesitter.EnsureIndex(root2)
+	if1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	cond1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	s1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "expression_statement" })
+
+	if2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	cond2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	s2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "expression_statement" })
 
 	m := NewMapping()
 	if hasHeaderMatch(if1, if2, m, r) {
@@ -1078,30 +1109,41 @@ func TestHasHeaderMatch(t *testing.T) {
 func TestHasForeignHeaderOwner(t *testing.T) {
 	r := rules.Get("go")
 
-	// Construct 1 in Old: if nilR.IsCaseClause("expression_case") { t.Errorf(...) }
-	cond1 := testutil.Node("call_expression", "nilR.IsCaseClause")
-	body1 := testutil.Node("block", "", testutil.Leaf("identifier", "t"))
-	if1 := testutil.Node("if_statement", "", cond1, body1)
+	code1 := `package main
 
-	// Construct 2 in Old: if !IsCaseClause("case_clause") { t.Errorf(...) }
-	cond2 := testutil.Node("call_expression", "IsCaseClause")
-	body2 := testutil.Node("block", "", testutil.Leaf("identifier", "t"))
-	if2 := testutil.Node("if_statement", "", cond2, body2)
+func f() {
+	if nilR.IsCaseClause("expression_case") {
+		t.Errorf()
+	}
+	if !IsCaseClause("case_clause") {
+		t.Errorf()
+	}
+}
+`
+	code2 := `package main
 
-	// Construct in New: if nilR.IsCaseClause("expression_case") { t.Errorf(...) }
-	newCond := testutil.Node("call_expression", "nilR.IsCaseClause")
-	newBody := testutil.Node("block", "", testutil.Leaf("identifier", "t"))
-	newIf := testutil.Node("if_statement", "", newCond, newBody)
+func f() {
+	if nilR.IsCaseClause("expression_case") {
+		t.Errorf()
+	}
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	treesitter.EnsureIndex(if1)
-	treesitter.EnsureIndex(if2)
-	treesitter.EnsureIndex(newIf)
+	ifStmts1 := findAllNodesByType(root1, "if_statement")
+	if1, if2 := ifStmts1[0], ifStmts1[1]
+	cond1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
+	body1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	body2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	newIf := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	newCond := findFirstNode(newIf, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
+	newBody := findFirstNode(newIf, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 	m := NewMapping()
-	// Map newIf's header to if1.
 	m.Add(cond1, newCond)
 
-	// if2 and its body shouldn't match against newIf because newIf's header belongs to if1.
 	if !hasForeignHeaderOwner(if2, newIf, m, r) {
 		t.Errorf("expected hasForeignHeaderOwner to be true for if2 against newIf whose header is mapped to if1")
 	}
@@ -1109,7 +1151,6 @@ func TestHasForeignHeaderOwner(t *testing.T) {
 		t.Errorf("expected hasForeignHeaderOwner to be true for body2 against newBody whose parent header is mapped to if1")
 	}
 
-	// if1 is the rightful owner, so it shouldn't be flagged as foreign.
 	if hasForeignHeaderOwner(if1, newIf, m, r) {
 		t.Errorf("expected hasForeignHeaderOwner to be false for if1 against newIf")
 	}
@@ -1188,116 +1229,116 @@ func f(src, dst, r *int) {
 }
 
 func TestRollupMatchedContainers_ScopePreservedGuard(t *testing.T) {
-	// Function block in Old with flat if statement:
-	// func test() {
-	//     if !r.IsCaseClause("foo") { t.Errorf() }
-	// }
-	idT1 := testutil.Leaf("identifier", "t")
-	body1 := testutil.Node("block", "", idT1)
-	cond1 := testutil.Node("unary_expression", "", testutil.Leaf("identifier", "r"))
-	if1 := testutil.Node("if_statement", "", cond1, body1)
-	fnBlock1 := testutil.Node("block", "", if1)
-	fn1 := testutil.Node("function_declaration", "", fnBlock1)
+	code1 := `package main
 
-	// Function block in New with a for loop containing an if statement:
-	// func test() {
-	//     for ... {
-	//         if got := r.IsCaseClause(...); got != tt.want { t.Errorf() }
-	//     }
-	// }
-	idT2 := testutil.Leaf("identifier", "t")
-	body2 := testutil.Node("block", "", idT2)
-	cond2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "got"))
-	if2 := testutil.Node("if_statement", "", cond2, body2)
-	forBlock := testutil.Node("block", "", if2)
-	forStmt := testutil.Node("for_statement", "", forBlock)
-	fnBlock2 := testutil.Node("block", "", forStmt)
-	fn2 := testutil.Node("function_declaration", "", fnBlock2)
+func test() {
+	if !r.IsCaseClause("foo") {
+		t.Errorf()
+	}
+}
+`
+	code2 := `package main
 
-	treesitter.EnsureIndex(fn1)
-	treesitter.EnsureIndex(fn2)
+func test() {
+	for i := 0; i < 10; i++ {
+		if got := r.IsCaseClause("foo"); got != tt.want {
+			t.Errorf()
+		}
+	}
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+
+	fn1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	fn2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
+	fnBlock1 := findFirstNode(fn1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+	fnBlock2 := findFirstNode(fn2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	if1 := findFirstNode(fnBlock1, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	if2 := findFirstNode(fnBlock2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+
+	call1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
+	call2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
 
 	m := NewMapping()
+	m.Add(root1, root2)
 	m.Add(fn1, fn2)
 	m.Add(fnBlock1, fnBlock2)
-	m.Add(idT1, idT2)
+	if call1 != nil && call2 != nil {
+		m.Add(call1, call2)
+	}
 
 	RollupMatchedContainers(fn1, fn2, m)
 
-	// if1 shouldn't roll up into if2 across an unmapped loop boundary when Dice is low.
 	if m.Get(if1) == if2 {
 		t.Errorf("expected if1 NOT to roll up to if2 across unmapped loop scope boundary")
 	}
 }
 
 func TestBottomUp_BinaryChainLeadingOperandDeletion(t *testing.T) {
-	// Old: return A || B || C || D
-	// New: return B || C || D
-	// When deleting "A ||" from the front of a binary chain, inner bin3 (A || B)
-	// shouldn't steal bin2 (B || C) across the operator. bin2 ((A || B) || C) should
-	// match bin2 (B || C), and bin1 (((A || B) || C) || D) should match bin1 ((B || C) || D).
-	mkLeaf := func(typ, label string, startByte, endByte uint32) *treesitter.ASTNode {
-		n := testutil.Leaf(typ, label)
-		n.Language = "go"
-		n.StartByte, n.EndByte = startByte, endByte
-		return n
-	}
-	mkContainer := func(typ string, startByte, endByte uint32, children ...*treesitter.ASTNode) *treesitter.ASTNode {
-		n := testutil.Node(typ, "", children...)
-		n.Language = "go"
-		n.StartByte, n.EndByte = startByte, endByte
-		return n
-	}
+	code1 := `package main
 
-	oldA := mkContainer("call_expression", 10, 25, mkLeaf("identifier", "isOp", 10, 14), mkLeaf("identifier", "n", 15, 16))
-	oldOp1 := mkLeaf("logical_operator_literal", "||", 26, 28)
-	oldB := mkContainer("call_expression", 29, 45, mkLeaf("identifier", "isPunct", 29, 36), mkLeaf("identifier", "n", 37, 38))
-	oldBin3 := mkContainer("binary_expression", 10, 45, oldA, oldOp1, oldB)
+func f(n *Node) bool {
+	return isOp(n) || isPunct(n) || n.IsKeyword || isKw(n)
+}
+`
+	code2 := `package main
 
-	oldOp2 := mkLeaf("logical_operator_literal", "||", 46, 48)
-	oldC := mkContainer("selector_expression", 49, 60, mkLeaf("identifier", "n", 49, 50), mkLeaf("field_identifier", "IsKeyword", 51, 60))
-	oldBin2 := mkContainer("binary_expression", 10, 60, oldBin3, oldOp2, oldC)
+func f(n *Node) bool {
+	return isPunct(n) || n.IsKeyword || isKw(n)
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
 
-	oldOp3 := mkLeaf("logical_operator_literal", "||", 61, 63)
-	oldD := mkContainer("call_expression", 64, 80, mkLeaf("identifier", "isKw", 64, 68), mkLeaf("identifier", "n", 69, 70))
-	oldBin1 := mkContainer("binary_expression", 10, 80, oldBin2, oldOp3, oldD)
-	oldRet := mkContainer("return_statement", 3, 80, mkLeaf("return", "return", 3, 9), oldBin1)
+	ret1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "return_statement" })
+	ret2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "return_statement" })
 
-	newB := mkContainer("call_expression", 10, 26, mkLeaf("identifier", "isPunct", 10, 17), mkLeaf("identifier", "n", 18, 19))
-	newOp2 := mkLeaf("logical_operator_literal", "||", 27, 29)
-	newC := mkContainer("selector_expression", 30, 41, mkLeaf("identifier", "n", 30, 31), mkLeaf("field_identifier", "IsKeyword", 32, 41))
-	newBin2 := mkContainer("binary_expression", 10, 41, newB, newOp2, newC)
+	bins1 := findAllNodesByType(ret1, "binary_expression")
+	oldBin1 := bins1[0]
+	oldBin2 := bins1[1]
+	oldBin3 := bins1[2]
 
-	newOp3 := mkLeaf("logical_operator_literal", "||", 42, 44)
-	newD := mkContainer("call_expression", 45, 61, mkLeaf("identifier", "isKw", 45, 49), mkLeaf("identifier", "n", 50, 51))
-	newBin1 := mkContainer("binary_expression", 10, 61, newBin2, newOp3, newD)
-	newRet := mkContainer("return_statement", 3, 61, mkLeaf("return", "return", 3, 9), newBin1)
+	bins2 := findAllNodesByType(ret2, "binary_expression")
+	newBin1 := bins2[0]
+	newBin2 := bins2[1]
 
-	treesitter.EnsureIndex(oldRet)
-	treesitter.EnsureIndex(newRet)
+	r := rules.Get("go")
+	oldB := findFirstNode(ret1, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isPunct" })
+	newB := findFirstNode(ret2, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isPunct" })
+
+	oldC := findFirstNode(ret1, func(n *treesitter.ASTNode) bool { return n.Type == "selector_expression" })
+	newC := findFirstNode(ret2, func(n *treesitter.ASTNode) bool { return n.Type == "selector_expression" })
+
+	oldD := findFirstNode(ret1, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isKw" })
+	newD := findFirstNode(ret2, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isKw" })
 
 	m := NewMapping()
-	// TopDown matches calls B and D. BottomUp recovers selector C.
+	m.Add(root1, root2)
+	m.Add(ret1, ret2)
 	m.Add(oldB, newB)
-	m.Add(oldB.Children[0], newB.Children[0])
-	m.Add(oldB.Children[1], newB.Children[1])
+	for i := range oldB.Children {
+		m.Add(oldB.Children[i], newB.Children[i])
+	}
 	m.Add(oldD, newD)
-	m.Add(oldD.Children[0], newD.Children[0])
-	m.Add(oldD.Children[1], newD.Children[1])
+	for i := range oldD.Children {
+		m.Add(oldD.Children[i], newD.Children[i])
+	}
 
-	BottomUp(oldRet, newRet, m, 0.30)
+	BottomUp(root1, root2, m, 0.30)
 
 	if m.Has(oldBin3) {
-		t.Errorf("expected inner oldBin3 (A || B) to remain unmapped, but mapped to %v", m.Get(oldBin3))
+		t.Errorf("expected inner oldBin3 (isOp || isPunct) to remain unmapped, but mapped to %v", m.Get(oldBin3))
 	}
 	if m.Get(oldBin2) != newBin2 {
-		t.Errorf("expected oldBin2 ((A || B) || C) to match newBin2 (B || C), got %v", m.Get(oldBin2))
+		t.Errorf("expected oldBin2 to match newBin2, got %v", m.Get(oldBin2))
 	}
 	if m.Get(oldBin1) != newBin1 {
 		t.Errorf("expected oldBin1 to match newBin1, got %v", m.Get(oldBin1))
 	}
 	if m.Get(oldC) != newC {
-		t.Errorf("expected oldC (n.IsKeyword) to match newC, got %v", m.Get(oldC))
+		t.Errorf("expected oldC to match newC, got %v", m.Get(oldC))
 	}
 }
 
@@ -1305,59 +1346,57 @@ func TestBottomUp_NestedCallFlattening_EnclosingConstructGuard(t *testing.T) {
 	t.Run("Unit", func(t *testing.T) {
 		r := rules.Get("go")
 
-		// Source tree:
-		// outerMax(foo(a), innerMax(0, diff))
-		firstArg := testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Node("argument_list", "", testutil.Leaf("identifier", "a")),
-		)
-		innerZero := testutil.Leaf("int_literal", "0")
-		innerDiff := testutil.Leaf("identifier", "diff")
-		innerMax := testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "max"),
-			testutil.Node("argument_list", "", innerZero, innerDiff),
-		)
-		outerMax := testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "max"),
-			testutil.Node("argument_list", "", firstArg, innerMax),
-		)
+		code1 := "package main\n\nfunc f() {\n\t_ = max(foo(a), max(0, diff))\n}\n"
+		code2 := "package main\n\nfunc f() {\n\t_ = max(foo(a), 0, diff)\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		// Destination tree (flattened):
-		// newMax(foo(a), 0, diff)
-		newFirstArg := testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Node("argument_list", "", testutil.Leaf("identifier", "a")),
-		)
-		newZero := testutil.Leaf("int_literal", "0")
-		newDiff := testutil.Leaf("identifier", "diff")
-		newMax := testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "max"),
-			testutil.Node("argument_list", "", newFirstArg, newZero, newDiff),
-		)
+		var outerMax, innerMax, firstArg *treesitter.ASTNode
+		for _, n := range root1.PostOrder() {
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "foo":
+					firstArg = n
+				case "max":
+					if innerMax == nil {
+						innerMax = n
+					} else {
+						outerMax = n
+					}
+				}
+			}
+		}
 
-		treesitter.EnsureIndex(outerMax)
-		treesitter.EnsureIndex(newMax)
+		var newMax, newFirstArg *treesitter.ASTNode
+		for _, n := range root2.PostOrder() {
+			if r.IsCall(n.Type) {
+				switch extractCalleeLabel(n, r) {
+				case "foo":
+					newFirstArg = n
+				case "max":
+					newMax = n
+				}
+			}
+		}
+
+		innerZero := findFirstNode(innerMax, func(n *treesitter.ASTNode) bool { return n.Label == "0" })
+		innerDiff := findFirstNode(innerMax, func(n *treesitter.ASTNode) bool { return n.Label == "diff" })
+		newZero := findFirstNode(newMax, func(n *treesitter.ASTNode) bool { return n.Label == "0" })
+		newDiff := findFirstNode(newMax, func(n *treesitter.ASTNode) bool { return n.Label == "diff" })
 
 		m := NewMapping()
-		// Map foo(a) <-> foo(a), which sits in outerMax outside innerMax.
 		addIsomorphicPairs(firstArg, newFirstArg, m)
-		// Map 0 <-> 0 and diff <-> diff inside innerMax.
 		m.Add(innerZero, newZero)
 		m.Add(innerDiff, newDiff)
 
-		// innerMax should NOT be allowed to steal newMax because newMax contains newFirstArg,
-		// whose source partner firstArg belongs to outerMax (an unmapped ancestor of innerMax).
 		if !hasEnclosingConstructWithMappedDescendant(innerMax, newMax, m, r) {
 			t.Errorf("expected innerMax <-> newMax candidate to be rejected by enclosing construct guard")
 		}
 
-		// outerMax, however, IS the enclosing construct, so it should not be blocked from newMax.
 		if hasEnclosingConstructWithMappedDescendant(outerMax, newMax, m, r) {
 			t.Errorf("expected outerMax <-> newMax candidate to be allowed")
 		}
 
-		// Symmetrically in reverse: reject if source container has descendants whose partners
-		// belong to an unmapped outer ancestor of the candidate.
 		revM := NewMapping()
 		addIsomorphicPairs(newFirstArg, firstArg, revM)
 		revM.Add(newZero, innerZero)
@@ -1672,26 +1711,60 @@ func f() {
 func TestHasForeignBodyOwner_InvertedNestedGuards(t *testing.T) {
 	goRules := rules.Get("go")
 
-	body1 := testutil.Node("block", "")
-	condC1 := testutil.Node("identifier", "condC")
-	innerIf1 := testutil.Node("if_statement", "", condC1, body1)
-	block1 := testutil.Node("block", "", innerIf1)
-	cond1 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "checkA"), testutil.Leaf("identifier", "checkB"))
-	outerIf1 := testutil.Node("if_statement", "", cond1, block1)
-	root1 := testutil.Node("source_file", "", outerIf1)
-	root1.Language = "go"
+	code1 := `package main
 
-	body2 := testutil.Node("block", "")
-	cond2 := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "checkA"), testutil.Leaf("identifier", "checkB"))
-	innerIf2 := testutil.Node("if_statement", "", cond2, body2)
-	block2 := testutil.Node("block", "", innerIf2)
-	condC2 := testutil.Node("identifier", "condC")
-	outerIf2 := testutil.Node("if_statement", "", condC2, block2)
-	root2 := testutil.Node("source_file", "", outerIf2)
-	root2.Language = "go"
+func f() {
+	if checkA && checkB {
+		if condC {
+			body()
+		}
+	}
+}
+`
+	code2 := `package main
 
-	treesitter.EnsureIndex(root1)
-	treesitter.EnsureIndex(root2)
+func f() {
+	if condC {
+		if checkA && checkB {
+			body()
+		}
+	}
+}
+`
+	codeParen := `package main
+
+func f() {
+	if (checkA && checkB) {
+		if condC {
+			body()
+		}
+	}
+}
+`
+	codeUnrelated := `package main
+
+func other() {
+	if unrelatedCond {
+		unrelatedBody()
+	}
+}
+`
+	root1 := parseSnippet(t, code1, "test.go")
+	root2 := parseSnippet(t, code2, "test.go")
+	rootParen := parseSnippet(t, codeParen, "test.go")
+	rootUnrelated := parseSnippet(t, codeUnrelated, "test.go")
+
+	ifStmts1 := findAllNodesByType(root1, "if_statement")
+	outerIf1, innerIf1 := ifStmts1[0], ifStmts1[1]
+	cond1 := findFirstNode(outerIf1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	condC1 := findFirstNode(innerIf1, func(n *treesitter.ASTNode) bool { return n.Label == "condC" })
+	body1 := findFirstNode(innerIf1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
+
+	ifStmts2 := findAllNodesByType(root2, "if_statement")
+	outerIf2, innerIf2 := ifStmts2[0], ifStmts2[1]
+	condC2 := findFirstNode(outerIf2, func(n *treesitter.ASTNode) bool { return n.Label == "condC" })
+	cond2 := findFirstNode(innerIf2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	body2 := findFirstNode(innerIf2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 	m := NewMapping()
 	m.Add(body1, body2)
@@ -1701,17 +1774,11 @@ func TestHasForeignBodyOwner_InvertedNestedGuards(t *testing.T) {
 		t.Errorf("expected inverted nested guards to permit matching cond1 vs cond2")
 	}
 
-	// Parenthesized guard variant: expression wrappers shouldn't trap the construct lookup.
-	bodyParen := testutil.Node("block", "")
-	condCParen := testutil.Node("identifier", "condC")
-	innerIfParen := testutil.Node("if_statement", "", condCParen, bodyParen)
-	blockParen := testutil.Node("block", "", innerIfParen)
-	rawCondParen := testutil.Node("binary_expression", "", testutil.Leaf("identifier", "checkA"), testutil.Leaf("identifier", "checkB"))
-	parenExpr := testutil.Node("parenthesized_expression", "", rawCondParen)
-	outerIfParen := testutil.Node("if_statement", "", parenExpr, blockParen)
-	rootParen := testutil.Node("source_file", "", outerIfParen)
-	rootParen.Language = "go"
-	treesitter.EnsureIndex(rootParen)
+	ifStmtsParen := findAllNodesByType(rootParen, "if_statement")
+	outerIfParen, innerIfParen := ifStmtsParen[0], ifStmtsParen[1]
+	rawCondParen := findFirstNode(outerIfParen, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+	condCParen := findFirstNode(innerIfParen, func(n *treesitter.ASTNode) bool { return n.Label == "condC" })
+	bodyParen := findFirstNode(innerIfParen, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 	mParen := NewMapping()
 	mParen.Add(bodyParen, body2)
@@ -1721,13 +1788,8 @@ func TestHasForeignBodyOwner_InvertedNestedGuards(t *testing.T) {
 		t.Errorf("expected parenthesized inverted guard to permit matching rawCondParen vs cond2")
 	}
 
-	// Unrelated construct condition should still be rejected as foreign.
-	unrelatedBody := testutil.Node("block", "")
-	unrelatedCond := testutil.Node("binary_expression", "")
-	unrelatedIf := testutil.Node("if_statement", "", unrelatedCond, unrelatedBody)
-	rootUnrelated := testutil.Node("source_file", "", unrelatedIf)
-	rootUnrelated.Language = "go"
-	treesitter.EnsureIndex(rootUnrelated)
+	unrelatedIf := findFirstNode(rootUnrelated, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
+	unrelatedCond := findFirstNode(unrelatedIf, func(n *treesitter.ASTNode) bool { return n.Label == "unrelatedCond" })
 
 	if !hasForeignBodyOwner(unrelatedCond, cond2, m, goRules) {
 		t.Errorf("expected unrelated condition to be rejected by hasForeignBodyOwner")
@@ -1738,28 +1800,19 @@ func TestHasSplitStatementDescendant(t *testing.T) {
 	goRules := rules.Get("go")
 
 	t.Run("LeftInsideRightOutside", func(t *testing.T) {
-		d1Left := testutil.Node("identifier", "condA")
-		op1 := testutil.Leaf("&&", "&&")
-		d1Right := testutil.Node("identifier", "condB")
-		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Right)
-		stmt1 := testutil.Node("expression_statement", "", bin1)
-		root1 := testutil.Node("source_file", "", stmt1)
-		root1.Language = "go"
-		treesitter.EnsureIndex(root1)
+		code1 := "package main\n\nfunc f() {\n\t_ = condA && condB\n}\n"
+		code2 := "package main\n\nfunc f() {\n\t_ = condA || other\n\t_ = condB\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		d2Left := testutil.Node("identifier", "condA")
-		op2 := testutil.Leaf("||", "||")
-		d2Other := testutil.Node("identifier", "other")
-		bin2 := testutil.Node("binary_expression", "", d2Left, op2, d2Other)
-		stmt2 := testutil.Node("expression_statement", "", bin2)
+		bin1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+		bin2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
 
-		d2Outside := testutil.Node("identifier", "condB")
-		stmtOutside := testutil.Node("expression_statement", "", d2Outside)
+		d1Left := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d1Right := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condB" })
 
-		block2 := testutil.Node("block", "", stmt2, stmtOutside)
-		root2 := testutil.Node("source_file", "", block2)
-		root2.Language = "go"
-		treesitter.EnsureIndex(root2)
+		d2Left := findFirstNode(bin2, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d2Outside := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Label == "condB" })
 
 		m := NewMapping()
 		m.Add(d1Left, d2Left)
@@ -1771,30 +1824,19 @@ func TestHasSplitStatementDescendant(t *testing.T) {
 	})
 
 	t.Run("RightInsideLeftOutside_ReversedOrder", func(t *testing.T) {
-		// When outside descendant is encountered before inside descendant in pre-order,
-		// the matcher must not break prematurely.
-		d1Left := testutil.Node("identifier", "condB") // outside
-		op1 := testutil.Leaf("&&", "&&")
-		d1Right := testutil.Node("identifier", "condA") // inside
-		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Right)
-		stmt1 := testutil.Node("expression_statement", "", bin1)
-		root1 := testutil.Node("source_file", "", stmt1)
-		root1.Language = "go"
-		treesitter.EnsureIndex(root1)
+		code1 := "package main\n\nfunc f() {\n\t_ = condB && condA\n}\n"
+		code2 := "package main\n\nfunc f() {\n\t_ = condA || other\n\t_ = condB\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		d2Inside := testutil.Node("identifier", "condA")
-		op2 := testutil.Leaf("||", "||")
-		d2Other := testutil.Node("identifier", "other")
-		bin2 := testutil.Node("binary_expression", "", d2Inside, op2, d2Other)
-		stmt2 := testutil.Node("expression_statement", "", bin2)
+		bin1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+		bin2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
 
-		d2Outside := testutil.Node("identifier", "condB")
-		stmtOutside := testutil.Node("expression_statement", "", d2Outside)
+		d1Left := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condB" })
+		d1Right := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
 
-		block2 := testutil.Node("block", "", stmt2, stmtOutside)
-		root2 := testutil.Node("source_file", "", block2)
-		root2.Language = "go"
-		treesitter.EnsureIndex(root2)
+		d2Inside := findFirstNode(bin2, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d2Outside := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Label == "condB" })
 
 		m := NewMapping()
 		m.Add(d1Right, d2Inside)
@@ -1806,29 +1848,19 @@ func TestHasSplitStatementDescendant(t *testing.T) {
 	})
 
 	t.Run("ReverseDirection", func(t *testing.T) {
-		// Candidate c in tree 2 has operands split across multiple statements in tree 1.
-		d1Left := testutil.Node("identifier", "condA")
-		op1 := testutil.Leaf("&&", "&&")
-		d1Unused := testutil.Node("identifier", "unused")
-		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Unused)
-		stmt1 := testutil.Node("expression_statement", "", bin1)
+		code1 := "package main\n\nfunc f() {\n\t_ = condA && unused\n\t_ = other\n}\n"
+		code2 := "package main\n\nfunc f() {\n\t_ = condA || other\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		d1Outside := testutil.Node("identifier", "other")
-		stmtOutside1 := testutil.Node("expression_statement", "", d1Outside)
+		bin1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+		bin2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
 
-		block1 := testutil.Node("block", "", stmt1, stmtOutside1)
-		root1 := testutil.Node("source_file", "", block1)
-		root1.Language = "go"
-		treesitter.EnsureIndex(root1)
+		d1Left := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d1Outside := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Label == "other" })
 
-		d2Left := testutil.Node("identifier", "condA")
-		op2 := testutil.Leaf("||", "||")
-		d2Right := testutil.Node("identifier", "other")
-		bin2 := testutil.Node("binary_expression", "", d2Left, op2, d2Right)
-		stmt2 := testutil.Node("expression_statement", "", bin2)
-		root2 := testutil.Node("source_file", "", stmt2)
-		root2.Language = "go"
-		treesitter.EnsureIndex(root2)
+		d2Left := findFirstNode(bin2, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d2Right := findFirstNode(bin2, func(n *treesitter.ASTNode) bool { return n.Label == "other" })
 
 		m := NewMapping()
 		m.Add(d1Left, d2Left)
@@ -1840,23 +1872,19 @@ func TestHasSplitStatementDescendant(t *testing.T) {
 	})
 
 	t.Run("SameStatementPermitted", func(t *testing.T) {
-		d1Left := testutil.Node("identifier", "condA")
-		op1 := testutil.Leaf("&&", "&&")
-		d1Right := testutil.Node("identifier", "condB")
-		bin1 := testutil.Node("binary_expression", "", d1Left, op1, d1Right)
-		stmt1 := testutil.Node("expression_statement", "", bin1)
-		root1 := testutil.Node("source_file", "", stmt1)
-		root1.Language = "go"
-		treesitter.EnsureIndex(root1)
+		code1 := "package main\n\nfunc f() {\n\t_ = condA && condB\n}\n"
+		code2 := "package main\n\nfunc f() {\n\t_ = condA || condB\n}\n"
+		root1 := parseSnippet(t, code1, "test.go")
+		root2 := parseSnippet(t, code2, "test.go")
 
-		d2Left := testutil.Node("identifier", "condA")
-		op2 := testutil.Leaf("||", "||")
-		d2Right := testutil.Node("identifier", "condB")
-		bin2 := testutil.Node("binary_expression", "", d2Left, op2, d2Right)
-		stmt2 := testutil.Node("expression_statement", "", bin2)
-		root2 := testutil.Node("source_file", "", stmt2)
-		root2.Language = "go"
-		treesitter.EnsureIndex(root2)
+		bin1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+		bin2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "binary_expression" })
+
+		d1Left := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d1Right := findFirstNode(bin1, func(n *treesitter.ASTNode) bool { return n.Label == "condB" })
+
+		d2Left := findFirstNode(bin2, func(n *treesitter.ASTNode) bool { return n.Label == "condA" })
+		d2Right := findFirstNode(bin2, func(n *treesitter.ASTNode) bool { return n.Label == "condB" })
 
 		m := NewMapping()
 		m.Add(d1Left, d2Left)
