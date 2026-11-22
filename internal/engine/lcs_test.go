@@ -8,20 +8,62 @@ import (
 )
 
 func TestLCSLabelIdentical(t *testing.T) {
-	a := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "y")}
-	b := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "y")}
+	srcA := []byte("package p\nvar ( x = 1\n y = 2 )\n")
+	srcB := []byte("package p\nvar ( x = 1\n y = 2 )\n")
 
-	pairs := LCSLabel(a, b)
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	x1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	y1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	y2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pairs := LCSLabel([]*treesitter.ASTNode{x1, y1}, []*treesitter.ASTNode{x2, y2})
 	if len(pairs) != 2 {
 		t.Errorf("identical seqs: want 2 pairs, got %d", len(pairs))
 	}
 }
 
 func TestLCSLabelPartial(t *testing.T) {
-	a := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "y"), testutil.Leaf("id", "z")}
-	b := []*treesitter.ASTNode{testutil.Leaf("id", "x"), testutil.Leaf("id", "z")}
+	srcA := []byte("package p\nvar ( x = 1\n y = 2\n z = 3 )\n")
+	srcB := []byte("package p\nvar ( x = 1\n z = 3 )\n")
 
-	pairs := LCSLabel(a, b)
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	x1, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2})
+	y1, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
+	z1, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 4})
+
+	x2, _ := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2})
+	z2, _ := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 3})
+
+	pairs := LCSLabel([]*treesitter.ASTNode{x1, y1, z1}, []*treesitter.ASTNode{x2, z2})
 	if len(pairs) != 2 {
 		t.Errorf("partial match: want 2 pairs, got %d", len(pairs))
 	}
@@ -31,7 +73,13 @@ func TestLCSLabelPartial(t *testing.T) {
 }
 
 func TestLCSLabelEmpty(t *testing.T) {
-	a := []*treesitter.ASTNode{testutil.Leaf("id", "x")}
+	src := []byte("package p\nvar x = 1\n")
+	root, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, _ := testutil.FindNode(root, testutil.NodeQuery{Type: "identifier", Line: 2})
+	a := []*treesitter.ASTNode{x}
 
 	if pairs := LCSLabel(nil, a); pairs != nil {
 		t.Error("nil seq1 should return nil")
@@ -42,10 +90,22 @@ func TestLCSLabelEmpty(t *testing.T) {
 }
 
 func TestLCSLabelNoMatch(t *testing.T) {
-	a := []*treesitter.ASTNode{testutil.Leaf("id", "x")}
-	b := []*treesitter.ASTNode{testutil.Leaf("id", "y")}
+	srcA := []byte("package p\nvar x = 1\n")
+	srcB := []byte("package p\nvar y = 1\n")
 
-	pairs := LCSLabel(a, b)
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	x, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2})
+	y, _ := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2})
+
+	pairs := LCSLabel([]*treesitter.ASTNode{x}, []*treesitter.ASTNode{y})
 	if len(pairs) != 0 {
 		t.Errorf("no match: want 0 pairs, got %d", len(pairs))
 	}
@@ -53,41 +113,87 @@ func TestLCSLabelNoMatch(t *testing.T) {
 
 func TestLCSStructureBasic(t *testing.T) {
 	// Matches same structure even if labels differ.
-	a := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"))}
-	b := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "y"))}
+	srcA := []byte("package p\nfunc f() { foo(1) }\n")
+	srcB := []byte("package p\nfunc f() { bar(2) }\n")
 
-	pairs := LCSStructure(a, b, nil)
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pairs := LCSStructure([]*treesitter.ASTNode{callA}, []*treesitter.ASTNode{callB}, nil)
 	if len(pairs) != 1 {
 		t.Errorf("structural match: want 1 pair, got %d", len(pairs))
 	}
 }
 
 func TestLCSStructureDiffShape(t *testing.T) {
-	a := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"))}
-	b := []*treesitter.ASTNode{testutil.Node("call", "", testutil.Leaf("id", "x"), testutil.Leaf("id", "y"))}
+	srcA := []byte("package p\nfunc f() { foo(1) }\n")
+	srcB := []byte("package p\nfunc f() { bar(1, 2) }\n")
 
-	pairs := LCSStructure(a, b, nil)
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pairs := LCSStructure([]*treesitter.ASTNode{callA}, []*treesitter.ASTNode{callB}, nil)
 	if len(pairs) != 0 {
 		t.Errorf("different shape: want 0 pairs, got %d", len(pairs))
 	}
 }
 
 func TestChildIndex(t *testing.T) {
-	c1 := testutil.Leaf("id", "x")
-	c2 := testutil.Leaf("id", "y")
-	testutil.Node("call", "", c1, c2)
-
-	if got := c1.ChildIndex(); got != 0 {
-		t.Errorf("c1.ChildIndex() = %d, want 0", got)
+	src := []byte("package p\nfunc f() { x(); y() }\n")
+	root, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := c2.ChildIndex(); got != 1 {
-		t.Errorf("c2.ChildIndex() = %d, want 1", got)
+
+	c0 := root.Children[0]
+	c1 := root.Children[1]
+
+	if got := c0.ChildIndex(); got != 0 {
+		t.Errorf("c0.ChildIndex() = %d, want 0", got)
+	}
+	if got := c1.ChildIndex(); got != 1 {
+		t.Errorf("c1.ChildIndex() = %d, want 1", got)
 	}
 }
 
 func TestChildIndexNoParent(t *testing.T) {
-	n := testutil.Leaf("id", "x")
-	if got := n.ChildIndex(); got != -1 {
+	src := []byte("package p\n")
+	root, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := root.ChildIndex(); got != -1 {
 		t.Errorf("orphan ChildIndex() = %d, want -1", got)
 	}
 	var nilNode *treesitter.ASTNode
@@ -97,12 +203,28 @@ func TestChildIndexNoParent(t *testing.T) {
 }
 
 func TestScorePartner(t *testing.T) {
-	src := testutil.Leaf("id", "x")
-	dst := testutil.Leaf("id", "x")
-	testutil.Node("call", "", src)
-	testutil.Node("call", "", dst)
+	srcA := []byte("package p\nfunc f() { x() }\n")
+	srcB := []byte("package p\nfunc f() { x() }\n")
 
-	score := scorePartner(src, dst, 0, nil)
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	idA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	score := scorePartner(idA, idB, idA.ChildIndex(), nil)
 	if score < 100 {
 		t.Errorf("same position + label should score >= 100, got %d", score)
 	}

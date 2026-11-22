@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -10,18 +11,28 @@ import (
 
 func TestRevokeOrphanedGlue(t *testing.T) {
 	// Parent with orphaned glue: operator matched, sibling subtree unmatched.
-	parent := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Node("call_expression", "", testutil.Leaf("identifier", "NewMapping")),
-	)
-	glue, unmatched := parent.Children[1], parent.Children[2]
-	dstParent := testutil.Node("other_construct", "",
-		testutil.Leaf("identifier", "y"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-	)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tm := NewMapping()\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc g() {\n\ty := 1\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	glue, err := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	if err != nil {
+		t.Fatalf("find glue: %v", err)
+	}
+	unmatched, err := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "call_expression", Line: 3})
+	if err != nil {
+		t.Fatalf("find unmatched: %v", err)
+	}
+	dstGlue, err := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	if err != nil {
+		t.Fatalf("find dstGlue: %v", err)
+	}
 	m := NewMapping()
-	m.Add(glue, dstParent.Children[1])
+	m.Add(glue, dstGlue)
 	RevokeOrphanedGlue(m)
 	if m.Has(glue) {
 		t.Fatal("reparented orphaned glue should be revoked")
@@ -33,400 +44,420 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	// Reparented glue revoked even when siblings mapped elsewhere
 	// (scattered matches in repetitive code): glue must never move.
 	m5 := NewMapping()
-	srcScat := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "a"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "b"),
-	)
-	dstScat := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "c"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "d"),
-	)
-	m5.Add(srcScat.Children[0], testutil.Leaf("identifier", "elsewhere"))
-	m5.Add(srcScat.Children[1], dstScat.Children[1])
-	m5.Add(srcScat.Children[2], testutil.Leaf("identifier", "elsewhere2"))
+	srcScatTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\ta := b\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcScat: %v", err)
+	}
+	dstScatTree, err := treesitter.Parse([]byte("package main\nfunc g() {\n\tc := d\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstScat: %v", err)
+	}
+	elsewhereTree, err := treesitter.Parse([]byte("package main\nfunc h() {\n\t_ = elsewhere\n\t_ = elsewhere2\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse elsewhere: %v", err)
+	}
+	srcScatA, _ := testutil.FindNode(srcScatTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+	srcScatGlue, _ := testutil.FindNode(srcScatTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	srcScatB, _ := testutil.FindNode(srcScatTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	dstScatGlue, _ := testutil.FindNode(dstScatTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	ew1, _ := testutil.FindNode(elsewhereTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	ew2, _ := testutil.FindNode(elsewhereTree, testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 2})
+
+	m5.Add(srcScatA, ew1)
+	m5.Add(srcScatGlue, dstScatGlue)
+	m5.Add(srcScatB, ew2)
 	RevokeOrphanedGlue(m5)
-	if m5.Has(srcScat.Children[1]) {
+	if m5.Has(srcScatGlue) {
 		t.Fatal("reparented glue with scattered siblings should be revoked")
 	}
+
 	// Stationary glue (same container): kept even with unmatched sibling.
-	dstSame := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-	)
+	srcSameTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tm := NewMapping()\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcSame: %v", err)
+	}
+	dstSameTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tm := 1\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstSame: %v", err)
+	}
+	srcFunc, _ := testutil.FindNode(srcSameTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	dstFunc, _ := testutil.FindNode(dstSameTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	srcBlock, _ := testutil.FindNode(srcSameTree, testutil.NodeQuery{Type: "block", Line: 2})
+	dstBlock, _ := testutil.FindNode(dstSameTree, testutil.NodeQuery{Type: "block", Line: 2})
+	srcDecl, _ := testutil.FindNode(srcSameTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	dstDecl, _ := testutil.FindNode(dstSameTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	srcSameGlue, _ := testutil.FindNode(srcSameTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	dstSameGlue, _ := testutil.FindNode(dstSameTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
 	m4 := NewMapping()
-	m4.Add(parent, dstSame)
-	m4.Add(glue, dstSame.Children[1])
+	m4.Add(srcFunc, dstFunc)
+	m4.Add(srcBlock, dstBlock)
+	m4.Add(srcDecl, dstDecl)
+	m4.Add(srcSameGlue, dstSameGlue)
 	RevokeOrphanedGlue(m4)
-	if !m4.Has(glue) {
+	if !m4.Has(srcSameGlue) {
 		t.Fatal("stationary glue should be kept")
 	}
 
 	// Fully matched construct: glue kept.
 	m2 := NewMapping()
-	parent2 := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "x"),
-	)
-	dstFull := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "x"),
-	)
-	m2.Add(parent2, dstFull)
-	m2.Add(parent2.Children[0], dstFull.Children[0])
-	m2.Add(parent2.Children[1], dstFull.Children[1])
-	m2.Add(parent2.Children[2], dstFull.Children[2])
+	srcFullTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tm := x\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcFull: %v", err)
+	}
+	dstFullTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tm := x\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstFull: %v", err)
+	}
+	srcFullDecl, _ := testutil.FindNode(srcFullTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	dstFullDecl, _ := testutil.FindNode(dstFullTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	srcFullM, _ := testutil.FindNode(srcFullTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+	dstFullM, _ := testutil.FindNode(dstFullTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+	srcFullGlue, _ := testutil.FindNode(srcFullTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	dstFullGlue, _ := testutil.FindNode(dstFullTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	srcFullX, _ := testutil.FindNode(srcFullTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	dstFullX, _ := testutil.FindNode(dstFullTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+
+	m2.Add(srcFullDecl, dstFullDecl)
+	m2.Add(srcFullM, dstFullM)
+	m2.Add(srcFullGlue, dstFullGlue)
+	m2.Add(srcFullX, dstFullX)
 	RevokeOrphanedGlue(m2)
-	if !m2.Has(parent2.Children[1]) {
+	if !m2.Has(srcFullGlue) {
 		t.Fatal("glue in fully matched construct should be kept")
 	}
 
 	// Moving container with zero non-glue children matched:
 	// Reparented across blocks, only glue matched -> revoked.
-	srcBlock := testutil.Node("block", "")
-	dstBlock := testutil.Node("block", "")
-	srcMoving := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "srcVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "oldVal"),
-	)
-	srcMoving.Parent = srcBlock
-	dstMoving := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "dstVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "newVal"),
-	)
-	dstMoving.Parent = dstBlock
+	srcMoveTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tsrcVar := oldVal\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcMove: %v", err)
+	}
+	dstMoveTree, err := treesitter.Parse([]byte("package main\nfunc g() {\n\tdstVar := newVal\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstMove: %v", err)
+	}
+	srcMoveDecl, _ := testutil.FindNode(srcMoveTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	dstMoveDecl, _ := testutil.FindNode(dstMoveTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	srcMoveGlue, _ := testutil.FindNode(srcMoveTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	dstMoveGlue, _ := testutil.FindNode(dstMoveTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
 	mMoving := NewMapping()
-	mMoving.Add(srcMoving, dstMoving)
-	mMoving.Add(srcMoving.Children[1], dstMoving.Children[1])
+	mMoving.Add(srcMoveDecl, dstMoveDecl)
+	mMoving.Add(srcMoveGlue, dstMoveGlue)
 	RevokeOrphanedGlue(mMoving)
-	if mMoving.Has(srcMoving) {
+	if mMoving.Has(srcMoveDecl) {
 		t.Fatal("moving container with zero non-glue matches should be revoked")
 	}
-	if mMoving.Has(srcMoving.Children[1]) {
+	if mMoving.Has(srcMoveGlue) {
 		t.Fatal("glue inside revoked moving container should be revoked")
 	}
 
 	// Moving container with only a bare identifier or single-child wrapper matched:
 	// bare tokens (height = 1) do not have structural mass to anchor a moving container across blocks.
-	srcMoveLeaf := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "commonVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "oldVal"),
-	)
-	srcMoveLeaf.Parent = srcBlock
-	dstMoveLeaf := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "commonVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "newVal"),
-	)
-	dstMoveLeaf.Parent = dstBlock
+	srcMoveLeafTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tcommonVar := oldVal\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcMoveLeaf: %v", err)
+	}
+	dstMoveLeafTree, err := treesitter.Parse([]byte("package main\nfunc g() {\n\tcommonVar := newVal\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstMoveLeaf: %v", err)
+	}
+	srcLeafDecl, _ := testutil.FindNode(srcMoveLeafTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	dstLeafDecl, _ := testutil.FindNode(dstMoveLeafTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	srcCommonVar, _ := testutil.FindNode(srcMoveLeafTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+	dstCommonVar, _ := testutil.FindNode(dstMoveLeafTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+	srcLeafGlue, _ := testutil.FindNode(srcMoveLeafTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	dstLeafGlue, _ := testutil.FindNode(dstMoveLeafTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
 	mRevokeLeaf := NewMapping()
-	mRevokeLeaf.Add(srcMoveLeaf, dstMoveLeaf)
-	mRevokeLeaf.Add(srcMoveLeaf.Children[0], dstMoveLeaf.Children[0])
-	mRevokeLeaf.Add(srcMoveLeaf.Children[1], dstMoveLeaf.Children[1])
+	mRevokeLeaf.Add(srcLeafDecl, dstLeafDecl)
+	mRevokeLeaf.Add(srcCommonVar, dstCommonVar)
+	mRevokeLeaf.Add(srcLeafGlue, dstLeafGlue)
 	RevokeOrphanedGlue(mRevokeLeaf)
-	if mRevokeLeaf.Has(srcMoveLeaf) {
+	if mRevokeLeaf.Has(srcLeafDecl) {
 		t.Fatal("moving container anchored solely by glue and bare identifier should be revoked")
 	}
-	if mRevokeLeaf.Has(srcMoveLeaf.Children[1]) {
+	if mRevokeLeaf.Has(srcLeafGlue) {
 		t.Fatal("glue inside revoked moving container should be revoked")
 	}
 
 	// Single-child wrapper (expression_list -> identifier, effectiveHeight = 1): revoked.
-	srcLHSWrap := testutil.Node("expression_list", "", testutil.Leaf("identifier", "m"))
-	srcLHSWrap.Language = "go"
-	dstLHSWrap := testutil.Node("expression_list", "", testutil.Leaf("identifier", "m"))
-	dstLHSWrap.Language = "go"
-	srcMoveWrap := testutil.Node("short_var_declaration", "",
-		srcLHSWrap,
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "oldVal"),
-	)
-	srcMoveWrap.Language = "go"
-	srcMoveWrap.Parent = srcBlock
-	dstMoveWrap := testutil.Node("short_var_declaration", "",
-		dstLHSWrap,
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "newVal"),
-	)
-	dstMoveWrap.Language = "go"
-	dstMoveWrap.Parent = dstBlock
+	srcLHSWrap, _ := testutil.FindNode(srcMoveLeafTree, testutil.NodeQuery{Type: "expression_list", Line: 3, Nth: 1})
+	dstLHSWrap, _ := testutil.FindNode(dstMoveLeafTree, testutil.NodeQuery{Type: "expression_list", Line: 3, Nth: 1})
 	mRevokeWrap := NewMapping()
-	mRevokeWrap.Add(srcMoveWrap, dstMoveWrap)
+	mRevokeWrap.Add(srcLeafDecl, dstLeafDecl)
 	mRevokeWrap.Add(srcLHSWrap, dstLHSWrap)
-	mRevokeWrap.Add(srcLHSWrap.Children[0], dstLHSWrap.Children[0])
-	mRevokeWrap.Add(srcMoveWrap.Children[1], dstMoveWrap.Children[1])
+	mRevokeWrap.Add(srcCommonVar, dstCommonVar)
+	mRevokeWrap.Add(srcLeafGlue, dstLeafGlue)
 	RevokeOrphanedGlue(mRevokeWrap)
-	if mRevokeWrap.Has(srcMoveWrap) {
+	if mRevokeWrap.Has(srcLeafDecl) {
 		t.Fatal("moving container with only a 1-child wrapper LHS matched should be revoked")
 	}
-	if mRevokeWrap.Has(srcMoveWrap.Children[1]) {
+	if mRevokeWrap.Has(srcLeafGlue) {
 		t.Fatal("glue inside revoked moving container should be revoked")
 	}
 
 	// Moving container with matched compound child (effectiveHeight >= 2, e.g. RHS call_expression):
 	// Reparented across blocks, compound RHS and glue matched -> preserved.
-	srcRHSCall := testutil.Node("call_expression", "",
-		testutil.Leaf("identifier", "compute"),
-		testutil.Node("argument_list", "", testutil.Leaf("identifier", "x")),
-	)
-	dstRHSCall := testutil.Node("call_expression", "",
-		testutil.Leaf("identifier", "compute"),
-		testutil.Node("argument_list", "", testutil.Leaf("identifier", "x")),
-	)
-	srcMoveOK := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "oldVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		srcRHSCall,
-	)
-	srcMoveOK.Parent = srcBlock
-	dstMoveOK := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "newVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		dstRHSCall,
-	)
-	dstMoveOK.Parent = dstBlock
+	srcCompoundTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\toldVar := compute(x)\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcCompound: %v", err)
+	}
+	dstCompoundTree, err := treesitter.Parse([]byte("package main\nfunc g() {\n\tnewVar := compute(x)\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstCompound: %v", err)
+	}
+	srcCompDecl, _ := testutil.FindNode(srcCompoundTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	dstCompDecl, _ := testutil.FindNode(dstCompoundTree, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	srcRHSWrap, _ := testutil.FindNode(srcCompoundTree, testutil.NodeQuery{Type: "expression_list", Line: 3, Nth: 2})
+	dstRHSWrap, _ := testutil.FindNode(dstCompoundTree, testutil.NodeQuery{Type: "expression_list", Line: 3, Nth: 2})
+	srcRHSCall, _ := testutil.FindNode(srcCompoundTree, testutil.NodeQuery{Type: "call_expression", Line: 3})
+	dstRHSCall, _ := testutil.FindNode(dstCompoundTree, testutil.NodeQuery{Type: "call_expression", Line: 3})
+	srcCompGlue, _ := testutil.FindNode(srcCompoundTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
+	dstCompGlue, _ := testutil.FindNode(dstCompoundTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3})
 	mPreserve := NewMapping()
-	mPreserve.Add(srcMoveOK, dstMoveOK)
+	mPreserve.Add(srcCompDecl, dstCompDecl)
+	mPreserve.Add(srcRHSWrap, dstRHSWrap)
 	mPreserve.Add(srcRHSCall, dstRHSCall)
-	mPreserve.Add(srcMoveOK.Children[1], dstMoveOK.Children[1])
+	mPreserve.Add(srcCompGlue, dstCompGlue)
 	RevokeOrphanedGlue(mPreserve)
-	if !mPreserve.Has(srcMoveOK) {
+	if !mPreserve.Has(srcCompDecl) {
 		t.Fatal("moving container with matched compound child (height >= 2) should be preserved")
 	}
-	if !mPreserve.Has(srcMoveOK.Children[1]) {
+	if !mPreserve.Has(srcCompGlue) {
 		t.Fatal("glue inside valid moving container with compound child should be preserved")
 	}
 
 	// Keyword glue recognition: if keyword across moving blocks with no non-glue matches.
-	srcIf := testutil.Node("if_statement", "",
-		testutil.Leaf("if", "if"),
-		testutil.Leaf("identifier", "condA"),
-	)
-	srcIf.Children[0].IsKeyword = true
-	srcIf.Parent = srcBlock
-	dstIf := testutil.Node("if_statement", "",
-		testutil.Leaf("if", "if"),
-		testutil.Leaf("identifier", "condB"),
-	)
-	dstIf.Children[0].IsKeyword = true
-	dstIf.Parent = dstBlock
+	srcIfTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tif condA {}\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse srcIf: %v", err)
+	}
+	dstIfTree, err := treesitter.Parse([]byte("package main\nfunc g() {\n\tif condB {}\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dstIf: %v", err)
+	}
+	srcIf, _ := testutil.FindNode(srcIfTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	dstIf, _ := testutil.FindNode(dstIfTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	srcKw, _ := testutil.FindNode(srcIfTree, testutil.NodeQuery{Type: "if", Line: 3})
+	dstKw, _ := testutil.FindNode(dstIfTree, testutil.NodeQuery{Type: "if", Line: 3})
 	mKw := NewMapping()
 	mKw.Add(srcIf, dstIf)
-	mKw.Add(srcIf.Children[0], dstIf.Children[0])
+	mKw.Add(srcKw, dstKw)
 	RevokeOrphanedGlue(mKw)
 	if mKw.Has(srcIf) {
 		t.Fatal("moving if_statement anchored solely by if keyword should be revoked")
 	}
-	if mKw.Has(srcIf.Children[0]) {
+	if mKw.Has(srcKw) {
 		t.Fatal("if keyword glue should be revoked")
 	}
 
 	// A moved statement with only leaf tokens (like let far_future = 10_000_000)
 	// should be preserved when both sides are isomorphic.
-	srcIso := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	srcIso.Children[0].IsKeyword = true
-	srcIso.Parent = srcBlock
-	dstIso := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	dstIso.Children[0].IsKeyword = true
-	dstIso.Parent = dstBlock
+	srcIsoTree, err := treesitter.Parse([]byte("fn f() {\n\tlet far_future = 10_000_000;\n}"), "test.rs")
+	if err != nil {
+		t.Fatalf("parse srcIso: %v", err)
+	}
+	dstIsoTree, err := treesitter.Parse([]byte("fn g() {\n\tlet far_future = 10_000_000;\n}"), "test.rs")
+	if err != nil {
+		t.Fatalf("parse dstIso: %v", err)
+	}
+	srcLet, _ := testutil.FindNode(srcIsoTree, testutil.NodeQuery{Type: "let_declaration", Line: 2})
+	dstLet, _ := testutil.FindNode(dstIsoTree, testutil.NodeQuery{Type: "let_declaration", Line: 2})
 	mIso := NewMapping()
-	mIso.Add(srcIso, dstIso)
-	mIso.Add(srcIso.Children[0], dstIso.Children[0]) // let
-	mIso.Add(srcIso.Children[1], dstIso.Children[1]) // far_future
-	mIso.Add(srcIso.Children[2], dstIso.Children[2]) // =
-	mIso.Add(srcIso.Children[3], dstIso.Children[3]) // 10_000_000
+	mIso.Add(srcLet, dstLet)
+	for i := range srcLet.Children {
+		if i < len(dstLet.Children) {
+			mIso.Add(srcLet.Children[i], dstLet.Children[i])
+		}
+	}
 	RevokeOrphanedGlue(mIso)
-	if !mIso.Has(srcIso) {
+	if !mIso.Has(srcLet) {
 		t.Fatal("moving isomorphic container with leaf payload should be preserved")
 	}
-	if !mIso.Has(srcIso.Children[0]) {
+	if !mIso.Has(srcLet.Children[0]) {
 		t.Fatal("glue inside moving isomorphic container should be preserved")
 	}
 
 	// A moved statement should also stay mapped if all non-glue children match,
 	// even when the destination adds a keyword like mut.
-	srcAllNonGlue := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	srcAllNonGlue.Children[0].IsKeyword = true
-	srcAllNonGlue.Parent = srcBlock
-	dstAllNonGlue := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("mutable_specifier", "mut"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	dstAllNonGlue.Children[0].IsKeyword = true
-	dstAllNonGlue.Children[1].IsKeyword = true
-	dstAllNonGlue.Parent = dstBlock
+	dstMutTree, err := treesitter.Parse([]byte("fn g() {\n\tlet mut far_future = 10_000_000;\n}"), "test.rs")
+	if err != nil {
+		t.Fatalf("parse dstMut: %v", err)
+	}
+	dstMutLet, _ := testutil.FindNode(dstMutTree, testutil.NodeQuery{Type: "let_declaration", Line: 2})
+	srcLetKw, _ := testutil.FindNode(srcIsoTree, testutil.NodeQuery{Type: "let", Line: 2})
+	dstLetKw, _ := testutil.FindNode(dstMutTree, testutil.NodeQuery{Type: "let", Line: 2})
+	srcIdent, _ := testutil.FindNode(srcIsoTree, testutil.NodeQuery{Type: "identifier", Line: 2})
+	dstIdent, _ := testutil.FindNode(dstMutTree, testutil.NodeQuery{Type: "identifier", Line: 2})
+	srcEq, _ := testutil.FindNode(srcIsoTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 2})
+	dstEq, _ := testutil.FindNode(dstMutTree, testutil.NodeQuery{Type: "assignment_operator_literal", Line: 2})
+	srcInt, _ := testutil.FindNode(srcIsoTree, testutil.NodeQuery{Type: "integer_literal", Line: 2})
+	dstInt, _ := testutil.FindNode(dstMutTree, testutil.NodeQuery{Type: "integer_literal", Line: 2})
+
 	mAllNonGlue := NewMapping()
-	mAllNonGlue.Add(srcAllNonGlue, dstAllNonGlue)
-	mAllNonGlue.Add(srcAllNonGlue.Children[0], dstAllNonGlue.Children[0]) // let
-	mAllNonGlue.Add(srcAllNonGlue.Children[1], dstAllNonGlue.Children[2]) // far_future
-	mAllNonGlue.Add(srcAllNonGlue.Children[2], dstAllNonGlue.Children[3]) // =
-	mAllNonGlue.Add(srcAllNonGlue.Children[3], dstAllNonGlue.Children[4]) // 10_000_000
+	mAllNonGlue.Add(srcLet, dstMutLet)
+	mAllNonGlue.Add(srcLetKw, dstLetKw)
+	mAllNonGlue.Add(srcIdent, dstIdent)
+	mAllNonGlue.Add(srcEq, dstEq)
+	mAllNonGlue.Add(srcInt, dstInt)
 	RevokeOrphanedGlue(mAllNonGlue)
-	if !mAllNonGlue.Has(srcAllNonGlue) {
+	if !mAllNonGlue.Has(srcLet) {
 		t.Fatal("moving container with all non-glue children matched should be preserved")
 	}
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_RHSMatched(t *testing.T) {
-	lhsOld := testutil.Leaf("identifier", "oldVar")
-	opOld := testutil.Leaf("comparison_operator_literal", "==")
-	rhs := testutil.Leaf("identifier", "commonVal")
-	srcExpr := testutil.Node("binary_expression", "", lhsOld, opOld, rhs)
-
-	lhsNew := testutil.Leaf("identifier", "newVar")
-	opNew := testutil.Leaf("comparison_operator_literal", "==")
-	rhsDst := testutil.Leaf("identifier", "commonVal")
-	dstExpr := testutil.Node("binary_expression", "", lhsNew, opNew, rhsDst)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\t_ = oldVar == commonVal\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\t_ = newVar == commonVal\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcFunc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	dstFunc, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	srcBin, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+	dstBin, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+	srcLHS, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	dstLHS, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	srcOp, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "comparison_operator_literal", Line: 3})
+	dstOp, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "comparison_operator_literal", Line: 3})
+	srcRHS, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 3})
+	dstRHS, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 3})
 
 	m := NewMapping()
-	m.Add(rhs, rhsDst)
+	m.Add(srcFunc, dstFunc)
+	m.Add(srcRHS, dstRHS)
 
 	RecoverGlueAnchors(m)
 
-	if !m.Has(srcExpr) || m.Src()[srcExpr] != dstExpr {
-		t.Fatalf("parent binary_expression should be mapped to dstExpr, got %v", m.Src()[srcExpr])
+	if !m.Has(srcBin) || m.Src()[srcBin] != dstBin {
+		t.Fatalf("parent binary_expression should be mapped to dstBin, got %v", m.Src()[srcBin])
 	}
-	if !m.Has(opOld) || m.Src()[opOld] != opNew {
-		t.Fatalf("operator == should be mapped to opNew, got %v", m.Src()[opOld])
+	if !m.Has(srcOp) || m.Src()[srcOp] != dstOp {
+		t.Fatalf("operator == should be mapped to dstOp, got %v", m.Src()[srcOp])
 	}
-	if !m.Has(lhsOld) || m.Src()[lhsOld] != lhsNew {
-		t.Fatalf("LHS oldVar should be recovered and mapped to newVar, got %v", m.Src()[lhsOld])
+	if !m.Has(srcLHS) || m.Src()[srcLHS] != dstLHS {
+		t.Fatalf("LHS oldVar should be recovered and mapped to newVar, got %v", m.Src()[srcLHS])
 	}
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_LHSMatched(t *testing.T) {
-	lhs := testutil.Leaf("identifier", "commonVal")
-	opOld := testutil.Leaf("comparison_operator_literal", "==")
-	rhsOld := testutil.Leaf("identifier", "oldRHS")
-	srcExpr := testutil.Node("binary_expression", "", lhs, opOld, rhsOld)
-
-	lhsDst := testutil.Leaf("identifier", "commonVal")
-	opNew := testutil.Leaf("comparison_operator_literal", "==")
-	rhsNew := testutil.Leaf("identifier", "newRHS")
-	dstExpr := testutil.Node("binary_expression", "", lhsDst, opNew, rhsNew)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\t_ = commonVal == oldRHS\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\t_ = commonVal == newRHS\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcFunc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	dstFunc, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	srcBin, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+	dstBin, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+	srcLHS, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	dstLHS, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	srcOp, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "comparison_operator_literal", Line: 3})
+	dstOp, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "comparison_operator_literal", Line: 3})
+	srcRHS, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 3})
+	dstRHS, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 3})
 
 	m := NewMapping()
-	m.Add(lhs, lhsDst)
+	m.Add(srcFunc, dstFunc)
+	m.Add(srcLHS, dstLHS)
 
 	RecoverGlueAnchors(m)
 
-	if !m.Has(srcExpr) || m.Src()[srcExpr] != dstExpr {
-		t.Fatalf("parent binary_expression should be mapped to dstExpr, got %v", m.Src()[srcExpr])
+	if !m.Has(srcBin) || m.Src()[srcBin] != dstBin {
+		t.Fatalf("parent binary_expression should be mapped to dstBin, got %v", m.Src()[srcBin])
 	}
-	if !m.Has(opOld) || m.Src()[opOld] != opNew {
-		t.Fatalf("operator == should be mapped to opNew, got %v", m.Src()[opOld])
+	if !m.Has(srcOp) || m.Src()[srcOp] != dstOp {
+		t.Fatalf("operator == should be mapped to dstOp, got %v", m.Src()[srcOp])
 	}
-	if !m.Has(rhsOld) || m.Src()[rhsOld] != rhsNew {
-		t.Fatalf("RHS oldRHS should be recovered and mapped to newRHS, got %v", m.Src()[rhsOld])
+	if !m.Has(srcRHS) || m.Src()[srcRHS] != dstRHS {
+		t.Fatalf("RHS oldRHS should be recovered and mapped to newRHS, got %v", m.Src()[srcRHS])
 	}
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_OppositeSidesNotMatched(t *testing.T) {
 	// x = y (y is on RHS) vs y = z (y is on LHS)
-	xOld := testutil.Leaf("identifier", "x")
-	xOld.StartByte = 0
-	opOld := testutil.Leaf("=", "=")
-	opOld.StartByte = 2
-	yOld := testutil.Leaf("identifier", "y")
-	yOld.StartByte = 4
-	srcExpr := testutil.Node("assignment_expression", "", xOld, opOld, yOld)
-
-	yNew := testutil.Leaf("identifier", "y")
-	yNew.StartByte = 0
-	opNew := testutil.Leaf("=", "=")
-	opNew.StartByte = 2
-	zNew := testutil.Leaf("identifier", "z")
-	zNew.StartByte = 4
-	dstExpr := testutil.Node("assignment_expression", "", yNew, opNew, zNew)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tx = y\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\ty = z\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcAssign, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "assignment_statement", Line: 3})
+	dstAssign, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "assignment_statement", Line: 3})
+	srcY, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2})
+	dstY, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
 
 	m := NewMapping()
-	m.Add(yOld, yNew)
+	m.Add(srcY, dstY)
 
 	RecoverGlueAnchors(m)
 
-	if m.Has(srcExpr) || m.HasDst(dstExpr) {
+	if m.Has(srcAssign) || m.HasDst(dstAssign) {
 		t.Fatalf("assignment expressions should not be paired when matched operand sits on opposite sides of operator")
 	}
 }
 
 func TestRecoverGlueAnchors_ControlFlow_BodyMatched(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Leaf("identifier", "oldCond")
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "stmt1"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	condNew := testutil.Leaf("identifier", "newCond")
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "stmt1"))
-	dstIf := testutil.Node("if_statement", "", kwNew, condNew, bodyNew)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tif oldCond {\n\t\tstmt1()\n\t}\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tif newCond {\n\t\tstmt1()\n\t}\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcFunc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	dstFunc, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	srcIf, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	dstIf, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	srcKw, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if", Line: 3})
+	dstKw, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if", Line: 3})
+	srcCond, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 3})
+	dstCond, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 3})
+	srcBody, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 3})
+	dstBody, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 3})
 
 	m := NewMapping()
-	m.Add(bodyOld, bodyNew)
+	m.Add(srcFunc, dstFunc)
+	m.Add(srcBody, dstBody)
 
 	RecoverGlueAnchors(m)
 
 	if !m.Has(srcIf) || m.Src()[srcIf] != dstIf {
 		t.Fatalf("parent if_statement should be mapped to dstIf, got %v", m.Src()[srcIf])
 	}
-	if !m.Has(kwOld) || m.Src()[kwOld] != kwNew {
-		t.Fatalf("if keyword should be mapped to kwNew, got %v", m.Src()[kwOld])
+	if !m.Has(srcKw) || m.Src()[srcKw] != dstKw {
+		t.Fatalf("if keyword should be mapped to dstKw, got %v", m.Src()[srcKw])
 	}
-	if !m.Has(condOld) || m.Src()[condOld] != condNew {
-		t.Fatalf("condition oldCond should be recovered and mapped to newCond, got %v", m.Src()[condOld])
+	if !m.Has(srcCond) || m.Src()[srcCond] != dstCond {
+		t.Fatalf("condition oldCond should be recovered and mapped to newCond, got %v", m.Src()[srcCond])
 	}
 }
 
 func TestRecoverGlueAnchors_BoilerplateGuard(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "err"),
-		testutil.Leaf("comparison_operator_literal", "!="),
-		testutil.Leaf("identifier", "nil"),
-	)
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "stmtA"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-	srcIf.StartRow = 10
-
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	condNew := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "err"),
-		testutil.Leaf("comparison_operator_literal", "!="),
-		testutil.Leaf("identifier", "nil"),
-	)
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "stmtB"))
-	dstIf := testutil.Node("if_statement", "", kwNew, condNew, bodyNew)
-	dstIf.StartRow = 80
+	src := "package main\nfunc f() {\n\tif err != nil {\n\t\tstmtA()\n\t}\n}"
+	dst := "package main\nfunc f() {\n" + strings.Repeat("\t// line padding\n", 70) + "\tif err != nil {\n\t\tstmtB()\n\t}\n}"
+	srcTree, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte(dst), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcIf, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	srcCond, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+	dstCond, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "binary_expression", Line: 73})
 
 	m := NewMapping()
-	m.Add(condOld, condNew)
+	m.Add(srcCond, dstCond)
 
 	RecoverGlueAnchors(m)
 
@@ -437,32 +468,54 @@ func TestRecoverGlueAnchors_BoilerplateGuard(t *testing.T) {
 
 func TestIsOperatorGlue(t *testing.T) {
 	r := rules.Get("go")
+	src := `package main
+func ops() {
+	a = b
+	c := b
+	_ = a == b
+	_ = a != b
+	_ = a + b
+	a += b
+	_ = a & b
+	_ = a || b
+	_ = a < b
+	_ = err
+	_ = foo
+	_ = s[1:2]
+	_ = []int{1, 2}
+}
+`
+	tree, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+
 	tests := []struct {
-		name string
-		node *treesitter.ASTNode
-		want bool
+		name  string
+		query testutil.NodeQuery
+		want  bool
 	}{
-		{"assign", testutil.Leaf("=", "="), true},
-		{"short_var", testutil.Leaf(":=", ":="), true},
-		{"equal", testutil.Leaf("==", "=="), true},
-		{"not_equal", testutil.Leaf("!=", "!="), true},
-		{"plus", testutil.Leaf("+", "+"), true},
-		{"plus_assign", testutil.Leaf("+=", "+="), true},
-		{"bitwise_and", testutil.Leaf("&", "&"), true},
-		{"logical_or", testutil.Leaf("||", "||"), true},
-		{"less_than", testutil.Leaf("<", "<"), true},
-		{"operator_literal", testutil.Leaf("comparison_operator_literal", "=="), true},
-		{"identifier_err", testutil.Leaf("identifier", "err"), false},
-		{"identifier_foo", testutil.Leaf("identifier", "foo"), false},
-		{"colon_alone", testutil.Leaf(":", ":"), false},
-		{"comma_delimiter", testutil.Leaf(",", ","), false},
-		{"semicolon_delimiter", testutil.Leaf(";", ";"), false},
-		{"paren_left", testutil.Leaf("(", "("), false},
-		{"brace_right", testutil.Leaf("}", "}"), false},
+		{"assign", testutil.NodeQuery{Type: "assignment_operator_literal", Line: 3}, true},
+		{"short_var", testutil.NodeQuery{Type: "assignment_operator_literal", Line: 4}, true},
+		{"equal", testutil.NodeQuery{Type: "comparison_operator_literal", Line: 5}, true},
+		{"not_equal", testutil.NodeQuery{Type: "comparison_operator_literal", Line: 6}, true},
+		{"plus", testutil.NodeQuery{Type: "arithmetic_operator_literal", Line: 7}, true},
+		{"plus_assign", testutil.NodeQuery{Type: "assignment_operator_literal", Line: 8}, true},
+		{"bitwise_and", testutil.NodeQuery{Type: "bitwise_operator_literal", Line: 9}, true},
+		{"logical_or", testutil.NodeQuery{Type: "logical_operator_literal", Line: 10}, true},
+		{"less_than", testutil.NodeQuery{Type: "comparison_operator_literal", Line: 11}, true},
+		{"identifier_err", testutil.NodeQuery{Type: "identifier", Line: 12, Nth: 2}, false},
+		{"identifier_foo", testutil.NodeQuery{Type: "identifier", Line: 13, Nth: 2}, false},
+		{"slice_expression_has_children", testutil.NodeQuery{Type: "slice_expression", Line: 14}, false},
+		{"composite_literal_has_children", testutil.NodeQuery{Type: "composite_literal", Line: 15}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isOperatorGlue(tc.node, r); got != tc.want {
+			node, err := testutil.FindNode(tree, tc.query)
+			if err != nil {
+				t.Fatalf("find node %s: %v", tc.name, err)
+			}
+			if got := isOperatorGlue(node, r); got != tc.want {
 				t.Errorf("isOperatorGlue(%v) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
@@ -470,140 +523,125 @@ func TestIsOperatorGlue(t *testing.T) {
 }
 
 func TestIsBoilerplateCondition(t *testing.T) {
-	rGo := rules.Get("go")
-	rPy := rules.Get("python")
-	rJava := rules.Get("java")
-	rRust := rules.Get("rust")
-
 	tests := []struct {
-		name string
-		cond *treesitter.ASTNode
-		r    *rules.Rules
-		want bool
+		name      string
+		src       string
+		ext       string
+		queryType string
+		line      int
+		nth       int
+		want      bool
 	}{
 		{
-			name: "go_err_not_nil",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "err"),
-				testutil.Leaf("!=", "!="),
-				testutil.Leaf("identifier", "nil"),
-			),
-			r:    rGo,
-			want: true,
+			name:      "go_err_not_nil",
+			src:       "package main\nfunc f() {\n\tif err != nil {}\n}",
+			ext:       "test.go",
+			queryType: "binary_expression",
+			line:      3,
+			want:      true,
 		},
 		{
-			name: "go_single_var_ok",
-			cond: testutil.Leaf("identifier", "ok"),
-			r:    rGo,
-			want: true,
+			name:      "go_single_var_ok",
+			src:       "package main\nfunc f() {\n\tif ok {}\n}",
+			ext:       "test.go",
+			queryType: "identifier",
+			line:      3,
+			want:      true,
 		},
 		{
-			name: "go_negated_var",
-			cond: testutil.Node("unary_expression", "",
-				testutil.Leaf("!", "!"),
-				testutil.Leaf("identifier", "ok"),
-			),
-			r:    rGo,
-			want: true,
+			name:      "go_negated_var",
+			src:       "package main\nfunc f() {\n\tif !ok {}\n}",
+			ext:       "test.go",
+			queryType: "unary_expression",
+			line:      3,
+			want:      true,
 		},
 		{
-			name: "go_compare_zero",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "count"),
-				testutil.Leaf("==", "=="),
-				testutil.Leaf("int_literal", "0"),
-			),
-			r:    rGo,
-			want: true,
+			name:      "go_compare_zero",
+			src:       "package main\nfunc f() {\n\tif count == 0 {}\n}",
+			ext:       "test.go",
+			queryType: "binary_expression",
+			line:      3,
+			want:      true,
 		},
 		{
-			name: "java_null_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "ptr"),
-				testutil.Leaf("==", "=="),
-				testutil.Leaf("null_literal", "null"),
-			),
-			r:    rJava,
-			want: true,
+			name:      "java_null_check",
+			src:       "class C {\n\tvoid f() {\n\t\tif (ptr == null) {}\n\t}\n}",
+			ext:       "test.java",
+			queryType: "binary_expression",
+			line:      3,
+			want:      true,
 		},
 		{
-			name: "python_none_check",
-			cond: testutil.Node("comparison", "",
-				testutil.Leaf("identifier", "val"),
-				testutil.Leaf("is", "is"),
-				testutil.Leaf("none", "None"),
-			),
-			r:    rPy,
-			want: true,
+			name:      "python_none_check",
+			src:       "def f():\n    if val is None:\n        pass",
+			ext:       "test.py",
+			queryType: "comparison_operator",
+			line:      2,
+			want:      true,
 		},
 		{
-			name: "rust_none_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "opt"),
-				testutil.Leaf("!=", "!="),
-				testutil.Leaf("identifier", "None"),
-			),
-			r:    rRust,
-			want: true,
+			name:      "rust_none_check",
+			src:       "fn f() {\n\tif opt != None {}\n}",
+			ext:       "test.rs",
+			queryType: "binary_expression",
+			line:      2,
+			want:      true,
 		},
 		{
-			name: "c_null_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "ptr"),
-				testutil.Leaf("!=", "!="),
-				testutil.Leaf("identifier", "NULL"),
-			),
-			r:    rules.Get("c"),
-			want: true,
+			name:      "c_null_check",
+			src:       "void f() {\n\tif (ptr != NULL) {}\n}",
+			ext:       "test.c",
+			queryType: "binary_expression",
+			line:      2,
+			want:      true,
 		},
 		{
-			name: "js_undefined_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "arg"),
-				testutil.Leaf("!==", "!=="),
-				testutil.Leaf("identifier", "undefined"),
-			),
-			r:    rules.Get("javascript"),
-			want: true,
+			name:      "js_undefined_check",
+			src:       "function f() {\n\tif (arg !== undefined) {}\n}",
+			ext:       "test.js",
+			queryType: "binary_expression",
+			line:      2,
+			want:      true,
 		},
 		{
-			name: "two_variables_compare",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "a"),
-				testutil.Leaf("==", "=="),
-				testutil.Leaf("identifier", "b"),
-			),
-			r:    rGo,
-			want: false,
+			name:      "two_variables_compare",
+			src:       "package main\nfunc f() {\n\tif a == b {}\n}",
+			ext:       "test.go",
+			queryType: "binary_expression",
+			line:      3,
+			want:      false,
 		},
 		{
-			name: "two_variables_ordered",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "min"),
-				testutil.Leaf("<", "<"),
-				testutil.Leaf("identifier", "max"),
-			),
-			r:    rGo,
-			want: false,
+			name:      "two_variables_ordered",
+			src:       "package main\nfunc f() {\n\tif min < max {}\n}",
+			ext:       "test.go",
+			queryType: "binary_expression",
+			line:      3,
+			want:      false,
 		},
 		{
-			name: "compound_call_condition",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Node("call_expression", "",
-					testutil.Leaf("identifier", "len"),
-					testutil.Leaf("identifier", "items"),
-				),
-				testutil.Leaf(">", ">"),
-				testutil.Leaf("int_literal", "0"),
-			),
-			r:    rGo,
-			want: false,
+			name:      "compound_call_condition",
+			src:       "package main\nfunc f() {\n\tif len(items) > 0 {}\n}",
+			ext:       "test.go",
+			queryType: "binary_expression",
+			line:      3,
+			want:      false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isBoilerplateCondition(tc.cond, tc.r); got != tc.want {
+			tree, err := treesitter.Parse([]byte(tc.src), tc.ext)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			cond, err := testutil.FindNode(tree, testutil.NodeQuery{Type: tc.queryType, Line: tc.line, Nth: tc.nth})
+			if err != nil {
+				t.Fatalf("find cond %s: %v", tc.name, err)
+			}
+			r := rulesFor(cond)
+			if got := isBoilerplateCondition(cond, r); got != tc.want {
 				t.Errorf("isBoilerplateCondition(%s) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
@@ -611,22 +649,23 @@ func TestIsBoilerplateCondition(t *testing.T) {
 }
 
 func TestRevokeOrphanedGlue_RelocatedControlFlowAnchoredSolelyByKeyword(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr"))
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "ret"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-	srcIf.StartRow = 10
+	src := "package main\nfunc f() {\n\tif isErr() {\n\t\treturn\n\t}\n}"
+	dst := "package main\nfunc f() {\n" + strings.Repeat("\t// line padding\n", 35) + "\tif !isErr() {\n\t\tlogErr()\n\t}\n}"
+	srcTree, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte(dst), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	unaryCond := testutil.Node("unary_expression", "", testutil.Leaf("!", "!"), testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr")))
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "logErr"))
-	dstIf := testutil.Node("if_statement", "", kwNew, unaryCond, bodyNew)
-	dstIf.StartRow = 46
-
-	outerBlockSrc := testutil.Node("block", "", srcIf)
-	outerBlockDst := testutil.Node("block", "", dstIf)
+	outerBlockSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 2})
+	outerBlockDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 2})
+	srcIf, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	dstIf, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if_statement", Line: 38})
+	kwOld, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if", Line: 3})
+	kwNew, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if", Line: 38})
 
 	m := NewMapping()
 	m.Add(outerBlockSrc, outerBlockDst)
@@ -644,24 +683,28 @@ func TestRevokeOrphanedGlue_RelocatedControlFlowAnchoredSolelyByKeyword(t *testi
 }
 
 func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr"))
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "ret"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-	srcIf.StartRow = 10
+	src := "package main\nfunc f() {\n\tif isErr() {\n\t\treturn\n\t}\n}"
+	dst := "package main\nfunc f() {\n\t_ = 1\n\tif !isErr() {\n\t\tlogErr()\n\t}\n}"
+	srcTree, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte(dst), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	unaryCond := testutil.Node("unary_expression", "", testutil.Leaf("!", "!"), testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr")))
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "logErr"))
-	dstIf := testutil.Node("if_statement", "", kwNew, unaryCond, bodyNew)
-	dstIf.StartRow = 11
-
-	outerBlockSrc := testutil.Node("block", "", srcIf)
-	outerBlockDst := testutil.Node("block", "", dstIf)
+	srcFunc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	dstFunc, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	outerBlockSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 2})
+	outerBlockDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 2})
+	srcIf, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	dstIf, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if_statement", Line: 4})
+	kwOld, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if", Line: 3})
+	kwNew, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if", Line: 4})
 
 	m := NewMapping()
+	m.Add(srcFunc, dstFunc)
 	m.Add(outerBlockSrc, outerBlockDst)
 	m.Add(srcIf, dstIf)
 	m.Add(kwOld, kwNew)

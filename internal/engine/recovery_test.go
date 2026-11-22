@@ -10,10 +10,18 @@ import (
 
 func TestSimpleRecoveryLabelMatch(t *testing.T) {
 	// SimpleRecovery maps isomorphic children of mapped parents.
-	srcChild := testutil.Leaf("id", "x")
-	srcRoot := testutil.Node("block", "", srcChild)
-	dstChild := testutil.Leaf("id", "x")
-	dstRoot := testutil.Node("block", "", dstChild)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() { a() }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() { a() }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcRoot, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 2})
+	dstRoot, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 2})
+	srcChild, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+	dstChild, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "expression_statement", Line: 2})
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -29,10 +37,17 @@ func TestSimpleRecoveryLabelMatch(t *testing.T) {
 
 func TestSimpleRecoveryStructureMatch(t *testing.T) {
 	// SimpleRecovery maps children with matching structures but different labels.
-	srcChild := testutil.Node("call", "", testutil.Leaf("id", "a"))
-	srcRoot := testutil.Node("block", "", srcChild)
-	dstChild := testutil.Node("call", "", testutil.Leaf("id", "b"))
-	dstRoot := testutil.Node("block", "", dstChild)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() { a() }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() { b() }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcRoot, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 2})
+	dstRoot, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 2})
+	srcChild, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "expression_statement", Line: 2})
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -45,13 +60,18 @@ func TestSimpleRecoveryStructureMatch(t *testing.T) {
 
 func TestSimpleRecoveryUniqueType(t *testing.T) {
 	// SimpleRecovery pairs nodes with unique types.
-	srcIf := testutil.Node("if_stmt", "", testutil.Leaf("cond", "a"))
-	srcLet := testutil.Leaf("let", "x")
-	srcRoot := testutil.Node("block", "", srcIf, srcLet)
-
-	dstIf := testutil.Node("if_stmt", "", testutil.Leaf("cond", "b"))
-	dstLet := testutil.Leaf("let", "y")
-	dstRoot := testutil.Node("block", "", dstIf, dstLet)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tif cond { a() }\n\tvar x int\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\tif cond { b() }\n\tvar y int\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcRoot, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 2})
+	dstRoot, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 2})
+	srcIf, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
+	dstIf, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "if_statement", Line: 3})
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -66,8 +86,16 @@ func TestSimpleRecoveryUniqueType(t *testing.T) {
 }
 
 func TestSimpleRecoveryNoChildren(t *testing.T) {
-	a := testutil.Leaf("id", "x")
-	b := testutil.Leaf("id", "y")
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() { _ = x }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() { _ = y }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	a, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	b, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
 	m := NewMapping()
 	m.Add(a, b)
 	SimpleRecovery(a, b, m)
@@ -78,10 +106,18 @@ func TestSimpleRecoveryNoChildren(t *testing.T) {
 }
 
 func TestUniqueTypePairs(t *testing.T) {
-	a1 := testutil.Leaf("id", "x")
-	a2 := testutil.Leaf("str", "hello")
-	b1 := testutil.Leaf("id", "y")
-	b2 := testutil.Leaf("str", "world")
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\t_ = 10\n\t_ = \"hello\"\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\t_ = 20\n\t_ = \"world\"\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	a1, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "int_literal", Line: 3})
+	a2, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "interpreted_string_literal", Line: 4})
+	b1, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "int_literal", Line: 3})
+	b2, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "interpreted_string_literal", Line: 4})
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{a1, a2},
@@ -94,9 +130,17 @@ func TestUniqueTypePairs(t *testing.T) {
 }
 
 func TestUniqueTypePairsAmbiguous(t *testing.T) {
-	a1 := testutil.Leaf("id", "x")
-	a2 := testutil.Leaf("id", "y")
-	b1 := testutil.Leaf("id", "z")
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() { _ = x; _ = y }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() { _ = z }"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	a1, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	a2, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 4})
+	b1, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{a1, a2},
@@ -109,15 +153,22 @@ func TestUniqueTypePairsAmbiguous(t *testing.T) {
 }
 
 func TestSimpleRecoveryStationaryNeighbors(t *testing.T) {
-	leftSrc := testutil.Leaf("id", "a")
-	midSrc := testutil.Leaf("id", "b")
-	rightSrc := testutil.Leaf("id", "c")
-	srcRoot := testutil.Node("block", "", leftSrc, midSrc, rightSrc)
-
-	leftDst := testutil.Leaf("id", "a")
-	midDst := testutil.Leaf("id", "b")
-	rightDst := testutil.Leaf("id", "c")
-	dstRoot := testutil.Node("block", "", leftDst, midDst, rightDst)
+	srcTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\ta()\n\tb()\n\tc()\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nfunc f() {\n\ta()\n\tb()\n\tc()\n}"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcRoot, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "block", Line: 2})
+	dstRoot, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "block", Line: 2})
+	leftSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+	midSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "expression_statement", Line: 4})
+	rightSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "expression_statement", Line: 5})
+	leftDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+	midDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "expression_statement", Line: 4})
+	rightDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "expression_statement", Line: 5})
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -135,22 +186,16 @@ func TestSimpleRecoveryStationaryNeighbors(t *testing.T) {
 }
 
 func TestUniqueTypePairsDeclarationNoSemanticOverlap(t *testing.T) {
-	// Two var_declarations that share only the keyword "var" must NOT pair.
-	v1 := testutil.Node("var_declaration", "",
-		testutil.Leaf("var", "var"),
-		testutil.Leaf("identifier", "headerStyle"),
-		testutil.Leaf("type_identifier", "Style"),
-	)
-	root1 := testutil.Node("source_file", "", v1)
-	root1.Language = "go"
-
-	v2 := testutil.Node("var_declaration", "",
-		testutil.Leaf("var", "var"),
-		testutil.Leaf("identifier", "rulesObj"),
-		testutil.Leaf("type_identifier", "Rules"),
-	)
-	root2 := testutil.Node("source_file", "", v2)
-	root2.Language = "go"
+	srcTree, err := treesitter.Parse([]byte("package main\nvar headerStyle Style"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nvar rulesObj Rules"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	v1, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "var_declaration", Line: 2})
+	v2, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "var_declaration", Line: 2})
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{v1},
@@ -163,22 +208,16 @@ func TestUniqueTypePairsDeclarationNoSemanticOverlap(t *testing.T) {
 }
 
 func TestUniqueTypePairsDeclarationWithSemanticOverlap(t *testing.T) {
-	// Two var_declarations that share a semantic identifier ("count") should pair.
-	v1 := testutil.Node("var_declaration", "",
-		testutil.Leaf("var", "var"),
-		testutil.Leaf("identifier", "count"),
-		testutil.Leaf("type_identifier", "int"),
-	)
-	root1 := testutil.Node("source_file", "", v1)
-	root1.Language = "go"
-
-	v2 := testutil.Node("var_declaration", "",
-		testutil.Leaf("var", "var"),
-		testutil.Leaf("identifier", "count"),
-		testutil.Leaf("type_identifier", "int64"),
-	)
-	root2 := testutil.Node("source_file", "", v2)
-	root2.Language = "go"
+	srcTree, err := treesitter.Parse([]byte("package main\nvar count int"), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("package main\nvar count int64"), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	v1, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "var_declaration", Line: 2})
+	v2, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "var_declaration", Line: 2})
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{v1},
@@ -191,47 +230,26 @@ func TestUniqueTypePairsDeclarationWithSemanticOverlap(t *testing.T) {
 }
 
 func TestUniqueTypePairs_UnwrappedCondition(t *testing.T) {
-	// src is a chained || while dst is a single check.
-	// uniqueTypePairs should match the inner z == nil, not the root ||.
-	c1 := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "x"),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	c2 := testutil.Node("binary_expression", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "x"),
-			testutil.Leaf("field_identifier", "Parent"),
-		),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	c3 := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "z"),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	c12 := testutil.Node("binary_expression", "",
-		c1,
-		testutil.Leaf("logical_operator_literal", "||"),
-		c2,
-	)
-	compoundSrc := testutil.Node("binary_expression", "",
-		c12,
-		testutil.Leaf("logical_operator_literal", "||"),
-		c3,
-	)
-	compoundSrc.Language = "go"
+	src := "package main\nfunc f() {\n\tif x == nil || x.Parent == nil || z == nil {}\n}"
+	dst := "package main\nfunc f() {\n\tif v == nil {}\n}"
+	srcTree, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte(dst), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	simpleDst := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "v"),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	simpleDst.Language = "go"
+	compoundSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "binary_expression", Line: 3, Nth: 1})
+	c3, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "binary_expression", Line: 3, Nth: 5})
+	simpleDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+
+	nilSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "nil", Line: 3, Nth: 3})
+	nilDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "nil", Line: 3})
 
 	m := NewMapping()
-	m.Add(c3.Children[2], simpleDst.Children[2])
+	m.Add(nilSrc, nilDst)
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{compoundSrc},
@@ -250,47 +268,26 @@ func TestUniqueTypePairs_UnwrappedCondition(t *testing.T) {
 }
 
 func TestUniqueTypePairs_WrappedCondition(t *testing.T) {
-	// Flipped case: src is simple and dst is the chained ||.
-	// It should still pair v == nil with the inner z == nil.
-	simpleSrc := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "v"),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	simpleSrc.Language = "go"
+	src := "package main\nfunc f() {\n\tif v == nil {}\n}"
+	dst := "package main\nfunc f() {\n\tif x == nil || x.Parent == nil || z == nil {}\n}"
+	srcTree, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte(dst), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	c1 := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "x"),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	c2 := testutil.Node("binary_expression", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "x"),
-			testutil.Leaf("field_identifier", "Parent"),
-		),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	c3 := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "z"),
-		testutil.Leaf("comparison_operator_literal", "=="),
-		testutil.Leaf("nil", "nil"),
-	)
-	c12 := testutil.Node("binary_expression", "",
-		c1,
-		testutil.Leaf("logical_operator_literal", "||"),
-		c2,
-	)
-	compoundDst := testutil.Node("binary_expression", "",
-		c12,
-		testutil.Leaf("logical_operator_literal", "||"),
-		c3,
-	)
-	compoundDst.Language = "go"
+	simpleSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "binary_expression", Line: 3})
+	compoundDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "binary_expression", Line: 3, Nth: 1})
+	c3, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "binary_expression", Line: 3, Nth: 5})
+
+	nilSrc, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "nil", Line: 3})
+	nilDst, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "nil", Line: 3, Nth: 3})
 
 	m := NewMapping()
-	m.Add(simpleSrc.Children[2], c3.Children[2])
+	m.Add(nilSrc, nilDst)
 
 	pairs := uniqueTypePairs(
 		[]*treesitter.ASTNode{simpleSrc},
@@ -309,61 +306,31 @@ func TestUniqueTypePairs_WrappedCondition(t *testing.T) {
 }
 
 func TestUniqueTypePairsDisparateJSXTags(t *testing.T) {
-	spanOpen := testutil.Node("jsx_opening_element", "",
-		testutil.Leaf("comparison_operator_literal", "<"),
-		testutil.Leaf("identifier", "span"),
-		testutil.Leaf("comparison_operator_literal", ">"),
-	)
-	spanText := testutil.Leaf("jsx_text", "Recent Admissions")
-	spanClose := testutil.Node("jsx_closing_element", "",
-		testutil.Leaf("jsx_closing_tag_lt_slash", "</"),
-		testutil.Leaf("identifier", "span"),
-		testutil.Leaf("comparison_operator_literal", ">"),
-	)
-	spanElem := testutil.Node("jsx_element", "", spanOpen, spanText, spanClose)
-	spanElem.Language = "tsx"
-
-	iOpen := testutil.Node("jsx_opening_element", "",
-		testutil.Leaf("comparison_operator_literal", "<"),
-		testutil.Leaf("identifier", "i"),
-		testutil.Leaf("comparison_operator_literal", ">"),
-	)
-	iClose := testutil.Node("jsx_closing_element", "",
-		testutil.Leaf("jsx_closing_tag_lt_slash", "</"),
-		testutil.Leaf("identifier", "i"),
-		testutil.Leaf("comparison_operator_literal", ">"),
-	)
-	iElem := testutil.Node("jsx_element", "", iOpen, iClose)
-	iElem.Language = "tsx"
+	srcTree, err := treesitter.Parse([]byte("const x = <span>Recent Admissions</span>;"), "test.tsx")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse([]byte("const y = <i></i>;"), "test.tsx")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	spanElem, _ := testutil.FindNode(srcTree, testutil.NodeQuery{Type: "jsx_element", Line: 1})
+	iElem, _ := testutil.FindNode(dstTree, testutil.NodeQuery{Type: "jsx_element", Line: 1})
 
 	m := NewMapping()
 	pairs := uniqueTypePairs([]*treesitter.ASTNode{spanElem}, []*treesitter.ASTNode{iElem}, m)
 	if len(pairs) != 0 {
-		t.Errorf("uniqueTypePairs should NOT pair disparate JSX tags ('span' vs 'i'), got %d pairs", len(pairs))
+		t.Errorf("uniqueTypePairs should NOT pair disparate JSX tags (span vs i), got %d pairs", len(pairs))
 	}
 }
 
 func TestUniqueTypePairs_BlindSingletonTrapStatement(t *testing.T) {
-	// Two for_statements with completely different headers and zero mapped descendants.
-	// Source: for item := range list { ... }
-	forRange := testutil.Node("for_statement", "",
-		testutil.Leaf("for", "for"),
-		testutil.Leaf("identifier", "item"),
-		testutil.Leaf("identifier", "list"),
-		testutil.Node("block", "", testutil.Leaf("identifier", "oldBody")),
-	)
-	forRange.Language = "go"
-
-	// Destination: for i := 0; i < n; i++ { ... }
-	forThreeClause := testutil.Node("for_statement", "",
-		testutil.Leaf("for", "for"),
-		testutil.Leaf("identifier", "i"),
-		testutil.Leaf("int_literal", "0"),
-		testutil.Leaf("identifier", "n"),
-		testutil.Leaf("operator", "++"),
-		testutil.Node("block", "", testutil.Leaf("identifier", "newBody")),
-	)
-	forThreeClause.Language = "go"
+	src1 := "package main\nfunc f() {\n\tfor item := range list {\n\t\toldBody()\n\t}\n}"
+	dst1 := "package main\nfunc f() {\n\tfor i := 0; i < n; i++ {\n\t\tnewBody()\n\t}\n}"
+	tree1, _ := treesitter.Parse([]byte(src1), "test.go")
+	tree2, _ := treesitter.Parse([]byte(dst1), "test.go")
+	forRange, _ := testutil.FindNode(tree1, testutil.NodeQuery{Type: "for_statement", Line: 3})
+	forThreeClause, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "for_statement", Line: 3})
 
 	m := NewMapping()
 	pairs := uniqueTypePairs([]*treesitter.ASTNode{forRange}, []*treesitter.ASTNode{forThreeClause}, m)
@@ -371,28 +338,12 @@ func TestUniqueTypePairs_BlindSingletonTrapStatement(t *testing.T) {
 		t.Errorf("uniqueTypePairs should NOT pair disparate statements with 0 affinity, got %d pairs", len(pairs))
 	}
 
-	// Two for_statements with isomorphic headers should still pair even with an empty mapping.
-	for1 := testutil.Node("for_statement", "",
-		testutil.Leaf("for", "for"),
-		testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "i"),
-			testutil.Leaf("comparison_operator_literal", "<"),
-			testutil.Leaf("identifier", "n"),
-		),
-		testutil.Node("block", "", testutil.Leaf("identifier", "bodyA")),
-	)
-	for1.Language = "go"
-
-	for2 := testutil.Node("for_statement", "",
-		testutil.Leaf("for", "for"),
-		testutil.Node("binary_expression", "",
-			testutil.Leaf("identifier", "i"),
-			testutil.Leaf("comparison_operator_literal", "<"),
-			testutil.Leaf("identifier", "n"),
-		),
-		testutil.Node("block", "", testutil.Leaf("identifier", "bodyB")),
-	)
-	for2.Language = "go"
+	src2 := "package main\nfunc f() {\n\tfor i < n {\n\t\tbodyA()\n\t}\n}"
+	dst2 := "package main\nfunc f() {\n\tfor i < n {\n\t\tbodyB()\n\t}\n}"
+	tree3, _ := treesitter.Parse([]byte(src2), "test.go")
+	tree4, _ := treesitter.Parse([]byte(dst2), "test.go")
+	for1, _ := testutil.FindNode(tree3, testutil.NodeQuery{Type: "for_statement", Line: 3})
+	for2, _ := testutil.FindNode(tree4, testutil.NodeQuery{Type: "for_statement", Line: 3})
 
 	m2 := NewMapping()
 	pairs2 := uniqueTypePairs([]*treesitter.ASTNode{for1}, []*treesitter.ASTNode{for2}, m2)
@@ -482,56 +433,30 @@ func Run(mode int) {
 }
 
 func TestFindBestExpressionMatch_StopsAtClosureAndBlockBoundary(t *testing.T) {
-	// Outer call `sort.SliceStable(scored, func() { return dice })` vs
-	// `slices.SortStableFunc(scored, func() { return cmp.Or(dice) })`.
-	// Expression unwrapping must NOT tunnel through `func_literal` -> `block` -> `return_statement`
-	// to hijack the outer call onto the inner `cmp.Or(dice)` call.
-	outerCall1 := testutil.Node("call_expression", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "sort"),
-			testutil.Leaf("field_identifier", "SliceStable"),
-		),
-		testutil.Node("argument_list", "",
-			testutil.Leaf("identifier", "scored"),
-			testutil.Node("func_literal", "",
-				testutil.Node("block", "",
-					testutil.Node("return_statement", "",
-						testutil.Leaf("field_identifier", "dice"),
-					),
-				),
-			),
-		),
-	)
-	outerCall1.Language = "go"
+	src := `package main
+import "sort"
+func f() {
+	sort.SliceStable(scored, func() { return dice })
+}
+`
+	dst := `package main
+import "slices"
+func f() {
+	slices.SortStableFunc(scored, func() { return cmp.Or(dice) })
+}
+`
+	tree1, err := treesitter.Parse([]byte(src), "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	tree2, err := treesitter.Parse([]byte(dst), "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	innerCmpCall := testutil.Node("call_expression", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "cmp"),
-			testutil.Leaf("field_identifier", "Or"),
-		),
-		testutil.Node("argument_list", "",
-			testutil.Leaf("field_identifier", "dice"),
-		),
-	)
-	innerCmpCall.Language = "go"
-
-	outerCall2 := testutil.Node("call_expression", "",
-		testutil.Node("selector_expression", "",
-			testutil.Leaf("identifier", "slices"),
-			testutil.Leaf("field_identifier", "SortStableFunc"),
-		),
-		testutil.Node("argument_list", "",
-			testutil.Leaf("identifier", "scored"),
-			testutil.Node("func_literal", "",
-				testutil.Node("block", "",
-					testutil.Node("return_statement", "",
-						innerCmpCall,
-					),
-				),
-			),
-		),
-	)
-	outerCall2.Language = "go"
+	outerCall1, _ := testutil.FindNode(tree1, testutil.NodeQuery{Type: "call_expression", Line: 4})
+	outerCall2, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "call_expression", Line: 4, Nth: 1})
+	innerCmpCall, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "call_expression", Line: 4, Nth: 2})
 
 	r := rules.Get("go")
 	m := NewMapping()
@@ -542,42 +467,31 @@ func TestFindBestExpressionMatch_StopsAtClosureAndBlockBoundary(t *testing.T) {
 }
 
 func TestUniqueTypePairs_ClosureCallUsesContainerThreshold(t *testing.T) {
-	// Calls that wrap a closure contain a nested block inside their argument list.
-	// uniqueTypePairs should treat them as containers (needing >= 0.50 Dice)
-	// instead of flat expressions (0.25 overlap).
-	call1 := testutil.Node("call_expression", "",
-		testutil.Leaf("identifier", "sortSlice"),
-		testutil.Node("argument_list", "",
-			testutil.Leaf("identifier", "scored"),
-			testutil.Node("func_literal", "",
-				testutil.Node("block", "",
-					testutil.Leaf("identifier", "a1"),
-					testutil.Leaf("identifier", "a2"),
-					testutil.Leaf("identifier", "a3"),
-					testutil.Leaf("identifier", "a4"),
-				),
-			),
-		),
-	)
-	call1.Language = "go"
+	src1 := `package main
+func f() {
+	sortSlice(scored, func() {
+		check(a1, a2, a3, a4)
+	})
+}
+`
+	src2 := `package main
+func f() {
+	sortStableFunc(scored, func() {
+		verify(a1, b2, b3, b4, b5, b6)
+	})
+}
+`
+	tree1, err := treesitter.Parse([]byte(src1), "test.go")
+	if err != nil {
+		t.Fatalf("parse 1: %v", err)
+	}
+	tree2, err := treesitter.Parse([]byte(src2), "test.go")
+	if err != nil {
+		t.Fatalf("parse 2: %v", err)
+	}
 
-	call2 := testutil.Node("call_expression", "",
-		testutil.Leaf("identifier", "sortStableFunc"),
-		testutil.Node("argument_list", "",
-			testutil.Leaf("identifier", "scored"),
-			testutil.Node("func_literal", "",
-				testutil.Node("block", "",
-					testutil.Leaf("identifier", "a1"),
-					testutil.Leaf("identifier", "b2"),
-					testutil.Leaf("identifier", "b3"),
-					testutil.Leaf("identifier", "b4"),
-					testutil.Leaf("identifier", "b5"),
-					testutil.Leaf("identifier", "b6"),
-				),
-			),
-		),
-	)
-	call2.Language = "go"
+	call1, _ := testutil.FindNode(tree1, testutil.NodeQuery{Type: "call_expression", Line: 3})
+	call2, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "call_expression", Line: 3})
 
 	m := NewMapping()
 	pairs := uniqueTypePairs([]*treesitter.ASTNode{call1}, []*treesitter.ASTNode{call2}, m)
