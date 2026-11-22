@@ -7,10 +7,31 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
+func parseTestNodes(t *testing.T) map[string]*treesitter.ASTNode {
+	t.Helper()
+	tree, err := treesitter.Parse([]byte("package p\nfunc f() { _ = a1 + b1 + a2 + b2 + a3 + b3 + a4 + b4 + x + y + z + x1 + x2 + unmapped }\n"), "test.go")
+	if err != nil {
+		t.Fatalf("parseTestNodes: %v", err)
+	}
+	nodes := make(map[string]*treesitter.ASTNode)
+	var walk func(n *treesitter.ASTNode)
+	walk = func(n *treesitter.ASTNode) {
+		if n.Type == "identifier" {
+			nodes[n.Label] = n
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(tree)
+	return nodes
+}
+
 func TestMappingAddAndLookup(t *testing.T) {
+	nodes := parseTestNodes(t)
 	m := NewMapping()
-	a := testutil.Leaf("id", "x")
-	b := testutil.Leaf("id", "y")
+	a := nodes["x"]
+	b := nodes["y"]
 
 	m.Add(a, b)
 
@@ -29,11 +50,12 @@ func TestMappingAddAndLookup(t *testing.T) {
 }
 
 func TestMappingPairsOrder(t *testing.T) {
+	nodes := parseTestNodes(t)
 	m := NewMapping()
-	a1 := testutil.Leaf("id", "x")
-	b1 := testutil.Leaf("id", "x")
-	a2 := testutil.Leaf("id", "y")
-	b2 := testutil.Leaf("id", "y")
+	a1 := nodes["a1"]
+	b1 := nodes["b1"]
+	a2 := nodes["a2"]
+	b2 := nodes["b2"]
 
 	m.Add(a1, b1)
 	m.Add(a2, b2)
@@ -48,10 +70,11 @@ func TestMappingPairsOrder(t *testing.T) {
 
 func TestMappingDuplicateAdd(t *testing.T) {
 	// Re-adding the same source doesn't duplicate the pair and updates m.Pairs and m.dst.
+	nodes := parseTestNodes(t)
 	m := NewMapping()
-	a := testutil.Leaf("id", "x")
-	b1 := testutil.Leaf("id", "y")
-	b2 := testutil.Leaf("id", "z")
+	a := nodes["x"]
+	b1 := nodes["y"]
+	b2 := nodes["z"]
 
 	m.Add(a, b1)
 	m.Add(a, b2)
@@ -75,10 +98,11 @@ func TestMappingDuplicateAdd(t *testing.T) {
 
 func TestMappingRemapDestination(t *testing.T) {
 	// Adding a pair where destination was previously mapped to a different source.
+	nodes := parseTestNodes(t)
 	m := NewMapping()
-	a1 := testutil.Leaf("id", "x1")
-	a2 := testutil.Leaf("id", "x2")
-	b := testutil.Leaf("id", "y")
+	a1 := nodes["x1"]
+	a2 := nodes["x2"]
+	b := nodes["y"]
 
 	m.Add(a1, b)
 	m.Add(a2, b)
@@ -101,9 +125,10 @@ func TestMappingRemapDestination(t *testing.T) {
 }
 
 func TestMappingRemove(t *testing.T) {
+	nodes := parseTestNodes(t)
 	m := NewMapping()
-	a := testutil.Leaf("id", "x")
-	b := testutil.Leaf("id", "y")
+	a := nodes["x"]
+	b := nodes["y"]
 
 	m.Add(a, b)
 	m.Remove(a)
@@ -117,8 +142,9 @@ func TestMappingRemove(t *testing.T) {
 }
 
 func TestMappingRemoveNonexistent(t *testing.T) {
+	nodes := parseTestNodes(t)
 	m := NewMapping()
-	node := testutil.Leaf("id", "x")
+	node := nodes["x"]
 
 	// Removing from an empty mapping should not panic or add state.
 	m.Remove(node)
@@ -127,8 +153,8 @@ func TestMappingRemoveNonexistent(t *testing.T) {
 	}
 
 	// Removing an unmapped node from a populated mapping must leave existing pairs intact.
-	existingSrc := testutil.Leaf("id", "a")
-	existingDst := testutil.Leaf("id", "b")
+	existingSrc := nodes["a1"]
+	existingDst := nodes["b1"]
 	m.Add(existingSrc, existingDst)
 
 	m.Remove(node)
@@ -152,10 +178,11 @@ func TestMappingClone(t *testing.T) {
 		t.Error("cloning empty mapping should yield valid empty mapping")
 	}
 
-	a1 := testutil.Leaf("id", "a1")
-	b1 := testutil.Leaf("id", "b1")
-	a2 := testutil.Leaf("id", "a2")
-	b2 := testutil.Leaf("id", "b2")
+	nodes := parseTestNodes(t)
+	a1 := nodes["a1"]
+	b1 := nodes["b1"]
+	a2 := nodes["a2"]
+	b2 := nodes["b2"]
 
 	m.Add(a1, b1)
 	m.Add(a2, b2)
@@ -175,8 +202,8 @@ func TestMappingClone(t *testing.T) {
 	}
 
 	// Mutating the clone should not mutate the original.
-	a3 := testutil.Leaf("id", "a3")
-	b3 := testutil.Leaf("id", "b3")
+	a3 := nodes["a3"]
+	b3 := nodes["b3"]
 	cp.Add(a3, b3)
 	cp.Remove(a1)
 
@@ -189,28 +216,29 @@ func TestMappingClone(t *testing.T) {
 }
 
 func TestMappingRemoveSet(t *testing.T) {
+	nodes := parseTestNodes(t)
 	var nilMapping *Mapping
-	nilMapping.RemoveSet(map[*treesitter.ASTNode]struct{}{testutil.Leaf("id", "x"): {}})
+	nilMapping.RemoveSet(map[*treesitter.ASTNode]struct{}{nodes["x"]: {}})
 
 	m := NewMapping()
 	m.RemoveSet(nil)
 	m.RemoveSet(map[*treesitter.ASTNode]struct{}{})
 
-	a1 := testutil.Leaf("id", "a1")
-	b1 := testutil.Leaf("id", "b1")
-	a2 := testutil.Leaf("id", "a2")
-	b2 := testutil.Leaf("id", "b2")
-	a3 := testutil.Leaf("id", "a3")
-	b3 := testutil.Leaf("id", "b3")
-	a4 := testutil.Leaf("id", "a4")
-	b4 := testutil.Leaf("id", "b4")
+	a1 := nodes["a1"]
+	b1 := nodes["b1"]
+	a2 := nodes["a2"]
+	b2 := nodes["b2"]
+	a3 := nodes["a3"]
+	b3 := nodes["b3"]
+	a4 := nodes["a4"]
+	b4 := nodes["b4"]
 
 	m.Add(a1, b1)
 	m.Add(a2, b2)
 	m.Add(a3, b3)
 	m.Add(a4, b4)
 
-	unmapped := testutil.Leaf("id", "unmapped")
+	unmapped := nodes["unmapped"]
 	toRemove := map[*treesitter.ASTNode]struct{}{
 		a1:       {},
 		a3:       {},
@@ -244,33 +272,70 @@ func TestMappingRemoveSet(t *testing.T) {
 }
 
 func TestMappingDiceSrc(t *testing.T) {
-	a1 := testutil.Leaf("id", "x")
-	rootA := testutil.Node("call", "", a1)
-	b1 := testutil.Leaf("id", "x")
-	rootB := testutil.Node("call", "", b1)
+	srcA := []byte("package p\nfunc f() { x() }\n")
+	srcB := []byte("package p\nfunc f() { x() }\n")
+
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	m := NewMapping()
-	m.Add(a1, b1)
+	for i, cA := range callA.Children {
+		m.Add(cA, callB.Children[i])
+	}
 
-	d := m.DiceSrc(rootA, rootB)
+	d := m.DiceSrc(callA, callB)
 	if d != 1.0 {
 		t.Errorf("DiceSrc = %f, want 1.0", d)
 	}
 }
 
 func TestAddIsomorphicPairs(t *testing.T) {
-	a1 := testutil.Leaf("id", "x")
-	rootA := testutil.Node("call", "", a1)
-	b1 := testutil.Leaf("id", "x")
-	rootB := testutil.Node("call", "", b1)
+	srcA := []byte("package p\nfunc f() { x() }\n")
+	srcB := []byte("package p\nfunc f() { x() }\n")
+
+	rootA, err := treesitter.Parse(srcA, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(srcB, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	m := NewMapping()
-	addIsomorphicPairs(rootA, rootB, m)
+	addIsomorphicPairs(callA, callB, m)
 
-	if !m.Has(rootA) || !m.Has(a1) {
-		t.Error("addIsomorphicPairs should map all nodes")
+	if !m.Has(callA) {
+		t.Error("addIsomorphicPairs should map root call")
 	}
-	if m.Src()[rootA] != rootB || m.Src()[a1] != b1 {
-		t.Error("addIsomorphicPairs should map nodes by position")
+	for i, cA := range callA.Children {
+		cB := callB.Children[i]
+		if !m.Has(cA) || m.Src()[cA] != cB {
+			t.Errorf("child %d should be mapped to corresponding child", i)
+		}
 	}
 }

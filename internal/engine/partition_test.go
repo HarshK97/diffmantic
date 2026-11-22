@@ -3,6 +3,7 @@ package engine
 import (
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -11,10 +12,19 @@ func TestLinePartition(t *testing.T) {
 		srcA := []byte("func main() {\n\tx := 1\n}\n")
 		srcB := []byte("func main() {\n\tx := 1\n}\n")
 
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(srcB, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		part := NewLinePartition(srcA, srcB)
 
-		n1 := &treesitter.ASTNode{StartRow: 0, EndRow: 2}
-		n2 := &treesitter.ASTNode{StartRow: 0, EndRow: 2}
+		n1 := rootA.Children[0]
+		n2 := rootB.Children[0]
 
 		if !part.CanMatch(n1, n2) {
 			t.Errorf("expected identical subtrees on matching lines to be allowed")
@@ -22,13 +32,28 @@ func TestLinePartition(t *testing.T) {
 	})
 
 	t.Run("Forbids cross-matching between Group 1 (non-edited) and Group 2 (edited)", func(t *testing.T) {
-		srcA := []byte("func main() {\n\t// untouched\n\tdeletedLine()\n}\n")
-		srcB := []byte("func main() {\n\t// untouched\n\tinsertedLine()\n}\n")
+		srcA := []byte("func main() {\n\tuntouched := 1\n\tdeletedLine()\n}\n")
+		srcB := []byte("func main() {\n\tuntouched := 1\n\tinsertedLine()\n}\n")
+
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(srcB, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		part := NewLinePartition(srcA, srcB)
 
-		n1 := &treesitter.ASTNode{StartRow: 1, EndRow: 1}
-		n2 := &treesitter.ASTNode{StartRow: 2, EndRow: 2}
+		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if part.CanMatch(n1, n2) {
 			t.Errorf("expected CanMatch to return false between Group 1 (non-edited) and Group 2 (edited) lines")
@@ -39,10 +64,25 @@ func TestLinePartition(t *testing.T) {
 		srcA := []byte("func oldFunc() {\n\tdeletedCode()\n}\n")
 		srcB := []byte("func newFunc() {\n\tinsertedCode()\n}\n")
 
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(srcB, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		part := NewLinePartition(srcA, srcB)
 
-		n1 := &treesitter.ASTNode{StartRow: 1, EndRow: 1}
-		n2 := &treesitter.ASTNode{StartRow: 1, EndRow: 1}
+		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if !part.CanMatch(n1, n2) {
 			t.Errorf("expected CanMatch to return true between two Group 2 (edited) nodes")
@@ -50,14 +90,32 @@ func TestLinePartition(t *testing.T) {
 	})
 
 	t.Run("Forbids Group 1 matching on non-corresponding line offsets", func(t *testing.T) {
-		srcA := []byte("lineA0\nlineA1\nlineA2\n")
-		srcB := []byte("header\nlineA0\nlineA1\nlineA2\n")
+		srcA := []byte("package main\nvar a = 0\nvar b = 1\n")
+		srcB := []byte("// header\npackage main\nvar a = 0\nvar b = 1\n")
+
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(srcB, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		part := NewLinePartition(srcA, srcB)
 
-		n1 := &treesitter.ASTNode{StartRow: 0, EndRow: 0}
-		n2Correct := &treesitter.ASTNode{StartRow: 1, EndRow: 1}
-		n2Wrong := &treesitter.ASTNode{StartRow: 2, EndRow: 2}
+		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "package_clause", Line: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n2Correct, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "package_clause", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n2Wrong, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "var_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if !part.CanMatch(n1, n2Correct) {
 			t.Errorf("expected CanMatch to return true for mapped line offsets")
@@ -68,11 +126,16 @@ func TestLinePartition(t *testing.T) {
 	})
 
 	t.Run("Memoization cache and nil handling", func(t *testing.T) {
-		srcA := []byte("a\nb\n")
-		srcB := []byte("a\nb\n")
-		part := NewLinePartition(srcA, srcB)
+		srcA := []byte("package main\nvar a = 1\n")
+		srcB := []byte("package main\nvar a = 1\n")
 
-		n := &treesitter.ASTNode{StartRow: 0, EndRow: 0}
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		part := NewLinePartition(srcA, srcB)
+		n := rootA.Children[0]
 
 		g1First, startFirst := part.IsGroup1A(n)
 		g1Second, startSecond := part.IsGroup1A(n)
@@ -97,11 +160,19 @@ func TestLinePartition(t *testing.T) {
 		srcA := []byte("func f() {\n\tif oldCond {\n\t\toldCall()\n\t}\n\tm.Add(p1, p2)\n\tafterOld()\n}\n")
 		srcB := []byte("func f() {\n\tif newCond {\n\t\tnewCall()\n\t}\n\tm.Add(p1, p2)\n\tafterNew()\n}\n")
 
+		rootA, err := treesitter.Parse(srcA, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		part := NewLinePartition(srcA, srcB)
 
-		// Line 4 (`m.Add(p1, p2)`) only has line 3 (`\t}`) as a contiguous matched neighbor;
-		// because `\t}` is trivial punctuation, line 4 alone should not be locked as Group 1.
-		n1 := &treesitter.ASTNode{StartRow: 4, EndRow: 4}
+		// Line 5 (`m.Add(p1, p2)`) only has line 4 (`\t}`) as a contiguous matched neighbor;
+		// because `\t}` is trivial punctuation, line 5 alone should not be locked as Group 1.
+		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "expression_statement", Line: 5})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if isG1, _ := part.IsGroup1A(n1); isG1 {
 			t.Errorf("expected single substantive line with only a brace neighbor to remain Group 2, got isG1=%v", isG1)
 		}
@@ -123,7 +194,10 @@ func TestLinePartition(t *testing.T) {
 		part := NewLinePartition(srcA, srcB)
 
 		// Before attaching roots, line diff matches lines 1..2 in A with lines 3..4 in B as identical runs.
-		nodeA := &treesitter.ASTNode{StartRow: 1, EndRow: 2}
+		nodeA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if isG1, _ := part.IsGroup1A(nodeA); !isG1 {
 			t.Errorf("expected lines to match as Group 1 before declaration scopes are attached")
 		}

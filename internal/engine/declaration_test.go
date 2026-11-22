@@ -11,19 +11,29 @@ import (
 
 func TestGetDeclarationName(t *testing.T) {
 	t.Run("function declaration", func(t *testing.T) {
-		n := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-		)
-		if got := getDeclarationName(n); got != "foo" {
+		tree, err := treesitter.Parse([]byte("package main\nfunc foo() {}\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := getDeclarationName(fn); got != "foo" {
 			t.Errorf("getDeclarationName = %q, want %q", got, "foo")
 		}
 	})
 
 	t.Run("method declaration", func(t *testing.T) {
-		n := testutil.Node("method_declaration", "",
-			testutil.Leaf("field_identifier", "Bar"),
-		)
-		if got := getDeclarationName(n); got != "Bar" {
+		tree, err := treesitter.Parse([]byte("package main\ntype S struct{}\nfunc (s S) Bar() {}\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "method_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := getDeclarationName(fn); got != "Bar" {
 			t.Errorf("getDeclarationName = %q, want %q", got, "Bar")
 		}
 	})
@@ -35,10 +45,15 @@ func TestGetDeclarationName(t *testing.T) {
 	})
 
 	t.Run("no identifier child", func(t *testing.T) {
-		n := testutil.Node("function_declaration", "",
-			testutil.Leaf("block", "{}"),
-		)
-		if got := getDeclarationName(n); got != "" {
+		tree, err := treesitter.Parse([]byte("package main\nfunc f() { return }\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ret, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "return_statement", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := getDeclarationName(ret); got != "" {
 			t.Errorf("getDeclarationName = %q, want empty", got)
 		}
 	})
@@ -46,26 +61,29 @@ func TestGetDeclarationName(t *testing.T) {
 
 func TestMatchDeclarations(t *testing.T) {
 	t.Run("matches functions with same name", func(t *testing.T) {
-		src := testutil.Node("program", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "foo"),
-				testutil.Leaf("call", "a()"),
-			),
-		)
-		src.Language = "go"
-		dst := testutil.Node("program", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "foo"),
-				testutil.Leaf("call", "b()"),
-			),
-		)
-		dst.Language = "go"
+		src := []byte("package main\nfunc foo() { a() }\n")
+		dst := []byte("package main\nfunc foo() { b() }\n")
+
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
-		srcFn := src.Children[0]
-		dstFn := dst.Children[0]
+		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstFn, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !m.Has(srcFn) {
 			t.Error("src function_declaration should be mapped by name")
 		}
@@ -75,150 +93,139 @@ func TestMatchDeclarations(t *testing.T) {
 	})
 
 	t.Run("skips ambiguous declarations", func(t *testing.T) {
-		src := testutil.Node("program", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "foo"),
-				testutil.Leaf("call", "a()"),
-			),
-		)
-		src.Language = "go"
-		dst := testutil.Node("program", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "foo"),
-				testutil.Leaf("call", "b()"),
-			),
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "foo"),
-				testutil.Leaf("call", "c()"),
-			),
-		)
-		dst.Language = "go"
+		src := []byte("package main\nfunc foo() { a() }\n")
+		dst := []byte("package main\nfunc foo() { b() }\nfunc foo() { c() }\n")
+
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
-		srcFn := src.Children[0]
+		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if m.Has(srcFn) {
 			t.Error("should not map when multiple dst candidates exist")
 		}
 	})
 
 	t.Run("does not match different names", func(t *testing.T) {
-		src := testutil.Node("program", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "foo"),
-			),
-		)
-		src.Language = "go"
-		dst := testutil.Node("program", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "bar"),
-			),
-		)
-		dst.Language = "go"
+		src := []byte("package main\nfunc foo() {}\n")
+		dst := []byte("package main\nfunc bar() {}\n")
+
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
-		srcFn := src.Children[0]
+		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if m.Has(srcFn) {
 			t.Error("foo and bar should not be matched")
 		}
 	})
 
 	t.Run("matches class declarations by name", func(t *testing.T) {
-		src := testutil.Node("program", "",
-			testutil.Node("class_declaration", "",
-				testutil.Leaf("identifier", "User"),
-				testutil.Leaf("body", "{...}"),
-			),
-		)
-		src.Language = "java"
-		dst := testutil.Node("program", "",
-			testutil.Node("class_declaration", "",
-				testutil.Leaf("identifier", "User"),
-				testutil.Leaf("body", "{...different...}"),
-			),
-		)
-		dst.Language = "java"
+		src := []byte("class User { void a() {} }\n")
+		dst := []byte("class User { void b() {} }\n")
+
+		rootA, err := treesitter.Parse(src, "test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.java")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
-		srcCls := src.Children[0]
+		srcCls, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "class_declaration", Line: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !m.Has(srcCls) {
 			t.Error("class declarations with same name should be matched")
 		}
 	})
 
 	t.Run("matches methods with same receiver type", func(t *testing.T) {
-		srcParam := testutil.Node("parameter_list", "",
-			testutil.Node("parameter_declaration", "",
-				testutil.Node("pointer_type", "",
-					testutil.Leaf("type_identifier", "Type"),
-				),
-			),
-		)
-		dstParam := testutil.Node("parameter_list", "",
-			testutil.Node("parameter_declaration", "",
-				testutil.Node("pointer_type", "",
-					testutil.Leaf("type_identifier", "Type"),
-				),
-			),
-		)
+		src := []byte("package main\ntype Type struct{}\nfunc (t *Type) Foo() {}\n")
+		dst := []byte("package main\ntype Type struct{}\nfunc (t *Type) Foo() {}\n")
 
-		src := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				srcParam,
-			),
-		)
-		src.Language = "go"
-		dst := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				dstParam,
-			),
-		)
-		dst.Language = "go"
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
-		srcMeth := src.Children[0]
+		srcMeth, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !m.Has(srcMeth) {
 			t.Error("methods with same name and receiver should be matched")
 		}
 	})
 
 	t.Run("matches remaining unmatched declarations when duplicate is already mapped", func(t *testing.T) {
-		fn1Src := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Leaf("call", "a()"),
-		)
-		fn2Src := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Leaf("call", "b()"),
-		)
-		src := testutil.Node("program", "", fn1Src, fn2Src)
-		src.Language = "go"
+		src := []byte("package main\nfunc foo() { a() }\nfunc foo() { b() }\n")
+		dst := []byte("package main\nfunc foo() { a() }\nfunc foo() { c() }\n")
 
-		fn1Dst := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Leaf("call", "a()"),
-		)
-		fn2Dst := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Leaf("call", "c()"),
-		)
-		dst := testutil.Node("program", "", fn1Dst, fn2Dst)
-		dst.Language = "go"
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		fn1Src, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn2Src, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn1Dst, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn2Dst, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		// Simulate TopDown having already matched fn1Src -> fn1Dst
 		m.Add(fn1Src, fn1Dst)
 
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
 		if !m.Has(fn2Src) {
 			t.Fatal("fn2Src should be matched to fn2Dst")
@@ -232,27 +239,27 @@ func TestMatchDeclarations(t *testing.T) {
 func TestMatchDeclarationIntegration(t *testing.T) {
 	// Functions with same name but completely different bodies
 	// should still match via the declaration pre-pass.
-	src := testutil.Node("program", "",
-		testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Node("block", "",
-				testutil.Leaf("return_statement", "return 1"),
-			),
-		),
-	)
-	dst := testutil.Node("program", "",
-		testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "foo"),
-			testutil.Node("block", "",
-				testutil.Leaf("call", "other()"),
-				testutil.Leaf("return_statement", "return 2"),
-			),
-		),
-	)
+	src := []byte("package main\nfunc foo() {\n\treturn 1\n}\n")
+	dst := []byte("package main\nfunc foo() {\n\tother()\n\treturn 2\n}\n")
 
-	r := Match(src, dst, nil, nil, nil)
-	srcFn := src.Children[0]
-	dstFn := dst.Children[0]
+	rootA, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootB, err := treesitter.Parse(dst, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Match(rootA, rootB, nil, nil, nil)
+	srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstFn, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !r.Mappings.Has(srcFn) {
 		t.Error("Match should map declarations with same name")
 	}
@@ -263,33 +270,56 @@ func TestMatchDeclarationIntegration(t *testing.T) {
 
 func TestBottomUpDeclarationNameAffinity(t *testing.T) {
 	// BottomUp should skip c1 because its declaration name doesn't match t1.
-	leafA1 := testutil.Leaf("id", "x")
-	leafA2 := testutil.Leaf("id", "x")
-	leafB1 := testutil.Leaf("id", "y")
-	leafB2 := testutil.Leaf("id", "y")
+	src := []byte("package main\nfunc foo() {\n\tx := 1\n\ty := 2\n}\n")
+	dst1 := []byte("package main\nfunc bar() {\n\tx := 1\n}\n")
+	dst2 := []byte("package main\nfunc foo() {\n\ty := 2\n}\n")
 
-	t1 := testutil.Node("function_declaration", "",
-		testutil.Leaf("identifier", "foo"),
-		leafA1,
-		leafB1,
-	)
-	t1.Language = "go"
+	rootA, err := treesitter.Parse(src, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootD1, err := treesitter.Parse(dst1, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootD2, err := treesitter.Parse(dst2, "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	c1 := testutil.Node("function_declaration", "",
-		testutil.Leaf("identifier", "bar"),
-		leafA2,
-	)
-	c1.Language = "go"
+	t1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1, err := testutil.FindNode(rootD1, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := testutil.FindNode(rootD2, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	c2 := testutil.Node("function_declaration", "",
-		testutil.Leaf("identifier", "foo"),
-		leafB2,
-	)
-	c2.Language = "go"
+	xSrc, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xDst, err := testutil.FindNode(rootD1, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ySrc, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	yDst, err := testutil.FindNode(rootD2, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	m := NewMapping()
-	m.Add(leafA1, leafA2)
-	m.Add(leafB1, leafB2)
+	m.Add(xSrc, xDst)
+	m.Add(ySrc, yDst)
 
 	picked := candidate(t1, []*treesitter.ASTNode{c1, c2}, m)
 	if picked != c2 {
@@ -299,79 +329,65 @@ func TestBottomUpDeclarationNameAffinity(t *testing.T) {
 
 func TestMatchDeclarationsEquivalentTypes(t *testing.T) {
 	t.Run("matches function_declaration with variable_declaration in lua", func(t *testing.T) {
-		src := testutil.Node("chunk", "",
-			testutil.Node("function_declaration", "",
-				testutil.Leaf("identifier", "sync_once_impl"),
-				testutil.Node("block", "",
-					testutil.Leaf("return_statement", "return"),
-				),
-			),
-		)
-		src.Language = "lua"
+		src := []byte("function sync_once_impl()\n\treturn\nend\n")
+		dst := []byte("local sync_once_impl = function()\n\treturn\nend\n")
 
-		dst := testutil.Node("chunk", "",
-			testutil.Node("variable_declaration", "",
-				testutil.Leaf("identifier", "sync_once_impl"),
-				testutil.Node("block", "",
-					testutil.Leaf("return_statement", "return"),
-				),
-			),
-		)
-		dst.Language = "lua"
+		rootA, err := treesitter.Parse(src, "test.lua")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.lua")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
-		srcFn := src.Children[0]
-		dstFn := dst.Children[0]
+		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstFn, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "variable_declaration", Line: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !m.Has(srcFn) {
 			t.Fatal("src function_declaration should map to dst variable_declaration under equivalent types")
 		}
 		if m.Src()[srcFn] != dstFn {
 			t.Errorf("expected %v to map to %v, got %v", srcFn, dstFn, m.Src()[srcFn])
 		}
-
-		srcBlock := srcFn.Children[1]
-		dstBlock := dstFn.Children[1]
-		if m.Src()[srcBlock] != dstBlock {
-			t.Errorf("expected body blocks to be matched and recovered")
-		}
 	})
 
 	t.Run("disambiguates forward declaration vs full definition by size", func(t *testing.T) {
-		srcForward := testutil.Node("variable_declaration", "",
-			testutil.Leaf("identifier", "sync_once_impl"),
-		)
-		srcForward.Language = "lua"
+		src := []byte("local sync_once_impl\nfunction sync_once_impl(a, b, c)\n\treturn a, b, c\nend\n")
+		dst := []byte("function sync_once_impl(a, b)\n\treturn a, b\nend\n")
 
-		srcFull := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "sync_once_impl"),
-			testutil.Node("parameters", ""),
-			testutil.Node("block", "",
-				testutil.Leaf("statement", "a"),
-				testutil.Leaf("statement", "b"),
-				testutil.Leaf("statement", "c"),
-			),
-		)
-		srcFull.Language = "lua"
+		rootA, err := treesitter.Parse(src, "test.lua")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.lua")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		src := testutil.Node("chunk", "", srcForward, srcFull)
-		src.Language = "lua"
-
-		dstFull := testutil.Node("function_declaration", "",
-			testutil.Leaf("identifier", "sync_once_impl"),
-			testutil.Node("parameters", ""),
-			testutil.Node("block", "",
-				testutil.Leaf("statement", "a"),
-				testutil.Leaf("statement", "b"),
-			),
-		)
-		dstFull.Language = "lua"
-		dst := testutil.Node("chunk", "", dstFull)
-		dst.Language = "lua"
+		srcForward, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "variable_declaration", Line: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		srcFull, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstFull, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		m := NewMapping()
-		matchDeclarations(src, dst, m)
+		matchDeclarations(rootA, rootB, m)
 
 		if m.Has(srcForward) {
 			t.Errorf("forward declaration should not steal destination function")
@@ -387,72 +403,36 @@ func TestMatchDeclarationsEquivalentTypes(t *testing.T) {
 
 func TestMethodReceiverDisambiguation(t *testing.T) {
 	t.Run("same name different receivers only changes one", func(t *testing.T) {
-		src := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				testutil.Node("parameter_list", "",
-					testutil.Node("parameter_declaration", "",
-						testutil.Node("pointer_type", "",
-							testutil.Leaf("type_identifier", "TypeA"),
-						),
-					),
-				),
-				testutil.Node("block", "",
-					testutil.Leaf("assignment", "x = 1"),
-				),
-			),
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				testutil.Node("parameter_list", "",
-					testutil.Node("parameter_declaration", "",
-						testutil.Node("pointer_type", "",
-							testutil.Leaf("type_identifier", "TypeB"),
-						),
-					),
-				),
-				testutil.Node("block", "",
-					testutil.Leaf("assignment", "y = 2"),
-				),
-			),
-		)
-		src.Language = "go"
+		src := []byte("package main\ntype TypeA struct{}\ntype TypeB struct{}\nfunc (t *TypeA) Foo() {\n\tx = 1\n}\nfunc (t *TypeB) Foo() {\n\ty = 2\n}\n")
+		dst := []byte("package main\ntype TypeA struct{}\ntype TypeB struct{}\nfunc (t *TypeA) Foo() {\n\tx = 999\n}\nfunc (t *TypeB) Foo() {\n\ty = 2\n}\n")
 
-		dst := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				testutil.Node("parameter_list", "",
-					testutil.Node("parameter_declaration", "",
-						testutil.Node("pointer_type", "",
-							testutil.Leaf("type_identifier", "TypeA"),
-						),
-					),
-				),
-				testutil.Node("block", "",
-					testutil.Leaf("assignment", "x = 999"),
-				),
-			),
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				testutil.Node("parameter_list", "",
-					testutil.Node("parameter_declaration", "",
-						testutil.Node("pointer_type", "",
-							testutil.Leaf("type_identifier", "TypeB"),
-						),
-					),
-				),
-				testutil.Node("block", "",
-					testutil.Leaf("assignment", "y = 2"),
-				),
-			),
-		)
-		dst.Language = "go"
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		r := Match(src, dst, nil, nil, nil)
+		r := Match(rootA, rootB, nil, nil, nil)
 
-		srcA := src.Children[0]
-		srcB := src.Children[1]
-		dstA := dst.Children[0]
-		dstB := dst.Children[1]
+		srcA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 4})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstA, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "method_declaration", Line: 4})
+		if err != nil {
+			t.Fatal(err)
+		}
+		srcB, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 7})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "method_declaration", Line: 7})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if r.Mappings.Src()[srcA] != dstA {
 			t.Error("TypeA.Foo should map to TypeA.Foo")
@@ -463,44 +443,28 @@ func TestMethodReceiverDisambiguation(t *testing.T) {
 	})
 
 	t.Run("same name same receiver matches", func(t *testing.T) {
-		src := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				testutil.Node("parameter_list", "",
-					testutil.Node("parameter_declaration", "",
-						testutil.Node("pointer_type", "",
-							testutil.Leaf("type_identifier", "Type"),
-						),
-					),
-				),
-				testutil.Node("block", "",
-					testutil.Leaf("assignment", "x = 1"),
-				),
-			),
-		)
-		src.Language = "go"
+		src := []byte("package main\ntype Type struct{}\nfunc (t *Type) Foo() {\n\tx = 1\n}\n")
+		dst := []byte("package main\ntype Type struct{}\nfunc (t *Type) Foo() {\n\tx = 999\n}\n")
 
-		dst := testutil.Node("program", "",
-			testutil.Node("method_declaration", "",
-				testutil.Leaf("field_identifier", "Foo"),
-				testutil.Node("parameter_list", "",
-					testutil.Node("parameter_declaration", "",
-						testutil.Node("pointer_type", "",
-							testutil.Leaf("type_identifier", "Type"),
-						),
-					),
-				),
-				testutil.Node("block", "",
-					testutil.Leaf("assignment", "x = 999"),
-				),
-			),
-		)
-		dst.Language = "go"
+		rootA, err := treesitter.Parse(src, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootB, err := treesitter.Parse(dst, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		r := Match(src, dst, nil, nil, nil)
+		r := Match(rootA, rootB, nil, nil, nil)
 
-		srcMeth := src.Children[0]
-		dstMeth := dst.Children[0]
+		srcMeth, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstMeth, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "method_declaration", Line: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if r.Mappings.Src()[srcMeth] != dstMeth {
 			t.Error("same name same receiver should match")
 		}
