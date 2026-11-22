@@ -2921,3 +2921,154 @@ func TestFormatFallbackAnnotation(t *testing.T) {
 		}
 	})
 }
+
+func TestAssignMoveColors_ExtractedBlockColorContrast(t *testing.T) {
+	r := rules.Get("rust")
+	if r == nil {
+		t.Fatal("rules for rust not found")
+	}
+
+	oldSrc := `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    match pagerflags.split_first() {
+        Some((_, _)) => {
+            let mut process = Command::new("less");
+            process.arg("-R");
+            process.arg("-F");
+            process.arg("-X");
+            process.arg("-K");
+            process.arg("-i");
+            process.env("LESSCHARSET", "UTF-8");
+            process.env("LESSHISTFILE", "/dev/null");
+            Ok(process)
+        }
+        None => Ok(Command::new("cat")),
+    };
+    process.wait()
+}
+`
+	newSrc := `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    Ok(match pagerflags.split_first() {
+        Some((_, _)) => {
+            _make_process_from_less_path()
+        }
+        None => Command::new("cat"),
+    });
+    process.wait()
+}
+
+fn _make_process_from_less_path() -> Command {
+    let mut process = Command::new("less");
+    process.arg("-R");
+    process.arg("-F");
+    process.arg("-X");
+    process.arg("-K");
+    process.arg("-i");
+    process.env("LESSCHARSET", "UTF-8");
+    process.env("LESSHISTFILE", "/dev/null");
+    process
+}
+`
+
+	oldAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+	if err != nil {
+		t.Fatalf("parse oldSrc: %v", err)
+	}
+	if oldAST.HasError || oldAST.ParseErrorCount > 0 {
+		t.Fatalf("expected zero parse errors in oldSrc, got %d", oldAST.ParseErrorCount)
+	}
+
+	newAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+	if err != nil {
+		t.Fatalf("parse newSrc: %v", err)
+	}
+	if newAST.HasError || newAST.ParseErrorCount > 0 {
+		t.Fatalf("expected zero parse errors in newSrc, got %d", newAST.ParseErrorCount)
+	}
+
+	part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
+	mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+	es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
+	es = postprocess.Run(es, mr.Mappings, oldAST, newAST)
+
+	env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
+		IncludeActions:    true,
+		IncludeHighlights: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
+	}
+
+	// The outer try_pager function shouldn't have any edit actions.
+	for _, a := range env.Actions {
+		if a.Node != nil && r.IsDeclaration(a.Node.Type) && a.Node.StartByte == 0 {
+			t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
+		}
+	}
+
+	// Extracted block moved to a new function, so it shouldn't share match_arm's group ID.
+	var matchArmGid string
+	var extractedBlockGid string
+	var foundExtractedBlock bool
+	for _, a := range env.Actions {
+		if a.Action != "move" && a.Action != "move_update" {
+			continue
+		}
+		if a.Node != nil && a.Node.Type == "match_arm" {
+			matchArmGid = a.GroupID
+		}
+		if a.Node != nil && r.IsBlock(a.Node.Type) && a.DestASTNode != nil && a.DestASTNode.StartRow >= 11 {
+			foundExtractedBlock = true
+			extractedBlockGid = a.GroupID
+		}
+	}
+	if !foundExtractedBlock {
+		t.Fatalf("expected to find moved extracted block in actions, but none found: %+v", env.Actions)
+	}
+	if matchArmGid != "" && extractedBlockGid == matchArmGid {
+		t.Errorf("extracted block leaked parent match_arm GroupID %q", extractedBlockGid)
+	}
+
+	// Opening and closing braces on the left should both get color 0 (cyan).
+	leftOpeningBraceColor, leftClosingBraceColor := -1, -1
+	for _, h := range env.LeftHighlights {
+		if h.Line == 2 && h.Action == "move" {
+			leftOpeningBraceColor = h.ColorIndex
+		}
+		if h.Line == 15 && h.Action == "move" {
+			leftClosingBraceColor = h.ColorIndex
+		}
+	}
+	if leftOpeningBraceColor != 0 {
+		t.Errorf("expected left opening brace on line 2 to have ColorIndex 0 (Cyan), got %d", leftOpeningBraceColor)
+	}
+	if leftClosingBraceColor != 0 {
+		t.Errorf("expected left closing brace on line 15 to have ColorIndex 0 (Cyan), got %d", leftClosingBraceColor)
+	}
+
+	// Same on the right: the braces around match should match each other in color 0.
+	rightClosingBraceColor := -1
+	for _, h := range env.RightHighlights {
+		if h.Line == 7 && h.Action == "move" {
+			rightClosingBraceColor = h.ColorIndex
+		}
+	}
+	if rightClosingBraceColor != 0 {
+		t.Errorf("expected right closing brace on line 7 to have ColorIndex 0 (Cyan), got %d", rightClosingBraceColor)
+	}
+
+	// Statements moved into the helper function should get the contrasting color (magenta/mauve).
+	var foundExtractedMoveHighlights bool
+	for _, h := range env.RightHighlights {
+		if h.Line >= 12 && h.Line <= 21 && h.Action == "move" {
+			foundExtractedMoveHighlights = true
+			if h.ColorIndex != 1 {
+				t.Errorf("expected extracted statement highlight on right line %d to have contrasting ColorIndex 1 (Mauve), got %d", h.Line, h.ColorIndex)
+			}
+		}
+	}
+	if !foundExtractedMoveHighlights {
+		t.Errorf("expected right move highlights on extracted lines 12..21, got none")
+	}
+}
