@@ -1210,30 +1210,32 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 
 func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *testing.T) {
 	t.Run("TriviaAdjacentCommaAbsorbed", func(t *testing.T) {
-		fileBytes := []byte("foo(a, b);\n")
-		// a: bytes 4..5
-		// ,: bytes 5..6
-		astIndex := &treesitter.ASTIndex{
-			SyntaxTrivia: []treesitter.SyntaxTriviaBlock{
-				{
-					TrailingStart: 5,
-					TrailingEnd:   6,
-				},
-			},
+		fileBytes := []byte("package main\n\nfunc main() {\n\tfoo(a, b)\n}\n")
+		root, err := treesitter.Parse(fileBytes, "main.go")
+		if err != nil || root == nil {
+			t.Fatal("failed to parse Go source")
 		}
-		astNode := &treesitter.ASTNode{
-			ID:        0,
-			StartByte: 4,
-			EndByte:   5,
-			Index:     astIndex,
+
+		var childA, argListNode *treesitter.ASTNode
+		for _, d := range root.Descendants() {
+			if d.Type == "argument_list" {
+				argListNode = d
+				if len(d.Children) > 0 {
+					childA = d.Children[0]
+				}
+				break
+			}
+		}
+		if childA == nil || argListNode == nil {
+			t.Fatal("expected to find childA and argListNode")
 		}
 
 		actions := []Action{
 			{
 				Action:  "delete",
-				Node:    &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
-				ASTNode: astNode,
-				Parent:  &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9},
+				Node:    &NodeRef{Type: childA.Type, StartByte: childA.StartByte, EndByte: childA.EndByte},
+				ASTNode: childA,
+				Parent:  &NodeRef{Type: argListNode.Type, StartByte: argListNode.StartByte, EndByte: argListNode.EndByte},
 			},
 		}
 
@@ -1241,38 +1243,44 @@ func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *tes
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// "a," should be absorbed (endCol at 6, exactly trivia.TrailingEnd)
-		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span cols 4..6, got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		// "a," should be absorbed (endCol includes comma)
+		trivia := childA.SyntaxTrivia()
+		if trivia == nil {
+			t.Fatal("expected childA to have syntax trivia")
+		}
+		expectedEndCol := int(childA.StartCol) + int(trivia.TrailingEnd-childA.StartByte)
+		if spans[0].StartCol != int(childA.StartCol) || spans[0].EndCol != expectedEndCol {
+			t.Errorf("expected span cols %d..%d, got %d..%d", childA.StartCol, expectedEndCol, spans[0].StartCol, spans[0].EndCol)
 		}
 	})
 
 	t.Run("TriviaInterveningCommentNotSwallowed", func(t *testing.T) {
-		fileBytes := []byte("foo(a /* comment */, b);\n")
-		// a: bytes 4..5
-		// /* comment */: bytes 6..19
-		// ,: bytes 19..20
-		astIndex := &treesitter.ASTIndex{
-			SyntaxTrivia: []treesitter.SyntaxTriviaBlock{
-				{
-					TrailingStart: 19,
-					TrailingEnd:   20,
-				},
-			},
+		fileBytes := []byte("package main\n\nfunc main() {\n\tfoo(a /* comment */, b)\n}\n")
+		root, err := treesitter.Parse(fileBytes, "main.go")
+		if err != nil || root == nil {
+			t.Fatal("failed to parse Go source")
 		}
-		astNode := &treesitter.ASTNode{
-			ID:        0,
-			StartByte: 4,
-			EndByte:   5,
-			Index:     astIndex,
+
+		var childA, argListNode *treesitter.ASTNode
+		for _, d := range root.Descendants() {
+			if d.Type == "argument_list" {
+				argListNode = d
+				if len(d.Children) > 0 {
+					childA = d.Children[0]
+				}
+				break
+			}
+		}
+		if childA == nil || argListNode == nil {
+			t.Fatal("expected to find childA and argListNode")
 		}
 
 		actions := []Action{
 			{
 				Action:  "delete",
-				Node:    &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
-				ASTNode: astNode,
-				Parent:  &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 23},
+				Node:    &NodeRef{Type: childA.Type, StartByte: childA.StartByte, EndByte: childA.EndByte},
+				ASTNode: childA,
+				Parent:  &NodeRef{Type: argListNode.Type, StartByte: argListNode.StartByte, EndByte: argListNode.EndByte},
 			},
 		}
 
@@ -1280,9 +1288,10 @@ func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *tes
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// Keep the span at endCol 5 so it doesn't swallow the comment.
-		if spans[0].StartCol != 4 || spans[0].EndCol != 5 {
-			t.Errorf("expected span cols 4..5 (comment preserved untouched), got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		// Keep the span at childA.EndCol so it doesn't swallow the comment.
+		if spans[0].StartCol != int(childA.StartCol) || spans[0].EndCol != int(childA.EndCol) {
+			t.Errorf("expected span cols %d..%d (comment preserved untouched), got %d..%d",
+				childA.StartCol, childA.EndCol, spans[0].StartCol, spans[0].EndCol)
 		}
 	})
 }

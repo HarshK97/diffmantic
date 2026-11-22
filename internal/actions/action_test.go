@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -99,29 +100,37 @@ func TestEditScriptAddAndSize(t *testing.T) {
 }
 
 func TestNodeToString(t *testing.T) {
-	n := &treesitter.ASTNode{
-		Type:     "identifier",
-		Label:    "foo",
-		StartRow: 1, // displays as 2
-		StartCol: 4,
-		EndRow:   1,
-		EndCol:   7,
+	code := []byte("package main\n\nfunc foo() {\n\treturn\n}\n")
+	ast, err := treesitter.Parse(code, "test.go")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
 	}
-	got := NodeToString(n)
-	want := "identifier: foo [2:4-2:7]"
+
+	var identNode, blockNode *treesitter.ASTNode
+	for _, n := range ast.Children {
+		if n.Type == "function_declaration" {
+			for _, child := range n.Children {
+				if child.Type == "identifier" && child.Label == "foo" {
+					identNode = child
+				}
+				if child.Type == "block" {
+					blockNode = child
+				}
+			}
+		}
+	}
+	if identNode == nil || blockNode == nil {
+		t.Fatalf("failed to locate test nodes: ident=%v, block=%v", identNode, blockNode)
+	}
+
+	got := NodeToString(identNode)
+	want := fmt.Sprintf("%s: %s [%d:%d-%d:%d]", identNode.Type, identNode.Label, identNode.StartRow+1, identNode.StartCol, identNode.EndRow+1, identNode.EndCol)
 	if got != want {
 		t.Errorf("NodeToString = %q, want %q", got, want)
 	}
 
-	n2 := &treesitter.ASTNode{
-		Type:     "block",
-		StartRow: 0,
-		StartCol: 0,
-		EndRow:   5,
-		EndCol:   1,
-	}
-	got2 := NodeToString(n2)
-	want2 := "block [1:0-6:1]"
+	got2 := NodeToString(blockNode)
+	want2 := fmt.Sprintf("%s [%d:%d-%d:%d]", blockNode.Type, blockNode.StartRow+1, blockNode.StartCol, blockNode.EndRow+1, blockNode.EndCol)
 	if got2 != want2 {
 		t.Errorf("NodeToString no-label = %q, want %q", got2, want2)
 	}

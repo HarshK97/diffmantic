@@ -159,6 +159,28 @@ func TestDeleteChildDefensive(t *testing.T) {
 }
 
 func TestFindPosDefensive(t *testing.T) {
+	code := []byte("package main\n\nfunc fn() {\n\ta()\n\tb()\n}\n")
+	ast, err := treesitter.Parse(code, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+
+	var fnBlock *treesitter.ASTNode
+	for _, n := range ast.Children {
+		if n.Type == "function_declaration" {
+			for _, child := range n.Children {
+				if child.Type == "block" {
+					fnBlock = child
+				}
+			}
+		}
+	}
+	if fnBlock == nil || len(fnBlock.Children) < 2 {
+		t.Fatalf("failed to find function block with statements")
+	}
+	stmtA := fnBlock.Children[0]
+	stmtB := fnBlock.Children[1]
+
 	s := &chawatheState{
 		dstInOrder:  make(map[*treesitter.ASTNode]bool),
 		srcInOrder:  make(map[*cnode]bool),
@@ -173,34 +195,27 @@ func TestFindPosDefensive(t *testing.T) {
 	})
 
 	t.Run("nil target container", func(t *testing.T) {
-		node := &treesitter.ASTNode{Type: "id", Parent: &treesitter.ASTNode{Type: "block"}}
-		if pos := s.findPos(node, nil); pos != 0 {
+		if pos := s.findPos(stmtB, nil); pos != 0 {
 			t.Errorf("expected findPos with nil target = 0, got %d", pos)
 		}
 	})
 
 	t.Run("orphan node", func(t *testing.T) {
-		orphan := &treesitter.ASTNode{Type: "id"}
-		if pos := s.findPos(orphan, targetContainer); pos != 0 {
+		// Root node ast has nil parent
+		if pos := s.findPos(ast, targetContainer); pos != 0 {
 			t.Errorf("expected findPos(orphan) = 0, got %d", pos)
 		}
 	})
 
 	t.Run("detached node", func(t *testing.T) {
-		parent := &treesitter.ASTNode{Type: "block"}
-		detached := &treesitter.ASTNode{Type: "id", Parent: parent}
-		if pos := s.findPos(detached, targetContainer); pos != 0 {
+		if pos := s.findPos(stmtA, targetContainer); pos != 0 {
 			t.Errorf("expected findPos(detached) = 0, got %d", pos)
 		}
 	})
 
 	t.Run("unmapped partner sibling", func(t *testing.T) {
-		parent := &treesitter.ASTNode{Type: "block"}
-		sibling := &treesitter.ASTNode{Type: "id", Parent: parent}
-		target := &treesitter.ASTNode{Type: "id", Parent: parent}
-		parent.Children = []*treesitter.ASTNode{sibling, target}
-		s.dstInOrder[sibling] = true
-		if pos := s.findPos(target, targetContainer); pos != 0 {
+		s.dstInOrder[stmtA] = true
+		if pos := s.findPos(stmtB, targetContainer); pos != 0 {
 			t.Errorf("expected findPos with unmapped partner = 0, got %d", pos)
 		}
 	})
@@ -214,16 +229,11 @@ func TestFindPosDefensive(t *testing.T) {
 			foreignChild,
 		}
 
-		parent := &treesitter.ASTNode{Type: "block"}
-		sibling := &treesitter.ASTNode{Type: "id", Parent: parent}
-		target := &treesitter.ASTNode{Type: "id", Parent: parent}
-		parent.Children = []*treesitter.ASTNode{sibling, target}
-
-		s.dstInOrder[sibling] = true
+		s.dstInOrder[stmtA] = true
 		s.srcInOrder[foreignChild] = true
-		s.cpyDstToSrc[sibling] = foreignChild
+		s.cpyDstToSrc[stmtA] = foreignChild
 
-		pos := s.findPos(target, targetContainer)
+		pos := s.findPos(stmtB, targetContainer)
 		if pos != 0 {
 			t.Errorf("expected pos 0 due to foreign parent check, got %d (positional bleed occurred)", pos)
 		}
@@ -233,16 +243,11 @@ func TestFindPosDefensive(t *testing.T) {
 		partnerChild := &cnode{nodeType: "id", parent: targetContainer}
 		targetContainer.children = []*cnode{partnerChild}
 
-		parent := &treesitter.ASTNode{Type: "block"}
-		sibling := &treesitter.ASTNode{Type: "id", Parent: parent}
-		target := &treesitter.ASTNode{Type: "id", Parent: parent}
-		parent.Children = []*treesitter.ASTNode{sibling, target}
-
-		s.dstInOrder[sibling] = true
+		s.dstInOrder[stmtA] = true
 		s.srcInOrder[partnerChild] = true
-		s.cpyDstToSrc[sibling] = partnerChild
+		s.cpyDstToSrc[stmtA] = partnerChild
 
-		pos := s.findPos(target, targetContainer)
+		pos := s.findPos(stmtB, targetContainer)
 		if pos != 1 {
 			t.Errorf("expected pos 1, got %d", pos)
 		}
@@ -419,13 +424,14 @@ func TestGenerateEditScriptNilAndPartialASTs(t *testing.T) {
 	})
 
 	t.Run("src nil dst non-nil", func(t *testing.T) {
-		dst := &treesitter.ASTNode{Type: "module", Label: "dst"}
-		dstChild := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: dst}
-		dst.Children = []*treesitter.ASTNode{dstChild}
+		dst, err := treesitter.Parse([]byte("x = 1\n"), "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
 
 		esInsert := GenerateEditScript(nil, dst, nil)
-		if esInsert == nil || esInsert.Size() != 2 {
-			t.Fatalf("expected 2 inserts for nil src, got %d actions", esInsert.Size())
+		if esInsert == nil || esInsert.Size() != dst.Size() {
+			t.Fatalf("expected %d inserts for nil src, got %d actions", dst.Size(), esInsert.Size())
 		}
 		for _, a := range esInsert.Actions() {
 			if a.Type != Insert {
@@ -435,13 +441,14 @@ func TestGenerateEditScriptNilAndPartialASTs(t *testing.T) {
 	})
 
 	t.Run("src non-nil dst nil", func(t *testing.T) {
-		src := &treesitter.ASTNode{Type: "module", Label: "src"}
-		srcChild := &treesitter.ASTNode{Type: "identifier", Label: "y", Parent: src}
-		src.Children = []*treesitter.ASTNode{srcChild}
+		src, err := treesitter.Parse([]byte("y = 2\n"), "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
 
 		esDelete := GenerateEditScript(src, nil, nil)
-		if esDelete == nil || esDelete.Size() != 2 {
-			t.Fatalf("expected 2 deletes for nil dst, got %d actions", esDelete.Size())
+		if esDelete == nil || esDelete.Size() != src.Size() {
+			t.Fatalf("expected %d deletes for nil dst, got %d actions", src.Size(), esDelete.Size())
 		}
 		for _, a := range esDelete.Actions() {
 			if a.Type != Delete {
@@ -451,10 +458,21 @@ func TestGenerateEditScriptNilAndPartialASTs(t *testing.T) {
 	})
 
 	t.Run("detached malformed dst node", func(t *testing.T) {
-		src := &treesitter.ASTNode{Type: "module", Label: "src"}
-		detachedDst := &treesitter.ASTNode{Type: "module"}
-		unlinkedChild := &treesitter.ASTNode{Type: "error_node", Parent: &treesitter.ASTNode{Type: "ghost_parent"}}
-		detachedDst.Children = []*treesitter.ASTNode{unlinkedChild}
+		src, err := treesitter.Parse([]byte("y = 2\n"), "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse src: %v", err)
+		}
+		detachedDst, err := treesitter.Parse([]byte("x = 1\n"), "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse dst: %v", err)
+		}
+		ghostParent, err := treesitter.Parse([]byte("z = 3\n"), "test.py")
+		if err != nil {
+			t.Fatalf("failed to parse ghost parent: %v", err)
+		}
+		if len(detachedDst.Children) > 0 {
+			detachedDst.Children[0].Parent = ghostParent
+		}
 
 		esDetached := GenerateEditScript(src, detachedDst, engine.NewMapping())
 		if esDetached == nil {

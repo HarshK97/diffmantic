@@ -14,62 +14,87 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-// setParentAndRange links a node to its parent and sets its byte range.
-func setParentAndRange(node, parent *treesitter.ASTNode, startByte, endByte uint32) {
-	node.Parent = parent
-	node.StartByte = startByte
-	node.EndByte = endByte
-	if parent != nil {
-		parent.Children = append(parent.Children, node)
-	}
-}
-
 func TestRoundTrip(t *testing.T) {
-	// Let's build a source (before) tree:
-	// module
-	//  ├── function (foo)
-	//  │    ├── identifier (x)
-	//  │    └── identifier (y)
-	//  └── function (bar)
-	src := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(src, nil, 0, 100)
+	srcCode := []byte(`def foo():
+    x = 1
+    y = 2
 
-	srcFoo := &treesitter.ASTNode{Type: "function", Label: "foo"}
-	setParentAndRange(srcFoo, src, 10, 50)
+def bar():
+    pass
+`)
+	dstCode := []byte(`def foo():
+    pass
 
-	srcX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(srcX, srcFoo, 15, 20)
+def bar():
+    z = 3
+    x = 1
+`)
+	src, err := treesitter.Parse(srcCode, "src.py")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	srcY := &treesitter.ASTNode{Type: "identifier", Label: "y"}
-	setParentAndRange(srcY, srcFoo, 25, 30)
+	var srcFoo, srcBar, srcX, srcY, srcBarIdent *treesitter.ASTNode
+	for _, n := range src.Children {
+		if n.Type == "function_definition" {
+			for _, c := range n.Children {
+				if c.Type == "identifier" {
+					switch c.Label {
+					case "foo":
+						srcFoo = n
+					case "bar":
+						srcBar = n
+						srcBarIdent = c
+					}
+				}
+			}
+		}
+	}
+	for _, n := range srcFoo.Descendants() {
+		if n.Type == "identifier" {
+			if n.Label == "x" && srcX == nil {
+				srcX = n
+			}
+			if n.Label == "y" && srcY == nil {
+				srcY = n
+			}
+		}
+	}
 
-	srcBar := &treesitter.ASTNode{Type: "function", Label: "bar"}
-	setParentAndRange(srcBar, src, 60, 90)
+	var dstFoo, dstBar, dstZ, dstMovedX *treesitter.ASTNode
+	for _, n := range dst.Children {
+		if n.Type == "function_definition" {
+			for _, c := range n.Children {
+				if c.Type == "identifier" {
+					switch c.Label {
+					case "foo":
+						dstFoo = n
+					case "bar":
+						dstBar = n
+					}
+				}
+			}
+		}
+	}
+	for _, n := range dstBar.Descendants() {
+		if n.Type == "identifier" {
+			if n.Label == "z" && dstZ == nil {
+				dstZ = n
+			}
+			if n.Label == "x" && dstMovedX == nil {
+				dstMovedX = n
+			}
+		}
+	}
 
-	// Let's build a destination (after) tree:
-	// module
-	//  ├── function (foo)
-	//  │    └── identifier (x)  <-- y deleted
-	//  └── function (bar)
-	//       ├── identifier (z)  <-- z inserted
-	//       └── identifier (x)  <-- x moved here from foo
-	dst := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(dst, nil, 0, 100)
-
-	dstFoo := &treesitter.ASTNode{Type: "function", Label: "foo"}
-	setParentAndRange(dstFoo, dst, 10, 40)
-
-	dstX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(dstX, dstFoo, 15, 20)
-
-	dstBar := &treesitter.ASTNode{Type: "function", Label: "bar"}
-	setParentAndRange(dstBar, dst, 50, 95)
-
-	dstZ := &treesitter.ASTNode{Type: "identifier", Label: "z"}
-	setParentAndRange(dstZ, dstBar, 55, 60)
-
-	dstMovedX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(dstMovedX, dstBar, 65, 70)
+	if srcFoo == nil || srcBar == nil || srcX == nil || srcY == nil || srcBarIdent == nil ||
+		dstFoo == nil || dstBar == nil || dstZ == nil || dstMovedX == nil {
+		t.Fatalf("nodes not found in roundtrip snippets")
+	}
 
 	// Create Mappings:
 	ms := engine.NewMapping()
@@ -97,10 +122,10 @@ func TestRoundTrip(t *testing.T) {
 		Subtree: true, // test subtree delete
 	})
 
-	// 3. Update action (update srcBar from "bar" to "new_bar")
+	// 3. Update action (update srcBarIdent from "bar" to "new_bar")
 	es.Add(actions.Action{
 		Type:  actions.Update,
-		Node:  srcBar,
+		Node:  srcBarIdent,
 		Value: "new_bar",
 	})
 
@@ -114,7 +139,7 @@ func TestRoundTrip(t *testing.T) {
 	})
 
 	opts := EnvelopeOptions{IncludeActions: true, IncludeAlignment: true, IncludeHighlights: true}
-	jsonData, err := MarshalWithOptions(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte), opts)
+	jsonData, err := MarshalWithOptions(es, ms, src, dst, srcCode, dstCode, opts)
 	if err != nil {
 		t.Fatalf("Marshal failed: %v", err)
 	}
@@ -199,8 +224,8 @@ func TestRoundTrip(t *testing.T) {
 	if oldParent4["tree"] != "before" {
 		t.Errorf("move old_parent should be 'before', got %v", oldParent4["tree"])
 	}
-	if int(act4["old_position"].(float64)) != 0 {
-		t.Errorf("move old_position should be 0, got %v", act4["old_position"])
+	if int(act4["old_position"].(float64)) != srcX.ChildIndex() {
+		t.Errorf("move old_position should be %d, got %v", srcX.ChildIndex(), act4["old_position"])
 	}
 	if int(act4["position"].(float64)) != 1 {
 		t.Errorf("move position should be 1, got %v", act4["position"])
@@ -216,17 +241,30 @@ func TestNilEditScript(t *testing.T) {
 }
 
 func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
-	src := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(src, nil, 0, 100)
+	srcCode := []byte("def foo():\n    x = 1\n")
+	dstCode := []byte("def foo():\n    pass\n")
 
-	srcFoo := &treesitter.ASTNode{Type: "function", Label: "foo"}
-	setParentAndRange(srcFoo, src, 10, 50)
+	src, err := treesitter.Parse(srcCode, "src.py")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	srcX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(srcX, srcFoo, 15, 20)
-
-	dst := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(dst, nil, 0, 100)
+	var srcFoo, srcX *treesitter.ASTNode
+	for _, n := range src.Descendants() {
+		if n.Type == "function_definition" && srcFoo == nil {
+			srcFoo = n
+		}
+		if n.Type == "identifier" && n.Label == "x" && srcX == nil {
+			srcX = n
+		}
+	}
+	if srcFoo == nil || srcX == nil {
+		t.Fatalf("nodes not found: srcFoo=%v, srcX=%v", srcFoo, srcX)
+	}
 
 	// Create an empty mapping
 	ms := engine.NewMapping()
@@ -241,7 +279,7 @@ func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
 	})
 
 	opts := EnvelopeOptions{IncludeActions: true}
-	_, err := MarshalWithOptions(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte), opts)
+	_, err = MarshalWithOptions(es, ms, src, dst, srcCode, dstCode, opts)
 	if err == nil {
 		t.Fatal("expected Marshal to fail due to unmapped move parent, but it succeeded")
 	}
@@ -354,79 +392,107 @@ func TestBuildLineDiffEnvelopeWithOptions_ShowStyleChanges(t *testing.T) {
 }
 
 func TestAdjustRangeForContainerDeclarationChild(t *testing.T) {
-	kw := &treesitter.ASTNode{Type: "friend", StartByte: 10, EndByte: 16, StartRow: 1, EndRow: 1}
-	fn := &treesitter.ASTNode{Type: "function_definition", StartByte: 17, EndByte: 80, StartRow: 1, EndRow: 4}
-	container := &treesitter.ASTNode{
-		Type: "friend_declaration", StartByte: 10, EndByte: 80, StartRow: 1, EndRow: 4,
-		Children: []*treesitter.ASTNode{kw, fn},
+	code := []byte("class A {\n    friend void foo() {\n    }\n};\n")
+	ast, err := treesitter.Parse(code, "test.cpp")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	container.Language = "cpp"
-	kw.Parent = container
-	fn.Parent = container
+
+	var container *treesitter.ASTNode
+	for _, n := range ast.Descendants() {
+		if n.Type == "friend_declaration" {
+			container = n
+			break
+		}
+	}
+	if container == nil {
+		t.Fatal("expected friend_declaration node")
+	}
 
 	start := container.StartByte
 	end := container.EndByte
 
 	adjustRangeForContainer(container, &start, &end, nil)
 
-	if start != 10 || end != 17 {
-		t.Errorf("expected container range sliced to [10, 17], got [%d, %d]", start, end)
+	var fnChild *treesitter.ASTNode
+	for _, c := range container.Children {
+		if c.Type == "function_definition" {
+			fnChild = c
+			break
+		}
+	}
+	if fnChild == nil {
+		t.Fatal("expected function_definition child")
+	}
+
+	if start != container.StartByte || end != fnChild.StartByte {
+		t.Errorf("expected container range sliced to [%d, %d], got [%d, %d]", container.StartByte, fnChild.StartByte, start, end)
 	}
 }
 
 func TestAdjustRangeForContainerParenWrapper(t *testing.T) {
-	inner := &treesitter.ASTNode{Type: "identifier", StartByte: 1, EndByte: 9, StartRow: 1, EndRow: 1}
-	paren := &treesitter.ASTNode{
-		Type:      "parenthesized_expression",
-		StartByte: 0,
-		EndByte:   10,
-		StartRow:  1,
-		EndRow:    1,
-		Children:  []*treesitter.ASTNode{inner},
+	code := []byte("int x = (12345678);\n")
+	ast, err := treesitter.Parse(code, "test.c")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	paren.Language = "cpp"
-	inner.Parent = paren
+
+	var paren *treesitter.ASTNode
+	for _, n := range ast.Descendants() {
+		if n.Type == "parenthesized_expression" {
+			paren = n
+			break
+		}
+	}
+	if paren == nil {
+		t.Fatal("expected parenthesized_expression node")
+	}
 
 	start := paren.StartByte
 	end := paren.EndByte
 
-	code := []byte("(12345678)")
 	hasFooter, fStart, fEnd := adjustRangeForContainer(paren, &start, &end, code)
 	if !hasFooter {
 		t.Fatal("expected paren wrapper to report footer")
 	}
-	if start != 0 || end != 1 {
-		t.Errorf("expected header range [0, 1], got [%d, %d]", start, end)
+	if string(code[start:end]) != "(" {
+		t.Errorf("expected opening delimiter '(', got %q [%d, %d]", string(code[start:end]), start, end)
 	}
-	if fStart != 9 || fEnd != 10 {
-		t.Errorf("expected footer range [9, 10], got [%d, %d]", fStart, fEnd)
+	if string(code[fStart:fEnd]) != ")" {
+		t.Errorf("expected closing delimiter ')', got %q [%d, %d]", string(code[fStart:fEnd]), fStart, fEnd)
 	}
 }
 
 func TestAdjustRangeForContainerImplicitLengthArrayType(t *testing.T) {
-	dots := &treesitter.ASTNode{Type: "...", StartByte: 1, EndByte: 4, StartRow: 1, EndRow: 1}
-	typeIdent := &treesitter.ASTNode{Type: "type_identifier", StartByte: 4, EndByte: 10, StartRow: 1, EndRow: 1}
-	arr := &treesitter.ASTNode{
-		Type:      "implicit_length_array_type",
-		StartByte: 0,
-		EndByte:   10,
-		StartRow:  1,
-		EndRow:    1,
-		Children:  []*treesitter.ASTNode{dots, typeIdent},
+	code := []byte("package main\n\nvar x = [...]string{}\n")
+	ast, err := treesitter.Parse(code, "test.go")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	arr.Language = "go"
-	dots.Parent = arr
-	typeIdent.Parent = arr
+
+	var arr *treesitter.ASTNode
+	for _, n := range ast.Descendants() {
+		if n.Type == "implicit_length_array_type" {
+			arr = n
+			break
+		}
+	}
+	if arr == nil {
+		t.Fatal("expected implicit_length_array_type node")
+	}
 
 	start := arr.StartByte
 	end := arr.EndByte
 
-	hasFooter, fStart, fEnd := adjustRangeForContainer(arr, &start, &end, []byte("[...]string"))
-	if hasFooter {
-		t.Errorf("expected no footer delimiter for implicit length array, got [%d, %d]", fStart, fEnd)
+	hasFooter, fStart, fEnd := adjustRangeForContainer(arr, &start, &end, code)
+	if !hasFooter {
+		t.Errorf("expected closing delimiter footer for implicit length array")
 	}
-	if start != 0 || end != 1 {
-		t.Errorf("expected container header range [0, 1] for '[', got [%d, %d]", start, end)
+	if string(code[start:end]) != "[" {
+		t.Errorf("expected container header range '[' for implicit length array, got %q [%d, %d]", string(code[start:end]), start, end)
+	}
+	if string(code[fStart:fEnd]) != "]" {
+		t.Errorf("expected closing delimiter ']', got %q [%d, %d]", string(code[fStart:fEnd]), fStart, fEnd)
 	}
 }
 
@@ -465,20 +531,27 @@ func TestAdjustRangeForContainerTupleStructPatternWrapper(t *testing.T) {
 
 func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	// A block container with an inner statement and closing brace:
-	// line 0: {
-	// line 1:     x = 1
-	// line 2: }
-	srcBytes := []byte("{\n    x = 1\n}\n")
-	dstBytes := []byte("{\n    x = 1\n}\n")
+	// func f() {
+	//     x := 1
+	// }
+	srcBytes := []byte("func f() {\n    x := 1\n}\n")
+	dstBytes := []byte("func f() {\n    x := 1\n}\n")
 
-	root := &treesitter.ASTNode{Type: "source_file"}
-	setParentAndRange(root, nil, 0, uint32(len(dstBytes)))
+	dstAST, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	blockNode := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
-	setParentAndRange(blockNode, root, 0, uint32(len(dstBytes)-1))
-
-	innerStmt := &treesitter.ASTNode{Type: "assignment", StartRow: 1, EndRow: 1}
-	setParentAndRange(innerStmt, blockNode, 2, 11) // "x = 1\n"
+	var blockNode *treesitter.ASTNode
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "block" {
+			blockNode = n
+			break
+		}
+	}
+	if blockNode == nil {
+		t.Fatal("expected block node in dst")
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{
@@ -491,7 +564,7 @@ func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 		IncludeActions:    true,
 		IncludeHighlights: true,
 	}
-	env, err := BuildEnvelopeWithOptions(es, nil, nil, root, srcBytes, dstBytes, opts)
+	env, err := BuildEnvelopeWithOptions(es, nil, nil, dstAST, srcBytes, dstBytes, opts)
 	if err != nil {
 		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 	}
@@ -503,17 +576,17 @@ func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	if env.Actions[0].Action != "insert" || env.Actions[0].Node.Type != "block" {
 		t.Errorf("expected 1 insert action on block, got %+v", env.Actions[0])
 	}
-	if env.Actions[0].Node.StartByte != 0 || env.Actions[0].Node.EndByte != 2 {
-		t.Errorf("expected header range 0..2, got %d..%d", env.Actions[0].Node.StartByte, env.Actions[0].Node.EndByte)
+	if env.Actions[0].Node.StartByte != blockNode.StartByte {
+		t.Errorf("expected header start %d, got %d", blockNode.StartByte, env.Actions[0].Node.StartByte)
 	}
 
 	// intentionally no postprocess.Run: isolates delimiter highlight synthesis from move normalization
-	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `{
-    x = 1
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `func f() {
+    x := 1
 }
 `)
-	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `<ins>{</ins>
-    x = 1
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `func f() <ins>{</ins>
+    x := 1
 <ins>}</ins>
 `)
 }
@@ -524,14 +597,21 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 	//     pass
 	// \n
 	pyCode := []byte("def foo():\n    pass\n\n")
-	root := &treesitter.ASTNode{Type: "module", Language: "python"}
-	setParentAndRange(root, nil, 0, uint32(len(pyCode)))
+	pyAST, err := treesitter.Parse(pyCode, "test.py")
+	if err != nil {
+		t.Fatalf("parse py failed: %v", err)
+	}
 
-	funcDef := &treesitter.ASTNode{Type: "function_definition", StartRow: 0, EndRow: 1}
-	setParentAndRange(funcDef, root, 0, uint32(len(pyCode)))
-
-	body := &treesitter.ASTNode{Type: "block", StartRow: 1, EndRow: 1}
-	setParentAndRange(body, funcDef, 11, 19)
+	var funcDef *treesitter.ASTNode
+	for _, n := range pyAST.Descendants() {
+		if n.Type == "function_definition" {
+			funcDef = n
+			break
+		}
+	}
+	if funcDef == nil {
+		t.Fatal("expected function_definition in pyAST")
+	}
 
 	start := funcDef.StartByte
 	end := funcDef.EndByte
@@ -541,36 +621,47 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 	}
 
 	// Trailing comments should not be treated as closing delimiter
-	codeWithComment := []byte("{\n    x = 1\n    // trailing comment\n")
-	cRoot := &treesitter.ASTNode{Type: "source_file", Language: "go"}
-	setParentAndRange(cRoot, nil, 0, uint32(len(codeWithComment)))
+	pyCommentCode := []byte("def foo():\n    x = 1\n    # trailing comment\n")
+	pyCommentAST, err := treesitter.Parse(pyCommentCode, "test.py")
+	if err != nil {
+		t.Fatalf("parse pyComment failed: %v", err)
+	}
 
-	bNode := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
-	setParentAndRange(bNode, cRoot, 0, uint32(len(codeWithComment)))
+	var pyBlock *treesitter.ASTNode
+	for _, n := range pyCommentAST.Descendants() {
+		if n.Type == "block" {
+			pyBlock = n
+			break
+		}
+	}
+	if pyBlock == nil {
+		t.Fatal("expected block in pyCommentAST")
+	}
 
-	stmt := &treesitter.ASTNode{Type: "assignment", StartRow: 1, EndRow: 1}
-	setParentAndRange(stmt, bNode, 2, 11)
-
-	bStart := bNode.StartByte
-	bEnd := bNode.EndByte
-	hasCommentFooter, _, _ := adjustRangeForContainer(bNode, &bStart, &bEnd, codeWithComment)
+	bStart := pyBlock.StartByte
+	bEnd := pyBlock.EndByte
+	hasCommentFooter, _, _ := adjustRangeForContainer(pyBlock, &bStart, &bEnd, pyCommentCode)
 	if hasCommentFooter {
 		t.Errorf("expected hasCommentFooter=false for sliced region containing comments")
 	}
 
 	// Python subscripts use bracket delimiters ([ ]), so they need closing footers.
-	pySubscriptCode := []byte("cookie_dict[cookie.name]")
-	pySubRoot := &treesitter.ASTNode{Type: "module", Language: "python"}
-	setParentAndRange(pySubRoot, nil, 0, uint32(len(pySubscriptCode)))
+	pySubscriptCode := []byte("cookie_dict[cookie.name]\n")
+	pySubAST, err := treesitter.Parse(pySubscriptCode, "test.py")
+	if err != nil {
+		t.Fatalf("parse pySubscript failed: %v", err)
+	}
 
-	subscript := &treesitter.ASTNode{Type: "subscript", StartRow: 0, EndRow: 0}
-	setParentAndRange(subscript, pySubRoot, 0, uint32(len(pySubscriptCode)))
-
-	receiver := &treesitter.ASTNode{Type: "identifier", StartRow: 0, EndRow: 0}
-	setParentAndRange(receiver, subscript, 0, 11)
-
-	index := &treesitter.ASTNode{Type: "attribute", StartRow: 0, EndRow: 0}
-	setParentAndRange(index, subscript, 12, 23)
+	var subscript *treesitter.ASTNode
+	for _, n := range pySubAST.Descendants() {
+		if n.Type == "subscript" {
+			subscript = n
+			break
+		}
+	}
+	if subscript == nil {
+		t.Fatal("expected subscript in pySubAST")
+	}
 
 	subStart := subscript.StartByte
 	subEnd := subscript.EndByte
@@ -780,13 +871,43 @@ func TestAssignMoveColors(t *testing.T) {
 	})
 
 	t.Run("child co-mover under equivalent parent type inherits parent color", func(t *testing.T) {
-		parentSrc := &treesitter.ASTNode{Type: "assignment_statement", StartByte: 20, EndByte: 35, Language: "go"}
-		childSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 20, EndByte: 29, Parent: parentSrc, Language: "go"}
-		parentSrc.Children = []*treesitter.ASTNode{childSrc}
+		srcAST, err := treesitter.Parse([]byte("package main\n\nfunc f() {\n\ta = 1\n}\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte("package main\n\nfunc f() {\n\ta := 1\n}\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		parentDst := &treesitter.ASTNode{Type: "short_var_declaration", StartByte: 80, EndByte: 95, Language: "go"}
-		childDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 80, EndByte: 89, Parent: parentDst, Language: "go"}
-		parentDst.Children = []*treesitter.ASTNode{childDst}
+		var parentSrc, childSrc, parentDst, childDst *treesitter.ASTNode
+		for _, d := range srcAST.Descendants() {
+			if d.Type == "assignment_statement" {
+				parentSrc = d
+				for _, c := range d.Children {
+					if c.Type == "expression_list" {
+						childSrc = c
+						break
+					}
+				}
+				break
+			}
+		}
+		for _, d := range dstAST.Descendants() {
+			if d.Type == "short_var_declaration" {
+				parentDst = d
+				for _, c := range d.Children {
+					if c.Type == "expression_list" {
+						childDst = c
+						break
+					}
+				}
+				break
+			}
+		}
+		if parentSrc == nil || childSrc == nil || parentDst == nil || childDst == nil {
+			t.Fatal("failed to find assignment and expression_list nodes in parsed snippets")
+		}
 
 		// Move 0 and Move 1 conflict on adjacent lines, so Move 1 gets color 1.
 		// Move 2 is a child of Move 1 (with only DestStartByte set, relying on EquivalentTypes matching),
@@ -801,7 +922,7 @@ func TestAssignMoveColors(t *testing.T) {
 			{
 				Action:        "move",
 				ASTNode:       parentSrc,
-				Node:          &NodeRef{Type: "assignment_statement", StartByte: 20, EndByte: 35},
+				Node:          &NodeRef{Type: parentSrc.Type, StartByte: parentSrc.StartByte, EndByte: parentSrc.EndByte},
 				DestStartByte: ptr(uint32(80)),
 				DestEndByte:   ptr(uint32(95)),
 			},
@@ -809,9 +930,9 @@ func TestAssignMoveColors(t *testing.T) {
 				Action:        "move",
 				ASTNode:       childSrc,
 				DestASTNode:   childDst,
-				Node:          &NodeRef{Type: "expression_list", StartByte: 20, EndByte: 29},
-				OldParent:     &NodeRef{Type: "assignment_statement", StartByte: 20, EndByte: 35},
-				Parent:        &NodeRef{Type: "short_var_declaration", StartByte: 80, EndByte: 95},
+				Node:          &NodeRef{Type: childSrc.Type, StartByte: childSrc.StartByte, EndByte: childSrc.EndByte},
+				OldParent:     &NodeRef{Type: parentSrc.Type, StartByte: parentSrc.StartByte, EndByte: parentSrc.EndByte},
+				Parent:        &NodeRef{Type: parentDst.Type, StartByte: 80, EndByte: 95},
 				DestStartByte: ptr(uint32(80)),
 				DestEndByte:   ptr(uint32(89)),
 			},
@@ -826,22 +947,48 @@ func TestAssignMoveColors(t *testing.T) {
 	})
 
 	t.Run("Container header and enclosed body co-mover share move color without interference", func(t *testing.T) {
-		srcBytes := []byte("line0\nif cond {\n\tbody()\n}\n")
-		dstBytes := []byte("other0\nif cond {\n\tbody()\n}\n")
+		srcBytes := []byte("package main\n\nfunc f() {\n\tline0()\n\tif cond {\n\t\tbody()\n\t}\n}\n")
+		dstBytes := []byte("package main\n\nfunc f() {\n\tother0()\n\tif cond {\n\t\tbody()\n\t}\n}\n")
 		srcOffsets := BuildLineIndex(srcBytes)
 		dstOffsets := BuildLineIndex(dstBytes)
 
-		srcBody := &treesitter.ASTNode{Type: "expression_statement", StartByte: 16, EndByte: 23, Language: "go"}
-		srcBlock := &treesitter.ASTNode{Type: "block", StartByte: 14, EndByte: 25, Children: []*treesitter.ASTNode{srcBody}, Language: "go"}
-		srcBody.Parent = srcBlock
-		srcIf := &treesitter.ASTNode{Type: "if_statement", StartByte: 6, EndByte: 25, Children: []*treesitter.ASTNode{srcBlock}, Language: "go"}
-		srcBlock.Parent = srcIf
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		dstBody := &treesitter.ASTNode{Type: "expression_statement", StartByte: 17, EndByte: 24, Language: "go"}
-		dstBlock := &treesitter.ASTNode{Type: "block", StartByte: 15, EndByte: 26, Children: []*treesitter.ASTNode{dstBody}, Language: "go"}
-		dstBody.Parent = dstBlock
-		dstIf := &treesitter.ASTNode{Type: "if_statement", StartByte: 7, EndByte: 26, Children: []*treesitter.ASTNode{dstBlock}, Language: "go"}
-		dstBlock.Parent = dstIf
+		var srcIf, srcBody, dstIf, dstBody *treesitter.ASTNode
+		for _, d := range srcAST.Descendants() {
+			if d.Type == "if_statement" {
+				srcIf = d
+			}
+			if d.Type == "expression_statement" && len(d.Children) > 0 && d.Children[0].Type == "call_expression" {
+				for _, c := range d.Children[0].Children {
+					if c.Type == "identifier" && c.Label == "body" {
+						srcBody = d
+					}
+				}
+			}
+		}
+		for _, d := range dstAST.Descendants() {
+			if d.Type == "if_statement" {
+				dstIf = d
+			}
+			if d.Type == "expression_statement" && len(d.Children) > 0 && d.Children[0].Type == "call_expression" {
+				for _, c := range d.Children[0].Children {
+					if c.Type == "identifier" && c.Label == "body" {
+						dstBody = d
+					}
+				}
+			}
+		}
+		if srcIf == nil || srcBody == nil || dstIf == nil || dstBody == nil {
+			t.Fatal("failed to find if_statement and body expression_statement in parsed snippets")
+		}
 
 		actions := []Action{
 			{
@@ -855,17 +1002,17 @@ func TestAssignMoveColors(t *testing.T) {
 				GroupID:       "group-1",
 				ASTNode:       srcBody,
 				DestASTNode:   dstBody,
-				Node:          &NodeRef{Type: "expression_statement", StartByte: 16, EndByte: 23},
-				DestStartByte: ptr(uint32(17)),
-				DestEndByte:   ptr(uint32(24)),
+				Node:          &NodeRef{Type: srcBody.Type, StartByte: srcBody.StartByte, EndByte: srcBody.EndByte},
+				DestStartByte: ptr(dstBody.StartByte),
+				DestEndByte:   ptr(dstBody.EndByte),
 			},
 			{
 				Action:        "move",
 				ASTNode:       srcIf,
 				DestASTNode:   dstIf,
-				Node:          &NodeRef{Type: "if_statement", StartByte: 6, EndByte: 15},
-				DestStartByte: ptr(uint32(7)),
-				DestEndByte:   ptr(uint32(16)),
+				Node:          &NodeRef{Type: srcIf.Type, StartByte: srcIf.StartByte, EndByte: srcIf.EndByte},
+				DestStartByte: ptr(dstIf.StartByte),
+				DestEndByte:   ptr(dstIf.EndByte),
 			},
 		}
 
@@ -2050,261 +2197,127 @@ func process() {
 }
 
 func TestAdjustRangeForContainer_LeadingTrivia(t *testing.T) {
-	fileBytes := []byte("{\n    // comment\n    if (x) {}\n}")
-	block := &treesitter.ASTNode{
-		Type:      "block",
-		Language:  "java",
-		StartByte: 0,
-		EndByte:   32,
-		StartRow:  0,
-		EndRow:    3,
+	fileBytes := []byte("class Test {\n    void foo() {\n        // comment\n        if (x) {}\n    }\n}")
+	ast, err := treesitter.ParseWithLanguage(fileBytes, "java")
+	if err != nil {
+		t.Fatal(err)
 	}
-	stmt := &treesitter.ASTNode{
-		Type:      "if_statement",
-		StartByte: 17,
-		EndByte:   30,
-		StartRow:  2,
-		EndRow:    2,
-		Parent:    block,
-		LeadingTrivia: []*treesitter.CommentBlock{
-			{
-				StartByte: 6,
-				EndByte:   16,
-				StartRow:  1,
-				EndRow:    1,
-			},
-		},
-	}
-	block.Children = []*treesitter.ASTNode{stmt}
 
-	start := uint32(0)
-	end := uint32(32)
+	var block, stmt *treesitter.ASTNode
+	for _, d := range ast.Descendants() {
+		if d.Type == "block" && d.Parent != nil && d.Parent.Type == "method_declaration" {
+			block = d
+		}
+		if d.Type == "if_statement" {
+			stmt = d
+		}
+	}
+	if block == nil || stmt == nil {
+		t.Fatal("failed to find method block and if_statement in parsed java snippet")
+	}
+	if len(stmt.LeadingTrivia) == 0 {
+		t.Fatal("expected if_statement to have attached LeadingTrivia")
+	}
+
+	start := block.StartByte
+	end := block.EndByte
 	hasFooter, fStart, fEnd := adjustRangeForContainer(block, &start, &end, fileBytes)
 
-	if end != 6 {
-		t.Errorf("expected container prologue end to be clamped to 6 (start of comment), got %d", end)
+	expectedEnd := stmt.LeadingTrivia[0].StartByte
+	if end != expectedEnd {
+		t.Errorf("expected container prologue end to be clamped to %d (start of comment), got %d", expectedEnd, end)
 	}
 	if !hasFooter {
 		t.Errorf("expected container to have footer for closing brace")
 	}
-	if fStart != 30 || fEnd != 32 {
-		t.Errorf("expected footer [30, 32], got [%d, %d]", fStart, fEnd)
+	if fStart >= fEnd || string(fileBytes[fStart:fEnd]) != "}" {
+		t.Errorf("expected closing brace footer, got [%d, %d] %q", fStart, fEnd, string(fileBytes[fStart:fEnd]))
 	}
 }
 
 func TestAdjustRangeForContainer_MultilineWrapperWithBlock(t *testing.T) {
-	fileBytes := []byte("model(|| {\n    let a = 1;\n});")
-	exprStmt := &treesitter.ASTNode{
-		Type:      "expression_statement",
-		Language:  "rust",
-		StartByte: 0,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-	}
-	callExpr := &treesitter.ASTNode{
-		Type:      "call_expression",
-		Language:  "rust",
-		StartByte: 0,
-		EndByte:   29,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    exprStmt,
-	}
-	exprStmt.Children = []*treesitter.ASTNode{callExpr}
-
-	args := &treesitter.ASTNode{
-		Type:      "arguments",
-		Language:  "rust",
-		StartByte: 5,
-		EndByte:   29,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    callExpr,
-	}
-	callExpr.Children = []*treesitter.ASTNode{
-		{Type: "identifier", StartByte: 0, EndByte: 5, StartRow: 0, EndRow: 0, Parent: callExpr},
-		args,
+	fileBytes := []byte("fn main() {\n    model(|| {\n        let a = 1;\n    });\n}")
+	ast, err := treesitter.ParseWithLanguage(fileBytes, "rust")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	closure := &treesitter.ASTNode{
-		Type:      "closure_expression",
-		Language:  "rust",
-		StartByte: 6,
-		EndByte:   27,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    args,
+	var exprStmt, callExpr, block *treesitter.ASTNode
+	for _, d := range ast.Descendants() {
+		if d.Type == "expression_statement" {
+			exprStmt = d
+		}
+		if d.Type == "call_expression" {
+			callExpr = d
+		}
+		if d.Type == "block" && d.Parent != nil && d.Parent.Type == "closure_expression" {
+			block = d
+		}
 	}
-	args.Children = []*treesitter.ASTNode{closure}
-
-	block := &treesitter.ASTNode{
-		Type:      "block",
-		Language:  "rust",
-		StartByte: 9,
-		EndByte:   27,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    closure,
+	if exprStmt == nil || callExpr == nil || block == nil {
+		t.Fatal("failed to find expression_statement, call_expression, and closure block in parsed rust snippet")
 	}
-	closure.Children = []*treesitter.ASTNode{
-		{Type: "closure_parameters", StartByte: 6, EndByte: 8, StartRow: 0, EndRow: 0, Parent: closure},
-		block,
-	}
-
-	stmt := &treesitter.ASTNode{
-		Type:      "let_declaration",
-		Language:  "rust",
-		StartByte: 15,
-		EndByte:   25,
-		StartRow:  1,
-		EndRow:    1,
-		Parent:    block,
-	}
-	block.Children = []*treesitter.ASTNode{stmt}
 
 	t.Run("expression_statement", func(t *testing.T) {
-		start := uint32(0)
-		end := uint32(len(fileBytes))
+		start := exprStmt.StartByte
+		end := exprStmt.EndByte
 		hasFooter, fStart, fEnd := adjustRangeForContainer(exprStmt, &start, &end, fileBytes)
-		if end != 9 {
-			t.Errorf("expected exprStmt end to be clamped to 9 (start of block), got %d", end)
+		if end != block.StartByte {
+			t.Errorf("expected exprStmt end to be clamped to %d (start of block), got %d", block.StartByte, end)
 		}
 		if !hasFooter {
 			t.Errorf("expected exprStmt to have closing footer")
 		}
-		if fStart != 27 || fEnd != 29 {
-			t.Errorf("expected exprStmt footer [27, 29], got [%d, %d]", fStart, fEnd)
+		if string(fileBytes[fStart:fEnd]) != "}" {
+			t.Errorf("expected exprStmt closing footer '}', got [%d, %d] %q", fStart, fEnd, string(fileBytes[fStart:fEnd]))
 		}
 	})
 
 	t.Run("call_expression", func(t *testing.T) {
-		start := uint32(0)
-		end := uint32(28)
+		start := callExpr.StartByte
+		end := callExpr.EndByte
 		hasFooter, fStart, fEnd := adjustRangeForContainer(callExpr, &start, &end, fileBytes)
-		if end != 9 {
-			t.Errorf("expected callExpr end to be clamped to 9 (start of block), got %d", end)
+		if end != block.StartByte {
+			t.Errorf("expected callExpr end to be clamped to %d (start of block), got %d", block.StartByte, end)
 		}
 		if !hasFooter {
 			t.Errorf("expected callExpr to have closing footer")
 		}
-		if fStart != 27 || fEnd != 28 {
-			t.Errorf("expected callExpr footer [27, 28], got [%d, %d]", fStart, fEnd)
+		if string(fileBytes[fStart:fEnd]) != "}" {
+			t.Errorf("expected callExpr closing footer '}', got [%d, %d] %q", fStart, fEnd, string(fileBytes[fStart:fEnd]))
 		}
 	})
 }
 
 func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T) {
-	fileBytes := []byte("opDeleted := slices.ContainsFunc(result.Actions(), func() {\n\treturn\n})")
-	shortVar := &treesitter.ASTNode{
-		Type:      "short_var_declaration",
-		Language:  "go",
-		StartByte: 0,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-	}
-	lhsList := &treesitter.ASTNode{
-		Type:      "expression_list",
-		Language:  "go",
-		StartByte: 0,
-		EndByte:   9,
-		StartRow:  0,
-		EndRow:    0,
-		Parent:    shortVar,
-	}
-	colonEq := &treesitter.ASTNode{
-		Type:      ":=",
-		Language:  "go",
-		StartByte: 10,
-		EndByte:   12,
-		StartRow:  0,
-		EndRow:    0,
-		Parent:    shortVar,
-	}
-	rhsList := &treesitter.ASTNode{
-		Type:      "expression_list",
-		Language:  "go",
-		StartByte: 13,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    shortVar,
-	}
-	shortVar.Children = []*treesitter.ASTNode{lhsList, colonEq, rhsList}
-
-	callExpr := &treesitter.ASTNode{
-		Type:      "call_expression",
-		Language:  "go",
-		StartByte: 13,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    rhsList,
-	}
-	rhsList.Children = []*treesitter.ASTNode{callExpr}
-
-	argList := &treesitter.ASTNode{
-		Type:      "argument_list",
-		Language:  "go",
-		StartByte: 32,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    callExpr,
-	}
-	callExpr.Children = []*treesitter.ASTNode{
-		{Type: "selector_expression", Language: "go", StartByte: 13, EndByte: 32, StartRow: 0, EndRow: 0, Parent: callExpr},
-		argList,
+	fileBytes := []byte("package main\n\nfunc f() {\n\topDeleted := slices.ContainsFunc(result.Actions(), func() {\n\t\treturn\n\t})\n}\n")
+	ast, err := treesitter.Parse(fileBytes, "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	firstArgCall := &treesitter.ASTNode{
-		Type:      "call_expression",
-		Language:  "go",
-		StartByte: 33,
-		EndByte:   49,
-		StartRow:  0,
-		EndRow:    0,
-		Parent:    argList,
+	var shortVar, argList, rhsList *treesitter.ASTNode
+	for _, d := range ast.Descendants() {
+		if d.Type == "short_var_declaration" {
+			shortVar = d
+		}
+		if d.Type == "argument_list" && len(d.Children) >= 2 {
+			argList = d
+		}
+		if d.Type == "expression_list" && d.Parent != nil && d.Parent.Type == "short_var_declaration" && d != d.Parent.Children[0] {
+			rhsList = d
+		}
 	}
-	funcLit := &treesitter.ASTNode{
-		Type:      "func_literal",
-		Language:  "go",
-		StartByte: 51,
-		EndByte:   uint32(len(fileBytes) - 1),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    argList,
+	if shortVar == nil || argList == nil || rhsList == nil {
+		t.Fatal("failed to find short_var_declaration, rhs expression_list, and argument_list in parsed go snippet")
 	}
-	argList.Children = []*treesitter.ASTNode{firstArgCall, funcLit}
 
-	block := &treesitter.ASTNode{
-		Type:      "block",
-		Language:  "go",
-		StartByte: 58,
-		EndByte:   uint32(len(fileBytes) - 1),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    funcLit,
-	}
-	funcLit.Children = []*treesitter.ASTNode{block}
-	retStmt := &treesitter.ASTNode{
-		Type:      "return_statement",
-		Language:  "go",
-		StartByte: 61,
-		EndByte:   67,
-		StartRow:  1,
-		EndRow:    1,
-		Parent:    block,
-	}
-	block.Children = []*treesitter.ASTNode{retStmt}
-
-	// Make sure the var declaration header clamps before the multiline RHS (byte 13) and doesn't claim a closing delimiter.
-	start := uint32(0)
-	end := uint32(len(fileBytes))
+	// Make sure the var declaration header clamps before the multiline RHS and doesn't claim a closing delimiter.
+	start := shortVar.StartByte
+	end := shortVar.EndByte
 	hasFooter, _, _ := adjustRangeForContainer(shortVar, &start, &end, fileBytes)
-	if end != 13 {
-		t.Errorf("expected short_var_declaration prologue end to clamp to 13, got %d", end)
+	if end != rhsList.StartByte {
+		t.Errorf("expected short_var_declaration prologue end to clamp to %d, got %d", rhsList.StartByte, end)
 	}
 	if hasFooter {
 		t.Errorf("expected short_var_declaration not to claim a closing footer")
@@ -2317,8 +2330,8 @@ func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T)
 	if !argHasFooter {
 		t.Fatalf("expected 2-arg argument_list to preserve its closing ')' footer")
 	}
-	if argFStart != uint32(len(fileBytes)-1) || argFEnd != uint32(len(fileBytes)) {
-		t.Errorf("expected argument_list footer [%d, %d], got [%d, %d]", len(fileBytes)-1, len(fileBytes), argFStart, argFEnd)
+	if argFStart != argList.EndByte-1 || argFEnd != argList.EndByte {
+		t.Errorf("expected argument_list footer [%d, %d], got [%d, %d]", argList.EndByte-1, argList.EndByte, argFStart, argFEnd)
 	}
 }
 

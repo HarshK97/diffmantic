@@ -327,8 +327,31 @@ func TestDiffCommentsScopedLCSNoCrossover(t *testing.T) {
 }
 
 func TestDiffCommentsRenamedFunction(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration", StartByte: 0, EndByte: 200}
-	dstDecl := &treesitter.ASTNode{ID: 25, Type: "function_declaration", StartByte: 0, EndByte: 200}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc bar() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(srcDecl, dstDecl)
@@ -381,8 +404,31 @@ func TestDiffCommentsRenamedFunction(t *testing.T) {
 }
 
 func TestDiffCommentsLeadingDocstringRenamed(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
-	dstDecl := &treesitter.ASTNode{ID: 25, Type: "function_declaration"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc bar() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(srcDecl, dstDecl)
@@ -418,8 +464,31 @@ func TestDiffCommentsLeadingDocstringRenamed(t *testing.T) {
 }
 
 func TestDiffCommentsBranchIsolation(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
-	dstDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(srcDecl, dstDecl)
@@ -454,8 +523,31 @@ func TestDiffCommentsBranchIsolation(t *testing.T) {
 }
 
 func TestDiffCommentsUnmappedStrictIsolation(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
-	dstDecl := &treesitter.ASTNode{ID: 99, Type: "function_declaration"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc bar() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	// Unmapped declarations (mappings does NOT map srcDecl to dstDecl)
 	mappings := engine.NewMapping()
@@ -529,16 +621,55 @@ public class TestClass {
 }
 
 func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
-	declSrc := &treesitter.ASTNode{Type: "function_declaration", Language: "lua"}
-	declDst := &treesitter.ASTNode{Type: "function_declaration", Language: "lua"}
+	luaCode := []byte("function f()\n    if a then\n        x = 1\n    else\n        y = 2\n    end\nend\n")
+	srcAST, err := treesitter.ParseWithLanguage(luaCode, "lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.ParseWithLanguage(luaCode, "lua")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// Branch 1 in src and dst (mapped to each other)
-	block1Src := &treesitter.ASTNode{Type: "block", Parent: declSrc, Language: "lua"}
-	block1Dst := &treesitter.ASTNode{Type: "block", Parent: declDst, Language: "lua"}
+	var declSrc, declDst *treesitter.ASTNode
+	var block1Src, block1Dst, block2Src, block2Dst *treesitter.ASTNode
+	var stmt1Dst, stmt2Src *treesitter.ASTNode
 
-	// Branch 2 in src and dst (mapped to each other)
-	block2Src := &treesitter.ASTNode{Type: "block", Parent: declSrc, Language: "lua"}
-	block2Dst := &treesitter.ASTNode{Type: "block", Parent: declDst, Language: "lua"}
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			declSrc = n
+		}
+		if n.Type == "assignment_statement" {
+			for _, c := range n.Children {
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "y" {
+					stmt2Src = n
+					block2Src = n.Parent
+				}
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "x" {
+					block1Src = n.Parent
+				}
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			declDst = n
+		}
+		if n.Type == "assignment_statement" {
+			for _, c := range n.Children {
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "x" {
+					stmt1Dst = n
+					block1Dst = n.Parent
+				}
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "y" {
+					block2Dst = n.Parent
+				}
+			}
+		}
+	}
+	if declSrc == nil || declDst == nil || block1Src == nil || block1Dst == nil || block2Src == nil || block2Dst == nil || stmt2Src == nil || stmt1Dst == nil {
+		t.Fatal("failed to find function, blocks, and statements in parsed lua snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(declSrc, declDst)
@@ -546,7 +677,6 @@ func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
 	mappings.Add(block2Src, block2Dst)
 
 	// Comment in src block 2:
-	stmt2Src := &treesitter.ASTNode{Type: "assignment_statement", Parent: block2Src, Language: "lua"}
 	sc := CommentBlock{
 		Text:          "-- TODO: Need to track exact whitespace length for each level.",
 		StartRow:      10,
@@ -555,7 +685,6 @@ func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
 	}
 
 	// Comment in dst block 1 (similar wording, but in a completely different branch!):
-	stmt1Dst := &treesitter.ASTNode{Type: "assignment_statement", Parent: block1Dst, Language: "lua"}
 	dc := CommentBlock{
 		Text:          "-- Track the leading whitespace for each indent level so that we can dedent",
 		StartRow:      12,
@@ -620,9 +749,34 @@ func TestDiffCommentsGlobalBestScorePreventsGreedyTheft(t *testing.T) {
 func TestDiffCommentsAnchorFirstPrecedenceOverUnanchoredExactMatch(t *testing.T) {
 	// Make sure an edited comment on a mapped statement isn't stolen by an
 	// unmapped deleted statement that happens to share identical text.
-	stmtSrc1 := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 5, Language: "go"}
-	stmtDst1 := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 5, Language: "go"}
-	stmtSrcDeleted := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 10, Language: "go"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {\n\ta := 1\n\tb := 2\n}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {\n\ta := 1\n}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stmtSrc1, stmtSrcDeleted, stmtDst1 *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "short_var_declaration" {
+			if stmtSrc1 == nil {
+				stmtSrc1 = n
+			} else if stmtSrcDeleted == nil {
+				stmtSrcDeleted = n
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "short_var_declaration" {
+			stmtDst1 = n
+			break
+		}
+	}
+	if stmtSrc1 == nil || stmtSrcDeleted == nil || stmtDst1 == nil {
+		t.Fatal("failed to find short_var_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(stmtSrc1, stmtDst1)
@@ -670,8 +824,31 @@ func TestDiffCommentsAnchorFirstGlobalBestScorePreventsGreedyTheft(t *testing.T)
 	// When multiple comments share the same mapped anchor, the pair with
 	// higher similarity should match first, even if the lower similarity
 	// comment appears earlier in document order.
-	stmtSrc := &treesitter.ASTNode{Type: "function_declaration", StartRow: 10, Language: "go"}
-	stmtDst := &treesitter.ASTNode{Type: "function_declaration", StartRow: 10, Language: "go"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stmtSrc, stmtDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			stmtSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			stmtDst = n
+			break
+		}
+	}
+	if stmtSrc == nil || stmtDst == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(stmtSrc, stmtDst)

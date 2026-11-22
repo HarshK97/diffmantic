@@ -162,22 +162,37 @@ func TestAlignLinesWithMapping(t *testing.T) {
 	src := []byte("func f() {\n  sh := 1\n  bh := 2\n  return b\n}")
 	dst := []byte("func f() {\n  return struct{\n    x int\n  }{1}\n}")
 
-	ms := engine.NewMapping()
-	parentSrc := &treesitter.ASTNode{StartRow: 0, EndRow: 4}
-	parentDst := &treesitter.ASTNode{StartRow: 0, EndRow: 4}
+	srcAST, err := treesitter.Parse(src, "main.go")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "main.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	retSrc := &treesitter.ASTNode{
-		Type:     "return_statement",
-		StartRow: 3,
-		EndRow:   3,
-		Parent:   parentSrc,
+	var retSrc, retDst, parentSrc, parentDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			parentSrc = n
+		}
+		if n.Type == "return_statement" {
+			retSrc = n
+		}
 	}
-	retDst := &treesitter.ASTNode{
-		Type:     "return_statement",
-		StartRow: 1,
-		EndRow:   3,
-		Parent:   parentDst,
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			parentDst = n
+		}
+		if n.Type == "return_statement" {
+			retDst = n
+		}
 	}
+	if retSrc == nil || retDst == nil || parentSrc == nil || parentDst == nil {
+		t.Fatalf("nodes not found: retSrc=%v, retDst=%v, parentSrc=%v, parentDst=%v", retSrc, retDst, parentSrc, parentDst)
+	}
+
+	ms := engine.NewMapping()
 	ms.Add(parentSrc, parentDst)
 	ms.Add(retSrc, retDst)
 
@@ -202,13 +217,45 @@ func TestAlignLinesExtraction(t *testing.T) {
 	src := []byte("func f() {\n  if ok {\n    doA()\n    doB()\n  }\n  return\n}")
 	dst := []byte("func f() {\n  doA()\n  doB()\n  return\n}")
 
-	es := actions.NewEditScript()
-	innerA := &treesitter.ASTNode{StartRow: 2, EndRow: 2}
-	destA := &treesitter.ASTNode{StartRow: 1, EndRow: 1}
-	innerB := &treesitter.ASTNode{StartRow: 3, EndRow: 3}
-	destB := &treesitter.ASTNode{StartRow: 2, EndRow: 2}
-	parentDst := &treesitter.ASTNode{StartRow: 0, EndRow: 4}
+	srcAST, err := treesitter.Parse(src, "main.go")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "main.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
+	var innerA, innerB *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "expression_statement" {
+			if strings.Contains(string(src[n.StartByte:n.EndByte]), "doA") {
+				innerA = n
+			}
+			if strings.Contains(string(src[n.StartByte:n.EndByte]), "doB") {
+				innerB = n
+			}
+		}
+	}
+	var destA, destB, parentDst *treesitter.ASTNode
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			parentDst = n
+		}
+		if n.Type == "expression_statement" {
+			if strings.Contains(string(dst[n.StartByte:n.EndByte]), "doA") {
+				destA = n
+			}
+			if strings.Contains(string(dst[n.StartByte:n.EndByte]), "doB") {
+				destB = n
+			}
+		}
+	}
+	if innerA == nil || innerB == nil || destA == nil || destB == nil || parentDst == nil {
+		t.Fatalf("extraction nodes not found: %v, %v, %v, %v, %v", innerA, innerB, destA, destB, parentDst)
+	}
+
+	es := actions.NewEditScript()
 	es.Add(actions.Action{
 		Type:     actions.Move,
 		Node:     innerA,
@@ -240,25 +287,52 @@ func TestAlignLinesExtraction(t *testing.T) {
 
 func TestAlignLinesSingleStatementBlock(t *testing.T) {
 	// Simulate single-statement block where parent block has exact same row range as child call
-	src := []byte("elseif tgt == 'msg' then\n  api.nvim_win_set_cursor(ui.wins.msg)\nelseif tgt == 'pager' then")
-	dst := []byte("elseif tgt == 'msg' then\n  -- comment 1\n  -- comment 2\n  fn.win_execute(ui.wins.msg)\nelseif tgt == 'pager' then")
+	src := []byte("if tgt == 'msg' then\n  api.nvim_win_set_cursor(ui.wins.msg)\nelseif tgt == 'pager' then\nend")
+	dst := []byte("if tgt == 'msg' then\n  -- comment 1\n  -- comment 2\n  fn.win_execute(ui.wins.msg)\nelseif tgt == 'pager' then\nend")
+
+	srcAST, err := treesitter.Parse(src, "test.lua")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.lua")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	var blockSrc, callSrc *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "block" && blockSrc == nil {
+			blockSrc = n
+		}
+		if n.Type == "function_call" && callSrc == nil {
+			callSrc = n
+		}
+	}
+	var blockDst, callDst *treesitter.ASTNode
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "block" && blockDst == nil {
+			blockDst = n
+		}
+		if n.Type == "function_call" && callDst == nil {
+			callDst = n
+		}
+	}
+	if blockSrc == nil || callSrc == nil || blockDst == nil || callDst == nil {
+		t.Fatalf("nodes not found in lua snippet: blockSrc=%v, callSrc=%v, blockDst=%v, callDst=%v", blockSrc, callSrc, blockDst, callDst)
+	}
 
 	ms := engine.NewMapping()
-	blockSrc := &treesitter.ASTNode{Type: "block", StartRow: 1, EndRow: 1}
-	blockDst := &treesitter.ASTNode{Type: "block", StartRow: 3, EndRow: 3}
-	callSrc := &treesitter.ASTNode{Type: "function_call", StartRow: 1, EndRow: 1, Parent: blockSrc}
-	callDst := &treesitter.ASTNode{Type: "function_call", StartRow: 3, EndRow: 3, Parent: blockDst}
-
 	ms.Add(blockSrc, blockDst)
 	ms.Add(callSrc, callDst)
 
 	got := AlignLines(src, dst, ms, nil)
 	want := []LineAlignmentPair{
-		{LeftLine: 0, RightLine: 0},  // elseif tgt == 'msg' then
+		{LeftLine: 0, RightLine: 0},  // if tgt == 'msg' then
 		{LeftLine: -1, RightLine: 1}, // filler <-> -- comment 1
 		{LeftLine: -1, RightLine: 2}, // filler <-> -- comment 2
 		{LeftLine: 1, RightLine: 3},  // api.nvim_win_set_cursor <-> fn.win_execute (ALIGNED!)
 		{LeftLine: 2, RightLine: 4},  // elseif tgt == 'pager' then
+		{LeftLine: 3, RightLine: 5},  // end
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -267,18 +341,37 @@ func TestAlignLinesSingleStatementBlock(t *testing.T) {
 }
 
 func TestAlignLinesContinuationCondition(t *testing.T) {
-	src := []byte("if delta.type == 'workspaces' and\n  kong.default_workspace ~= delta.entity.id\nthen")
-	dst := []byte("if delta.type == 'workspaces' and\n  delta_entity ~= nil and\n  kong.default_workspace ~= delta_entity.id\nthen")
+	src := []byte("if delta.type == 'workspaces' and\n  kong.default_workspace ~= delta.entity.id\nthen\nend")
+	dst := []byte("if delta.type == 'workspaces' and\n  delta_entity ~= nil and\n  kong.default_workspace ~= delta_entity.id\nthen\nend")
+
+	srcAST, err := treesitter.Parse(src, "test.lua")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.lua")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	var condSrc, condDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "binary_expression" && strings.Contains(string(src[n.StartByte:n.EndByte]), "kong.default_workspace") {
+			condSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "binary_expression" && strings.Contains(string(dst[n.StartByte:n.EndByte]), "kong.default_workspace") {
+			condDst = n
+			break
+		}
+	}
+	if condSrc == nil || condDst == nil {
+		t.Fatalf("binary_expression condition nodes not found: condSrc=%v, condDst=%v", condSrc, condDst)
+	}
 
 	ms := engine.NewMapping()
-	rootSrc := &treesitter.ASTNode{Type: "source_file", StartRow: 0, EndRow: 2}
-	rootDst := &treesitter.ASTNode{Type: "source_file", StartRow: 0, EndRow: 3}
-	parentSrc := &treesitter.ASTNode{Type: "binary_expression", StartRow: 0, EndRow: 1, Parent: rootSrc}
-	parentDst := &treesitter.ASTNode{Type: "binary_expression", StartRow: 0, EndRow: 2, Parent: rootDst}
-	condSrc := &treesitter.ASTNode{Type: "binary_expression", StartRow: 1, EndRow: 1, StartCol: 2, EndCol: 44, Parent: parentSrc}
-	condDst := &treesitter.ASTNode{Type: "binary_expression", StartRow: 2, EndRow: 2, StartCol: 2, EndCol: 44, Parent: parentDst}
-
-	ms.Add(rootSrc, rootDst)
+	ms.Add(srcAST, dstAST)
 	ms.Add(condSrc, condDst)
 
 	got := AlignLines(src, dst, ms, nil)
@@ -287,6 +380,7 @@ func TestAlignLinesContinuationCondition(t *testing.T) {
 		{LeftLine: -1, RightLine: 1}, // filler <-> delta_entity ~= nil and
 		{LeftLine: 1, RightLine: 2},  // kong.default_workspace ~= ... (ALIGNED!)
 		{LeftLine: 2, RightLine: 3},  // then
+		{LeftLine: 3, RightLine: 4},  // end
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -412,36 +506,43 @@ func TestAlignLinesBanded(t *testing.T) {
 }
 
 func TestAlignLines_DataContainerAndASTMappingPrior(t *testing.T) {
-	// Old JSON has validations with additionalProperties: false
-	// New JSON has validations with additionalProperties: false, followed by inserted upload_validations with identical duplicate additionalProperties: false
-	src := []byte(`{
-  "validations": {
-    "required": true,
-    "additionalProperties": false
-  },
-  "assignee": "test"
-}`)
-	dst := []byte(`{
-  "validations": {
-    "required": true,
-    "additionalProperties": false
-  },
-  "upload_validations": {
-    "required": true,
-    "additionalProperties": false
-  },
-  "assignee": "test"
-}`)
+	// Old Python dictionary has validations with additionalProperties: False
+	// New Python dictionary has validations with additionalProperties: False, followed by inserted upload_validations with identical duplicate additionalProperties: False
+	src := []byte("d = {\n  \"validations\": {\n    \"required\": True,\n    \"additionalProperties\": False,\n  },\n  \"assignee\": \"test\",\n}\n")
+	dst := []byte("d = {\n  \"validations\": {\n    \"required\": True,\n    \"additionalProperties\": False,\n  },\n  \"upload_validations\": {\n    \"required\": True,\n    \"additionalProperties\": False,\n  },\n  \"assignee\": \"test\",\n}\n")
 
-	// Construct mock Mapping pairing the first additionalProperties (src line 3) with dst line 3
+	srcAST, err := treesitter.Parse(src, "test.py")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.py")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	var n1, n2 *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "pair" && strings.Contains(string(src[n.StartByte:n.EndByte]), "additionalProperties") {
+			n1 = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "pair" && strings.Contains(string(dst[n.StartByte:n.EndByte]), "additionalProperties") {
+			n2 = n
+			break
+		}
+	}
+	if n1 == nil || n2 == nil {
+		t.Fatalf("pair nodes not found: n1=%v, n2=%v", n1, n2)
+	}
+
 	ms := engine.NewMapping()
-	n1 := &treesitter.ASTNode{Type: "pair", Label: "additionalProperties", StartRow: 3, EndRow: 3, Language: "json"}
-	n2 := &treesitter.ASTNode{Type: "pair", Label: "additionalProperties", StartRow: 3, EndRow: 3, Language: "json"}
 	ms.Add(n1, n2)
 
 	got := AlignLines(src, dst, ms, nil)
 
-	// Verify that src line 3 ("additionalProperties": false) aligns with dst line 3 (not dst line 7)
+	// Verify that src line 3 ("additionalProperties": False) aligns with dst line 3 (not dst line 7)
 	foundMappedPair := false
 	for _, p := range got {
 		if p.LeftLine == 3 && p.RightLine == 3 {
@@ -948,43 +1049,63 @@ func TestAlignLines_StationaryElsePrecedenceOverInsertedClause(t *testing.T) {
 }
 
 func TestCollectMoveRanges_MacroStructuralFilter_Tier4(t *testing.T) {
-	// Micro-move: sub-statement identifier (size 1), not a statement, block, or declaration.
-	microSrc := &treesitter.ASTNode{Type: "identifier", Label: "x", StartRow: 5, EndRow: 5, Language: "go"}
-	microDst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartRow: 50, EndRow: 50, Language: "go"}
+	src := []byte("package main\n\nfunc main() {\n\tx := 1\n\tfoo()\n\ta := b + c + d\n}\n")
+	dst := []byte("package main\n\nfunc other() {\n\t// spacer\n\t// spacer\n\t// spacer\n\t// spacer\n\t// spacer\n\t// spacer\n\tx := 1\n\tfoo()\n\ta := b + c + d\n}\n")
 
-	// Macro-move 1: statement node (size 2).
-	stmtSrc := &treesitter.ASTNode{
-		Type:     "expression_statement",
-		StartRow: 10,
-		EndRow:   10,
-		Language: "go",
-		Children: []*treesitter.ASTNode{{Type: "identifier", Label: "foo", Language: "go"}},
+	srcAST, err := treesitter.Parse(src, "main.go")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
 	}
-	stmtDst := &treesitter.ASTNode{
-		Type:     "expression_statement",
-		StartRow: 60,
-		EndRow:   60,
-		Language: "go",
-		Children: []*treesitter.ASTNode{{Type: "identifier", Label: "foo", Language: "go"}},
+	dstAST, err := treesitter.Parse(dst, "main.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
 	}
 
-	// Macro-move 2: non-statement node with Size() >= 4 (complex expression).
-	c1 := &treesitter.ASTNode{Type: "identifier", Label: "a", Language: "go"}
-	c2 := &treesitter.ASTNode{Type: "+", Label: "+", Language: "go"}
-	c3 := &treesitter.ASTNode{Type: "identifier", Label: "b", Language: "go"}
-	largeExprSrc := &treesitter.ASTNode{
-		Type:     "binary_expression",
-		StartRow: 20,
-		EndRow:   20,
-		Language: "go",
-		Children: []*treesitter.ASTNode{c1, c2, c3},
+	var microSrc, microDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "identifier" && n.Label == "x" {
+			microSrc = n
+			break
+		}
 	}
-	largeExprDst := &treesitter.ASTNode{
-		Type:     "binary_expression",
-		StartRow: 70,
-		EndRow:   70,
-		Language: "go",
-		Children: []*treesitter.ASTNode{c1, c2, c3},
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "identifier" && n.Label == "x" {
+			microDst = n
+			break
+		}
+	}
+
+	var stmtSrc, stmtDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "expression_statement" {
+			stmtSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "expression_statement" {
+			stmtDst = n
+			break
+		}
+	}
+
+	var largeExprSrc, largeExprDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "binary_expression" && n.Size() >= 4 {
+			largeExprSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "binary_expression" && n.Size() >= 4 {
+			largeExprDst = n
+			break
+		}
+	}
+
+	if microSrc == nil || microDst == nil || stmtSrc == nil || stmtDst == nil || largeExprSrc == nil || largeExprDst == nil {
+		t.Fatalf("nodes not found: microSrc=%v, microDst=%v, stmtSrc=%v, stmtDst=%v, largeExprSrc=%v, largeExprDst=%v",
+			microSrc, microDst, stmtSrc, stmtDst, largeExprSrc, largeExprDst)
 	}
 
 	ms := engine.NewMapping()
@@ -1008,8 +1129,8 @@ func TestCollectMoveRanges_MacroStructuralFilter_Tier4(t *testing.T) {
 	}
 
 	for _, m := range moves {
-		if m.sStart == 5 && m.dStart == 50 {
-			t.Errorf("micro-move on line 5->50 should be excluded from line alignment moveRange")
+		if m.sStart == int(microSrc.StartRow) && m.dStart == int(microDst.StartRow) {
+			t.Errorf("micro-move on line %d->%d should be excluded from line alignment moveRange", microSrc.StartRow, microDst.StartRow)
 		}
 	}
 }
