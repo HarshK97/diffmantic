@@ -8,33 +8,16 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
-// buildSimpleTree creates:
-//
-//	module
-//	├── function: foo
-//	│   ├── identifier: x
-//	│   └── identifier: y
-//	└── function: bar
-//	    └── identifier: z
-func buildSimpleTree(prefix string) *treesitter.ASTNode {
-	module := &treesitter.ASTNode{Type: "module", StartRow: 0, EndRow: 10}
-	foo := &treesitter.ASTNode{Type: "function", Label: "foo", Parent: module, StartRow: 1, EndRow: 4}
-	bar := &treesitter.ASTNode{Type: "function", Label: "bar", Parent: module, StartRow: 5, EndRow: 8}
-	module.Children = []*treesitter.ASTNode{foo, bar}
-
-	x := &treesitter.ASTNode{Type: "identifier", Label: prefix + "x", Parent: foo, StartRow: 2, StartCol: 4, EndRow: 2, EndCol: 5}
-	y := &treesitter.ASTNode{Type: "identifier", Label: prefix + "y", Parent: foo, StartRow: 3, StartCol: 4, EndRow: 3, EndCol: 5}
-	foo.Children = []*treesitter.ASTNode{x, y}
-
-	z := &treesitter.ASTNode{Type: "identifier", Label: prefix + "z", Parent: bar, StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 5}
-	bar.Children = []*treesitter.ASTNode{z}
-
-	return module
-}
-
 func TestChawatheIdenticalTrees(t *testing.T) {
-	src := buildSimpleTree("")
-	dst := buildSimpleTree("")
+	code := []byte("package main\n\nfunc foo() {\n\tx := 1\n}\n")
+	src, err := treesitter.Parse(code, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dst, err := treesitter.Parse(code, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
 
 	srcNodes := src.LevelOrder()
 	dstNodes := dst.LevelOrder()
@@ -44,7 +27,6 @@ func TestChawatheIdenticalTrees(t *testing.T) {
 	}
 
 	es := GenerateEditScript(src, dst, ms)
-
 	if es.Size() != 0 {
 		t.Errorf("identical trees should produce 0 actions, got %d", es.Size())
 		for _, a := range es.Actions() {
@@ -54,32 +36,36 @@ func TestChawatheIdenticalTrees(t *testing.T) {
 }
 
 func TestChawatheInsertLeaf(t *testing.T) {
-	// Src: module -> [function:foo -> [id:x]]
-	src := &treesitter.ASTNode{Type: "module"}
-	srcFoo := &treesitter.ASTNode{Type: "function", Label: "foo", Parent: src}
-	src.Children = []*treesitter.ASTNode{srcFoo}
-	srcX := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: srcFoo, StartRow: 1}
-	srcFoo.Children = []*treesitter.ASTNode{srcX}
+	srcCode := []byte("package main\n\nfunc foo() {\n\tx := 1\n}\n")
+	dstCode := []byte("package main\n\nfunc foo() {\n\tx := 1\n\ty := 2\n}\n")
+	src, err := treesitter.Parse(srcCode, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
 
-	// Dst: module -> [function:foo -> [id:x, id:y]]
-	dst := &treesitter.ASTNode{Type: "module"}
-	dstFoo := &treesitter.ASTNode{Type: "function", Label: "foo", Parent: dst}
-	dst.Children = []*treesitter.ASTNode{dstFoo}
-	dstX := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: dstFoo, StartRow: 1}
-	dstY := &treesitter.ASTNode{Type: "identifier", Label: "y", Parent: dstFoo, StartRow: 2}
-	dstFoo.Children = []*treesitter.ASTNode{dstX, dstY}
+	var dstY *treesitter.ASTNode
+	for _, n := range dst.PostOrder() {
+		if n.Label == "y" {
+			dstY = n
+			break
+		}
+	}
+	if dstY == nil {
+		t.Fatal("failed to find identifier y in dst")
+	}
 
-	ms := engine.NewMapping()
-	ms.Add(src, dst)
-	ms.Add(srcFoo, dstFoo)
-	ms.Add(srcX, dstX)
-
-	es := GenerateEditScript(src, dst, ms)
+	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
+	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
 	found := false
 	for _, a := range es.Actions() {
 		if a.Type == Insert && a.Node == dstY {
 			found = true
+			break
 		}
 	}
 	if !found {
@@ -91,49 +77,74 @@ func TestChawatheInsertLeaf(t *testing.T) {
 }
 
 func TestChawatheDeleteLeaf(t *testing.T) {
-	// Src: module -> [function:foo -> [id:x, id:y]]
-	src := &treesitter.ASTNode{Type: "module"}
-	srcFoo := &treesitter.ASTNode{Type: "function", Label: "foo", Parent: src}
-	src.Children = []*treesitter.ASTNode{srcFoo}
-	srcX := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: srcFoo, StartRow: 1}
-	srcY := &treesitter.ASTNode{Type: "identifier", Label: "y", Parent: srcFoo, StartRow: 2}
-	srcFoo.Children = []*treesitter.ASTNode{srcX, srcY}
+	srcCode := []byte("package main\n\nfunc foo() {\n\tx := 1\n\ty := 2\n}\n")
+	dstCode := []byte("package main\n\nfunc foo() {\n\tx := 1\n}\n")
+	src, err := treesitter.Parse(srcCode, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
 
-	// Dst: module -> [function:foo -> [id:x]]
-	dst := &treesitter.ASTNode{Type: "module"}
-	dstFoo := &treesitter.ASTNode{Type: "function", Label: "foo", Parent: dst}
-	dst.Children = []*treesitter.ASTNode{dstFoo}
-	dstX := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: dstFoo, StartRow: 1}
-	dstFoo.Children = []*treesitter.ASTNode{dstX}
+	var srcY *treesitter.ASTNode
+	for _, n := range src.PostOrder() {
+		if n.Label == "y" {
+			srcY = n
+			break
+		}
+	}
+	if srcY == nil {
+		t.Fatal("failed to find identifier y in src")
+	}
 
-	ms := engine.NewMapping()
-	ms.Add(src, dst)
-	ms.Add(srcFoo, dstFoo)
-	ms.Add(srcX, dstX)
-
-	es := GenerateEditScript(src, dst, ms)
+	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
+	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
 	found := false
 	for _, a := range es.Actions() {
 		if a.Type == Delete && a.Node == srcY {
 			found = true
+			break
 		}
 	}
 	if !found {
 		t.Error("expected Delete action for srcY")
+		for _, a := range es.Actions() {
+			t.Logf("  %s: node=%v", a.Type, a.Node)
+		}
 	}
 }
 
 func TestChawatheUpdateLeaf(t *testing.T) {
-	// Src: module -> [id:old]
-	src := &treesitter.ASTNode{Type: "module"}
-	srcID := &treesitter.ASTNode{Type: "identifier", Label: "old", Parent: src, StartRow: 1}
-	src.Children = []*treesitter.ASTNode{srcID}
+	srcCode := []byte("old_val = 1\n")
+	dstCode := []byte("new_val = 1\n")
+	src, err := treesitter.Parse(srcCode, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
 
-	// Dst: module -> [id:new]
-	dst := &treesitter.ASTNode{Type: "module"}
-	dstID := &treesitter.ASTNode{Type: "identifier", Label: "new", Parent: dst, StartRow: 1}
-	dst.Children = []*treesitter.ASTNode{dstID}
+	var srcID, dstID *treesitter.ASTNode
+	for _, n := range src.PostOrder() {
+		if n.Label == "old_val" {
+			srcID = n
+			break
+		}
+	}
+	for _, n := range dst.PostOrder() {
+		if n.Label == "new_val" {
+			dstID = n
+			break
+		}
+	}
+	if srcID == nil || dstID == nil {
+		t.Fatalf("failed to find identifiers: srcID=%v, dstID=%v", srcID, dstID)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(src, dst)
@@ -143,21 +154,29 @@ func TestChawatheUpdateLeaf(t *testing.T) {
 
 	found := false
 	for _, a := range es.Actions() {
-		if a.Type == Update && a.Node == srcID && a.Value == "new" {
+		if a.Type == Update && a.Node == srcID && a.Value == "new_val" {
 			found = true
+			break
 		}
 	}
 	if !found {
-		t.Error("expected Update action changing 'old' to 'new'")
+		t.Error("expected Update action changing 'old_val' to 'new_val'")
+		for _, a := range es.Actions() {
+			t.Logf("  %s: node=%v val=%q", a.Type, a.Node, a.Value)
+		}
 	}
 }
 
 // --- PrintActions test ---
 
 func TestPrintActions(t *testing.T) {
+	ast, err := treesitter.Parse([]byte("foo = 1\n"), "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
 	es := NewEditScript()
-	node := &treesitter.ASTNode{Type: "identifier", Label: "foo", StartRow: 1}
-	parent := &treesitter.ASTNode{Type: "block"}
+	parent := ast
+	node := ast.Children[0]
 	es.Add(Action{Type: Insert, Node: node, Parent: parent, Position: 0})
 	es.Add(Action{Type: Delete, Node: node})
 	es.Add(Action{Type: Update, Node: node, Value: "bar"})

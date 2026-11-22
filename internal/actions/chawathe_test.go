@@ -8,36 +8,24 @@ import (
 )
 
 func TestUnorderedNodeMatching(t *testing.T) {
-	// Create two container nodes with reordered child nodes
-	childA1 := &treesitter.ASTNode{Type: "pair", Label: "a"}
-	childB1 := &treesitter.ASTNode{Type: "pair", Label: "b"}
-	src := &treesitter.ASTNode{
-		Type:        "object",
-		IsUnordered: true,
-		Children:    []*treesitter.ASTNode{childA1, childB1},
+	srcCode := []byte("const x = { a: 1, b: 2 };\n")
+	dstCode := []byte("const x = { b: 2, a: 1 };\n")
+
+	srcAST, err := treesitter.Parse(srcCode, "test.js")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
 	}
-	childA1.Parent = src
-	childB1.Parent = src
-
-	childB2 := &treesitter.ASTNode{Type: "pair", Label: "b"}
-	childA2 := &treesitter.ASTNode{Type: "pair", Label: "a"}
-	dst := &treesitter.ASTNode{
-		Type:        "object",
-		IsUnordered: true,
-		Children:    []*treesitter.ASTNode{childB2, childA2},
+	dstAST, err := treesitter.Parse(dstCode, "test.js")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
 	}
-	childB2.Parent = dst
-	childA2.Parent = dst
 
-	ms := engine.NewMapping()
-	ms.Add(src, dst)
-	ms.Add(childA1, childA2)
-	ms.Add(childB1, childB2)
+	matchResult := engine.Match(srcAST, dstAST, srcCode, dstCode, nil)
+	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 
-	script := GenerateEditScript(src, dst, ms)
 	for _, action := range script.Actions() {
 		if action.Type == Move {
-			t.Errorf("expected 0 Move actions for unordered container, got Move action on node %s", action.Node.Label)
+			t.Errorf("expected 0 Move actions for unordered container, got Move action on node %s", action.Node.Type)
 		}
 	}
 }
@@ -262,49 +250,46 @@ func TestFindPosDefensive(t *testing.T) {
 }
 
 func TestNonRootProvenanceFallback(t *testing.T) {
-	dstRoot := &treesitter.ASTNode{Type: "module", Label: "root"}
-	dstContainer := &treesitter.ASTNode{Type: "function", Label: "fn", Parent: dstRoot}
-	dstChild := &treesitter.ASTNode{Type: "identifier", Label: "x", Parent: dstContainer}
-	dstContainer.Children = []*treesitter.ASTNode{dstChild}
-	dstRoot.Children = []*treesitter.ASTNode{dstContainer}
+	code := []byte("package main\n\nfunc fn() {\n\tx := 1\n}\n")
+	dstRoot, err := treesitter.Parse(code, "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
 
 	script := GenerateEditScript(nil, dstRoot, nil)
 	if script == nil {
 		t.Fatalf("expected non-nil script")
 	}
 
-	actions := script.Actions()
-	for _, a := range actions {
+	for _, a := range script.Actions() {
 		if a.Node == dstRoot {
 			if a.Parent != nil {
 				t.Errorf("expected root Insert to have Parent nil (source realm purity), got %v", a.Parent)
 			}
-		}
-		if a.Node == dstContainer {
-			if a.Parent != dstRoot {
-				t.Errorf("expected dstContainer Insert to have Parent dstRoot, got %v", a.Parent)
-			}
-		}
-		if a.Node == dstChild {
-			if a.Parent != dstContainer {
-				t.Errorf("expected dstChild Insert to have Parent dstContainer, got %v", a.Parent)
+		} else if a.Node.Parent != nil {
+			if a.Parent != a.Node.Parent {
+				t.Errorf("expected child %v Insert to have Parent %v, got %v", a.Node.Type, a.Node.Parent.Type, a.Parent)
 			}
 		}
 	}
 
 	// Verify unmapped synthetic parent evaluates strictly to nil (pointer domain purity)
-	ghostParent := &treesitter.ASTNode{Type: "ghost"}
-	orphanChild := &treesitter.ASTNode{Type: "identifier", Label: "orphan", Parent: ghostParent}
-	treeWithOrphan := &treesitter.ASTNode{
-		Type:     "module",
-		Label:    "root2",
-		Children: []*treesitter.ASTNode{orphanChild},
+	var fnNode *treesitter.ASTNode
+	for _, n := range dstRoot.PostOrder() {
+		if n.Type == "function_declaration" {
+			fnNode = n
+			break
+		}
 	}
-	scriptOrphan := GenerateEditScript(nil, treeWithOrphan, nil)
-	for _, a := range scriptOrphan.Actions() {
-		if a.Node == orphanChild {
+	if fnNode == nil {
+		t.Fatal("failed to find function_declaration in dstRoot")
+	}
+	// Passing a subtree directly without mapping its enclosing root
+	scriptSub := GenerateEditScript(nil, fnNode, nil)
+	for _, a := range scriptSub.Actions() {
+		if a.Node == fnNode {
 			if a.Parent != nil {
-				t.Errorf("expected orphan child with unmapped ghost parent to have nil Parent, got %v", a.Parent)
+				t.Errorf("expected root of subtree insert to have nil Parent, got %v", a.Parent)
 			}
 		}
 	}
@@ -347,14 +332,27 @@ func TestInsertChildSameParentNoDuplication(t *testing.T) {
 }
 
 func TestInsertNodeTypePreserved(t *testing.T) {
-	src := &treesitter.ASTNode{Type: "module", Label: "root"}
-	dstChild := &treesitter.ASTNode{Type: "function_def", Label: "my_func"}
-	dst := &treesitter.ASTNode{
-		Type:     "module",
-		Label:    "root",
-		Children: []*treesitter.ASTNode{dstChild},
+	srcCode := []byte("# empty\n")
+	dstCode := []byte("def my_func():\n    pass\n")
+	src, err := treesitter.Parse(srcCode, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
 	}
-	dstChild.Parent = dst
+	dst, err := treesitter.Parse(dstCode, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
+	}
+
+	var dstChild *treesitter.ASTNode
+	for _, n := range dst.Children {
+		if n.Type == "function_definition" {
+			dstChild = n
+			break
+		}
+	}
+	if dstChild == nil {
+		t.Fatal("failed to find function_definition in dst")
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(src, dst)
@@ -370,11 +368,8 @@ func TestInsertNodeTypePreserved(t *testing.T) {
 	if !ok || w == nil {
 		t.Fatalf("expected inserted node to be registered in cpyDstToSrc")
 	}
-	if w.nodeType != "function_def" {
-		t.Errorf("expected working node type 'function_def', got %q", w.nodeType)
-	}
-	if w.label != "my_func" {
-		t.Errorf("expected working node label 'my_func', got %q", w.label)
+	if w.nodeType != "function_definition" {
+		t.Errorf("expected working node type 'function_definition', got %q", w.nodeType)
 	}
 	if w.orig != dstChild {
 		t.Errorf("expected working node orig to point to dstChild, got %v", w.orig)
@@ -382,23 +377,34 @@ func TestInsertNodeTypePreserved(t *testing.T) {
 }
 
 func TestLCSTieBreakingScore(t *testing.T) {
-	s := &chawatheState{
-		cpyDstToSrc: make(map[*treesitter.ASTNode]*cnode),
+	srcCode := []byte("a = 1\nb = 2\n")
+	dstCode := []byte("a = 1\n")
+	src, err := treesitter.Parse(srcCode, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse src: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	parentX := &cnode{nodeType: "block"}
-	parentY := &treesitter.ASTNode{Type: "block"}
+	cs := &chawatheState{}
+	cs.init(src, dst, engine.NewMapping())
 
-	x0 := &cnode{nodeType: "item", parent: parentX}
-	x1 := &cnode{nodeType: "item", parent: parentX}
-	parentX.children = []*cnode{x0, x1}
+	if len(cs.cpySrc.children) < 2 {
+		t.Fatalf("expected at least 2 children in cpySrc, got %d", len(cs.cpySrc.children))
+	}
+	if len(dst.Children) < 1 {
+		t.Fatalf("expected at least 1 child in dst, got %d", len(dst.Children))
+	}
 
-	y0 := &treesitter.ASTNode{Type: "item", Parent: parentY}
-	parentY.Children = []*treesitter.ASTNode{y0}
+	x0 := cs.cpySrc.children[0]
+	x1 := cs.cpySrc.children[1]
+	y0 := dst.Children[0]
 
-	s.cpyDstToSrc[y0] = x0
+	cs.cpyDstToSrc[y0] = x0
 
-	pairs := s.lcs([]*cnode{x0, x1}, []*treesitter.ASTNode{y0})
+	pairs := cs.lcs([]*cnode{x0, x1}, []*treesitter.ASTNode{y0})
 	if len(pairs) != 1 || pairs[0].src != x0 || pairs[0].dst != y0 {
 		t.Fatalf("expected pair (x0, y0), got %+v", pairs)
 	}
@@ -492,12 +498,16 @@ func TestLCSStationarySiblingOrder(t *testing.T) {
     resp.history = hist[1:]
     try:
         pass
+    except Exception:
+        pass
 `)
 	dst := []byte(`while url:
     prepared_request = req.copy()
     resp.history = hist[:]
     hist.append(resp)
     try:
+        pass
+    except Exception:
         pass
 `)
 
