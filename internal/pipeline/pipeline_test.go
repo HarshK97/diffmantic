@@ -1332,13 +1332,13 @@ end
 	}
 
 	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `function build_node(declaration)
-    local <del>add_undefined</del> = declaration and is_parameter(declaration)
+    local <upd>add_undefined</upd> = declaration and is_parameter(declaration)
     local intermediate = compute(declaration)
     return format(intermediate, add_undefined)
 end
 `)
 	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `function build_node(declaration)
-    local <ins>add_undefined_for_parameter</ins> = declaration and is_parameter(declaration)
+    local <upd>add_undefined_for_parameter</upd> = declaration and is_parameter(declaration)
     local intermediate = compute(declaration)
     <ins>local add_undefined = add_undefined_for_parameter or check_optional(declaration)</ins>
     return format(intermediate, add_undefined)
