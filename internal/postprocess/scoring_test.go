@@ -2,10 +2,12 @@ package postprocess
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -873,16 +875,53 @@ func NewExtractedHandler() {
 		es := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		es = Run(es, mr.Mappings, srcAST, dstAST)
 
-		// All contiguous procedural statements should survive as moves.
-		moveCount := 0
-		for _, a := range es.Actions() {
-			if a.Type == actions.Move && a.Node != nil && rules.Get("go").IsStatement(a.Node.Type) {
-				moveCount++
-			}
+		// Whole-Snippet Verification:
+		// 1. Enclosing context and surrounding helper functions map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func OldHandler()", "func OldHandler()", "function_declaration",
+		)
+		for i := 1; i <= 10; i++ {
+			fnName := fmt.Sprintf("func Helper%d()", i)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+				fnName, fnName, "function_declaration",
+			)
 		}
 
-		if moveCount < 10 {
-			t.Errorf("expected at least 10 statement moves preserved by CMR, got %d", moveCount)
+		// 2. Extracted procedural statements map to destination in NewExtractedHandler.
+		statements := []string{
+			`config := loadConfig("production", true)`,
+			`logger := initLogger(config.LogLevel, "stderr")`,
+			`client := connectDatabase(config.DBHost, config.DBPort, config.Timeout)`,
+			`session := client.CreateSession("admin", true)`,
+			`metrics := registerMetrics("service_v1", session.ID)`,
+			`worker := newWorkerPool(config.Concurrency, metrics)`,
+			`worker.Start(session.Context())`,
+			`cache := initCache(config.CacheSize, "lru")`,
+			`server := startServer(config.HTTPPort, router, cache)`,
+			`notifyStartup(logger, server.Address())`,
+		}
+
+		for _, stmtText := range statements {
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), stmtText, stmtText)
+		}
+
+		// 3. All contiguous procedural statements must survive postprocessing as Moves.
+		r := rules.Get("go")
+		for _, stmtText := range statements {
+			node, err := testutil.FindNodeByText(srcAST, []byte(src), stmtText)
+			if err != nil {
+				t.Fatalf("failed to locate node for %q: %v", stmtText, err)
+			}
+			stmtNode := engine.FindEnclosingStatement(node, r)
+			if stmtNode == nil {
+				stmtNode = node
+			}
+			hasMove := slices.ContainsFunc(es.Actions(), func(a actions.Action) bool {
+				return a.Type == actions.Move && (a.Node == stmtNode || a.Node == node)
+			})
+			if !hasMove {
+				t.Errorf("expected Move action for extracted statement %q, but none found", stmtText)
+			}
 		}
 	})
 }

@@ -230,6 +230,26 @@ func AssertMappedText(t testing.TB, srcTree, dstTree *treesitter.ASTNode, src, d
 	}
 }
 
+// AssertMappedTextQuery asserts that the AST node matching srcQuery in srcTree maps to
+// the AST node matching dstQuery in dstTree in mappings.
+func AssertMappedTextQuery(t testing.TB, srcTree, dstTree *treesitter.ASTNode, src, dst []byte, mappings map[*treesitter.ASTNode]*treesitter.ASTNode, srcQuery, dstQuery TextQuery) {
+	t.Helper()
+	srcNode, err := FindNodeByTextQuery(srcTree, src, srcQuery)
+	if err != nil {
+		t.Fatalf("AssertMappedTextQuery: failed to find src node for %+v: %v", srcQuery, err)
+		return
+	}
+	dstNode, err := FindNodeByTextQuery(dstTree, dst, dstQuery)
+	if err != nil {
+		t.Fatalf("AssertMappedTextQuery: failed to find dst node for %+v: %v", dstQuery, err)
+		return
+	}
+	if got := mappings[srcNode]; got != dstNode {
+		t.Errorf("AssertMappedTextQuery: expected %s %q to map to %s %q, got %v",
+			srcNode.Type, srcQuery.Text, dstNode.Type, dstQuery.Text, got)
+	}
+}
+
 // AssertNotMappedText asserts that the AST node enclosing srcText in srcTree does not
 // map to the AST node enclosing dstText in dstTree in mappings.
 func AssertNotMappedText(t testing.TB, srcTree, dstTree *treesitter.ASTNode, src, dst []byte, mappings map[*treesitter.ASTNode]*treesitter.ASTNode, srcText, dstText string, nodeType ...string) {

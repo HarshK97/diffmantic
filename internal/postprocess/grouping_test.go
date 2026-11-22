@@ -253,23 +253,26 @@ func bar() {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		// Outer package and function declarations shouldn't have any edit actions.
+		// Whole-Snippet Verification:
+		// 1. Enclosing context declarations (foo, bar) map in place with no edit actions.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func foo()", "func foo()", "function_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func bar()", "func bar()", "function_declaration",
+		)
 		for _, a := range normalized.Actions() {
 			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
 
-		// println("prologue") didn't move, so it maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		// 2. Stationary statements and literals map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			`println("prologue")`, `println("prologue")`, "call_expression",
 		)
-
-		// Argument literal "prologue" maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-			testutil.NodeQuery{Type: "interpreted_string_literal", Line: 4},
-			testutil.NodeQuery{Type: "interpreted_string_literal", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			`"prologue"`, `"prologue"`, "interpreted_string_literal",
 		)
 
 		// Statements that moved in order stay in group-1; only hoisted stmtD is ungrouped.
@@ -443,6 +446,12 @@ def dest_fn():
 
 	// Whole-Snippet Verification:
 	// 1. Enclosing context declarations (source_fn, dest_fn) map in place with no edit actions.
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		"def source_fn():", "def source_fn():", "function_definition",
+	)
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		"def dest_fn():", "def dest_fn():", "function_definition",
+	)
 	for _, a := range normalized.Actions() {
 		if a.Node != nil && r.IsContainerDeclaration(a.Node.Type) {
 			t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
@@ -450,25 +459,21 @@ def dest_fn():
 	}
 
 	// 2. Preceding stationary statement: print("prologue") maps in place.
-	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "call", Line: 2},
-		testutil.NodeQuery{Type: "call", Line: 2},
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`print("prologue")`, `print("prologue")`, "call",
 	)
 
 	// 3. Succeeding stationary statement: print("epilogue") maps in place.
-	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "call", Line: 5},
-		testutil.NodeQuery{Type: "call", Line: 3},
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`print("epilogue")`, `print("epilogue")`, "call",
 	)
 
 	// 4. Stationary argument literals ("prologue", "epilogue") map in place.
-	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "string", Line: 2},
-		testutil.NodeQuery{Type: "string", Line: 2},
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`"prologue"`, `"prologue"`, "string",
 	)
-	testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "string", Line: 5},
-		testutil.NodeQuery{Type: "string", Line: 3},
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`"epilogue"`, `"epilogue"`, "string",
 	)
 
 	// 5. Target statements moved_one() and moved_two() move together and receive identical GroupID "group-1".
@@ -538,15 +543,20 @@ func process() error {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
+		// Whole-Snippet Verification:
+		// 1. Enclosing context declaration maps in place with no edit actions.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func process() error", "func process() error", "function_declaration",
+		)
 		for _, a := range normalized.Actions() {
 			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
 
-		testutil.AssertMapped(t, srcAST, dstAST, matchResult.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		// 2. Preceding stationary statement: prepare() maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			`prepare()`, `prepare()`, "call_expression",
 		)
 
 		groupMap := make(map[string]string)
