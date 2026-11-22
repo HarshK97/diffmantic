@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -3192,14 +3191,19 @@ func TestRecovery_LocalVarDeclarationTheft_FullEngine(t *testing.T) {
 		}
 
 		// 1. Enclosing Context: enclosing function maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_item", Line: 1}, testutil.NodeQuery{Type: "function_item", Line: 1})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn set_widths()", "fn set_widths()")
 
 		// 2. Surrounding Sequence: opt.available_terminal_width assignment statement maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 2}, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"opt.available_terminal_width = Term::stdout().size().1;",
+			"opt.available_terminal_width = term_stdout.size().1;")
 
 		// 3. Target: unrelated let declarations don't pair across statements.
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "let_declaration", Line: 3})
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(), testutil.NodeQuery{Type: "let_declaration", Line: 2})
+		testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+			"let empty_builtin_features = HashMap::new();")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"let term_stdout = Term::stdout();")
 	})
 
 	t.Run("Go_UnrelatedShortVarDeclarationsAcrossStatements_Rejected", func(t *testing.T) {
@@ -3247,14 +3251,19 @@ func setWidths() {
 		}
 
 		// 1. Enclosing Context: func setWidths maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_declaration", Line: 3}, testutil.NodeQuery{Type: "function_declaration", Line: 3})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"func setWidths()", "func setWidths()")
 
 		// 2. Surrounding Sequence: availableTerminalWidth assignment statement maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "assignment_statement", Line: 4}, testutil.NodeQuery{Type: "assignment_statement", Line: 5})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"opt.availableTerminalWidth = TermStdout().size().one",
+			"opt.availableTerminalWidth = termStdout.size().one")
 
 		// 3. Target: unrelated short var declarations don't pair across statements.
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "short_var_declaration", Line: 5})
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(), testutil.NodeQuery{Type: "short_var_declaration", Line: 4})
+		testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+			"emptyBuiltinFeatures := HashMapNew()")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"termStdout := TermStdout()")
 	})
 
 	t.Run("Rust_LegitimateInPlaceLocalVarRename_Maps", func(t *testing.T) {
@@ -3298,13 +3307,16 @@ func setWidths() {
 		}
 
 		// 1. Enclosing Context: function item maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_item", Line: 1}, testutil.NodeQuery{Type: "function_item", Line: 1})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn compute()", "fn compute()")
 
 		// 2. Surrounding Sequence: process(value) statement maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 3}, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"process(old_value);", "process(new_value);")
 
 		// 3. Target: in-place renamed let_declaration maps across versions.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "let_declaration", Line: 2}, testutil.NodeQuery{Type: "let_declaration", Line: 2})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"let old_value = calculate_total(a, b);", "let new_value = calculate_total(a, b);")
 	})
 
 	t.Run("TypeScript_UnrelatedLexicalDeclarationsAcrossStatements_Rejected", func(t *testing.T) {
@@ -3348,14 +3360,19 @@ func setWidths() {
 		}
 
 		// 1. Enclosing Context: enclosing function maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_declaration", Line: 1}, testutil.NodeQuery{Type: "function_declaration", Line: 1})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"function setWidths()", "function setWidths()")
 
 		// 2. Surrounding Sequence: availableTerminalWidth expression statement maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 2}, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"opt.availableTerminalWidth = Term.stdout().size().one;",
+			"opt.availableTerminalWidth = termStdout.size().one;")
 
 		// 3. Target: unrelated lexical declarations don't pair across statements.
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "lexical_declaration", Line: 3})
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(), testutil.NodeQuery{Type: "lexical_declaration", Line: 2})
+		testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+			"const emptyBuiltinFeatures = HashMap.create();")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"const termStdout = Term.stdout();")
 	})
 
 	t.Run("TypeScript_LegitimateInPlaceConstRename_Maps", func(t *testing.T) {
@@ -3399,13 +3416,16 @@ func setWidths() {
 		}
 
 		// 1. Enclosing Context: enclosing function maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_declaration", Line: 1}, testutil.NodeQuery{Type: "function_declaration", Line: 1})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"function compute()", "function compute()")
 
 		// 2. Surrounding Sequence: process call statement maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 3}, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"process(oldValue);", "process(newValue);")
 
 		// 3. Target: in-place renamed lexical_declaration maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "lexical_declaration", Line: 2}, testutil.NodeQuery{Type: "lexical_declaration", Line: 2})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"const oldValue = calculateTotal(a, b);", "const newValue = calculateTotal(a, b);")
 	})
 }
 
@@ -3450,117 +3470,37 @@ func evaluate(val int) int {
 		t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 	}
 
-	r := rulesFor(srcAST)
-	if r == nil {
-		t.Fatal("rulesFor returned nil")
-	}
-
 	part := NewLinePartition(srcBytes, dstBytes)
 	mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 	if mr == nil || mr.Mappings == nil {
 		t.Fatal("Match returned nil")
 	}
-	mapped := mr.Mappings.Src()
-	revMapped := mr.Mappings.Dst()
 
 	// 1. Enclosing Context: evaluate function maps in place.
-	var srcFn, dstFn *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "evaluate") {
-			srcFn = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "evaluate") {
-			dstFn = n
-			break
-		}
-	}
-	if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-		t.Fatalf("expected evaluate fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"func evaluate(val int) int", "func evaluate(val int) int")
 
 	// 2. Surrounding Sequence: startMetrics and endMetrics map in place.
-	var srcStart, dstStart, srcEnd, dstEnd *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsStatement(n.Type) {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "startMetrics") {
-				srcStart = n
-			} else if strings.Contains(text, "endMetrics") {
-				srcEnd = n
-			}
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsStatement(n.Type) {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "startMetrics") {
-				dstStart = n
-			} else if strings.Contains(text, "endMetrics") {
-				dstEnd = n
-			}
-		}
-	}
-	if srcStart == nil || dstStart == nil || mapped[srcStart] != dstStart {
-		t.Fatalf("expected startMetrics to map in place, got %v", mapped[srcStart])
-	}
-	if srcEnd == nil || dstEnd == nil || mapped[srcEnd] != dstEnd {
-		t.Fatalf("expected endMetrics to map in place, got %v", mapped[srcEnd])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"startMetrics()", "startMetrics()")
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"endMetrics()", "endMetrics()")
 
 	// 3. Target: if_statement maps in place.
-	var srcIf, dstIf *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if n.Type == "if_statement" {
-			srcIf = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if n.Type == "if_statement" {
-			dstIf = n
-			break
-		}
-	}
-	if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
-		t.Fatalf("expected if_statement to map in place, got src=%v dst=%v mapped=%v", srcIf, dstIf, mapped[srcIf])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"if val > 0 {\n\t\treturn val * 2\n\t}", "if err := validate(val); val > 0 {\n\t\treturn val * 2\n\t}", "if_statement")
 
 	// 4. Condition: val > 0 maps in place.
-	srcCond := srcIf.ChildByFieldName("condition")
-	dstCond := dstIf.ChildByFieldName("condition")
-	if srcCond == nil || dstCond == nil || mapped[srcCond] != dstCond {
-		t.Fatalf("expected condition (val > 0) to map in place, got srcCond=%v dstCond=%v mapped=%v", srcCond, dstCond, mapped[srcCond])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"val > 0", "val > 0")
 
 	// 5. Stationary inner return statement maps in place.
-	var srcRet, dstRet *treesitter.ASTNode
-	for _, n := range srcIf.Descendants() {
-		if r.IsJumpStatement(n.Type) {
-			srcRet = n
-			break
-		}
-	}
-	for _, n := range dstIf.Descendants() {
-		if r.IsJumpStatement(n.Type) {
-			dstRet = n
-			break
-		}
-	}
-	if srcRet == nil || dstRet == nil || mapped[srcRet] != dstRet {
-		t.Fatalf("expected return statement inside if to map in place, got srcRet=%v dstRet=%v mapped=%v", srcRet, dstRet, mapped[srcRet])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"return val * 2", "return val * 2")
 
-	// 6. The newly added init statement in dstIf must not steal an existing mapping.
-	for _, n := range dstIf.Children {
-		if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "validate") {
-			if revMapped[n] != nil {
-				t.Errorf("expected inserted init statement to remain unmapped, got %v", revMapped[n])
-			}
-		}
-	}
+	// 6. The newly added init statement in dstIf must remain unmapped.
+	testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+		"err := validate(val)")
 }
 
 func TestRecovery_CrossBranchStatementMove_FullEngine(t *testing.T) {
@@ -3608,102 +3548,29 @@ func handleBranch(flag bool, val int) {
 		t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 	}
 
-	r := rulesFor(srcAST)
-	if r == nil {
-		t.Fatal("rulesFor returned nil")
-	}
-
 	part := NewLinePartition(srcBytes, dstBytes)
 	mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 	if mr == nil || mr.Mappings == nil {
 		t.Fatal("Match returned nil")
 	}
-	mapped := mr.Mappings.Src()
 
 	// 1. Enclosing function handleBranch maps in place.
-	var srcFn, dstFn *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "handleBranch") {
-			srcFn = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "handleBranch") {
-			dstFn = n
-			break
-		}
-	}
-	if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-		t.Fatalf("expected handleBranch fn to map in place, got %v", mapped[srcFn])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"func handleBranch(flag bool, val int)", "func handleBranch(flag bool, val int)")
 
 	// 2. Surrounding Sequence: header, footer, and if_statement map in place.
-	var srcHeader, dstHeader, srcFooter, dstFooter, srcIf, dstIf *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsStatement(n.Type) {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "header") {
-				srcHeader = n
-			} else if strings.Contains(text, "footer") {
-				srcFooter = n
-			}
-		}
-		if n.Type == "if_statement" {
-			srcIf = n
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsStatement(n.Type) {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "header") {
-				dstHeader = n
-			} else if strings.Contains(text, "footer") {
-				dstFooter = n
-			}
-		}
-		if n.Type == "if_statement" {
-			dstIf = n
-		}
-	}
-	if srcHeader == nil || dstHeader == nil || mapped[srcHeader] != dstHeader {
-		t.Fatalf("expected header to map in place, got %v", mapped[srcHeader])
-	}
-	if srcFooter == nil || dstFooter == nil || mapped[srcFooter] != dstFooter {
-		t.Fatalf("expected footer to map in place, got %v", mapped[srcFooter])
-	}
-	if srcIf == nil || dstIf == nil || mapped[srcIf] != dstIf {
-		t.Fatalf("expected if_statement to map in place, got %v", mapped[srcIf])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"header()", "header()")
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"footer()", "footer()")
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"if flag", "if flag", "if_statement")
 
 	// 3. Moved statements across branches map to each other (cross-branch move).
-	var srcCompute, dstCompute, srcFallback, dstFallback *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsStatement(n.Type) {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "compute") {
-				srcCompute = n
-			} else if strings.Contains(text, "fallback") {
-				srcFallback = n
-			}
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsStatement(n.Type) {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "compute") {
-				dstCompute = n
-			} else if strings.Contains(text, "fallback") {
-				dstFallback = n
-			}
-		}
-	}
-	if srcCompute == nil || dstCompute == nil || mapped[srcCompute] != dstCompute {
-		t.Fatalf("expected compute statement to map across branches, got %v", mapped[srcCompute])
-	}
-	if srcFallback == nil || dstFallback == nil || mapped[srcFallback] != dstFallback {
-		t.Fatalf("expected fallback statement to map across branches, got %v", mapped[srcFallback])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"compute(val)", "compute(val)")
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+		"fallback()", "fallback()")
 }
 
 func TestSandwichedStatementShiftedIntervalRecovery(t *testing.T) {
@@ -3739,106 +3606,30 @@ func TestSandwichedStatementShiftedIntervalRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
 		}
-		mapped := mr.Mappings.Src()
 
 		// 1. Enclosing Context: enclosing function maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "test_logging") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "test_logging") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-			t.Fatalf("expected test_logging fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn test_logging(val: &str)", "fn test_logging(val: &str)")
 
 		// 2. Surrounding Sequence: anchor statements map in place.
-		var srcSetup, dstSetup *treesitter.ASTNode
-		var srcCleanup, dstCleanup *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if r.IsStatement(n.Type) {
-				if strings.Contains(text, "setup_env") {
-					srcSetup = n
-				} else if strings.Contains(text, "cleanup_env") {
-					srcCleanup = n
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if r.IsStatement(n.Type) {
-				if strings.Contains(text, "setup_env") {
-					dstSetup = n
-				} else if strings.Contains(text, "cleanup_env") {
-					dstCleanup = n
-				}
-			}
-		}
-
-		if srcSetup == nil || dstSetup == nil || mapped[srcSetup] != dstSetup {
-			t.Fatalf("expected setup_env() statement to map in place, got %v", mapped[srcSetup])
-		}
-		if srcCleanup == nil || dstCleanup == nil || mapped[srcCleanup] != dstCleanup {
-			t.Fatalf("expected cleanup_env() statement to map in place, got %v", mapped[srcCleanup])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"setup_env();", "setup_env();")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"cleanup_env();", "cleanup_env();")
 
 		// 3. Target Sandwiched Statement:
 		// print! statement must map to write! statement across the shifted index interval.
-		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if r.IsStatement(n.Type) && strings.HasPrefix(text, "print!") {
-				srcPrintStmt = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if r.IsStatement(n.Type) && strings.HasPrefix(text, "write!") {
-				dstWriteStmt = n
-			}
-		}
-
-		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
-			t.Fatalf("expected print! expression_statement to map to write! expression_statement across shifted interval, got %v", mapped[srcPrintStmt])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"print!(\"value: {}\", val);", "write!(io::stdout(), \"value: {}\", val);")
 
 		// 4. Stationary Operands: format string literal "value: {}" maps in place.
-		var srcFmtStr, dstFmtStr *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "value: {}") {
-				srcFmtStr = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "value: {}") {
-				dstFmtStr = n
-				break
-			}
-		}
-		if srcFmtStr == nil || dstFmtStr == nil || mapped[srcFmtStr] != dstFmtStr {
-			t.Errorf("expected 'value: {}' format string to map in place, got %v", mapped[srcFmtStr])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"value: {}"`, `"value: {}"`)
 	})
 }
 
@@ -3878,11 +3669,6 @@ func TestRustSandwichedStatementTryWrapperRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
@@ -3890,31 +3676,48 @@ func TestRustSandwichedStatementTryWrapperRecovery(t *testing.T) {
 		}
 
 		// 1. Enclosing Context: enclosing function, its parameters, and body block map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_item", Line: 1}, testutil.NodeQuery{Type: "function_item", Line: 1})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn write_assets(target_dir: &Path, current_version: &str) -> Result<()>",
+			"fn write_assets(target_dir: &Path, current_version: &str) -> Result<()>")
 
 		// 2. Surrounding Sequence: anchor statements map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "let_declaration", Line: 2}, testutil.NodeQuery{Type: "let_declaration", Line: 2})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 4}, testutil.NodeQuery{Type: "expression_statement", Line: 4})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "call_expression", Line: 6}, testutil.NodeQuery{Type: "call_expression", Line: 6})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"let _ = std::fs::create_dir_all(target_dir);", "let _ = std::fs::create_dir_all(target_dir);")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"crate::assets_metadata::AssetsMetadata::new(current_version).save_to_folder(target_dir)?;",
+			"crate::assets_metadata::AssetsMetadata::new(current_version).save_to_folder(target_dir)?;")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"Ok(())", "Ok(())")
 
 		// 3. Target Sandwiched Statements:
 		// Statement 1: print! -> write!
 		// Statement 2: println! -> writeln!
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 3}, testutil.NodeQuery{Type: "expression_statement", Line: 3})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 5}, testutil.NodeQuery{Type: "expression_statement", Line: 5})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"print!(\"Writing metadata to folder {} ... \", target_dir.to_string_lossy());",
+			"write!(io::stdout(), \"Writing metadata to folder {} ... \", target_dir.to_string_lossy())?;", "expression_statement")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"println!(\"okay\");",
+			"writeln!(io::stdout(), \"okay\")?;", "expression_statement")
 
 		// 4. Transparent Wrapper Unwrapping:
 		// The inner macro_invocations must map across the try_expression wrapper.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "macro_invocation", Line: 3}, testutil.NodeQuery{Type: "macro_invocation", Line: 3})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "macro_invocation", Line: 5}, testutil.NodeQuery{Type: "macro_invocation", Line: 5})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"print!(\"Writing metadata to folder {} ... \", target_dir.to_string_lossy())",
+			"write!(io::stdout(), \"Writing metadata to folder {} ... \", target_dir.to_string_lossy())", "macro_invocation")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"println!(\"okay\")",
+			"writeln!(io::stdout(), \"okay\")", "macro_invocation")
 
 		// Outer try_expressions must remain unmapped so they become inserted wrappers.
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(), testutil.NodeQuery{Type: "try_expression", Line: 3})
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(), testutil.NodeQuery{Type: "try_expression", Line: 5})
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"write!(io::stdout(), \"Writing metadata to folder {} ... \", target_dir.to_string_lossy())?", "try_expression")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"writeln!(io::stdout(), \"okay\")?", "try_expression")
 
 		// 5. Stationary Operands:
 		// String literal "okay" must map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "string_literal", Line: 5}, testutil.NodeQuery{Type: "string_literal", Line: 5})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"okay"`, `"okay"`)
 	})
 }
 
@@ -3962,11 +3765,6 @@ func TestRustMultiStatementIntervalRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
@@ -3974,23 +3772,35 @@ func TestRustMultiStatementIntervalRecovery(t *testing.T) {
 		}
 
 		// 1. Enclosing Context: fn generate_config_file maps in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "function_item", Line: 1}, testutil.NodeQuery{Type: "function_item", Line: 1})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn generate_config_file() -> Result<()>", "fn generate_config_file() -> Result<()>")
 
 		// 2. Surrounding Sequence: if_statement and inner statements map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "if_expression", Line: 3}, testutil.NodeQuery{Type: "if_expression", Line: 3})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 6}, testutil.NodeQuery{Type: "expression_statement", Line: 6})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "let_declaration", Line: 7}, testutil.NodeQuery{Type: "let_declaration", Line: 7})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 8}, testutil.NodeQuery{Type: "expression_statement", Line: 8})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "call_expression", Line: 10}, testutil.NodeQuery{Type: "call_expression", Line: 10})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"if config_file.is_file()", "if config_file.is_file()", "if_expression")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"io::stdout().flush()?;", "io::stdout().flush()?;")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"let mut decision = String::new();", "let mut decision = String::new();")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"io::stdin().read_line(&mut decision)?;", "io::stdin().read_line(&mut decision)?;")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"Ok(())", "Ok(())")
 
 		// 3. Multi-statement Leading Interval Pairing:
 		// println! and print! statements in the leading interval must map 1:1 to writeln! and write!.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 4}, testutil.NodeQuery{Type: "expression_statement", Line: 4})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "expression_statement", Line: 5}, testutil.NodeQuery{Type: "expression_statement", Line: 5})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"println!(\"A config file already exists at: {}\", config_file.to_string_lossy());",
+			"writeln!(io::stdout(), \"A config file already exists at: {}\", config_file.to_string_lossy())?;", "expression_statement")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"print!(\"Overwrite? (y/N): \");",
+			"write!(io::stdout(), \"Overwrite? (y/N): \")?;", "expression_statement")
 
 		// 4. Stationary Operands: format string literals map in place without disruption.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "string_literal", Line: 4}, testutil.NodeQuery{Type: "string_literal", Line: 4})
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(), testutil.NodeQuery{Type: "string_literal", Line: 5}, testutil.NodeQuery{Type: "string_literal", Line: 5})
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"A config file already exists at: {}"`, `"A config file already exists at: {}"`)
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"Overwrite? (y/N): "`, `"Overwrite? (y/N): "`)
 	})
 }
 
@@ -4030,174 +3840,49 @@ func TestZigSandwichedStatementTryWrapperRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
 		}
-		mapped := mr.Mappings.Src()
-		revMapped := mr.Mappings.Dst()
 
 		// 1. Enclosing Context: run function declaration maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "run") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "run") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-			t.Fatalf("expected run fn to map in place, got src=%v dst=%v mapped=%v", srcFn, dstFn, mapped[srcFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"pub fn run(writer: anytype) !void", "pub fn run(writer: anytype) !void")
 
 		// 2. Surrounding Sequence: init, anchor, and finish statements map in place.
-		var srcInit, dstInit *treesitter.ASTNode
-		var srcAnchor, dstAnchor *treesitter.ASTNode
-		var srcFinish, dstFinish *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := strings.TrimSpace(string(srcBytes[n.StartByte:n.EndByte]))
-			if strings.HasPrefix(text, "init(") && r.IsStatement(n.Type) {
-				srcInit = n
-			} else if strings.HasPrefix(text, "anchor(") && r.IsStatement(n.Type) {
-				srcAnchor = n
-			} else if strings.HasPrefix(text, "finish(") && r.IsStatement(n.Type) {
-				srcFinish = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := strings.TrimSpace(string(dstBytes[n.StartByte:n.EndByte]))
-			if strings.HasPrefix(text, "init(") && r.IsStatement(n.Type) {
-				dstInit = n
-			} else if strings.HasPrefix(text, "anchor(") && r.IsStatement(n.Type) {
-				dstAnchor = n
-			} else if strings.HasPrefix(text, "finish(") && r.IsStatement(n.Type) {
-				dstFinish = n
-			}
-		}
-
-		if srcInit == nil || dstInit == nil || mapped[srcInit] != dstInit {
-			t.Errorf("expected init statement to map in place, got %v", mapped[srcInit])
-		}
-		if srcAnchor == nil || dstAnchor == nil || mapped[srcAnchor] != dstAnchor {
-			t.Errorf("expected anchor statement to map in place, got %v", mapped[srcAnchor])
-		}
-		if srcFinish == nil || dstFinish == nil || mapped[srcFinish] != dstFinish {
-			t.Errorf("expected finish statement to map in place, got %v", mapped[srcFinish])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"init();", "init();")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"anchor();", "anchor();")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"finish();", "finish();")
 
 		// 3. Target Sandwiched Statements:
 		// writer.print statement maps to try writer.write statement.
 		// writer.println statement maps to try writer.writeln statement.
-		var srcPrintStmt, dstWriteStmt *treesitter.ASTNode
-		var srcPrintlnStmt, dstWritelnStmt *treesitter.ASTNode
-		var srcPrintCall, dstWriteCall *treesitter.ASTNode
-		var srcPrintlnCall, dstWritelnCall *treesitter.ASTNode
-		var dstTry1, dstTry2 *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if r.IsStatement(n.Type) {
-				if strings.Contains(text, "writer.print(") {
-					srcPrintStmt = n
-				} else if strings.Contains(text, "writer.println(") {
-					srcPrintlnStmt = n
-				}
-			}
-			if r.IsCall(n.Type) {
-				if strings.Contains(text, "writer.print(") {
-					srcPrintCall = n
-				} else if strings.Contains(text, "writer.println(") {
-					srcPrintlnCall = n
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if r.IsStatement(n.Type) {
-				if strings.Contains(text, "writer.write(") {
-					dstWriteStmt = n
-				} else if strings.Contains(text, "writer.writeln(") {
-					dstWritelnStmt = n
-				}
-			}
-			if r.IsCall(n.Type) {
-				if strings.Contains(text, "writer.write(") {
-					dstWriteCall = n
-				} else if strings.Contains(text, "writer.writeln(") {
-					dstWritelnCall = n
-				}
-			}
-			if r.IsWrapper(n.Type) && n.Type == "try_expression" {
-				if dstTry1 == nil {
-					dstTry1 = n
-				} else {
-					dstTry2 = n
-				}
-			}
-		}
-
-		if srcPrintStmt == nil || dstWriteStmt == nil || mapped[srcPrintStmt] != dstWriteStmt {
-			t.Fatalf("expected writer.print expression_statement to map in place, got %v", mapped[srcPrintStmt])
-		}
-		if srcPrintlnStmt == nil || dstWritelnStmt == nil || mapped[srcPrintlnStmt] != dstWritelnStmt {
-			t.Fatalf("expected writer.println expression_statement to map in place, got %v", mapped[srcPrintlnStmt])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`writer.print("foo\n", .{});`, `try writer.write("foo\n", .{});`)
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`writer.println("bar\n", .{});`, `try writer.writeln("bar\n", .{});`)
 
 		// 4. Transparent Wrapper Unwrapping:
 		// Inner call_expressions map across try_expression wrappers.
-		if srcPrintCall == nil || dstWriteCall == nil || mapped[srcPrintCall] != dstWriteCall {
-			t.Errorf("expected writer.print call_expression to map across try wrapper, got %v", mapped[srcPrintCall])
-		}
-		if srcPrintlnCall == nil || dstWritelnCall == nil || mapped[srcPrintlnCall] != dstWritelnCall {
-			t.Errorf("expected writer.println call_expression to map across try wrapper, got %v", mapped[srcPrintlnCall])
-		}
-		if dstTry1 != nil && revMapped[dstTry1] != nil {
-			t.Errorf("expected dst try_expression 1 to remain unmapped, got %v", revMapped[dstTry1])
-		}
-		if dstTry2 != nil && revMapped[dstTry2] != nil {
-			t.Errorf("expected dst try_expression 2 to remain unmapped, got %v", revMapped[dstTry2])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`writer.print("foo\n", .{})`, `writer.write("foo\n", .{})`)
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`writer.println("bar\n", .{})`, `writer.writeln("bar\n", .{})`)
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			`try writer.write("foo\n", .{})`, "try_expression")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			`try writer.writeln("bar\n", .{})`, "try_expression")
 
 		// 5. Stationary Operands:
 		// Format string literals "foo\n" and "bar\n" map in place.
-		var srcFoo, dstFoo *treesitter.ASTNode
-		var srcBar, dstBar *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "foo") && (n.Type == "string" || n.Type == "string_content") {
-				srcFoo = n
-			} else if strings.Contains(text, "bar") && (n.Type == "string" || n.Type == "string_content") {
-				srcBar = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "foo") && (n.Type == "string" || n.Type == "string_content") {
-				dstFoo = n
-			} else if strings.Contains(text, "bar") && (n.Type == "string" || n.Type == "string_content") {
-				dstBar = n
-			}
-		}
-
-		if srcFoo != nil && dstFoo != nil && mapped[srcFoo] != dstFoo {
-			t.Errorf("expected 'foo' string to map in place, got %v", mapped[srcFoo])
-		}
-		if srcBar != nil && dstBar != nil && mapped[srcBar] != dstBar {
-			t.Errorf("expected 'bar' string to map in place, got %v", mapped[srcBar])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"foo\n"`, `"foo\n"`)
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"bar\n"`, `"bar\n"`)
 	})
 }
 
@@ -4233,122 +3918,39 @@ func TestCParenthesizedStatementRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
 		}
-		mapped := mr.Mappings.Src()
-		revMapped := mr.Mappings.Dst()
 
 		// 1. Enclosing Context: handle_transaction function maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "handle_transaction") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "handle_transaction") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-			t.Fatalf("expected handle_transaction fn to map in place, got %v", mapped[srcFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"void handle_transaction(Database* db)", "void handle_transaction(Database* db)")
 
 		// 2. Surrounding Sequence: surrounding statements map in place.
-		var srcBegin, dstBegin *treesitter.ASTNode
-		var srcCommit, dstCommit *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := string(srcBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "db_begin") && r.IsStatement(n.Type) {
-				srcBegin = n
-			} else if strings.Contains(text, "db_commit") && r.IsStatement(n.Type) {
-				srcCommit = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := string(dstBytes[n.StartByte:n.EndByte])
-			if strings.Contains(text, "db_begin") && r.IsStatement(n.Type) {
-				dstBegin = n
-			} else if strings.Contains(text, "db_commit") && r.IsStatement(n.Type) {
-				dstCommit = n
-			}
-		}
-
-		if srcBegin == nil || dstBegin == nil || mapped[srcBegin] != dstBegin {
-			t.Errorf("expected db_begin statement to map in place, got %v", mapped[srcBegin])
-		}
-		if srcCommit == nil || dstCommit == nil || mapped[srcCommit] != dstCommit {
-			t.Errorf("expected db_commit statement to map in place, got %v", mapped[srcCommit])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"db_begin(db);", "db_begin(db);")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"db_commit(db);", "db_commit(db);")
 
 		// 3. Target Sandwiched Statement:
 		// db_flush_wal statement maps in place across parenthesized expression.
-		var srcFlushStmt, dstFlushStmt *treesitter.ASTNode
-		var srcFlushCall, dstFlushCall *treesitter.ASTNode
-		var dstParen *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
-				srcFlushStmt = n
-			}
-			if r.IsCall(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
-				srcFlushCall = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
-				dstFlushStmt = n
-			}
-			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "db_flush_wal") {
-				dstFlushCall = n
-			}
-			if r.IsWrapper(n.Type) && n.Type == "parenthesized_expression" {
-				dstParen = n
-			}
-		}
-
-		if srcFlushStmt == nil || dstFlushStmt == nil || mapped[srcFlushStmt] != dstFlushStmt {
-			t.Fatalf("expected db_flush_wal expression_statement to map in place, got %v", mapped[srcFlushStmt])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"db_flush_wal(db);", "(db_flush_wal(db));")
 
 		// 4. Transparent Wrapper Unwrapping:
 		// Inner call_expression maps across the parenthesized_expression wrapper.
-		if srcFlushCall == nil || dstFlushCall == nil || mapped[srcFlushCall] != dstFlushCall {
-			t.Errorf("expected db_flush_wal call_expression to map across paren wrapper, got %v", mapped[srcFlushCall])
-		}
-		if dstParen != nil && revMapped[dstParen] != nil {
-			t.Errorf("expected dst parenthesized_expression to remain unmapped, got %v", revMapped[dstParen])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"db_flush_wal(db)", "db_flush_wal(db)")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"(db_flush_wal(db))", "parenthesized_expression")
 
 		// 5. Stationary Operands:
 		// db argument identifier maps in place.
-		var srcArg, dstArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(srcBytes[n.StartByte:n.EndByte]) == "db" && n.Parent == srcFlushCall {
-				srcArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dstBytes[n.StartByte:n.EndByte]) == "db" && n.Parent == dstFlushCall {
-				dstArg = n
-				break
-			}
-		}
-		if srcArg != nil && dstArg != nil && mapped[srcArg] != dstArg {
-			t.Errorf("expected 'db' identifier argument to map in place, got %v", mapped[srcArg])
-		}
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "db", Occurrence: 3},
+			testutil.TextQuery{Text: "db", Occurrence: 3})
 	})
 }
 
@@ -4384,103 +3986,33 @@ func TestJavaScriptSandwichedStatementAwaitWrapperRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
 		}
-		mapped := mr.Mappings.Src()
-		revMapped := mr.Mappings.Dst()
 
 		// 1. Enclosing Context: syncSession function declaration maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "syncSession") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "syncSession") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-			t.Fatalf("expected syncSession fn to map in place, got %v", mapped[srcFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"async function syncSession(client)", "async function syncSession(client)")
 
 		// 2. Surrounding Sequence: connect and disconnect statements map in place.
-		var srcConn, dstConn *treesitter.ASTNode
-		var srcDisc, dstDisc *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := strings.TrimSpace(string(srcBytes[n.StartByte:n.EndByte]))
-			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
-				srcConn = n
-			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
-				srcDisc = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := strings.TrimSpace(string(dstBytes[n.StartByte:n.EndByte]))
-			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
-				dstConn = n
-			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
-				dstDisc = n
-			}
-		}
-
-		if srcConn == nil || dstConn == nil || mapped[srcConn] != dstConn {
-			t.Errorf("expected connect statement to map in place, got %v", mapped[srcConn])
-		}
-		if srcDisc == nil || dstDisc == nil || mapped[srcDisc] != dstDisc {
-			t.Errorf("expected disconnect statement to map in place, got %v", mapped[srcDisc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.connect();", "client.connect();")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.disconnect();", "client.disconnect();")
 
 		// 3. Target Sandwiched Statement:
 		// fetchUpdates statement maps across await_expression.
-		var srcFetchStmt, dstFetchStmt *treesitter.ASTNode
-		var srcFetchCall, dstFetchCall *treesitter.ASTNode
-		var dstAwait *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
-				srcFetchStmt = n
-			}
-			if r.IsCall(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
-				srcFetchCall = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
-				dstFetchStmt = n
-			}
-			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetchUpdates") {
-				dstFetchCall = n
-			}
-			if r.IsWrapper(n.Type) && n.Type == "await_expression" {
-				dstAwait = n
-			}
-		}
-
-		if srcFetchStmt == nil || dstFetchStmt == nil || mapped[srcFetchStmt] != dstFetchStmt {
-			t.Fatalf("expected fetchUpdates expression_statement to map in place, got %v", mapped[srcFetchStmt])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.fetchUpdates();", "await client.fetchUpdates();")
 
 		// 4. Transparent Wrapper Unwrapping:
 		// Inner call_expression maps across the await_expression wrapper.
-		if srcFetchCall == nil || dstFetchCall == nil || mapped[srcFetchCall] != dstFetchCall {
-			t.Errorf("expected fetchUpdates call_expression to map across await wrapper, got %v", mapped[srcFetchCall])
-		}
-		if dstAwait != nil && revMapped[dstAwait] != nil {
-			t.Errorf("expected dst await_expression to remain unmapped, got %v", revMapped[dstAwait])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.fetchUpdates()", "client.fetchUpdates()")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"await client.fetchUpdates()", "await_expression")
 	})
 }
 
@@ -4514,102 +4046,32 @@ func TestPythonSandwichedStatementAwaitWrapperRecovery(t *testing.T) {
 			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
-		if r == nil {
-			t.Fatal("rulesFor returned nil")
-		}
-
 		part := NewLinePartition(srcBytes, dstBytes)
 		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
 		}
-		mapped := mr.Mappings.Src()
-		revMapped := mr.Mappings.Dst()
 
 		// 1. Enclosing Context: sync_session function definition maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "sync_session") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "sync_session") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mapped[srcFn] != dstFn {
-			t.Fatalf("expected sync_session fn to map in place, got %v", mapped[srcFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"async def sync_session(client):", "async def sync_session(client):")
 
 		// 2. Surrounding Sequence: connect and disconnect statements map in place.
-		var srcConn, dstConn *treesitter.ASTNode
-		var srcDisc, dstDisc *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			text := strings.TrimSpace(string(srcBytes[n.StartByte:n.EndByte]))
-			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
-				srcConn = n
-			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
-				srcDisc = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			text := strings.TrimSpace(string(dstBytes[n.StartByte:n.EndByte]))
-			if strings.HasPrefix(text, "client.connect") && r.IsStatement(n.Type) {
-				dstConn = n
-			} else if strings.HasPrefix(text, "client.disconnect") && r.IsStatement(n.Type) {
-				dstDisc = n
-			}
-		}
-
-		if srcConn == nil || dstConn == nil || mapped[srcConn] != dstConn {
-			t.Errorf("expected connect statement to map in place, got %v", mapped[srcConn])
-		}
-		if srcDisc == nil || dstDisc == nil || mapped[srcDisc] != dstDisc {
-			t.Errorf("expected disconnect statement to map in place, got %v", mapped[srcDisc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.connect()", "client.connect()")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.disconnect()", "client.disconnect()")
 
 		// 3. Target Sandwiched Statement:
 		// fetch_updates statement maps across await wrapper.
-		var srcFetchStmt, dstFetchStmt *treesitter.ASTNode
-		var srcFetchCall, dstFetchCall *treesitter.ASTNode
-		var dstAwait *treesitter.ASTNode
-
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetch_updates") {
-				srcFetchStmt = n
-			}
-			if r.IsCall(n.Type) && strings.Contains(string(srcBytes[n.StartByte:n.EndByte]), "fetch_updates") {
-				srcFetchCall = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetch_updates") {
-				dstFetchStmt = n
-			}
-			if r.IsCall(n.Type) && strings.Contains(string(dstBytes[n.StartByte:n.EndByte]), "fetch_updates") {
-				dstFetchCall = n
-			}
-			if r.IsWrapper(n.Type) && n.Type == "await" {
-				dstAwait = n
-			}
-		}
-
-		if srcFetchStmt == nil || dstFetchStmt == nil || mapped[srcFetchStmt] != dstFetchStmt {
-			t.Fatalf("expected fetch_updates expression_statement to map in place, got %v", mapped[srcFetchStmt])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.fetch_updates()", "await client.fetch_updates()", "expression_statement")
 
 		// 4. Transparent Wrapper Unwrapping:
 		// Inner call maps across the await wrapper.
-		if srcFetchCall == nil || dstFetchCall == nil || mapped[srcFetchCall] != dstFetchCall {
-			t.Errorf("expected fetch_updates call to map across await wrapper, got %v", mapped[srcFetchCall])
-		}
-		if dstAwait != nil && revMapped[dstAwait] != nil {
-			t.Errorf("expected dst await to remain unmapped, got %v", revMapped[dstAwait])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"client.fetch_updates()", "client.fetch_updates()", "call")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+			"await client.fetch_updates()", "await")
 	})
 }

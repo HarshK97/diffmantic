@@ -593,3 +593,12 @@ func TestAncestorNameSimilarity_ScopeBounded(t *testing.T) {
 		t.Errorf("AncestorNameSimilarity(x, y) = %d, want 1 (only doWork, bounded at function_declaration)", sim)
 	}
 }
+
+func findFirstNode(root *treesitter.ASTNode, predicate func(*treesitter.ASTNode) bool) *treesitter.ASTNode {
+	for _, n := range root.PreOrder() {
+		if predicate(n) {
+			return n
+		}
+	}
+	return nil
+}

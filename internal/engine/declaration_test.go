@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"slices"
 	"testing"
 
@@ -541,32 +540,17 @@ func TestMatchDeclarations_ExcludesLocalVars(t *testing.T) {
 			}
 
 			// 1. Enclosing Context: buildNode function
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 1},
-				testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "function buildNode", "function buildNode")
 
 			// 2. Surrounding Sequence: const intermediate and return format
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "lexical_declaration", Line: 3},
-				testutil.NodeQuery{Type: "lexical_declaration", Line: 3},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "return_statement", Line: 4},
-				testutil.NodeQuery{Type: "return_statement", Line: 5},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "const intermediate = compute(declaration);", "const intermediate = compute(declaration);")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "return format(intermediate, addUndefined);", "return format(intermediate, addUndefined);")
 
 			// 3. Target: first const addUndefined must map in place to const addUndefinedForParameter
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
-				testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "const addUndefined = declaration && isParameter(declaration);", "const addUndefinedForParameter = declaration && isParameter(declaration);")
 
 			// The new const at line 4 must NOT have stolen the identity of src line 2
-			testutil.AssertNotMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
-				testutil.NodeQuery{Type: "lexical_declaration", Line: 4},
-			)
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "const addUndefined = declaration && isParameter(declaration);", "const addUndefined = addUndefinedForParameter || checkOptional(declaration);")
 		})
 
 		t.Run("Go", func(t *testing.T) {
@@ -604,37 +588,22 @@ func buildNode(declaration Declaration) string {
 			}
 
 			// 1. Enclosing Context: buildNode function
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 3},
-				testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "func buildNode", "func buildNode")
 
 			// 2. Surrounding Sequence: var intermediate and return format
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "var_declaration", Line: 5},
-				testutil.NodeQuery{Type: "var_declaration", Line: 5},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "return_statement", Line: 6},
-				testutil.NodeQuery{Type: "return_statement", Line: 7},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "var intermediate = compute(declaration)", "var intermediate = compute(declaration)")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "return format(intermediate, addUndefined)", "return format(intermediate, addUndefined)")
 
 			// 3. Target: first var addUndefined must map in place to var addUndefinedForParameter
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "var_declaration", Line: 4},
-				testutil.NodeQuery{Type: "var_declaration", Line: 4},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "var addUndefined = declaration && isParameter(declaration)", "var addUndefinedForParameter = declaration && isParameter(declaration)")
 
 			// The new var at line 6 must NOT have stolen the identity of src line 4
-			testutil.AssertNotMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "var_declaration", Line: 4},
-				testutil.NodeQuery{Type: "var_declaration", Line: 6},
-			)
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "var addUndefined = declaration && isParameter(declaration)", "var addUndefined = addUndefinedForParameter || checkOptional(declaration)")
 
 			// 4. Stationary Operands: parameter declaration identifier
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2},
-				testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 2},
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+				testutil.TextQuery{Text: "declaration", Type: "identifier", Occurrence: 1},
+				testutil.TextQuery{Text: "declaration", Type: "identifier", Occurrence: 1},
 			)
 		})
 
@@ -669,37 +638,22 @@ end
 			}
 
 			// 1. Enclosing Context: build_node function
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 1},
-				testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "function build_node", "function build_node")
 
 			// 2. Surrounding Sequence: local intermediate and return format
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 3},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 3},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "return_statement", Line: 4},
-				testutil.NodeQuery{Type: "return_statement", Line: 5},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "local intermediate = compute(declaration)", "local intermediate = compute(declaration)")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "return format(intermediate, add_undefined)", "return format(intermediate, add_undefined)")
 
 			// 3. Target: first local add_undefined must map in place to local add_undefined_for_parameter
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 2},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 2},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "local add_undefined = declaration and is_parameter(declaration)", "local add_undefined_for_parameter = declaration and is_parameter(declaration)")
 
 			// The new local var at line 4 must NOT have stolen the identity of src line 2
-			testutil.AssertNotMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 2},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 4},
-			)
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(), "local add_undefined = declaration and is_parameter(declaration)", "local add_undefined = add_undefined_for_parameter or check_optional(declaration)")
 
 			// 4. Stationary Operands: parameter declaration identifier
-			testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-				testutil.NodeQuery{Type: "identifier", Line: 1, Nth: 2},
-				testutil.NodeQuery{Type: "identifier", Line: 1, Nth: 2},
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+				testutil.TextQuery{Text: "declaration", Type: "identifier", Occurrence: 1},
+				testutil.TextQuery{Text: "declaration", Type: "identifier", Occurrence: 1},
 			)
 		})
 	})
@@ -727,15 +681,6 @@ func runMatchForDeclTest(t *testing.T, src, dst, filename string) (*treesitter.A
 		t.Fatal("Match returned nil")
 	}
 	return srcAST, dstAST, mr.Mappings
-}
-
-func findFirstNode(root *treesitter.ASTNode, pred func(*treesitter.ASTNode) bool) *treesitter.ASTNode {
-	for _, n := range root.PreOrder() {
-		if pred(n) {
-			return n
-		}
-	}
-	return nil
 }
 
 func TestDeclarationNameTheft(t *testing.T) {
@@ -845,13 +790,8 @@ type Foo struct {
 			m := NewMapping()
 			matchDeclarations(srcAST, dstAST, m)
 
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "type_spec", Line: 4},
-				testutil.NodeQuery{Type: "type_spec", Line: 3},
-			)
-			testutil.AssertUnmapped(t, srcAST, m.Src(),
-				testutil.NodeQuery{Type: "type_declaration", Line: 3},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "Foo struct", "Foo struct", "type_spec")
+			testutil.AssertUnmappedText(t, srcAST, []byte(src), m.Src(), "type (", "type_declaration")
 		})
 	})
 
@@ -905,33 +845,18 @@ type Foo struct {
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "line_numbers.rs")
 
 			// 1. Enclosing Context: impl block
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "impl_item", Line: 1},
-				testutil.NodeQuery{Type: "impl_item", Line: 1},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "impl<'a> LineNumbersData<'a>", "impl<'a> LineNumbersData<'a>", "impl_item")
 
 			// 2 & 3. Surrounding Sequence + Target methods and body block
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_item", Line: 2},
-				testutil.NodeQuery{Type: "function_item", Line: 2},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_item", Line: 13},
-				testutil.NodeQuery{Type: "function_item", Line: 24},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "block", Line: 2},
-				testutil.NodeQuery{Type: "block", Line: 5},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn from_format_strings", "pub fn from_format_strings", "function_item")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn initialize_hunk", "pub fn initialize_hunk", "function_item")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "Self {\n            left_format_data", "Self {\n            format_data", "block")
 
 			// 4. Stationary Operands: unchanged assignment in initialize_hunk and LineNumbersData return type
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "assignment_expression", Line: 14},
-				testutil.NodeQuery{Type: "assignment_expression", Line: 25},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "type_identifier", Line: 2},
-				testutil.NodeQuery{Type: "type_identifier", Line: 5},
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "self.plus_file = plus_file;", "self.plus_file = plus_file;")
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "LineNumbersData", Type: "type_identifier", Occurrence: 2},
+				testutil.TextQuery{Text: "LineNumbersData", Type: "type_identifier", Occurrence: 2},
 			)
 		})
 
@@ -965,38 +890,17 @@ async def get_posts(ctx: Context, db: AsyncSession) -> Response:
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "handlers.py")
 
 			// 1. Surrounding Sequence: unchanged health_check function
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 1},
-				testutil.NodeQuery{Type: "function_definition", Line: 1},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "def health_check():", "def health_check():", "function_definition")
 
 			// 2 & 3. Targets: both decorated functions and their outer decorated_definition wrappers
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "decorated_definition", Line: 4},
-				testutil.NodeQuery{Type: "decorated_definition", Line: 4},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 5},
-				testutil.NodeQuery{Type: "function_definition", Line: 5},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "decorated_definition", Line: 9},
-				testutil.NodeQuery{Type: "decorated_definition", Line: 9},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 10},
-				testutil.NodeQuery{Type: "function_definition", Line: 10},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "@route(\"/users\")\ndef get_users", "@route(\"/v2/users\")\nasync def get_users", "decorated_definition")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "def get_users(req):", "async def get_users(ctx: Context, db: AsyncSession) -> Response:", "function_definition")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "@route(\"/posts\")\ndef get_posts", "@route(\"/v2/posts\")\nasync def get_posts", "decorated_definition")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "def get_posts(req):", "async def get_posts(ctx: Context, db: AsyncSession) -> Response:", "function_definition")
 
 			// 4. Stationary Operands: route call identifier inside decorators
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "identifier", Line: 4},
-				testutil.NodeQuery{Type: "identifier", Line: 4},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "identifier", Line: 9},
-				testutil.NodeQuery{Type: "identifier", Line: 9},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "route(\"/users\")", "route(\"/v2/users\")", "call")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "route(\"/posts\")", "route(\"/v2/posts\")", "call")
 		})
 
 		t.Run("Lua_ModuleVariableAndMethodMatch", func(t *testing.T) {
@@ -1036,38 +940,17 @@ end
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "fs.lua")
 
 			// 1. Module-level variable declarations
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 1},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 1},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 2},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 2},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 3},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 3},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "local uv = vim.uv", "local uv = vim.uv", "variable_declaration")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "local M = {}", "local M = {}", "variable_declaration")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "local iswin = uv.os_uname().version:match(\"Windows\")", "local iswin = uv.os_uname().version:match(\"Windows\")", "variable_declaration")
 
 			// 2 & 3. Surrounding Sequence + Target functions
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 5},
-				testutil.NodeQuery{Type: "function_declaration", Line: 5},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 13},
-				testutil.NodeQuery{Type: "function_declaration", Line: 13},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "function M.slug", "function M.slug", "function_declaration")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "function M.normalize", "function M.normalize", "function_declaration")
 
 			// 4. Stationary Operands: local s = path and vim.fs.normalize call
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "variable_declaration", Line: 6},
-				testutil.NodeQuery{Type: "variable_declaration", Line: 6},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_call", Line: 14},
-				testutil.NodeQuery{Type: "function_call", Line: 14},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "local s = path", "local s = path", "variable_declaration")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "vim.fs.normalize(path)", "vim.fs.normalize(path)", "function_call")
 		})
 
 		t.Run("Cpp_TemplateAndQualifiedReturnMatch", func(t *testing.T) {
@@ -1107,20 +990,11 @@ std::string render_report(const Summary<T>& sum) {
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "render.cpp")
 
 			// 1 & 2. Surrounding context + Target functions must map to themselves (no stdstring collision)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 2},
-				testutil.NodeQuery{Type: "function_definition", Line: 2},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 7},
-				testutil.NodeQuery{Type: "function_definition", Line: 7},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "Vec<int> get_items(const Buffer<T>& buf)", "Vec<int> get_items(const Buffer<T>& buf)", "function_definition")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "std::string format_items(const Buffer<T>& buf)", "std::string format_items(const Buffer<T>& buf, bool pretty)", "function_definition")
 
 			// 3 & 4. Stationary Operands inside format_items: return out
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "return_statement", Line: 12},
-				testutil.NodeQuery{Type: "return_statement", Line: 12},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "return out;", "return out;", "return_statement")
 		})
 
 		t.Run("Java_ReturnAndFieldTypeMatch", func(t *testing.T) {
@@ -1158,32 +1032,17 @@ public class UserController {
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "UserController.java")
 
 			// 1. Enclosing Context: UserController
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "class_declaration", Line: 3},
-				testutil.NodeQuery{Type: "class_declaration", Line: 3},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "public class UserController", "public class UserController", "class_declaration")
 
 			// 2. Surrounding Sequence: fields (must resolve to entries/svc, not List/UserService)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "field_declaration", Line: 4},
-				testutil.NodeQuery{Type: "field_declaration", Line: 4},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "field_declaration", Line: 5},
-				testutil.NodeQuery{Type: "field_declaration", Line: 5},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "private final List<Entry<String, Integer>> entries;", "private final List<Entry<String, Integer>> entries;", "field_declaration")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "private UserService svc;", "private UserService svc;", "field_declaration")
 
 			// 3. Target: getUsers must map to getUsers (not collide with createTeam on UserResponse)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "method_declaration", Line: 7},
-				testutil.NodeQuery{Type: "method_declaration", Line: 7},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "public UserResponse getUsers(Request req)", "public UserResponse getUsers(Context ctx, Filter filter)", "method_declaration")
 
 			// 4. Stationary Operands: rows variable declaration
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "local_variable_declaration", Line: 9},
-				testutil.NodeQuery{Type: "local_variable_declaration", Line: 9},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "List<User> rows =", "List<User> rows =", "local_variable_declaration")
 		})
 
 		t.Run("C_StructReturnFunctionMatch", func(t *testing.T) {
@@ -1216,20 +1075,11 @@ void init_all(void) {
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "nodes.c")
 
 			// 1 & 2. Surrounding Sequence + Target functions
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 9},
-				testutil.NodeQuery{Type: "function_definition", Line: 9},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_definition", Line: 3},
-				testutil.NodeQuery{Type: "function_definition", Line: 3},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "void init_all(void)", "void init_all(void)", "function_definition")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "static struct Node *build_node(int id, const char *name)", "static struct Node *build_node(int id, const char *label, int flags)", "function_definition")
 
 			// 3 & 4. Stationary Operands inside build_node: return n
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "return_statement", Line: 6},
-				testutil.NodeQuery{Type: "return_statement", Line: 6},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "return n;", "return n;", "return_statement")
 		})
 
 		t.Run("Go_GroupedTypeSplitMatch", func(t *testing.T) {
@@ -1259,25 +1109,13 @@ type Bar struct {
 `
 			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "config.go")
 
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "type_spec", Line: 4},
-				testutil.NodeQuery{Type: "type_spec", Line: 3},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "type_spec", Line: 7},
-				testutil.NodeQuery{Type: "type_spec", Line: 8},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "package_identifier", Line: 1},
-				testutil.NodeQuery{Type: "package_identifier", Line: 1},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "field_identifier", Line: 5},
-				testutil.NodeQuery{Type: "field_identifier", Line: 4},
-			)
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "field_identifier", Line: 8},
-				testutil.NodeQuery{Type: "field_identifier", Line: 9},
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "Foo struct", "Foo struct", "type_spec")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "Bar struct", "Bar struct", "type_spec")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "package config", "package config")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "A", "A", "field_identifier")
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "B", Type: "field_identifier", Occurrence: 2},
+				testutil.TextQuery{Text: "B", Type: "field_identifier", Occurrence: 2},
 			)
 		})
 	})
@@ -1341,27 +1179,16 @@ impl UseFullPanelWidth {
 			m := mr.Mappings
 
 			// 1. Enclosing context & Surrounding sequence: helper maps in place
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_item", Line: 8},
-				testutil.NodeQuery{Type: "function_item", Line: 8},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn other_helper", "pub fn other_helper", "function_item")
 
 			// 2. Target function: SideBySideData::new must map to new_sbs in place
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_item", Line: 4},
-				testutil.NodeQuery{Type: "function_item", Line: 4},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn new(decorations_width", "pub fn new_sbs(decorations_width", "function_item")
 
 			// 3. SideBySideData::new was not stolen by UseFullPanelWidth::new across containers
-			testutil.AssertNotMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_item", Line: 4},
-				testutil.NodeQuery{Type: "function_item", Line: 16},
-			)
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn new(decorations_width", "pub fn new(enabled", "function_item")
 
 			// 4. UseFullPanelWidth::new is unmapped
-			testutil.AssertUnmapped(t, dstAST, m.Dst(),
-				testutil.NodeQuery{Type: "function_item", Line: 16},
-			)
+			testutil.AssertUnmappedText(t, dstAST, []byte(dst), m.Dst(), "pub fn new(enabled", "function_item")
 		})
 
 		t.Run("Zig_AnonymousStructScopingAndRenameInPlace", func(t *testing.T) {
@@ -1410,27 +1237,16 @@ const Beta = struct {
 			m := mr.Mappings
 
 			// 1. Surrounding sequence: helper maps in place
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 6},
-				testutil.NodeQuery{Type: "function_declaration", Line: 6},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "fn helper() void {}", "fn helper() void {}", "function_declaration")
 
 			// 2. Target function: Alpha.make must map to make_renamed in place
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 2},
-				testutil.NodeQuery{Type: "function_declaration", Line: 2},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "fn make(x: u32) u32 {\n        return x + 1;", "fn make_renamed(x: u32) u32 {\n        return x + 1;", "function_declaration")
 
 			// 3. Alpha.make was not stolen by Beta.make across anonymous struct containers
-			testutil.AssertNotMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 2},
-				testutil.NodeQuery{Type: "function_declaration", Line: 10},
-			)
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "fn make(x: u32) u32 {\n        return x + 1;", "fn make(x: u32) u32 {\n        return x + 2;", "function_declaration")
 
 			// 4. Beta.make is an unmapped insertion
-			testutil.AssertUnmapped(t, dstAST, m.Dst(),
-				testutil.NodeQuery{Type: "function_declaration", Line: 10},
-			)
+			testutil.AssertUnmappedText(t, dstAST, []byte(dst), m.Dst(), "fn make(x: u32) u32 {\n        return x + 2;", "function_declaration")
 		})
 
 		t.Run("Go_MethodScopingAndRenameInPlace", func(t *testing.T) {
@@ -1491,27 +1307,16 @@ func (u *UseFullPanelWidth) New(enabled bool) *UseFullPanelWidth {
 			m := mr.Mappings
 
 			// 1. Surrounding sequence: OtherHelper maps in place
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "method_declaration", Line: 11},
-				testutil.NodeQuery{Type: "method_declaration", Line: 11},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "func (s *SideBySideData) OtherHelper", "func (s *SideBySideData) OtherHelper", "method_declaration")
 
 			// 2. Target function: SideBySideData.New maps to NewSBS in place
-			testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "method_declaration", Line: 5},
-				testutil.NodeQuery{Type: "method_declaration", Line: 5},
-			)
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "func (s *SideBySideData) New", "func (s *SideBySideData) NewSBS", "method_declaration")
 
 			// 3. SideBySideData.New was not stolen by UseFullPanelWidth.New across receivers
-			testutil.AssertNotMapped(t, srcAST, dstAST, m.Src(),
-				testutil.NodeQuery{Type: "method_declaration", Line: 5},
-				testutil.NodeQuery{Type: "method_declaration", Line: 17},
-			)
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "func (s *SideBySideData) New", "func (u *UseFullPanelWidth) New", "method_declaration")
 
 			// 4. UseFullPanelWidth.New is unmapped
-			testutil.AssertUnmapped(t, dstAST, m.Dst(),
-				testutil.NodeQuery{Type: "method_declaration", Line: 17},
-			)
+			testutil.AssertUnmappedText(t, dstAST, []byte(dst), m.Dst(), "func (u *UseFullPanelWidth) New", "method_declaration")
 		})
 	})
 }
@@ -1647,46 +1452,30 @@ pub fn helper_omega(y: usize) -> usize {
 		m := mr.Mappings
 
 		// 1. Enclosing context & Surrounding sequence: helpers map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 2},
-			testutil.NodeQuery{Type: "function_item", Line: 2},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 55},
-			testutil.NodeQuery{Type: "function_item", Line: 40},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn helper_alpha", "pub fn helper_alpha", "function_item")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn helper_omega", "pub fn helper_omega", "function_item")
 
 		// 2. Inserted helper compute_panel_style must be a clean insertion
-		testutil.AssertUnmapped(t, dstAST, m.Dst(),
-			testutil.NodeQuery{Type: "function_item", Line: 6},
-		)
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), m.Dst(), "pub fn compute_panel_style", "function_item")
 
 		// 3. Deleted sibling function right_fill_right_panel_line must be unmapped
-		testutil.AssertUnmapped(t, srcAST, m.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 29},
-		)
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), m.Src(), "pub fn right_fill_right_panel_line", "function_item")
 
 		// 4. Target function: right_pad_left_panel_line must map to pad_panel_line_to_width
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 6},
-			testutil.NodeQuery{Type: "function_item", Line: 18},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "pub fn right_pad_left_panel_line", "pub fn pad_panel_line_to_width", "function_item")
 
 		// 5. Delimited parameters container and individual parameters map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "parameters", Line: 6},
-			testutil.NodeQuery{Type: "parameters", Line: 18},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+			testutil.TextQuery{Text: "panel_line: &mut String", Type: "parameters", Occurrence: 1},
+			testutil.TextQuery{Text: "panel_line: &mut String", Type: "parameters", Occurrence: 1},
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "parameter", Line: 7},
-			testutil.NodeQuery{Type: "parameter", Line: 19},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+			testutil.TextQuery{Text: "panel_line: &mut String", Type: "parameter", Occurrence: 1},
+			testutil.TextQuery{Text: "panel_line: &mut String", Type: "parameter", Occurrence: 1},
 		)
 
 		// 6. Stationary body statements: function body block maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "block", Line: 14},
-			testutil.NodeQuery{Type: "block", Line: 27},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "{\n    if panel_line_is_empty && line_index.is_some() {\n        match state {", "{\n    if panel_line_is_empty && line_index.is_some() {\n        if let Some(mark)", "block")
 	})
 }
 
@@ -1775,9 +1564,9 @@ pub fn execute_app() -> bool {
 		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "crate::{", "crate::{", "scoped_use_list")
 
 		// 4. Stationary Operands: Unchanged imported identifiers must map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 9},
-			testutil.NodeQuery{Type: "identifier", Line: 8},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "clap_app", Type: "identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "clap_app", Type: "identifier", Occurrence: 1},
 		)
 		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "get_args_from_config_file", "get_args_from_config_file", "identifier")
 
@@ -1830,77 +1619,18 @@ end
 			t.Fatal("nil match result")
 		}
 		m := mr.Mappings
-		r := rules.Get("lua")
 
 		// 1. Enclosing Context: check function declaration must map in place
-		var fnSrc, fnDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "check" {
-				fnSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "check" {
-				fnDst = n
-				break
-			}
-		}
-		if fnSrc == nil || fnDst == nil || m.Src()[fnSrc] != fnDst {
-			t.Fatalf("expected function check to map in place, got src=%v dst=%v", fnSrc, fnDst)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "function check(x)", "function check(x)")
 
 		// 2. Surrounding Sequence: local start and local end_val must map in place
-		needleStart := []byte("start")
-		needleEnd := []byte("end_val")
-		var startSrc, startDst, endSrc, endDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleStart) {
-					startSrc = n
-				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleEnd) {
-					endSrc = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleStart) {
-					startDst = n
-				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleEnd) {
-					endDst = n
-				}
-			}
-		}
-		if startSrc == nil || startDst == nil || m.Src()[startSrc] != startDst {
-			t.Errorf("expected preceding start declaration to map in place")
-		}
-		if endSrc == nil || endDst == nil || m.Src()[endSrc] != endDst {
-			t.Errorf("expected succeeding end_val declaration to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "local start = 1", "local start = 1")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "local end_val = 2", "local end_val = 2")
 
 		// 3. Target: else_statement clause must map in place when body changes
 		// On unpatched main, missing else_statement from r.Clauses caused reconcileClauseWrappers
 		// to fail and drop the else clause into keyword deletion/insertion (<del>else</del>/<ins>else</ins>).
-		var elseSrc, elseDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsClause(n.Type) {
-				elseSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsClause(n.Type) {
-				elseDst = n
-				break
-			}
-		}
-		if elseSrc == nil || elseDst == nil {
-			t.Fatalf("else_statement clause missing: src=%v dst=%v", elseSrc, elseDst)
-		}
-		if m.Src()[elseSrc] != elseDst {
-			t.Errorf("expected else_statement clause to map in place when body changes, got %v", m.Src()[elseSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "else\n        do_old_thing_one()", "else\n        do_completely_different_new_action()", "else_statement")
 	})
 
 	t.Run("Lua_FunctionCall_StatementBoundary", func(t *testing.T) {
@@ -1939,87 +1669,22 @@ end
 		r := rules.Get("lua")
 
 		// 1. Enclosing Context: test function declaration must map in place
-		var fnSrc, fnDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test" {
-				fnSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "test" {
-				fnDst = n
-				break
-			}
-		}
-		if fnSrc == nil || fnDst == nil || m.Src()[fnSrc] != fnDst {
-			t.Fatalf("expected function test to map in place, got src=%v dst=%v", fnSrc, fnDst)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "function test()", "function test()")
 
 		// 2. Surrounding Sequence: local start and local end_val must map in place
-		needleStart := []byte("start")
-		needleEnd := []byte("end_val")
-		var startSrc, startDst, endSrc, endDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleStart) {
-					startSrc = n
-				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleEnd) {
-					endSrc = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) {
-				if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleStart) {
-					startDst = n
-				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], needleEnd) {
-					endDst = n
-				}
-			}
-		}
-		if startSrc == nil || startDst == nil || m.Src()[startSrc] != startDst {
-			t.Errorf("expected preceding start declaration to map in place")
-		}
-		if endSrc == nil || endDst == nil || m.Src()[endSrc] != endDst {
-			t.Errorf("expected succeeding end_val declaration to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "local start = 1", "local start = 1")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "local end_val = 2", "local end_val = 2")
 
 		// 3. Target Statement Classification:
 		// Standalone Lua function calls must be recognized as statements (r.IsStatement).
-		needlePoke := []byte("poke_eventloop")
-		needleEq := []byte("eq(true")
-		var pokeSrc, oldEqSrc, newEqDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsStatement(n.Type) {
-				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needlePoke) {
-					pokeSrc = n
-				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], needleEq) {
-					oldEqSrc = n
-				}
-			}
+		pokeSrc, err := testutil.FindNodeByText(srcAST, oldSrc, "poke_eventloop()")
+		if err != nil {
+			t.Fatalf("poke_eventloop function_call statement missing from src: %v", err)
 		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsStatement(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], needleEq) {
-				newEqDst = n
-				break
-			}
+		if !r.IsStatement(pokeSrc.Type) {
+			t.Errorf("expected function_call to be classified as a statement, got %s", pokeSrc.Type)
 		}
-		if pokeSrc == nil {
-			t.Fatalf("poke_eventloop function_call statement missing from src")
-		}
-		if oldEqSrc == nil {
-			t.Fatalf("old eq function_call statement missing from src")
-		}
-		if newEqDst == nil {
-			t.Fatalf("new eq function_call statement missing from dst")
-		}
-		if !r.IsStatement(pokeSrc.Type) || !r.IsStatement(oldEqSrc.Type) || !r.IsStatement(newEqDst.Type) {
-			t.Errorf("expected function_call to be classified as a statement")
-		}
-		if m.Src()[oldEqSrc] == newEqDst {
-			t.Errorf("expected statement boundary to prevent cross-statement callee dredging of eq")
-		}
+		testutil.AssertNotMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "eq(true, exec_capture('messages'):find('incorrect password', 1, true) ~= nil)", "eq(true, reported)")
 	})
 
 	t.Run("Rust_MacroDefinition_Renamed", func(t *testing.T) {
@@ -2068,26 +1733,14 @@ macro_rules! say_bye {
 		m := mr.Mappings
 
 		// 1. Surrounding macros map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "macro_definition", Line: 1},
-			testutil.NodeQuery{Type: "macro_definition", Line: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "macro_definition", Line: 9},
-			testutil.NodeQuery{Type: "macro_definition", Line: 9},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "macro_rules! say_hello", "macro_rules! say_hello")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "macro_rules! say_bye", "macro_rules! say_bye")
 
 		// 2. The renamed macro_definition maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "macro_definition", Line: 5},
-			testutil.NodeQuery{Type: "macro_definition", Line: 5},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "macro_rules! empty", "macro_rules! empty_evolved")
 
 		// 3. The inner macro_rule maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "macro_rule", Line: 6},
-			testutil.NodeQuery{Type: "macro_rule", Line: 6},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "() => {}", "() => {}", "macro_rule")
 	})
 
 	t.Run("Rust_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
@@ -2122,26 +1775,17 @@ type FnObject<'b> = dyn for<'a> FnLike<&'a isize_evolved, &'a isize> + 'b;
 		m := mr.Mappings
 
 		// 1. Surrounding trait declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "trait_item", Line: 1},
-			testutil.NodeQuery{Type: "trait_item", Line: 1},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "trait T: for<'a> AddAssign<&'a usize>", "trait T: for<'a> AddAssign<&'a usize>")
 
 		// 2. Enclosing FnObject type alias and delimited type_arguments map in place
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "type_item", Line: 4},
-			testutil.NodeQuery{Type: "type_item", Line: 4},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "type_arguments", Line: 4},
-			testutil.NodeQuery{Type: "type_arguments", Line: 4},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "type FnObject<'b>", "type FnObject<'b>")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "<&'a isize, &'a isize>", "<&'a isize_evolved, &'a isize>", "type_arguments")
 
 		// 3. Sibling invariant: the identical second reference_type MUST map to the second reference_type
 		// without crossing over or stealing the first slot.
-		testutil.AssertMapped(t, srcAST, dstAST, m.Src(),
-			testutil.NodeQuery{Type: "reference_type", Line: 4, Nth: 2},
-			testutil.NodeQuery{Type: "reference_type", Line: 4, Nth: 2},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "&'a isize", Type: "reference_type", Occurrence: 2},
+			testutil.TextQuery{Text: "&'a isize", Type: "reference_type", Occurrence: 2},
 		)
 	})
 
@@ -2177,77 +1821,23 @@ type IntPair = Tuple[string, int]
 			t.Fatal("nil match result")
 		}
 		m := mr.Mappings
-		r := rules.Get("go")
 
 		// Surrounding declarations must map in place.
-		var pairSrc, pairDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("IntPair")) {
-				pairSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("IntPair")) {
-				pairDst = n
-				break
-			}
-		}
-		if pairSrc == nil || pairDst == nil {
-			t.Fatalf("IntPair declaration missing: pairSrc=%v pairDst=%v", pairSrc, pairDst)
-		}
-		if m.Src()[pairSrc] != pairDst {
-			t.Errorf("expected IntPair declaration to map in place, got %v", m.Src()[pairSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "type Tuple[T, U any] struct{}", "type Tuple[T, U any] struct{}")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "type IntPair = Tuple[int, int]", "type IntPair = Tuple[string, int]")
 
 		// Delimited type_arguments container must map in place.
-		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("int, int")) {
-				typeArgsSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("string, int")) {
-				typeArgsDst = n
-				break
-			}
-		}
-		if typeArgsSrc == nil || typeArgsDst == nil {
-			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
-		}
-		if m.Src()[typeArgsSrc] != typeArgsDst {
-			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "[int, int]", "[string, int]", "type_arguments")
 
-		// Locate the two int types in oldSrc.
-		var oldInt0, oldInt1, newInt1 *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsType(n.Type) && bytes.Equal(oldSrc[n.StartByte:n.EndByte], []byte("int")) {
-				if oldInt0 == nil {
-					oldInt0 = n
-				} else if oldInt1 == nil {
-					oldInt1 = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsType(n.Type) && bytes.Equal(newSrc[n.StartByte:n.EndByte], []byte("int")) {
-				newInt1 = n
-				break
-			}
-		}
-		if oldInt0 == nil || oldInt1 == nil || newInt1 == nil {
-			t.Fatalf("int types missing: oldInt0=%v oldInt1=%v newInt1=%v", oldInt0, oldInt1, newInt1)
-		}
-
-		if m.Src()[oldInt0] == newInt1 {
-			t.Errorf("first int type crossed over to second slot")
-		}
-		if m.Src()[oldInt1] != newInt1 {
-			t.Errorf("expected second int to map in place, got %v", m.Src()[oldInt1])
-		}
+		// Sibling invariant: second int maps in place, first does not cross over.
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "int", Type: "type_identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "int", Type: "type_identifier", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "int", Type: "type_identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "int", Type: "type_identifier", Occurrence: 1},
+		)
 	})
 
 	t.Run("Java_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
@@ -2278,77 +1868,22 @@ type IntPair = Tuple[string, int]
 			t.Fatal("nil match result")
 		}
 		m := mr.Mappings
-		r := rules.Get("java")
 
 		// Surrounding class declaration must map in place.
-		var classSrc, classDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("Container")) {
-				classSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("Container")) {
-				classDst = n
-				break
-			}
-		}
-		if classSrc == nil || classDst == nil {
-			t.Fatalf("Container class missing: classSrc=%v classDst=%v", classSrc, classDst)
-		}
-		if m.Src()[classSrc] != classDst {
-			t.Errorf("expected Container class to map in place, got %v", m.Src()[classSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "class Container", "class Container")
 
 		// Delimited type_arguments container must map in place.
-		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("String, String")) {
-				typeArgsSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("Integer, String")) {
-				typeArgsDst = n
-				break
-			}
-		}
-		if typeArgsSrc == nil || typeArgsDst == nil {
-			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
-		}
-		if m.Src()[typeArgsSrc] != typeArgsDst {
-			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "<String, String>", "<Integer, String>", "type_arguments")
 
-		// Locate the two String type identifiers in oldSrc.
-		var oldStr0, oldStr1, newStr1 *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsType(n.Type) && bytes.Equal(oldSrc[n.StartByte:n.EndByte], []byte("String")) {
-				if oldStr0 == nil {
-					oldStr0 = n
-				} else if oldStr1 == nil {
-					oldStr1 = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsType(n.Type) && bytes.Equal(newSrc[n.StartByte:n.EndByte], []byte("String")) {
-				newStr1 = n
-				break
-			}
-		}
-		if oldStr0 == nil || oldStr1 == nil || newStr1 == nil {
-			t.Fatalf("String types missing: oldStr0=%v oldStr1=%v newStr1=%v", oldStr0, oldStr1, newStr1)
-		}
-
-		if m.Src()[oldStr0] == newStr1 {
-			t.Errorf("first String type crossed over to second slot")
-		}
-		if m.Src()[oldStr1] != newStr1 {
-			t.Errorf("expected second String to map in place, got %v", m.Src()[oldStr1])
-		}
+		// Sibling invariant: second String maps in place, first does not cross over.
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "String", Type: "type_identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "String", Type: "type_identifier", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "String", Type: "type_identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "String", Type: "type_identifier", Occurrence: 1},
+		)
 	})
 
 	t.Run("TypeScript_TypeArguments_SameLineHorizontalMatching", func(t *testing.T) {
@@ -2375,76 +1910,21 @@ type IntPair = Tuple[string, int]
 			t.Fatal("nil match result")
 		}
 		m := mr.Mappings
-		r := rules.Get("typescript")
 
 		// Surrounding type alias must map in place.
-		var aliasSrc, aliasDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsContainerDeclaration(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("PairMap")) {
-				aliasSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsContainerDeclaration(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("PairMap")) {
-				aliasDst = n
-				break
-			}
-		}
-		if aliasSrc == nil || aliasDst == nil {
-			t.Fatalf("PairMap alias missing: aliasSrc=%v aliasDst=%v", aliasSrc, aliasDst)
-		}
-		if m.Src()[aliasSrc] != aliasDst {
-			t.Errorf("expected PairMap alias to map in place, got %v", m.Src()[aliasSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "type PairMap", "type PairMap")
 
 		// Delimited type_arguments container must map in place.
-		var typeArgsSrc, typeArgsDst *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDelimitedContainer(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("string, string")) {
-				typeArgsSrc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDelimitedContainer(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("number, string")) {
-				typeArgsDst = n
-				break
-			}
-		}
-		if typeArgsSrc == nil || typeArgsDst == nil {
-			t.Fatalf("type_arguments container missing: typeArgsSrc=%v typeArgsDst=%v", typeArgsSrc, typeArgsDst)
-		}
-		if m.Src()[typeArgsSrc] != typeArgsDst {
-			t.Errorf("expected type_arguments to map in place, got %v", m.Src()[typeArgsSrc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, m.Src(), "<string, string>", "<number, string>", "type_arguments")
 
-		// Locate the two string types in oldSrc.
-		var oldStr0, oldStr1, newStr1 *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsType(n.Type) && bytes.Equal(oldSrc[n.StartByte:n.EndByte], []byte("string")) {
-				if oldStr0 == nil {
-					oldStr0 = n
-				} else if oldStr1 == nil {
-					oldStr1 = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsType(n.Type) && bytes.Equal(newSrc[n.StartByte:n.EndByte], []byte("string")) {
-				newStr1 = n
-				break
-			}
-		}
-		if oldStr0 == nil || oldStr1 == nil || newStr1 == nil {
-			t.Fatalf("string types missing: oldStr0=%v oldStr1=%v newStr1=%v", oldStr0, oldStr1, newStr1)
-		}
-
-		if m.Src()[oldStr0] == newStr1 {
-			t.Errorf("first string type crossed over to second slot")
-		}
-		if m.Src()[oldStr1] != newStr1 {
-			t.Errorf("expected second string to map in place, got %v", m.Src()[oldStr1])
-		}
+		// Sibling invariant: second string maps in place, first does not cross over.
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "string", Type: "predefined_type", Occurrence: 1},
+			testutil.TextQuery{Text: "string", Type: "predefined_type", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, m.Src(),
+			testutil.TextQuery{Text: "string", Type: "predefined_type", Occurrence: 2},
+			testutil.TextQuery{Text: "string", Type: "predefined_type", Occurrence: 1},
+		)
 	})
 }

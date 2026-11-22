@@ -725,41 +725,41 @@ func helperExtracted(items []int) {
 
 		// Whole-snippet verification: all loop statements and outer functions accounted for
 		// Enclosing function processOld maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func processOld(items []int)",
+			"func processOld(items []int)",
 		)
 
 		// Deleted otherCaller and inserted helperExtracted
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 12},
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"func otherCaller()",
 		)
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 7},
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"func helperExtracted(items []int)",
 		)
 
 		// Loop maps to extracted helper
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "for_statement", Line: 4},
-			testutil.NodeQuery{Type: "for_statement", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"for _, item := range items",
+			"for _, item := range items",
 		)
 
 		// Target break_statement inside moved loop block is preserved and mapped
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "break_statement", Line: 6},
-			testutil.NodeQuery{Type: "break_statement", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"break",
+			"break",
 		)
 
 		// Sibling statement handle(item) remains mapped
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 8},
-			testutil.NodeQuery{Type: "expression_statement", Line: 12},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"handle(item)",
+			"handle(item)",
 		)
 
 		// println("hello") maps to moved caller
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 13},
-			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			`println("hello")`,
+			`println("hello")`,
 		)
 	})
 }
@@ -806,31 +806,31 @@ func Helper(x any) bool {
 		}
 
 		// Whole-snippet verification: both functions and their statements map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func Process(x any)",
+			"func Process(x any)",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 9},
-			testutil.NodeQuery{Type: "function_declaration", Line: 9},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func Helper(x any) bool",
+			"func Helper(x any) bool",
 		)
 
 		// Target moving scalar binary expression (x != nil) remains mapped
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "binary_expression", Line: 4, Nth: 2},
-			testutil.NodeQuery{Type: "binary_expression", Line: 10, Nth: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"x != nil",
+			"x != nil",
 		)
 
 		// Stationary println("valid")
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 5},
-			testutil.NodeQuery{Type: "expression_statement", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			`println("valid")`,
+			`println("valid")`,
 		)
 
 		// Return statement in Helper maps
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 10},
-			testutil.NodeQuery{Type: "return_statement", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"return false",
+			"return x != nil && validate(x)",
 		)
 	})
 }
@@ -879,33 +879,33 @@ func renderTest(left, right, lastSrcLineIdx, lastDstLineIdx int, sText, dText st
 		}
 
 		// 1. Enclosing context: outer func renderTest maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func renderTest",
+			"func renderTest",
 		)
 
 		// 2. Surrounding sequence: isEOFLine declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"isEOFLine :=",
+			"isEOFLine :=",
 		)
 
 		// 3. Stationary body: upd++ maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "inc_statement", Line: 6},
-			testutil.NodeQuery{Type: "inc_statement", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"upd++",
+			"upd++",
 		)
 
 		// 4. Target operand: sText != dText must map to sText != dText
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "binary_expression", Line: 5, Nth: 2},
-			testutil.NodeQuery{Type: "binary_expression", Line: 6, Nth: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"sText != dText",
+			"sText != dText",
 		)
 
 		// 5. Outer binary expression: sText != dText || ... must NOT map to sText != dText || isEOFChange
-		testutil.AssertNotMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "binary_expression", Line: 5, Nth: 1},
-			testutil.NodeQuery{Type: "binary_expression", Line: 6, Nth: 1},
+		testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL)",
+			"sText != dText || isEOFChange",
 		)
 	})
 }
@@ -971,39 +971,44 @@ mod test_utils {
 		}
 
 		// Enclosing function, module, and declaration list must stay mapped in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 1},
-			testutil.NodeQuery{Type: "function_item", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn top_helper()",
+			"fn top_helper()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "mod_item", Line: 6},
-			testutil.NodeQuery{Type: "mod_item", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"mod test_utils",
+			"mod test_utils",
+			"mod_item",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "declaration_list", Line: 6},
-			testutil.NodeQuery{Type: "declaration_list", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"use std::fs::remove_file;",
+			"use std::fs::remove_file;",
+			"declaration_list",
 		)
 
 		// Surrounding statements must stay mapped without disruption.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 7},
-			testutil.NodeQuery{Type: "use_declaration", Line: 11},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"use std::fs::remove_file;",
+			"use std::fs::remove_file;",
+			"use_declaration",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 12},
-			testutil.NodeQuery{Type: "function_item", Line: 16},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn test_diff_highlight_defaults()",
+			"fn test_diff_highlight_defaults()",
 		)
 
 		// Target use declaration must stay mapped despite upstream line drift.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 9},
-			testutil.NodeQuery{Type: "use_declaration", Line: 13},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"use crate::tests::integration_test_utils::integration_test_utils;",
+			"use crate::tests::integration_test_utils;",
+			"use_declaration",
 		)
 
 		// Shared path prefix must stay mapped in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "scoped_identifier", Line: 9, Nth: 2},
-			testutil.NodeQuery{Type: "scoped_identifier", Line: 13, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"crate::tests::integration_test_utils",
+			"crate::tests::integration_test_utils",
+			"scoped_identifier",
 		)
 	})
 
@@ -1053,39 +1058,43 @@ namespace test_env {
 		}
 
 		// Enclosing function, namespace, and declaration list must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 1},
-			testutil.NodeQuery{Type: "function_definition", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void setup()",
+			"void setup()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "namespace_definition", Line: 6},
-			testutil.NodeQuery{Type: "namespace_definition", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"namespace test_env",
+			"namespace test_env",
+			"namespace_definition",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "declaration_list", Line: 6},
-			testutil.NodeQuery{Type: "declaration_list", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void init() {}",
+			"void init() {}",
+			"declaration_list",
 		)
 
 		// Surrounding statements must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 7},
-			testutil.NodeQuery{Type: "function_definition", Line: 11},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void init() {}",
+			"void init() {}",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 9},
-			testutil.NodeQuery{Type: "function_definition", Line: 13},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void teardown() {}",
+			"void teardown() {}",
 		)
 
 		// Target using declaration must stay mapped despite upstream line drift.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "using_declaration", Line: 8},
-			testutil.NodeQuery{Type: "using_declaration", Line: 12},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"using foo::bar::baz;",
+			"using bar::baz;",
+			"using_declaration",
 		)
 
 		// Shared qualified identifier must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "qualified_identifier", Line: 8, Nth: 2},
-			testutil.NodeQuery{Type: "qualified_identifier", Line: 12, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"bar::baz",
+			"bar::baz",
+			"qualified_identifier",
 		)
 	})
 
@@ -1135,35 +1144,38 @@ const test_mod = struct {
 		}
 
 		// Enclosing function and module struct must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn setup() void",
+			"fn setup() void",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "variable_declaration", Line: 6},
-			testutil.NodeQuery{Type: "variable_declaration", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"const test_mod = struct",
+			"const test_mod = struct",
+			"variable_declaration",
 		)
 
 		// Surrounding functions must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 7},
-			testutil.NodeQuery{Type: "function_declaration", Line: 11},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn before() void",
+			"fn before() void",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 9},
-			testutil.NodeQuery{Type: "function_declaration", Line: 13},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn after() void",
+			"fn after() void",
 		)
 
 		// Target usingnamespace declaration must stay mapped despite upstream line drift.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "using_namespace_declaration", Line: 8},
-			testutil.NodeQuery{Type: "using_namespace_declaration", Line: 12},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"pub usingnamespace foo.bar.baz;",
+			"pub usingnamespace foo.bar;",
+			"using_namespace_declaration",
 		)
 
 		// Shared field expression must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "field_expression", Line: 8, Nth: 2},
-			testutil.NodeQuery{Type: "field_expression", Line: 12, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"foo.bar",
+			"foo.bar",
+			"field_expression",
 		)
 	})
 
@@ -1213,25 +1225,27 @@ class TargetTest {
 		}
 
 		// Enclosing package and class declarations must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "package_declaration", Line: 4},
-			testutil.NodeQuery{Type: "package_declaration", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"package test_pkg;",
+			"package test_pkg;",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "class_declaration", Line: 8},
-			testutil.NodeQuery{Type: "class_declaration", Line: 12},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"class TargetTest",
+			"class TargetTest",
 		)
 
 		// Target import declaration must stay mapped despite upstream line drift.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "import_declaration", Line: 6},
-			testutil.NodeQuery{Type: "import_declaration", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"import com.example.foo.Bar;",
+			"import com.example.foo;",
+			"import_declaration",
 		)
 
 		// Shared scoped identifier must stay mapped.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "scoped_identifier", Line: 6, Nth: 2},
-			testutil.NodeQuery{Type: "scoped_identifier", Line: 10, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"com.example.foo",
+			"com.example.foo",
+			"scoped_identifier",
 		)
 	})
 }

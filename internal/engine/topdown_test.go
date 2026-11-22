@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/testutil"
@@ -450,39 +449,39 @@ func process(items []int) {
 			t.Fatal("Match returned nil")
 		}
 
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 5},
-			testutil.NodeQuery{Type: "if_statement", Line: 8},
+		// 1. Enclosing context and surrounding loop map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func process(items []int)",
+			"func process(items []int)",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "block", Line: 5},
-			testutil.NodeQuery{Type: "block", Line: 8},
-		)
-
-		// Whole-snippet verification: func process and for loop map in place, early if is cleanly unmapped
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "for_statement", Line: 4},
-			testutil.NodeQuery{Type: "for_statement", Line: 4},
-		)
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "if_statement", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"for _, x := range items",
+			"for _, x := range items",
 		)
 
-		// Verify continue statement in srcIf maps to continue in dstLateIf
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "continue_statement", Line: 6},
-			testutil.NodeQuery{Type: "continue_statement", Line: 9},
+		// 2. Early newly introduced if statement is cleanly unmapped in dst
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"if already := toDemote[x]; already",
+		)
+
+		// 3. Evolving shouldDemoteMove if_statement and its block map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"if shouldDemoteMove(x, dstNode, ms, r)",
+			"if shouldDemoteMove(x, dstNode, ms, r, evicted)",
+			"if_statement",
+		)
+
+		// 4. Verify continue statement in srcIf maps to continue in dstLateIf
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			testutil.TextQuery{Text: "continue", Type: "continue_statement", Occurrence: 1},
+			testutil.TextQuery{Text: "continue", Type: "continue_statement", Occurrence: 2},
 		)
 	})
 }
 
 func TestTopDown_DelimitedContainerBoundaryGuard(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		runCase := func(t *testing.T, name string, src, dst []byte, stagingRow, backupRowSrc, backupRowDst uint32) {
+		runCase := func(t *testing.T, name string, src, dst []byte) {
 			t.Run(name, func(t *testing.T) {
 				oldTree, err := treesitter.Parse(src, "old.go")
 				if err != nil {
@@ -492,63 +491,41 @@ func TestTopDown_DelimitedContainerBoundaryGuard(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				r := rulesFor(oldTree)
 
 				part := NewLinePartition(src, dst)
 				mr := Match(oldTree, newTree, src, dst, part)
 				m := mr.Mappings
 
 				// Enclosing declarations must stay anchored in place.
-				testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-					testutil.NodeQuery{Type: "type_declaration", Line: 3},
-					testutil.NodeQuery{Type: "type_declaration", Line: 3},
+				testutil.AssertMappedText(t, oldTree, newTree, src, dst, m.Src(),
+					"type Server struct",
+					"type Server struct",
 				)
-				testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-					testutil.NodeQuery{Type: "var_declaration", Line: 9},
-					testutil.NodeQuery{Type: "var_declaration", Line: 9},
+				testutil.AssertMappedText(t, oldTree, newTree, src, dst, m.Src(),
+					"var servers = []Server{",
+					"var servers = []Server{",
 				)
 
 				// Unchanged earlier elements must stay mapped in place.
-				testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-					testutil.NodeQuery{Type: "keyed_element", Line: 10, Nth: 1},
-					testutil.NodeQuery{Type: "keyed_element", Line: 10, Nth: 1},
+				testutil.AssertMappedText(t, oldTree, newTree, src, dst, m.Src(),
+					`{Host: "primary.internal", Port: 8080, SSL: true}`,
+					`{Host: "primary.internal", Port: 8080, SSL: true}`,
 				)
 
-				// Staging was deleted; it must not map into the updated backup element.
-				for n1, n2 := range m.Src() {
-					if n1.StartRow == stagingRow && n2.StartRow == backupRowDst {
-						t.Errorf("expected deleted staging element at row %d to not map to new backup element at row %d (node %s -> %s)",
-							n1.StartRow, n2.StartRow, n1.Type, n2.Type)
-					}
-				}
+				// Staging was deleted; it must be unmapped in src.
+				testutil.AssertUnmappedText(t, oldTree, src, m.Src(),
+					`{Host: "staging.internal", Port: 9090, SSL: true}`,
+				)
 
 				// Stationary fields inside the updated element should map in place.
-				var oldBackupHost, newBackupHost *treesitter.ASTNode
-				var oldBackupPort, newBackupPort *treesitter.ASTNode
-				for _, n := range oldTree.PreOrder() {
-					if r.IsPair(n.Type) && n.StartRow == backupRowSrc && len(n.Children) >= 2 {
-						if getKeyLabel(n) == "Host" {
-							oldBackupHost = n
-						} else if getKeyLabel(n) == "Port" {
-							oldBackupPort = n
-						}
-					}
-				}
-				for _, n := range newTree.PreOrder() {
-					if r.IsPair(n.Type) && n.StartRow == backupRowDst && len(n.Children) >= 2 {
-						if getKeyLabel(n) == "Host" {
-							newBackupHost = n
-						} else if getKeyLabel(n) == "Port" {
-							newBackupPort = n
-						}
-					}
-				}
-				if oldBackupHost == nil || newBackupHost == nil || m.Src()[oldBackupHost] != newBackupHost {
-					t.Errorf("expected backup Host pair to map in place, got %v", m.Src()[oldBackupHost])
-				}
-				if oldBackupPort == nil || newBackupPort == nil || m.Src()[oldBackupPort] != newBackupPort {
-					t.Errorf("expected backup Port pair to map in place, got %v", m.Src()[oldBackupPort])
-				}
+				testutil.AssertMappedText(t, oldTree, newTree, src, dst, m.Src(),
+					`Host: "backup.internal"`,
+					`Host: "backup.internal"`,
+				)
+				testutil.AssertMappedTextQuery(t, oldTree, newTree, src, dst, m.Src(),
+					testutil.TextQuery{Text: "Port: 8080", Occurrence: 2},
+					testutil.TextQuery{Text: "Port: 8080", Occurrence: 2},
+				)
 			})
 		}
 
@@ -580,7 +557,7 @@ var servers = []Server{
 	{Host: "backup.internal", Port: 8080, SSL: true},
 }
 `)
-		runCase(t, "StandardOrder_DeletedAfterUpdated", srcStd, dstStd, 11, 10, 10)
+		runCase(t, "StandardOrder_DeletedAfterUpdated", srcStd, dstStd)
 
 		// Case 2: Deleted element appears first; top-down matching must not greedily claim the updated element.
 		srcInv := []byte(`package config
@@ -610,7 +587,7 @@ var servers = []Server{
 	{Host: "backup.internal", Port: 8080, SSL: true},
 }
 `)
-		runCase(t, "InvertedOrder_DeletedBeforeUpdated", srcInv, dstInv, 10, 11, 10)
+		runCase(t, "InvertedOrder_DeletedBeforeUpdated", srcInv, dstInv)
 	})
 }
 
@@ -651,40 +628,27 @@ fn f2() void {
 		}
 
 		// 1. Enclosing context: functions map in place
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			"fn f1() void",
+			"fn f1() void",
 		)
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 6},
-		)
-
-		// 2. Surrounding sequence: blocks map in place
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "block", Line: 1},
-			testutil.NodeQuery{Type: "block", Line: 1},
-		)
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "block", Line: 3},
-			testutil.NodeQuery{Type: "block", Line: 6},
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			"fn f2() void",
+			"fn f2() void",
 		)
 
-		// 3. Stationary target: x += 1 inside f2 maps monotonically in place to f2
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "variable_declaration", Line: 4},
-			testutil.NodeQuery{Type: "variable_declaration", Line: 8},
+		// 2. Surrounding sequence & stationary target: x += 1 inside f2 maps monotonically in place to f2
+		testutil.AssertMappedTextQuery(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "x += 1", Occurrence: 1},
+			testutil.TextQuery{Text: "x += 1", Occurrence: 2},
 		)
 
-		// 4. Non-theft assertion: newly inserted statements in f1 are unmapped
-		testutil.AssertUnmapped(t, newTree, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 2},
+		// 3. Non-theft assertion: newly inserted statements in f1 are unmapped
+		testutil.AssertUnmappedTextQuery(t, newTree, newSrc, mr.Mappings.Dst(),
+			testutil.TextQuery{Text: "foo()", Occurrence: 1},
 		)
-		testutil.AssertUnmapped(t, newTree, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "variable_declaration", Line: 3},
-		)
-		testutil.AssertUnmapped(t, newTree, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 7},
+		testutil.AssertUnmappedTextQuery(t, newTree, newSrc, mr.Mappings.Dst(),
+			testutil.TextQuery{Text: "x += 1", Occurrence: 1},
 		)
 	})
 }
@@ -734,44 +698,37 @@ func f() {
 		m := mr.Mappings
 
 		// 1. Enclosing Context: Function declaration must map in place.
-		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, oldTree, newTree, src, dst, m.Src(),
+			"func f()",
+			"func f()",
 		)
 
-		// 2. Target & Containers:
-		// Newly prepended block 1 must NOT steal oldBlock. oldBlock must map to newBlock2 where "b" survives.
-		testutil.AssertNotMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "block", Line: 4},
-			testutil.NodeQuery{Type: "block", Line: 4},
-		)
-		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "block", Line: 4},
-			testutil.NodeQuery{Type: "block", Line: 10},
+		// Block mapping: oldBlock maps to newBlock2 where "b" survives, not newBlock1.
+		testutil.AssertMappedText(t, oldTree, newTree, src, dst, m.Src(),
+			"{\n\t\titer := slice(\"1\", \"b\")\n\t\texpect(1, iter.get(0))\n\t\texpectStrings(\"b\", iter.get(1))\n\t}",
+			"{\n\t\titer := slice(\"1\", \"2\", \"b\")\n\t\texpect(1, iter.get(0))\n\t\texpect(2, iter.get(1))\n\t\texpectStrings(\"b\", iter.get(2))\n\t}",
 		)
 
-		// 3. Surrounding Sequence & Target Statement:
-		// In diffm_main, expectStrings in oldBlock was stolen by newBlock1's expect(2, iter.get(1)) on line 7.
-		// In diffm_branch, expectStrings is correctly anchored inside newBlock2 (line 13).
-		testutil.AssertNotMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7, Nth: 1},
-			testutil.NodeQuery{Type: "call_expression", Line: 7, Nth: 1},
+		// 2. Target Statement: expectStrings in oldBlock is anchored inside newBlock2 (Occurrence 2 of expect(2,...))
+		// and NOT stolen by newly prepended newBlock1 (Occurrence 1).
+		testutil.AssertMappedTextQuery(t, oldTree, newTree, src, dst, m.Src(),
+			testutil.TextQuery{Text: `expectStrings("b", iter.get(1))`},
+			testutil.TextQuery{Text: `expect(2, iter.get(1))`, Occurrence: 2},
 		)
-		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7, Nth: 1},
-			testutil.NodeQuery{Type: "call_expression", Line: 13, Nth: 1},
+		testutil.AssertNotMappedTextQuery(t, oldTree, newTree, src, dst, m.Src(),
+			testutil.TextQuery{Text: `expectStrings("b", iter.get(1))`},
+			testutil.TextQuery{Text: `expect(2, iter.get(1))`, Occurrence: 1},
 		)
 
-		// 4. Stationary Operands:
-		// expect(1, iter.get(0)) in oldBlock must stay mapped to newBlock2's expect(1, iter.get(0)) on line 12,
+		// 3. Stationary Operands: expect(1, iter.get(0)) in oldBlock must stay mapped to newBlock2's expect(1, iter.get(0)),
 		// and NOT be stolen by newBlock1's expect(1) on line 6.
-		testutil.AssertNotMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6, Nth: 1},
-			testutil.NodeQuery{Type: "call_expression", Line: 6, Nth: 1},
+		testutil.AssertMappedTextQuery(t, oldTree, newTree, src, dst, m.Src(),
+			testutil.TextQuery{Text: "expect(1, iter.get(0))", Occurrence: 1},
+			testutil.TextQuery{Text: "expect(1, iter.get(0))", Occurrence: 2},
 		)
-		testutil.AssertMapped(t, oldTree, newTree, m.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6, Nth: 1},
-			testutil.NodeQuery{Type: "call_expression", Line: 12, Nth: 1},
+		testutil.AssertNotMappedTextQuery(t, oldTree, newTree, src, dst, m.Src(),
+			testutil.TextQuery{Text: "expect(1, iter.get(0))", Occurrence: 1},
+			testutil.TextQuery{Text: "expect(1, iter.get(0))", Occurrence: 1},
 		)
 	})
 }
@@ -830,31 +787,25 @@ func renderWholeFileSingleColumn(action int) error {
 		}
 
 		// 1. Enclosing context: function declaration must map in place
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 8},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			"func renderWholeFileSingleColumn",
+			"func renderWholeFileSingleColumn",
 		)
 
 		// 2. Surrounding sequence: if_statement maps in place
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 10},
-			testutil.NodeQuery{Type: "if_statement", Line: 5},
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			"if action == 1",
+			"if action == 1",
 		)
 
 		// 3. In-branch statement preservation: then maps to then, else maps to else (never inverted)
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "assignment_statement", Line: 11},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 6},
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			`hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, 10, extra)`,
+			`hunkHeader = renderutil.FormatHunkHeader(0, 0, 1, 10, "")`,
 		)
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "assignment_statement", Line: 13},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 8},
-		)
-
-		// 4. Stationary sub-statement tokens (hunkHeader and FormatHunkHeader) must map in-branch
-		testutil.AssertMapped(t, oldTree, newTree, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 11, Nth: 1},
-			testutil.NodeQuery{Type: "identifier", Line: 6, Nth: 1},
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, mr.Mappings.Src(),
+			`hunkHeader = renderutil.FormatHunkHeader(1, 10, 0, 0, extra)`,
+			`hunkHeader = renderutil.FormatHunkHeader(1, 10, 0, 0, "")`,
 		)
 	})
 }
@@ -897,40 +848,31 @@ func TestTopDown_CalleeCompatibility(t *testing.T) {
 		}
 
 		// 1. Enclosing Context: evaluateType declaration
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"function evaluateType(type: Type, host: Node)",
+			"function evaluateType(type: Type, host: Node)",
 		)
 
 		// 2. Surrounding Sequence: let original statement and return type statement
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
-			testutil.NodeQuery{Type: "lexical_declaration", Line: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"let original = type;",
+			"let original = type;",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 6},
-			testutil.NodeQuery{Type: "return_statement", Line: 9},
-		)
-
-		// 3. Target & Containers: getOptionalType call and arguments
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4, Nth: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "arguments", Line: 4},
-			testutil.NodeQuery{Type: "arguments", Line: 4, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"return type;",
+			"return type;",
 		)
 
-		// 4. Stationary Operands: argument "type" must map in place to "type"
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 2},
-			testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 2},
+		// 3. Target & Containers: getOptionalType call
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"getOptionalType(type)",
+			"getOptionalType(type, !isParameter(host))",
+			"call_expression",
 		)
 
-		// 5. Newly introduced call containsNonMissingUndefinedType must be unmapped in src
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6},
+		// 4. Newly introduced call containsNonMissingUndefinedType must be unmapped in src
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"containsNonMissingUndefinedType(type)",
 		)
 	})
 
@@ -975,40 +917,31 @@ func evaluateType(t Type, host Node) Type {
 		}
 
 		// 1. Enclosing Context: evaluateType declaration
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func evaluateType(t Type, host Node) Type",
+			"func evaluateType(t Type, host Node) Type",
 		)
 
 		// 2. Surrounding Sequence: original := t and return t
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"original := t",
+			"original := t",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 8},
-			testutil.NodeQuery{Type: "return_statement", Line: 11},
-		)
-
-		// 3. Target & Containers: getOptionalType call and argument list
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6},
-			testutil.NodeQuery{Type: "call_expression", Line: 6, Nth: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "argument_list", Line: 6},
-			testutil.NodeQuery{Type: "argument_list", Line: 6, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"return t",
+			"return t",
 		)
 
-		// 4. Stationary Operands: argument "t"
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 6, Nth: 2},
-			testutil.NodeQuery{Type: "identifier", Line: 6, Nth: 2},
+		// 3. Target: getOptionalType call
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"getOptionalType(t)",
+			"getOptionalType(t, !isParameter(host))",
+			"call_expression",
 		)
 
-		// 5. Newly introduced call containsNonMissingUndefinedType must be unmapped in src
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "call_expression", Line: 8},
+		// 4. Newly introduced call containsNonMissingUndefinedType must be unmapped in src
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"containsNonMissingUndefinedType(t)",
 		)
 	})
 
@@ -1057,36 +990,30 @@ fn configure(opt: &Opt) {
 		}
 
 		// 1. Enclosing Context: configure declaration and let commit_regex declaration
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 2},
-			testutil.NodeQuery{Type: "function_item", Line: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn configure(opt: &Opt)",
+			"fn configure(opt: &Opt)",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "let_declaration", Line: 3},
-			testutil.NodeQuery{Type: "let_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"let commit_regex = Regex::new(&opt.commit_regex)",
+			"let commit_regex = Regex::new(&opt.commit_regex)",
 		)
 
 		// 2. Surrounding Sequence: succeeding println! statement maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "macro_invocation", Line: 12},
-			testutil.NodeQuery{Type: "macro_invocation", Line: 11},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"println!(\"Ready: {:?}\", commit_regex);",
+			"println!(\"Ready: {:?}\", commit_regex);",
 		)
 
-		// 3. Target & Containers: token_tree under eprintln! and format! maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "token_tree", Line: 4},
-			testutil.NodeQuery{Type: "token_tree", Line: 4},
+		// 3. Stationary Operands: multi-line format string maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"\"Invalid commit-regex: {}.",
+			"\"Invalid commit-regex: {}.",
 		)
 
-		// 4. Stationary Operands: multi-line format string and opt.commit_regex arguments map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "string_literal", Line: 5},
-			testutil.NodeQuery{Type: "string_literal", Line: 5},
-		)
-
-		// 5. Deleted statement: process::exit(1) in src must be unmapped
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 10},
+		// 4. Deleted statement: process::exit(1) in src must be unmapped
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"process::exit(1);",
 		)
 	})
 
@@ -1129,32 +1056,26 @@ void validate(const char *pattern) {
 		}
 
 		// 1. Enclosing Context: validate function definition maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 4},
-			testutil.NodeQuery{Type: "function_definition", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void validate(const char *pattern)",
+			"void validate(const char *pattern)",
 		)
 
 		// 2. Surrounding Sequence: succeeding printf("Ready:...") call maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 9},
-			testutil.NodeQuery{Type: "call_expression", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"printf(\"Ready: %s\\n\", pattern);",
+			"printf(\"Ready: %s\\n\", pattern);",
 		)
 
-		// 3. Target & Containers: argument_list under printf and format_error maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "argument_list", Line: 6},
-			testutil.NodeQuery{Type: "argument_list", Line: 6, Nth: 2},
+		// 3. Stationary Operands: format string literal maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"\"Invalid commit-regex: %s. Must be valid regex.\\n\"",
+			"\"Invalid commit-regex: %s. Must be valid regex.\\n\"",
 		)
 
-		// 4. Stationary Operands: format string literal maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "string_literal", Line: 6},
-			testutil.NodeQuery{Type: "string_literal", Line: 6},
-		)
-
-		// 5. Deleted Statement Theft Guard: exit(1) in src must be unmapped (never stolen by fatal)
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7},
+		// 4. Deleted Statement Theft Guard: exit(1) in src must be unmapped (never stolen by fatal)
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"exit(1);",
 		)
 	})
 
@@ -1195,26 +1116,26 @@ fn validate(pattern: []const u8) void {
 		}
 
 		// 1. Enclosing Context: validate function maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn validate(pattern: []const u8) void",
+			"fn validate(pattern: []const u8) void",
 		)
 
 		// 2. Surrounding Sequence: succeeding std.debug.print statement maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 8},
-			testutil.NodeQuery{Type: "call_expression", Line: 7},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"std.debug.print(\"Ready: {s}\\n\", .{pattern});",
+			"std.debug.print(\"Ready: {s}\\n\", .{pattern});",
 		)
 
 		// 3. Stationary Operands: format string literal maps in place as context
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "string", Line: 5},
-			testutil.NodeQuery{Type: "string", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"\"Invalid commit-regex: {s}. See docs.\\n\"",
+			"\"Invalid commit-regex: {s}. See docs.\\n\"",
 		)
 
 		// 4. Deleted Statement: exit call in src must be unmapped
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6},
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"std.process.exit(1);",
 		)
 	})
 }
@@ -1301,44 +1222,40 @@ func run(in chan string) {
 		}
 
 		// 1. Enclosing Context: run function maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 5},
-			testutil.NodeQuery{Type: "function_declaration", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func run(in chan string)",
+			"func run(in chan string)",
 		)
 
 		// 2. Surrounding Sequence: preceding wg declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "var_declaration", Line: 6},
-			testutil.NodeQuery{Type: "var_declaration", Line: 6},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"var wg sync.WaitGroup",
+			"var wg sync.WaitGroup",
 		)
 
 		// 3. Target & Containers: grouped var_declaration and surviving specs (workerErr, readerErr)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "var_declaration", Line: 8},
-			testutil.NodeQuery{Type: "var_declaration", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"workerErr error",
+			"workerErr error",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "var_spec", Line: 10},
-			testutil.NodeQuery{Type: "var_spec", Line: 9},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"readerErr error",
+			"readerErr error",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "var_spec", Line: 11},
-			testutil.NodeQuery{Type: "var_spec", Line: 10},
-		)
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "var_spec", Line: 9},
+		testutil.AssertUnmappedText(t, srcAST, oldSrc, mr.Mappings.Src(),
+			"errMu     sync.Mutex",
 		)
 
 		// 4. Target Closure: failReader closure matches in place across deleted sibling closures
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 25},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 12},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"failReader := func(err error)",
+			"failReader := func(err error)",
 		)
 
 		// 5. Stationary Operands: cancel() inside failReader maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 27},
-			testutil.NodeQuery{Type: "call_expression", Line: 14},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "cancel()", Occurrence: 1},
+			testutil.TextQuery{Text: "cancel()", Occurrence: 1},
 		)
 	})
 }
@@ -1411,32 +1328,33 @@ func runPipeline() error {
 		}
 
 		// 1. Enclosing Context: runPipeline function maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func runPipeline() error",
+			"func runPipeline() error",
 		)
 
 		// 2. Surrounding Sequence: flusherErr if_statement maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 17},
-			testutil.NodeQuery{Type: "if_statement", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"if flusherErr != nil && !isBrokenPipe(flusherErr)",
+			"if flusherErr != nil && !isBrokenPipe(flusherErr)",
 		)
 
 		// 3. Target Construct: Evolving if_statement (with rErr) maps in place to the new rErr check
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 20},
-			testutil.NodeQuery{Type: "if_statement", Line: 11},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"if rErr := getReaderErr(); rErr != nil && !isBrokenPipe(rErr) && !isCanceled(rErr)",
+			"if rErr != nil && !isBrokenPipe(rErr) && !isCanceled(rErr) && !isDeadline(rErr)",
+			"if_statement",
 		)
 
 		// 4. Initializer short_var_declaration must NOT map to rErr = *p inside the intermediate if
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 20},
+		testutil.AssertUnmappedText(t, srcAST, oldSrc, mr.Mappings.Src(),
+			"rErr := getReaderErr()",
 		)
 
 		// 5. Stationary Operands: return rErr inside body block maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 21},
-			testutil.NodeQuery{Type: "return_statement", Line: 12},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"return rErr",
+			"return rErr",
 		)
 	})
 }
@@ -1508,47 +1426,33 @@ func ContestContainers(currentT1, t2 *ASTNode, m *Mapping) {
 		}
 
 		// 1. Enclosing Context: ContestContainers function maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func ContestContainers",
+			"func ContestContainers",
 		)
 
 		// 2. Surrounding Sequence: precedingInit and succeedingDone map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"precedingInit()",
+			"precedingInit()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 10},
-			testutil.NodeQuery{Type: "call_expression", Line: 26},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"succeedingDone(currCommon, currDice, currAffinity)",
+			"succeedingDone(currCommon, currDice, currAffinity)",
 		)
 
 		// 3. Target Statements: all 3 short_var_declarations map to assignment_statements
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 6},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 22},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"currCommon, _, _ := commonMappedDescendants",
+			"currCommon, _, _ = commonMappedDescendants",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 7},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 23},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"currDice := m.DiceSrc(currentT1, t2)",
+			"currDice = m.DiceSrc(currentT1, t2)",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 8},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 24},
-		)
-
-		// 4. Target Calls: commonMappedDescendants, DiceSrc, and computeAffinity map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6, Nth: 1},
-			testutil.NodeQuery{Type: "call_expression", Line: 22, Nth: 1},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7},
-			testutil.NodeQuery{Type: "call_expression", Line: 23},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 8, Nth: 2},
-			testutil.NodeQuery{Type: "call_expression", Line: 24, Nth: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"currAffinity := max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))",
+			"currAffinity = max(0, computeAffinity(currentT1, t2, m, DefaultAffinityWeights, true))",
 		)
 	})
 }
@@ -1640,37 +1544,37 @@ func TestDiffCommentsAnchorFirst() {
 		}
 
 		// Both functions should map in place as enclosing context.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func TestDiffCommentsGlobal()",
+			"func TestDiffCommentsGlobal()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 22},
-			testutil.NodeQuery{Type: "function_declaration", Line: 22},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func TestDiffCommentsAnchorFirst()",
+			"func TestDiffCommentsAnchorFirst()",
 		)
 
 		// Fixture setup and teardown calls around the target statements shouldn't move.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setupFixture()",
+			"setupFixture()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 8},
-			testutil.NodeQuery{Type: "call_expression", Line: 8},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardownFixture()",
+			"teardownFixture()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 23},
-			testutil.NodeQuery{Type: "call_expression", Line: 23},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setupAnchor()",
+			"setupAnchor()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 27},
-			testutil.NodeQuery{Type: "call_expression", Line: 27},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardownAnchor()",
+			"teardownAnchor()",
 		)
 
 		// The unchanged condition inside TestDiffCommentsGlobal should map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "binary_expression", Line: 5, Nth: 2},
-			testutil.NodeQuery{Type: "binary_expression", Line: 5, Nth: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"strings.Contains(act.Node.Type, \"identifier\")",
+			"strings.Contains(act.Node.Type, \"identifier\")",
 		)
 	})
 }
@@ -1739,34 +1643,35 @@ mod tests {
 		}
 
 		// 1. Target 1: Outer attribute #[cfg(test)] at line 1 must map to inner attribute #![cfg(test)] at line 1.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "attribute_item", Line: 1},
-			testutil.NodeQuery{Type: "inner_attribute_item", Line: 1},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "#[cfg(test)]", Occurrence: 1},
+			testutil.TextQuery{Text: "#![cfg(test)]", Occurrence: 1},
 		)
 
 		// 2. Target 2: #[allow(dead_code)] on make_config must map to #[allow(dead_code)] in place (NOT deleted or cross-matched).
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "attribute_item", Line: 9},
-			testutil.NodeQuery{Type: "attribute_item", Line: 9},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"#[allow(dead_code)]",
+			"#[allow(dead_code)]",
 		)
 
 		// 3. Sibling Scope: tests mod #[cfg(test)] must remain mapped to tests mod #[cfg(test)] without cross-scope theft.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "attribute_item", Line: 15},
-			testutil.NodeQuery{Type: "attribute_item", Line: 14},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "#[cfg(test)]", Occurrence: 2},
+			testutil.TextQuery{Text: "#[cfg(test)]", Occurrence: 1},
 		)
+
 		// 4. Surrounding Sequence & Stationary Functions: make_options, make_config, and tests mod map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 5},
-			testutil.NodeQuery{Type: "function_item", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"pub fn make_options() -> bool",
+			"pub fn make_options() -> bool",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 10},
-			testutil.NodeQuery{Type: "function_item", Line: 10},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"pub fn make_config() -> bool",
+			"pub fn make_config() -> bool",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "mod_item", Line: 16},
-			testutil.NodeQuery{Type: "mod_item", Line: 15},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"mod tests",
+			"mod tests",
 		)
 	})
 
@@ -1833,57 +1738,45 @@ class TaskManager {
 		}
 
 		// 1. Target 1: Outer marker_annotation @Deprecated on inner class maps to unnested annotation @Deprecated(since = "1.2").
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "marker_annotation", Line: 2},
-			testutil.NodeQuery{Type: "annotation", Line: 1},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "@Deprecated", Occurrence: 1},
+			testutil.TextQuery{Text: "@Deprecated(since = \"1.2\")", Occurrence: 1},
 		)
 
 		// 2. Target 2: @SuppressWarnings on isBusy stays mapped in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "annotation", Line: 6},
-			testutil.NodeQuery{Type: "annotation", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"@SuppressWarnings(\"rawtypes\")",
+			"@SuppressWarnings(\"rawtypes\")",
 		)
 
 		// 3. Sibling Scope: TaskManager's @Deprecated shouldn't get stolen across scopes.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "marker_annotation", Line: 12},
-			testutil.NodeQuery{Type: "marker_annotation", Line: 11},
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "@Deprecated", Occurrence: 2},
+			testutil.TextQuery{Text: "@Deprecated", Occurrence: 2},
 		)
 
 		// 4. Surrounding Sequence & Stationary Declarations: Worker, TaskManager, execute, and isBusy map in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "class_declaration", Line: 2},
-			testutil.NodeQuery{Type: "class_declaration", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"class Worker",
+			"class Worker",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "method_declaration", Line: 4},
-			testutil.NodeQuery{Type: "method_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"public void execute()",
+			"public void execute()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "method_declaration", Line: 6},
-			testutil.NodeQuery{Type: "method_declaration", Line: 5},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"public boolean isBusy()",
+			"public boolean isBusy()",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "class_declaration", Line: 12},
-			testutil.NodeQuery{Type: "class_declaration", Line: 11},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"class TaskManager",
+			"class TaskManager",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "method_declaration", Line: 14},
-			testutil.NodeQuery{Type: "method_declaration", Line: 13},
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"public void process()",
+			"public void process()",
 		)
 	})
-}
-
-func findChainedCall(root *treesitter.ASTNode, methodName string, r *rules.Rules) *treesitter.ASTNode {
-	for _, n := range root.PreOrder() {
-		if r.IsCall(n.Type) {
-			callee := extractCalleeNode(n, r)
-			if callee != nil && callee.Label == methodName {
-				return n
-			}
-		}
-	}
-	return nil
 }
 
 func TestTopDown_ChainedMethodCalleeCompatibility(t *testing.T) {
@@ -1939,41 +1832,41 @@ func TestTopDown_ChainedMethodCalleeCompatibility(t *testing.T) {
 		}
 
 		// 1. Enclosing Context: configure_app declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 1},
-			testutil.NodeQuery{Type: "function_item", Line: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn configure_app()",
+			"fn configure_app()",
 		)
 
 		// 2. Surrounding Sequence: let mut flags = 0 and finalize(flags) map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "let_declaration", Line: 2},
-			testutil.NodeQuery{Type: "let_declaration", Line: 2},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"let mut flags = 0;",
+			"let mut flags = 0;",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 10},
-			testutil.NodeQuery{Type: "call_expression", Line: 14},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"finalize(flags)",
+			"finalize(flags)",
 		)
 
 		// 3. Target & Containers: stationary Arg::new("highlight-line") chain maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 5, Nth: 2},
-			testutil.NodeQuery{Type: "call_expression", Line: 10, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			`Arg::new("highlight-line")`,
+			`Arg::new("highlight-line")`,
 		)
 
 		// 4. Deleted tail call takes_value(true) must be unmapped in src
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 5, Nth: 1},
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"takes_value(true)",
 		)
 
 		// 5. Newly inserted hide_default_value(true) must be unmapped in dst
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "call_expression", Line: 5, Nth: 1},
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"hide_default_value(true)",
 		)
 
 		// 6. Argument literal 'true' must not be stolen across mismatched callees.
-		testutil.AssertNotMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "boolean_literal", Line: 8},
-			testutil.NodeQuery{Type: "boolean_literal", Line: 7},
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			testutil.TextQuery{Text: "true", Type: "boolean_literal", Occurrence: 1},
+			testutil.TextQuery{Text: "true", Type: "boolean_literal", Occurrence: 1},
 		)
 	})
 
@@ -2035,41 +1928,41 @@ func configureApp() {
 		}
 
 		// 1. Enclosing Context: configureApp declaration maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func configureApp()",
+			"func configureApp()",
 		)
 
 		// 2. Surrounding Sequence: flags := 0 and finalize(flags) map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"flags := 0",
+			"flags := 0",
 		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 12},
-			testutil.NodeQuery{Type: "call_expression", Line: 16},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"finalize(flags)",
+			"finalize(flags)",
 		)
 
 		// 3. Target & Containers: stationary NewArg("highlight-line") chain maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7, Nth: 2},
-			testutil.NodeQuery{Type: "call_expression", Line: 12, Nth: 1},
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			`NewArg("highlight-line")`,
+			`NewArg("highlight-line")`,
 		)
 
 		// 4. Deleted tail call TakesValue(true) must be unmapped in src
-		testutil.AssertUnmapped(t, srcAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7, Nth: 1},
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"TakesValue(true)",
 		)
 
 		// 5. Newly inserted HideDefaultValue(true) must be unmapped in dst
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7, Nth: 1},
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"HideDefaultValue(true)",
 		)
 
 		// 6. Argument literal 'true' must not be stolen across mismatched callees.
-		testutil.AssertNotMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "true", Line: 10},
-			testutil.NodeQuery{Type: "true", Line: 9},
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			testutil.TextQuery{Text: "true", Type: "true", Occurrence: 1},
+			testutil.TextQuery{Text: "true", Type: "true", Occurrence: 1},
 		)
 	})
 
@@ -2123,7 +2016,6 @@ func configureApp() {
 			t.Fatalf("dst has parse errors: count=%d", dstAST.ParseErrorCount)
 		}
 
-		r := rulesFor(srcAST)
 		part := NewLinePartition([]byte(src), []byte(dst))
 		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
 		if mr == nil || mr.Mappings == nil {
@@ -2131,101 +2023,47 @@ func configureApp() {
 		}
 
 		// 1. Enclosing function maps in place.
-		var srcFunc, dstFunc *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configureApp" {
-				srcFunc = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configureApp" {
-				dstFunc = n
-				break
-			}
-		}
-		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
-			t.Fatalf("expected method configureApp to map in place, got src=%v dst=%v", srcFunc, dstFunc)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void configureApp()",
+			"void configureApp()",
+		)
 
 		// 2. Preceding and succeeding statements stay locked in place.
-		var srcFlags, dstFlags *treesitter.ASTNode
-		var srcFinalize, dstFinalize *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 2 {
-				srcFlags = n
-			}
-			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "finalize" {
-				srcFinalize = n
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsLocalVarDeclaration(n.Type) && n.StartRow == 2 {
-				dstFlags = n
-			}
-			if r.IsCall(n.Type) && extractCalleeLabel(n, r) == "finalize" {
-				dstFinalize = n
-			}
-		}
-		if srcFlags == nil || dstFlags == nil || mr.Mappings.Src()[srcFlags] != dstFlags {
-			t.Errorf("expected preceding int flags = 0 to map in place")
-		}
-		if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
-			t.Errorf("expected succeeding finalize(flags) to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"int flags = 0;",
+			"int flags = 0;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"finalize(flags)",
+			"finalize(flags)",
+		)
 
 		// 3. Unchanged middle methods (.shortCode) still map across both trees.
-		srcShortCall := findChainedCall(srcAST, "shortCode", r)
-		dstShortCall := findChainedCall(dstAST, "shortCode", r)
-		if srcShortCall == nil || dstShortCall == nil || mr.Mappings.Src()[srcShortCall] != dstShortCall {
-			t.Fatalf("expected stationary .shortCode('H') call to map in place, got src=%v dst=%v", srcShortCall, dstShortCall)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"shortCode('H')",
+			"shortCode('H')",
+		)
 
 		// 4. Deleted tail call stays unmapped in old tree.
-		srcTakesValueCall := findChainedCall(srcAST, "takesValue", r)
-		if srcTakesValueCall == nil {
-			t.Fatal("failed to find src takesValue call")
-		}
-		if partner := mr.Mappings.Src()[srcTakesValueCall]; partner != nil {
-			t.Errorf("expected deleted takesValue call to be unmapped in src, got %v", partner)
-		}
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"takesValue(true)",
+		)
 
 		// 5. Newly inserted tail call stays unmapped in new tree.
-		dstHideDefaultCall := findChainedCall(dstAST, "hideDefaultValue", r)
-		if dstHideDefaultCall == nil {
-			t.Fatal("failed to find dst hideDefaultValue call")
-		}
-		if partner := mr.Mappings.Dst()[dstHideDefaultCall]; partner != nil {
-			t.Errorf("expected inserted hideDefaultValue call to be unmapped in dst, got %v", partner)
-		}
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"hideDefaultValue(true)",
+		)
 
 		// 6. Argument literal 'true' must not be stolen across mismatched callees.
-		var srcTrue, dstTrue *treesitter.ASTNode
-		for _, n := range srcTakesValueCall.Descendants() {
-			if n.Label == "true" {
-				srcTrue = n
-				break
-			}
-		}
-		for _, n := range dstHideDefaultCall.Descendants() {
-			if n.Label == "true" {
-				dstTrue = n
-				break
-			}
-		}
-		if srcTrue == nil || dstTrue == nil {
-			t.Fatalf("failed to locate true literals: src=%v dst=%v", srcTrue, dstTrue)
-		}
-		if mr.Mappings.Src()[srcTrue] == dstTrue {
-			t.Errorf("argument 'true' in takesValue must not be stolen by hideDefaultValue")
-		}
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			testutil.TextQuery{Text: "true", Type: "boolean_literal", Occurrence: 1},
+			testutil.TextQuery{Text: "true", Type: "boolean_literal", Occurrence: 1},
+		)
 	})
 }
 
 func TestTopDown_FieldConcordanceTieBreaking_FullEngine(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("python")
-
 		oldSrc := []byte(`def configure_session():
     setup_logger()
     options = {
@@ -2264,89 +2102,39 @@ func TestTopDown_FieldConcordanceTieBreaking_FullEngine(t *testing.T) {
 		}
 
 		// 1. Enclosing function declaration maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "configure_session" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected configure_session to map in place, got src=%v dst=%v", srcFn, dstFn)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"def configure_session():",
+			"def configure_session():",
+		)
 
 		// 2. Surrounding sequence (setup_logger, teardown_logger) maps in place.
-		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				if extractCalleeLabel(n, r) == "setup_logger" {
-					srcSetup = n
-				} else if extractCalleeLabel(n, r) == "teardown_logger" {
-					srcTeardown = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				if extractCalleeLabel(n, r) == "setup_logger" {
-					dstSetup = n
-				} else if extractCalleeLabel(n, r) == "teardown_logger" {
-					dstTeardown = n
-				}
-			}
-		}
-		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
-			t.Errorf("expected setup_logger call to map in place")
-		}
-		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
-			t.Errorf("expected teardown_logger call to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setup_logger()",
+			"setup_logger()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardown_logger(options)",
+			"teardown_logger(options)",
+		)
 
-		// 3. Locate pair container and key/value expressions.
-		var srcPair, dstPair *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsPair(n.Type) {
-				srcPair = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsPair(n.Type) {
-				dstPair = n
-				break
-			}
-		}
-		if srcPair == nil || dstPair == nil {
-			t.Fatalf("failed to locate pair nodes: src=%v dst=%v", srcPair, dstPair)
-		}
+		// 3. Locate pair container and key/value expressions:
+		// The pair container must map in place so the colon stays stationary trivia.
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"(a + b): (c + d)",
+			"(c + d): (a + b)",
+			"pair",
+		)
 
-		// 4. Verification: The pair container must map in place so the colon stays stationary trivia.
-		if matched := mr.Mappings.Src()[srcPair]; matched != dstPair {
-			t.Errorf("expected pair container to map in place, got %v", matched)
-		}
-
-		// 5. Conflicting slots: key (a + b) must not match value (a + b) across the colon.
-		srcKey := srcPair.ChildByFieldName("key")
-		dstVal := dstPair.ChildByFieldName("value")
-		if srcKey == nil || dstVal == nil {
-			t.Fatalf("failed to locate key or value nodes: key=%v val=%v", srcKey, dstVal)
-		}
-		if matched := mr.Mappings.Src()[srcKey]; matched == dstVal {
-			t.Errorf("TopDown incorrectly paired key (a + b) across colon to value (a + b)")
-		}
+		// 4. Conflicting slots: key (a + b) must not match value (a + b) across the colon.
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "(a + b)", Occurrence: 1},
+			testutil.TextQuery{Text: "(a + b)", Occurrence: 1},
+		)
 	})
 }
 
 func TestTopDown_CrossStatementDredging_FieldMutualExclusion_FullEngine(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("go")
-
 		oldSrc := []byte(`package main
 
 func computeMetrics() {
@@ -2391,103 +2179,38 @@ func computeMetrics() {
 		}
 
 		// 1. Enclosing function maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "computeMetrics" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsDeclaration(n.Type) && getDeclarationName(n) == "computeMetrics" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected computeMetrics to map in place, got src=%v dst=%v", srcFn, dstFn)
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func computeMetrics()",
+			"func computeMetrics()",
+		)
 
 		// 2. Surrounding sequence (setupMetrics, teardownMetrics) maps in place.
-		var srcSetup, dstSetup, srcTeardown, dstTeardown *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				if extractCalleeLabel(n, r) == "setupMetrics" {
-					srcSetup = n
-				} else if extractCalleeLabel(n, r) == "teardownMetrics" {
-					srcTeardown = n
-				}
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsCall(n.Type) {
-				if extractCalleeLabel(n, r) == "setupMetrics" {
-					dstSetup = n
-				} else if extractCalleeLabel(n, r) == "teardownMetrics" {
-					dstTeardown = n
-				}
-			}
-		}
-		if srcSetup == nil || dstSetup == nil || mr.Mappings.Src()[srcSetup] != dstSetup {
-			t.Errorf("expected setupMetrics to map in place")
-		}
-		if srcTeardown == nil || dstTeardown == nil || mr.Mappings.Src()[srcTeardown] != dstTeardown {
-			t.Errorf("expected teardownMetrics to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setupMetrics()",
+			"setupMetrics()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardownMetrics(unrelated, rightExpr)",
+			"teardownMetrics(unrelated, rightExpr)",
+		)
 
 		// 3. Middle statement unrelated := 200 maps in place.
-		var srcUnrelated, dstUnrelated *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsLocalVarDeclaration(n.Type) && slices.Contains(getAssignmentTargetNames(n, r), "unrelated") {
-				srcUnrelated = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsLocalVarDeclaration(n.Type) && slices.Contains(getAssignmentTargetNames(n, r), "unrelated") {
-				dstUnrelated = n
-				break
-			}
-		}
-		if srcUnrelated == nil || dstUnrelated == nil || mr.Mappings.Src()[srcUnrelated] != dstUnrelated {
-			t.Fatalf("expected unrelated := 200 to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"unrelated := 200",
+			"unrelated := 200",
+		)
 
 		// 4. Locate leftTarget in old statement 1 (LHS target) and leftTarget in new statement 3 (RHS operand).
-		var srcLeftTarget, dstRhsLeftTarget *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsIdentifier(n.Type) && n.Label == "leftTarget" && n.StartRow == 4 {
-				srcLeftTarget = n
-				break
-			}
-		}
-		for _, n := range dstAST.PreOrder() {
-			if r.IsIdentifier(n.Type) && n.Label == "leftTarget" && n.StartRow == 6 {
-				dstRhsLeftTarget = n
-				break
-			}
-		}
-		if srcLeftTarget == nil || dstRhsLeftTarget == nil {
-			t.Fatalf("failed to locate leftTarget identifiers: src=%v dst=%v", srcLeftTarget, dstRhsLeftTarget)
-		}
+		// An LHS target variable in statement 1 shouldn't dredge into an RHS operand in another statement.
+		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "leftTarget", Type: "identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "leftTarget", Type: "identifier", Occurrence: 1},
+		)
 
-		// 5. An LHS target variable in statement 1 shouldn't dredge into an RHS operand in another statement.
-		if matched := mr.Mappings.Src()[srcLeftTarget]; matched == dstRhsLeftTarget {
-			t.Errorf("LHS target variable in statement 1 incorrectly dredged into RHS operand across statement boundaries")
-		}
-
-		// 6. Commutative operand leftTarget in statement 3 should map to dstRhsLeftTarget.
-		var srcRhsLeftTarget *treesitter.ASTNode
-		for _, n := range srcAST.PreOrder() {
-			if r.IsIdentifier(n.Type) && n.Label == "leftTarget" && n.StartRow == 6 {
-				srcRhsLeftTarget = n
-				break
-			}
-		}
-		if srcRhsLeftTarget != nil {
-			if matched := mr.Mappings.Src()[srcRhsLeftTarget]; matched != dstRhsLeftTarget {
-				t.Errorf("expected commutative operand leftTarget in statement 3 to map to dstRhsLeftTarget, got %v", matched)
-			}
-		}
+		// 5. Commutative operand leftTarget in statement 3 should map to dstRhsLeftTarget.
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "leftTarget", Type: "identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "leftTarget", Type: "identifier", Occurrence: 1},
+		)
 	})
 }
