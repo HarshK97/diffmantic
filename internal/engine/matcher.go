@@ -1153,6 +1153,19 @@ func isBlockNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	return rules.IsBlock(n.Type)
 }
 
+func isBlockOrWrapper(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	if r != nil {
+		return r.IsBlock(n.Type) || r.IsWrapper(n.Type)
+	}
+	return rules.IsBlock(n.Type) || rules.IsWrapper(n.Type)
+}
+
 func isStatementNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil {
 		return false

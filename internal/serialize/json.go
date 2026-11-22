@@ -1190,20 +1190,22 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 		return false, 0, 0
 	}
 	r := rules.Get(n.GetLanguage())
-	if block := findDirectOrEnclosedBlock(n, r); block != nil {
-		if block.StartByte > *start && block.StartByte < *end {
-			origEnd := *end
-			*end = block.StartByte
-			if len(block.LeadingTrivia) > 0 && block.LeadingTrivia[0].StartByte > *start && block.LeadingTrivia[0].StartByte < *end {
-				*end = block.LeadingTrivia[0].StartByte
+	if r == nil || !r.IsBlock(n.Type) {
+		if block := findDirectOrEnclosedBlock(n, r); block != nil {
+			if block.StartByte > *start && block.StartByte < *end {
+				origEnd := *end
+				*end = block.StartByte
+				if len(block.LeadingTrivia) > 0 && block.LeadingTrivia[0] != nil && block.LeadingTrivia[0].StartByte > *start && block.LeadingTrivia[0].StartByte < *end {
+					*end = block.LeadingTrivia[0].StartByte
+				}
+				if bt := block.SyntaxTrivia(); bt != nil && bt.ClosingEnd > bt.ClosingStart && !isIndentationConstruct(n, block) {
+					return true, bt.ClosingStart, bt.ClosingEnd
+				}
+				if block.EndByte < origEnd && !isIndentationConstruct(n, block) && isClosingDelimiter(fileBytes, block.EndByte, origEnd) {
+					return true, block.EndByte, origEnd
+				}
+				return false, 0, 0
 			}
-			if bt := block.SyntaxTrivia(); bt != nil && bt.ClosingEnd > bt.ClosingStart && !isIndentationConstruct(n, block) {
-				return true, bt.ClosingStart, bt.ClosingEnd
-			}
-			if block.EndByte < origEnd && !isIndentationConstruct(n, block) && isClosingDelimiter(fileBytes, block.EndByte, origEnd) {
-				return true, block.EndByte, origEnd
-			}
-			return false, 0, 0
 		}
 	}
 	if len(n.Children) > 0 {
@@ -1215,7 +1217,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				origEnd := *end
 				*start = receiver.EndByte
 				*end = firstIndex.StartByte
-				if len(firstIndex.LeadingTrivia) > 0 && firstIndex.LeadingTrivia[0].StartByte > *start && firstIndex.LeadingTrivia[0].StartByte < *end {
+				if len(firstIndex.LeadingTrivia) > 0 && firstIndex.LeadingTrivia[0] != nil && firstIndex.LeadingTrivia[0].StartByte > *start && firstIndex.LeadingTrivia[0].StartByte < *end {
 					*end = firstIndex.LeadingTrivia[0].StartByte
 				}
 				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
@@ -1235,7 +1237,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			if firstChild.StartByte > *start && firstChild.StartByte < *end {
 				origEnd := *end
 				*end = firstChild.StartByte
-				if len(firstChild.LeadingTrivia) > 0 && firstChild.LeadingTrivia[0].StartByte > *start && firstChild.LeadingTrivia[0].StartByte < *end {
+				if len(firstChild.LeadingTrivia) > 0 && firstChild.LeadingTrivia[0] != nil && firstChild.LeadingTrivia[0].StartByte > *start && firstChild.LeadingTrivia[0].StartByte < *end {
 					*end = firstChild.LeadingTrivia[0].StartByte
 				}
 				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
@@ -1261,7 +1263,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				}
 				origEnd := *end
 				*end = firstInner.StartByte
-				if len(firstInner.LeadingTrivia) > 0 && firstInner.LeadingTrivia[0].StartByte > *start && firstInner.LeadingTrivia[0].StartByte < *end {
+				if len(firstInner.LeadingTrivia) > 0 && firstInner.LeadingTrivia[0] != nil && firstInner.LeadingTrivia[0].StartByte > *start && firstInner.LeadingTrivia[0].StartByte < *end {
 					*end = firstInner.LeadingTrivia[0].StartByte
 				}
 				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
@@ -1297,7 +1299,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 			if firstBodyChild != nil {
 				origEnd := *end
 				*end = firstBodyChild.StartByte
-				if len(firstBodyChild.LeadingTrivia) > 0 && firstBodyChild.LeadingTrivia[0].StartByte > *start && firstBodyChild.LeadingTrivia[0].StartByte < *end {
+				if len(firstBodyChild.LeadingTrivia) > 0 && firstBodyChild.LeadingTrivia[0] != nil && firstBodyChild.LeadingTrivia[0].StartByte > *start && firstBodyChild.LeadingTrivia[0].StartByte < *end {
 					*end = firstBodyChild.LeadingTrivia[0].StartByte
 				}
 				if trivia := n.SyntaxTrivia(); trivia != nil && trivia.ClosingEnd > trivia.ClosingStart && !isIndentationConstruct(n, nil) {
@@ -1305,19 +1307,39 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 				}
 				lastChild := n.Children[len(n.Children)-1]
 				if lastChild.EndByte > firstBodyChild.StartByte && lastChild.EndByte < origEnd {
-					if !isIndentationConstruct(n, nil) && isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
-						return true, lastChild.EndByte, origEnd
+					if !isIndentationConstruct(n, nil) {
+						if isClosingDelimiter(fileBytes, lastChild.EndByte, origEnd) {
+							return true, lastChild.EndByte, origEnd
+						}
+						if isStatementTerminator(fileBytes, lastChild.EndByte, origEnd) {
+							termStart, termEnd := trimWhitespaceSpan(fileBytes, lastChild.EndByte, origEnd)
+							return true, termStart, termEnd
+						}
 					}
 				}
 				return false, 0, 0
 			}
 		}
+
+		if r != nil && r.IsExpressionStatement(n.Type) && len(n.Children) > 0 {
+			origEnd := *end
+			*end = *start
+			if trivia := n.SyntaxTrivia(); trivia != nil && trivia.TrailingEnd > trivia.TrailingStart && trivia.TrailingEnd <= origEnd {
+				return true, trivia.TrailingStart, trivia.TrailingEnd
+			}
+			lastChild := n.Children[len(n.Children)-1]
+			if lastChild.EndByte < origEnd && isStatementTerminator(fileBytes, lastChild.EndByte, origEnd) {
+				termStart, termEnd := trimWhitespaceSpan(fileBytes, lastChild.EndByte, origEnd)
+				return true, termStart, termEnd
+			}
+			return false, 0, 0
+		}
 	}
 	return false, 0, 0
 }
 
-// findDirectOrEnclosedBlock finds an immediate block child, or walks down single-line opening
-// wrappers of a multiline call (e.g. arguments, closures) to locate an enclosed block.
+// findDirectOrEnclosedBlock finds an immediate block child or unrolls opening
+// wrappers around a multiline call (like arguments or closures) to find its block.
 func findDirectOrEnclosedBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil || r == nil {
 		return nil
@@ -1347,8 +1369,8 @@ func findDirectOrEnclosedBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitte
 	return nil
 }
 
-// isCallOrCallStatement reports whether n is a call expression or an expression statement
-// wrapping a call (optionally followed by a trailing semicolon).
+// isCallOrCallStatement matches bare calls and expression-statement call wrappers
+// so multiline call blocks can be carved out.
 func isCallOrCallStatement(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil || r == nil || r.IsBlock(n.Type) || r.IsDeclaration(n.Type) {
 		return false
@@ -1399,6 +1421,24 @@ func isClosingDelimiter(fileBytes []byte, start, end uint32) bool {
 	tok := bytes.Trim(trimmed, ",; \t\r\n")
 	return bytes.Equal(tok, []byte("}")) || bytes.Equal(tok, []byte("]")) ||
 		bytes.Equal(tok, []byte(")")) || bytes.Equal(tok, []byte("end"))
+}
+
+func isStatementTerminator(fileBytes []byte, start, end uint32) bool {
+	if fileBytes == nil || start >= end || end > uint32(len(fileBytes)) {
+		return false
+	}
+	trimmed := bytes.TrimSpace(fileBytes[start:end])
+	return len(trimmed) == 1 && (trimmed[0] == ';' || trimmed[0] == ',')
+}
+
+func trimWhitespaceSpan(fileBytes []byte, start, end uint32) (uint32, uint32) {
+	for start < end && (fileBytes[start] == ' ' || fileBytes[start] == '\t' || fileBytes[start] == '\r' || fileBytes[start] == '\n') {
+		start++
+	}
+	for end > start && (fileBytes[end-1] == ' ' || fileBytes[end-1] == '\t' || fileBytes[end-1] == '\r' || fileBytes[end-1] == '\n') {
+		end--
+	}
+	return start, end
 }
 
 // collectMappedTrailingDelimiters compares syntax trivia trailing separators across

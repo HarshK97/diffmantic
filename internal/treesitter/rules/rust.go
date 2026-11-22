@@ -182,6 +182,9 @@ var rustRules = &Rules{
 		"declaration_list",
 		"try_block",
 		"gen_block",
+		"match_block",
+		"unsafe_block",
+		"async_block",
 	},
 	Wrappers: []string{
 		"parenthesized_expression",
