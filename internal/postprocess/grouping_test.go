@@ -168,14 +168,14 @@ func TestGroupMoves_UnresolvedDstNoFalseSwap(t *testing.T) {
 }
 
 func TestGroupMovesPropagateToBlock(t *testing.T) {
-	funcBody := &treesitter.ASTNode{Type: "block", Language: "go"}
-	newFuncBody := &treesitter.ASTNode{Type: "block", Language: "go"}
+	oldFuncBody := &treesitter.ASTNode{Type: "block"}
+	newFuncBody := &treesitter.ASTNode{Type: "block"}
 
 	stmt := &treesitter.ASTNode{Type: "if_statement", Language: "go"}
-	setParentAndRange(stmt, funcBody, 10, 50)
+	setParentAndRange(stmt, oldFuncBody, 10, 50)
 
-	stmt2 := &treesitter.ASTNode{Type: "for_statement", Language: "go"}
-	setParentAndRange(stmt2, funcBody, 51, 90)
+	stmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "go"}
+	setParentAndRange(stmt2, oldFuncBody, 51, 60)
 
 	stmtBlock := &treesitter.ASTNode{Type: "block", Language: "go"}
 	setParentAndRange(stmtBlock, stmt, 20, 50)

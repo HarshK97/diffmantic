@@ -63,7 +63,7 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 
 	// Only the outermost move of a relocated block gets spans. The nested
 	// ones would paint the same color twice.
-	skipNestedMove := nestedMoveActions(actions)
+	skipNestedMove, enclosingMove := nestedMoveActions(actions)
 
 	for i := range actions {
 		a := &actions[i]
@@ -122,7 +122,13 @@ func BuildHighlightSpans(fileBytes []byte, actions []Action, side string, extraS
 	for _, extra := range extraSpans {
 		if (side == "left" && (extra.Action == "delete" || extra.Action == "move")) ||
 			(side == "right" && (extra.Action == "insert" || extra.Action == "move")) {
-			addSpan(spansByLine, lineIndex, fileBytes, extra.StartByte, extra.EndByte, extra.Action, extra.ActionRef)
+			ref := extra.ActionRef
+			if ref != nil && extra.Action == "move" {
+				if enc := enclosingMove[ref]; enc != nil {
+					ref = enc
+				}
+			}
+			addSpan(spansByLine, lineIndex, fileBytes, extra.StartByte, extra.EndByte, extra.Action, ref)
 		}
 	}
 
@@ -350,10 +356,10 @@ func isOnlyNonCharacters(b []byte) bool {
 	return true
 }
 
-// nestedMoveActions drops moves nested inside a larger move across both sides.
-// Intact relocated blocks collapse to a single span, while moves that split
-// away or unbundle keep their own spans so both sides stay in sync.
-func nestedMoveActions(actions []Action) map[int]bool {
+// nestedMoveActions drops inner moves when an outer move already covers them on both sides.
+// If an inner piece broke away or got split up, it keeps its own move so both sides stay in sync.
+// It returns action indices to skip and a map from skipped inner moves to their enclosing outer move.
+func nestedMoveActions(actions []Action) (map[int]bool, map[*Action]*Action) {
 	type moveRange struct {
 		idx     int
 		sStart  uint32
@@ -415,10 +421,11 @@ func nestedMoveActions(actions []Action) map[int]bool {
 	})
 
 	skip := make(map[int]bool)
+	enclosing := make(map[*Action]*Action, len(moves))
 	var kept []moveRange
 
 	for _, r := range moves {
-		contained := false
+		var enclosingAct *Action
 		for _, k := range kept {
 			srcContained := k.sStart <= r.sStart && k.sEnd >= r.sEnd
 			dstContained := true
@@ -439,20 +446,21 @@ func nestedMoveActions(actions []Action) map[int]bool {
 				})
 
 				if !hasInterveningDel && !hasInterveningIns {
-					contained = true
+					enclosingAct = &actions[k.idx]
 					break
 				}
 			}
 		}
 
-		if contained {
+		if enclosingAct != nil {
 			skip[r.idx] = true
+			enclosing[&actions[r.idx]] = enclosingAct
 			continue
 		}
 		kept = append(kept, r)
 	}
 
-	return skip
+	return skip, enclosing
 }
 
 func nodeRefsEqual(n1, n2 *NodeRef) bool {
@@ -557,7 +565,7 @@ func ResolveMoveColor(act *Action, lineCount int) int {
 	if act == nil {
 		return 0
 	}
-	if act.GroupID == "" && lineCount > MaxUngroupedHighlightLines {
+	if act.GroupID == "" && (act.Subtree == nil || !*act.Subtree) && lineCount > MaxUngroupedHighlightLines {
 		return 0
 	}
 	return act.MoveColorIndex
