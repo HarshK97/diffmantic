@@ -109,14 +109,14 @@ func TopDown(
 						ambiguous := false
 
 						for _, ta := range candidates {
-							if ta != t2 && Isomorphic(t1, ta) {
+							if ta != t2 && (part == nil || part.CanMatch(t1, ta)) && Isomorphic(t1, ta) {
 								ambiguous = true
 								break
 							}
 						}
 						if !ambiguous {
 							for _, ta := range H1 {
-								if ta != t1 && Isomorphic(ta, t2) {
+								if ta != t1 && (part == nil || part.CanMatch(ta, t2)) && Isomorphic(ta, t2) {
 									ambiguous = true
 									break
 								}
