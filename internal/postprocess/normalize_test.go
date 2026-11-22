@@ -3,6 +3,7 @@ package postprocess
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -12,58 +13,29 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-// mkNode builds a node with children and sets Parent pointers.
-func mkNode(typ, label string, children ...*treesitter.ASTNode) *treesitter.ASTNode {
-	n := &treesitter.ASTNode{Type: typ, Label: label}
-	for _, c := range children {
-		c.Parent = n
-		n.Children = append(n.Children, c)
-	}
-	return n
-}
-
-// setLanguageRecursive assigns the language tag to n and all its descendants.
-func setLanguageRecursive(n *treesitter.ASTNode, lang string) {
-	if n == nil {
-		return
-	}
-	n.Language = lang
-	for _, c := range n.Children {
-		setLanguageRecursive(c, lang)
-	}
-}
-
 func TestNormalizeMovesByStructure(t *testing.T) {
 	ms := engine.NewMapping()
 
 	t.Run("demotes boilerplate if block across distant scope", func(t *testing.T) {
-		retStmt := mkNode("return_statement", "")
-		retStmt.Language = "go"
-		srcBody := mkNode("block", "", retStmt)
-		srcBody.Language = "go"
-		retStmt.Parent = srcBody
-		srcIf := mkNode("if_statement", "")
-		srcIf.Language = "go"
-		srcCond := mkNode("identifier", "err")
-		srcCond.Language = "go"
-		srcIf.Children = []*treesitter.ASTNode{srcCond, srcBody}
-		srcCond.Parent = srcIf
-		srcBody.Parent = srcIf
-		srcIf.StartRow = 10
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\tif err != nil {\n\t\treturn\n\t}\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 499) + "func g() {\n\tif err != nil {\n\t\treturn\n\t}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		retStmt2 := mkNode("return_statement", "")
-		retStmt2.Language = "go"
-		dstBody := mkNode("block", "", retStmt2)
-		dstBody.Language = "go"
-		retStmt2.Parent = dstBody
-		dstIf := mkNode("if_statement", "")
-		dstIf.Language = "go"
-		dstCond := mkNode("identifier", "err")
-		dstCond.Language = "go"
-		dstIf.Children = []*treesitter.ASTNode{dstCond, dstBody}
-		dstCond.Parent = dstIf
-		dstBody.Parent = dstIf
-		dstIf.StartRow = 500
+		srcIf, err := testutil.FindNodeByText(srcTree, src, "if err != nil {\n\t\treturn\n\t}", "if_statement")
+		if err != nil {
+			t.Fatalf("find srcIf: %v", err)
+		}
+		dstIf, err := testutil.FindNodeByText(dstTree, dst, "if err != nil {\n\t\treturn\n\t}", "if_statement")
+		if err != nil {
+			t.Fatalf("find dstIf: %v", err)
+		}
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Move, Node: srcIf, DestNode: dstIf})
@@ -79,17 +51,25 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("preserves declaration move", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcFunc.StartRow = 10
-		srcFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
-		srcFunc.Children[0].Parent = srcFunc
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func foo() {}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 499) + "func bar() {}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstFunc := mkNode("function_declaration", "bar")
-		dstFunc.Language = "go"
-		dstFunc.StartRow = 500
-		dstFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
-		dstFunc.Children[0].Parent = dstFunc
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func foo() {}", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func bar() {}", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Move, Node: srcFunc, DestNode: dstFunc})
@@ -103,13 +83,25 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	t.Run("suppresses orphaned update when paired move is demoted", func(t *testing.T) {
 		// Chawathe emits Update + Move on the same node when labels differ.
 		// When the Move is demoted, the Update must also be suppressed.
-		srcVal := mkNode("string", "main")
-		srcVal.Language = "javascript"
-		srcVal.StartRow = 5
+		src := []byte("const x = 'main';\n")
+		dst := []byte(strings.Repeat("\n", 500) + "const y = '2.0.0';\n")
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstVal := mkNode("string", "2.0.0")
-		dstVal.Language = "javascript"
-		dstVal.StartRow = 500
+		srcVal, err := testutil.FindNodeByText(srcTree, src, "'main'", "string")
+		if err != nil {
+			t.Fatalf("find srcVal: %v", err)
+		}
+		dstVal, err := testutil.FindNodeByText(dstTree, dst, "'2.0.0'", "string")
+		if err != nil {
+			t.Fatalf("find dstVal: %v", err)
+		}
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Update, Node: srcVal, DestNode: dstVal})
@@ -128,17 +120,28 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("preserves sibling relocation within same parent", func(t *testing.T) {
-		parent := mkNode("argument_list", "")
-		parent.Language = "go"
-		srcArg := mkNode("identifier", "a")
-		srcArg.Language = "go"
-		srcArg.Parent = parent
-		dstArg := mkNode("identifier", "b")
-		dstArg.Language = "go"
-		dstArg.Parent = parent
-		parent.Children = []*treesitter.ASTNode{srcArg, dstArg}
+		src := []byte("package main\nfunc f() {\n\tcall(argAlpha, argBeta)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		srcArg, err := testutil.FindNodeByText(srcTree, src, "argAlpha", "identifier")
+		if err != nil {
+			t.Fatalf("find srcArg: %v", err)
+		}
+		dstArg, err := testutil.FindNodeByText(srcTree, src, "argBeta", "identifier")
+		if err != nil {
+			t.Fatalf("find dstArg: %v", err)
+		}
+		parent := srcArg.Parent
 
 		ms2 := engine.NewMapping()
+		ms2.Add(srcFunc, srcFunc)
 		ms2.Add(parent, parent)
 
 		es := actions.NewEditScript()
@@ -151,26 +154,45 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("preserves one-hop container-preserving reparent", func(t *testing.T) {
-		// Value wrapped in a brand-new pair node, but the matched container is intact.
-		srcContainer := mkNode("object", "")
-		srcContainer.Language = "javascript"
-		srcVal := mkNode("string", "hello")
-		srcVal.Language = "javascript"
-		srcVal.Parent = srcContainer
-		srcContainer.Children = []*treesitter.ASTNode{srcVal}
+		// Value wrapped in a brand-new wrapper node, but the matched container is intact.
+		src := []byte("package main\nfunc f() {\n\tcall(valItem)\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tcall((valItem))\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstContainer := mkNode("object", "")
-		dstContainer.Language = "javascript"
-		dstPair := mkNode("pair", "")
-		dstPair.Language = "javascript"
-		dstPair.Parent = dstContainer
-		dstVal := mkNode("string", "hello")
-		dstVal.Language = "javascript"
-		dstVal.Parent = dstPair
-		dstPair.Children = []*treesitter.ASTNode{dstVal}
-		dstContainer.Children = []*treesitter.ASTNode{dstPair}
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		srcContainer, err := testutil.FindNodeByText(srcTree, src, "(valItem)", "argument_list")
+		if err != nil {
+			t.Fatalf("find srcContainer: %v", err)
+		}
+		dstContainer, err := testutil.FindNodeByText(dstTree, dst, "((valItem))", "argument_list")
+		if err != nil {
+			t.Fatalf("find dstContainer: %v", err)
+		}
+		srcVal, err := testutil.FindNodeByText(srcTree, src, "valItem", "identifier")
+		if err != nil {
+			t.Fatalf("find srcVal: %v", err)
+		}
+		dstVal, err := testutil.FindNodeByText(dstTree, dst, "valItem", "identifier")
+		if err != nil {
+			t.Fatalf("find dstVal: %v", err)
+		}
 
 		ms2 := engine.NewMapping()
+		ms2.Add(srcFunc, dstFunc)
 		ms2.Add(srcContainer, dstContainer)
 
 		es := actions.NewEditScript()
@@ -183,21 +205,33 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("preserves intra-scope move with moderate drift", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcStmt.StartRow = 10
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func foo() {\n\tstmtA()\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 29) + "func foo() {\n\tstmtA()\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstFunc := mkNode("function_declaration", "foo")
-		dstFunc.Language = "go"
-		dstStmt := mkNode("expression_statement", "")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstFunc
-		dstStmt.StartRow = 30
-		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func foo()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func foo()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms2 := engine.NewMapping()
 		ms2.Add(srcFunc, dstFunc)
@@ -212,21 +246,25 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("demotes cross-scope move with large drift and no mapped src decl", func(t *testing.T) {
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBlock
-		srcStmt.StartRow = 10
-		srcBlock.Children = []*treesitter.ASTNode{srcStmt}
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f1() {\n\tstmtA()\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 199) + "func f2() {\n\tstmtA()\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstStmt := mkNode("expression_statement", "")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBlock
-		dstStmt.StartRow = 200
-		dstBlock.Children = []*treesitter.ASTNode{dstStmt}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		// No parent mapping: cross-scope with no mapped enclosing decl.
 		ms2 := engine.NewMapping()
@@ -241,40 +279,33 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("demotes small inlined expression across different statements", func(t *testing.T) {
-		srcFn := mkNode("function_declaration", "init")
-		srcFn.Language = "go"
-		dstFn := mkNode("function_declaration", "init")
-		dstFn.Language = "go"
+		src := []byte("package main\n" + strings.Repeat("\n", 18) + "func init() {\n\tpairCount := len(pairs)\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 23) + "func init() {\n\ts := len(pairs)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcBlock.Parent = srcFn
-		srcFn.Children = []*treesitter.ASTNode{srcBlock}
-
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstBlock.Parent = dstFn
-		dstFn.Children = []*treesitter.ASTNode{dstBlock}
-
-		srcCall := mkNode("call_expression", "", mkNode("identifier", "len"), mkNode("argument_list", "", mkNode("identifier", "pairs")))
-		srcCall.Language = "go"
-		srcCall.StartRow = 20
-		srcCall.EndRow = 20
-		srcStmt := mkNode("assignment_statement", "", mkNode("identifier", "pairCount"), srcCall)
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBlock
-		srcCall.Parent = srcStmt
-		srcBlock.Children = []*treesitter.ASTNode{srcStmt}
-
-		dstCall := mkNode("call_expression", "", mkNode("identifier", "len"), mkNode("argument_list", "", mkNode("identifier", "pairs")))
-		dstCall.Language = "go"
-		dstCall.StartRow = 25
-		dstCall.EndRow = 25
-		dstStmt := mkNode("assignment_statement", "", mkNode("identifier", "s"), dstCall)
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBlock
-		dstCall.Parent = dstStmt
-		dstBlock.Children = []*treesitter.ASTNode{dstStmt}
+		srcFn, err := testutil.FindNodeByText(srcTree, src, "func init()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFn: %v", err)
+		}
+		dstFn, err := testutil.FindNodeByText(dstTree, dst, "func init()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFn: %v", err)
+		}
+		srcCall, err := testutil.FindNodeByText(srcTree, src, "len(pairs)", "call_expression")
+		if err != nil {
+			t.Fatalf("find srcCall: %v", err)
+		}
+		dstCall, err := testutil.FindNodeByText(dstTree, dst, "len(pairs)", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstCall: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcFn, dstFn)
@@ -293,55 +324,45 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("preserves substantial inlined call across different statements", func(t *testing.T) {
-		srcFn := mkNode("function_declaration", "init")
-		srcFn.Language = "go"
-		dstFn := mkNode("function_declaration", "init")
-		dstFn.Language = "go"
-
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcBlock.Parent = srcFn
-		srcFn.Children = []*treesitter.ASTNode{srcBlock}
-
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstBlock.Parent = dstFn
-		dstFn.Children = []*treesitter.ASTNode{dstBlock}
-
-		srcArgs := make([]*treesitter.ASTNode, 0, 10)
-		dstArgs := make([]*treesitter.ASTNode, 0, 10)
-		for range 10 {
-			a1 := mkNode("identifier", "arg")
-			a1.Language = "go"
-			srcArgs = append(srcArgs, a1)
-			a2 := mkNode("identifier", "arg")
-			a2.Language = "go"
-			dstArgs = append(dstArgs, a2)
+		src := []byte("package main\n" + strings.Repeat("\n", 18) + `func init() {
+	v := format(
+		a1, a2, a3, a4, a5,
+		a6, a7, a8, a9, a10,
+	)
+}
+`)
+		dst := []byte("package main\n" + strings.Repeat("\n", 23) + `func init() {
+	res := format(
+		a1, a2, a3, a4, a5,
+		a6, a7, a8, a9, a10,
+	)
+}
+`)
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		srcArgList := mkNode("argument_list", "", srcArgs...)
-		srcArgList.Language = "go"
-		dstArgList := mkNode("argument_list", "", dstArgs...)
-		dstArgList.Language = "go"
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcCall := mkNode("call_expression", "", mkNode("identifier", "format"), srcArgList)
-		srcCall.Language = "go"
-		srcCall.StartRow = 20
-		srcCall.EndRow = 22
-
-		dstCall := mkNode("call_expression", "", mkNode("identifier", "format"), dstArgList)
-		dstCall.Language = "go"
-		dstCall.StartRow = 25
-		dstCall.EndRow = 27
-
-		srcStmt := mkNode("assignment_statement", "", mkNode("identifier", "v"), srcCall)
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBlock
-		srcCall.Parent = srcStmt
-
-		dstStmt := mkNode("assignment_statement", "", mkNode("identifier", "res"), dstCall)
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBlock
-		dstCall.Parent = dstStmt
+		srcFn, err := testutil.FindNodeByText(srcTree, src, "func init()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFn: %v", err)
+		}
+		dstFn, err := testutil.FindNodeByText(dstTree, dst, "func init()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFn: %v", err)
+		}
+		srcCall, err := testutil.FindNodeByText(srcTree, src, "format(\n\t\ta1, a2, a3, a4, a5,\n\t\ta6, a7, a8, a9, a10,\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find srcCall: %v", err)
+		}
+		dstCall, err := testutil.FindNodeByText(dstTree, dst, "format(\n\t\ta1, a2, a3, a4, a5,\n\t\ta6, a7, a8, a9, a10,\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstCall: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcFn, dstFn)
@@ -357,8 +378,15 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("non-move actions pass through unchanged", func(t *testing.T) {
-		node := mkNode("identifier", "x")
-		node.Language = "go"
+		src := []byte("package main\nvar xVar int\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		node, err := testutil.FindNodeByText(srcTree, src, "xVar", "identifier")
+		if err != nil {
+			t.Fatalf("find node: %v", err)
+		}
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Insert, Node: node})
@@ -371,19 +399,33 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("nested move inside demoted ancestor move is suppressed", func(t *testing.T) {
-		childSrc := mkNode("identifier", "val")
-		childSrc.Language = "go"
-		parentSrc := mkNode("expression_statement", "", childSrc)
-		parentSrc.Language = "go"
-		parentSrc.StartRow = 10
-		parentSrc.EndRow = 10
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\tvalFunc()\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 499) + "func g() {\n\tvalFunc()\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		childDst := mkNode("identifier", "val")
-		childDst.Language = "go"
-		parentDst := mkNode("expression_statement", "", childDst)
-		parentDst.Language = "go"
-		parentDst.StartRow = 500
-		parentDst.EndRow = 500
+		parentSrc, err := testutil.FindNodeByText(srcTree, src, "valFunc()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find parentSrc: %v", err)
+		}
+		childSrc, err := testutil.FindNodeByText(srcTree, src, "valFunc()", "call_expression")
+		if err != nil {
+			t.Fatalf("find childSrc: %v", err)
+		}
+		parentDst, err := testutil.FindNodeByText(dstTree, dst, "valFunc()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find parentDst: %v", err)
+		}
+		childDst, err := testutil.FindNodeByText(dstTree, dst, "valFunc()", "call_expression")
+		if err != nil {
+			t.Fatalf("find childDst: %v", err)
+		}
 
 		msNested := engine.NewMapping()
 		msNested.Add(parentSrc, parentDst)
@@ -406,35 +448,33 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("nested move inside demoted ancestor wrapper is not suppressed and demotes to delete and insert", func(t *testing.T) {
-		childSrc := mkNode("call_expression", "r.IsDeclaration(n1.Type)")
-		childSrc.Language = "go"
-		childSrc.StartRow = 10
-		childSrc.EndRow = 10
-		binSrc := mkNode("binary_expression", "", childSrc)
-		binSrc.Language = "go"
-		binSrc.StartRow = 10
-		binSrc.EndRow = 10
-		childSrc.Parent = binSrc
-		parentSrc := mkNode("parenthesized_expression", "", binSrc)
-		parentSrc.Language = "go"
-		parentSrc.StartRow = 10
-		parentSrc.EndRow = 10
-		binSrc.Parent = parentSrc
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\t_ = (checkNode)\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 499) + "func g() {\n\t_ = (checkNode)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		childDst := mkNode("call_expression", "r.IsDeclaration(n1.Type)")
-		childDst.Language = "go"
-		childDst.StartRow = 500
-		childDst.EndRow = 500
-		binDst := mkNode("binary_expression", "", childDst)
-		binDst.Language = "go"
-		binDst.StartRow = 500
-		binDst.EndRow = 500
-		childDst.Parent = binDst
-		parentDst := mkNode("parenthesized_expression", "", binDst)
-		parentDst.Language = "go"
-		parentDst.StartRow = 500
-		parentDst.EndRow = 500
-		binDst.Parent = parentDst
+		parentSrc, err := testutil.FindNodeByText(srcTree, src, "(checkNode)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find parentSrc: %v", err)
+		}
+		childSrc, err := testutil.FindNodeByText(srcTree, src, "checkNode", "identifier")
+		if err != nil {
+			t.Fatalf("find childSrc: %v", err)
+		}
+		parentDst, err := testutil.FindNodeByText(dstTree, dst, "(checkNode)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find parentDst: %v", err)
+		}
+		childDst, err := testutil.FindNodeByText(dstTree, dst, "checkNode", "identifier")
+		if err != nil {
+			t.Fatalf("find childDst: %v", err)
+		}
 
 		msNested := engine.NewMapping()
 		msNested.Add(parentSrc, parentDst)
@@ -461,50 +501,41 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 	})
 
 	t.Run("descendants without own move are evicted and demoted to full subtree delete and insert", func(t *testing.T) {
-		childSrc := mkNode("call_expression", "min(v1, v2)")
-		childSrc.Language = "go"
-		childSrc.StartRow = 110
-		childSrc.EndRow = 110
-		parentSrc := mkNode("expression_list", "", childSrc)
-		parentSrc.Language = "go"
-		parentSrc.StartRow = 110
-		parentSrc.EndRow = 110
-		childSrc.Parent = parentSrc
+		src := []byte("package main\n" + strings.Repeat("\n", 99) + "func f() {\n" + strings.Repeat("\n", 9) + "\ttargetVar = min(v1, v2)\n" + strings.Repeat("\n", 39) + "}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 99) + "func f() {\n" + strings.Repeat("\n", 8) + "\tresVar := min(v1, v2)\n" + strings.Repeat("\n", 40) + "}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		childDst := mkNode("call_expression", "min(v1, v2)")
-		childDst.Language = "go"
-		childDst.StartRow = 109
-		childDst.EndRow = 109
-		parentDst := mkNode("expression_list", "", childDst)
-		parentDst.Language = "go"
-		parentDst.StartRow = 109
-		parentDst.EndRow = 109
-		childDst.Parent = parentDst
-
-		// Enclosing statements on different lines so cross-statement guard demotes move.
-		stmtSrc := mkNode("assignment_statement", "", parentSrc)
-		stmtSrc.Language = "go"
-		stmtSrc.StartRow = 110
-		stmtSrc.EndRow = 110
-		parentSrc.Parent = stmtSrc
-
-		stmtDst := mkNode("short_var_declaration", "", parentDst)
-		stmtDst.Language = "go"
-		stmtDst.StartRow = 109
-		stmtDst.EndRow = 109
-		parentDst.Parent = stmtDst
-
-		declSrc := mkNode("function_declaration", "", stmtSrc)
-		declSrc.Language = "go"
-		declSrc.StartRow = 100
-		declSrc.EndRow = 150
-		stmtSrc.Parent = declSrc
-
-		declDst := mkNode("function_declaration", "", stmtDst)
-		declDst.Language = "go"
-		declDst.StartRow = 100
-		declDst.EndRow = 150
-		stmtDst.Parent = declDst
+		declSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find declSrc: %v", err)
+		}
+		declDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find declDst: %v", err)
+		}
+		parentSrc, err := testutil.FindNodeByText(srcTree, src, "min(v1, v2)", "expression_list")
+		if err != nil {
+			t.Fatalf("find parentSrc: %v", err)
+		}
+		parentDst, err := testutil.FindNodeByText(dstTree, dst, "min(v1, v2)", "expression_list")
+		if err != nil {
+			t.Fatalf("find parentDst: %v", err)
+		}
+		childSrc, err := testutil.FindNodeByText(srcTree, src, "min(v1, v2)", "call_expression")
+		if err != nil {
+			t.Fatalf("find childSrc: %v", err)
+		}
+		childDst, err := testutil.FindNodeByText(dstTree, dst, "min(v1, v2)", "call_expression")
+		if err != nil {
+			t.Fatalf("find childDst: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(declSrc, declDst)
@@ -547,67 +578,91 @@ func TestShouldDemoteMove(t *testing.T) {
 	r := rules.Get("go")
 
 	t.Run("returns false for sibling relocation", func(t *testing.T) {
-		parent := mkNode("argument_list", "")
-		parent.Language = "go"
-		src := mkNode("identifier", "a")
-		src.Language = "go"
-		src.Parent = parent
-		dst := mkNode("identifier", "b")
-		dst.Language = "go"
-		dst.Parent = parent
-		parent.Children = []*treesitter.ASTNode{src, dst}
+		src := []byte("package main\nfunc f() {\n\tcall(argAlpha, argBeta)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		srcNode, err := testutil.FindNodeByText(srcTree, src, "argAlpha", "identifier")
+		if err != nil {
+			t.Fatalf("find src: %v", err)
+		}
+		dstNode, err := testutil.FindNodeByText(srcTree, src, "argBeta", "identifier")
+		if err != nil {
+			t.Fatalf("find dst: %v", err)
+		}
+		parent := srcNode.Parent
 
 		ms := engine.NewMapping()
+		ms.Add(srcFunc, srcFunc)
 		ms.Add(parent, parent)
 
-		if shouldDemoteMove(src, dst, ms, r) {
+		if shouldDemoteMove(srcNode, dstNode, ms, r) {
 			t.Error("expected sibling relocation to not be demoted")
 		}
 	})
 
 	t.Run("demotes sibling relocation across different enclosing scopes", func(t *testing.T) {
-		fn1 := mkNode("function_declaration", "funcA")
-		fn1.Language = "go"
-		parent1 := mkNode("binary_expression", "")
-		parent1.Language = "go"
-		parent1.Parent = fn1
-		src := mkNode("identifier", "a")
-		src.Language = "go"
-		src.Parent = parent1
-		parent1.Children = []*treesitter.ASTNode{src}
+		src := []byte("package main\nfunc funcA() {\n\t_ = varAlpha + 1\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 499) + "func funcB() {\n\t_ = varBeta + 1\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		fn2 := mkNode("function_declaration", "funcB")
-		fn2.Language = "go"
-		parent2 := mkNode("binary_expression", "")
-		parent2.Language = "go"
-		parent2.Parent = fn2
-		parent2.StartRow = 500
-		parent2.EndRow = 500
-		dst := mkNode("identifier", "b")
-		dst.Language = "go"
-		dst.Parent = parent2
-		dst.StartRow = 500
-		dst.EndRow = 500
-		parent2.Children = []*treesitter.ASTNode{dst}
+		parent1, err := testutil.FindNodeByText(srcTree, src, "varAlpha + 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find parent1: %v", err)
+		}
+		srcNode, err := testutil.FindNodeByText(srcTree, src, "varAlpha", "identifier")
+		if err != nil {
+			t.Fatalf("find srcNode: %v", err)
+		}
+		parent2, err := testutil.FindNodeByText(dstTree, dst, "varBeta + 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find parent2: %v", err)
+		}
+		dstNode, err := testutil.FindNodeByText(dstTree, dst, "varBeta", "identifier")
+		if err != nil {
+			t.Fatalf("find dstNode: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(parent1, parent2)
 
-		if !shouldDemoteMove(src, dst, ms, r) {
+		if !shouldDemoteMove(srcNode, dstNode, ms, r) {
 			t.Error("expected sibling relocation across different enclosing functions to be demoted")
 		}
 	})
 
 	t.Run("returns false for declaration move", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
-		srcFunc.Children[0].Parent = srcFunc
+		src := []byte("package main\nfunc foo() {}\n")
+		dst := []byte("package main\nfunc bar() {}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstFunc := mkNode("function_declaration", "bar")
-		dstFunc.Language = "go"
-		dstFunc.Children = []*treesitter.ASTNode{mkNode("block", "")}
-		dstFunc.Children[0].Parent = dstFunc
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func foo() {}", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func bar() {}", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
 
 		ms := engine.NewMapping()
 
@@ -617,33 +672,25 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("returns true for boilerplate if block across distant scope", func(t *testing.T) {
-		retStmt := mkNode("return_statement", "")
-		retStmt.Language = "go"
-		srcBody := mkNode("block", "", retStmt)
-		srcBody.Language = "go"
-		retStmt.Parent = srcBody
-		srcIf := mkNode("if_statement", "")
-		srcIf.Language = "go"
-		srcCond := mkNode("identifier", "err")
-		srcCond.Language = "go"
-		srcIf.Children = []*treesitter.ASTNode{srcCond, srcBody}
-		srcCond.Parent = srcIf
-		srcBody.Parent = srcIf
-		srcIf.StartRow = 10
+		src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\tif err != nil {\n\t\treturn\n\t}\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 499) + "func g() {\n\tif err != nil {\n\t\treturn\n\t}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		retStmt2 := mkNode("return_statement", "")
-		retStmt2.Language = "go"
-		dstBody := mkNode("block", "", retStmt2)
-		dstBody.Language = "go"
-		retStmt2.Parent = dstBody
-		dstIf := mkNode("if_statement", "")
-		dstIf.Language = "go"
-		dstCond := mkNode("identifier", "err")
-		dstCond.Language = "go"
-		dstIf.Children = []*treesitter.ASTNode{dstCond, dstBody}
-		dstCond.Parent = dstIf
-		dstBody.Parent = dstIf
-		dstIf.StartRow = 500
+		srcIf, err := testutil.FindNodeByText(srcTree, src, "if err != nil {\n\t\treturn\n\t}", "if_statement")
+		if err != nil {
+			t.Fatalf("find srcIf: %v", err)
+		}
+		dstIf, err := testutil.FindNodeByText(dstTree, dst, "if err != nil {\n\t\treturn\n\t}", "if_statement")
+		if err != nil {
+			t.Fatalf("find dstIf: %v", err)
+		}
 
 		ms := engine.NewMapping()
 
@@ -653,8 +700,17 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("returns false for nil arguments", func(t *testing.T) {
+		src := []byte("package main\nvar xVar int\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		node, err := testutil.FindNodeByText(srcTree, src, "xVar", "identifier")
+		if err != nil {
+			t.Fatalf("find node: %v", err)
+		}
+
 		ms := engine.NewMapping()
-		node := mkNode("identifier", "x")
 		if shouldDemoteMove(nil, node, ms, r) {
 			t.Error("expected false for nil src")
 		}
@@ -670,142 +726,155 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("returns true for cross-scope move with asymmetric destination mass", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "funcA")
-		srcFunc.Language = "go"
-		dstFunc := mkNode("function_declaration", "funcB")
-		dstFunc.Language = "go"
-
-		srcCall := mkNode("call_expression", "")
-		srcCall.Language = "go"
-		srcCall.Parent = srcFunc
-		srcCall.StartRow = 10
-		srcCall.EndRow = 25
-		for range 40 {
-			c := mkNode("identifier", "arg")
-			c.Language = "go"
-			c.Parent = srcCall
-			srcCall.Children = append(srcCall.Children, c)
+		// Large src call with 40 arguments, tiny dst call with 1 argument across distant scopes (line 10 vs 350)
+		srcArgs := make([]string, 40)
+		for i := range srcArgs {
+			srcArgs[i] = fmt.Sprintf("arg%d", i)
+		}
+		src := []byte("package main\nfunc funcA() {\n\tbigCall(" + strings.Join(srcArgs, ", ") + ")\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 350) + "func funcB() {\n\tsmallCall(argX)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
 
-		dstCall := mkNode("call_expression", "")
-		dstCall.Language = "go"
-		dstCall.Parent = dstFunc
-		dstCall.StartRow = 350
-		dstCall.EndRow = 353
-		for range 5 {
-			c := mkNode("identifier", "arg")
-			c.Language = "go"
-			c.Parent = dstCall
-			dstCall.Children = append(dstCall.Children, c)
+		srcCall, err := testutil.FindNodeByText(srcTree, src, "bigCall("+strings.Join(srcArgs, ", ")+")", "call_expression")
+		if err != nil {
+			t.Fatalf("find srcCall: %v", err)
+		}
+		dstCall, err := testutil.FindNodeByText(dstTree, dst, "smallCall(argX)", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstCall: %v", err)
 		}
 
 		ms := engine.NewMapping()
-		// Even if the deleted call was huge, the destination snippet is too small
-		// to justify a cross-scope move.
 		if !shouldDemoteMove(srcCall, dstCall, ms, r) {
 			t.Error("expected cross-scope move with tiny destination to be demoted via bidirectional scoring")
 		}
 	})
 
 	t.Run("returns false for cross-scope move with substantial mass on both ends", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "funcA")
-		srcFunc.Language = "go"
-		dstFunc := mkNode("function_declaration", "funcB")
-		dstFunc.Language = "go"
-
-		srcCall := mkNode("call_expression", "")
-		srcCall.Language = "go"
-		srcCall.Parent = srcFunc
-		srcCall.StartRow = 10
-		srcCall.EndRow = 40
-		for range 80 {
-			c := mkNode("identifier", "arg")
-			c.Language = "go"
-			c.Parent = srcCall
-			srcCall.Children = append(srcCall.Children, c)
+		// Substantial mass (80 arguments across multiple lines) on both ends clears the cross-scope drift penalty.
+		args := make([]string, 80)
+		for i := range args {
+			args[i] = fmt.Sprintf("arg%d", i)
+		}
+		src := []byte("package main\nfunc funcA() {\n\tbigCall(\n\t\t" + strings.Join(args, ",\n\t\t") + ",\n\t)\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 350) + "func funcB() {\n\tbigCall(\n\t\t" + strings.Join(args, ",\n\t\t") + ",\n\t)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
 
-		dstCall := mkNode("call_expression", "")
-		dstCall.Language = "go"
-		dstCall.Parent = dstFunc
-		dstCall.StartRow = 350
-		dstCall.EndRow = 380
-		for range 80 {
-			c := mkNode("identifier", "arg")
-			c.Language = "go"
-			c.Parent = dstCall
-			dstCall.Children = append(dstCall.Children, c)
+		srcCall, err := testutil.FindNodeByText(srcTree, src, "bigCall(\n\t\t"+strings.Join(args, ",\n\t\t")+",\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find srcCall: %v", err)
+		}
+		dstCall, err := testutil.FindNodeByText(dstTree, dst, "bigCall(\n\t\t"+strings.Join(args, ",\n\t\t")+",\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstCall: %v", err)
 		}
 
 		ms := engine.NewMapping()
-		// Substantial mass on both sides clears the cross-scope drift penalty.
 		if shouldDemoteMove(srcCall, dstCall, ms, r) {
 			t.Error("expected cross-scope move with substantial mass on both ends to be preserved")
 		}
 	})
 
 	t.Run("demotes wrapper/block moves when no child moves with them into destination", func(t *testing.T) {
-		// (r == nil && (...)) moving to (r == nil && rules.IsDeclaration(...))
-		// where no leaf tokens inside src move to dst.
-		srcParen := mkNode("parenthesized_expression", "")
-		srcParen.Language = "go"
-		srcBin := mkNode("binary_expression", "")
-		srcBin.Language = "go"
-		srcBin.Parent = srcParen
-		srcParen.Children = append(srcParen.Children, srcBin)
+		src := []byte("package main\nfunc f() {\n\t_ = (a && b)\n}\n")
+		dst := []byte("package main\nfunc g() {\n\t_ = (c && d)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcOp := mkNode("logical_operator_literal", "&&")
-		srcOp.Language = "go"
-		srcOp.Parent = srcBin
-		srcBin.Children = append(srcBin.Children, srcOp)
-
-		dstParen := mkNode("parenthesized_expression", "")
-		dstParen.Language = "go"
-		dstBin := mkNode("binary_expression", "")
-		dstBin.Language = "go"
-		dstBin.Parent = dstParen
-		dstParen.Children = append(dstParen.Children, dstBin)
-
-		dstOp := mkNode("logical_operator_literal", "&&")
-		dstOp.Language = "go"
-		dstOp.Parent = dstBin
-		dstBin.Children = append(dstBin.Children, dstOp)
+		srcParen, err := testutil.FindNodeByText(srcTree, src, "(a && b)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find srcParen: %v", err)
+		}
+		dstParen, err := testutil.FindNodeByText(dstTree, dst, "(c && d)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find dstParen: %v", err)
+		}
+		srcBin, err := testutil.FindNodeByText(srcTree, src, "a && b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find srcBin: %v", err)
+		}
+		dstBin, err := testutil.FindNodeByText(dstTree, dst, "c && d", "binary_expression")
+		if err != nil {
+			t.Fatalf("find dstBin: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcParen, dstParen)
 		ms.Add(srcBin, dstBin)
-		ms.Add(srcOp, dstOp)
 
-		// Only the operator and internal binary_expression match, no leaf expressions/identifiers.
+		// Only the wrapper and internal binary_expression match, no leaf expressions/identifiers.
 		if !shouldDemoteMove(srcParen, dstParen, ms, r) {
 			t.Error("expected empty wrapper move with no substantive child to be demoted")
 		}
 	})
 
 	t.Run("preserves wrapper move when substantive leaf moves with it into destination", func(t *testing.T) {
-		srcParen := mkNode("parenthesized_expression", "")
-		srcParen.Language = "go"
-		srcIdent := mkNode("identifier", "foo")
-		srcIdent.Language = "go"
-		srcIdent.Parent = srcParen
-		srcParen.Children = append(srcParen.Children, srcIdent)
+		src := []byte("package main\nfunc f() {\n\tcall((fooItem))\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tcall((fooItem))\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstParen := mkNode("parenthesized_expression", "")
-		dstParen.Language = "go"
-		dstIdent := mkNode("identifier", "foo")
-		dstIdent.Language = "go"
-		dstIdent.Parent = dstParen
-		dstParen.Children = append(dstParen.Children, dstIdent)
-
-		// Create sibling relocation context (same parent) so it isn't demoted by sibling/threshold
-		parent1 := mkNode("call_expression", "")
-		parent1.Language = "go"
-		parent2 := mkNode("call_expression", "")
-		parent2.Language = "go"
-		srcParen.Parent = parent1
-		dstParen.Parent = parent2
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		parent1, err := testutil.FindNodeByText(srcTree, src, "((fooItem))", "argument_list")
+		if err != nil {
+			t.Fatalf("find parent1: %v", err)
+		}
+		parent2, err := testutil.FindNodeByText(dstTree, dst, "((fooItem))", "argument_list")
+		if err != nil {
+			t.Fatalf("find parent2: %v", err)
+		}
+		srcParen, err := testutil.FindNodeByText(srcTree, src, "(fooItem)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find srcParen: %v", err)
+		}
+		dstParen, err := testutil.FindNodeByText(dstTree, dst, "(fooItem)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find dstParen: %v", err)
+		}
+		srcIdent, err := testutil.FindNodeByText(srcTree, src, "fooItem", "identifier")
+		if err != nil {
+			t.Fatalf("find srcIdent: %v", err)
+		}
+		dstIdent, err := testutil.FindNodeByText(dstTree, dst, "fooItem", "identifier")
+		if err != nil {
+			t.Fatalf("find dstIdent: %v", err)
+		}
 
 		ms := engine.NewMapping()
+		ms.Add(srcFunc, dstFunc)
 		ms.Add(parent1, parent2)
 		ms.Add(srcParen, dstParen)
 		ms.Add(srcIdent, dstIdent)
@@ -816,39 +885,53 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("demotes cross-scope container move with low retention", func(t *testing.T) {
-		fn1 := mkNode("function_declaration", "f1")
-		fn1.Language = "go"
-		fn2 := mkNode("function_declaration", "f2")
-		fn2.Language = "go"
-
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcBlock.Parent = fn1
-		fn1.Children = append(fn1.Children, srcBlock)
-
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstBlock.Parent = fn2
-		fn2.Children = append(fn2.Children, dstBlock)
-
+		srcLines := make([]string, 20)
+		dstLines := make([]string, 20)
 		for i := range 20 {
-			c := mkNode("identifier", fmt.Sprintf("src%d", i))
-			c.Language = "go"
-			c.Parent = srcBlock
-			srcBlock.Children = append(srcBlock.Children, c)
+			srcLines[i] = fmt.Sprintf("\t\t_ = src_%02d", i)
+			dstLines[i] = fmt.Sprintf("\t\t_ = dst_%02d", i)
 		}
-		for i := range 20 {
-			c := mkNode("identifier", fmt.Sprintf("dst%d", i))
-			c.Language = "go"
-			c.Parent = dstBlock
-			dstBlock.Children = append(dstBlock.Children, c)
+		src := []byte("package main\nfunc f1() {\n\t{\n" + strings.Join(srcLines, "\n") + "\n\t}\n}\n")
+		dst := []byte("package main\nfunc f2() {\n\t{\n" + strings.Join(dstLines, "\n") + "\n\t}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n"+strings.Join(srcLines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n"+strings.Join(dstLines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		src0, err := testutil.FindNodeByText(srcTree, src, "src_00", "identifier")
+		if err != nil {
+			t.Fatalf("find src0: %v", err)
+		}
+		dst0, err := testutil.FindNodeByText(dstTree, dst, "dst_00", "identifier")
+		if err != nil {
+			t.Fatalf("find dst0: %v", err)
+		}
+		src1, err := testutil.FindNodeByText(srcTree, src, "src_01", "identifier")
+		if err != nil {
+			t.Fatalf("find src1: %v", err)
+		}
+		dst1, err := testutil.FindNodeByText(dstTree, dst, "dst_01", "identifier")
+		if err != nil {
+			t.Fatalf("find dst1: %v", err)
 		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcBlock, dstBlock)
 		// Map only 2 out of 20 leaves (10% retention < 25%).
-		ms.Add(srcBlock.Children[0], dstBlock.Children[0])
-		ms.Add(srcBlock.Children[1], dstBlock.Children[1])
+		ms.Add(src0, dst0)
+		ms.Add(src1, dst1)
 
 		if !shouldDemoteMove(srcBlock, dstBlock, ms, r) {
 			t.Error("expected cross-scope container move with low retention (10%) to be demoted")
@@ -856,43 +939,43 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("preserves cross-scope container move with high retention", func(t *testing.T) {
-		fn1 := mkNode("function_declaration", "f1")
-		fn1.Language = "go"
-		fn2 := mkNode("function_declaration", "f2")
-		fn2.Language = "go"
-
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcBlock.Parent = fn1
-		srcBlock.StartRow = 10
-		srcBlock.EndRow = 30
-		fn1.Children = append(fn1.Children, srcBlock)
-
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstBlock.Parent = fn2
-		dstBlock.StartRow = 35
-		dstBlock.EndRow = 55
-		fn2.Children = append(fn2.Children, dstBlock)
-
+		lines := make([]string, 20)
 		for i := range 20 {
-			c := mkNode("identifier", fmt.Sprintf("var%d", i))
-			c.Language = "go"
-			c.Parent = srcBlock
-			srcBlock.Children = append(srcBlock.Children, c)
+			lines[i] = fmt.Sprintf("\t\tval_%02d++", i)
 		}
-		for i := range 20 {
-			c := mkNode("identifier", fmt.Sprintf("var%d", i))
-			c.Language = "go"
-			c.Parent = dstBlock
-			dstBlock.Children = append(dstBlock.Children, c)
+		src := []byte("package main\nfunc f1() {\n\t{\n" + strings.Join(lines, "\n") + "\n\t}\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 25) + "func f2() {\n\t{\n" + strings.Join(lines, "\n") + "\n\t}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n"+strings.Join(lines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n"+strings.Join(lines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
 		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcBlock, dstBlock)
 		// Map 18 out of 20 leaves (90% retention >= 25%).
 		for i := range 18 {
-			ms.Add(srcBlock.Children[i], dstBlock.Children[i])
+			sNode, err := testutil.FindNodeByText(srcTree, src, fmt.Sprintf("val_%02d", i), "identifier")
+			if err != nil {
+				t.Fatalf("find val_%02d: %v", i, err)
+			}
+			dNode, err := testutil.FindNodeByText(dstTree, dst, fmt.Sprintf("val_%02d", i), "identifier")
+			if err != nil {
+				t.Fatalf("find val_%02d: %v", i, err)
+			}
+			ms.Add(sNode, dNode)
 		}
 
 		if shouldDemoteMove(srcBlock, dstBlock, ms, r) {
@@ -901,50 +984,53 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("anchor protection preserves high-value node despite cascade eviction", func(t *testing.T) {
-		fn1 := mkNode("function_declaration", "handlerA")
-		fn1.Language = "go"
-		fn2 := mkNode("function_declaration", "handlerB")
-		fn2.Language = "go"
-
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcBlock.Parent = fn1
-		srcBlock.StartRow = 10
-		srcBlock.EndRow = 20
-		fn1.Children = append(fn1.Children, srcBlock)
-
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstBlock.Parent = fn2
-		dstBlock.StartRow = 210
-		dstBlock.EndRow = 220
-		fn2.Children = append(fn2.Children, dstBlock)
-
+		lines := make([]string, 20)
 		for i := range 20 {
-			c := mkNode("identifier", fmt.Sprintf("x%d", i))
-			c.Language = "go"
-			c.Parent = srcBlock
-			srcBlock.Children = append(srcBlock.Children, c)
+			lines[i] = fmt.Sprintf("\t\t_ = xVar_%02d", i)
+		}
+		src := []byte("package main\nfunc handlerA() {\n\t{\n" + strings.Join(lines, "\n") + "\n\t}\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 200) + "func handlerB() {\n\t{\n" + strings.Join(lines, "\n") + "\n\t}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-			d := mkNode("identifier", fmt.Sprintf("x%d", i))
-			d.Language = "go"
-			d.Parent = dstBlock
-			dstBlock.Children = append(dstBlock.Children, d)
+		srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n"+strings.Join(lines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n"+strings.Join(lines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
 		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcBlock, dstBlock)
+		srcLeaves := make([]*treesitter.ASTNode, 20)
+		dstLeaves := make([]*treesitter.ASTNode, 20)
 		for i := range 20 {
-			ms.Add(srcBlock.Children[i], dstBlock.Children[i])
+			sNode, err := testutil.FindNodeByText(srcTree, src, fmt.Sprintf("xVar_%02d", i), "identifier")
+			if err != nil {
+				t.Fatalf("find xVar_%02d: %v", i, err)
+			}
+			dNode, err := testutil.FindNodeByText(dstTree, dst, fmt.Sprintf("xVar_%02d", i), "identifier")
+			if err != nil {
+				t.Fatalf("find xVar_%02d: %v", i, err)
+			}
+			srcLeaves[i] = sNode
+			dstLeaves[i] = dNode
+			ms.Add(sNode, dNode)
 		}
 
 		// Evict 8 of 20 leaves: retention drops from 100% to 60%.
-		// Score after churn penalty drops from 62 to 37, which is below threshold (70).
-		// Anchor protection (score >= 30, intrinsic retention 100%) prevents demotion.
 		evicted := make(map[*treesitter.ASTNode]struct{})
 		for i := range 8 {
-			evicted[srcBlock.Children[i]] = struct{}{}
-			evicted[dstBlock.Children[i]] = struct{}{}
+			evicted[srcLeaves[i]] = struct{}{}
+			evicted[dstLeaves[i]] = struct{}{}
 		}
 
 		if shouldDemoteMove(srcBlock, dstBlock, ms, r, evicted) {
@@ -953,44 +1039,53 @@ func TestShouldDemoteMove(t *testing.T) {
 	})
 
 	t.Run("anchor protection does not exempt node when cascade caused no retention loss", func(t *testing.T) {
-		fn1 := mkNode("function_declaration", "handlerA")
-		fn1.Language = "go"
-		fn2 := mkNode("function_declaration", "handlerB")
-		fn2.Language = "go"
-
-		srcBlock := mkNode("block", "")
-		srcBlock.Language = "go"
-		srcBlock.Parent = fn1
-		srcBlock.StartRow = 10
-		srcBlock.EndRow = 20
-		fn1.Children = append(fn1.Children, srcBlock)
-
-		dstBlock := mkNode("block", "")
-		dstBlock.Language = "go"
-		dstBlock.Parent = fn2
-		dstBlock.StartRow = 210
-		dstBlock.EndRow = 220
-		fn2.Children = append(fn2.Children, dstBlock)
-
+		lines := make([]string, 8)
 		for i := range 8 {
-			c := mkNode("identifier", fmt.Sprintf("x%d", i))
-			c.Language = "go"
-			c.Parent = srcBlock
-			srcBlock.Children = append(srcBlock.Children, c)
+			lines[i] = fmt.Sprintf("\t\t_ = xVal%d", i)
+		}
+		src := []byte("package main\nfunc handlerA() {\n\t{\n" + strings.Join(lines, "\n") + "\n\t}\n}\n")
+		dst := []byte("package main\n" + strings.Repeat("\n", 200) + "func handlerB() {\n\t{\n" + strings.Join(lines, "\n") + "\n\t}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-			d := mkNode("identifier", fmt.Sprintf("x%d", i))
-			d.Language = "go"
-			d.Parent = dstBlock
-			dstBlock.Children = append(dstBlock.Children, d)
+		srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n"+strings.Join(lines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n"+strings.Join(lines, "\n")+"\n\t}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
 		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcBlock, dstBlock)
 		for i := range 8 {
-			ms.Add(srcBlock.Children[i], dstBlock.Children[i])
+			sNode, err := testutil.FindNodeByText(srcTree, src, fmt.Sprintf("xVal%d", i), "identifier")
+			if err != nil {
+				t.Fatalf("find xVal%d: %v", i, err)
+			}
+			dNode, err := testutil.FindNodeByText(dstTree, dst, fmt.Sprintf("xVal%d", i), "identifier")
+			if err != nil {
+				t.Fatalf("find xVal%d: %v", i, err)
+			}
+			ms.Add(sNode, dNode)
 		}
 
-		unrelatedNode := mkNode("identifier", "unrelated")
+		unrelatedCode := []byte("package main\nvar unrelatedVar int\n")
+		unrelatedTree, err := treesitter.Parse(unrelatedCode, "unrelated.go")
+		if err != nil {
+			t.Fatalf("parse unrelated: %v", err)
+		}
+		unrelatedNode, err := testutil.FindNodeByText(unrelatedTree, unrelatedCode, "unrelatedVar", "identifier")
+		if err != nil {
+			t.Fatalf("find unrelated: %v", err)
+		}
 		evicted := map[*treesitter.ASTNode]struct{}{unrelatedNode: {}}
 
 		// Node had 0 cascade degradation (retention == preEvictionRetention == 1.0),
@@ -1003,53 +1098,59 @@ func TestShouldDemoteMove(t *testing.T) {
 
 func TestNormalizeMovesByStructure_ScopedEviction(t *testing.T) {
 	// Container t1 moves across statements to dst1, but contains a substantial child call c1 mapped to c2 elsewhere.
-	var srcArgs []*treesitter.ASTNode
-	var dstArgs []*treesitter.ASTNode
-	for range 10 {
-		a1 := mkNode("identifier", "arg")
-		a1.Language = "go"
-		srcArgs = append(srcArgs, a1)
-		a2 := mkNode("identifier", "arg")
-		a2.Language = "go"
-		dstArgs = append(dstArgs, a2)
+	src := []byte("package main\n" + strings.Repeat("\n", 9) + `func f() {
+	_ = (format(
+		a1, a2, a3, a4, a5,
+		a6, a7, a8, a9, a10,
+	))
+}
+`)
+	dst := []byte("package main\n" + strings.Repeat("\n", 49) + `func f() {
+	_ = (empty())
+` + strings.Repeat("\n", 50) + `	format(
+		a1, a2, a3, a4, a5,
+		a6, a7, a8, a9, a10,
+	)
+}
+`)
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
 	}
-	srcArgList := mkNode("argument_list", "", srcArgs...)
-	srcArgList.Language = "go"
-	for _, a := range srcArgs {
-		a.Parent = srcArgList
-	}
-	dstArgList := mkNode("argument_list", "", dstArgs...)
-	dstArgList.Language = "go"
-	for _, a := range dstArgs {
-		a.Parent = dstArgList
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
 	}
 
-	c1 := mkNode("call_expression", "", mkNode("identifier", "format"), srcArgList)
-	c1.Language = "go"
-	c1.StartRow = 10
-	c1.EndRow = 12
-	srcArgList.Parent = c1
-	c1.Children[0].Parent = c1
+	srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find srcFunc: %v", err)
+	}
+	dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find dstFunc: %v", err)
+	}
 
-	t1 := mkNode("parenthesized_expression", "", c1)
-	t1.Language = "go"
-	c1.Parent = t1
-	t1.StartRow = 10
-	t1.EndRow = 12
-
-	dst1 := mkNode("parenthesized_expression", "")
-	dst1.Language = "go"
-	dst1.StartRow = 50
-	dst1.EndRow = 50
-
-	c2 := mkNode("call_expression", "", mkNode("identifier", "format"), dstArgList)
-	c2.Language = "go"
-	c2.StartRow = 100
-	c2.EndRow = 102
-	dstArgList.Parent = c2
-	c2.Children[0].Parent = c2
+	callText := "format(\n\t\ta1, a2, a3, a4, a5,\n\t\ta6, a7, a8, a9, a10,\n\t)"
+	c1, err := testutil.FindNodeByText(srcTree, src, callText, "call_expression")
+	if err != nil {
+		t.Fatalf("find c1: %v", err)
+	}
+	t1, err := testutil.FindNodeByText(srcTree, src, "("+callText+")", "parenthesized_expression")
+	if err != nil {
+		t.Fatalf("find t1: %v", err)
+	}
+	dst1, err := testutil.FindNodeByText(dstTree, dst, "(empty())", "parenthesized_expression")
+	if err != nil {
+		t.Fatalf("find dst1: %v", err)
+	}
+	c2, err := testutil.FindNodeByText(dstTree, dst, callText, "call_expression")
+	if err != nil {
+		t.Fatalf("find c2: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(srcFunc, dstFunc)
 	ms.Add(t1, dst1)
 	ms.Add(c1, c2)
 
@@ -1081,33 +1182,62 @@ func TestNormalizeMovesByStructure_EmitsDeleteForEvictedDescendantsWhenNonSubtre
 	// Moving c1 out of t1 (and c0 into dst1) keeps the demoted container's Delete
 	// and Insert non-subtree. Evicted children like opSrc/opDst that stayed inside
 	// the container still need their own Delete and Insert actions.
-	opSrc := mkNode("logical_operator_literal", "&&")
-	opSrc.Language = "go"
-	c1 := mkNode("identifier", "survivor")
-	c1.Language = "go"
-	t1 := mkNode("binary_expression", "", c1, opSrc)
-	t1.Language = "go"
-	t1.StartRow = 10
-	t1.EndRow = 10
+	src := []byte("package main\n" + strings.Repeat("\n", 9) + `func f() {
+	_ = survivorVar && true
+}
+func f0() {
+	_ = survivor2Var
+}
+`)
+	dst := []byte("package main\n" + strings.Repeat("\n", 49) + `func g() {
+	_ = survivor2Var && true
+}
+func g2() {
+` + strings.Repeat("\n", 29) + `	_ = survivorVar
+}
+`)
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	opDst := mkNode("logical_operator_literal", "&&")
-	opDst.Language = "go"
-	c3 := mkNode("identifier", "survivor2")
-	c3.Language = "go"
-	dst1 := mkNode("binary_expression", "", c3, opDst)
-	dst1.Language = "go"
-	dst1.StartRow = 50
-	dst1.EndRow = 50
+	t1, err := testutil.FindNodeByText(srcTree, src, "survivorVar && true", "binary_expression")
+	if err != nil {
+		t.Fatalf("find t1: %v", err)
+	}
+	c1, err := testutil.FindNodeByText(srcTree, src, "survivorVar", "identifier")
+	if err != nil {
+		t.Fatalf("find c1: %v", err)
+	}
+	opSrc, err := testutil.FindNodeByText(srcTree, src, "true", "true")
+	if err != nil {
+		t.Fatalf("find opSrc: %v", err)
+	}
+	c0, err := testutil.FindNodeByText(srcTree, src, "survivor2Var", "identifier")
+	if err != nil {
+		t.Fatalf("find c0: %v", err)
+	}
 
-	c2 := mkNode("identifier", "survivor")
-	c2.Language = "go"
-	c2.StartRow = 80
-	c2.EndRow = 80
-
-	c0 := mkNode("identifier", "survivor2")
-	c0.Language = "go"
-	c0.StartRow = 2
-	c0.EndRow = 2
+	dst1, err := testutil.FindNodeByText(dstTree, dst, "survivor2Var && true", "binary_expression")
+	if err != nil {
+		t.Fatalf("find dst1: %v", err)
+	}
+	c3, err := testutil.FindNodeByText(dstTree, dst, "survivor2Var", "identifier")
+	if err != nil {
+		t.Fatalf("find c3: %v", err)
+	}
+	opDst, err := testutil.FindNodeByText(dstTree, dst, "true", "true")
+	if err != nil {
+		t.Fatalf("find opDst: %v", err)
+	}
+	c2, err := testutil.FindNodeByText(dstTree, dst, "survivorVar", "identifier")
+	if err != nil {
+		t.Fatalf("find c2: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(t1, dst1)
@@ -1142,23 +1272,33 @@ func TestNormalizeMovesByStructure_EmitsDeleteForEvictedDescendantsWhenNonSubtre
 
 func TestNormalizeMovesByStructure_TrivialJumpBlockDemoted(t *testing.T) {
 	// A breakaway trivial jump block ({ return }) in another scope should not move on its own.
-	retStmt1 := mkNode("return_statement", "", mkNode("return", "return"))
-	retStmt1.Language = "go"
-	retStmt1.Children[0].Parent = retStmt1
-	block1 := mkNode("block", "", retStmt1)
-	block1.Language = "go"
-	retStmt1.Parent = block1
-	block1.StartRow = 10
-	block1.EndRow = 12
+	src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\t{\n\t\treturn\n\t}\n}\n")
+	dst := []byte("package main\n" + strings.Repeat("\n", 99) + "func g() {\n\t{\n\t\treturn\n\t}\n}\n")
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	retStmt2 := mkNode("return_statement", "", mkNode("return", "return"))
-	retStmt2.Language = "go"
-	retStmt2.Children[0].Parent = retStmt2
-	block2 := mkNode("block", "", retStmt2)
-	block2.Language = "go"
-	retStmt2.Parent = block2
-	block2.StartRow = 100
-	block2.EndRow = 102
+	block1, err := testutil.FindNodeByText(srcTree, src, "{\n\t\treturn\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find block1: %v", err)
+	}
+	retStmt1, err := testutil.FindNodeByText(srcTree, src, "return", "return_statement")
+	if err != nil {
+		t.Fatalf("find retStmt1: %v", err)
+	}
+	block2, err := testutil.FindNodeByText(dstTree, dst, "{\n\t\treturn\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find block2: %v", err)
+	}
+	retStmt2, err := testutil.FindNodeByText(dstTree, dst, "return", "return_statement")
+	if err != nil {
+		t.Fatalf("find retStmt2: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(block1, block2)
@@ -1190,52 +1330,56 @@ func TestNormalizeMovesByStructure_TrivialJumpBlockDemoted(t *testing.T) {
 
 func TestNormalizeMovesByStructure_HollowLoopDemotedAcrossScopes(t *testing.T) {
 	// Even if the loop header matches across functions, drop the move if the body was completely wiped out.
-	rangeClause1 := mkNode("range_clause", "", mkNode("identifier", "a"), mkNode("identifier", "Actions"))
-	rangeClause1.Language = "go"
-	for _, c := range rangeClause1.Children {
-		c.Parent = rangeClause1
+	src := []byte("package main\n" + strings.Repeat("\n", 159) + "func f() {\n\tfor idxVar := range actList {\n\t\tdeadLogic()\n\t}\n}\n")
+	dst := []byte("package main\n" + strings.Repeat("\n", 475) + "func g() {\n\tfor idxVar := range actList {\n\t\tbrandNewLogic()\n\t}\n}\n")
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
 	}
 
-	bodyStmt1 := mkNode("expression_statement", "", mkNode("identifier", "deadLogic"))
-	bodyStmt1.Language = "go"
-	bodyStmt1.Children[0].Parent = bodyStmt1
-	bodyBlock1 := mkNode("block", "", bodyStmt1)
-	bodyBlock1.Language = "go"
-	bodyStmt1.Parent = bodyBlock1
-
-	forStmt1 := mkNode("for_statement", "", rangeClause1, bodyBlock1)
-	forStmt1.Language = "go"
-	forStmt1.StartRow = 160
-	forStmt1.EndRow = 211
-	rangeClause1.Parent = forStmt1
-	bodyBlock1.Parent = forStmt1
-
-	rangeClause2 := mkNode("range_clause", "", mkNode("identifier", "a"), mkNode("identifier", "Actions"))
-	rangeClause2.Language = "go"
-	for _, c := range rangeClause2.Children {
-		c.Parent = rangeClause2
+	forStmt1, err := testutil.FindNodeByText(srcTree, src, "for idxVar := range actList {\n\t\tdeadLogic()\n\t}", "for_statement")
+	if err != nil {
+		t.Fatalf("find forStmt1: %v", err)
+	}
+	rangeClause1, err := testutil.FindNodeByText(srcTree, src, "idxVar := range actList", "range_clause")
+	if err != nil {
+		t.Fatalf("find rangeClause1: %v", err)
+	}
+	srcA, err := testutil.FindNodeByText(srcTree, src, "idxVar", "identifier")
+	if err != nil {
+		t.Fatalf("find srcA: %v", err)
+	}
+	srcActions, err := testutil.FindNodeByText(srcTree, src, "actList", "identifier")
+	if err != nil {
+		t.Fatalf("find srcActions: %v", err)
 	}
 
-	bodyStmt2 := mkNode("expression_statement", "", mkNode("identifier", "brandNewLogic"))
-	bodyStmt2.Language = "go"
-	bodyStmt2.Children[0].Parent = bodyStmt2
-	bodyBlock2 := mkNode("block", "", bodyStmt2)
-	bodyBlock2.Language = "go"
-	bodyStmt2.Parent = bodyBlock2
-
-	forStmt2 := mkNode("for_statement", "", rangeClause2, bodyBlock2)
-	forStmt2.Language = "go"
-	forStmt2.StartRow = 476
-	forStmt2.EndRow = 525
-	rangeClause2.Parent = forStmt2
-	bodyBlock2.Parent = forStmt2
+	forStmt2, err := testutil.FindNodeByText(dstTree, dst, "for idxVar := range actList {\n\t\tbrandNewLogic()\n\t}", "for_statement")
+	if err != nil {
+		t.Fatalf("find forStmt2: %v", err)
+	}
+	rangeClause2, err := testutil.FindNodeByText(dstTree, dst, "idxVar := range actList", "range_clause")
+	if err != nil {
+		t.Fatalf("find rangeClause2: %v", err)
+	}
+	dstA, err := testutil.FindNodeByText(dstTree, dst, "idxVar", "identifier")
+	if err != nil {
+		t.Fatalf("find dstA: %v", err)
+	}
+	dstActions, err := testutil.FindNodeByText(dstTree, dst, "actList", "identifier")
+	if err != nil {
+		t.Fatalf("find dstActions: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(forStmt1, forStmt2)
 	ms.Add(rangeClause1, rangeClause2)
-	for i := range rangeClause1.Children {
-		ms.Add(rangeClause1.Children[i], rangeClause2.Children[i])
-	}
+	ms.Add(srcA, dstA)
+	ms.Add(srcActions, dstActions)
 	// Only the loop header is mapped, body has 0% retention.
 
 	es := actions.NewEditScript()
@@ -1252,49 +1396,55 @@ func TestNormalizeMovesByStructure_HollowLoopDemotedAcrossScopes(t *testing.T) {
 
 func TestNormalizeMovesByStructure_LoopExtractionPreserved(t *testing.T) {
 	// Moving a loop out to a helper function should stay a Move when its body logic survives.
-	rangeClause1 := mkNode("range_clause", "", mkNode("identifier", "item"))
-	rangeClause1.Language = "go"
-	rangeClause1.Children[0].Parent = rangeClause1
+	src := []byte(`package main
+func f() {
+	for idxVar := range listItems {
+		stepOne()
+		stepTwo()
+		stepThree()
+		stepFour()
+		stepFive()
+		stepSix()
+	}
+}
+`)
+	dst := []byte(`package main
+func helper() {
+	for idxVar := range listItems {
+		stepOne()
+		stepTwo()
+		stepThree()
+		stepFour()
+		stepFive()
+		stepSix()
+	}
+}
+`)
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	stmt1 := mkNode("expression_statement", "", mkNode("identifier", "process"))
-	stmt1.Language = "go"
-	stmt1.Children[0].Parent = stmt1
-	bodyBlock1 := mkNode("block", "", stmt1)
-	bodyBlock1.Language = "go"
-	stmt1.Parent = bodyBlock1
-
-	forStmt1 := mkNode("for_statement", "", rangeClause1, bodyBlock1)
-	forStmt1.Language = "go"
-	forStmt1.StartRow = 20
-	forStmt1.EndRow = 30
-	rangeClause1.Parent = forStmt1
-	bodyBlock1.Parent = forStmt1
-
-	rangeClause2 := mkNode("range_clause", "", mkNode("identifier", "item"))
-	rangeClause2.Language = "go"
-	rangeClause2.Children[0].Parent = rangeClause2
-
-	stmt2 := mkNode("expression_statement", "", mkNode("identifier", "process"))
-	stmt2.Language = "go"
-	stmt2.Children[0].Parent = stmt2
-	bodyBlock2 := mkNode("block", "", stmt2)
-	bodyBlock2.Language = "go"
-	stmt2.Parent = bodyBlock2
-
-	forStmt2 := mkNode("for_statement", "", rangeClause2, bodyBlock2)
-	forStmt2.Language = "go"
-	forStmt2.StartRow = 150
-	forStmt2.EndRow = 160
-	rangeClause2.Parent = forStmt2
-	bodyBlock2.Parent = forStmt2
+	forStmt1, err := testutil.FindNodeByText(srcTree, src, "for idxVar := range listItems {\n\t\tstepOne()\n\t\tstepTwo()\n\t\tstepThree()\n\t\tstepFour()\n\t\tstepFive()\n\t\tstepSix()\n\t}", "for_statement")
+	if err != nil {
+		t.Fatalf("find forStmt1: %v", err)
+	}
+	forStmt2, err := testutil.FindNodeByText(dstTree, dst, "for idxVar := range listItems {\n\t\tstepOne()\n\t\tstepTwo()\n\t\tstepThree()\n\t\tstepFour()\n\t\tstepFive()\n\t\tstepSix()\n\t}", "for_statement")
+	if err != nil {
+		t.Fatalf("find forStmt2: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(forStmt1, forStmt2)
-	ms.Add(rangeClause1, rangeClause2)
-	ms.Add(rangeClause1.Children[0], rangeClause2.Children[0])
-	ms.Add(bodyBlock1, bodyBlock2)
-	ms.Add(stmt1, stmt2)
-	ms.Add(stmt1.Children[0], stmt2.Children[0])
+	srcNodes := forStmt1.Descendants()
+	dstNodes := forStmt2.Descendants()
+	for i := range min(len(srcNodes), len(dstNodes)) {
+		ms.Add(srcNodes[i], dstNodes[i])
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: forStmt1, DestNode: forStmt2})
@@ -1373,39 +1523,49 @@ func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
 func TestNormalizeMoves_DemotesHollowCallAndArgumentList(t *testing.T) {
 	// When sort.SliceStable(...) falsely matches cmp.Or(...) and only their empty
 	// argument lists get mapped, drop both moves so we don't leave an empty "()" move behind.
-	srcArgList := mkNode("argument_list", "",
-		mkNode("identifier", "scored"),
-		mkNode("func_literal", "",
-			mkNode("block", "",
-				mkNode("return_statement", "", mkNode("identifier", "a")),
-			),
-		),
-	)
-	srcCall := mkNode("call_expression", "",
-		mkNode("selector_expression", "",
-			mkNode("identifier", "sort"),
-			mkNode("field_identifier", "SliceStable"),
-		),
-		srcArgList,
-	)
-	srcStmt := mkNode("expression_statement", "", srcCall)
-	srcRoot := mkNode("block", "", srcStmt)
-	setLanguageRecursive(srcRoot, "go")
+	src := []byte(`package main
+func f() {
+	sort.SliceStable(scored, func() bool { return true })
+}
+`)
+	dst := []byte(`package main
+func g() bool {
+	return cmp.Or(xVar, yVar)
+}
+`)
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	dstArgList := mkNode("argument_list", "",
-		mkNode("identifier", "x"),
-		mkNode("identifier", "y"),
-	)
-	dstCall := mkNode("call_expression", "",
-		mkNode("selector_expression", "",
-			mkNode("identifier", "cmp"),
-			mkNode("field_identifier", "Or"),
-		),
-		dstArgList,
-	)
-	dstRet := mkNode("return_statement", "", dstCall)
-	dstRoot := mkNode("block", "", dstRet)
-	setLanguageRecursive(dstRoot, "go")
+	srcRoot, err := testutil.FindNodeByText(srcTree, src, "{\n\tsort.SliceStable(scored, func() bool { return true })\n}", "block")
+	if err != nil {
+		t.Fatalf("find srcRoot: %v", err)
+	}
+	dstRoot, err := testutil.FindNodeByText(dstTree, dst, "{\n\treturn cmp.Or(xVar, yVar)\n}", "block")
+	if err != nil {
+		t.Fatalf("find dstRoot: %v", err)
+	}
+	srcCall, err := testutil.FindNodeByText(srcTree, src, "sort.SliceStable(scored, func() bool { return true })", "call_expression")
+	if err != nil {
+		t.Fatalf("find srcCall: %v", err)
+	}
+	dstCall, err := testutil.FindNodeByText(dstTree, dst, "cmp.Or(xVar, yVar)", "call_expression")
+	if err != nil {
+		t.Fatalf("find dstCall: %v", err)
+	}
+	srcArgList, err := testutil.FindNodeByText(srcTree, src, "(scored, func() bool { return true })", "argument_list")
+	if err != nil {
+		t.Fatalf("find srcArgList: %v", err)
+	}
+	dstArgList, err := testutil.FindNodeByText(dstTree, dst, "(xVar, yVar)", "argument_list")
+	if err != nil {
+		t.Fatalf("find dstArgList: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(srcRoot, dstRoot)
