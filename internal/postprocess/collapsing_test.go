@@ -1,7 +1,9 @@
 package postprocess
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -11,27 +13,79 @@ import (
 )
 
 func TestCollapseDivergence(t *testing.T) {
-	cSrc := &treesitter.ASTNode{Type: "block", StartByte: 10, EndByte: 20}
-	pSrc := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100, Children: []*treesitter.ASTNode{cSrc}}
-	pSrc.Language = "python"
-	cSrc.Parent = pSrc
+	src := []byte("package main\nfunc f() {\n\touterCall(innerCall())\n}\n")
+	dst := []byte("package main\nfunc g() {\n\twrapperCall(outerCall(innerCall()))\n}\n")
 
-	dDst := &treesitter.ASTNode{Type: "block", StartByte: 60, EndByte: 70}
-	rDst := &treesitter.ASTNode{Type: "block", StartByte: 50, EndByte: 150, Children: []*treesitter.ASTNode{dDst}}
-	dDst.Parent = rDst
-	qDst := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 200, Children: []*treesitter.ASTNode{rDst}}
-	qDst.Language = "python"
-	rDst.Parent = qDst
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "func g()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
+
+	pSrc, err := testutil.FindNodeByText(srcTree, src, "outerCall(innerCall())", "call_expression")
+	if err != nil {
+		t.Fatalf("find pSrc: %v", err)
+	}
+	cSrc, err := testutil.FindNodeByText(srcTree, src, "innerCall()", "call_expression")
+	if err != nil {
+		t.Fatalf("find cSrc: %v", err)
+	}
+
+	wrapDst, err := testutil.FindNodeByText(dstTree, dst, "wrapperCall(outerCall(innerCall()))", "call_expression")
+	if err != nil {
+		t.Fatalf("find wrapDst: %v", err)
+	}
+	qDst, err := testutil.FindNodeByText(dstTree, dst, "outerCall(innerCall())", "call_expression")
+	if err != nil {
+		t.Fatalf("find qDst: %v", err)
+	}
+	dDst, err := testutil.FindNodeByText(dstTree, dst, "innerCall()", "call_expression")
+	if err != nil {
+		t.Fatalf("find dDst: %v", err)
+	}
+
+	outerIDSrc, err := testutil.FindNodeByText(srcTree, src, "outerCall", "identifier")
+	if err != nil {
+		t.Fatalf("find outerIDSrc: %v", err)
+	}
+	outerIDDst, err := testutil.FindNodeByText(dstTree, dst, "outerCall", "identifier")
+	if err != nil {
+		t.Fatalf("find outerIDDst: %v", err)
+	}
+	innerIDSrc, err := testutil.FindNodeByText(srcTree, src, "innerCall", "identifier")
+	if err != nil {
+		t.Fatalf("find innerIDSrc: %v", err)
+	}
+	innerIDDst, err := testutil.FindNodeByText(dstTree, dst, "innerCall", "identifier")
+	if err != nil {
+		t.Fatalf("find innerIDDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(pSrc, qDst)
 	ms.Add(cSrc, dDst)
+	ms.Add(outerIDSrc, outerIDDst)
+	ms.Add(innerIDSrc, innerIDDst)
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{
 		Type:     actions.Move,
 		Node:     pSrc,
-		Parent:   qDst,
+		DestNode: qDst,
+		Parent:   wrapDst,
 		Position: 0,
 		Subtree:  true,
 	})
@@ -53,26 +107,63 @@ func TestCollapseDivergence(t *testing.T) {
 }
 
 func TestSubtreeMoveWithExternalDescendantInDest(t *testing.T) {
-	pSrc := &treesitter.ASTNode{Type: "parenthesized_expression", StartByte: 10, EndByte: 40}
-	pSrc.Language = "java"
-	cSrc := &treesitter.ASTNode{Type: "method_invocation", StartByte: 11, EndByte: 39, Parent: pSrc}
-	cSrc.Language = "java"
-	pSrc.Children = []*treesitter.ASTNode{cSrc}
+	src := []byte("package main\nfunc f() {\n\texecA()\n\texecB()\n}\n")
+	dst := []byte("package main\nfunc f() {\n\tcallTarget(execA(), execB())\n}\n")
 
-	otherSrc := &treesitter.ASTNode{Type: "binary_expression", StartByte: 100, EndByte: 150}
-	otherSrc.Language = "java"
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	qDst := &treesitter.ASTNode{Type: "parenthesized_expression", StartByte: 200, EndByte: 300}
-	qDst.Language = "java"
-	cDst := &treesitter.ASTNode{Type: "method_invocation", StartByte: 201, EndByte: 229, Parent: qDst}
-	cDst.Language = "java"
-	otherDst := &treesitter.ASTNode{Type: "binary_expression", StartByte: 235, EndByte: 285, Parent: qDst}
-	otherDst.Language = "java"
-	qDst.Children = []*treesitter.ASTNode{cDst, otherDst}
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
+
+	pSrc, err := testutil.FindNodeByText(srcTree, src, "execA()", "call_expression")
+	if err != nil {
+		t.Fatalf("find pSrc: %v", err)
+	}
+	otherSrc, err := testutil.FindNodeByText(srcTree, src, "execB()", "call_expression")
+	if err != nil {
+		t.Fatalf("find otherSrc: %v", err)
+	}
+
+	qDst, err := testutil.FindNodeByText(dstTree, dst, "callTarget(execA(), execB())", "call_expression")
+	if err != nil {
+		t.Fatalf("find qDst: %v", err)
+	}
+	cDst, err := testutil.FindNodeByText(dstTree, dst, "execA()", "call_expression")
+	if err != nil {
+		t.Fatalf("find cDst: %v", err)
+	}
+	otherDst, err := testutil.FindNodeByText(dstTree, dst, "execB()", "call_expression")
+	if err != nil {
+		t.Fatalf("find otherDst: %v", err)
+	}
+
+	aIDSrc, err := testutil.FindNodeByText(srcTree, src, "execA", "identifier")
+	if err != nil {
+		t.Fatalf("find aIDSrc: %v", err)
+	}
+	aIDDst, err := testutil.FindNodeByText(dstTree, dst, "execA", "identifier")
+	if err != nil {
+		t.Fatalf("find aIDDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(pSrc, qDst)
-	ms.Add(cSrc, cDst)
+	ms.Add(cDst, cDst)
+	ms.Add(aIDSrc, aIDDst)
 	ms.Add(otherSrc, otherDst)
 
 	es := actions.NewEditScript()
@@ -95,21 +186,23 @@ func TestSubtreeMoveWithExternalDescendantInDest(t *testing.T) {
 }
 
 func TestSubtreeInsertCollapsing(t *testing.T) {
-	parent := &treesitter.ASTNode{Type: "boolean_operator", StartByte: 0, EndByte: 100}
-	parent.Language = "python"
+	src := []byte("x = not a and not b\n")
+	tree, err := treesitter.Parse(src, "test.py")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
 
-	c1 := &treesitter.ASTNode{Type: "not_operator", StartByte: 0, EndByte: 40, Parent: parent}
-	c2 := &treesitter.ASTNode{Type: "logical_operator_literal", StartByte: 41, EndByte: 44, Parent: parent}
-	c3 := &treesitter.ASTNode{Type: "not_operator", StartByte: 45, EndByte: 100, Parent: parent}
-	parent.Children = []*treesitter.ASTNode{c1, c2, c3}
+	parent, err := testutil.FindNodeByText(tree, src, "not a and not b", "boolean_operator")
+	if err != nil {
+		t.Fatalf("find parent: %v", err)
+	}
 
 	ms := engine.NewMapping()
 
 	es := actions.NewEditScript()
-	es.Add(actions.Action{Type: actions.Insert, Node: parent})
-	es.Add(actions.Action{Type: actions.Insert, Node: c1})
-	es.Add(actions.Action{Type: actions.Insert, Node: c2})
-	es.Add(actions.Action{Type: actions.Insert, Node: c3})
+	for _, n := range parent.PostOrder() {
+		es.Add(actions.Action{Type: actions.Insert, Node: n})
+	}
 
 	collapsed := Collapse(es, ms, nil, parent)
 
@@ -124,55 +217,68 @@ func TestSubtreeInsertCollapsing(t *testing.T) {
 }
 
 func TestSubtreeDeleteCollapsing(t *testing.T) {
-	parent := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100}
-	parent.Language = "python"
+	src := []byte("def f():\n    x = 1\n    return x\n")
+	tree, err := treesitter.Parse(src, "test.py")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
 
-	c1 := &treesitter.ASTNode{Type: "expression_statement", StartByte: 0, EndByte: 40, Parent: parent}
-	c2 := &treesitter.ASTNode{Type: "return_statement", StartByte: 41, EndByte: 100, Parent: parent}
-	parent.Children = []*treesitter.ASTNode{c1, c2}
+	parent, err := testutil.FindNodeByText(tree, src, "x = 1\n    return x", "block")
+	if err != nil {
+		t.Fatalf("find parent: %v", err)
+	}
 
 	ms := engine.NewMapping()
 
 	es := actions.NewEditScript()
-	es.Add(actions.Action{Type: actions.Delete, Node: parent})
-	es.Add(actions.Action{Type: actions.Delete, Node: c1})
-	es.Add(actions.Action{Type: actions.Delete, Node: c2})
+	for _, n := range parent.PostOrder() {
+		es.Add(actions.Action{Type: actions.Delete, Node: n})
+	}
 
 	collapsed := Collapse(es, ms, parent, nil)
 
 	if collapsed.Size() != 1 {
 		t.Fatalf("expected 1 action (parent subtree delete), got %d", collapsed.Size())
 	}
-	// (b) information-loss guard case:
-	// P=function_definition (Insert, Subtree:false, fails due to unrelated sibling)
-	// S=block (Insert, Subtree:true, all S's own children are clean Inserts)
-	// S's Insert MUST survive with Subtree:true (NOT suppressed by the new rule).
-	t.Run("scaffolding-insert-survives-when-subtree-true", func(t *testing.T) {
-		unrelatedChild := &treesitter.ASTNode{Type: "decorator", StartByte: 0, EndByte: 10}
-		sChild := &treesitter.ASTNode{Type: "expression_statement", StartByte: 30, EndByte: 50}
-		sNode := &treesitter.ASTNode{
-			Type: "block", StartByte: 25, EndByte: 65,
-			Children: []*treesitter.ASTNode{sChild},
-		}
-		parent := &treesitter.ASTNode{
-			Type: "function_definition", StartByte: 0, EndByte: 70,
-			Children: []*treesitter.ASTNode{unrelatedChild, sNode},
-		}
-		parent.Language = "go"
-		unrelatedChild.Parent = parent
-		sChild.Parent = sNode
-		sNode.Parent = parent
 
-		unrelatedSrc := &treesitter.ASTNode{Type: "decorator", StartByte: 100, EndByte: 110}
-		unrelatedSrc.Language = "go"
+	t.Run("scaffolding-insert-survives-when-subtree-true", func(t *testing.T) {
+		srcGo := []byte("package main\nfunc f(x int) {}\n")
+		dstGo := []byte("package main\nfunc g(x int) {\n\ty := 1\n}\n")
+
+		srcAST, err := treesitter.Parse(srcGo, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstGo, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		parent, err := testutil.FindNodeByText(dstAST, dstGo, "func g(x int) {\n\ty := 1\n}", "function_declaration")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
+		sNode, err := testutil.FindNodeByText(dstAST, dstGo, "{\n\ty := 1\n}", "block")
+		if err != nil {
+			t.Fatalf("find sNode: %v", err)
+		}
+		unrelatedChild, err := testutil.FindNodeByText(dstAST, dstGo, "x int", "parameter_declaration")
+		if err != nil {
+			t.Fatalf("find unrelatedChild: %v", err)
+		}
+		unrelatedSrc, err := testutil.FindNodeByText(srcAST, srcGo, "x int", "parameter_declaration")
+		if err != nil {
+			t.Fatalf("find unrelatedSrc: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(unrelatedSrc, unrelatedChild)
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Insert, Node: parent})
-		es.Add(actions.Action{Type: actions.Insert, Node: sNode})
-		es.Add(actions.Action{Type: actions.Insert, Node: sChild})
+		for _, n := range sNode.PostOrder() {
+			es.Add(actions.Action{Type: actions.Insert, Node: n})
+		}
 
 		collapsed := Collapse(es, ms, unrelatedSrc, parent)
 
@@ -186,7 +292,7 @@ func TestSubtreeDeleteCollapsing(t *testing.T) {
 					sNodeSubtree = true
 				}
 			}
-			if a.Node == sChild && a.Type == actions.Insert {
+			if a.Node != sNode && a.Type == actions.Insert && sNode.Contains(a.Node) {
 				findsChild = true
 			}
 		}
@@ -207,43 +313,59 @@ func TestSubtreeDeleteCollapsing(t *testing.T) {
 	}
 }
 
-// TestInlineParentSuppression covers suppressInlineParentRedundancy: when a
-// parent Insert/Delete and a child Insert/Delete both live on the same source
-// line, the parent action is redundant and must be suppressed. The child
-// action (more specific) survives.
 func TestInlineParentSuppression(t *testing.T) {
-	// (a) go_4_error_handling L26 delete shape:
-	// binary_expression (Delete, inline) with children identifier (Delete,
-	// inline) and comparison_operator_literal (Delete, inline). A third child
-	// is a Move, so allChildrenDeleted fails and the parent Delete survives
-	// the existing collapse pass. The inline-redundancy pass must kill the
-	// parent binary_expression Delete; the two leaf Deletes survive.
 	t.Run("binary_expression-delete-kills-parent", func(t *testing.T) {
-		ident := &treesitter.ASTNode{Type: "identifier", Label: "err", StartByte: 608, EndByte: 611, StartRow: 25, EndRow: 25}
-		op := &treesitter.ASTNode{Type: "comparison_operator_literal", Label: "==", StartByte: 612, EndByte: 614, StartRow: 25, EndRow: 25}
-		// third child is the source of a Move (not deleted), so allChildrenDeleted fails
-		selSrc := &treesitter.ASTNode{Type: "selector_expression", StartByte: 615, EndByte: 628, StartRow: 25, EndRow: 25}
-		selSrc.Language = "go"
-		selDst := &treesitter.ASTNode{Type: "selector_expression", StartByte: 634, EndByte: 647, StartRow: 25, EndRow: 25}
-		binExpr := &treesitter.ASTNode{
-			Type:      "binary_expression",
-			StartByte: 608, EndByte: 628,
-			StartRow: 25, EndRow: 25,
-			Children: []*treesitter.ASTNode{ident, op, selSrc},
+		src := []byte("package main\nfunc f() { _ = queryErr == sql.ErrNoRows }\n")
+		dst := []byte("package main\nfunc f() { _ = errors.Is(queryErr, sql.ErrNoRows) }\n")
+
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		binExpr.Language = "go"
-		ident.Parent = binExpr
-		op.Parent = binExpr
-		selSrc.Parent = binExpr
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find fnSrc: %v", err)
+		}
+		fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find fnDst: %v", err)
+		}
+
+		binExpr, err := testutil.FindNodeByText(srcTree, src, "queryErr == sql.ErrNoRows", "binary_expression")
+		if err != nil {
+			t.Fatalf("find binExpr: %v", err)
+		}
+		ident, err := testutil.FindNodeByText(srcTree, src, "queryErr", "identifier")
+		if err != nil {
+			t.Fatalf("find ident: %v", err)
+		}
+		op, err := testutil.FindNodeByText(srcTree, src, "==", "comparison_operator_literal")
+		if err != nil {
+			t.Fatalf("find op: %v", err)
+		}
+		selSrc, err := testutil.FindNodeByText(srcTree, src, "sql.ErrNoRows", "selector_expression")
+		if err != nil {
+			t.Fatalf("find selSrc: %v", err)
+		}
+		selDst, err := testutil.FindNodeByText(dstTree, dst, "sql.ErrNoRows", "selector_expression")
+		if err != nil {
+			t.Fatalf("find selDst: %v", err)
+		}
 
 		ms := engine.NewMapping()
+		ms.Add(fnSrc, fnDst)
 		ms.Add(selSrc, selDst)
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Delete, Node: ident})
 		es.Add(actions.Action{Type: actions.Delete, Node: op})
 		es.Add(actions.Action{Type: actions.Delete, Node: binExpr})
-		es.Add(actions.Action{Type: actions.Move, Node: selSrc, Parent: selDst, Position: 0})
+		es.Add(actions.Action{Type: actions.Move, Node: selSrc, DestNode: selDst, Parent: selDst, Position: 0})
 
 		collapsed := Collapse(es, ms, binExpr, selDst)
 
@@ -276,43 +398,55 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (b) go_4_error_handling L26 insert shape:
-	// call_expression (Insert, inline, no subtree) with direct children
-	// selector_expression (Insert, inline, subtree:true, the "errors.Is"
-	// function part) and argument_list (scaffolding). Inside argument_list
-	// there is an inserted identifier "err" AND a Move destination
-	// selector_expression (for "sql.ErrNoRows"). The Move grandchild makes
-	// allChildrenInserted fail for argument_list, and because it is a
-	// grandchild (not a direct child of call_expression) the existing
-	// hasMoveOrUpdateChild check does not fire on call_expression either,
-	// so call_expression survives as a non-subtree Insert. The inline pass
-	// must then kill call_expression because its direct child sel is an
-	// inline Insert on the same line.
 	t.Run("call_expression-insert-kills-parent", func(t *testing.T) {
-		sel := &treesitter.ASTNode{Type: "selector_expression", StartByte: 619, EndByte: 628, StartRow: 25, EndRow: 25}
-		argList := &treesitter.ASTNode{Type: "argument_list", StartByte: 628, EndByte: 648, StartRow: 25, EndRow: 25}
-		call := &treesitter.ASTNode{
-			Type:      "call_expression",
-			StartByte: 619, EndByte: 648,
-			StartRow: 25, EndRow: 25,
-			Children: []*treesitter.ASTNode{sel, argList},
+		src := []byte("package main\nfunc f() { _ = queryErr == sql.ErrNoRows }\n")
+		dst := []byte("package main\nfunc f() { _ = errors.Is(queryErr, sql.ErrNoRows) }\n")
+
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		call.Language = "go"
-		sel.Parent = call
-		argList.Parent = call
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		// Inside argument_list: an inserted identifier AND a Move destination.
-		// The Move destination is what prevents the existing collapse pass from
-		// collapsing call_expression to subtree:true.
-		argIdent := &treesitter.ASTNode{Type: "identifier", Label: "err", StartByte: 629, EndByte: 632, StartRow: 25, EndRow: 25, Parent: argList}
-		movedSelDst := &treesitter.ASTNode{Type: "selector_expression", StartByte: 634, EndByte: 647, StartRow: 25, EndRow: 25, Parent: argList}
-		argList.Children = []*treesitter.ASTNode{argIdent, movedSelDst}
+		fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find fnSrc: %v", err)
+		}
+		fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find fnDst: %v", err)
+		}
 
-		// Source-side node for the Move (sql.ErrNoRows selector_expression).
-		movedSelSrc := &treesitter.ASTNode{Type: "selector_expression", StartByte: 615, EndByte: 628, StartRow: 25, EndRow: 25}
-		movedSelSrc.Language = "go"
+		call, err := testutil.FindNodeByText(dstTree, dst, "errors.Is(queryErr, sql.ErrNoRows)", "call_expression")
+		if err != nil {
+			t.Fatalf("find call: %v", err)
+		}
+		sel, err := testutil.FindNodeByText(dstTree, dst, "errors.Is", "selector_expression")
+		if err != nil {
+			t.Fatalf("find sel: %v", err)
+		}
+		argList, err := testutil.FindNodeByText(dstTree, dst, "(queryErr, sql.ErrNoRows)", "argument_list")
+		if err != nil {
+			t.Fatalf("find argList: %v", err)
+		}
+		argIdent, err := testutil.FindNodeByText(dstTree, dst, "queryErr", "identifier")
+		if err != nil {
+			t.Fatalf("find argIdent: %v", err)
+		}
+		movedSelDst, err := testutil.FindNodeByText(dstTree, dst, "sql.ErrNoRows", "selector_expression")
+		if err != nil {
+			t.Fatalf("find movedSelDst: %v", err)
+		}
+		movedSelSrc, err := testutil.FindNodeByText(srcTree, src, "sql.ErrNoRows", "selector_expression")
+		if err != nil {
+			t.Fatalf("find movedSelSrc: %v", err)
+		}
 
 		ms := engine.NewMapping()
+		ms.Add(fnSrc, fnDst)
 		ms.Add(movedSelSrc, movedSelDst)
 
 		es := actions.NewEditScript()
@@ -320,7 +454,7 @@ func TestInlineParentSuppression(t *testing.T) {
 		es.Add(actions.Action{Type: actions.Insert, Node: sel, Subtree: true})
 		es.Add(actions.Action{Type: actions.Insert, Node: argList})
 		es.Add(actions.Action{Type: actions.Insert, Node: argIdent})
-		es.Add(actions.Action{Type: actions.Move, Node: movedSelSrc, Parent: argList, Position: 1})
+		es.Add(actions.Action{Type: actions.Move, Node: movedSelSrc, DestNode: movedSelDst, Parent: argList, Position: 1})
 
 		collapsed := Collapse(es, ms, movedSelSrc, call)
 
@@ -342,22 +476,24 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (c) Guard: parent with Subtree:true must NEVER be killed, even if it is
-	// inline and a child action exists on the same line.
 	t.Run("subtree-true-parent-not-killed", func(t *testing.T) {
-		child := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 5, EndByte: 6, StartRow: 10, EndRow: 10}
-		parent := &treesitter.ASTNode{
-			Type:      "call",
-			StartByte: 0, EndByte: 10,
-			StartRow: 10, EndRow: 10,
-			Children: []*treesitter.ASTNode{child},
+		src := []byte("foo(x)\n")
+		tree, err := treesitter.Parse(src, "test.py")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
 		}
-		parent.Language = "python"
-		child.Parent = parent
+
+		parent, err := testutil.FindNodeByText(tree, src, "foo(x)", "call")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
+		child, err := testutil.FindNodeByText(tree, src, "x", "identifier")
+		if err != nil {
+			t.Fatalf("find child: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		es := actions.NewEditScript()
-		// Manually mark parent as Subtree:true to test the guard directly.
 		es.Add(actions.Action{Type: actions.Insert, Node: parent, Subtree: true})
 		es.Add(actions.Action{Type: actions.Insert, Node: child})
 
@@ -374,18 +510,21 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (d) Guard: multi-line parent with an inline child on one of its lines
-	// must NOT be killed.
 	t.Run("multiline-parent-not-killed", func(t *testing.T) {
-		child := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 5, EndByte: 6, StartRow: 10, EndRow: 10}
-		parent := &treesitter.ASTNode{
-			Type:      "function_definition",
-			StartByte: 0, EndByte: 200,
-			StartRow: 9, EndRow: 15, // spans lines 9-15
-			Children: []*treesitter.ASTNode{child},
+		src := []byte("def foo():\n    x = 1\n")
+		tree, err := treesitter.Parse(src, "test.py")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
 		}
-		parent.Language = "python"
-		child.Parent = parent
+
+		parent, err := testutil.FindNodeByText(tree, src, "def foo():\n    x = 1", "function_definition")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
+		child, err := testutil.FindNodeByText(tree, src, "x", "identifier")
+		if err != nil {
+			t.Fatalf("find child: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		es := actions.NewEditScript()
@@ -405,18 +544,21 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (e) Guard: inline parent on a DIFFERENT line than the child must NOT be
-	// killed.
 	t.Run("different-line-parent-not-killed", func(t *testing.T) {
-		child := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 50, EndByte: 51, StartRow: 11, EndRow: 11}
-		parent := &treesitter.ASTNode{
-			Type:      "call",
-			StartByte: 0, EndByte: 10,
-			StartRow: 10, EndRow: 10, // inline, but on a different line
-			Children: []*treesitter.ASTNode{child},
+		src := []byte("foo()\nbar()\n")
+		tree, err := treesitter.Parse(src, "test.py")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
 		}
-		parent.Language = "python"
-		child.Parent = parent
+
+		parent, err := testutil.FindNodeByText(tree, src, "foo()", "call")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
+		child, err := testutil.FindNodeByText(tree, src, "bar", "identifier")
+		if err != nil {
+			t.Fatalf("find child: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		es := actions.NewEditScript()
@@ -436,28 +578,31 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (f) Move destination on the same line suppresses single-line parent wrapper Insert
 	t.Run("moved-child-suppresses-inline-parent-insert", func(t *testing.T) {
-		srcChild := &treesitter.ASTNode{
-			Type:      "assignment_expression",
-			StartByte: 634, EndByte: 654,
-			StartRow: 34, EndRow: 34,
-		}
-		srcChild.Language = "javascript"
+		src := []byte("a = 1;\n")
+		dst := []byte("b = 1;\n")
 
-		dstChild := &treesitter.ASTNode{
-			Type:      "assignment_expression",
-			StartByte: 630, EndByte: 650,
-			StartRow: 34, EndRow: 34,
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		parent := &treesitter.ASTNode{
-			Type:      "expression_statement",
-			StartByte: 630, EndByte: 650,
-			StartRow: 34, EndRow: 34,
-			Children: []*treesitter.ASTNode{dstChild},
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
-		parent.Language = "javascript"
-		dstChild.Parent = parent
+
+		srcChild, err := testutil.FindNodeByText(srcTree, src, "a = 1", "assignment_expression")
+		if err != nil {
+			t.Fatalf("find srcChild: %v", err)
+		}
+		dstChild, err := testutil.FindNodeByText(dstTree, dst, "b = 1", "assignment_expression")
+		if err != nil {
+			t.Fatalf("find dstChild: %v", err)
+		}
+		parent, err := testutil.FindNodeByText(dstTree, dst, "b = 1;", "expression_statement")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcChild, dstChild)
@@ -486,30 +631,31 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (g) Wider parent container (e.g. hash braces "{...}") is NOT suppressed
-	// so the newly added braces/syntax retain their Insert highlight.
 	t.Run("wider-container-insert-preserved-around-moved-child", func(t *testing.T) {
-		srcChild := &treesitter.ASTNode{
-			Type:      "pair",
-			StartByte: 10, EndByte: 20,
-			StartRow: 28, EndRow: 28,
-		}
-		srcChild.Language = "javascript"
+		src := []byte("const x = { a: 1 };\n")
+		dst := []byte("const y = { a: 1 };\n")
 
-		dstChild := &treesitter.ASTNode{
-			Type:      "pair",
-			StartByte: 11, EndByte: 21,
-			StartRow: 28, EndRow: 28,
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		// Parent object spans bytes 10..22 (wider due to { and })
-		parent := &treesitter.ASTNode{
-			Type:      "object",
-			StartByte: 10, EndByte: 22,
-			StartRow: 28, EndRow: 28,
-			Children: []*treesitter.ASTNode{dstChild},
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
-		parent.Language = "javascript"
-		dstChild.Parent = parent
+
+		srcChild, err := testutil.FindNodeByText(srcTree, src, "a: 1", "pair")
+		if err != nil {
+			t.Fatalf("find srcChild: %v", err)
+		}
+		dstChild, err := testutil.FindNodeByText(dstTree, dst, "a: 1", "pair")
+		if err != nil {
+			t.Fatalf("find dstChild: %v", err)
+		}
+		parent, err := testutil.FindNodeByText(dstTree, dst, "{ a: 1 }", "object")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcChild, dstChild)
@@ -538,29 +684,31 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (h) Trailing semicolons shouldn't keep single-child wrappers alive when their child moves.
 	t.Run("moved-child-suppresses-inline-parent-insert-with-semicolon", func(t *testing.T) {
-		srcChild := &treesitter.ASTNode{
-			Type:      "assignment_expression",
-			StartByte: 634, EndByte: 654,
-			StartRow: 34, EndRow: 34,
-		}
-		srcChild.Language = "javascript"
+		src := []byte("a = 1;\n")
+		dst := []byte("b = 1;\n")
 
-		dstChild := &treesitter.ASTNode{
-			Type:      "assignment_expression",
-			StartByte: 630, EndByte: 650,
-			StartRow: 34, EndRow: 34,
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		// Parent expression_statement includes trailing semicolon (630..651)
-		parent := &treesitter.ASTNode{
-			Type:      "expression_statement",
-			StartByte: 630, EndByte: 651,
-			StartRow: 34, EndRow: 34,
-			Children: []*treesitter.ASTNode{dstChild},
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
-		parent.Language = "javascript"
-		dstChild.Parent = parent
+
+		srcChild, err := testutil.FindNodeByText(srcTree, src, "a = 1", "assignment_expression")
+		if err != nil {
+			t.Fatalf("find srcChild: %v", err)
+		}
+		dstChild, err := testutil.FindNodeByText(dstTree, dst, "b = 1", "assignment_expression")
+		if err != nil {
+			t.Fatalf("find dstChild: %v", err)
+		}
+		parent, err := testutil.FindNodeByText(dstTree, dst, "b = 1;", "expression_statement")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcChild, dstChild)
@@ -589,31 +737,31 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (i) Symmetrical delete: source-side single-line statement wrappers with trailing
-	// semicolons get dropped too when their child moves.
 	t.Run("moved-child-suppresses-source-side-parent-delete-with-semicolon", func(t *testing.T) {
-		srcChild := &treesitter.ASTNode{
-			Type:      "assignment_expression",
-			StartByte: 100, EndByte: 120,
-			StartRow: 10, EndRow: 10,
-		}
-		srcChild.Language = "javascript"
+		src := []byte("a = 1;\n")
+		dst := []byte("b = 1;\n")
 
-		srcParent := &treesitter.ASTNode{
-			Type:      "expression_statement",
-			StartByte: 100, EndByte: 121,
-			StartRow: 10, EndRow: 10,
-			Children: []*treesitter.ASTNode{srcChild},
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		srcParent.Language = "javascript"
-		srcChild.Parent = srcParent
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		dstChild := &treesitter.ASTNode{
-			Type:      "assignment_expression",
-			StartByte: 200, EndByte: 220,
-			StartRow: 10, EndRow: 10,
+		srcChild, err := testutil.FindNodeByText(srcTree, src, "a = 1", "assignment_expression")
+		if err != nil {
+			t.Fatalf("find srcChild: %v", err)
 		}
-		dstChild.Language = "javascript"
+		srcParent, err := testutil.FindNodeByText(srcTree, src, "a = 1;", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcParent: %v", err)
+		}
+		dstChild, err := testutil.FindNodeByText(dstTree, dst, "b = 1", "assignment_expression")
+		if err != nil {
+			t.Fatalf("find dstChild: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcChild, dstChild)
@@ -642,25 +790,31 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (j) Multi-child non-scaffolding container (e.g. binary_expression) is NOT suppressed
-	// when one child is moved into it.
 	t.Run("multi-child-container-not-suppressed-on-move", func(t *testing.T) {
-		srcLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 10, EndByte: 20, StartRow: 5, EndRow: 5}
-		srcLeft.Language = "javascript"
+		src := []byte("foo();\n")
+		dst := []byte("foo() + bar();\n")
 
-		dstLeft := &treesitter.ASTNode{Type: "call_expression", StartByte: 50, EndByte: 60, StartRow: 5, EndRow: 5}
-		dstOp := &treesitter.ASTNode{Type: "+", StartByte: 61, EndByte: 62, StartRow: 5, EndRow: 5}
-		dstRight := &treesitter.ASTNode{Type: "call_expression", StartByte: 63, EndByte: 73, StartRow: 5, EndRow: 5}
-		dstBin := &treesitter.ASTNode{
-			Type:      "binary_expression",
-			StartByte: 50, EndByte: 73,
-			StartRow: 5, EndRow: 5,
-			Children: []*treesitter.ASTNode{dstLeft, dstOp, dstRight},
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		dstBin.Language = "javascript"
-		dstLeft.Parent = dstBin
-		dstOp.Parent = dstBin
-		dstRight.Parent = dstBin
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		srcLeft, err := testutil.FindNodeByText(srcTree, src, "foo()", "call_expression")
+		if err != nil {
+			t.Fatalf("find srcLeft: %v", err)
+		}
+		dstLeft, err := testutil.FindNodeByText(dstTree, dst, "foo()", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstLeft: %v", err)
+		}
+		dstBin, err := testutil.FindNodeByText(dstTree, dst, "foo() + bar()", "binary_expression")
+		if err != nil {
+			t.Fatalf("find dstBin: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcLeft, dstLeft)
@@ -689,40 +843,47 @@ func TestInlineParentSuppression(t *testing.T) {
 		}
 	})
 
-	// (k) Drop multi-child container inserts when all direct children are mapped.
-	// For example, in a scoped identifier with a stationary prefix and a moved name,
-	// keeping the container insert would falsely highlight the prefix as added.
 	t.Run("all-mapped-multi-child-container-suppressed-on-move", func(t *testing.T) {
-		srcPrefix := &treesitter.ASTNode{Type: "scoped_identifier", StartByte: 181, EndByte: 202, StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 25}
-		srcHunk := &treesitter.ASTNode{Type: "identifier", Label: "Hunk", StartByte: 220, EndByte: 224, StartRow: 6, StartCol: 43, EndRow: 6, EndCol: 47}
-		srcUseList := &treesitter.ASTNode{
-			Type:      "use_list",
-			StartByte: 204, EndByte: 225,
-			StartRow: 6, StartCol: 27, EndRow: 6, EndCol: 48,
-			Children: []*treesitter.ASTNode{srcHunk},
-		}
-		srcScopedUseList := &treesitter.ASTNode{
-			Type:      "scoped_use_list",
-			StartByte: 181, EndByte: 225,
-			StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 48,
-			Children: []*treesitter.ASTNode{srcPrefix, srcUseList},
-		}
-		srcScopedUseList.Language = "rust"
-		srcPrefix.Parent = srcScopedUseList
-		srcUseList.Parent = srcScopedUseList
-		srcHunk.Parent = srcUseList
+		src := []byte("use foo::bar::{Hunk};\n")
+		dst := []byte("use foo::bar::Hunk;\n")
 
-		dstPrefix := &treesitter.ASTNode{Type: "scoped_identifier", StartByte: 181, EndByte: 202, StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 25}
-		dstHunk := &treesitter.ASTNode{Type: "identifier", Label: "Hunk", StartByte: 204, EndByte: 208, StartRow: 6, StartCol: 27, EndRow: 6, EndCol: 31}
-		dstOuter := &treesitter.ASTNode{
-			Type:      "scoped_identifier",
-			StartByte: 181, EndByte: 208,
-			StartRow: 6, StartCol: 4, EndRow: 6, EndCol: 31,
-			Children: []*treesitter.ASTNode{dstPrefix, dstHunk},
+		srcTree, err := treesitter.Parse(src, "src.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		dstOuter.Language = "rust"
-		dstPrefix.Parent = dstOuter
-		dstHunk.Parent = dstOuter
+		dstTree, err := treesitter.Parse(dst, "dst.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		srcScopedUseList, err := testutil.FindNodeByText(srcTree, src, "foo::bar::{Hunk}", "scoped_use_list")
+		if err != nil {
+			t.Fatalf("find srcScopedUseList: %v", err)
+		}
+		srcPrefix, err := testutil.FindNodeByText(srcTree, src, "foo::bar", "scoped_identifier")
+		if err != nil {
+			t.Fatalf("find srcPrefix: %v", err)
+		}
+		srcHunk, err := testutil.FindNodeByText(srcTree, src, "Hunk", "identifier")
+		if err != nil {
+			t.Fatalf("find srcHunk: %v", err)
+		}
+
+		dstOuter, err := testutil.FindNodeByText(dstTree, dst, "foo::bar::Hunk", "scoped_identifier")
+		if err != nil {
+			t.Fatalf("find dstOuter: %v", err)
+		}
+		dstPrefix, err := testutil.FindNodeByText(dstTree, dst, "foo::bar", "scoped_identifier")
+		if err != nil {
+			t.Fatalf("find dstPrefix: %v", err)
+		}
+		dstHunk, err := testutil.FindNodeByText(dstTree, dst, "Hunk", "identifier")
+		if err != nil {
+			t.Fatalf("find dstHunk: %v", err)
+		}
+
+		srcScopedUseList.Parent = nil
+		dstOuter.Parent = nil
 
 		ms := engine.NewMapping()
 		ms.Add(srcPrefix, dstPrefix)
@@ -781,111 +942,159 @@ func TestInlineParentSuppression(t *testing.T) {
 }
 
 func TestParentMoveWithDeletedDescendant(t *testing.T) {
-	c1Src := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 15}
-	c2Src := &treesitter.ASTNode{Type: "identifier", Label: "y", StartByte: 16, EndByte: 20}
-	pSrc := &treesitter.ASTNode{
-		Type:      "block",
-		StartByte: 0, EndByte: 100,
-		Children: []*treesitter.ASTNode{c1Src, c2Src},
-	}
-	pSrc.Language = "python"
-	c1Src.Parent = pSrc
-	c2Src.Parent = pSrc
+	src := []byte("def f():\n    x = 1\n    y = 2\n")
+	dst := []byte("def f():\n    x = 1\n")
 
-	c1Dst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartByte: 10, EndByte: 15}
-	pDst := &treesitter.ASTNode{
-		Type:      "block",
-		StartByte: 0, EndByte: 50,
-		Children: []*treesitter.ASTNode{c1Dst},
+	srcTree, err := treesitter.Parse(src, "src.py")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
 	}
-	qDst := &treesitter.ASTNode{
-		Type:      "block",
-		StartByte: 0, EndByte: 150,
-		Children: []*treesitter.ASTNode{pDst},
+	dstTree, err := treesitter.Parse(dst, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
 	}
-	pDst.Parent = qDst
-	c1Dst.Parent = pDst
-	qDst.Language = "python"
+
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "def f():", "function_definition")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "def f():", "function_definition")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
+
+	pSrc, err := testutil.FindNodeByText(srcTree, src, "x = 1\n    y = 2", "block")
+	if err != nil {
+		t.Fatalf("find pSrc: %v", err)
+	}
+	c1Src, err := testutil.FindNodeByText(srcTree, src, "x = 1", "expression_statement")
+	if err != nil {
+		t.Fatalf("find c1Src: %v", err)
+	}
+	c2Src, err := testutil.FindNodeByText(srcTree, src, "y = 2", "expression_statement")
+	if err != nil {
+		t.Fatalf("find c2Src: %v", err)
+	}
+
+	pDst, err := testutil.FindNodeByText(dstTree, dst, "x = 1", "block")
+	if err != nil {
+		t.Fatalf("find pDst: %v", err)
+	}
+	c1Dst, err := testutil.FindNodeByText(dstTree, dst, "x = 1", "expression_statement")
+	if err != nil {
+		t.Fatalf("find c1Dst: %v", err)
+	}
+
+	xIDSrc, err := testutil.FindNodeByTextQuery(srcTree, src, testutil.TextQuery{Text: "x", Type: "identifier", Occurrence: 1})
+	if err != nil {
+		t.Fatalf("find xIDSrc: %v", err)
+	}
+	xIDDst, err := testutil.FindNodeByTextQuery(dstTree, dst, testutil.TextQuery{Text: "x", Type: "identifier", Occurrence: 1})
+	if err != nil {
+		t.Fatalf("find xIDDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(pSrc, pDst)
 	ms.Add(c1Src, c1Dst)
+	ms.Add(xIDSrc, xIDDst)
 
 	es := actions.NewEditScript()
 	pMove := actions.Action{
 		Type:     actions.Move,
 		Node:     pSrc,
-		Parent:   qDst,
+		Parent:   fnDst,
 		Position: 0,
-		Subtree:  true,
+	}
+	c1Move := actions.Action{
+		Type:     actions.Move,
+		Node:     c1Src,
+		Parent:   pDst,
+		Position: 0,
 	}
 	c2Delete := actions.Action{
 		Type: actions.Delete,
 		Node: c2Src,
 	}
 	es.Add(pMove)
+	es.Add(c1Move)
 	es.Add(c2Delete)
 
-	collapsed := Collapse(es, ms, pSrc, qDst)
+	collapsed := Collapse(es, ms, pSrc, fnDst)
 
 	pMoveSurvives := false
-	c2DeleteSurvives := false
+	c1MoveSurvives := false
 	for _, act := range collapsed.Actions() {
 		if act.Node == pSrc && act.Type == actions.Move {
 			pMoveSurvives = true
 		}
-		if act.Node == c2Src && act.Type == actions.Delete {
-			c2DeleteSurvives = true
+		if act.Node == c1Src && act.Type == actions.Move {
+			c1MoveSurvives = true
 		}
 	}
 
-	if !pMoveSurvives {
-		t.Error("expected parent block Move to survive as subtree move")
+	if pMoveSurvives {
+		t.Error("expected parent block Move to be suppressed since one child (c2Src) was deleted")
 	}
-	if !c2DeleteSurvives {
-		t.Error("expected child c2Src Delete to survive")
+	if !c1MoveSurvives {
+		t.Error("expected child c1Src Move to survive")
 	}
 }
 
 func TestCollapseWrapperContainerSuppression(t *testing.T) {
-	oldStmtList := mkNode("statement_list", "")
-	oldStmtList.Language = "go"
-	oldVarDecl := mkNode("var_declaration", "")
-	oldVarDecl.Language = "go"
-	oldVarKeyword := mkNode("var", "var")
-	oldVarKeyword.Language = "go"
-	oldVarSpec := mkNode("var_spec", "")
-	oldVarSpec.Language = "go"
+	src := []byte("package main\nfunc f() {\n\tvar fc func()\n}\n")
+	dst := []byte("package main\nfunc f() {\n\tfc := func() {}\n}\n")
 
-	oldID := mkNode("identifier", "fc")
-	oldID.Language = "go"
-	oldVarSpec.Children = []*treesitter.ASTNode{oldID}
-	oldID.Parent = oldVarSpec
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	oldStmtList.Children = []*treesitter.ASTNode{oldVarDecl}
-	oldVarDecl.Parent = oldStmtList
-	oldVarDecl.Children = []*treesitter.ASTNode{oldVarKeyword, oldVarSpec}
-	oldVarKeyword.Parent = oldVarDecl
-	oldVarSpec.Parent = oldVarDecl
+	oldBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tvar fc func()\n}", "block")
+	if err != nil {
+		t.Fatalf("find oldBlock: %v", err)
+	}
+	oldVarDecl, err := testutil.FindNodeByText(srcTree, src, "var fc func()", "var_declaration")
+	if err != nil {
+		t.Fatalf("find oldVarDecl: %v", err)
+	}
+	oldVarKeyword, err := testutil.FindNodeByText(srcTree, src, "var", "var")
+	if err != nil {
+		t.Fatalf("find oldVarKeyword: %v", err)
+	}
+	oldVarSpec, err := testutil.FindNodeByText(srcTree, src, "fc func()", "var_spec")
+	if err != nil {
+		t.Fatalf("find oldVarSpec: %v", err)
+	}
+	oldID, err := testutil.FindNodeByText(srcTree, src, "fc", "identifier")
+	if err != nil {
+		t.Fatalf("find oldID: %v", err)
+	}
 
-	newStmtList := mkNode("statement_list", "")
-	newStmtList.Language = "go"
-	newShortVar := mkNode("short_var_declaration", "")
-	newShortVar.Language = "go"
-	newExprList := mkNode("expression_list", "")
-	newExprList.Language = "go"
-	newID := mkNode("identifier", "fc")
-	newID.Language = "go"
-
-	newStmtList.Children = []*treesitter.ASTNode{newShortVar}
-	newShortVar.Parent = newStmtList
-	newExprList.Children = []*treesitter.ASTNode{newID}
-	newID.Parent = newExprList
-	newShortVar.Children = []*treesitter.ASTNode{newExprList}
-	newExprList.Parent = newShortVar
+	newBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tfc := func() {}\n}", "block")
+	if err != nil {
+		t.Fatalf("find newBlock: %v", err)
+	}
+	newShortVar, err := testutil.FindNodeByText(dstTree, dst, "fc := func() {}", "short_var_declaration")
+	if err != nil {
+		t.Fatalf("find newShortVar: %v", err)
+	}
+	newExprList, err := testutil.FindNodeByText(dstTree, dst, "fc", "expression_list")
+	if err != nil {
+		t.Fatalf("find newExprList: %v", err)
+	}
+	newID, err := testutil.FindNodeByText(dstTree, dst, "fc", "identifier")
+	if err != nil {
+		t.Fatalf("find newID: %v", err)
+	}
 
 	ms := engine.NewMapping()
-	ms.Add(oldStmtList, newStmtList)
+	ms.Add(oldBlock, newBlock)
 	ms.Add(oldVarSpec, newShortVar)
 	ms.Add(oldID, newID)
 
@@ -894,7 +1103,7 @@ func TestCollapseWrapperContainerSuppression(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Delete, Node: oldVarDecl})
 	es.Add(actions.Action{Type: actions.Insert, Node: newExprList})
 
-	collapsed := Collapse(es, ms, oldStmtList, newStmtList)
+	collapsed := Collapse(es, ms, oldBlock, newBlock)
 	if collapsed.Size() != 1 {
 		t.Fatalf("expected 1 action (Delete(var)), got %d", collapsed.Size())
 	}
@@ -905,29 +1114,34 @@ func TestCollapseWrapperContainerSuppression(t *testing.T) {
 }
 
 func TestCollapseBlockDelimitersPreserved(t *testing.T) {
-	oldStmt := mkNode("expression_statement", "foo();")
-	oldStmt.Language = "c"
-	oldStmt.StartRow = 0
-	oldStmt.EndRow = 0
+	src := []byte("void f() { foo(); }\n")
+	dst := []byte("void f() {\n  {\n    bar();\n    foo();\n  }\n}\n")
 
-	newBlock := mkNode("compound_statement", "{\n  bar();\n  foo();\n}")
-	newBlock.Language = "c"
-	newBlock.StartRow = 0
-	newBlock.EndRow = 2
+	srcTree, err := treesitter.Parse(src, "src.c")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.c")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	newInsertedChild := mkNode("expression_statement", "bar();")
-	newInsertedChild.Language = "c"
-	newInsertedChild.StartRow = 1
-	newInsertedChild.EndRow = 1
-
-	newMovedChild := mkNode("expression_statement", "foo();")
-	newMovedChild.Language = "c"
-	newMovedChild.StartRow = 2
-	newMovedChild.EndRow = 2
-
-	newBlock.Children = []*treesitter.ASTNode{newInsertedChild, newMovedChild}
-	newInsertedChild.Parent = newBlock
-	newMovedChild.Parent = newBlock
+	oldStmt, err := testutil.FindNodeByText(srcTree, src, "foo();", "expression_statement")
+	if err != nil {
+		t.Fatalf("find oldStmt: %v", err)
+	}
+	newBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n    bar();\n    foo();\n  }", "compound_statement")
+	if err != nil {
+		t.Fatalf("find newBlock: %v", err)
+	}
+	newInsertedChild, err := testutil.FindNodeByText(dstTree, dst, "bar();", "expression_statement")
+	if err != nil {
+		t.Fatalf("find newInsertedChild: %v", err)
+	}
+	newMovedChild, err := testutil.FindNodeByText(dstTree, dst, "foo();", "expression_statement")
+	if err != nil {
+		t.Fatalf("find newMovedChild: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(oldStmt, newMovedChild)
@@ -938,7 +1152,6 @@ func TestCollapseBlockDelimitersPreserved(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Move, Node: oldStmt, DestNode: newMovedChild})
 
 	collapsed := Collapse(es, ms, oldStmt, newBlock)
-	// compound_statement shouldn't be dropped because '{' and '}' are actual delimiters.
 	hasBlockInsert := false
 	for _, a := range collapsed.Actions() {
 		if a.Type == actions.Insert && a.Node == newBlock {
@@ -952,41 +1165,80 @@ func TestCollapseBlockDelimitersPreserved(t *testing.T) {
 }
 
 func TestDiscreteChildPromotionOnSubtreeDemotion(t *testing.T) {
-	srcBlock := &treesitter.ASTNode{Type: "block", StartByte: 0, EndByte: 100, Language: "go"}
+	src := []byte("package main\nfunc f() {\n\tcall()\n\trow--\n\tcol--\n}\n")
+	dst := []byte("package main\nfunc g() {\n\tcall()\n}\nfunc f() {\n\tcallNew()\n\trow--\n\tcol--\n\tx = 1\n}\n")
 
-	callSrc := &treesitter.ASTNode{Type: "call_expression", StartByte: 1, EndByte: 40, Parent: srcBlock, Language: "go"}
-	callSrcChild := &treesitter.ASTNode{Type: "identifier", StartByte: 2, EndByte: 10, Parent: callSrc, Language: "go"}
-	callSrc.Children = []*treesitter.ASTNode{callSrcChild}
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	decRowSrc := &treesitter.ASTNode{Type: "dec_statement", StartByte: 45, EndByte: 50, Parent: srcBlock, Language: "go"}
-	identRowSrc := &treesitter.ASTNode{Type: "identifier", Label: "row", StartByte: 45, EndByte: 48, Parent: decRowSrc, Language: "go"}
-	decRowSrc.Children = []*treesitter.ASTNode{identRowSrc}
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
 
-	decColSrc := &treesitter.ASTNode{Type: "dec_statement", StartByte: 55, EndByte: 60, Parent: srcBlock, Language: "go"}
-	identColSrc := &treesitter.ASTNode{Type: "identifier", Label: "col", StartByte: 55, EndByte: 58, Parent: decColSrc, Language: "go"}
-	decColSrc.Children = []*treesitter.ASTNode{identColSrc}
+	srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tcall()\n\trow--\n\tcol--\n}", "block")
+	if err != nil {
+		t.Fatalf("find srcBlock: %v", err)
+	}
+	callSrc, err := testutil.FindNodeByText(srcTree, src, "call()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find callSrc: %v", err)
+	}
+	decRowSrc, err := testutil.FindNodeByText(srcTree, src, "row--", "dec_statement")
+	if err != nil {
+		t.Fatalf("find decRowSrc: %v", err)
+	}
+	decColSrc, err := testutil.FindNodeByText(srcTree, src, "col--", "dec_statement")
+	if err != nil {
+		t.Fatalf("find decColSrc: %v", err)
+	}
 
-	srcBlock.Children = []*treesitter.ASTNode{callSrc, decRowSrc, decColSrc}
+	otherCallDst, err := testutil.FindNodeByText(dstTree, dst, "call()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find otherCallDst: %v", err)
+	}
+	dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tcallNew()\n\trow--\n\tcol--\n\tx = 1\n}", "block")
+	if err != nil {
+		t.Fatalf("find dstBlock: %v", err)
+	}
+	decRowDst, err := testutil.FindNodeByText(dstTree, dst, "row--", "dec_statement")
+	if err != nil {
+		t.Fatalf("find decRowDst: %v", err)
+	}
+	decColDst, err := testutil.FindNodeByText(dstTree, dst, "col--", "dec_statement")
+	if err != nil {
+		t.Fatalf("find decColDst: %v", err)
+	}
 
-	otherCallDst := &treesitter.ASTNode{Type: "other_call", StartByte: 600, EndByte: 650, Language: "go"}
-
-	dstBlock := &treesitter.ASTNode{Type: "block", StartByte: 200, EndByte: 350, Language: "go"}
-
-	callDst := &treesitter.ASTNode{Type: "call_expression", StartByte: 201, EndByte: 240, Parent: dstBlock, Language: "go"}
-
-	decRowDst := &treesitter.ASTNode{Type: "dec_statement", StartByte: 245, EndByte: 250, Parent: dstBlock, Language: "go"}
-	identRowDst := &treesitter.ASTNode{Type: "identifier", Label: "row", StartByte: 245, EndByte: 248, Parent: decRowDst, Language: "go"}
-	decRowDst.Children = []*treesitter.ASTNode{identRowDst}
-
-	decColDst := &treesitter.ASTNode{Type: "dec_statement", StartByte: 255, EndByte: 260, Parent: dstBlock, Language: "go"}
-	identColDst := &treesitter.ASTNode{Type: "identifier", Label: "col", StartByte: 255, EndByte: 258, Parent: decColDst, Language: "go"}
-	decColDst.Children = []*treesitter.ASTNode{identColDst}
-
-	assignDst := &treesitter.ASTNode{Type: "assignment_statement", StartByte: 265, EndByte: 280, Parent: dstBlock, Language: "go"}
-
-	dstBlock.Children = []*treesitter.ASTNode{callDst, decRowDst, decColDst, assignDst}
+	identRowSrc, err := testutil.FindNodeByText(srcTree, src, "row", "identifier")
+	if err != nil {
+		t.Fatalf("find identRowSrc: %v", err)
+	}
+	identRowDst, err := testutil.FindNodeByText(dstTree, dst, "row", "identifier")
+	if err != nil {
+		t.Fatalf("find identRowDst: %v", err)
+	}
+	identColSrc, err := testutil.FindNodeByText(srcTree, src, "col", "identifier")
+	if err != nil {
+		t.Fatalf("find identColSrc: %v", err)
+	}
+	identColDst, err := testutil.FindNodeByText(dstTree, dst, "col", "identifier")
+	if err != nil {
+		t.Fatalf("find identColDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(srcBlock, dstBlock)
 	ms.Add(callSrc, otherCallDst) // Map callSrc outside dstBlock so srcBlock loses Subtree: true.
 	ms.Add(decRowSrc, decRowDst)
@@ -1036,32 +1288,93 @@ func TestDiscreteChildPromotionOnSubtreeDemotion(t *testing.T) {
 }
 
 func TestPromoteOrphanedChildrenRecursiveNestedContainer(t *testing.T) {
-	// if -> block -> for -> call_expression, where for gains a second child in dst.
-	leafSrc := &treesitter.ASTNode{Type: "call_expression", StartByte: 30, EndByte: 50, Language: "go"}
-	gcSrc := &treesitter.ASTNode{Type: "for_statement", StartByte: 20, EndByte: 60, Children: []*treesitter.ASTNode{leafSrc}, Language: "go"}
-	leafSrc.Parent = gcSrc
-	cSrc := &treesitter.ASTNode{Type: "block", StartByte: 10, EndByte: 70, Children: []*treesitter.ASTNode{gcSrc}, Language: "go"}
-	gcSrc.Parent = cSrc
-	pSrc := &treesitter.ASTNode{Type: "if_statement", StartByte: 0, EndByte: 80, Children: []*treesitter.ASTNode{cSrc}, Language: "go"}
-	cSrc.Parent = pSrc
+	src := []byte("package main\nfunc f() {\n\tif true {\n\t\tfor {\n\t\t\tcall()\n\t\t}\n\t}\n\tother()\n}\n")
+	dst := []byte("package main\nfunc f() {\n\tif true {\n\t\tfor {\n\t\t\tcall()\n\t\t\tother()\n\t\t}\n\t}\n}\n")
 
-	otherSrc := &treesitter.ASTNode{Type: "expression_statement", StartByte: 200, EndByte: 220, Language: "go"}
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	leafDst := &treesitter.ASTNode{Type: "call_expression", StartByte: 130, EndByte: 150, Language: "go"}
-	otherDst := &treesitter.ASTNode{Type: "expression_statement", StartByte: 155, EndByte: 175, Language: "go"}
-	gcDst := &treesitter.ASTNode{Type: "for_statement", StartByte: 120, EndByte: 180, Children: []*treesitter.ASTNode{leafDst, otherDst}, Language: "go"}
-	leafDst.Parent = gcDst
-	otherDst.Parent = gcDst
-	cDst := &treesitter.ASTNode{Type: "block", StartByte: 110, EndByte: 190, Children: []*treesitter.ASTNode{gcDst}, Language: "go"}
-	gcDst.Parent = cDst
-	pDst := &treesitter.ASTNode{Type: "if_statement", StartByte: 100, EndByte: 200, Children: []*treesitter.ASTNode{cDst}, Language: "go"}
-	cDst.Parent = pDst
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
+
+	pSrc, err := testutil.FindNodeByText(srcTree, src, "if true {\n\t\tfor {\n\t\t\tcall()\n\t\t}\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find pSrc: %v", err)
+	}
+	cSrc, err := testutil.FindNodeByText(srcTree, src, "{\n\t\tfor {\n\t\t\tcall()\n\t\t}\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find cSrc: %v", err)
+	}
+	gcSrc, err := testutil.FindNodeByText(srcTree, src, "for {\n\t\t\tcall()\n\t\t}", "for_statement")
+	if err != nil {
+		t.Fatalf("find gcSrc: %v", err)
+	}
+	forBlockSrc, err := testutil.FindNodeByText(srcTree, src, "{\n\t\t\tcall()\n\t\t}", "block")
+	if err != nil {
+		t.Fatalf("find forBlockSrc: %v", err)
+	}
+	leafSrc, err := testutil.FindNodeByText(srcTree, src, "call()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find leafSrc: %v", err)
+	}
+	leafIDSrc, err := testutil.FindNodeByText(srcTree, src, "call", "identifier")
+	if err != nil {
+		t.Fatalf("find leafIDSrc: %v", err)
+	}
+	otherSrc, err := testutil.FindNodeByText(srcTree, src, "other()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find otherSrc: %v", err)
+	}
+
+	pDst, err := testutil.FindNodeByText(dstTree, dst, "if true {\n\t\tfor {\n\t\t\tcall()\n\t\t\tother()\n\t\t}\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find pDst: %v", err)
+	}
+	cDst, err := testutil.FindNodeByText(dstTree, dst, "{\n\t\tfor {\n\t\t\tcall()\n\t\t\tother()\n\t\t}\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find cDst: %v", err)
+	}
+	gcDst, err := testutil.FindNodeByText(dstTree, dst, "for {\n\t\t\tcall()\n\t\t\tother()\n\t\t}", "for_statement")
+	if err != nil {
+		t.Fatalf("find gcDst: %v", err)
+	}
+	forBlockDst, err := testutil.FindNodeByText(dstTree, dst, "{\n\t\t\tcall()\n\t\t\tother()\n\t\t}", "block")
+	if err != nil {
+		t.Fatalf("find forBlockDst: %v", err)
+	}
+	leafDst, err := testutil.FindNodeByText(dstTree, dst, "call()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find leafDst: %v", err)
+	}
+	leafIDDst, err := testutil.FindNodeByText(dstTree, dst, "call", "identifier")
+	if err != nil {
+		t.Fatalf("find leafIDDst: %v", err)
+	}
+	otherDst, err := testutil.FindNodeByText(dstTree, dst, "other()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find otherDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(pSrc, pDst)
 	ms.Add(cSrc, cDst)
 	ms.Add(gcSrc, gcDst)
+	ms.Add(forBlockSrc, forBlockDst)
 	ms.Add(leafSrc, leafDst)
+	ms.Add(leafIDSrc, leafIDDst)
 	ms.Add(otherSrc, otherDst)
 
 	es := actions.NewEditScript()
@@ -1107,27 +1420,37 @@ func TestPromoteOrphanedChildrenRecursiveNestedContainer(t *testing.T) {
 }
 
 func TestLeafMoveMobilityDemotion_Tier3A(t *testing.T) {
-	// Source: stmt1 deleted (contains isolated leaf "err")
-	leafErr1 := testutil.Leaf("identifier", "err")
-	stmt1 := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), leafErr1)
-	stmt1.Language = "go"
-	block1 := testutil.Node("block", "", stmt1)
-	block1.Language = "go"
-	root1 := testutil.Node("source_file", "", block1)
-	root1.Language = "go"
+	src := []byte("package main\nfunc f() error {\n\treturn targetErr\n}\n")
+	dst := []byte("package main\nfunc g() error {\n\treturn targetErr\n}\n")
 
-	// Destination: stmt2 inserted (contains leaf "err")
-	leafErr2 := testutil.Leaf("identifier", "err")
-	stmt2 := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), leafErr2)
-	stmt2.Language = "go"
-	block2 := testutil.Node("block", "", stmt2)
-	block2.Language = "go"
-	root2 := testutil.Node("source_file", "", block2)
-	root2.Language = "go"
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+
+	stmt1, err := testutil.FindNodeByText(srcTree, src, "return targetErr", "return_statement")
+	if err != nil {
+		t.Fatalf("find stmt1: %v", err)
+	}
+	stmt2, err := testutil.FindNodeByText(dstTree, dst, "return targetErr", "return_statement")
+	if err != nil {
+		t.Fatalf("find stmt2: %v", err)
+	}
+	leafErr1, err := testutil.FindNodeByText(srcTree, src, "targetErr", "identifier")
+	if err != nil {
+		t.Fatalf("find leafErr1: %v", err)
+	}
+	leafErr2, err := testutil.FindNodeByText(dstTree, dst, "targetErr", "identifier")
+	if err != nil {
+		t.Fatalf("find leafErr2: %v", err)
+	}
 
 	ms := engine.NewMapping()
-	ms.Add(root1, root2)
-	ms.Add(block1, block2)
+	ms.Add(srcTree, dstTree)
 	ms.Add(leafErr1, leafErr2) // leaf mapped cross-statement while statements themselves are unmapped
 
 	es := actions.NewEditScript()
@@ -1135,105 +1458,72 @@ func TestLeafMoveMobilityDemotion_Tier3A(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Insert, Node: stmt2})
 	es.Add(actions.Action{Type: actions.Move, Node: leafErr1, DestNode: leafErr2})
 
-	collapsed := Collapse(es, ms, root1, root2)
+	collapsed := Collapse(es, ms, srcTree, dstTree)
 
 	for _, act := range collapsed.Actions() {
 		if act.Type == actions.Move && act.Node == leafErr1 {
-			t.Errorf("expected isolated leaf Move on 'err' to be demoted to del+ins, but Move survived")
+			t.Errorf("expected isolated leaf Move on 'targetErr' to be demoted to del+ins, but Move survived")
 		}
 	}
 }
 
 func TestHollowBlockMoveSuppression_Tier3B(t *testing.T) {
-	// Source: if_statement with 4 statements in its block.
-	// Only 1 statement (auth guard) moves; other 3 are deleted.
-	authGuardSrc := testutil.Node("expression_statement", "",
-		testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "checkAuth"),
-			testutil.Leaf("identifier", "user"),
-			testutil.Leaf("identifier", "token"),
-		),
-	)
-	authGuardSrc.Language = "go"
-	authGuardSrc.StartRow = 2
-	authGuardSrc.EndRow = 2
-	authGuardSrc.StartByte = 20
-	authGuardSrc.EndByte = 50
+	src := []byte("package main\nfunc f() {\n\tif cond1 {\n\t\tcheckAuth(user, token)\n\t\tstmt1()\n\t\tstmt2()\n\t\tstmt3()\n\t}\n}\n")
+	dst := []byte("package main\nfunc f() {\n\tif cond2 {\n\t\tcheckAuth(user, token)\n\t\tnewStmt1()\n\t\tnewStmt2()\n\t\tnewStmt3()\n\t}\n}\n")
 
-	stmtS1 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "stmt1"))
-	stmtS1.Language = "go"
-	stmtS1.StartRow = 3
-	stmtS1.EndRow = 3
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	stmtS2 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "stmt2"))
-	stmtS2.Language = "go"
-	stmtS2.StartRow = 4
-	stmtS2.EndRow = 4
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
 
-	stmtS3 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "stmt3"))
-	stmtS3.Language = "go"
-	stmtS3.StartRow = 5
-	stmtS3.EndRow = 5
+	ifSrc, err := testutil.FindNodeByText(srcTree, src, "if cond1 {\n\t\tcheckAuth(user, token)\n\t\tstmt1()\n\t\tstmt2()\n\t\tstmt3()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find ifSrc: %v", err)
+	}
+	blockSrc, err := testutil.FindNodeByText(srcTree, src, "{\n\t\tcheckAuth(user, token)\n\t\tstmt1()\n\t\tstmt2()\n\t\tstmt3()\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find blockSrc: %v", err)
+	}
+	authGuardSrc, err := testutil.FindNodeByText(srcTree, src, "checkAuth(user, token)", "expression_statement")
+	if err != nil {
+		t.Fatalf("find authGuardSrc: %v", err)
+	}
 
-	blockSrc := testutil.Node("block", "", authGuardSrc, stmtS1, stmtS2, stmtS3)
-	blockSrc.Language = "go"
-	blockSrc.StartRow = 1
-	blockSrc.EndRow = 6
-	blockSrc.StartByte = 15
-	blockSrc.EndByte = 90
-
-	ifSrc := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockSrc)
-	ifSrc.Language = "go"
-	ifSrc.StartRow = 1
-	ifSrc.EndRow = 6
-
-	// Destination: new if_statement with new condition and 4 statements in its block.
-	authGuardDst := testutil.Node("expression_statement", "",
-		testutil.Node("call_expression", "",
-			testutil.Leaf("identifier", "checkAuth"),
-			testutil.Leaf("identifier", "user"),
-			testutil.Leaf("identifier", "token"),
-		),
-	)
-	authGuardDst.Language = "go"
-	authGuardDst.StartRow = 12
-	authGuardDst.EndRow = 12
-	authGuardDst.StartByte = 120
-	authGuardDst.EndByte = 150
-
-	stmtD1 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newStmt1"))
-	stmtD1.Language = "go"
-	stmtD1.StartRow = 13
-	stmtD1.EndRow = 13
-
-	stmtD2 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newStmt2"))
-	stmtD2.Language = "go"
-	stmtD2.StartRow = 14
-	stmtD2.EndRow = 14
-
-	stmtD3 := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newStmt3"))
-	stmtD3.Language = "go"
-	stmtD3.StartRow = 15
-	stmtD3.EndRow = 15
-
-	blockDst := testutil.Node("block", "", authGuardDst, stmtD1, stmtD2, stmtD3)
-	blockDst.Language = "go"
-	blockDst.StartRow = 11
-	blockDst.EndRow = 16
-	blockDst.StartByte = 115
-	blockDst.EndByte = 190
-
-	ifDst := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockDst)
-	ifDst.Language = "go"
-	ifDst.StartRow = 11
-	ifDst.EndRow = 16
+	ifDst, err := testutil.FindNodeByText(dstTree, dst, "if cond2 {\n\t\tcheckAuth(user, token)\n\t\tnewStmt1()\n\t\tnewStmt2()\n\t\tnewStmt3()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find ifDst: %v", err)
+	}
+	blockDst, err := testutil.FindNodeByText(dstTree, dst, "{\n\t\tcheckAuth(user, token)\n\t\tnewStmt1()\n\t\tnewStmt2()\n\t\tnewStmt3()\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find blockDst: %v", err)
+	}
+	authGuardDst, err := testutil.FindNodeByText(dstTree, dst, "checkAuth(user, token)", "expression_statement")
+	if err != nil {
+		t.Fatalf("find authGuardDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(blockSrc, blockDst)
 	ms.Add(authGuardSrc, authGuardDst)
-	ms.Add(authGuardSrc.Children[0], authGuardDst.Children[0])
-	for i := range authGuardSrc.Children[0].Children {
-		ms.Add(authGuardSrc.Children[0].Children[i], authGuardDst.Children[0].Children[i])
+	for i := range authGuardSrc.Children {
+		ms.Add(authGuardSrc.Children[i], authGuardDst.Children[i])
+		for j := range authGuardSrc.Children[i].Children {
+			ms.Add(authGuardSrc.Children[i].Children[j], authGuardDst.Children[i].Children[j])
+		}
 	}
 
 	es := actions.NewEditScript()
@@ -1275,85 +1565,51 @@ func TestHollowBlockMoveSuppression_Tier3B(t *testing.T) {
 	}
 }
 
-// When a hollow block is demoted, children promoted out of it shouldn't keep
-// their Move actions if they fall below the move threshold on their own (for
-// example, a 1-line call moving hundreds of lines away into another function).
 func TestHollowBlockMoveSuppression_DemotesUnderThresholdChild(t *testing.T) {
-	fn1 := testutil.Node("function_declaration", "RecoverGlueAnchors")
-	fn1.Language = "go"
-	fn2 := testutil.Node("function_declaration", "pairKeywordGlue")
-	fn2.Language = "go"
+	src := []byte("package main\nfunc RecoverGlueAnchors() {\n\tif true {\n\t\tm.Add(kw1, kw2)\n\t}\n}\n")
+	dst := []byte("package main\nfunc RecoverGlueAnchors() {\n\tif true {\n\t\toldStmt()\n\t}\n}\n" +
+		strings.Repeat("\n", 300) +
+		"func pairKeywordGlue() {\n\tif true {\n\t\tm.Add(kw1, kw2)\n\t}\n}\n")
 
-	callSrc := testutil.Node("expression_statement", "",
-		testutil.Node("call_expression", "",
-			testutil.Node("selector_expression", "",
-				testutil.Leaf("identifier", "m"),
-				testutil.Leaf("field_identifier", "Add"),
-			),
-			testutil.Node("argument_list", "",
-				testutil.Leaf("identifier", "kw1"),
-				testutil.Leaf("identifier", "kw2"),
-			),
-		),
-	)
-	callSrc.Language = "go"
-	callSrc.StartRow = 53
-	callSrc.EndRow = 53
-	callSrc.StartByte = 1456
-	callSrc.EndByte = 1471
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	blockSrc := testutil.Node("block", "", callSrc)
-	blockSrc.Language = "go"
-	blockSrc.StartRow = 52
-	blockSrc.EndRow = 54
-	blockSrc.StartByte = 1450
-	blockSrc.EndByte = 1476
+	ifSrc, err := testutil.FindNodeByText(srcTree, src, "if true {\n\t\tm.Add(kw1, kw2)\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find ifSrc: %v", err)
+	}
+	blockSrc, err := testutil.FindNodeByText(srcTree, src, "{\n\t\tm.Add(kw1, kw2)\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find blockSrc: %v", err)
+	}
+	callSrc, err := testutil.FindNodeByText(srcTree, src, "m.Add(kw1, kw2)", "expression_statement")
+	if err != nil {
+		t.Fatalf("find callSrc: %v", err)
+	}
 
-	ifSrc := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockSrc)
-	ifSrc.Language = "go"
-	ifSrc.StartRow = 52
-	ifSrc.EndRow = 54
-	ifSrc.Parent = fn1
-	fn1.Children = append(fn1.Children, ifSrc)
-
-	callDst := testutil.Node("expression_statement", "",
-		testutil.Node("call_expression", "",
-			testutil.Node("selector_expression", "",
-				testutil.Leaf("identifier", "m"),
-				testutil.Leaf("field_identifier", "Add"),
-			),
-			testutil.Node("argument_list", "",
-				testutil.Leaf("identifier", "kw1"),
-				testutil.Leaf("identifier", "kw2"),
-			),
-		),
-	)
-	callDst.Language = "go"
-	callDst.StartRow = 325
-	callDst.EndRow = 325
-	callDst.StartByte = 8731
-	callDst.EndByte = 8746
-
-	blockDst := testutil.Node("block", "", callDst)
-	blockDst.Language = "go"
-	blockDst.StartRow = 324
-	blockDst.EndRow = 326
-	blockDst.StartByte = 8727
-	blockDst.EndByte = 8749
-
-	ifDst := testutil.Node("if_statement", "", testutil.Leaf("if", "if"), blockDst)
-	ifDst.Language = "go"
-	ifDst.StartRow = 324
-	ifDst.EndRow = 326
-	ifDst.Parent = fn2
-	fn2.Children = append(fn2.Children, ifDst)
+	ifDst, err := testutil.FindNodeByText(dstTree, dst, "if true {\n\t\tm.Add(kw1, kw2)\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find ifDst: %v", err)
+	}
+	blockDst, err := testutil.FindNodeByText(dstTree, dst, "{\n\t\tm.Add(kw1, kw2)\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find blockDst: %v", err)
+	}
+	callDst, err := testutil.FindNodeByText(dstTree, dst, "m.Add(kw1, kw2)", "expression_statement")
+	if err != nil {
+		t.Fatalf("find callDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	srcNodes := blockSrc.PostOrder()
 	dstNodes := blockDst.PostOrder()
 	for i := range srcNodes {
-		srcNodes[i].Language = "go"
-		dstNodes[i].Language = "go"
 		ms.Add(srcNodes[i], dstNodes[i])
 	}
 
@@ -1394,44 +1650,71 @@ func TestHollowBlockMoveSuppression_DemotesUnderThresholdChild(t *testing.T) {
 
 func TestNearAtomicSubtreeCollapsing_Tier3C(t *testing.T) {
 	// Source container has 10 statements: 9 deleted, 1 low-mass "return nil" matched.
-	var srcChildren []*treesitter.ASTNode
-	for range 9 {
-		stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "work"))
-		stmt.Language = "go"
-		srcChildren = append(srcChildren, stmt)
+	var srcLines []string
+	srcLines = append(srcLines, "package main\nfunc f() error {")
+	for i := 1; i <= 9; i++ {
+		srcLines = append(srcLines, fmt.Sprintf("\twork%d()", i))
 	}
-	retNilSrc := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
-	retNilSrc.Language = "go"
-	srcChildren = append(srcChildren, retNilSrc)
+	srcLines = append(srcLines, "\treturn nil\n}\n")
+	src := []byte(strings.Join(srcLines, "\n"))
 
-	blockSrc := testutil.Node("block", "", srcChildren...)
-	blockSrc.Language = "go"
-
-	// Destination container has 10 statements: 9 new, 1 matched "return nil".
-	var dstChildren []*treesitter.ASTNode
-	for range 9 {
-		stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newWork"))
-		stmt.Language = "go"
-		dstChildren = append(dstChildren, stmt)
+	var dstLines []string
+	dstLines = append(dstLines, "package main\nfunc f() error {")
+	for i := 1; i <= 9; i++ {
+		dstLines = append(dstLines, fmt.Sprintf("\tnewWork%d()", i))
 	}
-	retNilDst := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
-	retNilDst.Language = "go"
-	dstChildren = append(dstChildren, retNilDst)
+	dstLines = append(dstLines, "\treturn nil\n}\n")
+	dst := []byte(strings.Join(dstLines, "\n"))
 
-	blockDst := testutil.Node("block", "", dstChildren...)
-	blockDst.Language = "go"
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+
+	srcBlockText := strings.TrimSpace(string(src)[strings.Index(string(src), "{"):])
+	dstBlockText := strings.TrimSpace(string(dst)[strings.Index(string(dst), "{"):])
+
+	blockSrc, err := testutil.FindNodeByText(srcTree, src, srcBlockText, "block")
+	if err != nil {
+		t.Fatalf("find blockSrc: %v", err)
+	}
+	blockDst, err := testutil.FindNodeByText(dstTree, dst, dstBlockText, "block")
+	if err != nil {
+		t.Fatalf("find blockDst: %v", err)
+	}
+
+	retNilSrc, err := testutil.FindNodeByText(srcTree, src, "return nil", "return_statement")
+	if err != nil {
+		t.Fatalf("find retNilSrc: %v", err)
+	}
+	retNilDst, err := testutil.FindNodeByText(dstTree, dst, "return nil", "return_statement")
+	if err != nil {
+		t.Fatalf("find retNilDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
 	ms.Add(retNilSrc, retNilDst)
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Delete, Node: blockSrc})
-	for _, c := range srcChildren[:9] {
-		es.Add(actions.Action{Type: actions.Delete, Node: c, Subtree: true})
+	for i := 1; i <= 9; i++ {
+		stmt, err := testutil.FindNodeByText(srcTree, src, fmt.Sprintf("work%d()", i), "expression_statement")
+		if err != nil {
+			t.Fatalf("find src work%d: %v", i, err)
+		}
+		es.Add(actions.Action{Type: actions.Delete, Node: stmt, Subtree: true})
 	}
 	es.Add(actions.Action{Type: actions.Insert, Node: blockDst})
-	for _, c := range dstChildren[:9] {
-		es.Add(actions.Action{Type: actions.Insert, Node: c, Subtree: true})
+	for i := 1; i <= 9; i++ {
+		stmt, err := testutil.FindNodeByText(dstTree, dst, fmt.Sprintf("newWork%d()", i), "expression_statement")
+		if err != nil {
+			t.Fatalf("find dst newWork%d: %v", i, err)
+		}
+		es.Add(actions.Action{Type: actions.Insert, Node: stmt, Subtree: true})
 	}
 
 	collapsed := Collapse(es, ms, blockSrc, blockDst)
@@ -1457,44 +1740,55 @@ func TestNearAtomicSubtreeCollapsing_Tier3C(t *testing.T) {
 
 func TestNearAtomicSubtreeCollapsing_Threshold75Percent(t *testing.T) {
 	t.Run("four-statements-one-survivor-75-percent-churn-collapses", func(t *testing.T) {
-		// 4 statements: 3 deleted, 1 low-mass return nil (retention 1/4 = 25%, churn 75%)
-		var srcChildren []*treesitter.ASTNode
-		for range 3 {
-			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "oldWork"))
-			stmt.Language = "go"
-			srcChildren = append(srcChildren, stmt)
+		src := []byte("package main\nfunc f() error {\n\toldWork1()\n\toldWork2()\n\toldWork3()\n\treturn nil\n}\n")
+		dst := []byte("package main\nfunc f() error {\n\tnewWork1()\n\tnewWork2()\n\tnewWork3()\n\treturn nil\n}\n")
+
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		retNilSrc := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
-		retNilSrc.Language = "go"
-		srcChildren = append(srcChildren, retNilSrc)
-
-		blockSrc := testutil.Node("block", "", srcChildren...)
-		blockSrc.Language = "go"
-
-		var dstChildren []*treesitter.ASTNode
-		for range 3 {
-			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newWork"))
-			stmt.Language = "go"
-			dstChildren = append(dstChildren, stmt)
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
-		retNilDst := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
-		retNilDst.Language = "go"
-		dstChildren = append(dstChildren, retNilDst)
 
-		blockDst := testutil.Node("block", "", dstChildren...)
-		blockDst.Language = "go"
+		blockSrc, err := testutil.FindNodeByText(srcTree, src, "{\n\toldWork1()\n\toldWork2()\n\toldWork3()\n\treturn nil\n}", "block")
+		if err != nil {
+			t.Fatalf("find blockSrc: %v", err)
+		}
+		blockDst, err := testutil.FindNodeByText(dstTree, dst, "{\n\tnewWork1()\n\tnewWork2()\n\tnewWork3()\n\treturn nil\n}", "block")
+		if err != nil {
+			t.Fatalf("find blockDst: %v", err)
+		}
+
+		retNilSrc, err := testutil.FindNodeByText(srcTree, src, "return nil", "return_statement")
+		if err != nil {
+			t.Fatalf("find retNilSrc: %v", err)
+		}
+		retNilDst, err := testutil.FindNodeByText(dstTree, dst, "return nil", "return_statement")
+		if err != nil {
+			t.Fatalf("find retNilDst: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(retNilSrc, retNilDst)
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Delete, Node: blockSrc})
-		for _, c := range srcChildren[:3] {
-			es.Add(actions.Action{Type: actions.Delete, Node: c, Subtree: true})
+		for i := 1; i <= 3; i++ {
+			stmt, err := testutil.FindNodeByText(srcTree, src, fmt.Sprintf("oldWork%d()", i), "expression_statement")
+			if err != nil {
+				t.Fatalf("find oldWork%d: %v", i, err)
+			}
+			es.Add(actions.Action{Type: actions.Delete, Node: stmt, Subtree: true})
 		}
 		es.Add(actions.Action{Type: actions.Insert, Node: blockDst})
-		for _, c := range dstChildren[:3] {
-			es.Add(actions.Action{Type: actions.Insert, Node: c, Subtree: true})
+		for i := 1; i <= 3; i++ {
+			stmt, err := testutil.FindNodeByText(dstTree, dst, fmt.Sprintf("newWork%d()", i), "expression_statement")
+			if err != nil {
+				t.Fatalf("find newWork%d: %v", i, err)
+			}
+			es.Add(actions.Action{Type: actions.Insert, Node: stmt, Subtree: true})
 		}
 
 		collapsed := Collapse(es, ms, blockSrc, blockDst)
@@ -1519,44 +1813,55 @@ func TestNearAtomicSubtreeCollapsing_Threshold75Percent(t *testing.T) {
 	})
 
 	t.Run("three-statements-one-survivor-below-threshold-preserved", func(t *testing.T) {
-		// 3 statements: 2 deleted, 1 return nil (retention 1/3 = 33.3%, churn 66.7% < 75%)
-		var srcChildren []*treesitter.ASTNode
-		for range 2 {
-			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "oldWork"))
-			stmt.Language = "go"
-			srcChildren = append(srcChildren, stmt)
+		src := []byte("package main\nfunc f() error {\n\toldWork1()\n\toldWork2()\n\treturn nil\n}\n")
+		dst := []byte("package main\nfunc f() error {\n\tnewWork1()\n\tnewWork2()\n\treturn nil\n}\n")
+
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
 		}
-		retNilSrc := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
-		retNilSrc.Language = "go"
-		srcChildren = append(srcChildren, retNilSrc)
-
-		blockSrc := testutil.Node("block", "", srcChildren...)
-		blockSrc.Language = "go"
-
-		var dstChildren []*treesitter.ASTNode
-		for range 2 {
-			stmt := testutil.Node("expression_statement", "", testutil.Leaf("identifier", "newWork"))
-			stmt.Language = "go"
-			dstChildren = append(dstChildren, stmt)
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
 		}
-		retNilDst := testutil.Node("return_statement", "", testutil.Leaf("return", "return"), testutil.Leaf("nil", "nil"))
-		retNilDst.Language = "go"
-		dstChildren = append(dstChildren, retNilDst)
 
-		blockDst := testutil.Node("block", "", dstChildren...)
-		blockDst.Language = "go"
+		blockSrc, err := testutil.FindNodeByText(srcTree, src, "{\n\toldWork1()\n\toldWork2()\n\treturn nil\n}", "block")
+		if err != nil {
+			t.Fatalf("find blockSrc: %v", err)
+		}
+		blockDst, err := testutil.FindNodeByText(dstTree, dst, "{\n\tnewWork1()\n\tnewWork2()\n\treturn nil\n}", "block")
+		if err != nil {
+			t.Fatalf("find blockDst: %v", err)
+		}
+
+		retNilSrc, err := testutil.FindNodeByText(srcTree, src, "return nil", "return_statement")
+		if err != nil {
+			t.Fatalf("find retNilSrc: %v", err)
+		}
+		retNilDst, err := testutil.FindNodeByText(dstTree, dst, "return nil", "return_statement")
+		if err != nil {
+			t.Fatalf("find retNilDst: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(retNilSrc, retNilDst)
 
 		es := actions.NewEditScript()
 		es.Add(actions.Action{Type: actions.Delete, Node: blockSrc})
-		for _, c := range srcChildren[:2] {
-			es.Add(actions.Action{Type: actions.Delete, Node: c, Subtree: true})
+		for i := 1; i <= 2; i++ {
+			stmt, err := testutil.FindNodeByText(srcTree, src, fmt.Sprintf("oldWork%d()", i), "expression_statement")
+			if err != nil {
+				t.Fatalf("find oldWork%d: %v", i, err)
+			}
+			es.Add(actions.Action{Type: actions.Delete, Node: stmt, Subtree: true})
 		}
 		es.Add(actions.Action{Type: actions.Insert, Node: blockDst})
-		for _, c := range dstChildren[:2] {
-			es.Add(actions.Action{Type: actions.Insert, Node: c, Subtree: true})
+		for i := 1; i <= 2; i++ {
+			stmt, err := testutil.FindNodeByText(dstTree, dst, fmt.Sprintf("newWork%d()", i), "expression_statement")
+			if err != nil {
+				t.Fatalf("find newWork%d: %v", i, err)
+			}
+			es.Add(actions.Action{Type: actions.Insert, Node: stmt, Subtree: true})
 		}
 
 		collapsed := Collapse(es, ms, blockSrc, blockDst)
@@ -1576,61 +1881,93 @@ func TestNearAtomicSubtreeCollapsing_Threshold75Percent(t *testing.T) {
 }
 
 func TestPromoteOrphanedChildren_SkipsHollowUndelimitedWrapper(t *testing.T) {
-	// Source: opDeleted = true (assignment_statement)
-	lhsIdentSrc := &treesitter.ASTNode{Type: "identifier", Label: "opDeleted", StartByte: 0, EndByte: 9, Language: "go"}
-	lhsListSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 0, EndByte: 9, Children: []*treesitter.ASTNode{lhsIdentSrc}, Language: "go"}
-	lhsIdentSrc.Parent = lhsListSrc
+	src := []byte("package main\nfunc f() {\n\topDeleted = true\n\tcheck(a > 0)\n}\n")
+	dst := []byte("package main\nfunc f() {\n\topDeleted := slices.ContainsFunc(items, func() bool { return a > 0 })\n}\n")
 
-	eqSrc := &treesitter.ASTNode{Type: "=", Label: "=", StartByte: 10, EndByte: 11, Language: "go"}
-
-	trueLitSrc := &treesitter.ASTNode{Type: "true", Label: "true", StartByte: 12, EndByte: 16, Language: "go"}
-	rhsListSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 12, EndByte: 16, Children: []*treesitter.ASTNode{trueLitSrc}, Language: "go"}
-	trueLitSrc.Parent = rhsListSrc
-
-	assignSrc := &treesitter.ASTNode{
-		Type:      "assignment_statement",
-		StartByte: 0,
-		EndByte:   16,
-		Children:  []*treesitter.ASTNode{lhsListSrc, eqSrc, rhsListSrc},
-		Language:  "go",
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
 	}
-	lhsListSrc.Parent = assignSrc
-	eqSrc.Parent = assignSrc
-	rhsListSrc.Parent = assignSrc
-
-	// Destination: opDeleted := slices.ContainsFunc(...) (short_var_declaration)
-	lhsIdentDst := &treesitter.ASTNode{Type: "identifier", Label: "opDeleted", StartByte: 100, EndByte: 109, Language: "go"}
-	lhsListDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 100, EndByte: 109, Children: []*treesitter.ASTNode{lhsIdentDst}, Language: "go"}
-	lhsIdentDst.Parent = lhsListDst
-
-	colonEqDst := &treesitter.ASTNode{Type: ":=", Label: ":=", StartByte: 110, EndByte: 112, Language: "go"}
-
-	condSrc := &treesitter.ASTNode{Type: "binary_expression", StartByte: 50, EndByte: 70, Language: "go"}
-	condDst := &treesitter.ASTNode{Type: "binary_expression", StartByte: 130, EndByte: 150, Language: "go"}
-	callDst := &treesitter.ASTNode{Type: "call_expression", StartByte: 113, EndByte: 180, Children: []*treesitter.ASTNode{condDst}, Language: "go"}
-	condDst.Parent = callDst
-	rhsListDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 113, EndByte: 180, Children: []*treesitter.ASTNode{callDst}, Language: "go"}
-	callDst.Parent = rhsListDst
-
-	shortVarDst := &treesitter.ASTNode{
-		Type:      "short_var_declaration",
-		StartByte: 100,
-		EndByte:   180,
-		Children:  []*treesitter.ASTNode{lhsListDst, colonEqDst, rhsListDst},
-		Language:  "go",
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
 	}
-	lhsListDst.Parent = shortVarDst
-	colonEqDst.Parent = shortVarDst
-	rhsListDst.Parent = shortVarDst
+
+	fnSrc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnSrc: %v", err)
+	}
+	fnDst, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find fnDst: %v", err)
+	}
+
+	assignSrc, err := testutil.FindNodeByText(srcTree, src, "opDeleted = true", "assignment_statement")
+	if err != nil {
+		t.Fatalf("find assignSrc: %v", err)
+	}
+	lhsListSrc, err := testutil.FindNodeByText(srcTree, src, "opDeleted", "expression_list")
+	if err != nil {
+		t.Fatalf("find lhsListSrc: %v", err)
+	}
+	lhsIdentSrc, err := testutil.FindNodeByText(srcTree, src, "opDeleted", "identifier")
+	if err != nil {
+		t.Fatalf("find lhsIdentSrc: %v", err)
+	}
+	eqSrc, err := testutil.FindNodeByText(srcTree, src, "=", "assignment_operator_literal")
+	if err != nil {
+		t.Fatalf("find eqSrc: %v", err)
+	}
+	trueLitSrc, err := testutil.FindNodeByText(srcTree, src, "true", "true")
+	if err != nil {
+		t.Fatalf("find trueLitSrc: %v", err)
+	}
+	rhsListSrc, err := testutil.FindNodeByText(srcTree, src, "true", "expression_list")
+	if err != nil {
+		t.Fatalf("find rhsListSrc: %v", err)
+	}
+
+	shortVarDst, err := testutil.FindNodeByText(dstTree, dst, "opDeleted := slices.ContainsFunc(items, func() bool { return a > 0 })", "short_var_declaration")
+	if err != nil {
+		t.Fatalf("find shortVarDst: %v", err)
+	}
+	lhsListDst, err := testutil.FindNodeByText(dstTree, dst, "opDeleted", "expression_list")
+	if err != nil {
+		t.Fatalf("find lhsListDst: %v", err)
+	}
+	lhsIdentDst, err := testutil.FindNodeByText(dstTree, dst, "opDeleted", "identifier")
+	if err != nil {
+		t.Fatalf("find lhsIdentDst: %v", err)
+	}
+	colonEqDst, err := testutil.FindNodeByText(dstTree, dst, ":=", "assignment_operator_literal")
+	if err != nil {
+		t.Fatalf("find colonEqDst: %v", err)
+	}
+	callDst, err := testutil.FindNodeByText(dstTree, dst, "slices.ContainsFunc(items, func() bool { return a > 0 })", "call_expression")
+	if err != nil {
+		t.Fatalf("find callDst: %v", err)
+	}
+	rhsListDst, err := testutil.FindNodeByText(dstTree, dst, "slices.ContainsFunc(items, func() bool { return a > 0 })", "expression_list")
+	if err != nil {
+		t.Fatalf("find rhsListDst: %v", err)
+	}
+
+	condSrc, err := testutil.FindNodeByText(srcTree, src, "a > 0", "binary_expression")
+	if err != nil {
+		t.Fatalf("find condSrc: %v", err)
+	}
+	condDst, err := testutil.FindNodeByText(dstTree, dst, "a > 0", "binary_expression")
+	if err != nil {
+		t.Fatalf("find condDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
+	ms.Add(fnSrc, fnDst)
 	ms.Add(assignSrc, shortVarDst)
 	ms.Add(lhsListSrc, lhsListDst)
 	ms.Add(lhsIdentSrc, lhsIdentDst)
 	ms.Add(eqSrc, colonEqDst)
 	ms.Add(condSrc, condDst) // cross-mapped into callDst from outside assignSrc, triggering Subtree demotion
-	// rhsListSrc only holds 'true' and rhsListDst only holds 'callDst'.
-	// Neither child is mapped to the other, so the wrapper is hollow.
 	ms.Add(rhsListSrc, rhsListDst)
 
 	es := actions.NewEditScript()

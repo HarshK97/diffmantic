@@ -14,23 +14,33 @@ import (
 
 func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	t.Run("drops move when wrapper is removed", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		oldWrapper := mkNode("friend_declaration", "")
-		oldWrapper.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = append(oldClass.Children, oldWrapper)
-		oldWrapper.Parent = oldClass
-		oldWrapper.Children = append(oldWrapper.Children, oldFn)
-		oldFn.Parent = oldWrapper
+		src := []byte("class A { friend void foo() {} };\n")
+		dst := []byte("class A { void foo() {} };\n")
+		srcTree, err := treesitter.Parse(src, "src.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = append(newClass.Children, newFn)
-		newFn.Parent = newClass
+		oldClass, err := testutil.FindNodeByText(srcTree, src, "class A { friend void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find oldClass: %v", err)
+		}
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newClass, err := testutil.FindNodeByText(dstTree, dst, "class A { void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find newClass: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldClass, newClass)
@@ -46,23 +56,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops move when wrapper is added", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = append(oldClass.Children, oldFn)
-		oldFn.Parent = oldClass
+		src := []byte("class A { void foo() {} };\n")
+		dst := []byte("class A { friend void foo() {} };\n")
+		srcTree, err := treesitter.Parse(src, "src.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		newWrapper := mkNode("friend_declaration", "")
-		newWrapper.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = append(newClass.Children, newWrapper)
-		newWrapper.Parent = newClass
-		newWrapper.Children = append(newWrapper.Children, newFn)
-		newFn.Parent = newWrapper
+		oldClass, err := testutil.FindNodeByText(srcTree, src, "class A { void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find oldClass: %v", err)
+		}
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newClass, err := testutil.FindNodeByText(dstTree, dst, "class A { friend void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find newClass: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldClass, newClass)
@@ -78,19 +98,25 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves genuine move across different containers", func(t *testing.T) {
-		oldClassA := mkNode("class_specifier", "A")
-		oldClassA.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClassA.Children = append(oldClassA.Children, oldFn)
-		oldFn.Parent = oldClassA
+		src := []byte("class A { void foo() {} };\n")
+		dst := []byte("class B { void foo() {} };\n")
+		srcTree, err := treesitter.Parse(src, "src.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClassB := mkNode("class_specifier", "B")
-		newClassB.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClassB.Children = append(newClassB.Children, newFn)
-		newFn.Parent = newClassB
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldFn, newFn)
@@ -105,58 +131,54 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops move when Go var_declaration is converted to short_var_declaration", func(t *testing.T) {
-		oldStmtList := mkNode("statement_list", "")
-		oldStmtList.Language = "go"
-		oldVarDecl := mkNode("var_declaration", "")
-		oldVarDecl.Language = "go"
-		oldVarKeyword := mkNode("var", "var")
-		oldVarKeyword.Language = "go"
-		oldVarSpec := mkNode("var_spec", "")
-		oldVarSpec.Language = "go"
-		oldID := mkNode("identifier", "fc")
-		oldID.Language = "go"
-		oldEq := mkNode("assignment_operator_literal", "=")
-		oldEq.Language = "go"
-		oldFn := mkNode("func_literal", "")
-		oldFn.Language = "go"
+		src := []byte("package main\nfunc f() {\n\tvar fc = func() {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tfc := func() {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldStmtList.Children = []*treesitter.ASTNode{oldVarDecl}
-		oldVarDecl.Parent = oldStmtList
-		oldVarDecl.Children = []*treesitter.ASTNode{oldVarKeyword, oldVarSpec}
-		oldVarKeyword.Parent = oldVarDecl
-		oldVarSpec.Parent = oldVarDecl
-		oldVarSpec.Children = []*treesitter.ASTNode{oldID, oldEq, oldFn}
-		oldID.Parent = oldVarSpec
-		oldEq.Parent = oldVarSpec
-		oldFn.Parent = oldVarSpec
-
-		newStmtList := mkNode("statement_list", "")
-		newStmtList.Language = "go"
-		newShortVar := mkNode("short_var_declaration", "")
-		newShortVar.Language = "go"
-		newExprList := mkNode("expression_list", "")
-		newExprList.Language = "go"
-		newID := mkNode("identifier", "fc")
-		newID.Language = "go"
-		newWalrus := mkNode("assignment_operator_literal", ":=")
-		newWalrus.Language = "go"
-		newFn := mkNode("func_literal", "")
-		newFn.Language = "go"
-
-		newStmtList.Children = []*treesitter.ASTNode{newShortVar}
-		newShortVar.Parent = newStmtList
-		newExprList.Children = []*treesitter.ASTNode{newID}
-		newID.Parent = newExprList
-		newShortVar.Children = []*treesitter.ASTNode{newExprList, newWalrus, newFn}
-		newExprList.Parent = newShortVar
-		newWalrus.Parent = newShortVar
-		newFn.Parent = newShortVar
+		srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tvar fc = func() {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tfc := func() {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		oldVarSpec, err := testutil.FindNodeByText(srcTree, src, "fc = func() {}", "var_spec")
+		if err != nil {
+			t.Fatalf("find oldVarSpec: %v", err)
+		}
+		newShortVar, err := testutil.FindNodeByText(dstTree, dst, "fc := func() {}", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find newShortVar: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, src, "fc", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dst, "fc", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "func() {}", "func_literal")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "func() {}", "func_literal")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldStmtList, newStmtList)
+		ms.Add(srcBlock, dstBlock)
 		ms.Add(oldVarSpec, newShortVar)
 		ms.Add(oldID, newID)
-		ms.Add(oldEq, newWalrus)
 		ms.Add(oldFn, newFn)
 
 		es := actions.NewEditScript()
@@ -170,25 +192,41 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when arguments are swapped within mapped argument_list", func(t *testing.T) {
-		oldArgs := mkNode("argument_list", "")
-		oldArgs.Language = "go"
-		oldArg1 := mkNode("call_expression", "info.Mode().Perm()")
-		oldArg1.Language = "go"
-		oldArg2 := mkNode("identifier", "mode")
-		oldArg2.Language = "go"
-		oldArgs.Children = []*treesitter.ASTNode{oldArg1, oldArg2}
-		oldArg1.Parent = oldArgs
-		oldArg2.Parent = oldArgs
+		src := []byte("package main\nfunc f() { call(info.Mode().Perm(), mode) }\n")
+		dst := []byte("package main\nfunc f() { call(mode, info.Mode().Perm()) }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newArgs := mkNode("argument_list", "")
-		newArgs.Language = "go"
-		newArg1 := mkNode("identifier", "mode")
-		newArg1.Language = "go"
-		newArg2 := mkNode("call_expression", "info.Mode().Perm()")
-		newArg2.Language = "go"
-		newArgs.Children = []*treesitter.ASTNode{newArg1, newArg2}
-		newArg1.Parent = newArgs
-		newArg2.Parent = newArgs
+		oldArgs, err := testutil.FindNodeByText(srcTree, src, "(info.Mode().Perm(), mode)", "argument_list")
+		if err != nil {
+			t.Fatalf("find oldArgs: %v", err)
+		}
+		newArgs, err := testutil.FindNodeByText(dstTree, dst, "(mode, info.Mode().Perm())", "argument_list")
+		if err != nil {
+			t.Fatalf("find newArgs: %v", err)
+		}
+		oldArg1, err := testutil.FindNodeByText(srcTree, src, "info.Mode().Perm()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldArg1: %v", err)
+		}
+		oldArg2, err := testutil.FindNodeByText(srcTree, src, "mode", "identifier")
+		if err != nil {
+			t.Fatalf("find oldArg2: %v", err)
+		}
+		newArg1, err := testutil.FindNodeByText(dstTree, dst, "mode", "identifier")
+		if err != nil {
+			t.Fatalf("find newArg1: %v", err)
+		}
+		newArg2, err := testutil.FindNodeByText(dstTree, dst, "info.Mode().Perm()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newArg2: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldArgs, newArgs)
@@ -205,30 +243,32 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops move when TypeScript declaration is wrapped in export_statement", func(t *testing.T) {
-		oldProg := mkNode("program", "")
-		oldProg.Language = "typescript"
-		oldTypeDecl := mkNode("type_alias_declaration", "type Foo = number")
-		oldTypeDecl.Language = "typescript"
-		oldProg.Children = []*treesitter.ASTNode{oldTypeDecl}
-		oldTypeDecl.Parent = oldProg
+		src := []byte("type Foo = number;\n")
+		dst := []byte("export type Foo = number;\n")
+		srcTree, err := treesitter.Parse(src, "src.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newProg := mkNode("program", "")
-		newProg.Language = "typescript"
-		newExportStmt := mkNode("export_statement", "export type Foo = number")
-		newExportStmt.Language = "typescript"
-		newExportKw := mkNode("export", "export")
-		newExportKw.Language = "typescript"
-		newTypeDecl := mkNode("type_alias_declaration", "type Foo = number")
-		newTypeDecl.Language = "typescript"
-
-		newProg.Children = []*treesitter.ASTNode{newExportStmt}
-		newExportStmt.Parent = newProg
-		newExportStmt.Children = []*treesitter.ASTNode{newExportKw, newTypeDecl}
-		newExportKw.Parent = newExportStmt
-		newTypeDecl.Parent = newExportStmt
+		oldTypeDecl, err := testutil.FindNodeByText(srcTree, src, "type Foo = number;", "type_alias_declaration")
+		if err != nil {
+			t.Fatalf("find oldTypeDecl: %v", err)
+		}
+		newTypeDecl, err := testutil.FindNodeByText(dstTree, dst, "type Foo = number;", "type_alias_declaration")
+		if err != nil {
+			t.Fatalf("find newTypeDecl: %v", err)
+		}
+		newExportKw, err := testutil.FindNodeByText(dstTree, dst, "export", "export")
+		if err != nil {
+			t.Fatalf("find newExportKw: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldProg, newProg)
+		ms.Add(srcTree, dstTree)
 		ms.Add(oldTypeDecl, newTypeDecl)
 
 		es := actions.NewEditScript()
@@ -245,26 +285,42 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when variable declaration is hoisted out of if_statement", func(t *testing.T) {
-		oldBlock := mkNode("block", "")
-		oldBlock.Language = "go"
-		oldIf := mkNode("if_statement", "")
-		oldIf.Language = "go"
-		oldDecl := mkNode("short_var_declaration", "r := rulesFor(t1)")
-		oldDecl.Language = "go"
-		oldBlock.Children = []*treesitter.ASTNode{oldIf}
-		oldIf.Parent = oldBlock
-		oldIf.Children = []*treesitter.ASTNode{oldDecl}
-		oldDecl.Parent = oldIf
+		src := []byte("package main\nfunc f() {\n\tif r := rulesFor(t1); r != nil {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tr := rulesFor(t1)\n\tif r != nil {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newBlock := mkNode("block", "")
-		newBlock.Language = "go"
-		newDecl := mkNode("short_var_declaration", "r := rulesFor(t1)")
-		newDecl.Language = "go"
-		newIf := mkNode("if_statement", "")
-		newIf.Language = "go"
-		newBlock.Children = []*treesitter.ASTNode{newDecl, newIf}
-		newDecl.Parent = newBlock
-		newIf.Parent = newBlock
+		oldBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tif r := rulesFor(t1); r != nil {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldBlock: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if r := rulesFor(t1); r != nil {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		oldDecl, err := testutil.FindNodeByText(srcTree, src, "r := rulesFor(t1)", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find oldDecl: %v", err)
+		}
+
+		newBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tr := rulesFor(t1)\n\tif r != nil {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newBlock: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if r != nil {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		newDecl, err := testutil.FindNodeByText(dstTree, dst, "r := rulesFor(t1)", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find newDecl: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldBlock, newBlock)
@@ -284,45 +340,25 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when expression is passed into a new function argument list", func(t *testing.T) {
-		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "javascript"
-		oldArgs := mkNode("arguments", "")
-		oldArgs.Language = "javascript"
-		oldArg := mkNode("argument", "")
-		oldArg.Language = "javascript"
-		oldExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		oldExpr.Language = "javascript"
+		src := []byte("call(localId.toString());\n")
+		dst := []byte("outer(nested(localId.toString()));\n")
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldCall.Children = []*treesitter.ASTNode{oldArgs}
-		oldArgs.Parent = oldCall
-		oldArgs.Children = []*treesitter.ASTNode{oldArg}
-		oldArg.Parent = oldArgs
-		oldArg.Children = []*treesitter.ASTNode{oldExpr}
-		oldExpr.Parent = oldArg
-
-		newOuterCall := mkNode("call_expression", "")
-		newOuterCall.Language = "javascript"
-		newOuterArgs := mkNode("arguments", "")
-		newOuterArgs.Language = "javascript"
-		newNestedCall := mkNode("call_expression", "")
-		newNestedCall.Language = "javascript"
-		newNestedArgs := mkNode("arguments", "")
-		newNestedArgs.Language = "javascript"
-		newArg := mkNode("argument", "")
-		newArg.Language = "javascript"
-		newExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		newExpr.Language = "javascript"
-
-		newOuterCall.Children = []*treesitter.ASTNode{newOuterArgs}
-		newOuterArgs.Parent = newOuterCall
-		newOuterArgs.Children = []*treesitter.ASTNode{newNestedCall}
-		newNestedCall.Parent = newOuterArgs
-		newNestedCall.Children = []*treesitter.ASTNode{newNestedArgs}
-		newNestedArgs.Parent = newNestedCall
-		newNestedArgs.Children = []*treesitter.ASTNode{newArg}
-		newArg.Parent = newNestedArgs
-		newArg.Children = []*treesitter.ASTNode{newExpr}
-		newExpr.Parent = newArg
+		oldExpr, err := testutil.FindNodeByText(srcTree, src, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldExpr: %v", err)
+		}
+		newExpr, err := testutil.FindNodeByText(dstTree, dst, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newExpr: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldExpr, newExpr)
@@ -337,59 +373,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move across lines when argument is wrapped in nested function calls", func(t *testing.T) {
-		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "javascript"
-		oldArgs := mkNode("arguments", "")
-		oldArgs.Language = "javascript"
-		oldArg := mkNode("argument", "")
-		oldArg.Language = "javascript"
-		oldExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		oldExpr.Language = "javascript"
-		oldExpr.StartRow, oldExpr.EndRow = 98, 98
+		src := []byte("package main\nfunc f() {\n\tpack(\n\t\tlocalId.toString(),\n\t)\n}\n")
+		dst := []byte("package main\nfunc f() {\n\thex2bin(\n\t\tthisCall(\n\t\t\tlocalId.toString(),\n\t\t),\n\t)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldName := mkNode("name", "pack")
-		oldName.Language = "javascript"
-		oldCall.Children = []*treesitter.ASTNode{oldName, oldArgs}
-		oldName.Parent = oldCall
-		oldArgs.Parent = oldCall
-		oldArgs.Children = []*treesitter.ASTNode{oldArg}
-		oldArg.Parent = oldArgs
-		oldArg.Children = []*treesitter.ASTNode{oldExpr}
-		oldExpr.Parent = oldArg
-
-		newOuterCall := mkNode("call_expression", "")
-		newOuterCall.Language = "javascript"
-		newOuterName := mkNode("name", "hex2bin")
-		newOuterName.Language = "javascript"
-		newOuterArgs := mkNode("arguments", "")
-		newOuterArgs.Language = "javascript"
-		newOuterCall.Children = []*treesitter.ASTNode{newOuterName, newOuterArgs}
-		newOuterName.Parent = newOuterCall
-		newOuterArgs.Parent = newOuterCall
-
-		newNestedCall := mkNode("call_expression", "")
-		newNestedCall.Language = "javascript"
-		newReceiver := mkNode("variable_name", "$this")
-		newReceiver.Language = "javascript"
-		newNestedArgs := mkNode("arguments", "")
-		newNestedArgs.Language = "javascript"
-		newNestedCall.Children = []*treesitter.ASTNode{newReceiver, newNestedArgs}
-		newReceiver.Parent = newNestedCall
-		newNestedArgs.Parent = newNestedCall
-
-		newOuterArgs.Children = []*treesitter.ASTNode{newNestedCall}
-		newNestedCall.Parent = newOuterArgs
-
-		newArg := mkNode("argument", "")
-		newArg.Language = "javascript"
-		newExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		newExpr.Language = "javascript"
-		newExpr.StartRow, newExpr.EndRow = 99, 99
-
-		newNestedArgs.Children = []*treesitter.ASTNode{newArg}
-		newArg.Parent = newNestedArgs
-		newArg.Children = []*treesitter.ASTNode{newExpr}
-		newExpr.Parent = newArg
+		oldCall, err := testutil.FindNodeByText(srcTree, src, "pack(\n\t\tlocalId.toString(),\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldCall: %v", err)
+		}
+		newOuterCall, err := testutil.FindNodeByText(dstTree, dst, "hex2bin(\n\t\tthisCall(\n\t\t\tlocalId.toString(),\n\t\t),\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find newOuterCall: %v", err)
+		}
+		oldExpr, err := testutil.FindNodeByText(srcTree, src, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldExpr: %v", err)
+		}
+		newExpr, err := testutil.FindNodeByText(dstTree, dst, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newExpr: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldCall, newOuterCall)
@@ -405,41 +415,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when identifier moves from named import to namespace import", func(t *testing.T) {
-		oldImport := mkNode("import_statement", "")
-		oldImport.Language = "typescript"
-		oldClause := mkNode("import_clause", "")
-		oldClause.Language = "typescript"
-		oldNamed := mkNode("named_imports", "")
-		oldNamed.Language = "typescript"
-		oldSpec := mkNode("import_specifier", "")
-		oldSpec.Language = "typescript"
-		oldID := mkNode("identifier", "util")
-		oldID.Language = "typescript"
+		src := []byte("import { util } from './module';\n")
+		dst := []byte("import * as util from './module';\n")
+		srcTree, err := treesitter.Parse(src, "src.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldImport.Children = []*treesitter.ASTNode{oldClause}
-		oldClause.Parent = oldImport
-		oldClause.Children = []*treesitter.ASTNode{oldNamed}
-		oldNamed.Parent = oldClause
-		oldNamed.Children = []*treesitter.ASTNode{oldSpec}
-		oldSpec.Parent = oldNamed
-		oldSpec.Children = []*treesitter.ASTNode{oldID}
-		oldID.Parent = oldSpec
-
-		newImport := mkNode("import_statement", "")
-		newImport.Language = "typescript"
-		newClause := mkNode("import_clause", "")
-		newClause.Language = "typescript"
-		newNamespace := mkNode("namespace_import", "")
-		newNamespace.Language = "typescript"
-		newID := mkNode("identifier", "util")
-		newID.Language = "typescript"
-
-		newImport.Children = []*treesitter.ASTNode{newClause}
-		newClause.Parent = newImport
-		newClause.Children = []*treesitter.ASTNode{newNamespace}
-		newNamespace.Parent = newClause
-		newNamespace.Children = []*treesitter.ASTNode{newID}
-		newID.Parent = newNamespace
+		oldImport, err := testutil.FindNodeByText(srcTree, src, "import { util } from './module';", "import_statement")
+		if err != nil {
+			t.Fatalf("find oldImport: %v", err)
+		}
+		newImport, err := testutil.FindNodeByText(dstTree, dst, "import * as util from './module';", "import_statement")
+		if err != nil {
+			t.Fatalf("find newImport: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, src, "util", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dst, "util", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldImport, newImport)
@@ -455,29 +457,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when expression moves from RHS to LHS operand slot in comparison", func(t *testing.T) {
-		oldBin := mkNode("binary_expression", "!=")
-		oldBin.Language = "zig"
-		oldLHS := mkNode("field_expression", "stream.positional")
-		oldLHS.Language = "zig"
-		oldRHS := mkNode("field_expression", "arg.param")
-		oldRHS.Language = "zig"
-		oldBin.Children = []*treesitter.ASTNode{oldLHS, oldRHS}
-		oldLHS.Parent = oldBin
-		oldRHS.Parent = oldBin
+		src := []byte("package main\nfunc f() { _ = streamPos != argParam }\n")
+		dst := []byte("package main\nfunc f() { _ = call(argParam) != posVal }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newBin := mkNode("binary_expression", "!=")
-		newBin.Language = "zig"
-		newCall := mkNode("call_expression", "")
-		newCall.Language = "zig"
-		newLHS := mkNode("field_expression", "arg.param")
-		newLHS.Language = "zig"
-		newCall.Children = []*treesitter.ASTNode{newLHS}
-		newLHS.Parent = newCall
-		newRHS := mkNode("enum_literal", ".positional")
-		newRHS.Language = "zig"
-		newBin.Children = []*treesitter.ASTNode{newCall, newRHS}
-		newCall.Parent = newBin
-		newRHS.Parent = newBin
+		oldBin, err := testutil.FindNodeByText(srcTree, src, "streamPos != argParam", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldBin: %v", err)
+		}
+		newBin, err := testutil.FindNodeByText(dstTree, dst, "call(argParam) != posVal", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newBin: %v", err)
+		}
+		oldRHS, err := testutil.FindNodeByText(srcTree, src, "argParam", "identifier")
+		if err != nil {
+			t.Fatalf("find oldRHS: %v", err)
+		}
+		newLHS, err := testutil.FindNodeByText(dstTree, dst, "argParam", "identifier")
+		if err != nil {
+			t.Fatalf("find newLHS: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldBin, newBin)
@@ -493,42 +499,41 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops Move when operand stays stationary within expanding conditional binary expression", func(t *testing.T) {
-		oldIf := mkNode("if_statement", "")
-		oldIf.Language = "c"
-		oldParen := mkNode("parenthesized_expression", "")
-		oldParen.Language = "c"
-		oldField := mkNode("field_expression", "server.allow_access_expired")
-		oldField.Language = "c"
-		oldField.StartRow = 10
-		oldField.EndRow = 10
-		oldField.StartCol = 8
-		oldField.EndCol = 35
-		oldIf.Children = []*treesitter.ASTNode{oldParen}
-		oldParen.Parent = oldIf
-		oldParen.Children = []*treesitter.ASTNode{oldField}
-		oldField.Parent = oldParen
+		src := []byte("void f() { if (server.allow_access_expired) {} }\n")
+		dst := []byte("void f() { if (subtractExpiredFields && server.allow_access_expired) {} }\n")
+		srcTree, err := treesitter.Parse(src, "src.c")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.c")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newIf := mkNode("if_statement", "")
-		newIf.Language = "c"
-		newParen := mkNode("parenthesized_expression", "")
-		newParen.Language = "c"
-		newBin := mkNode("binary_expression", "&&")
-		newBin.Language = "c"
-		newLHS := mkNode("identifier", "subtractExpiredFields")
-		newLHS.Language = "c"
-		newField := mkNode("field_expression", "server.allow_access_expired")
-		newField.Language = "c"
-		newField.StartRow = 12
-		newField.EndRow = 12
-		newField.StartCol = 33
-		newField.EndCol = 60
-		newIf.Children = []*treesitter.ASTNode{newParen}
-		newParen.Parent = newIf
-		newParen.Children = []*treesitter.ASTNode{newBin}
-		newBin.Parent = newParen
-		newBin.Children = []*treesitter.ASTNode{newLHS, newField}
-		newLHS.Parent = newBin
-		newField.Parent = newBin
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (server.allow_access_expired) {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if (subtractExpiredFields && server.allow_access_expired) {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldParen, err := testutil.FindNodeByText(srcTree, src, "(server.allow_access_expired)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find oldParen: %v", err)
+		}
+		newParen, err := testutil.FindNodeByText(dstTree, dst, "(subtractExpiredFields && server.allow_access_expired)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find newParen: %v", err)
+		}
+		oldField, err := testutil.FindNodeByText(srcTree, src, "server.allow_access_expired", "field_expression")
+		if err != nil {
+			t.Fatalf("find oldField: %v", err)
+		}
+		newField, err := testutil.FindNodeByText(dstTree, dst, "server.allow_access_expired", "field_expression")
+		if err != nil {
+			t.Fatalf("find newField: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldIf, newIf)
@@ -545,40 +550,41 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops Move when binary condition expression is pruned in Go if statement", func(t *testing.T) {
-		oldIf := mkNode("if_statement", "")
-		oldIf.Language = "go"
-		oldIfKw := mkNode("if", "if")
-		oldIfKw.Language = "go"
-		oldOuterBin := mkNode("binary_expression", "||")
-		oldOuterBin.Language = "go"
-		oldInnerBin := mkNode("binary_expression", "||")
-		oldInnerBin.Language = "go"
-		oldCall := mkNode("call_expression", "r.IsCall(n.Type)")
-		oldCall.Language = "go"
-		oldBlock := mkNode("block", "")
-		oldBlock.Language = "go"
+		src := []byte("package main\nfunc f() {\n\tif (a || b) || r.IsCall() {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif a || b {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldIf.Children = []*treesitter.ASTNode{oldIfKw, oldOuterBin, oldBlock}
-		oldIfKw.Parent = oldIf
-		oldOuterBin.Parent = oldIf
-		oldBlock.Parent = oldIf
-		oldOuterBin.Children = []*treesitter.ASTNode{oldInnerBin, oldCall}
-		oldInnerBin.Parent = oldOuterBin
-		oldCall.Parent = oldOuterBin
-
-		newIf := mkNode("if_statement", "")
-		newIf.Language = "go"
-		newIfKw := mkNode("if", "if")
-		newIfKw.Language = "go"
-		newCondition := mkNode("binary_expression", "||")
-		newCondition.Language = "go"
-		newBlock := mkNode("block", "")
-		newBlock.Language = "go"
-
-		newIf.Children = []*treesitter.ASTNode{newIfKw, newCondition, newBlock}
-		newIfKw.Parent = newIf
-		newCondition.Parent = newIf
-		newBlock.Parent = newIf
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (a || b) || r.IsCall() {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if a || b {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldInnerBin, err := testutil.FindNodeByText(srcTree, src, "a || b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldInnerBin: %v", err)
+		}
+		newCondition, err := testutil.FindNodeByText(dstTree, dst, "a || b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newCondition: %v", err)
+		}
+		oldBlock, err := testutil.FindNodeByText(srcTree, src, "{}", "block")
+		if err != nil {
+			t.Fatalf("find oldBlock: %v", err)
+		}
+		newBlock, err := testutil.FindNodeByText(dstTree, dst, "{}", "block")
+		if err != nil {
+			t.Fatalf("find newBlock: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldIf, newIf)
@@ -595,64 +601,80 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops Move when boolean operator precedence or parens rebalance within if condition", func(t *testing.T) {
-		// Old: if (A || B) || C { block }
-		oldAId := mkNode("identifier", "A")
-		oldBId := mkNode("identifier", "B")
-		oldCId := mkNode("identifier", "C")
-		oldA := mkNode("binary_expression", "==", oldAId)
-		oldB := mkNode("binary_expression", "<=", oldBId)
-		oldC := mkNode("call_expression", "", oldCId)
-		oldLeftBin := mkNode("binary_expression", "||", oldA, oldB)
-		oldRootBin := mkNode("binary_expression", "||", oldLeftBin, oldC)
-		oldBlock := mkNode("block", "")
-		oldIf := mkNode("if_statement", "", mkNode("if", "if"), oldRootBin, oldBlock)
-		oldOuterBlock := mkNode("block", "", oldIf)
-		setLanguageRecursive(oldOuterBlock, "go")
+		src := []byte("package main\nfunc f() {\n\tif (a == 1 || b <= 2) || c() {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif a == 1 && (b <= 2 || c()) {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		// New: if A && (B || C) { block }
-		newAId := mkNode("identifier", "A")
-		newBId := mkNode("identifier", "B")
-		newCId := mkNode("identifier", "C")
-		newA := mkNode("binary_expression", "==", newAId)
-		newB := mkNode("binary_expression", "<=", newBId)
-		newC := mkNode("call_expression", "", newCId)
-		newRightBin := mkNode("binary_expression", "||", newB, newC)
-		newParen := mkNode("parenthesized_expression", "", newRightBin)
-		newRootBin := mkNode("binary_expression", "&&", newA, newParen)
-		newBlock := mkNode("block", "")
-		newIf := mkNode("if_statement", "", mkNode("if", "if"), newRootBin, newBlock)
-		newOuterBlock := mkNode("block", "", newIf)
-		setLanguageRecursive(newOuterBlock, "go")
-
-		oldA.StartByte, oldA.EndByte = 10, 20
-		oldAId.StartByte, oldAId.EndByte = 10, 20
-		oldB.StartByte, oldB.EndByte = 30, 40
-		oldBId.StartByte, oldBId.EndByte = 30, 40
-		oldC.StartByte, oldC.EndByte = 50, 60
-		oldCId.StartByte, oldCId.EndByte = 50, 60
-		oldLeftBin.StartByte, oldLeftBin.EndByte = 10, 40
-		oldRootBin.StartByte, oldRootBin.EndByte = 10, 60
-
-		newA.StartByte, newA.EndByte = 10, 20
-		newAId.StartByte, newAId.EndByte = 10, 20
-		newB.StartByte, newB.EndByte = 35, 45
-		newBId.StartByte, newBId.EndByte = 35, 45
-		newC.StartByte, newC.EndByte = 55, 65
-		newCId.StartByte, newCId.EndByte = 55, 65
-		newRightBin.StartByte, newRightBin.EndByte = 35, 65
-		newParen.StartByte, newParen.EndByte = 34, 66
-		newRootBin.StartByte, newRootBin.EndByte = 10, 66
+		oldOuterBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tif (a == 1 || b <= 2) || c() {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldOuterBlock: %v", err)
+		}
+		newOuterBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tif a == 1 && (b <= 2 || c()) {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newOuterBlock: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (a == 1 || b <= 2) || c() {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if a == 1 && (b <= 2 || c()) {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldA, err := testutil.FindNodeByText(srcTree, src, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldA: %v", err)
+		}
+		newA, err := testutil.FindNodeByText(dstTree, dst, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newA: %v", err)
+		}
+		oldB, err := testutil.FindNodeByText(srcTree, src, "b <= 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldB: %v", err)
+		}
+		newB, err := testutil.FindNodeByText(dstTree, dst, "b <= 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newB: %v", err)
+		}
+		oldC, err := testutil.FindNodeByText(srcTree, src, "c()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldC: %v", err)
+		}
+		newC, err := testutil.FindNodeByText(dstTree, dst, "c()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newC: %v", err)
+		}
+		oldLeftBin, err := testutil.FindNodeByText(srcTree, src, "a == 1 || b <= 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldLeftBin: %v", err)
+		}
+		newRightBin, err := testutil.FindNodeByText(dstTree, dst, "b <= 2 || c()", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newRightBin: %v", err)
+		}
+		oldRootBin, err := testutil.FindNodeByText(srcTree, src, "(a == 1 || b <= 2) || c()", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldRootBin: %v", err)
+		}
+		newRootBin, err := testutil.FindNodeByText(dstTree, dst, "a == 1 && (b <= 2 || c())", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newRootBin: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldOuterBlock, newOuterBlock)
 		ms.Add(oldIf, newIf)
-		ms.Add(oldBlock, newBlock)
 		ms.Add(oldA, newA)
-		ms.Add(oldAId, newAId)
 		ms.Add(oldB, newB)
-		ms.Add(oldBId, newBId)
 		ms.Add(oldC, newC)
-		ms.Add(oldCId, newCId)
 		ms.Add(oldLeftBin, newRootBin)
 		ms.Add(oldRootBin, newRightBin)
 
@@ -667,46 +689,63 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when operands are swapped across intermediate expressions", func(t *testing.T) {
-		oldAId := mkNode("identifier", "A")
-		oldBId := mkNode("identifier", "B")
-		oldA := mkNode("binary_expression", "==", oldAId)
-		oldB := mkNode("binary_expression", "==", oldBId)
-		oldRootBin := mkNode("binary_expression", "||", oldA, oldB)
-		oldIf := mkNode("if_statement", "", oldRootBin)
-		oldOuterBlock := mkNode("block", "", oldIf)
-		setLanguageRecursive(oldOuterBlock, "go")
+		src := []byte("package main\nfunc f() {\n\tif a == 1 || b == 2 {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif (b == 2) || a == 1 {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldA.StartByte, oldA.EndByte = 10, 20
-		oldA.StartCol, oldA.EndCol = 10, 20
-		oldAId.StartByte, oldAId.EndByte = 10, 20
-		oldB.StartByte, oldB.EndByte = 30, 40
-		oldBId.StartByte, oldBId.EndByte = 30, 40
-
-		newAId := mkNode("identifier", "A")
-		newBId := mkNode("identifier", "B")
-		newA := mkNode("binary_expression", "==", newAId)
-		newB := mkNode("binary_expression", "==", newBId)
-		newParen := mkNode("parenthesized_expression", "", newB)
-		newRootBin := mkNode("binary_expression", "||", newParen, newA)
-		newIf := mkNode("if_statement", "", newRootBin)
-		newOuterBlock := mkNode("block", "", newIf)
-		setLanguageRecursive(newOuterBlock, "go")
-
-		// B is now before A in document order.
-		newParen.StartByte, newParen.EndByte = 10, 24
-		newB.StartByte, newB.EndByte = 12, 22
-		newBId.StartByte, newBId.EndByte = 12, 22
-		newA.StartByte, newA.EndByte = 26, 36
-		newA.StartCol, newA.EndCol = 26, 36
-		newAId.StartByte, newAId.EndByte = 26, 36
+		oldOuterBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tif a == 1 || b == 2 {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldOuterBlock: %v", err)
+		}
+		newOuterBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tif (b == 2) || a == 1 {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newOuterBlock: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if a == 1 || b == 2 {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if (b == 2) || a == 1 {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldA, err := testutil.FindNodeByText(srcTree, src, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldA: %v", err)
+		}
+		newA, err := testutil.FindNodeByText(dstTree, dst, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newA: %v", err)
+		}
+		oldB, err := testutil.FindNodeByText(srcTree, src, "b == 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldB: %v", err)
+		}
+		newB, err := testutil.FindNodeByText(dstTree, dst, "b == 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newB: %v", err)
+		}
+		oldRootBin, err := testutil.FindNodeByText(srcTree, src, "a == 1 || b == 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldRootBin: %v", err)
+		}
+		newRootBin, err := testutil.FindNodeByText(dstTree, dst, "(b == 2) || a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newRootBin: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldOuterBlock, newOuterBlock)
 		ms.Add(oldIf, newIf)
 		ms.Add(oldA, newA)
-		ms.Add(oldAId, newAId)
 		ms.Add(oldB, newB)
-		ms.Add(oldBId, newBId)
 		ms.Add(oldRootBin, newRootBin)
 
 		es := actions.NewEditScript()
@@ -719,24 +758,57 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("does not treat operator-only shell inside same statement as stationary expression move", func(t *testing.T) {
-		oldOp := mkNode("logical_operator_literal", "&&")
-		oldBin := mkNode("binary_expression", "&&", mkNode("identifier", "a"), oldOp, mkNode("identifier", "b"))
-		oldParen := mkNode("parenthesized_expression", "", oldBin)
-		oldRoot := mkNode("binary_expression", "||", oldParen, mkNode("identifier", "keep"))
-		oldIf := mkNode("if_statement", "", oldRoot)
-		oldOuter := mkNode("block", "", oldIf)
-		setLanguageRecursive(oldOuter, "go")
+		src := []byte("package main\nfunc f() {\n\tif (a && b) || keep {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif (c && d) || other {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newOp := mkNode("logical_operator_literal", "&&")
-		newBin := mkNode("binary_expression", "&&", mkNode("identifier", "c"), newOp, mkNode("identifier", "d"))
-		newParen := mkNode("parenthesized_expression", "", newBin)
-		newRoot := mkNode("binary_expression", "||", newParen, mkNode("identifier", "other"))
-		newIf := mkNode("if_statement", "", newRoot)
-		newOuter := mkNode("block", "", newIf)
-		setLanguageRecursive(newOuter, "go")
-
-		oldParen.StartCol, oldParen.EndCol = 3, 11
-		newParen.StartCol, newParen.EndCol = 3, 15
+		oldOuter, err := testutil.FindNodeByText(srcTree, src, "{\n\tif (a && b) || keep {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldOuter: %v", err)
+		}
+		newOuter, err := testutil.FindNodeByText(dstTree, dst, "{\n\tif (c && d) || other {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newOuter: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (a && b) || keep {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if (c && d) || other {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldParen, err := testutil.FindNodeByText(srcTree, src, "(a && b)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find oldParen: %v", err)
+		}
+		newParen, err := testutil.FindNodeByText(dstTree, dst, "(c && d)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find newParen: %v", err)
+		}
+		oldBin, err := testutil.FindNodeByText(srcTree, src, "a && b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldBin: %v", err)
+		}
+		newBin, err := testutil.FindNodeByText(dstTree, dst, "c && d", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newBin: %v", err)
+		}
+		oldOp, err := testutil.FindNodeByText(srcTree, src, "&&", "logical_operator_literal")
+		if err != nil {
+			t.Fatalf("find oldOp: %v", err)
+		}
+		newOp, err := testutil.FindNodeByText(dstTree, dst, "&&", "logical_operator_literal")
+		if err != nil {
+			t.Fatalf("find newOp: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldOuter, newOuter)
@@ -755,87 +827,83 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves move when wrapper unwrap depth exceeds limit", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		w1 := mkNode("friend_declaration", "")
-		w1.Language = "cpp"
-		w2 := mkNode("friend_declaration", "")
-		w2.Language = "cpp"
-		w3 := mkNode("friend_declaration", "")
-		w3.Language = "cpp"
-		w4 := mkNode("friend_declaration", "")
-		w4.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = []*treesitter.ASTNode{w1}
-		w1.Parent = oldClass
-		w1.Children = []*treesitter.ASTNode{w2}
-		w2.Parent = w1
-		w2.Children = []*treesitter.ASTNode{w3}
-		w3.Parent = w2
-		w3.Children = []*treesitter.ASTNode{w4}
-		w4.Parent = w3
-		w4.Children = []*treesitter.ASTNode{oldFn}
-		oldFn.Parent = w4
+		srcGo := []byte("package main\nfunc f() {\n\t_ = ((((foo))))\n}\n")
+		dstGo := []byte("package main\nfunc f() {\n\t_ = foo\n}\n")
+		srcTree, err := treesitter.Parse(srcGo, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dstGo, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = []*treesitter.ASTNode{newFn}
-		newFn.Parent = newClass
+		srcBlock, err := testutil.FindNodeByText(srcTree, srcGo, "{\n\t_ = ((((foo))))\n}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dstGo, "{\n\t_ = foo\n}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, srcGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dstGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldClass, newClass)
-		ms.Add(oldFn, newFn)
+		ms.Add(srcBlock, dstBlock)
+		ms.Add(oldID, newID)
 
 		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldFn, DestNode: newFn})
+		es.Add(actions.Action{Type: actions.Move, Node: oldID, DestNode: newID})
 
 		result := normalizeStationaryWrapperMoves(es, ms)
-		// With maxUnwrapDepth = 3, 4 hops cannot unwrap to oldClass, so move is preserved
+		// With maxUnwrapDepth = 3, 4 hops cannot unwrap to srcBlock, so move is preserved
 		if result.Size() != 1 {
 			t.Fatalf("expected move to be preserved across >3 wrapper hops, got %d actions", result.Size())
 		}
 	})
 
 	t.Run("preserves move when wrapper unwrap is asymmetric", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		w1 := mkNode("friend_declaration", "")
-		w1.Language = "cpp"
-		w2 := mkNode("friend_declaration", "")
-		w2.Language = "cpp"
-		w3 := mkNode("friend_declaration", "")
-		w3.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = []*treesitter.ASTNode{w1}
-		w1.Parent = oldClass
-		w1.Children = []*treesitter.ASTNode{w2}
-		w2.Parent = w1
-		w2.Children = []*treesitter.ASTNode{w3}
-		w3.Parent = w2
-		w3.Children = []*treesitter.ASTNode{oldFn}
-		oldFn.Parent = w3
+		srcGo := []byte("package main\nfunc f() {\n\t_ = (((foo)))\n}\n")
+		dstGo := []byte("package main\nfunc f() {\n\t_ = (foo)\n}\n")
+		srcTree, err := treesitter.Parse(srcGo, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dstGo, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		nw1 := mkNode("friend_declaration", "")
-		nw1.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = []*treesitter.ASTNode{nw1}
-		nw1.Parent = newClass
-		nw1.Children = []*treesitter.ASTNode{newFn}
-		newFn.Parent = nw1
+		srcBlock, err := testutil.FindNodeByText(srcTree, srcGo, "{\n\t_ = (((foo)))\n}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dstGo, "{\n\t_ = (foo)\n}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, srcGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dstGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldClass, newClass)
-		ms.Add(oldFn, newFn)
+		ms.Add(srcBlock, dstBlock)
+		ms.Add(oldID, newID)
 
 		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldFn, DestNode: newFn})
+		es.Add(actions.Action{Type: actions.Move, Node: oldID, DestNode: newID})
 
 		result := normalizeStationaryWrapperMoves(es, ms)
 		// srcDepth = 3, dstDepth = 1, diff = 2 > 1 → asymmetric unwrap, move is preserved
@@ -868,40 +936,71 @@ func TestSameScopeDeclaration(t *testing.T) {
 	})
 
 	t.Run("nil mapping returns false", func(t *testing.T) {
-		src := mkNode("identifier", "x")
-		src.Language = "go"
-		dst := mkNode("identifier", "y")
-		dst.Language = "go"
-		if sameScopeDeclaration(src, dst, nil, r) {
+		src := []byte("package main\nvar x = 1\nvar y = 2\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		xNode, err := testutil.FindNodeByText(tree, src, "x", "identifier")
+		if err != nil {
+			t.Fatalf("find x: %v", err)
+		}
+		yNode, err := testutil.FindNodeByText(tree, src, "y", "identifier")
+		if err != nil {
+			t.Fatalf("find y: %v", err)
+		}
+		if sameScopeDeclaration(xNode, yNode, nil, r) {
 			t.Error("expected false for nil mapping")
 		}
 	})
 
 	t.Run("both outside any container returns true", func(t *testing.T) {
 		ms := engine.NewMapping()
-		src := mkNode("identifier", "x")
-		src.Language = "go"
-		dst := mkNode("identifier", "y")
-		dst.Language = "go"
-		if !sameScopeDeclaration(src, dst, ms, r) {
+		src := []byte("package main\nvar x = 1\nvar y = 2\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		xNode, err := testutil.FindNodeByText(tree, src, "x", "identifier")
+		if err != nil {
+			t.Fatalf("find x: %v", err)
+		}
+		yNode, err := testutil.FindNodeByText(tree, src, "y", "identifier")
+		if err != nil {
+			t.Fatalf("find y: %v", err)
+		}
+		if !sameScopeDeclaration(xNode, yNode, ms, r) {
 			t.Error("expected true when both nodes are outside any container")
 		}
 	})
 
 	t.Run("matched enclosing containers returns true", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
-
-		dstFunc := mkNode("function_declaration", "bar")
-		dstFunc.Language = "go"
-		dstStmt := mkNode("expression_statement", "")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+		src := []byte("package main\nfunc foo() { stmtA() }\n")
+		dst := []byte("package main\nfunc bar() { stmtB() }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func foo()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func bar()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtB()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcFunc, dstFunc)
@@ -912,19 +1011,24 @@ func TestSameScopeDeclaration(t *testing.T) {
 	})
 
 	t.Run("unmatched enclosing containers returns false", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
-
-		dstFunc := mkNode("function_declaration", "bar")
-		dstFunc.Language = "go"
-		dstStmt := mkNode("expression_statement", "")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+		src := []byte("package main\nfunc foo() { stmtA() }\n")
+		dst := []byte("package main\nfunc bar() { stmtB() }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtB()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		// srcFunc and dstFunc are NOT mapped to each other.
@@ -935,43 +1039,45 @@ func TestSameScopeDeclaration(t *testing.T) {
 	})
 
 	t.Run("one inside container one outside returns false", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
-
-		dst := mkNode("expression_statement", "")
-		dst.Language = "go"
+		src := []byte("package main\nfunc foo() { stmtA() }\n")
+		dst := []byte("package main\nvar _ = stmtB()\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtB()", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		if sameScopeDeclaration(srcStmt, dst, ms, r) {
+		if sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
 			t.Error("expected false when only one node is inside a container")
 		}
 	})
 
 	t.Run("Unit/distinct closures in same outer function returns false", func(t *testing.T) {
-		outerFunc := mkNode("function_declaration", "outer")
-		outerFunc.Language = "go"
-
-		c1 := mkNode("func_literal", "")
-		c1.Language = "go"
-		c1.Parent = outerFunc
-
-		c2 := mkNode("func_literal", "")
-		c2.Language = "go"
-		c2.Parent = outerFunc
-
-		stmt1 := mkNode("expression_statement", "")
-		stmt1.Language = "go"
-		stmt1.Parent = c1
-		c1.Children = []*treesitter.ASTNode{stmt1}
-
-		stmt2 := mkNode("expression_statement", "")
-		stmt2.Language = "go"
-		stmt2.Parent = c2
-		c2.Children = []*treesitter.ASTNode{stmt2}
+		src := []byte("package main\nfunc outer() {\n\tc1 := func() { stmtOne() }\n\tc2 := func() { stmtTwo() }\n\t_, _ = c1, c2\n}\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		stmt1, err := testutil.FindNodeByText(tree, src, "stmtOne()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find stmt1: %v", err)
+		}
+		stmt2, err := testutil.FindNodeByText(tree, src, "stmtTwo()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find stmt2: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		// c1 and c2 are in the same outer function, but are distinct unmapped closures.
@@ -1551,44 +1657,61 @@ func processItems(items []int) {
 
 func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T) {
 	// Setup: stationary expression restructuring on the same line within the same statement.
-	outerBlock := mkNode("block", "")
-	outerBlock.Language = "go"
+	src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\tcallFoo()\n}\n")
+	dst := []byte("package main\n" + strings.Repeat("\n", 49) + "func f() {\n\tcallFoo()\n}\n")
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	stmt1 := mkNode("expression_statement", "")
-	stmt1.Language = "go"
-	stmt1.Parent = outerBlock
-	stmt1.StartRow = 10
-
-	call1 := mkNode("call_expression", "")
-	call1.Language = "go"
-	call1.Parent = stmt1
-	call1.StartRow = 10
-
-	stmt2 := mkNode("expression_statement", "")
-	stmt2.Language = "go"
-	stmt2.Parent = outerBlock
-	stmt2.StartRow = 50
-
-	call2 := mkNode("call_expression", "")
-	call2.Language = "go"
-	call2.Parent = stmt2
-	call2.StartRow = 50
-
-	id1 := mkNode("identifier", "foo")
-	id1.Language = "go"
-	id1.Parent = call1
-
-	id2 := mkNode("identifier", "foo")
-	id2.Language = "go"
-	id2.Parent = call2
-
-	call1.Children = []*treesitter.ASTNode{id1}
-	call2.Children = []*treesitter.ASTNode{id2}
-	stmt1.Children = []*treesitter.ASTNode{call1}
-	stmt2.Children = []*treesitter.ASTNode{call2}
+	srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find srcFunc: %v", err)
+	}
+	dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find dstFunc: %v", err)
+	}
+	srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tcallFoo()\n}", "block")
+	if err != nil {
+		t.Fatalf("find srcBlock: %v", err)
+	}
+	dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tcallFoo()\n}", "block")
+	if err != nil {
+		t.Fatalf("find dstBlock: %v", err)
+	}
+	stmt1, err := testutil.FindNodeByText(srcTree, src, "callFoo()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmt1: %v", err)
+	}
+	stmt2, err := testutil.FindNodeByText(dstTree, dst, "callFoo()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmt2: %v", err)
+	}
+	call1, err := testutil.FindNodeByText(srcTree, src, "callFoo()", "call_expression")
+	if err != nil {
+		t.Fatalf("find call1: %v", err)
+	}
+	call2, err := testutil.FindNodeByText(dstTree, dst, "callFoo()", "call_expression")
+	if err != nil {
+		t.Fatalf("find call2: %v", err)
+	}
+	id1, err := testutil.FindNodeByText(srcTree, src, "callFoo", "identifier")
+	if err != nil {
+		t.Fatalf("find id1: %v", err)
+	}
+	id2, err := testutil.FindNodeByText(dstTree, dst, "callFoo", "identifier")
+	if err != nil {
+		t.Fatalf("find id2: %v", err)
+	}
 
 	ms := engine.NewMapping()
-	ms.Add(outerBlock, outerBlock)
+	ms.Add(srcFunc, dstFunc)
+	ms.Add(srcBlock, dstBlock)
 	ms.Add(stmt1, stmt2)
 	ms.Add(call1, call2)
 	ms.Add(id1, id2)
@@ -1641,35 +1764,25 @@ func TestNormalizeStationaryMove_CrossScopeCoordinateCollision(t *testing.T) {
 	r := rules.Get("go")
 
 	t.Run("preserves move across unmapped functions with identical coordinates", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "oldFn")
-		srcFunc.Language = "go"
-		srcBody := mkNode("block", "")
-		srcBody.Language = "go"
-		srcBody.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+		src := []byte("package main\nfunc oldFn() {\n\tx := 1\n}\n")
+		dst := []byte("package main\nfunc newFn() {\n\tx := 1\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcStmt := mkNode("short_var_declaration", "x := 1")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBody
-		srcBody.Children = []*treesitter.ASTNode{srcStmt}
-		srcStmt.StartRow, srcStmt.EndRow = 10, 10
-		srcStmt.StartCol, srcStmt.EndCol = 4, 10
-		srcStmt.EndByte = 100
-
-		dstFunc := mkNode("function_declaration", "newFn")
-		dstFunc.Language = "go"
-		dstBody := mkNode("block", "")
-		dstBody.Language = "go"
-		dstBody.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstBody}
-
-		dstStmt := mkNode("short_var_declaration", "x := 1")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBody
-		dstBody.Children = []*treesitter.ASTNode{dstStmt}
-		dstStmt.StartRow, dstStmt.EndRow = 10, 10
-		dstStmt.StartCol, dstStmt.EndCol = 4, 10
-		dstStmt.EndByte = 100
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcStmt, dstStmt)
@@ -1691,35 +1804,33 @@ func TestNormalizeStationaryMove_CrossScopeCoordinateCollision(t *testing.T) {
 	})
 
 	t.Run("drops move within mapped functions with identical coordinates", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "fn")
-		srcFunc.Language = "go"
-		srcBody := mkNode("block", "")
-		srcBody.Language = "go"
-		srcBody.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+		src := []byte("package main\nfunc fn() {\n\tx := 1\n}\n")
+		dst := []byte("package main\nfunc fn() {\n\tx := 1\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcStmt := mkNode("short_var_declaration", "x := 1")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBody
-		srcBody.Children = []*treesitter.ASTNode{srcStmt}
-		srcStmt.StartRow, srcStmt.EndRow = 10, 10
-		srcStmt.StartCol, srcStmt.EndCol = 4, 10
-		srcStmt.EndByte = 100
-
-		dstFunc := mkNode("function_declaration", "fn")
-		dstFunc.Language = "go"
-		dstBody := mkNode("block", "")
-		dstBody.Language = "go"
-		dstBody.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstBody}
-
-		dstStmt := mkNode("short_var_declaration", "x := 1")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBody
-		dstBody.Children = []*treesitter.ASTNode{dstStmt}
-		dstStmt.StartRow, dstStmt.EndRow = 10, 10
-		dstStmt.StartCol, dstStmt.EndCol = 4, 10
-		dstStmt.EndByte = 100
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func fn()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func fn()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcFunc, dstFunc)
@@ -1791,28 +1902,56 @@ func TestAreChainedStatements(t *testing.T) {
 	r := rules.Get("go")
 
 	t.Run("returns true for matching chained if_statements", func(t *testing.T) {
-		base := mkNode("if_statement", "")
-		base.Language = "go"
-		parent := mkNode("if_statement", "")
-		parent.Language = "go"
-		if !areChainedStatements(base, parent, r) {
+		src := []byte("package main\nfunc f() { if a {} else if b {} }\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if1, err := testutil.FindNodeByText(tree, src, "if a {} else if b {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find if1: %v", err)
+		}
+		if2, err := testutil.FindNodeByText(tree, src, "if b {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find if2: %v", err)
+		}
+		origParent := if1.Parent
+		if1.Parent = nil
+		defer func() { if1.Parent = origParent }()
+		if !areChainedStatements(if2, if1, r) {
 			t.Errorf("expected areChainedStatements to return true for matching if_statements")
 		}
 	})
 
 	t.Run("returns false for non-statement nodes with identical types", func(t *testing.T) {
-		base := mkNode("identifier", "x")
-		base.Language = "go"
-		parent := mkNode("identifier", "y")
-		parent.Language = "go"
+		src := []byte("package main\nfunc f() { varAlpha := varBeta }\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		base, err := testutil.FindNodeByText(tree, src, "varAlpha", "identifier")
+		if err != nil {
+			t.Fatalf("find base: %v", err)
+		}
+		parent, err := testutil.FindNodeByText(tree, src, "varBeta", "identifier")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
 		if areChainedStatements(base, parent, r) {
 			t.Errorf("expected areChainedStatements to return false for non-statement identifier nodes")
 		}
 	})
 
 	t.Run("returns false when base is nil or parent is nil", func(t *testing.T) {
-		base := mkNode("if_statement", "")
-		base.Language = "go"
+		src := []byte("package main\nfunc f() { if a {} }\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		base, err := testutil.FindNodeByText(tree, src, "if a {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find base: %v", err)
+		}
 		if areChainedStatements(base, nil, r) || areChainedStatements(nil, base, r) {
 			t.Errorf("expected areChainedStatements to return false for nil nodes")
 		}
