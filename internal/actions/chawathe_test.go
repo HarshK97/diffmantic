@@ -26,10 +26,7 @@ func TestUnorderedNodeMatching(t *testing.T) {
 	matchResult := engine.Match(srcAST, dstAST, srcCode, dstCode, nil)
 	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 
-	moves := filterActions(script.Actions(), Move)
-	if len(moves) != 0 {
-		t.Errorf("expected 0 Move actions for unordered container, got %d Move actions (first: on %s)", len(moves), moves[0].Node.Type)
-	}
+	assertNoActions(t, script, Move)
 }
 
 func TestTSXUnorderedAttributesMatching(t *testing.T) {
@@ -48,10 +45,7 @@ func TestTSXUnorderedAttributesMatching(t *testing.T) {
 	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
 	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 
-	moves := filterActions(script.Actions(), Move)
-	if len(moves) != 0 {
-		t.Errorf("expected 0 Move actions for unordered JSX attribute reordering, got %d Move actions", len(moves))
-	}
+	assertNoActions(t, script, Move)
 	if script.Size() != 0 {
 		t.Errorf("expected 0 actions for unordered JSX attribute reordering, got %d actions", script.Size())
 	}
@@ -636,14 +630,10 @@ func TestLCSStationarySiblingOrder(t *testing.T) {
 	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 
-	moves := filterActions(script.Actions(), Move)
-	if len(moves) != 1 {
-		t.Fatalf("expected 1 Move action, got %d", len(moves))
-	}
+	moves := assertActionCount(t, script, Move, 1)
 	movedNode := moves[0].Node
 
-	pyRules := rules.Get("python")
-	if movedNode == nil || !pyRules.IsStatement(movedNode.Type) {
+	if movedNode == nil || !movedNode.IsStatement() {
 		t.Errorf("expected Move action on statement (resp.history), got %v", movedNode)
 	}
 }

@@ -20,14 +20,8 @@ func TestChawatheIdenticalTrees(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	srcNodes := src.LevelOrder()
-	dstNodes := dst.LevelOrder()
-	ms := engine.NewMapping()
-	for i := range srcNodes {
-		ms.Add(srcNodes[i], dstNodes[i])
-	}
-
-	es := GenerateEditScript(src, dst, ms)
+	matchResult := engine.Match(src, dst, code, code, nil)
+	es := GenerateEditScript(src, dst, matchResult.Mappings)
 	if es.Size() != 0 {
 		t.Errorf("identical trees should produce 0 actions, got %d", es.Size())
 		for _, a := range es.Actions() {
@@ -56,9 +50,7 @@ func TestChawatheInsertLeaf(t *testing.T) {
 	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
 	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
-	if !hasAction(es, Insert, dstY) {
-		t.Errorf("expected Insert action for dstY, got %v", es.Actions())
-	}
+	assertHasAction(t, es, Insert, dstY)
 }
 
 func TestChawatheDeleteLeaf(t *testing.T) {
@@ -81,9 +73,7 @@ func TestChawatheDeleteLeaf(t *testing.T) {
 	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
 	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
-	if !hasAction(es, Delete, srcY) {
-		t.Errorf("expected Delete action for srcY, got %v", es.Actions())
-	}
+	assertHasAction(t, es, Delete, srcY)
 }
 
 func TestChawatheUpdateLeaf(t *testing.T) {
@@ -102,20 +92,11 @@ func TestChawatheUpdateLeaf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to find identifier old_val in src: %v", err)
 	}
-	dstID, err := testutil.FindNodeByText(dst, dstCode, "new_val")
-	if err != nil {
-		t.Fatalf("failed to find identifier new_val in dst: %v", err)
-	}
 
-	ms := engine.NewMapping()
-	ms.Add(src, dst)
-	ms.Add(srcID, dstID)
+	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
+	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
-	es := GenerateEditScript(src, dst, ms)
-
-	if !hasUpdateAction(es, srcID, "new_val") {
-		t.Errorf("expected Update action changing 'old_val' to 'new_val', got %v", es.Actions())
-	}
+	assertHasUpdateAction(t, es, srcID, "new_val")
 }
 
 // --- PrintActions test ---
