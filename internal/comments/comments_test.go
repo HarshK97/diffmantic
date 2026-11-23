@@ -1096,33 +1096,17 @@ func check() {
 		part := engine.NewLinePartition(oldSrc, newSrc)
 		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
 
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"func check()", "func check()",
 		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "block", Line: 3},
-			testutil.NodeQuery{Type: "block", Line: 3},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"before()", "before()",
 		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 4},
-			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			`target("unchanged")`, `target("unchanged")`,
 		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 6},
-			testutil.NodeQuery{Type: "expression_statement", Line: 6},
-		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 7},
-			testutil.NodeQuery{Type: "expression_statement", Line: 7},
-		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6},
-			testutil.NodeQuery{Type: "call_expression", Line: 6},
-		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "argument_list", Line: 6},
-			testutil.NodeQuery{Type: "argument_list", Line: 6},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"after()", "after()",
 		)
 
 		srcComments := ExtractComments(oldAST)
@@ -1836,29 +1820,21 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
 
 		// 1. Enclosing context
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "block", Line: 3},
-			testutil.NodeQuery{Type: "block", Line: 3},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"func checkRecovery", "func checkRecovery",
 		)
 
 		// 2. Surrounding sequence
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 4},
-			testutil.NodeQuery{Type: "expression_statement", Line: 4},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"before()", "before()",
 		)
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 15},
-			testutil.NodeQuery{Type: "expression_statement", Line: 20},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"after()", "after()",
 		)
 
 		// 3. Inner if moved into the new block
-		testutil.AssertMapped(t, oldAST, newAST, match.Mappings.Src(),
-			testutil.NodeQuery{Type: "if_statement", Line: 10},
-			testutil.NodeQuery{Type: "if_statement", Line: 15},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"if len(u1) != len(u2)", "if len(u1) != len(u2)", "if_statement",
 		)
 
 		// 4. Verify comments extraction & diffing
@@ -1868,24 +1844,24 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 			t.Fatalf("expected 3 comment blocks on each side, got src=%d dst=%d", len(srcComments), len(dstComments))
 		}
 
-		// In source, comments attach to outer if (line 9)
-		outerIfSrc, err := testutil.FindNode(oldAST, testutil.NodeQuery{Type: "if_statement", Line: 9})
+		// In source, comments attach to outer if
+		outerIfSrc, err := testutil.FindNodeByText(oldAST, oldSrc, "if r != nil && r.IsDelimited(u1)", "if_statement")
 		if err != nil {
 			t.Fatalf("failed to find outer if in source: %v", err)
 		}
 		for i, c := range srcComments {
 			if c.AnchorNode != outerIfSrc {
-				t.Errorf("expected srcComments[%d] anchor to be outer if (line 9), got %+v", i, c.AnchorNode)
+				t.Errorf("expected srcComments[%d] anchor to be outer if, got %+v", i, c.AnchorNode)
 			}
 		}
-		// In dest, comments attach to inner if (line 15)
-		innerIfDst, err := testutil.FindNode(newAST, testutil.NodeQuery{Type: "if_statement", Line: 15})
+		// In dest, comments attach to inner if
+		innerIfDst, err := testutil.FindNodeByText(newAST, newSrc, "if len(u1) != len(u2)", "if_statement")
 		if err != nil {
 			t.Fatalf("failed to find inner if in dest: %v", err)
 		}
 		for i, c := range dstComments {
 			if c.AnchorNode != innerIfDst {
-				t.Errorf("expected dstComments[%d] anchor to be inner if (line 15), got %+v", i, c.AnchorNode)
+				t.Errorf("expected dstComments[%d] anchor to be inner if, got %+v", i, c.AnchorNode)
 			}
 		}
 
@@ -1955,13 +1931,11 @@ use crate::cli;
 		}
 
 		// Surviving use declarations map in place
-		testutil.AssertMapped(t, oldAST, newAST, matchResult.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 7},
-			testutil.NodeQuery{Type: "use_declaration", Line: 5},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(),
+			"use structopt::clap;", "use structopt::clap;",
 		)
-		testutil.AssertMapped(t, oldAST, newAST, matchResult.Mappings.Src(),
-			testutil.NodeQuery{Type: "use_declaration", Line: 8},
-			testutil.NodeQuery{Type: "use_declaration", Line: 6},
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(),
+			"use crate::cli;", "use crate::cli;",
 		)
 
 		oldComments := ExtractComments(oldAST)

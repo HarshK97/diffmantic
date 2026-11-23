@@ -1245,13 +1245,11 @@ func TestPython_StructuralIndentationPreserved_FullEngine(t *testing.T) {
 	}
 
 	// 3. Whole-Snippet Verification: stationary statements map in place.
-	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "call", Line: 2},
-		testutil.NodeQuery{Type: "call", Line: 2},
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"init()", "init()",
 	)
-	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "call", Line: 5},
-		testutil.NodeQuery{Type: "call", Line: 6},
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"cleanup()", "cleanup()",
 	)
 
 	// 4. Structural change is displayed unconditionally (both with and without ShowStyleChanges).
@@ -1300,13 +1298,11 @@ func TestPython_MultilineStringWhitespace_FullEngine(t *testing.T) {
 	}
 
 	// 3. Whole-Snippet Verification: stationary prologue and epilogue map in place.
-	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "call", Line: 2},
-		testutil.NodeQuery{Type: "call", Line: 2},
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"prologue()", "prologue()",
 	)
-	testutil.AssertMapped(t, dr.SrcAST, dr.DstAST, dr.MatchResult.Mappings.Src(),
-		testutil.NodeQuery{Type: "call", Line: 6},
-		testutil.NodeQuery{Type: "call", Line: 6},
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"epilogue()", "epilogue()",
 	)
 
 	// 4. Output displays unconditionally.
