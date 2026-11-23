@@ -25,10 +25,6 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find glue: %v", err)
 	}
-	unmatched, err := testutil.FindNodeByText(srcTree, srcBytes, "NewMapping()")
-	if err != nil {
-		t.Fatalf("find unmatched: %v", err)
-	}
 	dstGlue, err := testutil.FindNodeByText(dstTree, dstBytes, ":=")
 	if err != nil {
 		t.Fatalf("find dstGlue: %v", err)
@@ -36,12 +32,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	m := NewMapping()
 	m.Add(glue, dstGlue)
 	RevokeOrphanedGlue(m)
-	if m.Has(glue) {
-		t.Fatal("reparented orphaned glue should be revoked")
-	}
-	if m.Has(unmatched) {
-		t.Fatal("unmatched sibling should stay unmapped")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), ":=")
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "NewMapping()")
 
 	// Reparented glue revoked even when siblings mapped elsewhere
 	// (scattered matches in repetitive code): glue must never move.
@@ -72,9 +64,7 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	m5.Add(srcScatGlue, dstScatGlue)
 	m5.Add(srcScatB, ew2)
 	RevokeOrphanedGlue(m5)
-	if m5.Has(srcScatGlue) {
-		t.Fatal("reparented glue with scattered siblings should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcScatTree, srcScatBytes, m5.Src(), ":=")
 
 	// Stationary glue (same container): kept even with unmatched sibling.
 	srcSameBytes := []byte("package main\nfunc f() {\n\tm := NewMapping()\n}")
@@ -101,9 +91,7 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	m4.Add(srcDecl, dstDecl)
 	m4.Add(srcSameGlue, dstSameGlue)
 	RevokeOrphanedGlue(m4)
-	if !m4.Has(srcSameGlue) {
-		t.Fatal("stationary glue should be kept")
-	}
+	testutil.AssertMappedText(t, srcSameTree, dstSameTree, srcSameBytes, dstSameBytes, m4.Src(), ":=", ":=")
 
 	// Fully matched construct: glue kept.
 	m2 := NewMapping()
@@ -131,9 +119,7 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	m2.Add(srcFullGlue, dstFullGlue)
 	m2.Add(srcFullX, dstFullX)
 	RevokeOrphanedGlue(m2)
-	if !m2.Has(srcFullGlue) {
-		t.Fatal("glue in fully matched construct should be kept")
-	}
+	testutil.AssertMappedText(t, srcFullTree, dstFullTree, srcFullBytes, dstFullBytes, m2.Src(), ":=", ":=")
 
 	// Moving container with zero non-glue children matched:
 	// Reparented across blocks, only glue matched -> revoked.
@@ -155,12 +141,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	mMoving.Add(srcMoveDecl, dstMoveDecl)
 	mMoving.Add(srcMoveGlue, dstMoveGlue)
 	RevokeOrphanedGlue(mMoving)
-	if mMoving.Has(srcMoveDecl) {
-		t.Fatal("moving container with zero non-glue matches should be revoked")
-	}
-	if mMoving.Has(srcMoveGlue) {
-		t.Fatal("glue inside revoked moving container should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcMoveTree, srcMoveBytes, mMoving.Src(), "srcVar := oldVal")
+	testutil.AssertUnmappedText(t, srcMoveTree, srcMoveBytes, mMoving.Src(), ":=")
 
 	// Moving container with only a bare identifier or single-child wrapper matched:
 	// bare tokens (height = 1) do not have structural mass to anchor a moving container across blocks.
@@ -185,12 +167,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	mRevokeLeaf.Add(srcCommonVar, dstCommonVar)
 	mRevokeLeaf.Add(srcLeafGlue, dstLeafGlue)
 	RevokeOrphanedGlue(mRevokeLeaf)
-	if mRevokeLeaf.Has(srcLeafDecl) {
-		t.Fatal("moving container anchored solely by glue and bare identifier should be revoked")
-	}
-	if mRevokeLeaf.Has(srcLeafGlue) {
-		t.Fatal("glue inside revoked moving container should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeLeaf.Src(), "commonVar := oldVal")
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeLeaf.Src(), ":=")
 
 	// Single-child wrapper (expression_list -> identifier, effectiveHeight = 1): revoked.
 	srcLHSWrap, _ := testutil.FindNodeByTextQuery(srcMoveLeafTree, srcMoveLeafBytes, testutil.TextQuery{Text: "commonVar", Type: "expression_list"})
@@ -201,12 +179,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	mRevokeWrap.Add(srcCommonVar, dstCommonVar)
 	mRevokeWrap.Add(srcLeafGlue, dstLeafGlue)
 	RevokeOrphanedGlue(mRevokeWrap)
-	if mRevokeWrap.Has(srcLeafDecl) {
-		t.Fatal("moving container with only a 1-child wrapper LHS matched should be revoked")
-	}
-	if mRevokeWrap.Has(srcLeafGlue) {
-		t.Fatal("glue inside revoked moving container should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeWrap.Src(), "commonVar := oldVal")
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeWrap.Src(), ":=")
 
 	// Moving container with matched compound child (effectiveHeight >= 2, e.g. RHS call_expression):
 	// Reparented across blocks, compound RHS and glue matched -> preserved.
@@ -234,12 +208,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	mPreserve.Add(srcRHSCall, dstRHSCall)
 	mPreserve.Add(srcCompGlue, dstCompGlue)
 	RevokeOrphanedGlue(mPreserve)
-	if !mPreserve.Has(srcCompDecl) {
-		t.Fatal("moving container with matched compound child (height >= 2) should be preserved")
-	}
-	if !mPreserve.Has(srcCompGlue) {
-		t.Fatal("glue inside valid moving container with compound child should be preserved")
-	}
+	testutil.AssertMappedText(t, srcCompoundTree, dstCompoundTree, srcCompoundBytes, dstCompoundBytes, mPreserve.Src(), "oldVar := compute(x)", "newVar := compute(x)")
+	testutil.AssertMappedText(t, srcCompoundTree, dstCompoundTree, srcCompoundBytes, dstCompoundBytes, mPreserve.Src(), ":=", ":=")
 
 	// Keyword glue recognition: if keyword across moving blocks with no non-glue matches.
 	srcIfBytes := []byte("package main\nfunc f() {\n\tif condA {}\n}")
@@ -260,12 +230,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	mKw.Add(srcIf, dstIf)
 	mKw.Add(srcKw, dstKw)
 	RevokeOrphanedGlue(mKw)
-	if mKw.Has(srcIf) {
-		t.Fatal("moving if_statement anchored solely by if keyword should be revoked")
-	}
-	if mKw.Has(srcKw) {
-		t.Fatal("if keyword glue should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcIfTree, srcIfBytes, mKw.Src(), "if condA {}")
+	testutil.AssertUnmappedText(t, srcIfTree, srcIfBytes, mKw.Src(), "if", "if")
 
 	// A moved statement with only leaf tokens (like let far_future = 10_000_000)
 	// should be preserved when both sides are isomorphic.
@@ -289,12 +255,8 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 		}
 	}
 	RevokeOrphanedGlue(mIso)
-	if !mIso.Has(srcLet) {
-		t.Fatal("moving isomorphic container with leaf payload should be preserved")
-	}
-	if !mIso.Has(srcLet.Children[0]) {
-		t.Fatal("glue inside moving isomorphic container should be preserved")
-	}
+	testutil.AssertMappedText(t, srcIsoTree, dstIsoTree, srcIsoBytes, dstIsoBytes, mIso.Src(), "let far_future = 10_000_000;", "let far_future = 10_000_000;")
+	testutil.AssertMappedText(t, srcIsoTree, dstIsoTree, srcIsoBytes, dstIsoBytes, mIso.Src(), "let", "let", "let")
 
 	// A moved statement should also stay mapped if all non-glue children match,
 	// even when the destination adds a keyword like mut.
@@ -320,9 +282,7 @@ func TestRevokeOrphanedGlue(t *testing.T) {
 	mAllNonGlue.Add(srcEq, dstEq)
 	mAllNonGlue.Add(srcInt, dstInt)
 	RevokeOrphanedGlue(mAllNonGlue)
-	if !mAllNonGlue.Has(srcLet) {
-		t.Fatal("moving container with all non-glue children matched should be preserved")
-	}
+	testutil.AssertMappedText(t, srcIsoTree, dstMutTree, srcIsoBytes, dstMutBytes, mAllNonGlue.Src(), "let far_future = 10_000_000;", "let mut far_future = 10_000_000;")
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_RHSMatched(t *testing.T) {
@@ -405,8 +365,6 @@ func TestRecoverGlueAnchors_BinaryExpression_OppositeSidesNotMatched(t *testing.
 	if err != nil {
 		t.Fatalf("parse dst: %v", err)
 	}
-	srcAssign, _ := testutil.FindNodeByText(srcTree, srcBytes, "x = y", "assignment_statement")
-	dstAssign, _ := testutil.FindNodeByText(dstTree, dstBytes, "y = z", "assignment_statement")
 	srcY, _ := testutil.FindNodeByText(srcTree, srcBytes, "y", "identifier")
 	dstY, _ := testutil.FindNodeByText(dstTree, dstBytes, "y", "identifier")
 
@@ -415,9 +373,8 @@ func TestRecoverGlueAnchors_BinaryExpression_OppositeSidesNotMatched(t *testing.
 
 	RecoverGlueAnchors(m)
 
-	if m.Has(srcAssign) || m.HasDst(dstAssign) {
-		t.Fatalf("assignment expressions should not be paired when matched operand sits on opposite sides of operator")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "x = y", "assignment_statement")
+	testutil.AssertUnmappedText(t, dstTree, dstBytes, m.Dst(), "y = z", "assignment_statement")
 }
 
 func TestRecoverGlueAnchors_ControlFlow_BodyMatched(t *testing.T) {
@@ -467,7 +424,6 @@ func TestRecoverGlueAnchors_BoilerplateGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse dst: %v", err)
 	}
-	srcIf, _ := testutil.FindNodeByText(srcTree, srcBytes, "if err != nil {\n\t\tstmtA()\n\t}")
 	srcCond, _ := testutil.FindNodeByText(srcTree, srcBytes, "err != nil")
 	dstCond, _ := testutil.FindNodeByText(dstTree, dstBytes, "err != nil")
 
@@ -476,9 +432,7 @@ func TestRecoverGlueAnchors_BoilerplateGuard(t *testing.T) {
 
 	RecoverGlueAnchors(m)
 
-	if m.Has(srcIf) {
-		t.Fatalf("boilerplate err != nil condition across distant lines should NOT claim foreign if_statement")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "if err != nil {\n\t\tstmtA()\n\t}")
 }
 
 func TestIsOperatorGlue(t *testing.T) {
@@ -679,12 +633,8 @@ func TestRevokeOrphanedGlue_RelocatedControlFlowAnchoredSolelyByKeyword(t *testi
 
 	RevokeOrphanedGlue(m)
 
-	if m.Has(srcIf) {
-		t.Fatal("relocated if_statement anchored solely by if keyword across lines must be revoked")
-	}
-	if m.Has(kwOld) {
-		t.Fatal("if keyword of revoked if_statement must be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "if isErr() {\n\t\treturn\n\t}")
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "if", "if")
 }
 
 func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *testing.T) {
@@ -718,12 +668,8 @@ func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *tes
 
 	RevokeOrphanedGlue(m)
 
-	if !m.Has(srcIf) {
-		t.Fatal("adjacent if_statement on nearby line in same block should be preserved")
-	}
-	if !m.Has(kwOld) {
-		t.Fatal("if keyword of adjacent if_statement should be preserved")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(), "if isErr() {\n\t\treturn\n\t}", "if !isErr() {\n\t\tlogErr()\n\t}")
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(), "if", "if", "if")
 }
 
 func TestRevokeOrphanedGlue_BareJumpPreservedInMovingBlock(t *testing.T) {

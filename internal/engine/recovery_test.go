@@ -22,19 +22,12 @@ func TestSimpleRecoveryLabelMatch(t *testing.T) {
 	}
 	srcRoot, _ := testutil.FindNodeByText(srcTree, src, "{ a() }")
 	dstRoot, _ := testutil.FindNodeByText(dstTree, dst, "{ a() }")
-	srcChild, _ := testutil.FindNodeByText(srcTree, src, "a()")
-	dstChild, _ := testutil.FindNodeByText(dstTree, dst, "a()")
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
 	SimpleRecovery(srcRoot, dstRoot, m)
 
-	if !m.Has(srcChild) {
-		t.Error("isomorphic child should be recovered")
-	}
-	if m.Get(srcChild) != dstChild {
-		t.Error("child should map to corresponding dst child")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, m.Src(), "a()", "a()")
 }
 
 func TestSimpleRecoveryStructureMatch(t *testing.T) {
@@ -51,15 +44,12 @@ func TestSimpleRecoveryStructureMatch(t *testing.T) {
 	}
 	srcRoot, _ := testutil.FindNodeByText(srcTree, src, "{ a() }")
 	dstRoot, _ := testutil.FindNodeByText(dstTree, dst, "{ b() }")
-	srcChild, _ := testutil.FindNodeByText(srcTree, src, "a()")
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
 	SimpleRecovery(srcRoot, dstRoot, m)
 
-	if !m.Has(srcChild) {
-		t.Error("structurally isomorphic child should be recovered")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, m.Src(), "a()", "b()")
 }
 
 func TestSimpleRecoveryUniqueType(t *testing.T) {
@@ -76,19 +66,12 @@ func TestSimpleRecoveryUniqueType(t *testing.T) {
 	}
 	srcRoot, _ := testutil.FindNodeByText(srcTree, src, "{\n\tif cond { a() }\n\tvar x int\n}")
 	dstRoot, _ := testutil.FindNodeByText(dstTree, dst, "{\n\tif cond { b() }\n\tvar y int\n}")
-	srcIf, _ := testutil.FindNodeByText(srcTree, src, "if cond { a() }")
-	dstIf, _ := testutil.FindNodeByText(dstTree, dst, "if cond { b() }")
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
 	SimpleRecovery(srcRoot, dstRoot, m)
 
-	if !m.Has(srcIf) {
-		t.Error("unique-type if_stmt should be paired")
-	}
-	if m.Get(srcIf) != dstIf {
-		t.Error("if_stmt should map to corresponding dst if_stmt")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, m.Src(), "if cond { a() }", "if cond { b() }")
 }
 
 func TestSimpleRecoveryNoChildren(t *testing.T) {
@@ -178,10 +161,8 @@ func TestSimpleRecoveryStationaryNeighbors(t *testing.T) {
 	srcRoot, _ := testutil.FindNodeByText(srcTree, src, "{\n\ta()\n\tb()\n\tc()\n}")
 	dstRoot, _ := testutil.FindNodeByText(dstTree, dst, "{\n\ta()\n\tb()\n\tc()\n}")
 	leftSrc, _ := testutil.FindNodeByText(srcTree, src, "a()")
-	midSrc, _ := testutil.FindNodeByText(srcTree, src, "b()")
 	rightSrc, _ := testutil.FindNodeByText(srcTree, src, "c()")
 	leftDst, _ := testutil.FindNodeByText(dstTree, dst, "a()")
-	midDst, _ := testutil.FindNodeByText(dstTree, dst, "b()")
 	rightDst, _ := testutil.FindNodeByText(dstTree, dst, "c()")
 
 	m := NewMapping()
@@ -191,12 +172,7 @@ func TestSimpleRecoveryStationaryNeighbors(t *testing.T) {
 
 	SimpleRecovery(srcRoot, dstRoot, m)
 
-	if !m.Has(midSrc) {
-		t.Fatal("stationary middle child was not recovered")
-	}
-	if m.Get(midSrc) != midDst {
-		t.Errorf("got %v, want %v", m.Get(midSrc), midDst)
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, m.Src(), "b()", "b()")
 }
 
 func TestUniqueTypePairsDeclarationNoSemanticOverlap(t *testing.T) {
