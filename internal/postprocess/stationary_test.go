@@ -1728,9 +1728,7 @@ func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T)
 			t.Errorf("expected stationary expression Move to be dropped from edit script, got %v", a.Type)
 		}
 	}
-	if !ms.Has(call1) {
-		t.Errorf("expected stationary expression call1 to remain in mapping")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, ms.Src(), "callFoo()", "callFoo()")
 }
 
 func TestTSXSelfClosingTagConversion(t *testing.T) {
@@ -1746,7 +1744,8 @@ func TestTSXSelfClosingTagConversion(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1886,7 +1885,8 @@ var rules = &Rules{
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1988,7 +1988,8 @@ var pairs = []LineAlignmentPair{
 			t.Fatalf("failed to parse dst: %v", err)
 		}
 
-		matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -3627,8 +3628,7 @@ func TestStationaryFluentMethodChains(t *testing.T) {
 
 			for _, a := range normalized.Actions() {
 				if a.Type == actions.Move {
-					t.Fatalf("unexpected Move action on fluent receiver chain: %v (Node=%s [%d:%d])",
-						a, a.Node.Type, a.Node.StartRow, a.Node.EndRow)
+					t.Fatalf("unexpected Move action on fluent receiver chain: %v (Node=%s)", a, a.Node.Type)
 				}
 			}
 		})

@@ -548,12 +548,8 @@ func TestNormalizeMovesByStructure(t *testing.T) {
 
 		result := normalizeMovesByStructure(es, ms)
 
-		if ms.Has(childSrc) {
-			t.Errorf("expected childSrc to be evicted from mapping, but still present")
-		}
-		if ms.HasDst(childDst) {
-			t.Errorf("expected childDst to be evicted from mapping destination, but still present")
-		}
+		testutil.AssertUnmappedText(t, srcTree, src, ms.Src(), "min(v1, v2)", "call_expression")
+		testutil.AssertUnmappedText(t, dstTree, dst, ms.Dst(), "min(v1, v2)", "call_expression")
 
 		foundDeleteSubtree := false
 		foundInsertSubtree := false
@@ -1160,9 +1156,7 @@ func TestNormalizeMovesByStructure_ScopedEviction(t *testing.T) {
 
 	result := normalizeMovesByStructure(es, ms)
 
-	if ms.Src()[c1] != c2 {
-		t.Errorf("expected mapping of survivor child c1 to be preserved, got %v", ms.Src()[c1])
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, ms.Src(), callText, callText)
 
 	var c1Moved bool
 	for _, a := range result.Actions() {
@@ -1265,9 +1259,7 @@ func g2() {
 	if !opInserted {
 		t.Errorf("normalizeMovesByStructure() missing Insert for opDst; got actions = %+v", result.Actions())
 	}
-	if ms.Has(opSrc) {
-		t.Error("normalizeMovesByStructure() kept opSrc in mapping, want evicted")
-	}
+	testutil.AssertUnmappedText(t, srcTree, src, ms.Src(), "true", "true")
 }
 
 func TestNormalizeMovesByStructure_TrivialJumpBlockDemoted(t *testing.T) {
@@ -1508,7 +1500,8 @@ func isDeclarationHeader(n *treesitter.ASTNode, r *rules.Rules) bool {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1580,9 +1573,8 @@ func g() bool {
 			t.Errorf("expected hollow %s move to be demoted, but Move survived", a.Node.Type)
 		}
 	}
-	if ms.Has(srcCall) || ms.Has(srcArgList) {
-		t.Errorf("expected hollow call_expression and argument_list to be evicted from mapping")
-	}
+	testutil.AssertUnmappedText(t, srcRoot, src, ms.Src(), "sort.SliceStable(scored, func() bool { return true })", "call_expression")
+	testutil.AssertUnmappedText(t, srcRoot, src, ms.Src(), "(scored, func() bool { return true })", "argument_list")
 }
 
 func TestNormalizeMoves_ClosureCallAndArgumentList_FullEngine(t *testing.T) {
@@ -1675,7 +1667,8 @@ func f(rawType string, fn Node) {
 			t.Fatalf("failed to parse dst: %v", err)
 		}
 
-		matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1739,7 +1732,8 @@ func f(idx int) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1828,9 +1822,10 @@ func TestNormalize_StationaryMoveProtection(t *testing.T) {
 				t.Errorf("expected annotation to be preserved as context without action, got %v", a.Type)
 			}
 		}
-		if !ms.Has(srcAnnotation) {
-			t.Errorf("expected srcAnnotation to remain in mapping after postprocessing")
-		}
+		testutil.AssertMappedTextQuery(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			testutil.TextQuery{Text: "annotation", Occurrence: 2},
+			testutil.TextQuery{Text: "annotation", Occurrence: 2},
+		)
 	})
 }
 
@@ -1913,9 +1908,10 @@ func TestNormalize_BinaryChainOperandStationaryProtection(t *testing.T) {
 				t.Errorf("expected addUndefined to be preserved as context without action, got %v (%s)", a.Type, a.Node.Type)
 			}
 		}
-		if !ms.Has(srcAddUndefined) {
-			t.Errorf("expected srcAddUndefined to remain in mapping after postprocessing")
-		}
+		testutil.AssertMappedTextQuery(t, srcAST.Root(), dstAST.Root(), src, dst, ms.Src(),
+			testutil.TextQuery{Text: "addUndefined", Occurrence: 2},
+			testutil.TextQuery{Text: "addUndefined", Occurrence: 2},
+		)
 	})
 }
 

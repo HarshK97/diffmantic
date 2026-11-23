@@ -1637,9 +1637,7 @@ func TestHollowBlockMoveSuppression_DemotesUnderThresholdChild(t *testing.T) {
 	if hasActiveMove {
 		t.Errorf("expected under-threshold promoted child move on callSrc to be demoted, but Move survived")
 	}
-	if ms.Has(callSrc) {
-		t.Errorf("expected demoted child callSrc to be removed from mapping")
-	}
+	testutil.AssertUnmappedText(t, srcTree, src, ms.Src(), "m.Add(kw1, kw2)", "expression_statement")
 	if deleted[callSrc] == nil || deleted[callSrc].Type != actions.Delete {
 		t.Errorf("expected replacement Delete action for callSrc, got nil or wrong type")
 	}
@@ -1989,9 +1987,7 @@ func TestPromoteOrphanedChildren_SkipsHollowUndelimitedWrapper(t *testing.T) {
 			t.Errorf("expected hollow undelimited wrapper rhsListSrc NOT to be promoted to Move, got %+v", act)
 		}
 	}
-	if ms.Has(rhsListSrc) {
-		t.Errorf("expected hollow undelimited wrapper rhsListSrc to be removed from mapping")
-	}
+	testutil.AssertUnmappedText(t, srcTree, src, ms.Src(), "true", "expression_list")
 }
 
 func TestMultilineExpressionUnwrapping_SurvivingOperandPreserved(t *testing.T) {
