@@ -526,3 +526,26 @@ func TestPipeline_AdjustRangeForContainer_ZigElseClause(t *testing.T) {
 }
 `)
 }
+
+func TestPipeline_GoImplicitLengthArrayWrapperTrimming(t *testing.T) {
+	src := []byte("package main\n\nvar x = []string{}\n")
+	dst := []byte("package main\n\nvar x = [...]string{}\n")
+
+	res, err := Run(src, dst, "a.go", "b.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Changing []string to [...]string should only diff the brackets and dots,
+	// leaving the inner type "string" untouched as unchanged context.
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `package main
+
+var x = <del>[]</del>string{}
+`)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package main
+
+var x = <ins>[...]</ins>string{}
+`)
+}
