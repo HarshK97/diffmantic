@@ -1,7 +1,6 @@
 package postprocess
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
@@ -352,21 +351,30 @@ func bar() {
 		)
 
 		// Statements that moved in order stay in group-1; only hoisted stmtD is ungrouped.
-		groupMap := make(map[string]string)
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
-				text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
-				groupMap[text] = a.GroupID
+		findMoveGroupID := func(node *treesitter.ASTNode) (string, bool) {
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move && a.Node != nil && (a.Node.ID == node.ID || a.Node.Contains(node)) {
+					return a.GroupID, true
+				}
 			}
+			return "", false
 		}
 
 		for _, stmt := range []string{"stmtA()", "stmtB()", "stmtC()"} {
-			if gid, ok := groupMap[stmt]; !ok || gid != "group-1" {
+			node, err := testutil.FindNodeByText(srcAST, src, stmt)
+			if err != nil {
+				t.Fatalf("find node for %s: %v", stmt, err)
+			}
+			if gid, ok := findMoveGroupID(node); !ok || gid != "group-1" {
 				t.Errorf("expected in-order statement %s to have GroupID group-1, got %q", stmt, gid)
 			}
 		}
 
-		if gid, ok := groupMap["stmtD()"]; !ok || gid != "" {
+		nodeD, err := testutil.FindNodeByText(srcAST, src, "stmtD()")
+		if err != nil {
+			t.Fatalf("find node for stmtD(): %v", err)
+		}
+		if gid, ok := findMoveGroupID(nodeD); !ok || gid != "" {
 			t.Errorf("expected out-of-order statement stmtD() to have empty GroupID, got %q", gid)
 		}
 	})
@@ -587,16 +595,21 @@ def dest_fn():
 	)
 
 	// 5. Target statements moved_one() and moved_two() move together and receive identical GroupID "group-1".
-	groupMap := make(map[string]string)
-	for _, a := range normalized.Actions() {
-		if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
-			text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
-			groupMap[text] = a.GroupID
+	findMoveGroupID := func(node *treesitter.ASTNode) (string, bool) {
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && (a.Node.ID == node.ID || a.Node.Contains(node)) {
+				return a.GroupID, true
+			}
 		}
+		return "", false
 	}
 
 	for _, stmt := range []string{"moved_one()", "moved_two()"} {
-		if gid, ok := groupMap[stmt]; !ok || gid != "group-1" {
+		node, err := testutil.FindNodeByText(srcAST, src, stmt)
+		if err != nil {
+			t.Fatalf("find node for %s: %v", stmt, err)
+		}
+		if gid, ok := findMoveGroupID(node); !ok || gid != "group-1" {
 			t.Errorf("expected co-moving Python statement %s to have GroupID group-1, got %q", stmt, gid)
 		}
 	}
@@ -669,19 +682,28 @@ func process() error {
 			`prepare()`, `prepare()`, "call_expression",
 		)
 
-		groupMap := make(map[string]string)
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
-				text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
-				groupMap[text] = a.GroupID
+		findMoveGroupID := func(node *treesitter.ASTNode) (string, bool) {
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move && a.Node != nil && (a.Node.ID == node.ID || a.Node.Contains(node)) {
+					return a.GroupID, true
+				}
 			}
+			return "", false
 		}
 
-		ifText := "if count > limit {\n\t\treturn flush()\n\t}"
-		if gid, ok := groupMap[ifText]; !ok || gid == "" {
-			t.Errorf("expected dominant if statement to have non-empty GroupID, got %q (all groups: %+v)", gid, groupMap)
+		ifNode, err := testutil.FindNodeByText(srcAST, src, "if count > limit {\n\t\treturn flush()\n\t}", "if_statement")
+		if err != nil {
+			t.Fatalf("find if statement: %v", err)
 		}
-		if gid, ok := groupMap["count++"]; !ok || gid != "" {
+		if gid, ok := findMoveGroupID(ifNode); !ok || gid == "" {
+			t.Errorf("expected dominant if statement to have non-empty GroupID, got %q", gid)
+		}
+
+		countNode, err := testutil.FindNodeByText(srcAST, src, "count++", "inc_statement")
+		if err != nil {
+			t.Fatalf("find count++: %v", err)
+		}
+		if gid, ok := findMoveGroupID(countNode); !ok || gid != "" {
 			t.Errorf("expected reordered smaller statement count++ to have empty GroupID, got %q", gid)
 		}
 	})
