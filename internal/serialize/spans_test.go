@@ -236,17 +236,10 @@ end
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
 			"processItems", "processItems", "function_declaration",
 		)
-		srcParams, err := testutil.FindNodeByTextQuery(srcAST, src, testutil.TextQuery{Text: "(items)", Type: "parameters", Occurrence: 1})
-		if err != nil {
-			t.Fatalf("src parameters: %v", err)
-		}
-		dstParams, err := testutil.FindNodeByTextQuery(dstAST, dst, testutil.TextQuery{Text: "(items)", Type: "parameters", Occurrence: 1})
-		if err != nil {
-			t.Fatalf("dst parameters: %v", err)
-		}
-		if mr.Mappings.Src()[srcParams] != dstParams {
-			t.Errorf("expected parameters to map in place, got %v", mr.Mappings.Src()[srcParams])
-		}
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "(items)", Type: "parameters", Occurrence: 1},
+			testutil.TextQuery{Text: "(items)", Type: "parameters", Occurrence: 1},
+		)
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
 			"precedingInit()", "precedingInit()", "function_call",
 		)
@@ -2366,11 +2359,6 @@ func TestBuildHighlightSpans_MultilineStatementInsertCarveout_FullEngine(t *test
 	})
 
 	t.Run("Go multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("rules for go not found")
-		}
-
 		oldSrc := `package main
 
 func bar() {
@@ -2425,46 +2413,14 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"func bar()", "func bar()", "function_declaration",
+		)
 
 		// 2. Stationary arguments map in place
-		var srcArg1, dstArg1 *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"arg1"` {
-				srcArg1 = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"arg1"` {
-				dstArg1 = n
-				break
-			}
-		}
-		if srcArg1 == nil || dstArg1 == nil {
-			t.Fatal("failed to find 'arg1' nodes")
-		}
-		if mr.Mappings.Src()[srcArg1] != dstArg1 {
-			t.Fatalf("expected arg1 to map in place, got %v", mr.Mappings.Src()[srcArg1])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"arg1"`, `"arg1"`, "interpreted_string_literal",
+		)
 
 		// 3. Highlight span verification
 		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
@@ -2490,11 +2446,6 @@ func bar() {
 	})
 
 	t.Run("Rust let declaration wrapping match expression does not bleed insert over stationary match arms", func(t *testing.T) {
-		r := rules.Get("rust")
-		if r == nil {
-			t.Fatal("rules for rust not found")
-		}
-
 		oldSrc := `fn main() {
     match shell.as_str() {
         "bash" => println!("{}", completions::BASH_COMPLETION),
@@ -2545,46 +2496,16 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn main()", "fn main()", "function_item",
+		)
 
 		// 2. Stationary match arm maps in place
-		var srcArm, dstArm *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if strings.Contains(n.Label, "No completion") {
-				srcArm = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if strings.Contains(n.Label, "No completion") {
-				dstArm = n
-				break
-			}
-		}
-		if srcArm == nil || dstArm == nil {
-			t.Fatal("failed to find unreachable match arm nodes")
-		}
-		if mr.Mappings.Src()[srcArm] != dstArm {
-			t.Fatalf("expected unreachable match arm to map in place, got %v", mr.Mappings.Src()[srcArm])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`_ => unreachable!("No completion for shell '{shell}' available."),`,
+			`_ => unreachable!("No completion for shell '{shell}' available."),`,
+			"match_arm",
+		)
 
 		// 3. Highlight span verification
 		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn main() {
@@ -2606,11 +2527,6 @@ func bar() {
 	})
 
 	t.Run("C multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
-		r := rules.Get("c")
-		if r == nil {
-			t.Fatal("rules for c not found")
-		}
-
 		oldSrc := `void test() {
     foo(
         "arg1",
@@ -2661,46 +2577,14 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"void test()", "void test()", "function_definition",
+		)
 
 		// 2. Stationary arguments map in place
-		var srcArg1, dstArg1 *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"arg1"` {
-				srcArg1 = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"arg1"` {
-				dstArg1 = n
-				break
-			}
-		}
-		if srcArg1 == nil || dstArg1 == nil {
-			t.Fatal("failed to find 'arg1' nodes")
-		}
-		if mr.Mappings.Src()[srcArg1] != dstArg1 {
-			t.Errorf("expected arg1 to map in place, got %v", mr.Mappings.Src()[srcArg1])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"arg1"`, `"arg1"`, "string_literal",
+		)
 
 		// 3. Highlight span verification: stationary arguments on lines 2 and 3 are not deleted
 		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `void test() {
@@ -2722,11 +2606,6 @@ func bar() {
 	})
 
 	t.Run("Java multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
-		r := rules.Get("java")
-		if r == nil {
-			t.Fatal("rules for java not found")
-		}
-
 		oldSrc := `class Test {
     void run() {
         foo(
@@ -2781,46 +2660,14 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing class and method map in place
-		var srcClass, dstClass *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcClass = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstClass = n
-				break
-			}
-		}
-		if srcClass == nil || dstClass == nil {
-			t.Fatal("failed to find class declarations")
-		}
-		if mr.Mappings.Src()[srcClass] != dstClass {
-			t.Errorf("expected class declaration to map in place, got %v", mr.Mappings.Src()[srcClass])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"class Test", "class Test", "class_declaration",
+		)
 
 		// 2. Stationary arguments map in place
-		var srcArg1, dstArg1 *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"arg1"` {
-				srcArg1 = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"arg1"` {
-				dstArg1 = n
-				break
-			}
-		}
-		if srcArg1 == nil || dstArg1 == nil {
-			t.Fatal("failed to find 'arg1' nodes")
-		}
-		if mr.Mappings.Src()[srcArg1] != dstArg1 {
-			t.Errorf("expected arg1 to map in place, got %v", mr.Mappings.Src()[srcArg1])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"arg1"`, `"arg1"`, "string_literal",
+		)
 
 		// 3. Highlight span verification: stationary arguments on lines 3 and 4 are not deleted
 		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `class Test {
@@ -2946,11 +2793,6 @@ func bar() {
 	})
 
 	t.Run("FullEngine/C initializer list does not bleed insert span over stationary children", func(t *testing.T) {
-		r := rules.Get("c")
-		if r == nil {
-			t.Fatal("rules for c not found")
-		}
-
 		oldSrc := `void foo() {
     int item = 10;
     int a = item;
@@ -2996,55 +2838,22 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function declaration maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declaration nodes")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"void foo()", "void foo()", "function_definition",
+		)
 
 		// 2. Surrounding sequence: 'int item = 10;' maps in place
-		var srcItemDecl, dstItemDecl, srcItemUse, dstItemUse *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(srcBytes[n.StartByte:n.EndByte]) == "item" {
-				if srcItemDecl == nil {
-					srcItemDecl = n
-				} else {
-					srcItemUse = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dstBytes[n.StartByte:n.EndByte]) == "item" {
-				if dstItemDecl == nil {
-					dstItemDecl = n
-				} else {
-					dstItemUse = n
-				}
-			}
-		}
-		if srcItemDecl == nil || dstItemDecl == nil || srcItemUse == nil || dstItemUse == nil {
-			t.Fatal("failed to find item identifiers")
-		}
-		if mr.Mappings.Src()[srcItemDecl] != dstItemDecl {
-			t.Errorf("expected item declaration to map in place, got %v", mr.Mappings.Src()[srcItemDecl])
-		}
-		if mr.Mappings.Src()[srcItemUse] != dstItemUse {
-			t.Errorf("expected item use to map in place, got %v", mr.Mappings.Src()[srcItemUse])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"int item = 10;", "int item = 10;", "declaration",
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+		)
 
 		// 3. Right highlights on line 2 (0-indexed: int a[] = { item };)
 		// The inserted initializer_list delimiters must be carved out so `item` is NOT engulfed in an insert span.
@@ -3062,11 +2871,6 @@ func bar() {
 	})
 
 	t.Run("FullEngine/Java array initializer does not bleed insert span over stationary children", func(t *testing.T) {
-		r := rules.Get("java")
-		if r == nil {
-			t.Fatal("rules for java not found")
-		}
-
 		oldSrc := `class Test {
     void run() {
         int item = 10;
@@ -3116,55 +2920,22 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing class and method declarations map in place
-		var srcClass, dstClass *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcClass = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstClass = n
-				break
-			}
-		}
-		if srcClass == nil || dstClass == nil {
-			t.Fatal("failed to find class declarations")
-		}
-		if mr.Mappings.Src()[srcClass] != dstClass {
-			t.Errorf("expected class declaration to map in place, got %v", mr.Mappings.Src()[srcClass])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"class Test", "class Test", "class_declaration",
+		)
 
 		// 2. Surrounding sequence: 'int item = 10;' maps in place
-		var srcItemDecl, dstItemDecl, srcItemUse, dstItemUse *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(srcBytes[n.StartByte:n.EndByte]) == "item" {
-				if srcItemDecl == nil {
-					srcItemDecl = n
-				} else {
-					srcItemUse = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dstBytes[n.StartByte:n.EndByte]) == "item" {
-				if dstItemDecl == nil {
-					dstItemDecl = n
-				} else {
-					dstItemUse = n
-				}
-			}
-		}
-		if srcItemDecl == nil || dstItemDecl == nil || srcItemUse == nil || dstItemUse == nil {
-			t.Fatal("failed to find item identifiers")
-		}
-		if mr.Mappings.Src()[srcItemDecl] != dstItemDecl {
-			t.Errorf("expected item declaration to map in place, got %v", mr.Mappings.Src()[srcItemDecl])
-		}
-		if mr.Mappings.Src()[srcItemUse] != dstItemUse {
-			t.Errorf("expected item use to map in place, got %v", mr.Mappings.Src()[srcItemUse])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"int item = 10;", "int item = 10;", "local_variable_declaration",
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+		)
 
 		// 3. Right highlights on line 3 (0-indexed: int[] a = { item };)
 		// The inserted array_initializer delimiters must be carved out so `item` is NOT engulfed in an insert span.

@@ -42,35 +42,29 @@ func TestAlignLines(t *testing.T) {
 		src := ""
 		dst := "new\nlines"
 		got := AlignLines([]byte(src), []byte(dst), nil, nil)
-		if len(got) != 2 {
-			t.Fatalf("expected 2 alignment pairs for empty src, got %d", len(got))
-		}
-		for i, p := range got {
-			if p.LeftLine != -1 || p.RightLine != i {
-				t.Errorf("pair %d: expected {-1, %d}, got %+v", i, i, p)
-			}
-		}
+		testutil.AssertAlignmentGrid(t, src, dst, toTestPairs(got), `
+∅ │ new
+∅ │ lines
+`)
 	})
 
 	t.Run("Empty new file", func(t *testing.T) {
 		src := "old\nlines"
 		dst := ""
 		got := AlignLines([]byte(src), []byte(dst), nil, nil)
-		if len(got) != 2 {
-			t.Fatalf("expected 2 alignment pairs for empty dst, got %d", len(got))
-		}
-		for i, p := range got {
-			if p.LeftLine != i || p.RightLine != -1 {
-				t.Errorf("pair %d: expected {%d, -1}, got %+v", i, i, p)
-			}
-		}
+		testutil.AssertAlignmentGrid(t, src, dst, toTestPairs(got), `
+old   │ ∅
+lines │ ∅
+`)
 	})
 
 	t.Run("Both empty", func(t *testing.T) {
-		got := AlignLines([]byte(""), []byte(""), nil, nil)
-		if len(got) != 1 || got[0].LeftLine != -1 || got[0].RightLine != 0 {
-			t.Errorf("expected [{-1, 0}], got %+v", got)
-		}
+		src := ""
+		dst := ""
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testutil.AssertAlignmentGrid(t, src, dst, toTestPairs(got), `
+∅ │ 
+`)
 	})
 
 	t.Run("Deleted lines", func(t *testing.T) {
