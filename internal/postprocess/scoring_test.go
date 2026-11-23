@@ -649,6 +649,10 @@ func TestSurvivingAndSummarizeMappedLeaves(t *testing.T) {
 	ms.Add(srcLeaf1, dstLeaf1)
 	ms.Add(srcLeaf2, dstLeaf2)
 
+	// Declarative verification of mapping setup
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, ms.Src(), "foo", "foo", "identifier")
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, ms.Src(), "bar", "baz", "identifier")
+
 	t.Run("hasSurvivingMappedLeaves detects mapped payload", func(t *testing.T) {
 		if !hasSurvivingMappedLeaves(srcBlock, dstBlock, ms.Src(), nil, r) {
 			t.Fatalf("expected surviving mapped leaves")
@@ -878,8 +882,7 @@ func TestBuildCohortProtected(t *testing.T) {
 		result := normalizeMovesByStructure(es, ms)
 		for _, a := range result.Actions() {
 			if a.Type == actions.Move {
-				text := string(srcBytes[a.Node.StartByte:a.Node.EndByte])
-				t.Errorf("expected small move without anchor to be demoted, but found Move for %v", text)
+				t.Errorf("expected small move without anchor to be demoted, but found Move for node %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})

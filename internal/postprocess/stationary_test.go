@@ -1158,18 +1158,24 @@ func execute() {
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "cleanup()", "cleanup()")
 
 		// 4. return nil in dst must be recorded as an Insert, not a Move.
+		returnNil, err := testutil.FindNodeByText(dstAST, dst, "return nil")
+		if err != nil {
+			t.Fatalf("find return nil: %v", err)
+		}
 		hasReturnNilInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Insert && a.Node != nil && r.IsJumpStatement(a.Node.Type) &&
-				strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "return nil")
+			return a.Type == actions.Insert && a.Node != nil && a.Node.ID == returnNil.ID
 		})
 		if !hasReturnNilInsert {
 			t.Error("expected return nil in cleanup to be recorded as an Insert")
 		}
 
 		// 5. Entire deleted validate closure must be recorded as a Delete.
+		validateClosure, err := testutil.FindNodeByText(srcAST, src, "validate :=", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find validate closure: %v", err)
+		}
 		hasValidateDelete := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Delete && a.Node != nil && r.IsLocalVarDeclaration(a.Node.Type) &&
-				strings.Contains(string(src[a.Node.StartByte:a.Node.EndByte]), "validate :=")
+			return a.Type == actions.Delete && a.Node != nil && a.Node.ID == validateClosure.ID
 		})
 		if !hasValidateDelete {
 			t.Error("expected deleted validate closure to be recorded as a Delete")
@@ -1244,14 +1250,16 @@ func processItems(items []int) {
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
 
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
-				callee := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(callee, "precedingInit") || strings.Contains(callee, "succeedingDone") {
-					t.Errorf("expected stationary call to not have Move action, got %v", a)
-				}
-			}
+		srcInit, err := testutil.FindNodeByText(srcAST, src, "precedingInit()")
+		if err != nil {
+			t.Fatalf("find srcInit: %v", err)
 		}
+		srcDone, err := testutil.FindNodeByText(srcAST, src, "succeedingDone(currCommon, currDice, currAffinity)")
+		if err != nil {
+			t.Fatalf("find srcDone: %v", err)
+		}
+		assertNoActionOn(t, normalized, srcInit)
+		assertNoActionOn(t, normalized, srcDone)
 
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "func processItems(items []int)", "func processItems(items []int)")
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "items []int", "items []int")
@@ -1347,14 +1355,11 @@ func processItems(items []int) {
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
 
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
-				callee := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(callee, "precedingInit") {
-					t.Errorf("expected stationary call to not have Move action, got %v", a)
-				}
-			}
+		srcInit, err := testutil.FindNodeByText(srcAST, src, "precedingInit()")
+		if err != nil {
+			t.Fatalf("find srcInit: %v", err)
 		}
+		assertNoActionOn(t, normalized, srcInit)
 
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "function processItems(items: number[])", "function processItems(items: number[])")
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "precedingInit()", "precedingInit()")
@@ -1438,14 +1443,11 @@ func processItems(items []int) {
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
 
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
-				callee := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(callee, "preceding_init") {
-					t.Errorf("expected stationary call to not have Move action, got %v", a)
-				}
-			}
+		srcInit, err := testutil.FindNodeByText(srcAST, src, "preceding_init()")
+		if err != nil {
+			t.Fatalf("find srcInit: %v", err)
 		}
+		assertNoActionOn(t, normalized, srcInit)
 
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "fn process_items(items: &[i32])", "fn process_items(items: &[i32])")
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "preceding_init()", "preceding_init()")
@@ -1466,7 +1468,7 @@ func processItems(items []int) {
 }
 
 func TestClosureScopeBoundaries(t *testing.T) {
-	t.Run("FullEngine/java closure does not cross method and class boundaries", func(t *testing.T) {
+	t.Run("FullEngine/java closure across method and class boundaries is unmapped and out of scope", func(t *testing.T) {
 		r := rules.Get("java")
 		src := []byte(`class Outer {
     int value = compute();
@@ -1512,6 +1514,11 @@ func TestClosureScopeBoundaries(t *testing.T) {
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "precedingInit()", "precedingInit()")
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "succeedingDone()", "succeedingDone()")
 
+		// Whole-snippet unmapped assertions: cross-scope compute() and field declaration remain unmapped.
+		testutil.AssertUnmappedText(t, srcAST.Root(), src, mr.Mappings.Src(), "compute()")
+		testutil.AssertUnmappedText(t, dstAST.Root(), dst, mr.Mappings.Dst(), "compute()")
+		testutil.AssertUnmappedText(t, srcAST.Root(), src, mr.Mappings.Src(), "int value = compute();")
+
 		srcCompute, err := testutil.FindNodeByText(srcAST, src, "compute()")
 		if err != nil {
 			t.Fatalf("find srcCompute: %v", err)
@@ -1525,7 +1532,6 @@ func TestClosureScopeBoundaries(t *testing.T) {
 		if srcField == nil || !r.IsDeclaration(srcField.Type) || dstLambda == nil || !r.IsClosure(dstLambda.Type) {
 			t.Fatalf("unexpected parsed scopes: field=%v lambda=%v", srcField, dstLambda)
 		}
-		mr.Mappings.Add(srcField, dstLambda)
 		srcOuter, err := testutil.FindNodeByText(srcAST, src, "class Outer")
 		if err != nil {
 			t.Fatalf("find srcOuter: %v", err)
@@ -1542,9 +1548,67 @@ func TestClosureScopeBoundaries(t *testing.T) {
 		if sameScopeDeclaration(dstCompute, srcOuter, mr.Mappings, r) {
 			t.Error("sameScopeDeclaration() = true from Inner.run lambda to mapped Outer, want false")
 		}
-		mr.Mappings.Add(srcCompute, dstCompute)
 		if sameScopeDeclaration(srcCompute, dstCompute, mr.Mappings, r) {
-			t.Error("sameScopeDeclaration() = true for mapped calls across Outer and Inner.run, want false")
+			t.Error("sameScopeDeclaration() = true for calls across Outer and Inner.run, want false")
+		}
+	})
+
+	t.Run("FullEngine/java closure within method boundary maps in place", func(t *testing.T) {
+		r := rules.Get("java")
+		src := []byte(`class Outer {
+    static class Inner {
+        void run() {
+            precedingInit();
+            compute();
+            succeedingDone();
+        }
+    }
+}
+`)
+		dst := []byte(`class Outer {
+    static class Inner {
+        void run() {
+            precedingInit();
+            use(() -> compute());
+            succeedingDone();
+        }
+    }
+}
+`)
+		srcAST, err := treesitter.Parse(src, "Outer.java")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "Outer.java")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("snippets must parse cleanly: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "class Outer", "class Outer")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "static class Inner", "static class Inner")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "void run()", "void run()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "succeedingDone()", "succeedingDone()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "compute()", "compute()")
+
+		srcCompute, err := testutil.FindNodeByText(srcAST, src, "compute()")
+		if err != nil {
+			t.Fatalf("find srcCompute: %v", err)
+		}
+		dstCompute, err := testutil.FindNodeByText(dstAST, dst, "compute()")
+		if err != nil {
+			t.Fatalf("find dstCompute: %v", err)
+		}
+		if !sameScopeDeclaration(srcCompute, dstCompute, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = false for call mapped into lambda within same method, want true")
 		}
 	})
 
@@ -2005,8 +2069,12 @@ var pairs = []LineAlignmentPair{
 		}
 
 		// 3. Entire deleted collection element must be deleted
+		deletedElem, err := testutil.FindNodeByText(srcAST, src, "{LeftLine: -1, RightLine: 1}", "literal_element")
+		if err != nil {
+			t.Fatalf("find deleted element: %v", err)
+		}
 		hasElementDelete := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Delete && a.Node != nil && string(src[a.Node.StartByte:a.Node.EndByte]) == "{LeftLine: -1, RightLine: 1}"
+			return a.Type == actions.Delete && a.Node != nil && a.Node.ID == deletedElem.ID
 		})
 		if !hasElementDelete {
 			t.Error("expected entire deleted collection element to be deleted")
@@ -2082,14 +2150,21 @@ func f() {
 		if move.Node == nil || move.Node.Type != "argument_list" {
 			t.Errorf("expected moved node to be argument_list, got %v", move.Node)
 		}
-		moveContent := strings.TrimSpace(string(src[move.Node.StartByte:move.Node.EndByte]))
-		if !strings.Contains(moveContent, "longArg()") {
-			t.Errorf("expected moved argument_list to contain longArg(), got %q", moveContent)
+		longArgCall, err := testutil.FindNodeByText(srcAST, src, "longArg()", "call_expression")
+		if err != nil {
+			t.Fatalf("find longArg call: %v", err)
+		}
+		if !move.Node.Contains(longArgCall) {
+			t.Errorf("expected moved argument_list to contain longArg()")
 		}
 
 		// 3. The other() call arguments should be recorded as an insert
+		otherCall, err := testutil.FindNodeByText(dstAST, dst, "other()", "call_expression")
+		if err != nil {
+			t.Fatalf("find other call: %v", err)
+		}
 		hasOtherInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Insert && a.Node != nil && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "other()")
+			return a.Type == actions.Insert && a.Node != nil && a.Node.Contains(otherCall)
 		})
 		if !hasOtherInsert {
 			t.Error("expected chained call argument_list with other() to be inserted")
@@ -2349,9 +2424,13 @@ func process() {
 			}
 
 			// 2. Extracted multiline slice must be preserved as Move
+			sliceNode, err := testutil.FindNodeByText(srcAST, src, "fileBytes[gapStart:gapEnd]")
+			if err != nil {
+				t.Fatalf("find sliceNode: %v", err)
+			}
 			var hasSliceMove bool
 			for _, a := range normalized.Actions() {
-				if a.Type == actions.Move && a.Node != nil && r.IsIndexed(a.Node.Type) && string(src[a.Node.StartByte:a.Node.EndByte]) == "fileBytes[gapStart:gapEnd]" {
+				if a.Type == actions.Move && a.Node != nil && a.Node.ID == sliceNode.ID {
 					hasSliceMove = true
 					break
 				}
@@ -2412,9 +2491,13 @@ func process() {
 			}
 
 			// 2. Extracted condition err != nil is preserved as Move into the variable declaration
+			condNode, err := testutil.FindNodeByText(srcAST, src, "err != nil")
+			if err != nil {
+				t.Fatalf("find condNode: %v", err)
+			}
 			var hasMove bool
 			for _, a := range normalized.Actions() {
-				if a.Type == actions.Move && a.Node != nil && r.IsExpression(a.Node.Type) && string(src[a.Node.StartByte:a.Node.EndByte]) == "err != nil" {
+				if a.Type == actions.Move && a.Node != nil && a.Node.ID == condNode.ID {
 					hasMove = true
 					break
 				}
@@ -2484,8 +2567,12 @@ func TestProcess(t *testing.T) {
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "res.Cleanup()", "res.Cleanup()")
 
 		// 3. Move action: res.Envelope == nil moves into the new guard if
+		guardNode, err := testutil.FindNodeByText(srcAST, src, "res.Envelope == nil")
+		if err != nil {
+			t.Fatalf("find guardNode: %v", err)
+		}
 		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Move && a.Node != nil && string(src[a.Node.StartByte:a.Node.EndByte]) == "res.Envelope == nil"
+			return a.Type == actions.Move && a.Node != nil && a.Node.ID == guardNode.ID
 		})
 		if !hasMove {
 			t.Errorf("expected Move action on res.Envelope == nil to be preserved into new guard if statement, but none found: %v", normalized.Actions())
@@ -2638,17 +2725,24 @@ pub fn run() {}
 		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "GitConfigEntry", "GitConfigEntry")
 
 		// 3. Target & wrappers: none of the existing import paths or symbols should be marked as moved.
+		sideBySide, err := testutil.FindNodeByText(srcAST, src, "side_by_side")
+		if err != nil {
+			t.Fatalf("find side_by_side: %v", err)
+		}
+		gitConfigEntry, err := testutil.FindNodeByText(srcAST, src, "GitConfigEntry")
+		if err != nil {
+			t.Fatalf("find GitConfigEntry: %v", err)
+		}
+		gitConfigPath, err := testutil.FindNodeByText(srcAST, src, "git_config")
+		if err != nil {
+			t.Fatalf("find git_config: %v", err)
+		}
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Move && a.Node != nil {
-				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(nodeText, "side_by_side") {
-					t.Errorf("unexpected Move action on side_by_side: %v", a)
-				}
-				if strings.Contains(nodeText, "GitConfigEntry") {
-					t.Errorf("unexpected Move action on GitConfigEntry: %v", a)
-				}
-				if strings.Contains(nodeText, "git_config") {
-					t.Errorf("unexpected Move action on git_config: %v", a)
+				for _, unmovable := range []*treesitter.ASTNode{sideBySide, gitConfigEntry, gitConfigPath} {
+					if a.Node.ID == unmovable.ID || a.Node.Contains(unmovable) {
+						t.Errorf("unexpected Move action on stationary import node %s: %v", unmovable.Type, a)
+					}
 				}
 			}
 		}
@@ -2744,13 +2838,17 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 
 		// 4. Target & insertions: tuple_struct_pattern and SubmoduleLog are inserted.
+		submoduleArm, err := testutil.FindNodeByText(dstAST, dst, "SubmoduleLog", "match_arm")
+		if err != nil {
+			t.Fatalf("find SubmoduleLog match_arm: %v", err)
+		}
 		var foundTupleStructInsert, foundSubmoduleLogInsert bool
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Insert && a.Node != nil {
 				if r.IsWrapper(a.Node.Type) && a.Node.Type == "tuple_struct_pattern" {
 					foundTupleStructInsert = true
 				}
-				if a.Node.Type == "match_arm" && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "SubmoduleLog") {
+				if a.Node.ID == submoduleArm.ID {
 					foundSubmoduleLogInsert = true
 				}
 			}
@@ -2846,13 +2944,17 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 
 		// 4. Target & insertions: class_pattern and SUBMODULE_LOG are inserted.
+		submoduleCase, err := testutil.FindNodeByText(dstAST, dst, "SUBMODULE_LOG", "case_clause")
+		if err != nil {
+			t.Fatalf("find SUBMODULE_LOG case_clause: %v", err)
+		}
 		var foundClassPatternInsert, foundSubmoduleLogInsert bool
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Insert && a.Node != nil {
 				if pyRules.IsWrapper(a.Node.Type) && a.Node.Type == "class_pattern" {
 					foundClassPatternInsert = true
 				}
-				if a.Node.Type == "case_clause" && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "SUBMODULE_LOG") {
+				if a.Node.ID == submoduleCase.ID {
 					foundSubmoduleLogInsert = true
 				}
 			}
@@ -3042,21 +3144,24 @@ fn foo() {
 			testutil.AssertMappedText(t, srcAST, dstAST, tc.src, tc.dst, matchResult.Mappings.Src(), stmtText, stmtText)
 
 			// 4. Stationary Operands: placeholder and alignment_spec must NOT be deleted or inserted.
+			fieldExprSrc, err := testutil.FindNodeByText(srcAST, tc.src, "placeholder.alignment_spec")
+			if err != nil {
+				t.Fatalf("find src field_expression: %v", err)
+			}
+			fieldExprDst, err := testutil.FindNodeByText(dstAST, tc.dst, "placeholder.alignment_spec")
+			if err != nil {
+				t.Fatalf("find dst field_expression: %v", err)
+			}
+
 			for _, a := range normalized.Actions() {
 				if a.Node == nil {
 					continue
 				}
-				var text string
-				switch a.Type {
-				case actions.Delete:
-					text = string(tc.src[a.Node.StartByte:a.Node.EndByte])
-				case actions.Insert:
-					text = string(tc.dst[a.Node.StartByte:a.Node.EndByte])
-				default:
-					continue
+				if a.Type == actions.Delete && (a.Node.ID == fieldExprSrc.ID || fieldExprSrc.Contains(a.Node)) {
+					t.Errorf("spurious Delete on stationary payload %s (action: %v)", a.Node.Type, a)
 				}
-				if text == "placeholder" || text == "alignment_spec" || text == "placeholder.alignment_spec" {
-					t.Errorf("spurious %s on stationary payload %q (action: %v)", a.Type, text, a)
+				if a.Type == actions.Insert && (a.Node.ID == fieldExprDst.ID || fieldExprDst.Contains(a.Node)) {
+					t.Errorf("spurious Insert on stationary payload %s (action: %v)", a.Node.Type, a)
 				}
 			}
 
@@ -4185,8 +4290,7 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
 		// 4. Stationary operand: &matched_lines must NOT be emitted as a Move.
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Move {
-				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
-				t.Errorf("expected no Move actions for stationary argument, got Move on %s: %q", a.Node.Type, nodeText)
+				t.Errorf("expected no Move actions for stationary argument, got Move on %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})
@@ -4260,8 +4364,7 @@ func process(lhs, rhs []string) {
 		// 3. Stationary operand: &matched must NOT be emitted as a Move.
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Move {
-				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
-				t.Errorf("unexpected Move action on stationary Go argument, got Move on %s: %q", a.Node.Type, nodeText)
+				t.Errorf("unexpected Move action on stationary Go argument, got Move on %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})
@@ -4339,8 +4442,7 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Java(t *testing.T) {
 		// 3. Stationary operand: data.matched must NOT be emitted as a Move.
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Move {
-				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
-				t.Errorf("unexpected Move action on stationary Java field_access argument, got Move on %s: %q", a.Node.Type, nodeText)
+				t.Errorf("unexpected Move action on stationary Java field_access argument, got Move on %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})

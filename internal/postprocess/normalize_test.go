@@ -1686,15 +1686,18 @@ func f(rawType string, fn Node) {
 		}
 
 		movedNode := moveActions[0].Node
-		movedText := string(src[movedNode.StartByte:movedNode.EndByte])
-		if movedText != "(fn.Flags&FlatNodeMissing != 0)" {
-			t.Errorf("expected moved node text to be '(fn.Flags&FlatNodeMissing != 0)', got %q", movedText)
+		expectedMovedNode, err := testutil.FindNodeByText(srcAST, src, "(fn.Flags&FlatNodeMissing != 0)")
+		if err != nil {
+			t.Fatalf("find expected moved node: %v", err)
+		}
+		if movedNode.ID != expectedMovedNode.ID {
+			t.Errorf("expected moved node ID %d, got %d", expectedMovedNode.ID, movedNode.ID)
 		}
 
 		// The moved clause shouldn't have any deleted children.
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Delete && movedNode.Contains(a.Node) {
-				t.Errorf("unexpected Delete action on descendant of moved node: %s %s", a.Node.Type, string(src[a.Node.StartByte:a.Node.EndByte]))
+				t.Errorf("unexpected Delete action on descendant of moved node: %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})
@@ -1738,19 +1741,29 @@ func f(idx int) {
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 	// Both idx+1 < len(t1.Children) and idx+1 < len(t2.Children) should survive as moves.
-	moves := make(map[string]bool)
-	for _, a := range normalized.Actions() {
-		if a.Type == actions.Move && a.Node != nil {
-			txt := string(src[a.Node.StartByte:a.Node.EndByte])
-			moves[txt] = true
-		}
+	clause1, err := testutil.FindNodeByText(srcAST, src, "idx+1 < len(t1.Children)")
+	if err != nil {
+		t.Fatalf("find clause1: %v", err)
+	}
+	clause2, err := testutil.FindNodeByText(srcAST, src, "idx+1 < len(t2.Children)")
+	if err != nil {
+		t.Fatalf("find clause2: %v", err)
 	}
 
-	if !moves["idx+1 < len(t1.Children)"] {
-		t.Errorf("expected idx+1 < len(t1.Children) to be preserved as a move, moves: %+v", moves)
+	hasMoveForNode := func(node *treesitter.ASTNode) bool {
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && a.Node.ID == node.ID {
+				return true
+			}
+		}
+		return false
 	}
-	if !moves["idx+1 < len(t2.Children)"] {
-		t.Errorf("expected idx+1 < len(t2.Children) to be preserved as a move, moves: %+v", moves)
+
+	if !hasMoveForNode(clause1) {
+		t.Errorf("expected idx+1 < len(t1.Children) to be preserved as a move, actions: %+v", normalized.Actions())
+	}
+	if !hasMoveForNode(clause2) {
+		t.Errorf("expected idx+1 < len(t2.Children) to be preserved as a move, actions: %+v", normalized.Actions())
 	}
 }
 
@@ -1818,7 +1831,7 @@ func TestNormalize_StationaryMoveProtection(t *testing.T) {
 		normalized := Run(script, ms, srcAST, dstAST)
 
 		for _, a := range normalized.Actions() {
-			if a.Node == srcAnnotation {
+			if a.Node != nil && a.Node.ID == srcAnnotation.ID {
 				t.Errorf("expected annotation to be preserved as context without action, got %v", a.Type)
 			}
 		}
