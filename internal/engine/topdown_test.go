@@ -45,25 +45,12 @@ func TestTopDown(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcLeaf1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		srcLeaf2, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 4})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 1, m, nil)
 
 		// TopDown matches isomorphic subtrees like srcLeaf1.
-		if !m.Has(srcLeaf1) {
-			t.Errorf("expected unchanged leaf to be mapped")
-		}
-		if m.Has(srcLeaf2) {
-			t.Errorf("expected changed leaf to not be mapped by top-down")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "x", "x", "identifier")
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(), "y", "identifier")
 	})
 
 	t.Run("Added leaf", func(t *testing.T) {
@@ -79,24 +66,11 @@ func TestTopDown(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcLeaf, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstLeaf2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 4})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 1, m, nil)
 
-		if !m.Has(srcLeaf) {
-			t.Errorf("expected original leaf to be mapped")
-		}
-		if m.HasDst(dstLeaf2) {
-			t.Errorf("expected added leaf to not be mapped")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "x", "x", "identifier")
+		testutil.AssertUnmappedText(t, rootB, dst, m.Dst(), "y", "identifier")
 	})
 
 	t.Run("Structurally isomorphic subtrees", func(t *testing.T) {
@@ -112,24 +86,11 @@ func TestTopDown(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcSub, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		fnA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 1, m, nil)
 
-		if !m.Has(srcSub) {
-			t.Errorf("expected identical subtree to be mapped")
-		}
-		if m.Has(fnA) {
-			t.Errorf("expected root with different label to not be mapped by top-down")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "f()", "f()", "call_expression")
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(), "func a() { f() }", "function_declaration")
 	})
 }
 
@@ -147,15 +108,11 @@ func TestBottomUp(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcBlock, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "block", Line: 2})
+		srcLeaf, err := testutil.FindNodeByText(rootA, src, "x", "identifier")
 		if err != nil {
 			t.Fatal(err)
 		}
-		srcLeaf, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstLeaf, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 3})
+		dstLeaf, err := testutil.FindNodeByText(rootB, dst, "x", "identifier")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,9 +123,7 @@ func TestBottomUp(t *testing.T) {
 
 		BottomUp(rootA, rootB, m, 0.5)
 
-		if !m.Has(srcBlock) {
-			t.Errorf("expected BottomUp to map the parent block")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "{\n\tx := 1\n}", "{\n\tx := 1\n}", "block")
 	})
 
 	t.Run("Single leaf rename", func(t *testing.T) {
@@ -184,25 +139,12 @@ func TestBottomUp(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		srcBlock, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "block", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 1, m, nil)
 		BottomUp(rootA, rootB, m, 0.5)
 
-		if !m.Has(srcFn) {
-			t.Errorf("expected root to be mapped after BottomUp")
-		}
-		if !m.Has(srcBlock) {
-			t.Errorf("expected block to be mapped after BottomUp")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "func main() {\n\tx := 1\n\ty := 2\n}", "func main() {\n\tx := 1\n\tz := 2\n}", "function_declaration")
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "{\n\tx := 1\n\ty := 2\n}", "{\n\tx := 1\n\tz := 2\n}", "block")
 	})
 
 	t.Run("Completely different trees", func(t *testing.T) {
@@ -218,26 +160,13 @@ func TestBottomUp(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcLeaf, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstLeaf, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "interpreted_string_literal", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 1, m, nil)
 		BottomUp(rootA, rootB, m, 0.5)
 
 		// BottomUp might map the root as a fallback, but leaves shouldn't map.
-		if m.Has(srcLeaf) {
-			t.Errorf("expected completely different leaves to not be mapped")
-		}
-		if m.HasDst(dstLeaf) {
-			t.Errorf("expected completely different leaves to not be mapped")
-		}
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(), "x", "identifier")
+		testutil.AssertUnmappedText(t, rootB, dst, m.Dst(), "\"hello\"", "interpreted_string_literal")
 	})
 }
 
@@ -254,15 +183,6 @@ func TestTopDownUncomputedHashes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srcLeaf1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srcLeaf2, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 4})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	// Reset hashes to 0 to make sure TopDown lazily computes missing hashes.
 	for _, n := range rootA.PreOrder() {
 		n.Hash = 0
@@ -274,9 +194,8 @@ func TestTopDownUncomputedHashes(t *testing.T) {
 	m := NewMapping()
 	TopDown(rootA, rootB, 1, m, nil)
 
-	if !m.Has(srcLeaf1) || !m.Has(srcLeaf2) {
-		t.Errorf("expected all isomorphic leaves to be mapped even when initial Hash is 0")
-	}
+	testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "x", "x", "identifier")
+	testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "y", "y", "identifier")
 }
 
 func TestFindCandidatesWithCommonDescendants(t *testing.T) {
@@ -292,19 +211,19 @@ func TestFindCandidatesWithCommonDescendants(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, err := testutil.FindNodeByText(rootA, src, "x()", "call_expression")
 	if err != nil {
 		t.Fatal(err)
 	}
-	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callB, err := testutil.FindNodeByText(rootB, dst, "x()", "call_expression")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	idA, err := testutil.FindNodeByText(rootA, src, "x", "identifier")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	idB, err := testutil.FindNodeByText(rootB, dst, "x", "identifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,21 +252,13 @@ func TestTopDown_AmbiguityPreorderTieBreaker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srcCall, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dstCallClose, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	m := NewMapping()
 	TopDown(rootA, rootB, 2, m, nil)
 
-	if m.Src()[srcCall] != dstCallClose {
-		t.Errorf("TopDown matched srcCall to %v, want dstCallClose on line 3", m.Src()[srcCall])
-	}
+	testutil.AssertMappedTextQuery(t, rootA, rootB, src, dst, m.Src(),
+		testutil.TextQuery{Text: "score()", Type: "call_expression"},
+		testutil.TextQuery{Text: "score()", Type: "call_expression", Occurrence: 1},
+	)
 }
 
 func TestTopDown_IdentifierlessScopeIsolation(t *testing.T) {
@@ -364,17 +275,10 @@ func TestTopDown_IdentifierlessScopeIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcRet, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "return_statement", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 2, m, nil)
 
-		if m.Has(srcRet) {
-			t.Errorf("expected identifier-less subtree not to match across funcA and funcB, got %v", m.Src()[srcRet])
-		}
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(), "return false", "return_statement")
 	})
 
 	t.Run("matches identifier-less subtree within same function scope", func(t *testing.T) {
@@ -390,21 +294,10 @@ func TestTopDown_IdentifierlessScopeIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcRet, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "return_statement", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstRet, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "return_statement", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 2, m, nil)
 
-		if m.Src()[srcRet] != dstRet {
-			t.Errorf("expected identifier-less subtree to match within same function scope funcA, got %v", m.Src()[srcRet])
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "return false", "return false", "return_statement")
 	})
 
 	t.Run("matches subtree containing identifier across different function scopes", func(t *testing.T) {
@@ -420,21 +313,10 @@ func TestTopDown_IdentifierlessScopeIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcRet, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "return_statement", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstRet, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "return_statement", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		TopDown(rootA, rootB, 2, m, nil)
 
-		if m.Src()[srcRet] != dstRet {
-			t.Errorf("expected subtree with identifier to match across funcA and funcB, got %v", m.Src()[srcRet])
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "return err", "return err", "return_statement")
 	})
 }
 
@@ -470,28 +352,11 @@ func myFunc() {
 		t.Fatal(err)
 	}
 
-	srcExprA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srcExprB, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "assignment_statement", Line: 6})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dstExpr, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "short_var_declaration", Line: 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	m := NewMapping()
 	TopDown(rootA, rootB, 2, m, nil)
 
-	if m.Src()[srcExprA] != dstExpr {
-		t.Errorf("TopDown matched srcExprA to %v, want dstExpr", m.Src()[srcExprA])
-	}
-	if m.Src()[srcExprB] != nil {
-		t.Errorf("TopDown matched srcExprB to %v, want nil", m.Src()[srcExprB])
-	}
+	testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "sim := 10", "sim := 10", "short_var_declaration")
+	testutil.AssertUnmappedText(t, rootA, src, m.Src(), "sim = 20", "assignment_statement")
 }
 
 func TestTopDown_ParentLeafSimilarityTieBreaker(t *testing.T) {

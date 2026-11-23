@@ -11,11 +11,12 @@ import (
 
 func TestGetDeclarationName(t *testing.T) {
 	t.Run("function declaration", func(t *testing.T) {
-		tree, err := treesitter.Parse([]byte("package main\nfunc foo() {}\n"), "test.go")
+		src := []byte("package main\nfunc foo() {}\n")
+		tree, err := treesitter.Parse(src, "test.go")
 		if err != nil {
 			t.Fatal(err)
 		}
-		fn, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		fn, err := testutil.FindNodeByText(tree, src, "func foo() {}", "function_declaration")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -25,11 +26,12 @@ func TestGetDeclarationName(t *testing.T) {
 	})
 
 	t.Run("method declaration", func(t *testing.T) {
-		tree, err := treesitter.Parse([]byte("package main\ntype S struct{}\nfunc (s S) Bar() {}\n"), "test.go")
+		src := []byte("package main\ntype S struct{}\nfunc (s S) Bar() {}\n")
+		tree, err := treesitter.Parse(src, "test.go")
 		if err != nil {
 			t.Fatal(err)
 		}
-		fn, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "method_declaration", Line: 3})
+		fn, err := testutil.FindNodeByText(tree, src, "func (s S) Bar() {}", "method_declaration")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,11 +47,12 @@ func TestGetDeclarationName(t *testing.T) {
 	})
 
 	t.Run("no identifier child", func(t *testing.T) {
-		tree, err := treesitter.Parse([]byte("package main\nfunc f() { return }\n"), "test.go")
+		src := []byte("package main\nfunc f() { return }\n")
+		tree, err := treesitter.Parse(src, "test.go")
 		if err != nil {
 			t.Fatal(err)
 		}
-		ret, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "return_statement", Line: 2})
+		ret, err := testutil.FindNodeByText(tree, src, "return", "return_statement")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,20 +79,11 @@ func TestMatchDeclarations(t *testing.T) {
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstFn, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !m.Has(srcFn) {
-			t.Error("src function_declaration should be mapped by name")
-		}
-		if m.Src()[srcFn] != dstFn {
-			t.Error("functions with same name should map to each other")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(),
+			"func foo() { a() }",
+			"func foo() { b() }",
+			"function_declaration",
+		)
 	})
 
 	t.Run("skips ambiguous declarations", func(t *testing.T) {
@@ -108,13 +102,10 @@ func TestMatchDeclarations(t *testing.T) {
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if m.Has(srcFn) {
-			t.Error("should not map when multiple dst candidates exist")
-		}
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(),
+			"func foo() { a() }",
+			"function_declaration",
+		)
 	})
 
 	t.Run("does not match different names", func(t *testing.T) {
@@ -133,13 +124,10 @@ func TestMatchDeclarations(t *testing.T) {
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if m.Has(srcFn) {
-			t.Error("foo and bar should not be matched")
-		}
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(),
+			"func foo() {}",
+			"function_declaration",
+		)
 	})
 
 	t.Run("matches class declarations by name", func(t *testing.T) {
@@ -158,13 +146,11 @@ func TestMatchDeclarations(t *testing.T) {
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		srcCls, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "class_declaration", Line: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !m.Has(srcCls) {
-			t.Error("class declarations with same name should be matched")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(),
+			"class User { void a() {} }",
+			"class User { void b() {} }",
+			"class_declaration",
+		)
 	})
 
 	t.Run("matches methods with same receiver type", func(t *testing.T) {
@@ -183,13 +169,11 @@ func TestMatchDeclarations(t *testing.T) {
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		srcMeth, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !m.Has(srcMeth) {
-			t.Error("methods with same name and receiver should be matched")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(),
+			"func (t *Type) Foo() {}",
+			"func (t *Type) Foo() {}",
+			"method_declaration",
+		)
 	})
 
 	t.Run("matches remaining unmatched declarations when duplicate is already mapped", func(t *testing.T) {
@@ -205,19 +189,11 @@ func TestMatchDeclarations(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		fn1Src, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+		fn1Src, err := testutil.FindNodeByText(rootA, src, "func foo() { a() }", "function_declaration")
 		if err != nil {
 			t.Fatal(err)
 		}
-		fn2Src, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		fn1Dst, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		fn2Dst, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 3})
+		fn1Dst, err := testutil.FindNodeByText(rootB, dst, "func foo() { a() }", "function_declaration")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -227,12 +203,11 @@ func TestMatchDeclarations(t *testing.T) {
 
 		matchDeclarations(rootA, rootB, m)
 
-		if !m.Has(fn2Src) {
-			t.Fatal("fn2Src should be matched to fn2Dst")
-		}
-		if got := m.Src()[fn2Src]; got != fn2Dst {
-			t.Errorf("m.Src()[fn2Src] = %v, want %v", got, fn2Dst)
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(),
+			"func foo() { b() }",
+			"func foo() { c() }",
+			"function_declaration",
+		)
 	})
 }
 
@@ -251,21 +226,13 @@ func TestMatchDeclarationIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := Match(rootA, rootB, nil, nil, nil)
-	srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dstFn, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !r.Mappings.Has(srcFn) {
-		t.Error("Match should map declarations with same name")
-	}
-	if r.Mappings.Src()[srcFn] != dstFn {
-		t.Error("declaration pre-match should map foo -> foo")
-	}
+	part := NewLinePartition(src, dst)
+	r := Match(rootA, rootB, src, dst, part)
+	testutil.AssertMappedText(t, rootA, rootB, src, dst, r.Mappings.Src(),
+		"func foo() {\n\treturn 1\n}",
+		"func foo() {\n\tother()\n\treturn 2\n}",
+		"function_declaration",
+	)
 }
 
 func TestBottomUpDeclarationNameAffinity(t *testing.T) {
@@ -287,32 +254,32 @@ func TestBottomUpDeclarationNameAffinity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	t1, err := testutil.FindNodeByText(rootA, src, "func foo() {\n\tx := 1\n\ty := 2\n}", "function_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c1, err := testutil.FindNode(rootD1, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	c1, err := testutil.FindNodeByText(rootD1, dst1, "func bar() {\n\tx := 1\n}", "function_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c2, err := testutil.FindNode(rootD2, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	c2, err := testutil.FindNodeByText(rootD2, dst2, "func foo() {\n\ty := 2\n}", "function_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	xSrc, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	xSrc, err := testutil.FindNodeByText(rootA, src, "x := 1", "short_var_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
-	xDst, err := testutil.FindNode(rootD1, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	xDst, err := testutil.FindNodeByText(rootD1, dst1, "x := 1", "short_var_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ySrc, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 4})
+	ySrc, err := testutil.FindNodeByText(rootA, src, "y := 2", "short_var_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
-	yDst, err := testutil.FindNode(rootD2, testutil.NodeQuery{Type: "short_var_declaration", Line: 3})
+	yDst, err := testutil.FindNodeByText(rootD2, dst2, "y := 2", "short_var_declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,20 +311,10 @@ func TestMatchDeclarationsEquivalentTypes(t *testing.T) {
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		srcFn, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstFn, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "variable_declaration", Line: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !m.Has(srcFn) {
-			t.Fatal("src function_declaration should map to dst variable_declaration under equivalent types")
-		}
-		if m.Src()[srcFn] != dstFn {
-			t.Errorf("expected %v to map to %v, got %v", srcFn, dstFn, m.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(),
+			"function sync_once_impl()\n\treturn\nend",
+			"local sync_once_impl = function()\n\treturn\nend",
+		)
 	})
 
 	t.Run("disambiguates forward declaration vs full definition by size", func(t *testing.T) {
@@ -373,31 +330,18 @@ func TestMatchDeclarationsEquivalentTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		srcForward, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "variable_declaration", Line: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-		srcFull, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstFull, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "function_declaration", Line: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		m := NewMapping()
 		matchDeclarations(rootA, rootB, m)
 
-		if m.Has(srcForward) {
-			t.Errorf("forward declaration should not steal destination function")
-		}
-		if !m.Has(srcFull) {
-			t.Fatalf("full definition should map to destination function")
-		}
-		if m.Src()[srcFull] != dstFull {
-			t.Errorf("expected srcFull to map to dstFull")
-		}
+		testutil.AssertUnmappedText(t, rootA, src, m.Src(),
+			"local sync_once_impl",
+			"variable_declaration",
+		)
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(),
+			"function sync_once_impl(a, b, c)\n\treturn a, b, c\nend",
+			"function sync_once_impl(a, b)\n\treturn a, b\nend",
+			"function_declaration",
+		)
 	})
 }
 
@@ -415,31 +359,19 @@ func TestMethodReceiverDisambiguation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := Match(rootA, rootB, nil, nil, nil)
+		part := NewLinePartition(src, dst)
+		r := Match(rootA, rootB, src, dst, part)
 
-		srcA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 4})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstA, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "method_declaration", Line: 4})
-		if err != nil {
-			t.Fatal(err)
-		}
-		srcB, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 7})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "method_declaration", Line: 7})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if r.Mappings.Src()[srcA] != dstA {
-			t.Error("TypeA.Foo should map to TypeA.Foo")
-		}
-		if r.Mappings.Src()[srcB] != dstB {
-			t.Error("TypeB.Foo should map to TypeB.Foo")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, r.Mappings.Src(),
+			"func (t *TypeA) Foo() {\n\tx = 1\n}",
+			"func (t *TypeA) Foo() {\n\tx = 999\n}",
+			"method_declaration",
+		)
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, r.Mappings.Src(),
+			"func (t *TypeB) Foo() {\n\ty = 2\n}",
+			"func (t *TypeB) Foo() {\n\ty = 2\n}",
+			"method_declaration",
+		)
 	})
 
 	t.Run("same name same receiver matches", func(t *testing.T) {
@@ -455,19 +387,14 @@ func TestMethodReceiverDisambiguation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := Match(rootA, rootB, nil, nil, nil)
+		part := NewLinePartition(src, dst)
+		r := Match(rootA, rootB, src, dst, part)
 
-		srcMeth, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "method_declaration", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		dstMeth, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "method_declaration", Line: 3})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if r.Mappings.Src()[srcMeth] != dstMeth {
-			t.Error("same name same receiver should match")
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, r.Mappings.Src(),
+			"func (t *Type) Foo() {\n\tx = 1\n}",
+			"func (t *Type) Foo() {\n\tx = 999\n}",
+			"method_declaration",
+		)
 	})
 }
 

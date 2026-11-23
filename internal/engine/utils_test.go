@@ -14,20 +14,21 @@ func f() {
 	return
 }
 `
-	tree, err := treesitter.Parse([]byte(src), "test.go")
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	leaf, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1})
+	leaf, err := testutil.FindNodeByText(tree, srcBytes, "x")
 	if err != nil {
 		t.Fatalf("find leaf: %v", err)
 	}
-	retStmt, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "return_statement", Line: 4})
+	retStmt, err := testutil.FindNodeByTextQuery(tree, srcBytes, testutil.TextQuery{Text: "return", Type: "return_statement"})
 	if err != nil {
 		t.Fatalf("find retStmt: %v", err)
 	}
-	decl, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
+	decl, err := testutil.FindNodeByText(tree, srcBytes, "func f() {\n\tx := 1\n\treturn\n}")
 	if err != nil {
 		t.Fatalf("find decl: %v", err)
 	}
@@ -63,8 +64,8 @@ func TestDice(t *testing.T) {
 		t.Fatalf("parse B: %v", err)
 	}
 
-	callA, _ := testutil.FindNode(treeA, testutil.NodeQuery{Type: "call_expression", Line: 2})
-	callB, _ := testutil.FindNode(treeB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, _ := testutil.FindNodeByText(treeA, []byte(srcA), "a(x, y)")
+	callB, _ := testutil.FindNodeByText(treeB, []byte(srcB), "a(x, y)")
 
 	descA := callA.Descendants()
 	descB := callB.Descendants()
@@ -84,8 +85,8 @@ func TestDiceNoMapping(t *testing.T) {
 	treeA, _ := treesitter.Parse([]byte(srcA), "test.go")
 	treeB, _ := treesitter.Parse([]byte(srcB), "test.go")
 
-	callA, _ := testutil.FindNode(treeA, testutil.NodeQuery{Type: "call_expression", Line: 2})
-	callB, _ := testutil.FindNode(treeB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, _ := testutil.FindNodeByText(treeA, []byte(srcA), "a(x)")
+	callB, _ := testutil.FindNodeByText(treeB, []byte(srcB), "a(y)")
 
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{}
 	d := Dice(callA, callB, m)
@@ -96,9 +97,10 @@ func TestDiceNoMapping(t *testing.T) {
 
 func TestDiceEmptyTrees(t *testing.T) {
 	src := "package main\nfunc f() { _ = x; _ = y }"
-	tree, _ := treesitter.Parse([]byte(src), "test.go")
-	x, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
-	y, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 4})
+	srcBytes := []byte(src)
+	tree, _ := treesitter.Parse(srcBytes, "test.go")
+	x, _ := testutil.FindNodeByText(tree, srcBytes, "x")
+	y, _ := testutil.FindNodeByText(tree, srcBytes, "y")
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{}
 
 	// Dice is 0.0 for leaves because they have no descendants.
@@ -114,8 +116,8 @@ func TestChawatheSimilarity(t *testing.T) {
 	treeA, _ := treesitter.Parse([]byte(srcA), "test.go")
 	treeB, _ := treesitter.Parse([]byte(srcB), "test.go")
 
-	callA, _ := testutil.FindNode(treeA, testutil.NodeQuery{Type: "call_expression", Line: 2})
-	callB, _ := testutil.FindNode(treeB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, _ := testutil.FindNodeByText(treeA, []byte(srcA), "a(x)")
+	callB, _ := testutil.FindNodeByText(treeB, []byte(srcB), "a(x)")
 
 	descA := callA.Descendants()
 	descB := callB.Descendants()
@@ -131,9 +133,10 @@ func TestChawatheSimilarity(t *testing.T) {
 
 func TestChawatheSimilarityEmpty(t *testing.T) {
 	src := "package main\nfunc f() { _ = x; _ = y }"
-	tree, _ := treesitter.Parse([]byte(src), "test.go")
-	x, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
-	y, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 4})
+	srcBytes := []byte(src)
+	tree, _ := treesitter.Parse(srcBytes, "test.go")
+	x, _ := testutil.FindNodeByText(tree, srcBytes, "x")
+	y, _ := testutil.FindNodeByText(tree, srcBytes, "y")
 	m := map[*treesitter.ASTNode]*treesitter.ASTNode{}
 	sim := ChawatheSimilarity(x, y, m)
 	if sim != 0.0 {
@@ -143,20 +146,21 @@ func TestChawatheSimilarityEmpty(t *testing.T) {
 
 func TestIsomorphic(t *testing.T) {
 	src := "package main\nfunc f() { a(x); a(x); b(x); a(x, y) }"
-	tree, err := treesitter.Parse([]byte(src), "test.go")
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	callAX1, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 1})
-	callAX2, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 2})
-	callBX, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 3})
-	callAXY, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 4})
+	callAX1, _ := testutil.FindNodeByTextQuery(tree, srcBytes, testutil.TextQuery{Text: "a(x)", Occurrence: 1})
+	callAX2, _ := testutil.FindNodeByTextQuery(tree, srcBytes, testutil.TextQuery{Text: "a(x)", Occurrence: 2})
+	callBX, _ := testutil.FindNodeByText(tree, srcBytes, "b(x)")
+	callAXY, _ := testutil.FindNodeByText(tree, srcBytes, "a(x, y)")
 
-	idA1, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2}) // a
-	idA2, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 4}) // a
-	idB, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 6})  // b
-	pkgMain, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "package_identifier", Line: 1})
+	idA1, _ := testutil.FindNodeByTextQuery(tree, srcBytes, testutil.TextQuery{Text: "a", Occurrence: 1})
+	idA2, _ := testutil.FindNodeByTextQuery(tree, srcBytes, testutil.TextQuery{Text: "a", Occurrence: 2})
+	idB, _ := testutil.FindNodeByText(tree, srcBytes, "b")
+	pkgMain, _ := testutil.FindNodeByText(tree, srcBytes, "main")
 
 	tests := []struct {
 		name string
@@ -188,17 +192,16 @@ func TestStructureIsomorphic(t *testing.T) {
 	}
 
 	src := "package main\nfunc f() { a(x); b(y); a(x, y) }"
-	tree, err := treesitter.Parse([]byte(src), "test.go")
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	callAX, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 1})
-	callBY, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 2})
-	callAXY, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2, Nth: 3})
-	idA, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
-
-	if StructureIsomorphic(nil, idA) {
+	callAX, _ := testutil.FindNodeByText(tree, srcBytes, "a(x)")
+	callBY, _ := testutil.FindNodeByText(tree, srcBytes, "b(y)")
+	callAXY, _ := testutil.FindNodeByText(tree, srcBytes, "a(x, y)")
+	if StructureIsomorphic(nil, callAX) {
 		t.Error("nil and non-nil should not be StructureIsomorphic")
 	}
 
@@ -215,13 +218,14 @@ func TestStructureIsomorphic(t *testing.T) {
 
 func TestNearestMatchedAncestor(t *testing.T) {
 	src := "package main\nfunc f() { x() }"
-	tree, err := treesitter.Parse([]byte(src), "test.go")
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	root, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-	grandchild, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	root, _ := testutil.FindNodeByText(tree, srcBytes, "func f() { x() }")
+	grandchild, _ := testutil.FindNodeByText(tree, srcBytes, "x")
 
 	m := NewMapping()
 	m.Add(root, root)
@@ -241,13 +245,14 @@ func TestNearestMatchedAncestor(t *testing.T) {
 
 func TestNearestMatchedAncestorDst(t *testing.T) {
 	src := "package main\nfunc f() { x() }"
-	tree, err := treesitter.Parse([]byte(src), "test.go")
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	root, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "function_declaration", Line: 2})
-	grandchild, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	root, _ := testutil.FindNodeByText(tree, srcBytes, "func f() { x() }")
+	grandchild, _ := testutil.FindNodeByText(tree, srcBytes, "x")
 
 	m := NewMapping()
 	m.Add(root, root)
@@ -261,11 +266,13 @@ func TestNearestMatchedAncestorDst(t *testing.T) {
 func TestAncestorNameSimilarity(t *testing.T) {
 	srcA := "package main\nfunc foo() { x() }"
 	srcB := "package main\nfunc foo() { y() }"
-	treeA, _ := treesitter.Parse([]byte(srcA), "test.go")
-	treeB, _ := treesitter.Parse([]byte(srcB), "test.go")
+	srcBytesA := []byte(srcA)
+	srcBytesB := []byte(srcB)
+	treeA, _ := treesitter.Parse(srcBytesA, "test.go")
+	treeB, _ := treesitter.Parse(srcBytesB, "test.go")
 
-	leaf1, _ := testutil.FindNode(treeA, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
-	leaf2, _ := testutil.FindNode(treeB, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	leaf1, _ := testutil.FindNodeByText(treeA, srcBytesA, "x")
+	leaf2, _ := testutil.FindNodeByText(treeB, srcBytesB, "y")
 
 	overlap := AncestorNameSimilarity(leaf1, leaf2)
 	if overlap != 1 {
@@ -276,17 +283,19 @@ func TestAncestorNameSimilarity(t *testing.T) {
 func TestAncestorNameSimilarityPairKey(t *testing.T) {
 	srcA := `const obj1 = { priority: { min: 1 } };`
 	srcB := `let obj2 = { priority: { max: 1 } };`
-	treeA, err := treesitter.Parse([]byte(srcA), "test.js")
+	srcBytesA := []byte(srcA)
+	srcBytesB := []byte(srcB)
+	treeA, err := treesitter.Parse(srcBytesA, "test.js")
 	if err != nil {
 		t.Fatalf("parse A: %v", err)
 	}
-	treeB, err := treesitter.Parse([]byte(srcB), "test.js")
+	treeB, err := treesitter.Parse(srcBytesB, "test.js")
 	if err != nil {
 		t.Fatalf("parse B: %v", err)
 	}
 
-	leaf1, _ := testutil.FindNode(treeA, testutil.NodeQuery{Type: "property_identifier", Line: 1, Nth: 2}) // min
-	leaf2, _ := testutil.FindNode(treeB, testutil.NodeQuery{Type: "property_identifier", Line: 1, Nth: 2}) // max
+	leaf1, _ := testutil.FindNodeByText(treeA, srcBytesA, "min")
+	leaf2, _ := testutil.FindNodeByText(treeB, srcBytesB, "max")
 
 	overlap := AncestorNameSimilarity(leaf1, leaf2)
 	if overlap != 1 {
@@ -296,8 +305,9 @@ func TestAncestorNameSimilarityPairKey(t *testing.T) {
 
 func TestAncestorNameSimilarityNil(t *testing.T) {
 	src := "package main\nfunc f() { _ = x }"
-	tree, _ := treesitter.Parse([]byte(src), "test.go")
-	leaf, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	srcBytes := []byte(src)
+	tree, _ := treesitter.Parse(srcBytes, "test.go")
+	leaf, _ := testutil.FindNodeByText(tree, srcBytes, "x")
 
 	if AncestorNameSimilarity(nil, leaf) != 0 {
 		t.Error("nil input should return 0")
@@ -327,9 +337,51 @@ func TestCommentSimilarity(t *testing.T) {
 }
 
 func TestStructureIsomorphicComments(t *testing.T) {
-	c1 := &treesitter.ASTNode{Type: "comment", Label: "// Comment"}
-	c2 := &treesitter.ASTNode{Type: "comment", Label: "// Comment 1"}
-	c3 := &treesitter.ASTNode{Type: "comment", Label: "// Hello"}
+	findComment := func(root *treesitter.ASTNode) *treesitter.CommentBlock {
+		var walk func(n *treesitter.ASTNode) *treesitter.CommentBlock
+		walk = func(n *treesitter.ASTNode) *treesitter.CommentBlock {
+			if n == nil {
+				return nil
+			}
+			if len(n.LeadingTrivia) > 0 {
+				return n.LeadingTrivia[0]
+			}
+			if len(n.TrailingTrivia) > 0 {
+				return n.TrailingTrivia[0]
+			}
+			for _, ch := range n.Children {
+				if c := walk(ch); c != nil {
+					return c
+				}
+			}
+			return nil
+		}
+		return walk(root)
+	}
+
+	root1, err := treesitter.Parse([]byte("// Comment\npackage main\n"), "test.go")
+	if err != nil {
+		t.Fatalf("parse 1: %v", err)
+	}
+	root2, err := treesitter.Parse([]byte("// Comment 1\npackage main\n"), "test.go")
+	if err != nil {
+		t.Fatalf("parse 2: %v", err)
+	}
+	root3, err := treesitter.Parse([]byte("// Hello\npackage main\n"), "test.go")
+	if err != nil {
+		t.Fatalf("parse 3: %v", err)
+	}
+
+	cb1 := findComment(root1)
+	cb2 := findComment(root2)
+	cb3 := findComment(root3)
+	if cb1 == nil || cb2 == nil || cb3 == nil {
+		t.Fatalf("failed to find comment in trivia: cb1=%v, cb2=%v, cb3=%v", cb1, cb2, cb3)
+	}
+
+	c1 := &treesitter.ASTNode{Type: cb1.Type, Label: cb1.Text}
+	c2 := &treesitter.ASTNode{Type: cb2.Type, Label: cb2.Text}
+	c3 := &treesitter.ASTNode{Type: cb3.Type, Label: cb3.Text}
 
 	if !StructureIsomorphic(c1, c2) {
 		t.Error("expected c1 and c2 to be structurally isomorphic comments")
@@ -357,9 +409,9 @@ func TestLeafSimilarityAndHasLongLeafToken(t *testing.T) {
 		t.Fatalf("parse 3: %v", err)
 	}
 
-	t1, _ := testutil.FindNode(t1Tree, testutil.NodeQuery{Type: "pair", Line: 1})
-	t2, _ := testutil.FindNode(t2Tree, testutil.NodeQuery{Type: "pair", Line: 1})
-	t3, _ := testutil.FindNode(t3Tree, testutil.NodeQuery{Type: "pair", Line: 1})
+	t1, _ := testutil.FindNodeByText(t1Tree, []byte(src1), "414: (\"request_uri_too_large\",)")
+	t2, _ := testutil.FindNodeByText(t2Tree, []byte(src2), "422: (\"unprocessable_entity\",)")
+	t3, _ := testutil.FindNodeByText(t3Tree, []byte(src3), "414: (\"request_uri_too_large\", \"uri_too_long\")")
 
 	if !HasLongLeafToken(t1) {
 		t.Error("expected t1 to have long leaf token")
@@ -415,7 +467,7 @@ func TestNodePairRole(t *testing.T) {
 	t.Run("orphan node", func(t *testing.T) {
 		src := "const val = 1;"
 		tree, _ := treesitter.Parse([]byte(src), "test.js")
-		orphan, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 1})
+		orphan, _ := testutil.FindNodeByText(tree, []byte(src), "val")
 		if got := NodePairRole(orphan); got != PairRoleNone {
 			t.Errorf("NodePairRole(orphan) = %v, want %v", got, PairRoleNone)
 		}
@@ -427,8 +479,8 @@ func TestNodePairRole(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		key, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "property_identifier", Line: 1})
-		val, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "string", Line: 1})
+		key, _ := testutil.FindNodeByText(tree, []byte(src), "name")
+		val, _ := testutil.FindNodeByText(tree, []byte(src), "\"service\"")
 
 		if got := NodePairRole(key); got != PairRoleKey {
 			t.Errorf("NodePairRole(key) = %v, want %v", got, PairRoleKey)
@@ -444,7 +496,7 @@ func TestNodePairRole(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		item1, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 1, Nth: 2})
+		item1, _ := testutil.FindNodeByText(tree, []byte(src), "item1")
 
 		if got := NodePairRole(item1); got != PairRoleNone {
 			t.Errorf("NodePairRole(item1) = %v, want %v", got, PairRoleNone)
@@ -461,11 +513,11 @@ func TestCompatiblePairRoles(t *testing.T) {
 	tree2, _ := treesitter.Parse([]byte(src2), "test.js")
 	tree3, _ := treesitter.Parse([]byte(src3), "test.js")
 
-	key1, _ := testutil.FindNode(tree1, testutil.NodeQuery{Type: "property_identifier", Line: 1})
-	val1, _ := testutil.FindNode(tree1, testutil.NodeQuery{Type: "string", Line: 1})
-	key2, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "property_identifier", Line: 1})
-	val2, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "string", Line: 1})
-	nonPairNode, _ := testutil.FindNode(tree3, testutil.NodeQuery{Type: "identifier", Line: 1, Nth: 2})
+	key1, _ := testutil.FindNodeByText(tree1, []byte(src1), "k1")
+	val1, _ := testutil.FindNodeByText(tree1, []byte(src1), "\"v1\"")
+	key2, _ := testutil.FindNodeByText(tree2, []byte(src2), "k2")
+	val2, _ := testutil.FindNodeByText(tree2, []byte(src2), "\"v2\"")
+	nonPairNode, _ := testutil.FindNodeByText(tree3, []byte(src3), "plain")
 
 	tests := []struct {
 		name string
@@ -501,11 +553,12 @@ func TestGetKeyLabel(t *testing.T) {
 	t.Run("call with identifier in go", func(t *testing.T) {
 		src := `package main
 func f() { println("hello") }`
-		tree, err := treesitter.Parse([]byte(src), "test.go")
+		srcBytes := []byte(src)
+		tree, err := treesitter.Parse(srcBytes, "test.go")
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		call, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 2})
+		call, _ := testutil.FindNodeByText(tree, srcBytes, "println(\"hello\")")
 		if got := getKeyLabel(call); got != "println" {
 			t.Errorf("getKeyLabel(call) = %q, want %q", got, "println")
 		}
@@ -513,11 +566,12 @@ func f() { println("hello") }`
 
 	t.Run("call with identifier in c", func(t *testing.T) {
 		src := `void f() { doWork(); }`
-		tree, err := treesitter.Parse([]byte(src), "test.c")
+		srcBytes := []byte(src)
+		tree, err := treesitter.Parse(srcBytes, "test.c")
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		call, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 1})
+		call, _ := testutil.FindNodeByText(tree, srcBytes, "doWork()")
 		if got := getKeyLabel(call); got != "doWork" {
 			t.Errorf("getKeyLabel(call) = %q, want %q", got, "doWork")
 		}
@@ -525,11 +579,12 @@ func f() { println("hello") }`
 
 	t.Run("call with property_identifier in javascript", func(t *testing.T) {
 		src := `fetchData();`
-		tree, err := treesitter.Parse([]byte(src), "test.js")
+		srcBytes := []byte(src)
+		tree, err := treesitter.Parse(srcBytes, "test.js")
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		call, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "call_expression", Line: 1})
+		call, _ := testutil.FindNodeByText(tree, srcBytes, "fetchData()")
 		if got := getKeyLabel(call); got != "fetchData" {
 			t.Errorf("getKeyLabel(call) = %q, want %q", got, "fetchData")
 		}
@@ -537,11 +592,12 @@ func f() { println("hello") }`
 
 	t.Run("pair with direct key label", func(t *testing.T) {
 		src := `const obj = { "endpoint": "https://api.example.com" };`
-		tree, err := treesitter.Parse([]byte(src), "test.js")
+		srcBytes := []byte(src)
+		tree, err := treesitter.Parse(srcBytes, "test.js")
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		pair, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "pair", Line: 1})
+		pair, _ := testutil.FindNodeByText(tree, srcBytes, `"endpoint": "https://api.example.com"`)
 		if got := getKeyLabel(pair); got != `"endpoint"` {
 			t.Errorf("getKeyLabel(pair) = %q, want %q", got, `"endpoint"`)
 		}
@@ -549,11 +605,12 @@ func f() { println("hello") }`
 
 	t.Run("pair with identifier key label", func(t *testing.T) {
 		src := `const obj = { serviceName: "auth" };`
-		tree, err := treesitter.Parse([]byte(src), "test.js")
+		srcBytes := []byte(src)
+		tree, err := treesitter.Parse(srcBytes, "test.js")
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		pair, _ := testutil.FindNode(tree, testutil.NodeQuery{Type: "pair", Line: 1})
+		pair, _ := testutil.FindNodeByText(tree, srcBytes, `serviceName: "auth"`)
 		if got := getKeyLabel(pair); got != "serviceName" {
 			t.Errorf("getKeyLabel(pair) = %q, want %q", got, "serviceName")
 		}
@@ -569,12 +626,13 @@ func f() {
 	}
 }
 `
-	tree, err := treesitter.Parse([]byte(src), "test.go")
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	stmt, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "expression_statement", Line: 5})
+	stmt, err := testutil.FindNodeByTextQuery(tree, srcBytes, testutil.TextQuery{Text: "matchDeclarations()", Type: "expression_statement"})
 	if err != nil {
 		t.Fatalf("find expr stmt: %v", err)
 	}
@@ -584,7 +642,7 @@ func f() {
 		t.Errorf("FindEnclosingStatement(stmt inside default_case) = %v (%s), want %v (%s)", got, got.Type, stmt, stmt.Type)
 	}
 
-	innerID, err := testutil.FindNode(tree, testutil.NodeQuery{Type: "identifier", Line: 5})
+	innerID, err := testutil.FindNodeByText(tree, srcBytes, "matchDeclarations")
 	if err != nil {
 		t.Fatalf("find inner id: %v", err)
 	}
@@ -638,17 +696,19 @@ func f() {
 	getContent(dstFile, "")
 }
 `
-	tree1, err := treesitter.Parse([]byte(src1), "test.go")
+	srcBytes1 := []byte(src1)
+	srcBytes2 := []byte(src2)
+	tree1, err := treesitter.Parse(srcBytes1, "test.go")
 	if err != nil {
 		t.Fatalf("parse 1: %v", err)
 	}
-	tree2, err := treesitter.Parse([]byte(src2), "test.go")
+	tree2, err := treesitter.Parse(srcBytes2, "test.go")
 	if err != nil {
 		t.Fatalf("parse 2: %v", err)
 	}
 
-	call1, _ := testutil.FindNode(tree1, testutil.NodeQuery{Type: "call_expression", Line: 3})
-	call2, _ := testutil.FindNode(tree2, testutil.NodeQuery{Type: "call_expression", Line: 3})
+	call1, _ := testutil.FindNodeByText(tree1, srcBytes1, "getContent(dstFile, \":\")")
+	call2, _ := testutil.FindNodeByText(tree2, srcBytes2, "getContent(dstFile, \"\")")
 
 	if sim := LeafSimilarity(call1, call1); sim != 1.0 {
 		t.Errorf("LeafSimilarity(call1, call1) = %f, want 1.0", sim)
@@ -679,20 +739,22 @@ func doWork() {
 	y()
 }
 `
-	tree1, err := treesitter.Parse([]byte(src1), "test.go")
+	srcBytes1 := []byte(src1)
+	srcBytes2 := []byte(src2)
+	tree1, err := treesitter.Parse(srcBytes1, "test.go")
 	if err != nil {
 		t.Fatalf("parse 1: %v", err)
 	}
-	tree2, err := treesitter.Parse([]byte(src2), "test.go")
+	tree2, err := treesitter.Parse(srcBytes2, "test.go")
 	if err != nil {
 		t.Fatalf("parse 2: %v", err)
 	}
 
-	x, err := testutil.FindNode(tree1, testutil.NodeQuery{Type: "identifier", Line: 4})
+	x, err := testutil.FindNodeByText(tree1, srcBytes1, "x")
 	if err != nil {
 		t.Fatalf("find x: %v", err)
 	}
-	y, err := testutil.FindNode(tree2, testutil.NodeQuery{Type: "identifier", Line: 4})
+	y, err := testutil.FindNodeByText(tree2, srcBytes2, "y")
 	if err != nil {
 		t.Fatalf("find y: %v", err)
 	}
