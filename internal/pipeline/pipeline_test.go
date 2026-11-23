@@ -360,15 +360,17 @@ int main(void) {
 		srcMappings := res.MatchResult.Mappings.Src()
 
 		// 1. Enclosing context: main function definitions must map in place
-		testutil.AssertMapped(t, res.SrcAST, res.DstAST, srcMappings,
-			testutil.NodeQuery{Type: "function_definition", Line: 5},
-			testutil.NodeQuery{Type: "function_definition", Line: 5},
+		testutil.AssertMappedText(t, res.SrcAST, res.DstAST, oldC, newC, srcMappings,
+			"int main(void)",
+			"int main(void)",
+			"function_definition",
 		)
 
 		// 2. Surrounding statements: macro call and adjacent statements must map in place
-		testutil.AssertMapped(t, res.SrcAST, res.DstAST, srcMappings,
-			testutil.NodeQuery{Type: "call_expression", Line: 7},
-			testutil.NodeQuery{Type: "call_expression", Line: 7},
+		testutil.AssertMappedText(t, res.SrcAST, res.DstAST, oldC, newC, srcMappings,
+			"FOR_ALL_TAB_WINDOWS(tp, wp)",
+			"FOR_ALL_TAB_WINDOWS(tp, wp)",
+			"call_expression",
 		)
 
 		// 3. Highlights: only '10' -> '20' should take an update highlight

@@ -549,3 +549,277 @@ var x = <del>[]</del>string{}
 var x = <ins>[...]</ins>string{}
 `)
 }
+
+func TestPipeline_MultilineCallDeletionCarveout_C(t *testing.T) {
+	oldSrc := `void test() {
+    foo(
+        "arg1",
+        "arg2"
+    );
+}
+`
+	newSrc := `void test() {
+    int res = foo(
+        "arg1",
+        "arg2"
+    );
+    return;
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "old.c", "new.c", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `void test() {
+    foo(
+        "arg1",
+        "arg2"
+    )<del>;</del>
+}
+`)
+
+	testutil.AssertTagged(t, newSrc, toTestSpans(res.Envelope.RightHighlights), `void test() {
+    <ins>int res = foo(</ins>
+<ins>        "arg1",</ins>
+<ins>        "arg2"</ins>
+<ins>    );</ins>
+    <ins>return;</ins>
+}
+`)
+}
+
+func TestPipeline_MultilineCallDeletionCarveout_Java(t *testing.T) {
+	oldSrc := `class Test {
+    void run() {
+        foo(
+            "arg1",
+            "arg2"
+        );
+    }
+}
+`
+	newSrc := `class Test {
+    void run() {
+        int res = foo(
+            "arg1",
+            "arg2"
+        );
+        return;
+    }
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "Test.java", "Test.java", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `class Test {
+    void run() {
+        foo(
+            "arg1",
+            "arg2"
+        )<del>;</del>
+    }
+}
+`)
+
+	testutil.AssertTagged(t, newSrc, toTestSpans(res.Envelope.RightHighlights), `class Test {
+    void run() {
+        <ins>int res = foo(</ins>
+<ins>            "arg1",</ins>
+<ins>            "arg2"</ins>
+<ins>        );</ins>
+        <ins>return;</ins>
+    }
+}
+`)
+}
+
+func TestPipeline_ContainerDelimiterMoveParity(t *testing.T) {
+	oldSrc := `package main
+
+func Process(condition bool) error {
+	if condition {
+		step1 := validate()
+		step2 := transform(step1)
+		step3 := persist(step2)
+		notify(step3)
+		logAudit(step3)
+		return nil
+	}
+	return nil
+}
+`
+	newSrc := `package main
+
+func Process(condition bool) error {
+	if condition {
+		return handleCondition()
+	}
+	return nil
+}
+
+func handleCondition() error {
+	step1 := validate()
+	step2 := transform(step1)
+	step3 := persist(step2)
+	notify(step3)
+	logAudit(step3)
+	return nil
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.go", "test.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func Process(condition bool) error {
+	<del>if condition</del> <mov>{</mov>
+<mov>		step1 := validate()</mov>
+<mov>		step2 := transform(step1)</mov>
+<mov>		step3 := persist(step2)</mov>
+<mov>		notify(step3)</mov>
+<mov>		logAudit(step3)</mov>
+<mov>		return nil</mov>
+<mov>	}</mov>
+	return nil
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(res.Envelope.RightHighlights), `package main
+
+func Process(condition bool) error {
+	<ins>if condition {</ins>
+<ins>		return handleCondition()</ins>
+<ins>	}</ins>
+	return nil
+}
+
+<ins>func handleCondition() error</ins> <mov>{</mov>
+<mov>	step1 := validate()</mov>
+<mov>	step2 := transform(step1)</mov>
+<mov>	step3 := persist(step2)</mov>
+<mov>	notify(step3)</mov>
+<mov>	logAudit(step3)</mov>
+<mov>	return nil</mov>
+<mov>}</mov>
+`)
+}
+
+func TestPipeline_AssignMoveColors_ExtractedBlockColorContrast(t *testing.T) {
+	oldSrc := `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    match pagerflags.split_first() {
+        Some((_, _)) => {
+            let mut process = Command::new("less");
+            process.arg("-R");
+            process.arg("-F");
+            process.arg("-X");
+            process.arg("-K");
+            process.arg("-i");
+            process.env("LESSCHARSET", "UTF-8");
+            process.env("LESSHISTFILE", "/dev/null");
+            Ok(process)
+        }
+        None => Ok(Command::new("cat")),
+    };
+    process.wait()
+}
+`
+	newSrc := `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    Ok(match pagerflags.split_first() {
+        Some((_, _)) => {
+            _make_process_from_less_path()
+        }
+        None => Command::new("cat"),
+    });
+    process.wait()
+}
+
+fn _make_process_from_less_path() -> Command {
+    let mut process = Command::new("less");
+    process.arg("-R");
+    process.arg("-F");
+    process.arg("-X");
+    process.arg("-K");
+    process.arg("-i");
+    process.env("LESSCHARSET", "UTF-8");
+    process.env("LESSHISTFILE", "/dev/null");
+    process
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    <mov>match pagerflags.split_first() {</mov>
+        <mov>Some((_, _)) =></mov> <mov1>{</mov1>
+<mov1>            let mut process = Command::new("less");</mov1>
+<mov1>            process.arg("-R");</mov1>
+<mov1>            process.arg("-F");</mov1>
+<mov1>            process.arg("-X");</mov1>
+<mov1>            process.arg("-K");</mov1>
+<mov1>            process.arg("-i");</mov1>
+<mov1>            process.env("LESSCHARSET", "UTF-8");</mov1>
+<mov1>            process.env("LESSHISTFILE", "/dev/null");</mov1>
+<mov1>            </mov1><del>Ok(process)</del>
+<mov1>        }</mov1>
+        <mov>None => </mov><del>Ok(</del><mov>Command::new("cat")</mov><del>)</del><mov>,</mov>
+    <mov>}</mov><del>;</del>
+    process.wait()
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(res.Envelope.RightHighlights), `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    <ins>Ok(</ins><mov>match pagerflags.split_first() {</mov>
+        <mov>Some((_, _)) =></mov> <ins>{</ins>
+<ins>            _make_process_from_less_path()</ins>
+<ins>        }</ins>
+        <mov>None => Command::new("cat"),</mov>
+    <mov>}</mov><ins>)</ins>;
+    process.wait()
+}
+
+<ins>fn _make_process_from_less_path() -> Command</ins> <mov1>{</mov1>
+<mov1>    let mut process = Command::new("less");</mov1>
+<mov1>    process.arg("-R");</mov1>
+<mov1>    process.arg("-F");</mov1>
+<mov1>    process.arg("-X");</mov1>
+<mov1>    process.arg("-K");</mov1>
+<mov1>    process.arg("-i");</mov1>
+<mov1>    process.env("LESSCHARSET", "UTF-8");</mov1>
+<mov1>    process.env("LESSHISTFILE", "/dev/null");</mov1>
+    <ins>process</ins>
+<mov1>}</mov1>
+`)
+}

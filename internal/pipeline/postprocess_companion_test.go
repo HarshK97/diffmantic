@@ -783,3 +783,427 @@ func process(lhs, rhs []string) {
 `)
 	})
 }
+
+func TestPipeline_Postprocess_CrossBranchMove(t *testing.T) {
+	t.Run("Go", func(t *testing.T) {
+		src := []byte(`package main
+
+func handle(ready bool) {
+	prepare()
+	if ready {
+		processTask()
+	}
+	finish()
+}
+`)
+		dst := []byte(`package main
+
+func handle(ready bool) {
+	prepare()
+	if ready {
+		validate()
+	} else {
+		processTask()
+	}
+	finish()
+}
+`)
+		res, err := Run(src, dst, "test.go", "test.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func handle(ready bool) {
+	prepare()
+	if ready <del>{</del>
+		<mov>processTask()</mov>
+	<del>}</del>
+	finish()
+}
+`)
+		testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package main
+
+func handle(ready bool) {
+	prepare()
+	if ready <ins>{</ins>
+<ins>		validate()</ins>
+<ins>	} else {</ins>
+		<mov>processTask()</mov>
+	<ins>}</ins>
+	finish()
+}
+`)
+	})
+
+	t.Run("Rust", func(t *testing.T) {
+		src := []byte(`fn handle(ready: bool) {
+    prepare();
+    if ready {
+        process_task();
+    }
+    finish();
+}
+`)
+		dst := []byte(`fn handle(ready: bool) {
+    prepare();
+    if ready {
+        validate();
+    } else {
+        process_task();
+    }
+    finish();
+}
+`)
+		res, err := Run(src, dst, "test.rs", "test.rs", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `fn handle(ready: bool) {
+    prepare();
+    if ready <del>{</del>
+        <mov>process_task();</mov>
+    <del>}</del>
+    finish();
+}
+`)
+		testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `fn handle(ready: bool) {
+    prepare();
+    if ready <ins>{</ins>
+<ins>        validate();</ins>
+<ins>    } else {</ins>
+        <mov>process_task();</mov>
+    <ins>}</ins>
+    finish();
+}
+`)
+	})
+
+	t.Run("TypeScript", func(t *testing.T) {
+		src := []byte(`function handle(ready: boolean) {
+    prepare();
+    if (ready) {
+        processTask();
+    }
+    finish();
+}
+`)
+		dst := []byte(`function handle(ready: boolean) {
+    prepare();
+    if (ready) {
+        validate();
+    } else {
+        processTask();
+    }
+    finish();
+}
+`)
+		res, err := Run(src, dst, "test.ts", "test.ts", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `function handle(ready: boolean) {
+    prepare();
+    if (ready) <del>{</del>
+        <mov>processTask();</mov>
+    <del>}</del>
+    finish();
+}
+`)
+		testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `function handle(ready: boolean) {
+    prepare();
+    if (ready) <ins>{</ins>
+<ins>        validate();</ins>
+<ins>    } else {</ins>
+        <mov>processTask();</mov>
+    <ins>}</ins>
+    finish();
+}
+`)
+	})
+}
+
+func TestPipeline_Postprocess_StationaryIfElseIfLadderMoves(t *testing.T) {
+	t.Run("C", func(t *testing.T) {
+		src := []byte(`void evaluate_option() {
+    do_init();
+    if (x == 1) {
+        do_one();
+    } else if (x == 3) {
+        do_three();
+    }
+    do_done();
+}
+`)
+		dst := []byte(`void evaluate_option() {
+    do_init();
+    if (x == 1) {
+        do_one();
+    } else if (x == 2) {
+        do_two();
+    } else if (x == 3) {
+        do_three();
+    }
+    do_done();
+}
+`)
+		res, err := Run(src, dst, "test.c", "test.c", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `void evaluate_option() {
+    do_init();
+    if (x == 1) {
+        do_one();
+    } else if (x == 3) {
+        do_three();
+    }
+    do_done();
+}
+`)
+		testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `void evaluate_option() {
+    do_init();
+    if (x == 1) {
+        do_one();
+    } <ins>else if (x == 2) {</ins>
+<ins>        do_two();</ins>
+<ins>    }</ins> else if (x == 3) {
+        do_three();
+    }
+    do_done();
+}
+`)
+	})
+
+	t.Run("Python", func(t *testing.T) {
+		src := []byte(`def evaluate_option():
+    do_init()
+    if x == 1:
+        do_one()
+    elif x == 3:
+        do_three()
+    do_done()
+`)
+		dst := []byte(`def evaluate_option():
+    do_init()
+    if x == 1:
+        do_one()
+    elif x == 2:
+        do_two()
+    elif x == 3:
+        do_three()
+    do_done()
+`)
+		res, err := Run(src, dst, "test.py", "test.py", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `def evaluate_option():
+    do_init()
+    if x == 1:
+        do_one()
+    elif x == 3:
+        do_three()
+    do_done()
+`)
+		testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `def evaluate_option():
+    do_init()
+    if x == 1:
+        do_one()
+    <ins>elif x == 2:</ins>
+<ins>        do_two()</ins>
+    elif x == 3:
+        do_three()
+    do_done()
+`)
+	})
+
+	t.Run("TypeScript", func(t *testing.T) {
+		src := []byte(`function evaluateOption() {
+    doInit();
+    if (x === 1) {
+        doOne();
+    } else if (x === 3) {
+        doThree();
+    }
+    doDone();
+}
+`)
+		dst := []byte(`function evaluateOption() {
+    doInit();
+    if (x === 1) {
+        doOne();
+    } else if (x === 2) {
+        doTwo();
+    } else if (x === 3) {
+        doThree();
+    }
+    doDone();
+}
+`)
+		res, err := Run(src, dst, "test.ts", "test.ts", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{
+				IncludeHighlights: true,
+				IncludeActions:    true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+		testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `function evaluateOption() {
+    doInit();
+    if (x === 1) {
+        doOne();
+    } else if (x === 3) {
+        doThree();
+    }
+    doDone();
+}
+`)
+		testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `function evaluateOption() {
+    doInit();
+    if (x === 1) {
+        doOne();
+    } <ins>else if (x === 2) {</ins>
+<ins>        doTwo();</ins>
+<ins>    }</ins> else if (x === 3) {
+        doThree();
+    }
+    doDone();
+}
+`)
+	})
+}
+
+func TestPipeline_Postprocess_StationaryFluentMethodChains(t *testing.T) {
+	src := []byte(`fn build_cli() {
+    let mut config = Config::default();
+    let app = Command::new("bat")
+        .arg(
+            Arg::new("style")
+                .long("style")
+                .value_name("components")
+                .use_value_delimiter(false)
+                .takes_value(true)
+                .overrides_with("style")
+        );
+    config.validate();
+}
+`)
+	dst := []byte(`fn build_cli() {
+    let mut config = Config::default();
+    let app = Command::new("bat")
+        .arg(
+            Arg::new("style")
+                .long("style")
+                .value_name("components")
+                .overrides_with("style")
+        );
+    config.validate();
+}
+`)
+	res, err := Run(src, dst, "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeHighlights: true,
+			IncludeActions:    true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `fn build_cli() {
+    let mut config = Config::default();
+    let app = Command::new("bat")
+        .arg(
+            Arg::new("style")
+                .long("style")
+                .value_name("components")
+                <del>.use_value_delimiter(false)</del>
+                <del>.takes_value(true)</del>
+                .overrides_with("style")
+        );
+    config.validate();
+}
+`)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `fn build_cli() {
+    let mut config = Config::default();
+    let app = Command::new("bat")
+        .arg(
+            Arg::new("style")
+                .long("style")
+                .value_name("components")
+                .overrides_with("style")
+        );
+    config.validate();
+}
+`)
+}
+
+func TestPipeline_Postprocess_RustTailExpressionSemicolonTransitionWithDrift(t *testing.T) {
+	src := []byte(`fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut u32) {
+    set_parent(roots, None);
+    set_num_ancestors(roots, 0);
+    set_unique_id(roots, next_id)
+}
+`)
+	dst := []byte(`fn added_upstream_helper() {
+    let _ = 1;
+}
+
+fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut NonZeroU32) {
+    set_parent(roots, None);
+    set_num_ancestors(roots, 0);
+    set_unique_id(roots, next_id);
+}
+`)
+	res, err := Run(src, dst, "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeHighlights: true,
+			IncludeActions:    true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: <del>&mut u32</del>) {
+    set_parent(roots, None);
+    set_num_ancestors(roots, 0);
+    set_unique_id(roots, next_id)
+}
+`)
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `<ins>fn added_upstream_helper() {</ins>
+<ins>    let _ = 1;</ins>
+<ins>}</ins>
+
+fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: <ins>&mut NonZeroU32</ins>) {
+    set_parent(roots, None);
+    set_num_ancestors(roots, 0);
+    set_unique_id(roots, next_id)<ins>;</ins>
+}
+`)
+}
