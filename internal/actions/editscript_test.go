@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestEditScriptActionsSlice(t *testing.T) {
@@ -37,22 +39,28 @@ func TestFprintActionsNil(t *testing.T) {
 
 func TestFprintActionsContainsDetails(t *testing.T) {
 	// Verify subtree and move details appear in formatted output.
-	ast, err := treesitter.Parse([]byte("def foo():\n    x = 1\n"), "test.py")
+	code := []byte("def foo():\n    x = 1\n")
+	ast, err := treesitter.Parse(code, "test.py")
 	if err != nil {
 		t.Fatalf("failed to parse: %v", err)
 	}
 	fnNode := ast.Children[0]
-	var blockNode, idNode *treesitter.ASTNode
-	for _, n := range ast.Descendants() {
-		if n.Type == "block" && blockNode == nil {
-			blockNode = n
-		}
-		if n.Type == "identifier" && n.Label == "x" && idNode == nil {
-			idNode = n
+
+	idNode, err := testutil.FindNodeByText(ast, code, "x")
+	if err != nil {
+		t.Fatalf("failed to find identifier x: %v", err)
+	}
+
+	pyRules := rules.Get("python")
+	var blockNode *treesitter.ASTNode
+	for p := idNode.Parent; p != nil; p = p.Parent {
+		if pyRules.IsBlock(p.Type) {
+			blockNode = p
+			break
 		}
 	}
-	if blockNode == nil || idNode == nil {
-		t.Fatalf("failed to find child nodes in parsed snippet: block=%v, id=%v", blockNode, idNode)
+	if blockNode == nil {
+		t.Fatal("failed to find block node in parsed snippet")
 	}
 
 	es := NewEditScript()

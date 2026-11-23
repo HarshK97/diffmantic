@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 )
 
@@ -47,32 +48,16 @@ func TestChawatheInsertLeaf(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	var dstY *treesitter.ASTNode
-	for _, n := range dst.PostOrder() {
-		if n.Label == "y" {
-			dstY = n
-			break
-		}
-	}
-	if dstY == nil {
-		t.Fatal("failed to find identifier y in dst")
+	dstY, err := testutil.FindNodeByText(dst, dstCode, "y")
+	if err != nil {
+		t.Fatalf("failed to find identifier y in dst: %v", err)
 	}
 
 	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
 	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
-	found := false
-	for _, a := range es.Actions() {
-		if a.Type == Insert && a.Node == dstY {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected Insert action for dstY")
-		for _, a := range es.Actions() {
-			t.Logf("  %s: node=%v", a.Type, a.Node)
-		}
+	if !hasAction(es, Insert, dstY) {
+		t.Errorf("expected Insert action for dstY, got %v", es.Actions())
 	}
 }
 
@@ -88,32 +73,16 @@ func TestChawatheDeleteLeaf(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	var srcY *treesitter.ASTNode
-	for _, n := range src.PostOrder() {
-		if n.Label == "y" {
-			srcY = n
-			break
-		}
-	}
-	if srcY == nil {
-		t.Fatal("failed to find identifier y in src")
+	srcY, err := testutil.FindNodeByText(src, srcCode, "y")
+	if err != nil {
+		t.Fatalf("failed to find identifier y in src: %v", err)
 	}
 
 	matchResult := engine.Match(src, dst, srcCode, dstCode, nil)
 	es := GenerateEditScript(src, dst, matchResult.Mappings)
 
-	found := false
-	for _, a := range es.Actions() {
-		if a.Type == Delete && a.Node == srcY {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected Delete action for srcY")
-		for _, a := range es.Actions() {
-			t.Logf("  %s: node=%v", a.Type, a.Node)
-		}
+	if !hasAction(es, Delete, srcY) {
+		t.Errorf("expected Delete action for srcY, got %v", es.Actions())
 	}
 }
 
@@ -129,21 +98,13 @@ func TestChawatheUpdateLeaf(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	var srcID, dstID *treesitter.ASTNode
-	for _, n := range src.PostOrder() {
-		if n.Label == "old_val" {
-			srcID = n
-			break
-		}
+	srcID, err := testutil.FindNodeByText(src, srcCode, "old_val")
+	if err != nil {
+		t.Fatalf("failed to find identifier old_val in src: %v", err)
 	}
-	for _, n := range dst.PostOrder() {
-		if n.Label == "new_val" {
-			dstID = n
-			break
-		}
-	}
-	if srcID == nil || dstID == nil {
-		t.Fatalf("failed to find identifiers: srcID=%v, dstID=%v", srcID, dstID)
+	dstID, err := testutil.FindNodeByText(dst, dstCode, "new_val")
+	if err != nil {
+		t.Fatalf("failed to find identifier new_val in dst: %v", err)
 	}
 
 	ms := engine.NewMapping()
@@ -152,18 +113,8 @@ func TestChawatheUpdateLeaf(t *testing.T) {
 
 	es := GenerateEditScript(src, dst, ms)
 
-	found := false
-	for _, a := range es.Actions() {
-		if a.Type == Update && a.Node == srcID && a.Value == "new_val" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected Update action changing 'old_val' to 'new_val'")
-		for _, a := range es.Actions() {
-			t.Logf("  %s: node=%v val=%q", a.Type, a.Node, a.Value)
-		}
+	if !hasUpdateAction(es, srcID, "new_val") {
+		t.Errorf("expected Update action changing 'old_val' to 'new_val', got %v", es.Actions())
 	}
 }
 

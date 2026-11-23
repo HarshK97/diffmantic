@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestActionNames(t *testing.T) {
@@ -106,21 +108,24 @@ func TestNodeToString(t *testing.T) {
 		t.Fatalf("failed to parse: %v", err)
 	}
 
-	var identNode, blockNode *treesitter.ASTNode
-	for _, n := range ast.Children {
-		if n.Type == "function_declaration" {
-			for _, child := range n.Children {
-				if child.Type == "identifier" && child.Label == "foo" {
-					identNode = child
-				}
-				if child.Type == "block" {
-					blockNode = child
-				}
-			}
+	identNode, err := testutil.FindNodeByText(ast, code, "foo")
+	if err != nil {
+		t.Fatalf("failed to locate identNode: %v", err)
+	}
+	returnNode, err := testutil.FindNodeByText(ast, code, "return")
+	if err != nil {
+		t.Fatalf("failed to locate returnNode: %v", err)
+	}
+	goRules := rules.Get("go")
+	var blockNode *treesitter.ASTNode
+	for p := returnNode.Parent; p != nil; p = p.Parent {
+		if goRules.IsBlock(p.Type) {
+			blockNode = p
+			break
 		}
 	}
-	if identNode == nil || blockNode == nil {
-		t.Fatalf("failed to locate test nodes: ident=%v, block=%v", identNode, blockNode)
+	if blockNode == nil {
+		t.Fatal("failed to locate blockNode")
 	}
 
 	got := NodeToString(identNode)
@@ -170,10 +175,26 @@ func TestDeepCopyTree(t *testing.T) {
 }
 
 func TestInsertChild(t *testing.T) {
-	parent := &cnode{nodeType: "block"}
-	c1 := &cnode{nodeType: "a"}
-	c2 := &cnode{nodeType: "b"}
-	c3 := &cnode{nodeType: "c"}
+	code := []byte("a = 1\nb = 2\nc = 3\n")
+	ast, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+
+	cs := &chawatheState{}
+	cs.init(ast, ast, engine.NewMapping())
+	parent := cs.cpySrc
+	if len(parent.children) < 3 {
+		t.Fatalf("expected at least 3 children, got %d", len(parent.children))
+	}
+	c1 := parent.children[0]
+	c2 := parent.children[1]
+	c3 := parent.children[2]
+
+	parent.children = nil
+	c1.parent = nil
+	c2.parent = nil
+	c3.parent = nil
 
 	insertChild(parent, c1, 0)
 	insertChild(parent, c3, 1)
