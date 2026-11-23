@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/serialize"
+	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
@@ -21,22 +23,34 @@ func TestBuildMoveBadges_DeclarationMove(t *testing.T) {
 	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
 	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
 
-	// OldFunc moved from line 2 to line 5
-	sStartByte := uint32(srcOffsets[2])
-	sEndByte := uint32(srcOffsets[5])
-	dStartByte := uint32(dstOffsets[5])
-	dEndByte := uint32(len(dstContent))
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srcFunc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "func OldFunc() {\n\tprintln(\"old\")\n}", "function_declaration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstFunc, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "func OldFunc() {\n\tprintln(\"old\")\n}", "function_declaration")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []serialize.Action{
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "function_declaration",
-				StartByte: sStartByte,
-				EndByte:   sEndByte,
+				Type:      srcFunc.Type,
+				StartByte: srcFunc.StartByte,
+				EndByte:   srcFunc.EndByte,
 			},
-			DestStartByte: &dStartByte,
-			DestEndByte:   &dEndByte,
+			DestStartByte: &dstFunc.StartByte,
+			DestEndByte:   &dstFunc.EndByte,
 		},
 	}
 
@@ -79,21 +93,34 @@ func TestBuildMoveBadges_SingleLineStatementMove(t *testing.T) {
 	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
 	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
 
-	sStartByte := uint32(strings.Index(srcContent, "absorbed := false"))
-	sEndByte := sStartByte + uint32(len("absorbed := false"))
-	dStartByte := uint32(strings.Index(dstContent, "absorbed := false"))
-	dEndByte := dStartByte + uint32(len("absorbed := false"))
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srcStmt, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "absorbed := false", "short_var_declaration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstStmt, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "absorbed := false", "short_var_declaration")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []serialize.Action{
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "short_var_declaration",
-				StartByte: sStartByte,
-				EndByte:   sEndByte,
+				Type:      srcStmt.Type,
+				StartByte: srcStmt.StartByte,
+				EndByte:   srcStmt.EndByte,
 			},
-			DestStartByte: &dStartByte,
-			DestEndByte:   &dEndByte,
+			DestStartByte: &dstStmt.StartByte,
+			DestEndByte:   &dstStmt.EndByte,
 		},
 	}
 
@@ -137,38 +164,57 @@ func TestBuildMoveBadges_SuppressedWhenOpeningIsDeletedOrInserted(t *testing.T) 
 	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
 	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
 
-	// Move action on outer container from line 2 to line 2 (e.g. div.grid -> main.main)
-	sStartByte := uint32(srcOffsets[2])
-	sEndByte := uint32(srcOffsets[6])
-	dStartByte := uint32(dstOffsets[2])
-	dEndByte := uint32(dstOffsets[6])
+	srcAST, err := treesitter.ParseWithLanguage([]byte(srcContent), "tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.ParseWithLanguage([]byte(dstContent), "tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// But opening element on line 2 in source was deleted, and opening element on line 2 in dest was inserted.
+	srcDiv, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "<div className=\"grid\">\n      <div className=\"card\">\n        <Content />\n      </div>\n    </div>", "jsx_element")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstMain, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "<main className=\"main\">\n      <div className=\"card\">\n        <Content />\n      </div>\n    </main>", "jsx_element")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcOpen, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "<div className=\"grid\">", "jsx_opening_element")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstOpen, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "<main className=\"main\">", "jsx_opening_element")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	actions := []serialize.Action{
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "jsx_element",
-				StartByte: sStartByte,
-				EndByte:   sEndByte,
+				Type:      srcDiv.Type,
+				StartByte: srcDiv.StartByte,
+				EndByte:   srcDiv.EndByte,
 			},
-			DestStartByte: &dStartByte,
-			DestEndByte:   &dEndByte,
+			DestStartByte: &dstMain.StartByte,
+			DestEndByte:   &dstMain.EndByte,
 		},
 		{
 			Action: "delete",
 			Node: &serialize.NodeRef{
-				Type:      "jsx_opening_element",
-				StartByte: sStartByte,
-				EndByte:   sStartByte + 22,
+				Type:      srcOpen.Type,
+				StartByte: srcOpen.StartByte,
+				EndByte:   srcOpen.EndByte,
 			},
 		},
 		{
 			Action: "insert",
 			Node: &serialize.NodeRef{
-				Type:      "jsx_opening_element",
-				StartByte: dStartByte,
-				EndByte:   dStartByte + 23,
+				Type:      dstOpen.Type,
+				StartByte: dstOpen.StartByte,
+				EndByte:   dstOpen.EndByte,
 			},
 		},
 	}

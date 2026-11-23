@@ -333,12 +333,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 9 || spans[0].EndCol != 13 {
-			t.Errorf("expected span cols 9..13 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "func f(x <ins>gin.</ins>HandlerFunc) {}\n")
 	})
 
 	t.Run("absorbs leading dot in member access", func(t *testing.T) {
@@ -352,12 +347,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 8 || spans[0].EndCol != 14 {
-			t.Errorf("expected span cols 8..14 covering '.field', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "x := obj<ins>.field</ins>\n")
 	})
 
 	t.Run("absorbs trailing scope resolution ::", func(t *testing.T) {
@@ -371,12 +361,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 0 || spans[0].EndCol != 5 {
-			t.Errorf("expected span cols 0..5 covering 'std::', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "<ins>std::</ins>vector<int> v;\n")
 	})
 
 	t.Run("does not absorb variadic ellipsis ...", func(t *testing.T) {
@@ -390,13 +375,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		// Don't absorb leading "...", but still absorb trailing "." -> "gin." (cols 15..19)
-		if spans[0].StartCol != 15 || spans[0].EndCol != 19 {
-			t.Errorf("expected span cols 15..19 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "func f(args ...<ins>gin.</ins>HandlerFunc) {}\n")
 	})
 
 	t.Run("absorbs leading comma for appended argument", func(t *testing.T) {
@@ -410,12 +389,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 8 || spans[0].EndCol != 11 {
-			t.Errorf("expected span cols 8..11 covering ', c', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(a, b<ins>, c</ins>)\n")
 	})
 
 	t.Run("absorbs trailing comma for prepended argument", func(t *testing.T) {
@@ -429,12 +403,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span cols 4..6 covering 'a,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(<ins>a,</ins> b)\n")
 	})
 
 	t.Run("absorbs leading comma for deleted intermediate argument", func(t *testing.T) {
@@ -449,12 +418,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "left")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 7 || spans[0].EndCol != 9 {
-			t.Errorf("expected span cols 7..9 covering 'b,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(a, <del>b,</del> c)\n")
 	})
 
 	t.Run("absorbs multiline trailing comma", func(t *testing.T) {
@@ -470,13 +434,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].Line != 2 || spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span line 2 cols 4..6 covering 'b,', got line %d cols %d..%d",
-				spans[0].Line, spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(\n    a,\n    <ins>b,</ins>\n)\n")
 	})
 
 	t.Run("absorbs leading comma in array literal", func(t *testing.T) {
@@ -490,12 +448,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 9 || spans[0].EndCol != 12 {
-			t.Errorf("expected span cols 9..12 covering ', 3', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "x = [1, 2<ins>, 3</ins>]\n")
 	})
 
 	t.Run("absorbs trailing comma for moved elements on left and right", func(t *testing.T) {
@@ -515,26 +468,10 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		}
 
 		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
-		if len(leftSpans) != 2 {
-			t.Fatalf("expected 2 left spans (move element + delete comma), got %d: %+v", len(leftSpans), leftSpans)
-		}
-		if leftSpans[0].Line != 1 || leftSpans[0].StartCol != 4 || leftSpans[0].EndCol != 15 || leftSpans[0].Action != "move" {
-			t.Errorf("expected left span 0 covering '{name: \"a\"}' as move, got %+v", leftSpans[0])
-		}
-		if leftSpans[1].Line != 1 || leftSpans[1].StartCol != 15 || leftSpans[1].EndCol != 16 || leftSpans[1].Action != "delete" {
-			t.Errorf("expected left span 1 covering ',' as delete, got %+v", leftSpans[1])
-		}
+		testutil.AssertTagged(t, string(leftSrc), toTestSpans(leftSpans), "vals := []T{\n    <mov>{name: \"a\"}</mov><del>,</del>\n    {name: \"b\"},\n}\n")
 
 		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
-		if len(rightSpans) != 2 {
-			t.Fatalf("expected 2 right spans (move element + insert comma), got %d: %+v", len(rightSpans), rightSpans)
-		}
-		if rightSpans[0].Line != 2 || rightSpans[0].StartCol != 4 || rightSpans[0].EndCol != 15 || rightSpans[0].Action != "move" {
-			t.Errorf("expected right span 0 covering '{name: \"a\"}' as move, got %+v", rightSpans[0])
-		}
-		if rightSpans[1].Line != 2 || rightSpans[1].StartCol != 15 || rightSpans[1].EndCol != 16 || rightSpans[1].Action != "insert" {
-			t.Errorf("expected right span 1 covering ',' as insert, got %+v", rightSpans[1])
-		}
+		testutil.AssertTagged(t, string(rightSrc), toTestSpans(rightSpans), "vals := []T{\n    {name: \"b\"},\n    <mov>{name: \"a\"}</mov><ins>,</ins>\n}\n")
 	})
 
 	t.Run("absorbs leading comma for moved last element on left and right", func(t *testing.T) {
@@ -553,26 +490,10 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		}
 
 		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
-		if len(leftSpans) != 2 {
-			t.Fatalf("expected 2 left spans (delete leading comma + move element), got %d: %+v", len(leftSpans), leftSpans)
-		}
-		if leftSpans[0].Line != 0 || leftSpans[0].StartCol != 5 || leftSpans[0].EndCol != 6 || leftSpans[0].Action != "delete" {
-			t.Errorf("expected left span 0 covering ',' as delete, got %+v", leftSpans[0])
-		}
-		if leftSpans[1].Line != 0 || leftSpans[1].StartCol != 7 || leftSpans[1].EndCol != 8 || leftSpans[1].Action != "move" {
-			t.Errorf("expected left span 1 covering 'b' as move, got %+v", leftSpans[1])
-		}
+		testutil.AssertTagged(t, string(leftSrc), toTestSpans(leftSpans), "foo(a<del>,</del> <mov>b</mov>)")
 
 		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
-		if len(rightSpans) != 2 {
-			t.Fatalf("expected 2 right spans (insert leading comma + move element), got %d: %+v", len(rightSpans), rightSpans)
-		}
-		if rightSpans[0].Line != 0 || rightSpans[0].StartCol != 5 || rightSpans[0].EndCol != 6 || rightSpans[0].Action != "insert" {
-			t.Errorf("expected right span 0 covering ',' as insert, got %+v", rightSpans[0])
-		}
-		if rightSpans[1].Line != 0 || rightSpans[1].StartCol != 7 || rightSpans[1].EndCol != 8 || rightSpans[1].Action != "move" {
-			t.Errorf("expected right span 1 covering 'b' as move, got %+v", rightSpans[1])
-		}
+		testutil.AssertTagged(t, string(rightSrc), toTestSpans(rightSpans), "bar(x<ins>,</ins> <mov>b</mov>)")
 	})
 
 	t.Run("does not absorb commas for non-delimited containers", func(t *testing.T) {
@@ -585,12 +506,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 4 || spans[0].EndCol != 7 {
-			t.Errorf("expected span cols 4..7 covering 'foo', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "block {\n    <ins>foo</ins>,\n}\n")
 	})
 
 	t.Run("bounds safety when parent extends beyond file length", func(t *testing.T) {
@@ -604,12 +520,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span cols 4..6 covering 'a,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(<ins>a,</ins> b)")
 	})
 }
 
@@ -1117,9 +1028,6 @@ func TestBuildHighlightSpans_MultilineConstructMutesHeaderAndDelimiter(t *testin
 func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 	t.Run("ZigSwitchCaseArrow", func(t *testing.T) {
 		fileBytes := []byte("        .explicit => |lib_name| try w.print();\n")
-		// .explicit: bytes 8..17
-		// =>: bytes 18..20
-		// |lib_name|: bytes 21..31
 		parent := &NodeRef{
 			Type:      "switch_case",
 			StartByte: 8,
@@ -1140,21 +1048,11 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 		}
 
 		spans := BuildHighlightSpans(fileBytes, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 merged span for case pattern and payload, got %d: %+v", len(spans), spans)
-		}
-		if spans[0].StartCol != 8 || spans[0].EndCol != 31 {
-			t.Errorf("expected span cols 8..31, got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
-		if spans[0].Action != "insert" {
-			t.Errorf("expected action 'insert', got %q", spans[0].Action)
-		}
+		testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "        <ins>.explicit => |lib_name|</ins> try w.print();\n")
 	})
 
 	t.Run("RustMatchArmArrow", func(t *testing.T) {
 		fileBytes := []byte("    Some(v) => foo();\n")
-		// Some(v): bytes 4..11
-		// =>: bytes 12..14
 		parent := &NodeRef{
 			Type:      "match_arm",
 			StartByte: 4,
@@ -1170,19 +1068,11 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 		}
 
 		spans := BuildHighlightSpans(fileBytes, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		// Some(v) => should be absorbed (without trailing space)
-		if spans[0].StartCol != 4 || spans[0].EndCol != 14 {
-			t.Errorf("expected span cols 4..14 (including '=>'), got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "    <ins>Some(v) =></ins> foo();\n")
 	})
 
 	t.Run("JavaSwitchRuleArrow", func(t *testing.T) {
 		fileBytes := []byte("    case 1 -> foo();\n")
-		// case 1: bytes 4..10
-		// ->: bytes 11..13
 		parent := &NodeRef{
 			Type:      "switch_rule",
 			StartByte: 4,
@@ -1198,13 +1088,7 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 		}
 
 		spans := BuildHighlightSpans(fileBytes, actions, "left")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		// case 1 -> should be absorbed (without trailing space)
-		if spans[0].StartCol != 4 || spans[0].EndCol != 13 {
-			t.Errorf("expected span cols 4..13 (including '->'), got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "    <del>case 1 -></del> foo();\n")
 	})
 }
 

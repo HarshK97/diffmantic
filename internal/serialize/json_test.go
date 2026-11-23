@@ -38,62 +38,42 @@ def bar():
 		t.Fatalf("parse dst failed: %v", err)
 	}
 
-	var srcFoo, srcBar, srcX, srcY, srcBarIdent *treesitter.ASTNode
-	for _, n := range src.Children {
-		if n.Type == "function_definition" {
-			for _, c := range n.Children {
-				if c.Type == "identifier" {
-					switch c.Label {
-					case "foo":
-						srcFoo = n
-					case "bar":
-						srcBar = n
-						srcBarIdent = c
-					}
-				}
-			}
-		}
+	srcFoo, err := testutil.FindNodeByText(src, srcCode, "def foo():\n    x = 1\n    y = 2", "function_definition")
+	if err != nil {
+		t.Fatalf("find srcFoo: %v", err)
 	}
-	for _, n := range srcFoo.Descendants() {
-		if n.Type == "identifier" {
-			if n.Label == "x" && srcX == nil {
-				srcX = n
-			}
-			if n.Label == "y" && srcY == nil {
-				srcY = n
-			}
-		}
+	srcBar, err := testutil.FindNodeByText(src, srcCode, "def bar():\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("find srcBar: %v", err)
+	}
+	srcBarIdent, err := testutil.FindNodeByText(srcBar, srcCode, "bar", "identifier")
+	if err != nil {
+		t.Fatalf("find srcBarIdent: %v", err)
+	}
+	srcX, err := testutil.FindNodeByText(srcFoo, srcCode, "x", "identifier")
+	if err != nil {
+		t.Fatalf("find srcX: %v", err)
+	}
+	srcY, err := testutil.FindNodeByText(srcFoo, srcCode, "y", "identifier")
+	if err != nil {
+		t.Fatalf("find srcY: %v", err)
 	}
 
-	var dstFoo, dstBar, dstZ, dstMovedX *treesitter.ASTNode
-	for _, n := range dst.Children {
-		if n.Type == "function_definition" {
-			for _, c := range n.Children {
-				if c.Type == "identifier" {
-					switch c.Label {
-					case "foo":
-						dstFoo = n
-					case "bar":
-						dstBar = n
-					}
-				}
-			}
-		}
+	dstFoo, err := testutil.FindNodeByText(dst, dstCode, "def foo():\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("find dstFoo: %v", err)
 	}
-	for _, n := range dstBar.Descendants() {
-		if n.Type == "identifier" {
-			if n.Label == "z" && dstZ == nil {
-				dstZ = n
-			}
-			if n.Label == "x" && dstMovedX == nil {
-				dstMovedX = n
-			}
-		}
+	dstBar, err := testutil.FindNodeByText(dst, dstCode, "def bar():\n    z = 3\n    x = 1", "function_definition")
+	if err != nil {
+		t.Fatalf("find dstBar: %v", err)
 	}
-
-	if srcFoo == nil || srcBar == nil || srcX == nil || srcY == nil || srcBarIdent == nil ||
-		dstFoo == nil || dstBar == nil || dstZ == nil || dstMovedX == nil {
-		t.Fatalf("nodes not found in roundtrip snippets")
+	dstZ, err := testutil.FindNodeByText(dstBar, dstCode, "z", "identifier")
+	if err != nil {
+		t.Fatalf("find dstZ: %v", err)
+	}
+	dstMovedX, err := testutil.FindNodeByText(dstBar, dstCode, "x", "identifier")
+	if err != nil {
+		t.Fatalf("find dstMovedX: %v", err)
 	}
 
 	// Create Mappings:
@@ -398,15 +378,9 @@ func TestAdjustRangeForContainerDeclarationChild(t *testing.T) {
 		t.Fatalf("parse failed: %v", err)
 	}
 
-	var container *treesitter.ASTNode
-	for _, n := range ast.Descendants() {
-		if n.Type == "friend_declaration" {
-			container = n
-			break
-		}
-	}
-	if container == nil {
-		t.Fatal("expected friend_declaration node")
+	container, err := testutil.FindNodeByText(ast, code, "friend void foo() {\n    }", "friend_declaration")
+	if err != nil {
+		t.Fatalf("expected friend_declaration node: %v", err)
 	}
 
 	start := container.StartByte
@@ -414,15 +388,9 @@ func TestAdjustRangeForContainerDeclarationChild(t *testing.T) {
 
 	adjustRangeForContainer(container, &start, &end, nil)
 
-	var fnChild *treesitter.ASTNode
-	for _, c := range container.Children {
-		if c.Type == "function_definition" {
-			fnChild = c
-			break
-		}
-	}
-	if fnChild == nil {
-		t.Fatal("expected function_definition child")
+	fnChild, err := testutil.FindNodeByText(ast, code, "void foo() {\n    }", "function_definition")
+	if err != nil {
+		t.Fatalf("expected function_definition child: %v", err)
 	}
 
 	if start != container.StartByte || end != fnChild.StartByte {
@@ -437,15 +405,9 @@ func TestAdjustRangeForContainerParenWrapper(t *testing.T) {
 		t.Fatalf("parse failed: %v", err)
 	}
 
-	var paren *treesitter.ASTNode
-	for _, n := range ast.Descendants() {
-		if n.Type == "parenthesized_expression" {
-			paren = n
-			break
-		}
-	}
-	if paren == nil {
-		t.Fatal("expected parenthesized_expression node")
+	paren, err := testutil.FindNodeByText(ast, code, "(12345678)", "parenthesized_expression")
+	if err != nil {
+		t.Fatalf("expected parenthesized_expression node: %v", err)
 	}
 
 	start := paren.StartByte
@@ -470,15 +432,9 @@ func TestAdjustRangeForContainerImplicitLengthArrayType(t *testing.T) {
 		t.Fatalf("parse failed: %v", err)
 	}
 
-	var arr *treesitter.ASTNode
-	for _, n := range ast.Descendants() {
-		if n.Type == "implicit_length_array_type" {
-			arr = n
-			break
-		}
-	}
-	if arr == nil {
-		t.Fatal("expected implicit_length_array_type node")
+	arr, err := testutil.FindNodeByText(ast, code, "[...]string", "implicit_length_array_type")
+	if err != nil {
+		t.Fatalf("expected implicit_length_array_type node: %v", err)
 	}
 
 	start := arr.StartByte
@@ -503,15 +459,9 @@ func TestAdjustRangeForContainerTupleStructPatternWrapper(t *testing.T) {
 		t.Fatalf("parse failed: %v", err)
 	}
 
-	var pat *treesitter.ASTNode
-	for _, n := range ast.Descendants() {
-		if n.Type == "tuple_struct_pattern" {
-			pat = n
-			break
-		}
-	}
-	if pat == nil {
-		t.Fatal("expected tuple_struct_pattern node")
+	pat, err := testutil.FindNodeByText(ast, code, "State::HunkHeader(_, _)", "tuple_struct_pattern")
+	if err != nil {
+		t.Fatalf("expected tuple_struct_pattern node: %v", err)
 	}
 
 	start := pat.StartByte
@@ -602,15 +552,9 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 		t.Fatalf("parse py failed: %v", err)
 	}
 
-	var funcDef *treesitter.ASTNode
-	for _, n := range pyAST.Descendants() {
-		if n.Type == "function_definition" {
-			funcDef = n
-			break
-		}
-	}
-	if funcDef == nil {
-		t.Fatal("expected function_definition in pyAST")
+	funcDef, err := testutil.FindNodeByText(pyAST, pyCode, "def foo():\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("expected function_definition in pyAST: %v", err)
 	}
 
 	start := funcDef.StartByte
@@ -627,15 +571,9 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 		t.Fatalf("parse pyComment failed: %v", err)
 	}
 
-	var pyBlock *treesitter.ASTNode
-	for _, n := range pyCommentAST.Descendants() {
-		if n.Type == "block" {
-			pyBlock = n
-			break
-		}
-	}
-	if pyBlock == nil {
-		t.Fatal("expected block in pyCommentAST")
+	pyBlock, err := testutil.FindNodeByText(pyCommentAST, pyCommentCode, "x = 1", "block")
+	if err != nil {
+		t.Fatalf("expected block in pyCommentAST: %v", err)
 	}
 
 	bStart := pyBlock.StartByte
@@ -652,15 +590,9 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 		t.Fatalf("parse pySubscript failed: %v", err)
 	}
 
-	var subscript *treesitter.ASTNode
-	for _, n := range pySubAST.Descendants() {
-		if n.Type == "subscript" {
-			subscript = n
-			break
-		}
-	}
-	if subscript == nil {
-		t.Fatal("expected subscript in pySubAST")
+	subscript, err := testutil.FindNodeByText(pySubAST, pySubscriptCode, "cookie_dict[cookie.name]", "subscript")
+	if err != nil {
+		t.Fatalf("expected subscript in pySubAST: %v", err)
 	}
 
 	subStart := subscript.StartByte
@@ -2203,17 +2135,13 @@ func TestAdjustRangeForContainer_LeadingTrivia(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var block, stmt *treesitter.ASTNode
-	for _, d := range ast.Descendants() {
-		if d.Type == "block" && d.Parent != nil && d.Parent.Type == "method_declaration" {
-			block = d
-		}
-		if d.Type == "if_statement" {
-			stmt = d
-		}
+	block, err := testutil.FindNodeByText(ast, fileBytes, "{\n        // comment\n        if (x) {}\n    }", "block")
+	if err != nil {
+		t.Fatalf("expected method block: %v", err)
 	}
-	if block == nil || stmt == nil {
-		t.Fatal("failed to find method block and if_statement in parsed java snippet")
+	stmt, err := testutil.FindNodeByText(ast, fileBytes, "if (x) {}", "if_statement")
+	if err != nil {
+		t.Fatalf("expected if_statement: %v", err)
 	}
 	if len(stmt.LeadingTrivia) == 0 {
 		t.Fatal("expected if_statement to have attached LeadingTrivia")
@@ -2242,20 +2170,17 @@ func TestAdjustRangeForContainer_MultilineWrapperWithBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var exprStmt, callExpr, block *treesitter.ASTNode
-	for _, d := range ast.Descendants() {
-		if d.Type == "expression_statement" {
-			exprStmt = d
-		}
-		if d.Type == "call_expression" {
-			callExpr = d
-		}
-		if d.Type == "block" && d.Parent != nil && d.Parent.Type == "closure_expression" {
-			block = d
-		}
+	exprStmt, err := testutil.FindNodeByText(ast, fileBytes, "model(|| {\n        let a = 1;\n    });", "expression_statement")
+	if err != nil {
+		t.Fatalf("expected expression_statement: %v", err)
 	}
-	if exprStmt == nil || callExpr == nil || block == nil {
-		t.Fatal("failed to find expression_statement, call_expression, and closure block in parsed rust snippet")
+	callExpr, err := testutil.FindNodeByText(ast, fileBytes, "model(|| {\n        let a = 1;\n    })", "call_expression")
+	if err != nil {
+		t.Fatalf("expected call_expression: %v", err)
+	}
+	block, err := testutil.FindNodeByText(ast, fileBytes, "{\n        let a = 1;\n    }", "block")
+	if err != nil {
+		t.Fatalf("expected closure block: %v", err)
 	}
 
 	t.Run("expression_statement", func(t *testing.T) {
@@ -2296,20 +2221,17 @@ func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T)
 		t.Fatal(err)
 	}
 
-	var shortVar, argList, rhsList *treesitter.ASTNode
-	for _, d := range ast.Descendants() {
-		if d.Type == "short_var_declaration" {
-			shortVar = d
-		}
-		if d.Type == "argument_list" && len(d.Children) >= 2 {
-			argList = d
-		}
-		if d.Type == "expression_list" && d.Parent != nil && d.Parent.Type == "short_var_declaration" && d != d.Parent.Children[0] {
-			rhsList = d
-		}
+	shortVar, err := testutil.FindNodeByText(ast, fileBytes, "opDeleted := slices.ContainsFunc(result.Actions(), func() {\n\t\treturn\n\t})", "short_var_declaration")
+	if err != nil {
+		t.Fatalf("expected short_var_declaration: %v", err)
 	}
-	if shortVar == nil || argList == nil || rhsList == nil {
-		t.Fatal("failed to find short_var_declaration, rhs expression_list, and argument_list in parsed go snippet")
+	rhsList, err := testutil.FindNodeByText(ast, fileBytes, "slices.ContainsFunc(result.Actions(), func() {\n\t\treturn\n\t})", "expression_list")
+	if err != nil {
+		t.Fatalf("expected expression_list: %v", err)
+	}
+	argList, err := testutil.FindNodeByText(ast, fileBytes, "(result.Actions(), func() {\n\t\treturn\n\t})", "argument_list")
+	if err != nil {
+		t.Fatalf("expected argument_list: %v", err)
 	}
 
 	// Make sure the var declaration header clamps before the multiline RHS and doesn't claim a closing delimiter.
