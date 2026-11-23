@@ -1,7 +1,6 @@
 package renderutil
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -250,480 +249,535 @@ func TestBuildMoveBadges_SuppressedWhenOpeningIsDeletedOrInserted(t *testing.T) 
 func TestBuildMoveBadges_HierarchicalSuppression(t *testing.T) {
 	goRules := rules.Get("go")
 
-	srcLines := make([]string, 15)
-	for i := range srcLines {
-		srcLines[i] = fmt.Sprintf("src line %d", i)
+	srcContent := "package main\n\nfunc process() {\n\tif parentCond {\n\t\tfor childCond {\n\t\t\tif grandchildCond {\n\t\t\t}\n\t\t\textractedCall()\n\t\t}\n\t}\n\tanchor()\n}\n"
+	dstContent := "package main\n\nfunc process() {\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tpad05()\n\tpad06()\n\tpad07()\n\tif parentCond {\n\t\tfor childCond {\n\t\t\tif grandchildCond {\n\t\t\t}\n\t\t}\n\t}\n\tpad11()\n\tpad12()\n\tpad13()\n\tpad14()\n\tpad15()\n\tpad16()\n\tpad17()\n\tpad18()\n\tpad19()\n\textractedCall()\n\tanchor()\n}\n"
+
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstLines := make([]string, 30)
-	for i := range dstLines {
-		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	srcOffsets := make([]int, len(srcLines)+1)
-	for i := range srcLines {
-		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	pSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if parentCond {\n\t\tfor childCond {\n\t\t\tif grandchildCond {\n\t\t\t}\n\t\t\textractedCall()\n\t\t}\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstOffsets := make([]int, len(dstLines)+1)
-	for i := range dstLines {
-		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	pDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if parentCond {\n\t\tfor childCond {\n\t\t\tif grandchildCond {\n\t\t\t}\n\t\t}\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Line 2: parent if_statement (lines 2..6, bytes srcOffsets[2]..srcOffsets[7])
-	// moves to destination lines 10..14 (bytes dstOffsets[10]..dstOffsets[15])
-	pSrcStart := uint32(srcOffsets[2])
-	pSrcEnd := uint32(srcOffsets[7])
-	pDstStart := uint32(dstOffsets[10])
-	pDstEnd := uint32(dstOffsets[15])
+	c1Src, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "for childCond {\n\t\t\tif grandchildCond {\n\t\t\t}\n\t\t\textractedCall()\n\t\t}", "for_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1Dst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "for childCond {\n\t\t\tif grandchildCond {\n\t\t\t}\n\t\t}", "for_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// Line 3: child for_statement (lines 3..5, bytes srcOffsets[3]..srcOffsets[6])
-	// moves to destination lines 11..13 (bytes dstOffsets[11]..dstOffsets[14]) -> strictly inside parent
-	c1SrcStart := uint32(srcOffsets[3])
-	c1SrcEnd := uint32(srcOffsets[6])
-	c1DstStart := uint32(dstOffsets[11])
-	c1DstEnd := uint32(dstOffsets[14])
+	c2Src, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if grandchildCond {\n\t\t\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2Dst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if grandchildCond {\n\t\t\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// Line 4: grandchild if_statement (line 4, bytes srcOffsets[4]..srcOffsets[5])
-	// moves to destination line 12 (bytes dstOffsets[12]..dstOffsets[13]) -> strictly inside child & parent
-	c2SrcStart := uint32(srcOffsets[4])
-	c2SrcEnd := uint32(srcOffsets[5])
-	c2DstStart := uint32(dstOffsets[12])
-	c2DstEnd := uint32(dstOffsets[13])
-
-	// Line 5: extracted statement (line 5, bytes srcOffsets[5]..srcOffsets[6])
-	// was inside parent in source, but moved OUTSIDE parent to destination line 25 (bytes dstOffsets[25]..dstOffsets[26])
-	extSrcStart := uint32(srcOffsets[5])
-	extSrcEnd := uint32(srcOffsets[6])
-	extDstStart := uint32(dstOffsets[25])
-	extDstEnd := uint32(dstOffsets[26])
+	extSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "extractedCall()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "extractedCall()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []serialize.Action{
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "if_statement",
-				StartByte: pSrcStart,
-				EndByte:   pSrcEnd,
+				Type:      pSrc.Type,
+				StartByte: pSrc.StartByte,
+				EndByte:   pSrc.EndByte,
 			},
-			DestStartByte:     &pDstStart,
-			DestEndByte:       &pDstEnd,
-			OrigStartByte:     pSrcStart,
-			OrigEndByte:       pSrcEnd,
-			DestOrigStartByte: pDstStart,
-			DestOrigEndByte:   pDstEnd,
+			DestStartByte:     &pDst.StartByte,
+			DestEndByte:       &pDst.EndByte,
+			OrigStartByte:     pSrc.StartByte,
+			OrigEndByte:       pSrc.EndByte,
+			DestOrigStartByte: pDst.StartByte,
+			DestOrigEndByte:   pDst.EndByte,
 		},
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "for_statement",
-				StartByte: c1SrcStart,
-				EndByte:   c1SrcEnd,
+				Type:      c1Src.Type,
+				StartByte: c1Src.StartByte,
+				EndByte:   c1Src.EndByte,
 			},
-			DestStartByte:     &c1DstStart,
-			DestEndByte:       &c1DstEnd,
-			OrigStartByte:     c1SrcStart,
-			OrigEndByte:       c1SrcEnd,
-			DestOrigStartByte: c1DstStart,
-			DestOrigEndByte:   c1DstEnd,
+			DestStartByte:     &c1Dst.StartByte,
+			DestEndByte:       &c1Dst.EndByte,
+			OrigStartByte:     c1Src.StartByte,
+			OrigEndByte:       c1Src.EndByte,
+			DestOrigStartByte: c1Dst.StartByte,
+			DestOrigEndByte:   c1Dst.EndByte,
 		},
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "if_statement",
-				StartByte: c2SrcStart,
-				EndByte:   c2SrcEnd,
+				Type:      c2Src.Type,
+				StartByte: c2Src.StartByte,
+				EndByte:   c2Src.EndByte,
 			},
-			DestStartByte:     &c2DstStart,
-			DestEndByte:       &c2DstEnd,
-			OrigStartByte:     c2SrcStart,
-			OrigEndByte:       c2SrcEnd,
-			DestOrigStartByte: c2DstStart,
-			DestOrigEndByte:   c2DstEnd,
+			DestStartByte:     &c2Dst.StartByte,
+			DestEndByte:       &c2Dst.EndByte,
+			OrigStartByte:     c2Src.StartByte,
+			OrigEndByte:       c2Src.EndByte,
+			DestOrigStartByte: c2Dst.StartByte,
+			DestOrigEndByte:   c2Dst.EndByte,
 		},
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "expression_statement",
-				StartByte: extSrcStart,
-				EndByte:   extSrcEnd,
+				Type:      extSrc.Type,
+				StartByte: extSrc.StartByte,
+				EndByte:   extSrc.EndByte,
 			},
-			DestStartByte:     &extDstStart,
-			DestEndByte:       &extDstEnd,
-			OrigStartByte:     extSrcStart,
-			OrigEndByte:       extSrcEnd,
-			DestOrigStartByte: extDstStart,
-			DestOrigEndByte:   extDstEnd,
+			DestStartByte:     &extDst.StartByte,
+			DestEndByte:       &extDst.EndByte,
+			OrigStartByte:     extSrc.StartByte,
+			OrigEndByte:       extSrc.EndByte,
+			DestOrigStartByte: extDst.StartByte,
+			DestOrigEndByte:   extDst.EndByte,
 		},
-	}
-
-	hunks := []Interval{
-		{Start: 0, End: 7},   // covers source lines 0..7
-		{Start: 8, End: 15},  // covers dest lines 10..15
-		{Start: 16, End: 20}, // covers dest lines 24..28
 	}
 
 	pairs := []serialize.LineAlignmentPair{
 		{LeftLine: 0, RightLine: 0},
 		{LeftLine: 1, RightLine: 1},
-		{LeftLine: 2, RightLine: -1},
+		{LeftLine: 2, RightLine: 2},
 		{LeftLine: 3, RightLine: -1},
 		{LeftLine: 4, RightLine: -1},
 		{LeftLine: 5, RightLine: -1},
 		{LeftLine: 6, RightLine: -1},
-		{LeftLine: 7, RightLine: 7},
+		{LeftLine: 7, RightLine: -1},
+		{LeftLine: 8, RightLine: -1},
+		{LeftLine: 9, RightLine: -1},
+		{LeftLine: -1, RightLine: 3},
+		{LeftLine: -1, RightLine: 4},
+		{LeftLine: -1, RightLine: 5},
+		{LeftLine: -1, RightLine: 6},
+		{LeftLine: -1, RightLine: 7},
+		{LeftLine: -1, RightLine: 8},
+		{LeftLine: -1, RightLine: 9},
 		{LeftLine: -1, RightLine: 10},
 		{LeftLine: -1, RightLine: 11},
 		{LeftLine: -1, RightLine: 12},
 		{LeftLine: -1, RightLine: 13},
 		{LeftLine: -1, RightLine: 14},
 		{LeftLine: -1, RightLine: 15},
+		{LeftLine: -1, RightLine: 16},
+		{LeftLine: -1, RightLine: 17},
+		{LeftLine: -1, RightLine: 18},
+		{LeftLine: -1, RightLine: 19},
+		{LeftLine: -1, RightLine: 20},
+		{LeftLine: -1, RightLine: 21},
+		{LeftLine: -1, RightLine: 22},
+		{LeftLine: -1, RightLine: 23},
 		{LeftLine: -1, RightLine: 24},
 		{LeftLine: -1, RightLine: 25},
-		{LeftLine: -1, RightLine: 26},
+		{LeftLine: 10, RightLine: 26},
+		{LeftLine: 11, RightLine: 27},
+	}
+
+	hunks := []Interval{
+		{Start: 0, End: 9},
+		{Start: 10, End: 15},
+		{Start: 16, End: len(pairs) - 1},
 	}
 
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	// Parent move must have directional badges
-	if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L11") {
-		t.Errorf("expected parent move badge on line 2 '➔ L11', got %q", badge)
+	if badge, ok := badges.SrcLineBadges[3]; !ok || !strings.Contains(badge, "➔ L11") {
+		t.Errorf("expected parent move badge on line 3 '➔ L11', got %q", badge)
 	}
-	if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "↳ L3") {
-		t.Errorf("expected parent move badge on dest line 10 '↳ L3', got %q", badge)
+	if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "↳ L4") {
+		t.Errorf("expected parent move badge on dest line 10 '↳ L4', got %q", badge)
 	}
 
-	// Co-moving child (for_statement on line 3) must be suppressed
-	if badge, exists := badges.SrcLineBadges[3]; exists {
-		t.Errorf("expected child for_statement on line 3 to be suppressed, got %q", badge)
+	// Co-moving child (for_statement on line 4) must be suppressed
+	if badge, exists := badges.SrcLineBadges[4]; exists {
+		t.Errorf("expected child for_statement on line 4 to be suppressed, got %q", badge)
 	}
 	if badge, exists := badges.DstLineBadges[11]; exists {
 		t.Errorf("expected child for_statement on dest line 11 to be suppressed, got %q", badge)
 	}
 
-	// Co-moving grandchild (if_statement on line 4) must be suppressed
-	if badge, exists := badges.SrcLineBadges[4]; exists {
-		t.Errorf("expected grandchild if_statement on line 4 to be suppressed, got %q", badge)
+	// Co-moving grandchild (if_statement on line 5) must be suppressed
+	if badge, exists := badges.SrcLineBadges[5]; exists {
+		t.Errorf("expected grandchild if_statement on line 5 to be suppressed, got %q", badge)
 	}
 	if badge, exists := badges.DstLineBadges[12]; exists {
 		t.Errorf("expected grandchild if_statement on dest line 12 to be suppressed, got %q", badge)
 	}
 
-	// Extracted statement (line 5 moved to dest line 25 outside parent) must NOT be suppressed
-	if badge, ok := badges.SrcLineBadges[5]; !ok || !strings.Contains(badge, "➔ L26") {
-		t.Errorf("expected extracted statement on line 5 to have '➔ L26', got %q", badge)
+	// Extracted statement (line 7 moved to dest line 25 outside parent) must NOT be suppressed
+	if badge, ok := badges.SrcLineBadges[7]; !ok || !strings.Contains(badge, "➔ L26") {
+		t.Errorf("expected extracted statement on line 7 to have '➔ L26', got %q", badge)
 	}
-	if badge, ok := badges.DstLineBadges[25]; !ok || !strings.Contains(badge, "↳ L6") {
-		t.Errorf("expected extracted statement on dest line 25 to have '↳ L6', got %q", badge)
+	if badge, ok := badges.DstLineBadges[25]; !ok || !strings.Contains(badge, "↳ L8") {
+		t.Errorf("expected extracted statement on dest line 25 to have '↳ L8', got %q", badge)
 	}
 }
 
 func TestBuildMoveBadges_AlignmentDistanceThreshold(t *testing.T) {
 	goRules := rules.Get("go")
 
-	srcLines := make([]string, 40)
-	for i := range srcLines {
-		srcLines[i] = fmt.Sprintf("src line %d", i)
+	srcContent := "package main\n\nfunc process() {\n\tif nearCond {\n\t\tdoNear()\n\t}\n\tfarCall()\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tpad05()\n\tpad06()\n\tpad07()\n\tpad08()\n\tpad09()\n\tpad10()\n\tpad11()\n\tpad12()\n\tpad13()\n\tpad14()\n\tpad15()\n\tpad16()\n\tpad17()\n\tpad18()\n\tpad19()\n\tpad20()\n\tpad21()\n\tpad22()\n\tpad23()\n\tpad24()\n\tpad25()\n\tpad26()\n\tpad27()\n\tpad28()\n\tpad29()\n\tpad30()\n}\n"
+	dstContent := "package main\n\nfunc process() {\n\tif nearCond {\n\t\tdoNear()\n\t}\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tpad05()\n\tpad06()\n\tpad07()\n\tpad08()\n\tpad09()\n\tpad10()\n\tpad11()\n\tpad12()\n\tpad13()\n\tpad14()\n\tpad15()\n\tpad16()\n\tpad17()\n\tpad18()\n\tpad19()\n\tpad20()\n\tpad21()\n\tpad22()\n\tpad23()\n\tpad24()\n\tpad25()\n\tpad26()\n\tpad27()\n\tpad28()\n\tpad29()\n\tpad30()\n\tfarCall()\n}\n"
+
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstLines := make([]string, 40)
-	for i := range dstLines {
-		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	srcOffsets := make([]int, len(srcLines)+1)
-	for i := range srcLines {
-		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	nearSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if nearCond {\n\t\tdoNear()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstOffsets := make([]int, len(dstLines)+1)
-	for i := range dstLines {
-		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	nearDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if nearCond {\n\t\tdoNear()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// 1. Aligned on the same row (distance 0 <= 15), so suppress the badge.
-	nearSrcStart := uint32(srcOffsets[2])
-	nearSrcEnd := uint32(srcOffsets[5])
-	nearDstStart := uint32(dstOffsets[2])
-	nearDstEnd := uint32(dstOffsets[5])
-
-	// 2. Same hunk, but moves 24 alignment rows away (> 15 threshold), so keep the badge.
-	farSrcStart := uint32(srcOffsets[6])
-	farSrcEnd := uint32(srcOffsets[7] - 1)
-	farDstStart := uint32(dstOffsets[30])
-	farDstEnd := uint32(dstOffsets[31] - 1)
+	farSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "farCall()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	farDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "farCall()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []serialize.Action{
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "if_statement",
-				StartByte: nearSrcStart,
-				EndByte:   nearSrcEnd,
+				Type:      nearSrc.Type,
+				StartByte: nearSrc.StartByte,
+				EndByte:   nearSrc.EndByte,
 			},
-			DestStartByte:     &nearDstStart,
-			DestEndByte:       &nearDstEnd,
-			OrigStartByte:     nearSrcStart,
-			OrigEndByte:       nearSrcEnd,
-			DestOrigStartByte: nearDstStart,
-			DestOrigEndByte:   nearDstEnd,
+			DestStartByte:     &nearDst.StartByte,
+			DestEndByte:       &nearDst.EndByte,
+			OrigStartByte:     nearSrc.StartByte,
+			OrigEndByte:       nearSrc.EndByte,
+			DestOrigStartByte: nearDst.StartByte,
+			DestOrigEndByte:   nearDst.EndByte,
 		},
 		{
 			Action: "move",
 			Node: &serialize.NodeRef{
-				Type:      "expression_statement",
-				StartByte: farSrcStart,
-				EndByte:   farSrcEnd,
+				Type:      farSrc.Type,
+				StartByte: farSrc.StartByte,
+				EndByte:   farSrc.EndByte,
 			},
-			DestStartByte:     &farDstStart,
-			DestEndByte:       &farDstEnd,
-			OrigStartByte:     farSrcStart,
-			OrigEndByte:       farSrcEnd,
-			DestOrigStartByte: farDstStart,
-			DestOrigEndByte:   farDstEnd,
+			DestStartByte:     &farDst.StartByte,
+			DestEndByte:       &farDst.EndByte,
+			OrigStartByte:     farSrc.StartByte,
+			OrigEndByte:       farSrc.EndByte,
+			DestOrigStartByte: farDst.StartByte,
+			DestOrigEndByte:   farDst.EndByte,
 		},
 	}
 
-	pairs := make([]serialize.LineAlignmentPair, 40)
+	pairs := make([]serialize.LineAlignmentPair, len(srcLines))
 	for i := range pairs {
 		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: i}
 	}
 	hunks := []Interval{
-		{Start: 0, End: 39},
+		{Start: 0, End: len(pairs) - 1},
 	}
 
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
-	if badge, exists := badges.SrcLineBadges[2]; exists {
-		t.Errorf("expected aligned multi-line if_statement on src line 2 to suppress badge, got %q", badge)
+	if badge, exists := badges.SrcLineBadges[3]; exists {
+		t.Errorf("expected aligned multi-line if_statement on src line 3 to suppress badge, got %q", badge)
 	}
-	if badge, exists := badges.DstLineBadges[2]; exists {
-		t.Errorf("expected aligned multi-line if_statement on dst line 2 to suppress badge, got %q", badge)
+	if badge, exists := badges.DstLineBadges[3]; exists {
+		t.Errorf("expected aligned multi-line if_statement on dst line 3 to suppress badge, got %q", badge)
 	}
-	if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "➔ L31") {
-		t.Errorf("expected distant same-hunk one-liner on src line 6 (alignDist=24) to have '➔ L31', got %q", badge)
+	if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "➔ L37") {
+		t.Errorf("expected distant same-hunk one-liner on src line 6 to have '➔ L37', got %q", badge)
 	}
-	if badge, ok := badges.DstLineBadges[30]; !ok || !strings.Contains(badge, "↳ L7") {
-		t.Errorf("expected distant same-hunk one-liner on dst line 30 (alignDist=24) to have '↳ L7', got %q", badge)
+	if badge, ok := badges.DstLineBadges[36]; !ok || !strings.Contains(badge, "↳ L7") {
+		t.Errorf("expected distant same-hunk one-liner on dst line 36 to have '↳ L7', got %q", badge)
 	}
 }
 
 func TestBuildMoveBadges_ColorSynchronization(t *testing.T) {
 	goRules := rules.Get("go")
 
-	srcLines := make([]string, 30)
-	for i := range srcLines {
-		srcLines[i] = fmt.Sprintf("src line %d", i)
+	srcContent := "package main\n\nfunc process() {\n\toutlierCall()\n\tif mlCond {\n\t\tmlBody1()\n\t\tmlBody2()\n\t}\n\tgrpSingle()\n\tfor grpCond {\n\t\tgrpBody()\n\t}\n}\n"
+	dstContent := "package main\n\nfunc process() {\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tgrpSingle()\n\tfor grpCond {\n\t\tgrpBody()\n\t}\n\tpad05()\n\tpad06()\n\toutlierCall()\n\tif mlCond {\n\t\tmlBody1()\n\t\tmlBody2()\n\t}\n}\n"
+
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstLines := make([]string, 30)
-	for i := range dstLines {
-		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	srcOffsets := make([]int, len(srcLines)+1)
-	for i := range srcLines {
-		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	outlierSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "outlierCall()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstOffsets := make([]int, len(dstLines)+1)
-	for i := range dstLines {
-		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	outlierDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "outlierCall()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// 1. Single-line move with MoveColorIndex: 1 (outlier)
-	outlierSrcStart := uint32(srcOffsets[2])
-	outlierSrcEnd := uint32(srcOffsets[3] - 1)
-	outlierDstStart := uint32(dstOffsets[20])
-	outlierDstEnd := uint32(dstOffsets[21] - 1)
+	mlSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if mlCond {\n\t\tmlBody1()\n\t\tmlBody2()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mlDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if mlCond {\n\t\tmlBody1()\n\t\tmlBody2()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// 2. Multiline move with MoveColorIndex: 1
-	mlSrcStart := uint32(srcOffsets[5])
-	mlSrcEnd := uint32(srcOffsets[8])
-	mlDstStart := uint32(dstOffsets[23])
-	mlDstEnd := uint32(dstOffsets[26])
+	grpSlSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "grpSingle()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpSlDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "grpSingle()", "expression_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// 3. Single-line move that belongs to a multiline group "group-ml"
-	grpSlSrcStart := uint32(srcOffsets[10])
-	grpSlSrcEnd := uint32(srcOffsets[11] - 1)
-	grpSlDstStart := uint32(dstOffsets[15])
-	grpSlDstEnd := uint32(dstOffsets[16] - 1)
-
-	// Co-member of "group-ml" that is multiline
-	grpMlSrcStart := uint32(srcOffsets[12])
-	grpMlSrcEnd := uint32(srcOffsets[14])
-	grpMlDstStart := uint32(dstOffsets[17])
-	grpMlDstEnd := uint32(dstOffsets[19])
+	grpMlSrc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "for grpCond {\n\t\tgrpBody()\n\t}", "for_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpMlDst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "for grpCond {\n\t\tgrpBody()\n\t}", "for_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []serialize.Action{
 		{
 			Action:         "move",
 			MoveColorIndex: 1,
 			Node: &serialize.NodeRef{
-				Type:      "expression_statement",
-				StartByte: outlierSrcStart,
-				EndByte:   outlierSrcEnd,
+				Type:      outlierSrc.Type,
+				StartByte: outlierSrc.StartByte,
+				EndByte:   outlierSrc.EndByte,
 			},
-			DestStartByte:     &outlierDstStart,
-			DestEndByte:       &outlierDstEnd,
-			OrigStartByte:     outlierSrcStart,
-			OrigEndByte:       outlierSrcEnd,
-			DestOrigStartByte: outlierDstStart,
-			DestOrigEndByte:   outlierDstEnd,
+			DestStartByte:     &outlierDst.StartByte,
+			DestEndByte:       &outlierDst.EndByte,
+			OrigStartByte:     outlierSrc.StartByte,
+			OrigEndByte:       outlierSrc.EndByte,
+			DestOrigStartByte: outlierDst.StartByte,
+			DestOrigEndByte:   outlierDst.EndByte,
 		},
 		{
 			Action:         "move",
 			MoveColorIndex: 1,
 			Node: &serialize.NodeRef{
-				Type:      "if_statement",
-				StartByte: mlSrcStart,
-				EndByte:   mlSrcEnd,
+				Type:      mlSrc.Type,
+				StartByte: mlSrc.StartByte,
+				EndByte:   mlSrc.EndByte,
 			},
-			DestStartByte:     &mlDstStart,
-			DestEndByte:       &mlDstEnd,
-			OrigStartByte:     mlSrcStart,
-			OrigEndByte:       mlSrcEnd,
-			DestOrigStartByte: mlDstStart,
-			DestOrigEndByte:   mlDstEnd,
-		},
-		{
-			Action:         "move",
-			GroupID:        "group-ml",
-			MoveColorIndex: 1,
-			Node: &serialize.NodeRef{
-				Type:      "expression_statement",
-				StartByte: grpSlSrcStart,
-				EndByte:   grpSlSrcEnd,
-			},
-			DestStartByte:     &grpSlDstStart,
-			DestEndByte:       &grpSlDstEnd,
-			OrigStartByte:     grpSlSrcStart,
-			OrigEndByte:       grpSlSrcEnd,
-			DestOrigStartByte: grpSlDstStart,
-			DestOrigEndByte:   grpSlDstEnd,
+			DestStartByte:     &mlDst.StartByte,
+			DestEndByte:       &mlDst.EndByte,
+			OrigStartByte:     mlSrc.StartByte,
+			OrigEndByte:       mlSrc.EndByte,
+			DestOrigStartByte: mlDst.StartByte,
+			DestOrigEndByte:   mlDst.EndByte,
 		},
 		{
 			Action:         "move",
 			GroupID:        "group-ml",
 			MoveColorIndex: 1,
 			Node: &serialize.NodeRef{
-				Type:      "for_statement",
-				StartByte: grpMlSrcStart,
-				EndByte:   grpMlSrcEnd,
+				Type:      grpSlSrc.Type,
+				StartByte: grpSlSrc.StartByte,
+				EndByte:   grpSlSrc.EndByte,
 			},
-			DestStartByte:     &grpMlDstStart,
-			DestEndByte:       &grpMlDstEnd,
-			OrigStartByte:     grpMlSrcStart,
-			OrigEndByte:       grpMlSrcEnd,
-			DestOrigStartByte: grpMlDstStart,
-			DestOrigEndByte:   grpMlDstEnd,
+			DestStartByte:     &grpSlDst.StartByte,
+			DestEndByte:       &grpSlDst.EndByte,
+			OrigStartByte:     grpSlSrc.StartByte,
+			OrigEndByte:       grpSlSrc.EndByte,
+			DestOrigStartByte: grpSlDst.StartByte,
+			DestOrigEndByte:   grpSlDst.EndByte,
+		},
+		{
+			Action:         "move",
+			GroupID:        "group-ml",
+			MoveColorIndex: 1,
+			Node: &serialize.NodeRef{
+				Type:      grpMlSrc.Type,
+				StartByte: grpMlSrc.StartByte,
+				EndByte:   grpMlSrc.EndByte,
+			},
+			DestStartByte:     &grpMlDst.StartByte,
+			DestEndByte:       &grpMlDst.EndByte,
+			OrigStartByte:     grpMlSrc.StartByte,
+			OrigEndByte:       grpMlSrc.EndByte,
+			DestOrigStartByte: grpMlDst.StartByte,
+			DestOrigEndByte:   grpMlDst.EndByte,
 		},
 	}
 
-	hunks := []Interval{
-		{Start: 0, End: 29},
-	}
-	pairs := make([]serialize.LineAlignmentPair, 30)
+	pairs := make([]serialize.LineAlignmentPair, len(srcLines))
 	for i := range pairs {
 		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
+	}
+	hunks := []Interval{
+		{Start: 0, End: len(pairs) - 1},
 	}
 
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
-	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
-		t.Errorf("expected single-line ungrouped outlier src badge color to be 1, got %d", color)
+	// Line 3: outlierCall (single-line ungrouped outlier keeps color 1)
+	if color, ok := badges.SrcLineBadgeColors[3]; !ok || color != 1 {
+		t.Errorf("expected single-line ungrouped outlier src badge color on line 3 to be 1, got %d", color)
 	}
 
-	if color, ok := badges.SrcLineBadgeColors[5]; !ok || color != 0 {
-		t.Errorf("expected multiline move src badge color to collapse to 0, got %d", color)
+	// Line 4: ml if statement (multiline move collapses to color 0)
+	if color, ok := badges.SrcLineBadgeColors[4]; !ok || color != 0 {
+		t.Errorf("expected multiline move src badge color on line 4 to collapse to 0, got %d", color)
 	}
 
-	if color, ok := badges.SrcLineBadgeColors[10]; !ok || color != 1 {
-		t.Errorf("expected move in GroupID with MoveColorIndex 1 to honor badge color 1, got %d", color)
+	// Line 8: grpSingle (move in GroupID with MoveColorIndex 1 honors badge color 1)
+	if color, ok := badges.SrcLineBadgeColors[8]; !ok || color != 1 {
+		t.Errorf("expected move in GroupID on line 8 to honor badge color 1, got %d", color)
 	}
 }
 
 func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T) {
 	goRules := rules.Get("go")
 
-	srcLines := make([]string, 30)
-	for i := range srcLines {
-		srcLines[i] = fmt.Sprintf("src line %d", i)
-	}
-	dstLines := make([]string, 30)
-	for i := range dstLines {
-		dstLines[i] = fmt.Sprintf("dst line %d", i)
-	}
+	srcContent := "package main\n\nfunc process() {\n\tif cond3 {\n\t\tbody3()\n\t}\n\tif cond4 {\n\t\tbody4a()\n\t\tbody4b()\n\t}\n}\n"
+	dstContent := "package main\n\nfunc process() {\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tpad05()\n\tpad06()\n\tif cond3 {\n\t\tbody3()\n\t}\n\tif cond4 {\n\t\tbody4a()\n\t\tbody4b()\n\t}\n}\n"
 
-	srcOffsets := make([]int, len(srcLines)+1)
-	for i := range srcLines {
-		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	dstOffsets := make([]int, len(dstLines)+1)
-	for i := range dstLines {
-		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// 1. 3-line reordered move (outlier <= 3 lines, keeps slot 1 / Magenta)
-	reordered3SrcStart := uint32(srcOffsets[2])
-	reordered3SrcEnd := uint32(srcOffsets[5] - 1) // lines 2, 3, 4 (3 lines)
-	reordered3DstStart := uint32(dstOffsets[20])
-	reordered3DstEnd := uint32(dstOffsets[23] - 1)
+	reordered3Src, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if cond3 {\n\t\tbody3()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered3Dst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if cond3 {\n\t\tbody3()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// 2. 4-line reordered move (outlier > 3 lines, collapses to slot 0 / Cyan)
-	reordered4SrcStart := uint32(srcOffsets[7])
-	reordered4SrcEnd := uint32(srcOffsets[11] - 1) // lines 7, 8, 9, 10 (4 lines)
-	reordered4DstStart := uint32(dstOffsets[24])
-	reordered4DstEnd := uint32(dstOffsets[28] - 1)
+	reordered4Src, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if cond4 {\n\t\tbody4a()\n\t\tbody4b()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered4Dst, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if cond4 {\n\t\tbody4a()\n\t\tbody4b()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []serialize.Action{
 		{
 			Action:         "move",
 			MoveColorIndex: 1,
 			Node: &serialize.NodeRef{
-				Type:      "if_statement",
-				StartByte: reordered3SrcStart,
-				EndByte:   reordered3SrcEnd,
+				Type:      reordered3Src.Type,
+				StartByte: reordered3Src.StartByte,
+				EndByte:   reordered3Src.EndByte,
 			},
-			DestStartByte:     &reordered3DstStart,
-			DestEndByte:       &reordered3DstEnd,
-			OrigStartByte:     reordered3SrcStart,
-			OrigEndByte:       reordered3SrcEnd,
-			DestOrigStartByte: reordered3DstStart,
-			DestOrigEndByte:   reordered3DstEnd,
+			DestStartByte:     &reordered3Dst.StartByte,
+			DestEndByte:       &reordered3Dst.EndByte,
+			OrigStartByte:     reordered3Src.StartByte,
+			OrigEndByte:       reordered3Src.EndByte,
+			DestOrigStartByte: reordered3Dst.StartByte,
+			DestOrigEndByte:   reordered3Dst.EndByte,
 		},
 		{
 			Action:         "move",
 			MoveColorIndex: 1,
 			Node: &serialize.NodeRef{
-				Type:      "if_statement",
-				StartByte: reordered4SrcStart,
-				EndByte:   reordered4SrcEnd,
+				Type:      reordered4Src.Type,
+				StartByte: reordered4Src.StartByte,
+				EndByte:   reordered4Src.EndByte,
 			},
-			DestStartByte:     &reordered4DstStart,
-			DestEndByte:       &reordered4DstEnd,
-			OrigStartByte:     reordered4SrcStart,
-			OrigEndByte:       reordered4SrcEnd,
-			DestOrigStartByte: reordered4DstStart,
-			DestOrigEndByte:   reordered4DstEnd,
+			DestStartByte:     &reordered4Dst.StartByte,
+			DestEndByte:       &reordered4Dst.EndByte,
+			OrigStartByte:     reordered4Src.StartByte,
+			OrigEndByte:       reordered4Src.EndByte,
+			DestOrigStartByte: reordered4Dst.StartByte,
+			DestOrigEndByte:   reordered4Dst.EndByte,
 		},
 	}
 
-	hunks := []Interval{
-		{Start: 0, End: 29},
-	}
-	pairs := make([]serialize.LineAlignmentPair, 30)
+	pairs := make([]serialize.LineAlignmentPair, len(srcLines))
 	for i := range pairs {
 		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
+	}
+	hunks := []Interval{
+		{Start: 0, End: len(pairs) - 1},
 	}
 
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
-	// 1. 3-line reordered move keeps slot 1 (Magenta)
-	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
-		t.Errorf("expected 3-line reordered move badge color to be 1 (Magenta), got %d", color)
+	// Line 3: 3-line reordered move keeps slot 1 (Magenta)
+	if color, ok := badges.SrcLineBadgeColors[3]; !ok || color != 1 {
+		t.Errorf("expected 3-line reordered move badge color on line 3 to be 1 (Magenta), got %d", color)
 	}
 
-	// 2. 4-line reordered move collapses to slot 0 (Cyan)
-	if color, ok := badges.SrcLineBadgeColors[7]; !ok || color != 0 {
-		t.Errorf("expected 4-line reordered move badge color to collapse to 0 (Cyan), got %d", color)
+	// Line 6: 4-line reordered move collapses to slot 0 (Cyan)
+	if color, ok := badges.SrcLineBadgeColors[6]; !ok || color != 0 {
+		t.Errorf("expected 4-line reordered move badge color on line 6 to collapse to 0 (Cyan), got %d", color)
 	}
 
-	// 3. Badges should stay purely numerical without labels like "(hoisted)" or "(sunk)"
+	// Badges should stay purely numerical without labels like "(hoisted)" or "(sunk)"
 	for line, badge := range badges.SrcLineBadges {
 		if strings.Contains(badge, "hoisted") || strings.Contains(badge, "sunk") {
 			t.Errorf("badge on line %d contains unexpected label: %q", line, badge)
@@ -739,229 +793,266 @@ func TestBuildMoveBadges_ReorderedOutlierColorsAndNoVerbalSuffixes(t *testing.T)
 func TestBuildMoveBadges_UsesLargestMoveSide(t *testing.T) {
 	goRules := rules.Get("go")
 
-	srcLines := make([]string, 30)
-	dstLines := make([]string, 30)
-	for i := range srcLines {
-		srcLines[i] = fmt.Sprintf("src line %d", i)
-		dstLines[i] = fmt.Sprintf("dst line %d", i)
+	srcContent := "package main\n\nfunc process() {\n\tif cond {\n\t\tbody()\n\t}\n}\n"
+	dstContent := "package main\n\nfunc process() {\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tpad05()\n\tpad06()\n\tpad07()\n\tpad08()\n\tif cond {\n\t\tbody1()\n\t\tbody2()\n\t}\n}\n"
+
+	srcLines := strings.Split(srcContent, "\n")
+	dstLines := strings.Split(dstContent, "\n")
+
+	srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+	dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	srcOffsets := make([]int, len(srcLines)+1)
-	dstOffsets := make([]int, len(dstLines)+1)
-	for i := range srcLines {
-		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
-		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
+	srcNode, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "if cond {\n\t\tbody()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstNode, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "if cond {\n\t\tbody1()\n\t\tbody2()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	srcStart, srcEnd := uint32(srcOffsets[2]), uint32(srcOffsets[5]-1)
-	dstStart, dstEnd := uint32(dstOffsets[20]), uint32(dstOffsets[24]-1)
 	actions := []serialize.Action{{
 		Action:         "move",
 		MoveColorIndex: 1,
 		SrcLineCount:   3,
 		DstLineCount:   4,
 		Node: &serialize.NodeRef{
-			Type:      "if_statement",
-			StartByte: srcStart,
-			EndByte:   srcEnd,
+			Type:      srcNode.Type,
+			StartByte: srcNode.StartByte,
+			EndByte:   srcNode.EndByte,
 		},
-		DestStartByte:     &dstStart,
-		DestEndByte:       &dstEnd,
-		OrigStartByte:     srcStart,
-		OrigEndByte:       srcEnd,
-		DestOrigStartByte: dstStart,
-		DestOrigEndByte:   dstEnd,
+		DestStartByte:     &dstNode.StartByte,
+		DestEndByte:       &dstNode.EndByte,
+		OrigStartByte:     srcNode.StartByte,
+		OrigEndByte:       srcNode.EndByte,
+		DestOrigStartByte: dstNode.StartByte,
+		DestOrigEndByte:   dstNode.EndByte,
 	}}
 
-	pairs := make([]serialize.LineAlignmentPair, 60)
+	pairs := make([]serialize.LineAlignmentPair, 0, len(srcLines)+len(dstLines))
 	for i := range srcLines {
-		pairs[i] = serialize.LineAlignmentPair{LeftLine: i, RightLine: -1}
-		pairs[30+i] = serialize.LineAlignmentPair{LeftLine: -1, RightLine: i}
+		pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
+	}
+	for i := range dstLines {
+		pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
 	}
 
-	badges := BuildMoveBadges(actions, []Interval{{Start: 0, End: 59}}, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
-	if color := badges.SrcLineBadgeColors[2]; color != 0 {
-		t.Errorf("expected source badge to use color 0 when the destination spans four lines, got %d", color)
+	badges := BuildMoveBadges(actions, []Interval{{Start: 0, End: len(pairs) - 1}}, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
+	if color := badges.SrcLineBadgeColors[3]; color != 0 {
+		t.Errorf("expected source badge on line 3 to use color 0 when destination spans four lines, got %d", color)
 	}
-	if color := badges.DstLineBadgeColors[20]; color != 0 {
-		t.Errorf("expected destination badge to use color 0 when the destination spans four lines, got %d", color)
+	if color := badges.DstLineBadgeColors[11]; color != 0 {
+		t.Errorf("expected destination badge on line 11 to use color 0 when destination spans four lines, got %d", color)
 	}
 }
 
 func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 	goRules := rules.Get("go")
 
-	srcLines := make([]string, 40)
-	for i := range 40 {
-		srcLines[i] = fmt.Sprintf("src line %d", i)
-	}
-	dstLines := make([]string, 50)
-	for i := range 50 {
-		dstLines[i] = fmt.Sprintf("dst line %d", i)
-	}
-
-	srcOffsets := make([]int, len(srcLines)+1)
-	for i := range srcLines {
-		srcOffsets[i+1] = srcOffsets[i] + len(srcLines[i]) + 1
-	}
-	dstOffsets := make([]int, len(dstLines)+1)
-	for i := range dstLines {
-		dstOffsets[i+1] = dstOffsets[i] + len(dstLines[i]) + 1
-	}
-
-	pairs := make([]serialize.LineAlignmentPair, 0, 90)
-	for i := range 40 {
-		pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
-	}
-	for i := range 50 {
-		pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
-	}
-	hunks := []Interval{
-		{Start: 0, End: len(pairs) - 1},
-	}
-
-	mkAction := func(sType string, sL1, sL2, dL1, dL2 int, grp string) serialize.Action {
-		sStart := uint32(srcOffsets[sL1])
-		sEnd := uint32(srcOffsets[sL2+1] - 1)
-		dStart := uint32(dstOffsets[dL1])
-		dEnd := uint32(dstOffsets[dL2+1] - 1)
-		return serialize.Action{
-			Action:  "move",
-			GroupID: grp,
-			Node: &serialize.NodeRef{
-				Type:      sType,
-				StartByte: sStart,
-				EndByte:   sEnd,
-			},
-			DestStartByte:     &dStart,
-			DestEndByte:       &dEnd,
-			OrigStartByte:     sStart,
-			OrigEndByte:       sEnd,
-			DestOrigStartByte: dStart,
-			DestOrigEndByte:   dEnd,
-		}
-	}
-
 	t.Run("ContiguousRunAndMultilineLandmark", func(t *testing.T) {
+		srcContent := "package main\n\nfunc process() {\n\tstep1()\n\tstep2()\n\tstep3()\n\tif landmarkCond {\n\t\tlandmarkBody()\n\t}\n\tstep4()\n\tstep5()\n}\n"
+		dstContent := "package main\n\nfunc process() {\n\tpad01()\n\tpad02()\n\tpad03()\n\tpad04()\n\tpad05()\n\tpad06()\n\tpad07()\n\tstep1()\n\tstep2()\n\tstep3()\n\tif landmarkCond {\n\t\tlandmarkBody()\n\t}\n\tstep4()\n\tstep5()\n}\n"
+
+		srcLines := strings.Split(srcContent, "\n")
+		dstLines := strings.Split(dstContent, "\n")
+
+		srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+		dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+		srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		findStmt := func(ast *treesitter.ASTNode, content, text, nType string) *treesitter.ASTNode {
+			n, fErr := testutil.FindNodeByText(ast, []byte(content), text, nType)
+			if fErr != nil {
+				t.Fatalf("failed finding %q: %v", text, fErr)
+			}
+			return n
+		}
+
+		sStep1 := findStmt(srcAST, srcContent, "step1()", "expression_statement")
+		dStep1 := findStmt(dstAST, dstContent, "step1()", "expression_statement")
+		sStep2 := findStmt(srcAST, srcContent, "step2()", "expression_statement")
+		dStep2 := findStmt(dstAST, dstContent, "step2()", "expression_statement")
+		sStep3 := findStmt(srcAST, srcContent, "step3()", "expression_statement")
+		dStep3 := findStmt(dstAST, dstContent, "step3()", "expression_statement")
+		sIf := findStmt(srcAST, srcContent, "if landmarkCond {\n\t\tlandmarkBody()\n\t}", "if_statement")
+		dIf := findStmt(dstAST, dstContent, "if landmarkCond {\n\t\tlandmarkBody()\n\t}", "if_statement")
+		sStep4 := findStmt(srcAST, srcContent, "step4()", "expression_statement")
+		dStep4 := findStmt(dstAST, dstContent, "step4()", "expression_statement")
+		sStep5 := findStmt(srcAST, srcContent, "step5()", "expression_statement")
+		dStep5 := findStmt(dstAST, dstContent, "step5()", "expression_statement")
+
+		mkAction := func(sNode, dNode *treesitter.ASTNode, grp string) serialize.Action {
+			return serialize.Action{
+				Action:  "move",
+				GroupID: grp,
+				Node: &serialize.NodeRef{
+					Type:      sNode.Type,
+					StartByte: sNode.StartByte,
+					EndByte:   sNode.EndByte,
+				},
+				DestStartByte:     &dNode.StartByte,
+				DestEndByte:       &dNode.EndByte,
+				OrigStartByte:     sNode.StartByte,
+				OrigEndByte:       sNode.EndByte,
+				DestOrigStartByte: dNode.StartByte,
+				DestOrigEndByte:   dNode.EndByte,
+			}
+		}
+
 		actions := []serialize.Action{
-			mkAction("expression_statement", 2, 2, 20, 20, "group-1"),
-			mkAction("expression_statement", 3, 3, 21, 21, "group-1"),
-			mkAction("expression_statement", 4, 4, 22, 22, "group-1"),
-			mkAction("if_statement", 5, 7, 23, 25, "group-1"),
-			mkAction("expression_statement", 8, 8, 26, 26, "group-1"),
-			mkAction("expression_statement", 9, 9, 27, 27, "group-1"),
+			mkAction(sStep1, dStep1, "group-1"),
+			mkAction(sStep2, dStep2, "group-1"),
+			mkAction(sStep3, dStep3, "group-1"),
+			mkAction(sIf, dIf, "group-1"),
+			mkAction(sStep4, dStep4, "group-1"),
+			mkAction(sStep5, dStep5, "group-1"),
+		}
+
+		pairs := make([]serialize.LineAlignmentPair, 0, len(srcLines)+len(dstLines))
+		for i := range srcLines {
+			pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
+		}
+		for i := range dstLines {
+			pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
+		}
+		hunks := []Interval{
+			{Start: 0, End: len(pairs) - 1},
 		}
 
 		badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
-		// First flat run: only the leading statement keeps its badge.
-		if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L21") {
-			t.Errorf("expected line 2 badge '➔ L21', got %q", badge)
+		// First flat run: only the leading statement keeps its badge (line 3 -> dst line 10)
+		if badge, ok := badges.SrcLineBadges[3]; !ok || !strings.Contains(badge, "➔ L11") {
+			t.Errorf("expected line 3 badge '➔ L11', got %q", badge)
 		}
-		if badge, ok := badges.DstLineBadges[20]; !ok || !strings.Contains(badge, "↳ L3") {
-			t.Errorf("expected dst line 20 badge '↳ L3', got %q", badge)
+		if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "↳ L4") {
+			t.Errorf("expected dst line 10 badge '↳ L4', got %q", badge)
 		}
-		for _, l := range []int{3, 4} {
+		for _, l := range []int{4, 5} {
 			if badge, ok := badges.SrcLineBadges[l]; ok {
 				t.Errorf("expected line %d badge suppressed, found %q", l, badge)
 			}
 		}
-		for _, l := range []int{21, 22} {
+		for _, l := range []int{11, 12} {
 			if badge, ok := badges.DstLineBadges[l]; ok {
 				t.Errorf("expected dst line %d badge suppressed, found %q", l, badge)
 			}
 		}
 
-		// Multiline compound statements stay badged as landmarks.
-		if badge, ok := badges.SrcLineBadges[5]; !ok || !strings.Contains(badge, "➔ L24") {
-			t.Errorf("expected if statement line 5 badge '➔ L24', got %q", badge)
+		// Multiline compound statements stay badged as landmarks (line 6 -> dst line 13)
+		if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "➔ L14") {
+			t.Errorf("expected if statement line 6 badge '➔ L14', got %q", badge)
 		}
-		if badge, ok := badges.DstLineBadges[23]; !ok || !strings.Contains(badge, "↳ L6") {
-			t.Errorf("expected dst if statement line 23 badge '↳ L6', got %q", badge)
+		if badge, ok := badges.DstLineBadges[13]; !ok || !strings.Contains(badge, "↳ L7") {
+			t.Errorf("expected dst if statement line 13 badge '↳ L7', got %q", badge)
 		}
 
-		// Trailing run starts fresh after the compound statement.
-		if badge, ok := badges.SrcLineBadges[8]; !ok || !strings.Contains(badge, "➔ L27") {
-			t.Errorf("expected line 8 badge '➔ L27', got %q", badge)
+		// Trailing run starts fresh after the compound statement (line 9 -> dst line 16)
+		if badge, ok := badges.SrcLineBadges[9]; !ok || !strings.Contains(badge, "➔ L17") {
+			t.Errorf("expected line 9 badge '➔ L17', got %q", badge)
 		}
-		if badge, ok := badges.DstLineBadges[26]; !ok || !strings.Contains(badge, "↳ L9") {
-			t.Errorf("expected dst line 26 badge '↳ L9', got %q", badge)
+		if badge, ok := badges.DstLineBadges[16]; !ok || !strings.Contains(badge, "↳ L10") {
+			t.Errorf("expected dst line 16 badge '↳ L10', got %q", badge)
 		}
-		if badge, ok := badges.SrcLineBadges[9]; ok {
-			t.Errorf("expected line 9 badge suppressed, found %q", badge)
+		if badge, ok := badges.SrcLineBadges[10]; ok {
+			t.Errorf("expected line 10 badge suppressed, found %q", badge)
 		}
-		if badge, ok := badges.DstLineBadges[27]; ok {
-			t.Errorf("expected dst line 27 badge suppressed, found %q", badge)
+		if badge, ok := badges.DstLineBadges[17]; ok {
+			t.Errorf("expected dst line 17 badge suppressed, found %q", badge)
 		}
 	})
 
 	t.Run("InterveningTriviaAndComments", func(t *testing.T) {
-		triviaSrc := make([]string, 10)
-		triviaDst := make([]string, 20)
-		triviaSrc[0] = "a = 1"
-		triviaSrc[1] = "-- lua comment line"
-		triviaSrc[2] = ""
-		triviaSrc[3] = "b = 2"
+		luaRules := rules.Get("lua")
 
-		triviaDst[10] = "a = 1"
-		triviaDst[11] = "/* block comment */"
-		triviaDst[12] = "b = 2"
+		srcContent := "a = 1\n-- lua comment line\n\nb = 2\n"
+		dstContent := "pad01 = 0\npad02 = 0\npad03 = 0\npad04 = 0\npad05 = 0\npad06 = 0\npad07 = 0\npad08 = 0\npad09 = 0\npad10 = 0\npad11 = 0\npad12 = 0\npad13 = 0\npad14 = 0\npad15 = 0\npad16 = 0\npad17 = 0\npad18 = 0\npad19 = 0\npad20 = 0\na = 1\n--[[ block comment ]]\nb = 2\n"
 
-		tSrcOffsets := make([]int, len(triviaSrc)+1)
-		for i := range triviaSrc {
-			tSrcOffsets[i+1] = tSrcOffsets[i] + len(triviaSrc[i]) + 1
+		srcLines := strings.Split(srcContent, "\n")
+		dstLines := strings.Split(dstContent, "\n")
+
+		srcOffsets := serialize.BuildLineIndex([]byte(srcContent))
+		dstOffsets := serialize.BuildLineIndex([]byte(dstContent))
+
+		srcAST, err := treesitter.ParseWithLanguage([]byte(srcContent), "lua")
+		if err != nil {
+			t.Fatal(err)
 		}
-		tDstOffsets := make([]int, len(triviaDst)+1)
-		for i := range triviaDst {
-			tDstOffsets[i+1] = tDstOffsets[i] + len(triviaDst[i]) + 1
+		dstAST, err := treesitter.ParseWithLanguage([]byte(dstContent), "lua")
+		if err != nil {
+			t.Fatal(err)
 		}
 
-		tPairs := make([]serialize.LineAlignmentPair, 0, 40)
-		for i := range 20 {
-			tPairs = append(tPairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
+		s0Node, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "a = 1", "assignment_statement")
+		if err != nil {
+			t.Fatal(err)
 		}
-		for i := range 20 {
-			tPairs = append(tPairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
+		d0Node, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "a = 1", "assignment_statement")
+		if err != nil {
+			t.Fatal(err)
 		}
-		tHunks := []Interval{{Start: 0, End: len(tPairs) - 1}}
 
-		s0Start := uint32(tSrcOffsets[0])
-		s0End := uint32(tSrcOffsets[1] - 1)
-		d0Start := uint32(tDstOffsets[10])
-		d0End := uint32(tDstOffsets[11] - 1)
-
-		s1Start := uint32(tSrcOffsets[3])
-		s1End := uint32(tSrcOffsets[4] - 1)
-		d1Start := uint32(tDstOffsets[12])
-		d1End := uint32(tDstOffsets[13] - 1)
+		s1Node, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "b = 2", "assignment_statement")
+		if err != nil {
+			t.Fatal(err)
+		}
+		d1Node, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "b = 2", "assignment_statement")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		triviaActions := []serialize.Action{
 			{
 				Action:  "move",
 				GroupID: "lua-group",
 				Node: &serialize.NodeRef{
-					Type:      "assignment_statement",
-					StartByte: s0Start,
-					EndByte:   s0End,
+					Type:      s0Node.Type,
+					StartByte: s0Node.StartByte,
+					EndByte:   s0Node.EndByte,
 				},
-				DestStartByte: &d0Start,
-				DestEndByte:   &d0End,
+				DestStartByte: &d0Node.StartByte,
+				DestEndByte:   &d0Node.EndByte,
 			},
 			{
 				Action:  "move",
 				GroupID: "lua-group",
 				Node: &serialize.NodeRef{
-					Type:      "assignment_statement",
-					StartByte: s1Start,
-					EndByte:   s1End,
+					Type:      s1Node.Type,
+					StartByte: s1Node.StartByte,
+					EndByte:   s1Node.EndByte,
 				},
-				DestStartByte: &d1Start,
-				DestEndByte:   &d1End,
+				DestStartByte: &d1Node.StartByte,
+				DestEndByte:   &d1Node.EndByte,
 			},
 		}
 
-		luaRules := rules.Get("lua")
-		badges := BuildMoveBadges(triviaActions, tHunks, tPairs, tSrcOffsets, tDstOffsets, triviaSrc, triviaDst, luaRules)
+		pairs := make([]serialize.LineAlignmentPair, 0, len(srcLines)+len(dstLines))
+		for i := range srcLines {
+			pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: i, RightLine: -1})
+		}
+		for i := range dstLines {
+			pairs = append(pairs, serialize.LineAlignmentPair{LeftLine: -1, RightLine: i})
+		}
+		hunks := []Interval{{Start: 0, End: len(pairs) - 1}}
+
+		badges := BuildMoveBadges(triviaActions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, luaRules)
 
 		if _, ok := badges.SrcLineBadges[0]; !ok {
 			t.Errorf("expected line 0 to keep badge across trivia")
@@ -969,8 +1060,8 @@ func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 		if badge, ok := badges.SrcLineBadges[3]; ok {
 			t.Errorf("expected line 3 badge to be collapsed across Lua comment and blank line, but got %q", badge)
 		}
-		if badge, ok := badges.DstLineBadges[12]; ok {
-			t.Errorf("expected dst line 12 badge to be collapsed across block comment, but got %q", badge)
+		if badge, ok := badges.DstLineBadges[22]; ok {
+			t.Errorf("expected dst line 22 badge to be collapsed across block comment, but got %q", badge)
 		}
 	})
 

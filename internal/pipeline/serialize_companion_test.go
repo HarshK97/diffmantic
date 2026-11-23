@@ -1,10 +1,13 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/renderutil"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/testutil"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func toPipelineTestPairs(grid []serialize.LineAlignmentPair) []testutil.LineAlignmentPair {
@@ -822,4 +825,560 @@ fn _make_process_from_less_path() -> Command {
     <ins>process</ins>
 <mov1>}</mov1>
 `)
+}
+
+func buildPipelineBadges(res *DiffResult, contextLines int, lang string) renderutil.MoveBadges {
+	srcLines := strings.Split(string(res.SrcBytes), "\n")
+	dstLines := strings.Split(string(res.DstBytes), "\n")
+	srcOffsets := serialize.BuildLineIndex(res.SrcBytes)
+	dstOffsets := serialize.BuildLineIndex(res.DstBytes)
+
+	leftSpansByLine := make(map[int][]serialize.HighlightSpan)
+	for _, s := range res.Envelope.LeftHighlights {
+		leftSpansByLine[s.Line] = append(leftSpansByLine[s.Line], s)
+	}
+	rightSpansByLine := make(map[int][]serialize.HighlightSpan)
+	for _, s := range res.Envelope.RightHighlights {
+		rightSpansByLine[s.Line] = append(rightSpansByLine[s.Line], s)
+	}
+
+	isPairChanged := make([]bool, len(res.Envelope.LineAlignment))
+	for i, pair := range res.Envelope.LineAlignment {
+		var srcText, dstText string
+		if pair.LeftLine >= 0 && pair.LeftLine < len(srcLines) {
+			srcText = srcLines[pair.LeftLine]
+		}
+		if pair.RightLine >= 0 && pair.RightLine < len(dstLines) {
+			dstText = dstLines[pair.RightLine]
+		}
+		var leftSpans, rightSpans []serialize.HighlightSpan
+		if pair.LeftLine >= 0 {
+			leftSpans = leftSpansByLine[pair.LeftLine]
+		}
+		if pair.RightLine >= 0 {
+			rightSpans = rightSpansByLine[pair.RightLine]
+		}
+		if renderutil.IsPairChanged(pair, leftSpans, rightSpans, srcText, dstText, false, false, false) {
+			isPairChanged[i] = true
+		}
+	}
+	changeIntervals := renderutil.BuildChangeIntervals(isPairChanged)
+	hunks := renderutil.MergeHunks(changeIntervals, len(res.Envelope.LineAlignment), contextLines)
+
+	r := rules.Get(lang)
+	return renderutil.BuildMoveBadges(res.Envelope.Actions, hunks, res.Envelope.LineAlignment, srcOffsets, dstOffsets, srcLines, dstLines, r)
+}
+
+func TestPipeline_MoveBadges_DeclarationMove_Go(t *testing.T) {
+	// Companion for TestBuildMoveBadges_DeclarationMove:
+	// A function declaration moves past stationary functions.
+	// Separated by distant unchanged functions so source and destination hunks
+	// are distinct (> 15 alignment lines apart), emitting directional line badges
+	// with color index 0, and the moved function is highlighted as <mov>.
+	oldSrc := `package main
+
+func MovedFunc() {
+	println("moved")
+}
+
+func Pad01() {}
+func Pad02() {}
+func Pad03() {}
+func Pad04() {}
+func Pad05() {}
+func Pad06() {}
+func Pad07() {}
+func Pad08() {}
+func Pad09() {}
+func Pad10() {}
+func Pad11() {}
+func Pad12() {}
+func Pad13() {}
+func Pad14() {}
+func Pad15() {}
+func Pad16() {}
+func Pad17() {}
+func Pad18() {}
+func Pad19() {}
+func Pad20() {}
+`
+	newSrc := `package main
+
+func Pad01() {}
+func Pad02() {}
+func Pad03() {}
+func Pad04() {}
+func Pad05() {}
+func Pad06() {}
+func Pad07() {}
+func Pad08() {}
+func Pad09() {}
+func Pad10() {}
+func Pad11() {}
+func Pad12() {}
+func Pad13() {}
+func Pad14() {}
+func Pad15() {}
+func Pad16() {}
+func Pad17() {}
+func Pad18() {}
+func Pad19() {}
+func Pad20() {}
+
+func MovedFunc() {
+	println("moved")
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.go", "test.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+<mov>func MovedFunc() {</mov>
+<mov>	println("moved")</mov>
+<mov>}</mov>
+
+func Pad01() {}
+func Pad02() {}
+func Pad03() {}
+func Pad04() {}
+func Pad05() {}
+func Pad06() {}
+func Pad07() {}
+func Pad08() {}
+func Pad09() {}
+func Pad10() {}
+func Pad11() {}
+func Pad12() {}
+func Pad13() {}
+func Pad14() {}
+func Pad15() {}
+func Pad16() {}
+func Pad17() {}
+func Pad18() {}
+func Pad19() {}
+func Pad20() {}
+`)
+
+	testutil.AssertTagged(t, newSrc, toTestSpans(res.Envelope.RightHighlights), `package main
+
+func Pad01() {}
+func Pad02() {}
+func Pad03() {}
+func Pad04() {}
+func Pad05() {}
+func Pad06() {}
+func Pad07() {}
+func Pad08() {}
+func Pad09() {}
+func Pad10() {}
+func Pad11() {}
+func Pad12() {}
+func Pad13() {}
+func Pad14() {}
+func Pad15() {}
+func Pad16() {}
+func Pad17() {}
+func Pad18() {}
+func Pad19() {}
+func Pad20() {}
+
+<mov>func MovedFunc() {</mov>
+<mov>	println("moved")</mov>
+<mov>}</mov>
+`)
+
+	badges := buildPipelineBadges(res, 3, "go")
+
+	badgeSrc, hasSrc := badges.SrcLineBadges[2]
+	if !hasSrc || !strings.Contains(badgeSrc, "➔ L24") {
+		t.Errorf("expected SrcLineBadges[2] to contain '➔ L24', got %q", badgeSrc)
+	}
+	if color := badges.SrcLineBadgeColors[2]; color != 0 {
+		t.Errorf("expected SrcLineBadgeColors[2] to be 0 (Cyan), got %d", color)
+	}
+
+	badgeDst, hasDst := badges.DstLineBadges[23]
+	if !hasDst || !strings.Contains(badgeDst, "↳ L3") {
+		t.Errorf("expected DstLineBadges[23] to contain '↳ L3', got %q", badgeDst)
+	}
+	if color := badges.DstLineBadgeColors[23]; color != 0 {
+		t.Errorf("expected DstLineBadgeColors[23] to be 0 (Cyan), got %d", color)
+	}
+}
+
+func TestPipeline_MoveBadges_SingleLineStatementMove_Go(t *testing.T) {
+	// Companion for TestBuildMoveBadges_SingleLineStatementMove:
+	// A single-line assignment is relocated past stationary statements and distant lines.
+	oldSrc := `package main
+
+func Foo() {
+	if true {
+		absorbed := false
+	}
+}
+`
+	newSrc := `package main
+
+func Foo() {
+	absorbed := false
+	println("1")
+	println("2")
+	println("3")
+	println("4")
+	println("5")
+	println("6")
+	println("7")
+	println("8")
+	println("9")
+	println("10")
+	println("11")
+	println("12")
+	println("13")
+	println("14")
+	println("15")
+	println("16")
+	if true {
+	}
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.go", "test.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func Foo() {
+	if true {
+		<mov>absorbed := false</mov>
+	}
+}
+`)
+
+	badges := buildPipelineBadges(res, 3, "go")
+
+	badgeSrc, hasSrc := badges.SrcLineBadges[4]
+	if !hasSrc || !strings.Contains(badgeSrc, "➔ L4") {
+		t.Errorf("expected SrcLineBadges[4] to contain '➔ L4', got %q", badgeSrc)
+	}
+	badgeDst, hasDst := badges.DstLineBadges[3]
+	if !hasDst || !strings.Contains(badgeDst, "↳ L5") {
+		t.Errorf("expected DstLineBadges[3] to contain '↳ L5', got %q", badgeDst)
+	}
+}
+
+func TestPipeline_MoveBadges_HierarchicalSuppression_Rust(t *testing.T) {
+	// Companion for TestBuildMoveBadges_HierarchicalSuppression:
+	// When an enclosing declaration (impl block) moves past distant stationary functions,
+	// only the outer impl block gets badged; inner methods must have their badges suppressed.
+	oldSrc := `struct Service;
+
+impl Service {
+    fn handle_request(&self) {
+        println!("handling");
+    }
+}
+
+fn pad01() {}
+fn pad02() {}
+fn pad03() {}
+fn pad04() {}
+fn pad05() {}
+fn pad06() {}
+fn pad07() {}
+fn pad08() {}
+fn pad09() {}
+fn pad10() {}
+fn pad11() {}
+fn pad12() {}
+fn pad13() {}
+fn pad14() {}
+fn pad15() {}
+fn pad16() {}
+fn pad17() {}
+fn pad18() {}
+fn pad19() {}
+fn pad20() {}
+`
+	newSrc := `struct Service;
+
+fn pad01() {}
+fn pad02() {}
+fn pad03() {}
+fn pad04() {}
+fn pad05() {}
+fn pad06() {}
+fn pad07() {}
+fn pad08() {}
+fn pad09() {}
+fn pad10() {}
+fn pad11() {}
+fn pad12() {}
+fn pad13() {}
+fn pad14() {}
+fn pad15() {}
+fn pad16() {}
+fn pad17() {}
+fn pad18() {}
+fn pad19() {}
+fn pad20() {}
+
+impl Service {
+    fn handle_request(&self) {
+        println!("handling");
+    }
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `struct Service;
+
+<mov>impl Service {</mov>
+<mov>    fn handle_request(&self) {</mov>
+<mov>        println!("handling");</mov>
+<mov>    }</mov>
+<mov>}</mov>
+
+fn pad01() {}
+fn pad02() {}
+fn pad03() {}
+fn pad04() {}
+fn pad05() {}
+fn pad06() {}
+fn pad07() {}
+fn pad08() {}
+fn pad09() {}
+fn pad10() {}
+fn pad11() {}
+fn pad12() {}
+fn pad13() {}
+fn pad14() {}
+fn pad15() {}
+fn pad16() {}
+fn pad17() {}
+fn pad18() {}
+fn pad19() {}
+fn pad20() {}
+`)
+
+	testutil.AssertTagged(t, newSrc, toTestSpans(res.Envelope.RightHighlights), `struct Service;
+
+fn pad01() {}
+fn pad02() {}
+fn pad03() {}
+fn pad04() {}
+fn pad05() {}
+fn pad06() {}
+fn pad07() {}
+fn pad08() {}
+fn pad09() {}
+fn pad10() {}
+fn pad11() {}
+fn pad12() {}
+fn pad13() {}
+fn pad14() {}
+fn pad15() {}
+fn pad16() {}
+fn pad17() {}
+fn pad18() {}
+fn pad19() {}
+fn pad20() {}
+
+<mov>impl Service {</mov>
+<mov>    fn handle_request(&self) {</mov>
+<mov>        println!("handling");</mov>
+<mov>    }</mov>
+<mov>}</mov>
+`)
+
+	badges := buildPipelineBadges(res, 3, "rust")
+
+	// Outer impl block at source line 2 gets badged pointing to destination line 24 (1-based)
+	badgeSrc, hasSrc := badges.SrcLineBadges[2]
+	if !hasSrc || !strings.Contains(badgeSrc, "➔ L24") {
+		t.Errorf("expected outer impl at SrcLineBadges[2] to contain '➔ L24', got %q", badgeSrc)
+	}
+
+	// Inner method at source line 3 MUST NOT get a redundant badge
+	if badgeChild, hasChild := badges.SrcLineBadges[3]; hasChild {
+		t.Errorf("expected inner method at SrcLineBadges[3] to be suppressed, got %q", badgeChild)
+	}
+}
+
+func TestPipeline_MoveBadges_AlignmentDistanceThreshold_Go(t *testing.T) {
+	// Companion for TestBuildMoveBadges_AlignmentDistanceThreshold:
+	// A small move within <= 15 lines of alignment distance in the same hunk is
+	// visually clear in side-by-side alignment, so arrow badges are suppressed.
+	oldSrc := `package main
+
+func process() {
+	if cond {
+		doWork()
+	}
+	step1()
+	step2()
+}
+`
+	newSrc := `package main
+
+func process() {
+	step1()
+	step2()
+	if cond {
+		doWork()
+	}
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.go", "test.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func process() {
+	<mov>if cond {</mov>
+<mov>		doWork()</mov>
+<mov>	}</mov>
+	step1()
+	step2()
+}
+`)
+
+	badges := buildPipelineBadges(res, 3, "go")
+
+	// The move is within 5 lines in the same hunk, so badges are suppressed
+	if badge, ok := badges.SrcLineBadges[3]; ok {
+		t.Errorf("expected SrcLineBadges[3] to be suppressed due to alignment distance threshold, got %q", badge)
+	}
+	if badge, ok := badges.DstLineBadges[5]; ok {
+		t.Errorf("expected DstLineBadges[5] to be suppressed due to alignment distance threshold, got %q", badge)
+	}
+}
+
+func TestPipeline_MoveBadges_ColorSynchronization_TwoMoves_Python(t *testing.T) {
+	// Companion for TestBuildMoveBadges_ColorSynchronization:
+	// Two diverging moves across distant scopes receive distinct color indices (0: Cyan, 1: Magenta).
+	// The directional badge colors must match the move span colors.
+	oldSrc := `def process():
+    move_a()
+    move_b()
+    keep01()
+    keep02()
+    keep03()
+    keep04()
+    keep05()
+    keep06()
+    keep07()
+    keep08()
+    keep09()
+    keep10()
+    keep11()
+    keep12()
+    keep13()
+    keep14()
+    keep15()
+    keep16()
+    keep17()
+    keep18()
+`
+	newSrc := `def process():
+    keep01()
+    keep02()
+    keep03()
+    keep04()
+    keep05()
+    keep06()
+    keep07()
+    keep08()
+    if cond1:
+        move_a()
+    keep09()
+    keep10()
+    keep11()
+    keep12()
+    keep13()
+    keep14()
+    keep15()
+    keep16()
+    keep17()
+    keep18()
+    if cond2:
+        move_b()
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "test.py", "test.py", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, oldSrc, toTestSpans(res.Envelope.LeftHighlights), `def process():
+    <mov>move_a()</mov>
+    <mov1>move_b()</mov1>
+    keep01()
+    keep02()
+    keep03()
+    keep04()
+    keep05()
+    keep06()
+    keep07()
+    keep08()
+    keep09()
+    keep10()
+    keep11()
+    keep12()
+    keep13()
+    keep14()
+    keep15()
+    keep16()
+    keep17()
+    keep18()
+`)
+
+	badges := buildPipelineBadges(res, 3, "python")
+
+	// Check move 1 has color index 0 and badge color 0
+	if color, ok := badges.SrcLineBadgeColors[1]; !ok || color != 0 {
+		t.Errorf("expected SrcLineBadgeColors[1] to be color 0 (Cyan), got %d (has: %v)", color, ok)
+	}
+
+	// Check move 2 has color index 1 and badge color 1
+	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
+		t.Errorf("expected SrcLineBadgeColors[2] to be color 1 (Magenta), got %d (has: %v)", color, ok)
+	}
 }
