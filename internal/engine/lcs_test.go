@@ -20,19 +20,19 @@ func TestLCSLabelIdentical(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	x1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2})
+	x1, err := testutil.FindNodeByText(rootA, srcA, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
-	y1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
+	y1, err := testutil.FindNodeByText(rootA, srcA, "y")
 	if err != nil {
 		t.Fatal(err)
 	}
-	x2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2})
+	x2, err := testutil.FindNodeByText(rootB, srcB, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
-	y2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 3})
+	y2, err := testutil.FindNodeByText(rootB, srcB, "y")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,12 +56,12 @@ func TestLCSLabelPartial(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	x1, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2})
-	y1, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 3})
-	z1, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 4})
+	x1, _ := testutil.FindNodeByText(rootA, srcA, "x")
+	y1, _ := testutil.FindNodeByText(rootA, srcA, "y")
+	z1, _ := testutil.FindNodeByText(rootA, srcA, "z")
 
-	x2, _ := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2})
-	z2, _ := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 3})
+	x2, _ := testutil.FindNodeByText(rootB, srcB, "x")
+	z2, _ := testutil.FindNodeByText(rootB, srcB, "z")
 
 	pairs := LCSLabel([]*treesitter.ASTNode{x1, y1, z1}, []*treesitter.ASTNode{x2, z2})
 	if len(pairs) != 2 {
@@ -78,7 +78,7 @@ func TestLCSLabelEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x, _ := testutil.FindNode(root, testutil.NodeQuery{Type: "identifier", Line: 2})
+	x, _ := testutil.FindNodeByText(root, src, "x")
 	a := []*treesitter.ASTNode{x}
 
 	if pairs := LCSLabel(nil, a); pairs != nil {
@@ -102,8 +102,8 @@ func TestLCSLabelNoMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	x, _ := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2})
-	y, _ := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2})
+	x, _ := testutil.FindNodeByText(rootA, srcA, "x")
+	y, _ := testutil.FindNodeByText(rootB, srcB, "y")
 
 	pairs := LCSLabel([]*treesitter.ASTNode{x}, []*treesitter.ASTNode{y})
 	if len(pairs) != 0 {
@@ -125,11 +125,11 @@ func TestLCSStructureBasic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, err := testutil.FindNodeByText(rootA, srcA, "foo(1)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callB, err := testutil.FindNodeByText(rootB, srcB, "bar(2)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,11 +153,11 @@ func TestLCSStructureDiffShape(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, err := testutil.FindNodeByText(rootA, srcA, "foo(1)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callB, err := testutil.FindNodeByText(rootB, srcB, "bar(1, 2)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,11 +215,11 @@ func TestScorePartner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	idA, err := testutil.FindNodeByText(rootA, srcA, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 2})
+	idB, err := testutil.FindNodeByText(rootB, srcB, "x")
 	if err != nil {
 		t.Fatal(err)
 	}

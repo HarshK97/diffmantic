@@ -96,9 +96,7 @@ func TestMatchSingleLeaves(t *testing.T) {
 	src := tree1.Leaves()[0]
 	dst := tree2.Leaves()[0]
 	r := Match(src, dst, []byte(code), []byte(code), nil)
-	if !r.Mappings.Has(src) || r.Mappings.Src()[src] != dst {
-		t.Error("single identical leaves should be mapped")
-	}
+	testutil.AssertMappedText(t, tree1, tree2, []byte(code), []byte(code), r.Mappings.Src(), "x", "x")
 }
 
 func TestMatchPairsPreOrder(t *testing.T) {
@@ -239,7 +237,7 @@ func fb() {
 
 	for _, l := range srcFuncs[0].Leaves() {
 		if m.Has(l) {
-			dstL := m.Src()[l]
+			dstL := m.Get(l)
 			if !dstFuncs[0].Contains(dstL) {
 				t.Errorf("leaf %v from fa() mapped outside dst fa(): %v", l, dstL)
 			}
@@ -247,7 +245,7 @@ func fb() {
 	}
 	for _, l := range srcFuncs[1].Leaves() {
 		if m.Has(l) {
-			dstL := m.Src()[l]
+			dstL := m.Get(l)
 			if !dstFuncs[1].Contains(dstL) {
 				t.Errorf("leaf %v from fb() mapped outside dst fb(): %v", l, dstL)
 			}
@@ -278,9 +276,7 @@ func TestRollupMatchedContainers(t *testing.T) {
 
 	RollupMatchedContainers(dict1, dict2, m)
 
-	if !m.Has(pair1) || m.Src()[pair1] != pair2 {
-		t.Errorf("RollupMatchedContainers should pair pair1 -> pair2, got %v", m.Src()[pair1])
-	}
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(pyCode), []byte(pyCode), m.Src(), "414: \"request_uri_too_large\"", "414: \"request_uri_too_large\"")
 }
 
 func TestMatchUnmatchedLeavesUnderUnmatchedContainer(t *testing.T) {
@@ -301,15 +297,8 @@ func TestMatchUnmatchedLeavesUnderUnmatchedContainer(t *testing.T) {
 
 	MatchUnmatchedLeaves(dict1, dict2, m, nil)
 
-	k1, k2 := pair1.Leaves()[0], pair2.Leaves()[0]
-	v1, v2 := pair1.Leaves()[len(pair1.Leaves())-1], pair2.Leaves()[len(pair2.Leaves())-1]
-
-	if !m.Has(k1) || m.Src()[k1] != k2 {
-		t.Errorf("k1 should match k2 under matched dictionary ancestor, got %v", m.Src()[k1])
-	}
-	if !m.Has(v1) || m.Src()[v1] != v2 {
-		t.Errorf("v1 should match v2 under matched dictionary ancestor, got %v", m.Src()[v1])
-	}
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(pyCode), []byte(pyCode), m.Src(), "414", "414")
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(pyCode), []byte(pyCode), m.Src(), "\"request_uri_too_large\"", "\"request_uri_too_large\"")
 }
 
 func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
@@ -351,9 +340,7 @@ func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
 
 	MatchContainerKeywords(srcRoot, dstRoot, m)
 
-	if !m.Has(kw1) || m.Src()[kw1] != kw2 {
-		t.Errorf("MatchContainerKeywords should map kw1 to kw2 under mapped parents, got %v", m.Src()[kw1])
-	}
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(goCode), []byte(goCode), m.Src(), "if", "if")
 }
 
 func TestMatchPairValues(t *testing.T) {
@@ -367,17 +354,12 @@ func TestMatchPairValues(t *testing.T) {
 	if p1 == nil || p2 == nil {
 		t.Fatalf("failed to find keyed_element: p1=%v p2=%v", p1, p2)
 	}
-	val1 := p1.Children[len(p1.Children)-1]
-	val2 := p2.Children[len(p2.Children)-1]
 
 	m := NewMapping()
 	m.Add(p1, p2)
 
 	matchPairValues(srcRoot, dstRoot, m)
-
-	if !m.Has(val1) || m.Src()[val1] != val2 {
-		t.Errorf("matchPairValues should map val1 to val2, got %v", m.Src()[val1])
-	}
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(srcCode), []byte(dstCode), m.Src(), "\"a\"", "\"b\"", "literal_element")
 }
 
 func TestMatchPairKeyNameAffinity(t *testing.T) {
@@ -404,9 +386,7 @@ func TestMatchPairKeyNameAffinity(t *testing.T) {
 		t.Fatal("Match returned nil")
 	}
 
-	if r.Mappings.Src()[pairOld] != pairNew1 {
-		t.Errorf("pairOld ('priority') should match pairNew1 ('priority'), got %v", r.Mappings.Src()[pairOld])
-	}
+	testutil.AssertMappedText(t, srcObj, dstObj, []byte(srcCode), []byte(dstCode), r.Mappings.Src(), "\"priority\": {}", "\"priority\": {}")
 }
 
 func TestMatchPairValuesDisparateJSXTags(t *testing.T) {
@@ -426,20 +406,18 @@ func TestMatchPairValuesDisparateJSXTags(t *testing.T) {
 	if attrOld == nil || len(dstAttrs) < 2 {
 		t.Fatalf("failed to find jsx_attributes: attrOld=%v dstAttrs=%d", attrOld, len(dstAttrs))
 	}
-	attrNew1 := dstAttrs[0]
-	attrNew2 := dstAttrs[1]
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
 
 	matchPairValues(srcRoot, dstRoot, m)
 
-	if m.Src()[attrOld] == attrNew1 {
-		t.Errorf("attrOld ('span') should NOT match attrNew1 ('i') across disparate tags")
-	}
-	if m.Src()[attrOld] != attrNew2 {
-		t.Errorf("attrOld ('span') should match attrNew2 ('span'), got %v", m.Src()[attrOld])
-	}
+	testutil.AssertNotMappedText(t, srcRoot, dstRoot, []byte(srcCode), []byte(dstCode), m.Src(),
+		"className=\"text-[11px] font-semibold text-gray-400\"",
+		"className=\"fa-solid fa-clipboard-user text-gray-400\"")
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(srcCode), []byte(dstCode), m.Src(),
+		"className=\"text-[11px] font-semibold text-gray-400\"",
+		"className=\"text-[11px] font-semibold text-gray-400 ml-1\"")
 }
 
 func TestBottomUpOuterAncestorPreservation(t *testing.T) {
@@ -463,13 +441,13 @@ func TestBottomUpOuterAncestorPreservation(t *testing.T) {
 
 	res := Match(srcAST, dstAST, srcBytes, dstBytes, nil)
 	// Whole-snippet verification: enclosing function_definition and body block map in place.
-	testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-		testutil.NodeQuery{Type: "function_definition", Line: 96},
-		testutil.NodeQuery{Type: "function_definition", Line: 96},
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, res.Mappings.Src(),
+		"command('write ++p p_opt.txt')",
+		"command('write ++p p_opt.txt')",
 	)
-	testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-		testutil.NodeQuery{Type: "block", Line: 97},
-		testutil.NodeQuery{Type: "block", Line: 97},
+	testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, res.Mappings.Src(),
+		"command('write ++p ./p_opt.txt')",
+		"command('write ++p ./p_opt.txt')",
 	)
 }
 
@@ -495,8 +473,8 @@ func TestZipSpecChangeInsertedCallback(t *testing.T) {
 	res := Match(srcAST, dstAST, srcBytes, dstBytes, nil)
 	// The return statement inside vim.wait is newly added, so it shouldn't match
 	// an existing return in an unrelated callback.
-	testutil.AssertUnmapped(t, dstAST, res.Mappings.Dst(),
-		testutil.NodeQuery{Type: "return_statement", Line: 450},
+	testutil.AssertUnmappedText(t, dstAST, dstBytes, res.Mappings.Dst(),
+		"return vim.wait",
 	)
 }
 
@@ -533,7 +511,8 @@ func TestMatchUnmatchedLeaves_IsolatedGlueGuard(t *testing.T) {
 	}
 
 	if m.Has(leafOp1) {
-		t.Errorf("expected isolated statement-level glue ':=' not to match across statements, got %v", m.Src()[leafOp1])
+		dstNode := m.Get(leafOp1)
+		t.Errorf("expected isolated statement-level glue ':=' not to match across statements, got %v", dstNode)
 	}
 }
 
@@ -567,15 +546,7 @@ func TestMatchUnmatchedLeaves_ExpressionExemption(t *testing.T) {
 
 	MatchUnmatchedLeaves(root1, root2, m, nil)
 
-	leafOp1 := findFirstNode(block1, func(n *treesitter.ASTNode) bool { return n.Label == "+" })
-	leafOp2 := findFirstNode(block2, func(n *treesitter.ASTNode) bool { return n.Label == "+" })
-	if leafOp1 == nil || leafOp2 == nil {
-		t.Fatalf("failed to find '+' operators: op1=%v, op2=%v", leafOp1, leafOp2)
-	}
-
-	if !m.Has(leafOp1) || m.Src()[leafOp1] != leafOp2 {
-		t.Errorf("expected intra-expression '+' to match via expression exemption, got %v", m.Src()[leafOp1])
-	}
+	testutil.AssertMappedText(t, root1, root2, []byte(srcCode), []byte(dstCode), m.Src(), "+", "+")
 }
 
 func TestEffectiveDepthTo(t *testing.T) {
@@ -769,9 +740,7 @@ func TestMatchUnmatchedLeaves_ContainerWrappedSiblingScore(t *testing.T) {
 
 	MatchUnmatchedLeaves(root1, root2, m, nil)
 
-	if !m.Has(op1) || m.Src()[op1] != op2 {
-		t.Errorf("expected ':=' to match via container-aware sibling score, got %v", m.Src()[op1])
-	}
+	testutil.AssertMappedText(t, root1, root2, []byte(srcCode), []byte(dstCode), m.Src(), ":=", ":=")
 }
 
 func TestMatchPairValues_HighSimilarityPreferred(t *testing.T) {
@@ -789,31 +758,19 @@ func TestMatchPairValues_HighSimilarityPreferred(t *testing.T) {
 	root1 := parseSnippet(t, srcCode, "test.tsx")
 	root2 := parseSnippet(t, dstCode, "test.tsx")
 
-	attrs1 := findAllNodesByType(root1, "jsx_attribute")
-	if len(attrs1) < 2 {
-		t.Fatalf("expected at least 2 jsx_attribute in root1, got %d", len(attrs1))
-	}
-	attrOld1 := attrs1[0]
-	attrOld2 := attrs1[1]
-
-	attrNew := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "jsx_attribute" })
-	if attrNew == nil {
-		t.Fatal("failed to find jsx_attribute in root2")
-	}
-
 	m := NewMapping()
 	m.Add(root1, root2)
 
 	matchPairValues(root1, root2, m)
 
 	// 'grid' shouldn't match 'bg-white ...'
-	if m.Has(attrOld1) {
-		t.Errorf("attrOld1 (grid) should not match attrNew, got mapped to %v", m.Src()[attrOld1])
-	}
+	testutil.AssertNotMappedText(t, root1, root2, []byte(srcCode), []byte(dstCode), m.Src(),
+		"className=\"grid grid-cols-1 lg:grid-cols-3 gap-6\"",
+		"className=\"bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col items-center\"")
 	// 'lg:col-span-2 bg-white ...' matches 'bg-white ...' (>90% similar)
-	if !m.Has(attrOld2) || m.Src()[attrOld2] != attrNew {
-		t.Errorf("attrOld2 should match attrNew via similarity, got %v", m.Src()[attrOld2])
-	}
+	testutil.AssertMappedText(t, root1, root2, []byte(srcCode), []byte(dstCode), m.Src(),
+		"className=\"lg:col-span-2 bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col items-center\"",
+		"className=\"bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col items-center\"")
 }
 
 func TestRecoverCohortSiblings(t *testing.T) {
@@ -857,9 +814,6 @@ func fnOld2() {
 			return n.Type == "function_declaration" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "fnOld2" }) != nil
 		})
 
-		setupNew := findFirstNode(rootNew, func(n *treesitter.ASTNode) bool {
-			return n.Type == "short_var_declaration" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "targetLabels" }) != nil
-		})
 		anchorNew := findFirstNode(rootNew, func(n *treesitter.ASTNode) bool {
 			return n.Type == "expression_statement" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "doHeavyWork" }) != nil
 		})
@@ -867,9 +821,9 @@ func fnOld2() {
 			return n.Type == "expression_statement" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "doOther" }) != nil
 		})
 
-		if setupOld == nil || anchorOld == nil || otherOld == nil || fnOld2 == nil || fnNew == nil || setupNew == nil || anchorNew == nil || otherNew == nil {
-			t.Fatalf("failed to locate statements in ASTs: setupOld=%v, anchorOld=%v, otherOld=%v, fnOld2=%v, fnNew=%v, setupNew=%v, anchorNew=%v, otherNew=%v",
-				setupOld, anchorOld, otherOld, fnOld2, fnNew, setupNew, anchorNew, otherNew)
+		if setupOld == nil || anchorOld == nil || otherOld == nil || fnOld2 == nil || fnNew == nil || anchorNew == nil || otherNew == nil {
+			t.Fatalf("failed to locate statements in ASTs: setupOld=%v, anchorOld=%v, otherOld=%v, fnOld2=%v, fnNew=%v, anchorNew=%v, otherNew=%v",
+				setupOld, anchorOld, otherOld, fnOld2, fnNew, anchorNew, otherNew)
 		}
 
 		m := NewMapping()
@@ -879,12 +833,8 @@ func fnOld2() {
 
 		RecoverCohortSiblings(rootOld, rootNew, m)
 
-		if !m.Has(setupOld) {
-			t.Fatalf("expected setupOld to be recovered into mapping")
-		}
-		if m.Src()[setupOld] != setupNew {
-			t.Errorf("expected setupOld to map to setupNew, got %v", m.Src()[setupOld])
-		}
+		testutil.AssertMappedText(t, rootOld, rootNew, []byte(srcCode), []byte(dstCode), m.Src(),
+			"targetLabels := 1", "targetLabels := 1")
 		for i := range setupOld.Children {
 			child := setupOld.Children[i]
 			if !m.Has(child) {
@@ -926,7 +876,8 @@ func fnNew() {
 		RecoverCohortSiblings(rootOld, rootNew, m)
 
 		if m.Has(setupOld) {
-			t.Errorf("expected ambiguous candidate not to be paired, but was mapped to %v", m.Src()[setupOld])
+			dstNode := m.Get(setupOld)
+			t.Errorf("expected ambiguous candidate not to be paired, but was mapped to %v", dstNode)
 		}
 	})
 
@@ -970,10 +921,10 @@ func fnNew() {
 		RecoverCohortSiblings(rootOld, rootNew, m)
 
 		mappedCount := 0
-		if m.Has(setupOld1) && m.Src()[setupOld1] == setupNew {
+		if m.Get(setupOld1) == setupNew {
 			mappedCount++
 		}
-		if m.Has(setupOld2) && m.Src()[setupOld2] == setupNew {
+		if m.Get(setupOld2) == setupNew {
 			mappedCount++
 		}
 		if mappedCount != 1 {
@@ -1046,7 +997,8 @@ func f() {
 	MatchUnmatchedLeaves(rootSrc, rootDst, m, nil)
 
 	if m.Has(idSrc) {
-		t.Errorf("expected 'err' across unrelated short_var_declarations to be rejected by statement boundary invariant, got mapped to %v", m.Src()[idSrc])
+		dstNode := m.Get(idSrc)
+		t.Errorf("expected 'err' across unrelated short_var_declarations to be rejected by statement boundary invariant, got mapped to %v", dstNode)
 	}
 }
 
@@ -1108,44 +1060,28 @@ func ExtractedHelper() {
 		}
 
 		// Whole-snippet verification: enclosing declaration OldLogic maps in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func OldLogic()", "func OldLogic()")
 
 		// Cohort anchors: isDelim and deleteSubtree
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 4},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 8},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 12},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 16},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"isDelim := check(10)", "isDelim := check(20)")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"deleteSubtree := compute(true)", "deleteSubtree := compute(false)")
 
 		// Whole-snippet verification: all 4 intermediate statements in ExtractedHelper are mapped
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 5},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 9},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "for_statement", Line: 6},
-			testutil.NodeQuery{Type: "for_statement", Line: 10},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 13},
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 17},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 14},
-			testutil.NodeQuery{Type: "expression_statement", Line: 18},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"hasOutside := false", "hasOutside := false")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"for _, item := range items {", "for _, item := range items {")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"hasSrcOutside := false", "hasSrcOutside := false")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"process(isDelim, hasOutside, deleteSubtree, hasSrcOutside)", "process(isDelim, hasOutside, deleteSubtree, hasSrcOutside)")
 
 		// Verify println("hello") moved from OtherCaller to OldLogic
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 18},
-			testutil.NodeQuery{Type: "expression_statement", Line: 4},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"println(\"hello\")", "println(\"hello\")")
 	})
 }
 
@@ -1207,52 +1143,32 @@ func processItems(items []int) {
 		}
 
 		// Whole-snippet verification: enclosing declaration processItems and parameter_list map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "parameter_list", Line: 3},
-			testutil.NodeQuery{Type: "parameter_list", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"func processItems(items []int)", "func processItems(items []int)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"items []int", "items []int")
 
 		// Surrounding statements stay outside closure and map in place
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 8},
-			testutil.NodeQuery{Type: "call_expression", Line: 25},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"succeedingDone(currCommon, currDice, currAffinity)", "succeedingDone(currCommon, currDice, currAffinity)")
 
 		// Extracted cohort statements map from short_var_declaration to assignment_statement in closure
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 5},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 20},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 6},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 21},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "short_var_declaration", Line: 7},
-			testutil.NodeQuery{Type: "assignment_statement", Line: 22},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"currCommon := common(items)", "currCommon = common(items)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"currDice := dice(items)", "currDice = dice(items)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"currAffinity := affinity(items)", "currAffinity = affinity(items)")
 
 		// RHS call expressions map to destination calls inside closure
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 5},
-			testutil.NodeQuery{Type: "call_expression", Line: 20},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 6},
-			testutil.NodeQuery{Type: "call_expression", Line: 21},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 7},
-			testutil.NodeQuery{Type: "call_expression", Line: 22},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"common(items)", "common(items)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"dice(items)", "dice(items)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"affinity(items)", "affinity(items)")
 	})
 }
 
@@ -1393,31 +1309,25 @@ func Batch() {
 		}
 
 		// Whole-snippet verification 1: enclosing declarations map in place
-		testutil.AssertMapped(t, rootA, rootB, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-		)
-		testutil.AssertMapped(t, rootA, rootB, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 19},
-			testutil.NodeQuery{Type: "function_declaration", Line: 23},
-		)
+		testutil.AssertMappedText(t, rootA, rootB, []byte(oldSrc), []byte(newSrc), res.Mappings.Src(),
+			"func Process()", "func Process()")
+		testutil.AssertMappedText(t, rootA, rootB, []byte(oldSrc), []byte(newSrc), res.Mappings.Src(),
+			"func Batch()", "func Batch()")
 
 		// Whole-snippet verification 2: surrounding statements map in place
-		testutil.AssertMapped(t, rootA, rootB, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-			testutil.NodeQuery{Type: "call_expression", Line: 4},
-		)
+		testutil.AssertMappedText(t, rootA, rootB, []byte(oldSrc), []byte(newSrc), res.Mappings.Src(),
+			"setup()", "setup()")
 
 		// Whole-snippet verification 3: Process()'s loop must not map to worker() in B
-		testutil.AssertNotMapped(t, rootA, rootB, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "for_statement", Line: 5},
-			testutil.NodeQuery{Type: "for_statement", Line: 9},
+		testutil.AssertNotMappedTextQuery(t, rootA, rootB, []byte(oldSrc), []byte(newSrc), res.Mappings.Src(),
+			testutil.TextQuery{Text: "for i := 0; i < 10; i++ {", Occurrence: 1},
+			testutil.TextQuery{Text: "for i := 0; i < 10; i++ {", Occurrence: 1},
 		)
 
 		// The loop in worker() must originate from Batch's closure, never stolen from Process
-		testutil.AssertMapped(t, rootA, rootB, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "for_statement", Line: 21},
-			testutil.NodeQuery{Type: "for_statement", Line: 9},
+		testutil.AssertMappedTextQuery(t, rootA, rootB, []byte(oldSrc), []byte(newSrc), res.Mappings.Src(),
+			testutil.TextQuery{Text: "for i := 0; i < 10; i++ {", Occurrence: 2},
+			testutil.TextQuery{Text: "for i := 0; i < 10; i++ {", Occurrence: 1},
 		)
 	})
 }
@@ -1450,22 +1360,17 @@ func TestMatch_UnwrappedConditionIdentifier(t *testing.T) {
 		res := Match(srcAST, dstAST, src, dst, part)
 
 		// 1. Enclosing context: function serialize
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-			testutil.NodeQuery{Type: "function_declaration", Line: 1},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"function serialize(annotation: any, type: any)", "function serialize(annotation: any, type: any)")
 
 		// 2. Surrounding sequence: return statement
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 3},
-			testutil.NodeQuery{Type: "return_statement", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"return tryReuse(annotation);", "return tryReuse(annotation);")
 
 		// 3. Target: condition annotation identifiers
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 1},
-			testutil.NodeQuery{Type: "identifier", Line: 2, Nth: 1},
-		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			testutil.TextQuery{Text: "annotation", Occurrence: 2},
+			testutil.TextQuery{Text: "annotation", Occurrence: 2})
 	})
 
 	t.Run("FullEngine_Go", func(t *testing.T) {
@@ -1501,22 +1406,17 @@ func serialize(annotation bool, t bool) bool {
 		res := Match(srcAST, dstAST, src, dst, part)
 
 		// 1. Enclosing context: function serialize
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-			testutil.NodeQuery{Type: "function_declaration", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"func serialize(annotation bool, t bool) bool", "func serialize(annotation bool, t bool) bool")
 
 		// 2. Surrounding sequence: return false
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 7},
-			testutil.NodeQuery{Type: "return_statement", Line: 7},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"return false", "return false")
 
 		// 3. Target: condition annotation identifier
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 1},
-			testutil.NodeQuery{Type: "identifier", Line: 4, Nth: 1},
-		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			testutil.TextQuery{Text: "annotation", Occurrence: 2},
+			testutil.TextQuery{Text: "annotation", Occurrence: 2})
 	})
 
 	t.Run("FullEngine_Python", func(t *testing.T) {
@@ -1546,26 +1446,19 @@ func serialize(annotation bool, t bool) bool {
 		res := Match(srcAST, dstAST, src, dst, part)
 
 		// 1. Enclosing context: function serialize
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_definition", Line: 1},
-			testutil.NodeQuery{Type: "function_definition", Line: 1},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"def serialize(annotation, type_val):", "def serialize(annotation, type_val):")
 
 		// 2. Surrounding sequence: valid = check(annotation) and return valid
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "expression_statement", Line: 2},
-			testutil.NodeQuery{Type: "expression_statement", Line: 2},
-		)
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "return_statement", Line: 5},
-			testutil.NodeQuery{Type: "return_statement", Line: 5},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"valid = check(annotation)", "valid = check(annotation)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			"return valid", "return valid")
 
 		// 3. Target: condition annotation identifier
-		testutil.AssertMapped(t, srcAST, dstAST, res.Mappings.Src(),
-			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
-			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
-		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, res.Mappings.Src(),
+			testutil.TextQuery{Text: "annotation", Occurrence: 3},
+			testutil.TextQuery{Text: "annotation", Occurrence: 3})
 	})
 }
 
@@ -1713,42 +1606,30 @@ fn _make_process_from_less_path() -> Command {
 		}
 
 		// The enclosing function must stay in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "function_item", Line: 1},
-			testutil.NodeQuery{Type: "function_item", Line: 1},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"fn try_pager(pager: Option<String>) -> Result<()>", "fn try_pager(pager: Option<String>) -> Result<()>")
 
 		// The preceding statement must stay in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "let_declaration", Line: 2},
-			testutil.NodeQuery{Type: "let_declaration", Line: 2},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"let pagerflags = [\"--RAW-CONTROL-CHARS\"];", "let pagerflags = [\"--RAW-CONTROL-CHARS\"];")
 
 		// The statement after the wrapped expression must stay in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 17},
-			testutil.NodeQuery{Type: "call_expression", Line: 9},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"process.wait()", "process.wait()")
 
 		// The match expression must stay inside the new Ok wrapper.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "match_expression", Line: 3},
-			testutil.NodeQuery{Type: "match_expression", Line: 3},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"match pagerflags.split_first()", "match pagerflags.split_first()")
 
 		// The new wrapper must not claim an inner Ok call or its identifier.
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "call_expression", Line: 3, Nth: 1},
-		)
-		testutil.AssertUnmapped(t, dstAST, mr.Mappings.Dst(),
-			testutil.NodeQuery{Type: "identifier", Line: 3, Nth: 1},
-		)
+		testutil.AssertUnmappedText(t, dstAST, newSrc, mr.Mappings.Dst(),
+			"Ok(match pagerflags.split_first()", "call_expression")
+		testutil.AssertUnmappedText(t, dstAST, newSrc, mr.Mappings.Dst(),
+			"Ok", "identifier")
 
 		// The match operand must stay in place.
-		testutil.AssertMapped(t, srcAST, dstAST, mr.Mappings.Src(),
-			testutil.NodeQuery{Type: "call_expression", Line: 3},
-			testutil.NodeQuery{Type: "call_expression", Line: 3, Nth: 2},
-		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"pagerflags.split_first()", "pagerflags.split_first()")
 	})
 }
 

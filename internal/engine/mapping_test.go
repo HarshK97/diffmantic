@@ -284,11 +284,11 @@ func TestMappingDiceSrc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, err := testutil.FindNodeByText(rootA, srcA, "x()")
 	if err != nil {
 		t.Fatal(err)
 	}
-	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callB, err := testutil.FindNodeByText(rootB, srcB, "x()")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,11 +317,11 @@ func TestAddIsomorphicPairs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callA, err := testutil.FindNodeByText(rootA, srcA, "x()")
 	if err != nil {
 		t.Fatal(err)
 	}
-	callB, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "call_expression", Line: 2})
+	callB, err := testutil.FindNodeByText(rootB, srcB, "x()")
 	if err != nil {
 		t.Fatal(err)
 	}

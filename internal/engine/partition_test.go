@@ -46,11 +46,11 @@ func TestLinePartition(t *testing.T) {
 
 		part := NewLinePartition(srcA, srcB)
 
-		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "short_var_declaration", Line: 2})
+		n1, err := testutil.FindNodeByText(rootA, srcA, "untouched := 1", "short_var_declaration")
 		if err != nil {
 			t.Fatal(err)
 		}
-		n2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "expression_statement", Line: 3})
+		n2, err := testutil.FindNodeByText(rootB, srcB, "insertedLine()", "expression_statement")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,11 +75,11 @@ func TestLinePartition(t *testing.T) {
 
 		part := NewLinePartition(srcA, srcB)
 
-		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+		n1, err := testutil.FindNodeByText(rootA, srcA, "deletedCode()", "expression_statement")
 		if err != nil {
 			t.Fatal(err)
 		}
-		n2, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+		n2, err := testutil.FindNodeByText(rootB, srcB, "insertedCode()", "expression_statement")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,15 +104,15 @@ func TestLinePartition(t *testing.T) {
 
 		part := NewLinePartition(srcA, srcB)
 
-		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "package_clause", Line: 1})
+		n1, err := testutil.FindNodeByText(rootA, srcA, "package main", "package_clause")
 		if err != nil {
 			t.Fatal(err)
 		}
-		n2Correct, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "package_clause", Line: 2})
+		n2Correct, err := testutil.FindNodeByText(rootB, srcB, "package main", "package_clause")
 		if err != nil {
 			t.Fatal(err)
 		}
-		n2Wrong, err := testutil.FindNode(rootB, testutil.NodeQuery{Type: "var_declaration", Line: 3})
+		n2Wrong, err := testutil.FindNodeByText(rootB, srcB, "var a = 0", "var_declaration")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -169,7 +169,7 @@ func TestLinePartition(t *testing.T) {
 
 		// Line 5 (`m.Add(p1, p2)`) only has line 4 (`\t}`) as a contiguous matched neighbor;
 		// because `\t}` is trivial punctuation, line 5 alone should not be locked as Group 1.
-		n1, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "expression_statement", Line: 5})
+		n1, err := testutil.FindNodeByText(rootA, srcA, "m.Add(p1, p2)", "expression_statement")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +194,7 @@ func TestLinePartition(t *testing.T) {
 		part := NewLinePartition(srcA, srcB)
 
 		// Before attaching roots, line diff matches lines 1..2 in A with lines 3..4 in B as identical runs.
-		nodeA, err := testutil.FindNode(rootA, testutil.NodeQuery{Type: "expression_statement", Line: 2})
+		nodeA, err := testutil.FindNodeByText(rootA, srcA, "doWork(a, b)", "expression_statement")
 		if err != nil {
 			t.Fatal(err)
 		}
