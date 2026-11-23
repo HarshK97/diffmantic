@@ -5,52 +5,6 @@ import (
 	"testing"
 )
 
-// FormatAlignmentGrid renders the line alignment pairs as a two-column side-by-side string
-// separated by Unicode '│' (\u2502), using '∅' (\u2205) for void/filler rows.
-func FormatAlignmentGrid(leftSrc, rightSrc string, grid []LineAlignmentPair) string {
-	leftLines := strings.Split(leftSrc, "\n")
-	rightLines := strings.Split(rightSrc, "\n")
-
-	type rowCells struct {
-		left  string
-		right string
-	}
-
-	rows := make([]rowCells, len(grid))
-	maxLeftLen := 0
-
-	for i, p := range grid {
-		l := "∅"
-		if p.LeftLine >= 0 && p.LeftLine < len(leftLines) {
-			l = leftLines[p.LeftLine]
-		}
-		r := "∅"
-		if p.RightLine >= 0 && p.RightLine < len(rightLines) {
-			r = rightLines[p.RightLine]
-		}
-		rows[i] = rowCells{left: l, right: r}
-		if len(l) > maxLeftLen {
-			maxLeftLen = len(l)
-		}
-	}
-
-	var sb strings.Builder
-	for i, row := range rows {
-		pad := maxLeftLen - len(row.left)
-		if pad < 0 {
-			pad = 0
-		}
-		sb.WriteString(row.left)
-		sb.WriteString(strings.Repeat(" ", pad))
-		sb.WriteString(" │ ")
-		sb.WriteString(row.right)
-		if i < len(rows)-1 {
-			sb.WriteString("\n")
-		}
-	}
-	return sb.String()
-}
-
 // AssertAlignmentGrid verifies that grid aligns leftSrc and rightSrc according to expected.
 //
 // Rules enforced:
