@@ -324,15 +324,11 @@ func TestContestContainers_SiblingArbitration(t *testing.T) {
 	ContestContainers(root1, root2, m, nil)
 
 	// Sibling contest should reassign t2 from t1Early to t1Stationary
-	if m.Get(t1Early) != nil {
-		t.Errorf("expected t1Early to be unmapped after contest, got %v", m.Get(t1Early))
-	}
-	if m.Get(t1Stationary) != t2 {
-		t.Errorf("expected t1Stationary to be mapped to t2, got %v", m.Get(t1Stationary))
-	}
-	if m.Dst()[leafURL2] != nil && m.Dst()[leafURL2] == leafURL1 {
-		t.Errorf("expected leafURL2 mapping from t1Early to be freed")
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), `{"name": "early", "url": "url_match"}`)
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		`{"name": "stationary", "desc": "desc_match", "fileMatch": "file_match"}`,
+		`{"name": "stationary_updated", "desc": "desc_match", "fileMatch": "file_match", "url": "url_match"}`)
+	testutil.AssertNotMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(), `"url_match"`, `"url_match"`)
 }
 
 func TestContestContainers_VerticalHierarchy(t *testing.T) {
@@ -351,7 +347,6 @@ func TestContestContainers_VerticalHierarchy(t *testing.T) {
 	if len(blocks1) < 2 {
 		t.Fatalf("expected at least 2 blocks in root1")
 	}
-	outer1 := blocks1[0]
 	inner1 := blocks1[1]
 
 	outer2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
@@ -370,12 +365,10 @@ func TestContestContainers_VerticalHierarchy(t *testing.T) {
 
 	ContestContainers(root1, root2, m, nil)
 
-	if m.Get(inner1) != nil {
-		t.Errorf("expected inner1 to be unmapped, got %v", m.Get(inner1))
-	}
-	if m.Get(outer1) != outer2 {
-		t.Errorf("expected outer1 to be mapped to outer2, got %v", m.Get(outer1))
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "{\n\t\tpanic(\"throw\")\n\t}")
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		"{\n\tif true {\n\t\tpanic(\"throw\")\n\t}\n}",
+		"{\n\tpanic(\"throw\")\n}")
 }
 
 func TestRollupMatchedContainers_UnmatchedBodyGuard(t *testing.T) {
@@ -397,9 +390,7 @@ func TestRollupMatchedContainers_UnmatchedBodyGuard(t *testing.T) {
 
 	RollupMatchedContainers(root1, root2, m)
 
-	if m.Get(f1) != nil {
-		t.Errorf("expected function_declaration with unmatched body not to roll up, but got mapped to %v", m.Get(f1))
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "func Foo(t int) {\n\tstatementInOld()\n}")
 }
 
 func TestRollupMatchedContainers_MassWeighting(t *testing.T) {
@@ -434,9 +425,7 @@ func TestRollupMatchedContainers_MassWeighting(t *testing.T) {
 
 	RollupMatchedContainers(root1, root2, m)
 
-	if m.Get(t1) != c2Right {
-		t.Fatalf("expected t1 to roll up to c2Right by structural mass, got %v", m.Get(t1))
-	}
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(), "x = a + b", "x = a + b")
 }
 
 func TestRollupMatchedContainers_TieBreaking_ScopeAffinity(t *testing.T) {
@@ -617,16 +606,13 @@ func f() {
 
 	ContestContainers(root1, root2, m, nil)
 
-	if got := m.Get(currentT1); got != nil {
-		t.Errorf("m.Get(currentT1) = %v, want nil", got)
-	}
-	if got := m.Get(candidate); got != t2 {
-		t.Fatalf("m.Get(candidate) = %v, want %v", got, t2)
-	}
-	opOld := findFirstNode(candidate, func(n *treesitter.ASTNode) bool { return n.Label == "=" })
-	if got := m.Get(opOld); got != opNew {
-		t.Errorf("m.Get(opOld) = %v, want %v", got, opNew)
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "pairCount = len(pairs)")
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		"s.cpySrcToDst = make(map[key]val, pairCount)",
+		"s.cpySrcToDst = make(map[key]val, len(pairs))")
+	testutil.AssertMappedTextQuery(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		testutil.TextQuery{Text: "=", Occurrence: 2},
+		testutil.TextQuery{Text: "=", Occurrence: 1})
 }
 
 func TestRollupMatchedContainers_CrossStatementBoundaryGuard(t *testing.T) {
@@ -704,9 +690,7 @@ func other() {
 
 	RollupMatchedContainers(root1, root2, m)
 
-	if m.Get(cond1) != nil {
-		t.Errorf("expected cond1 NOT to roll up across distinct statement boundaries, but got %v", m.Get(cond1))
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "a && b")
 }
 
 func TestHasForeignBodyOwner_InitializerStatementPermitted(t *testing.T) {
@@ -884,18 +868,18 @@ func TestComputeAffinity_MismatchedDeclarationNames(t *testing.T) {
 }
 
 func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
-	buildTree := func(name string) (*treesitter.ASTNode, *treesitter.ASTNode, *treesitter.ASTNode, []*treesitter.ASTNode) {
+	buildTree := func(name string) (*treesitter.ASTNode, *treesitter.ASTNode, *treesitter.ASTNode, []*treesitter.ASTNode, []byte) {
 		code := fmt.Sprintf("package main\n\nfunc %s() {\n\ta()\n\tb()\n\tc()\n\td()\n\te()\n}\n", name)
 		root := parseSnippet(t, code, "test.go")
 		decl := findFirstNode(root, func(n *treesitter.ASTNode) bool { return n.Type == "function_declaration" })
 		body := findFirstNode(decl, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 		stmts := findAllNodesByType(body, "expression_statement")
-		return root, decl, body, stmts
+		return root, decl, body, stmts, []byte(code)
 	}
 
 	// 2 of 5 leaves + body mapped gives ~38% Dice (< 0.60, but >= 0.30).
-	root1, declA, bodyA, stmtsA := buildTree("funcA")
-	root2, _, bodyB, stmtsB := buildTree("funcB")
+	root1, _, bodyA, stmtsA, codeA := buildTree("funcA")
+	root2, _, bodyB, stmtsB, _ := buildTree("funcB")
 
 	m := NewMapping()
 	m.Add(root1, root2)
@@ -904,12 +888,10 @@ func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
 	addIsomorphicPairs(stmtsA[1], stmtsB[1], m)
 
 	RollupMatchedContainers(root1, root2, m)
-	if m.Get(declA) != nil {
-		t.Errorf("expected RollupMatchedContainers to reject declA -> declB with mismatched names at <60%% Dice, got %v", m.Get(declA))
-	}
+	testutil.AssertUnmappedText(t, root1, codeA, m.Src(), "func funcA() {\n\ta()\n\tb()\n\tc()\n\td()\n\te()\n}")
 
 	// Same overlap when declaration names match ("funcA" -> "funcA") should roll up (>= 30% Dice).
-	rootSame2, declSameA, bodySameA, stmtsSameA := buildTree("funcA")
+	rootSame2, _, bodySameA, stmtsSameA, codeSameA := buildTree("funcA")
 	mSame := NewMapping()
 	mSame.Add(root1, rootSame2)
 	mSame.Add(bodyA, bodySameA)
@@ -917,9 +899,9 @@ func TestRollupMatchedContainers_MismatchedDeclarationNames(t *testing.T) {
 	addIsomorphicPairs(stmtsA[1], stmtsSameA[1], mSame)
 
 	RollupMatchedContainers(root1, rootSame2, mSame)
-	if mSame.Get(declA) != declSameA {
-		t.Errorf("expected RollupMatchedContainers to pair matching declaration names at >=30%% Dice, got %v", mSame.Get(declA))
-	}
+	testutil.AssertMappedText(t, root1, rootSame2, codeA, codeSameA, mSame.Src(),
+		"func funcA() {\n\ta()\n\tb()\n\tc()\n\td()\n\te()\n}",
+		"func funcA() {\n\ta()\n\tb()\n\tc()\n\td()\n\te()\n}")
 }
 
 func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing.T) {
@@ -944,9 +926,7 @@ func TestRollupMatchedContainers_EquivalentTypeTargetVariableMismatch(t *testing
 
 	RollupMatchedContainers(root1, root2, m)
 
-	if m.Get(assignStmt1) != nil {
-		t.Errorf("expected assignStmt1 NOT to roll up to shortDecl2 with different target variable, got: %v", m.Get(assignStmt1))
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "overlap += min(v1, v2)")
 }
 
 func TestRollupMatchedContainers_SameTypeTargetVariableMismatch(t *testing.T) {
@@ -955,20 +935,15 @@ func TestRollupMatchedContainers_SameTypeTargetVariableMismatch(t *testing.T) {
 	root1 := parseSnippet(t, code1, "test.go")
 	root2 := parseSnippet(t, code2, "test.go")
 
-	assignStmt1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
-	assignStmt2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "assignment_statement" })
-
-	idDst1 := findFirstNode(assignStmt1, func(n *treesitter.ASTNode) bool { return n.Label == "dstNode" })
-	idDst2 := findFirstNode(assignStmt2, func(n *treesitter.ASTNode) bool { return n.Label == "dstNode" })
+	idDst1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Label == "dstNode" })
+	idDst2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Label == "dstNode" })
 
 	m := NewMapping()
 	m.Add(idDst1, idDst2)
 
 	RollupMatchedContainers(root1, root2, m)
 
-	if m.Get(assignStmt1) != nil {
-		t.Errorf("expected assignStmt1 NOT to roll up to assignStmt2 with disjoint target variables, got: %v", m.Get(assignStmt1))
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "dstNode = ms")
 }
 
 func TestHasCallCalleeOrArgMatch_UnextinguishedPeer(t *testing.T) {
@@ -1030,7 +1005,6 @@ func TestReconcileBodyBlocks(t *testing.T) {
 		ifStmts2 := findAllNodesByType(root2, "if_statement")
 		if2 := ifStmts2[0]
 		innerIf2 := ifStmts2[1]
-		body2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 		innerBody2 := findFirstNode(innerIf2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 		m := NewMapping()
@@ -1039,9 +1013,9 @@ func TestReconcileBodyBlocks(t *testing.T) {
 
 		reconcileBodyBlocks(root1, m)
 
-		if m.Get(body1) != body2 {
-			t.Errorf("expected body1 to be reconciled to outer body2, got %v", m.Get(body1))
-		}
+		testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+			"{\n\t\tx()\n\t}",
+			"{\n\t\tif b {\n\t\t\tx()\n\t\t}\n\t}")
 	})
 
 	t.Run("reverse unwrapping: re-aligns outer body block when inner was mapped", func(t *testing.T) {
@@ -1053,7 +1027,6 @@ func TestReconcileBodyBlocks(t *testing.T) {
 		ifStmts1 := findAllNodesByType(root1, "if_statement")
 		if1 := ifStmts1[0]
 		innerIf1 := ifStmts1[1]
-		body1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 		innerBody1 := findFirstNode(innerIf1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
 
 		if2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
@@ -1065,12 +1038,10 @@ func TestReconcileBodyBlocks(t *testing.T) {
 
 		reconcileBodyBlocks(root1, m)
 
-		if m.Get(body1) != body2 {
-			t.Errorf("expected outer body1 to be reconciled to body2, got %v", m.Get(body1))
-		}
-		if m.Get(innerBody1) != nil {
-			t.Errorf("expected innerBody1 to be evicted, got %v", m.Get(innerBody1))
-		}
+		testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+			"{\n\t\tif b {\n\t\t\tx()\n\t\t}\n\t}",
+			"{\n\t\tx()\n\t}")
+		testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "{\n\t\t\tx()\n\t\t}")
 	})
 }
 
@@ -1271,9 +1242,9 @@ func test() {
 
 	RollupMatchedContainers(fn1, fn2, m)
 
-	if m.Get(if1) == if2 {
-		t.Errorf("expected if1 NOT to roll up to if2 across unmapped loop scope boundary")
-	}
+	testutil.AssertNotMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		"if !r.IsCaseClause(\"foo\") {\n\t\tt.Errorf()\n\t}",
+		"if got := r.IsCaseClause(\"foo\"); got != tt.want {\n\t\t\tt.Errorf()\n\t\t}")
 }
 
 func TestBottomUp_BinaryChainLeadingOperandDeletion(t *testing.T) {
@@ -1295,21 +1266,9 @@ func f(n *Node) bool {
 	ret1 := findFirstNode(root1, func(n *treesitter.ASTNode) bool { return n.Type == "return_statement" })
 	ret2 := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "return_statement" })
 
-	bins1 := findAllNodesByType(ret1, "binary_expression")
-	oldBin1 := bins1[0]
-	oldBin2 := bins1[1]
-	oldBin3 := bins1[2]
-
-	bins2 := findAllNodesByType(ret2, "binary_expression")
-	newBin1 := bins2[0]
-	newBin2 := bins2[1]
-
 	r := rules.Get("go")
 	oldB := findFirstNode(ret1, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isPunct" })
 	newB := findFirstNode(ret2, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isPunct" })
-
-	oldC := findFirstNode(ret1, func(n *treesitter.ASTNode) bool { return n.Type == "selector_expression" })
-	newC := findFirstNode(ret2, func(n *treesitter.ASTNode) bool { return n.Type == "selector_expression" })
 
 	oldD := findFirstNode(ret1, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isKw" })
 	newD := findFirstNode(ret2, func(n *treesitter.ASTNode) bool { return r.IsCall(n.Type) && extractCalleeLabel(n, r) == "isKw" })
@@ -1328,18 +1287,19 @@ func f(n *Node) bool {
 
 	BottomUp(root1, root2, m, 0.30)
 
-	if m.Has(oldBin3) {
-		t.Errorf("expected inner oldBin3 (isOp || isPunct) to remain unmapped, but mapped to %v", m.Get(oldBin3))
-	}
-	if m.Get(oldBin2) != newBin2 {
-		t.Errorf("expected oldBin2 to match newBin2, got %v", m.Get(oldBin2))
-	}
-	if m.Get(oldBin1) != newBin1 {
-		t.Errorf("expected oldBin1 to match newBin1, got %v", m.Get(oldBin1))
-	}
-	if m.Get(oldC) != newC {
-		t.Errorf("expected oldC to match newC, got %v", m.Get(oldC))
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(code1), m.Src(), "isOp(n) || isPunct(n)", "binary_expression")
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		"isOp(n) || isPunct(n) || n.IsKeyword",
+		"isPunct(n) || n.IsKeyword",
+		"binary_expression")
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		"isOp(n) || isPunct(n) || n.IsKeyword || isKw(n)",
+		"isPunct(n) || n.IsKeyword || isKw(n)",
+		"binary_expression")
+	testutil.AssertMappedText(t, root1, root2, []byte(code1), []byte(code2), m.Src(),
+		"n.IsKeyword",
+		"n.IsKeyword",
+		"selector_expression")
 }
 
 func TestBottomUp_NestedCallFlattening_EnclosingConstructGuard(t *testing.T) {
@@ -1434,35 +1394,11 @@ func f() {
 		TopDown(t1, t2, 2, m, part)
 		BottomUp(t1, t2, m, 0.5)
 
-		r1 := rulesFor(t1)
-		r2 := rulesFor(t2)
-
-		var oldOuterMax, oldInnerMax, newMax *treesitter.ASTNode
-		for _, n := range t1.PostOrder() {
-			if r1.IsCall(n.Type) && extractCalleeLabel(n, r1) == "max" {
-				if oldInnerMax == nil {
-					oldInnerMax = n
-				} else {
-					oldOuterMax = n
-				}
-			}
-		}
-		for _, n := range t2.PostOrder() {
-			if r2.IsCall(n.Type) && extractCalleeLabel(n, r2) == "max" {
-				newMax = n
-			}
-		}
-
-		if oldOuterMax == nil || oldInnerMax == nil || newMax == nil {
-			t.Fatalf("failed to locate call nodes: outer=%v inner=%v new=%v", oldOuterMax, oldInnerMax, newMax)
-		}
-
-		if m.Get(oldInnerMax) == newMax {
-			t.Errorf("inner max(0, n-m) stole newMax container; expected inner max to remain unmapped")
-		}
-		if m.Get(oldOuterMax) != newMax {
-			t.Errorf("expected outer max(foo(a), ...) to match newMax, got %v", m.Get(oldOuterMax))
-		}
+		testutil.AssertUnmappedText(t, t1, oldSrc, m.Src(), "max(0, n-m)", "call_expression")
+		testutil.AssertMappedText(t, t1, t2, oldSrc, newSrc, m.Src(),
+			"max(foo(a), max(0, n-m))",
+			"max(foo(a), 0, n-m)",
+			"call_expression")
 	})
 
 	t.Run("FullEngine", func(t *testing.T) {

@@ -25,11 +25,12 @@ func TestTopDown(t *testing.T) {
 		m := NewMapping()
 		TopDown(rootA, rootB, 1, m, nil)
 
-		for _, n := range rootA.PreOrder() {
-			if !m.Has(n) {
-				t.Errorf("expected node %s:%s to be mapped", n.Type, n.Label)
-			}
-		}
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "package main", "package main")
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "func main() {\n\tx := 1\n\ty := 2\n}", "func main() {\n\tx := 1\n\ty := 2\n}")
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "x := 1", "x := 1")
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "y := 2", "y := 2")
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "x", "x", "identifier")
+		testutil.AssertMappedText(t, rootA, rootB, src, dst, m.Src(), "y", "y", "identifier")
 	})
 
 	t.Run("Single leaf label change", func(t *testing.T) {

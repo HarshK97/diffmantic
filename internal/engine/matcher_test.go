@@ -49,12 +49,13 @@ func TestMatchIdenticalTrees(t *testing.T) {
 		t.Fatal("Match returned nil")
 	}
 
-	srcNodes := src.PreOrder()
-	for _, n := range srcNodes {
-		if !r.Mappings.Has(n) {
-			t.Errorf("node %s:%s not mapped in identical tree", n.Type, n.Label)
-		}
-	}
+	srcBytes := []byte(code)
+	testutil.AssertMappedText(t, src, dst, srcBytes, srcBytes, r.Mappings.Src(), "package main", "package main")
+	testutil.AssertMappedText(t, src, dst, srcBytes, srcBytes, r.Mappings.Src(), "func main() {\n\tx := 1\n\ty := 2\n}", "func main() {\n\tx := 1\n\ty := 2\n}")
+	testutil.AssertMappedText(t, src, dst, srcBytes, srcBytes, r.Mappings.Src(), "x := 1", "x := 1")
+	testutil.AssertMappedText(t, src, dst, srcBytes, srcBytes, r.Mappings.Src(), "y := 2", "y := 2")
+	testutil.AssertMappedText(t, src, dst, srcBytes, srcBytes, r.Mappings.Src(), "x", "x", "identifier")
+	testutil.AssertMappedText(t, src, dst, srcBytes, srcBytes, r.Mappings.Src(), "y", "y", "identifier")
 }
 
 func TestMatchDifferentLeafLabels(t *testing.T) {
@@ -68,9 +69,8 @@ func TestMatchDifferentLeafLabels(t *testing.T) {
 	if r == nil {
 		t.Fatal("Match returned nil")
 	}
-	if !r.Mappings.Has(src) {
-		t.Error("root should be mapped")
-	}
+	testutil.AssertMappedText(t, src, dst, []byte(srcCode), []byte(dstCode), r.Mappings.Src(), "package main", "package main")
+	testutil.AssertMappedText(t, src, dst, []byte(srcCode), []byte(dstCode), r.Mappings.Src(), srcCode, dstCode, "source_file")
 }
 
 func TestMatchRootAlwaysMapped(t *testing.T) {
@@ -81,12 +81,8 @@ func TestMatchRootAlwaysMapped(t *testing.T) {
 	dst := parseSnippet(t, dstCode, "test.go")
 
 	r := Match(src, dst, []byte(srcCode), []byte(dstCode), nil)
-	if !r.Mappings.Has(src) {
-		t.Error("src root should always be mapped")
-	}
-	if !r.Mappings.HasDst(dst) {
-		t.Error("dst root should always be mapped")
-	}
+	testutil.AssertMappedText(t, src, dst, []byte(srcCode), []byte(dstCode), r.Mappings.Src(), "package main", "package main")
+	testutil.AssertMappedText(t, src, dst, []byte(srcCode), []byte(dstCode), r.Mappings.Src(), srcCode, dstCode, "source_file")
 }
 
 func TestMatchSingleLeaves(t *testing.T) {
@@ -141,20 +137,7 @@ func TestTopDownUnambiguous(t *testing.T) {
 	part := NewLinePartition([]byte(code), []byte(code))
 	TopDown(src, dst, 2, m, part)
 
-	r := rules.Get("go")
-	var srcCall *treesitter.ASTNode
-	for _, n := range src.PreOrder() {
-		if r.IsCall(n.Type) {
-			srcCall = n
-			break
-		}
-	}
-	if srcCall == nil {
-		t.Fatal("failed to find call node in src")
-	}
-	if !m.Has(srcCall) {
-		t.Error("unambiguous isomorphic subtree should be mapped by TopDown")
-	}
+	testutil.AssertMappedText(t, src, dst, []byte(code), []byte(code), m.Src(), "f()", "f()", "call_expression")
 }
 
 func TestBottomUpWithPriorMapping(t *testing.T) {
@@ -193,9 +176,7 @@ func TestBottomUpWithPriorMapping(t *testing.T) {
 
 	BottomUp(srcRoot, dstRoot, m, 0.5)
 
-	if !m.Has(srcBlock) {
-		t.Error("BottomUp should match block containing matched leaf")
-	}
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(srcCode), []byte(dstCode), m.Src(), "{\n\tx := 1\n}", "{\n\tx := 1\n}", "block")
 }
 
 func TestMatchUnmatchedLeaves(t *testing.T) {
@@ -235,22 +216,12 @@ func fb() {
 
 	MatchUnmatchedLeaves(srcRoot, dstRoot, m, nil)
 
-	for _, l := range srcFuncs[0].Leaves() {
-		if m.Has(l) {
-			dstL := m.Get(l)
-			if !dstFuncs[0].Contains(dstL) {
-				t.Errorf("leaf %v from fa() mapped outside dst fa(): %v", l, dstL)
-			}
-		}
-	}
-	for _, l := range srcFuncs[1].Leaves() {
-		if m.Has(l) {
-			dstL := m.Get(l)
-			if !dstFuncs[1].Contains(dstL) {
-				t.Errorf("leaf %v from fb() mapped outside dst fb(): %v", l, dstL)
-			}
-		}
-	}
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(srcCode), []byte(srcCode), m.Src(), "fa", "fa", "identifier")
+	testutil.AssertMappedText(t, srcRoot, dstRoot, []byte(srcCode), []byte(srcCode), m.Src(), "fb", "fb", "identifier")
+	testutil.AssertUnmappedTextQuery(t, srcRoot, []byte(srcCode), m.Src(), testutil.TextQuery{Text: "count", Occurrence: 1})
+	testutil.AssertUnmappedTextQuery(t, srcRoot, []byte(srcCode), m.Src(), testutil.TextQuery{Text: "count", Occurrence: 2})
+	testutil.AssertUnmappedTextQuery(t, srcRoot, []byte(srcCode), m.Src(), testutil.TextQuery{Text: "count", Occurrence: 3})
+	testutil.AssertUnmappedTextQuery(t, srcRoot, []byte(srcCode), m.Src(), testutil.TextQuery{Text: "count", Occurrence: 4})
 }
 
 func TestRollupMatchedContainers(t *testing.T) {
@@ -312,31 +283,12 @@ func TestMatchUnmatchedLeavesIgnoresKeywords(t *testing.T) {
 		t.Fatalf("failed to find if_statement: p1=%v p2=%v", p1, p2)
 	}
 
-	var kw1, kw2 *treesitter.ASTNode
-	for _, l := range p1.Leaves() {
-		if l.IsKeyword && l.Label == "if" {
-			kw1 = l
-			break
-		}
-	}
-	for _, l := range p2.Leaves() {
-		if l.IsKeyword && l.Label == "if" {
-			kw2 = l
-			break
-		}
-	}
-	if kw1 == nil || kw2 == nil {
-		t.Fatalf("failed to find if keyword: kw1=%v kw2=%v", kw1, kw2)
-	}
-
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
 	m.Add(p1, p2)
 
 	MatchUnmatchedLeaves(srcRoot, dstRoot, m, nil)
-	if m.Has(kw1) {
-		t.Errorf("MatchUnmatchedLeaves should ignore keywords, but kw1 was matched")
-	}
+	testutil.AssertUnmappedText(t, srcRoot, []byte(goCode), m.Src(), "if", "if")
 
 	MatchContainerKeywords(srcRoot, dstRoot, m)
 
@@ -505,15 +457,7 @@ func TestMatchUnmatchedLeaves_IsolatedGlueGuard(t *testing.T) {
 
 	MatchUnmatchedLeaves(root1, root2, m, nil)
 
-	leafOp1 := findFirstNode(block1, func(n *treesitter.ASTNode) bool { return n.Label == ":=" })
-	if leafOp1 == nil {
-		t.Fatal("failed to find ':=' leaf in block1")
-	}
-
-	if m.Has(leafOp1) {
-		dstNode := m.Get(leafOp1)
-		t.Errorf("expected isolated statement-level glue ':=' not to match across statements, got %v", dstNode)
-	}
+	testutil.AssertUnmappedText(t, root1, []byte(srcCode), m.Src(), ":=")
 }
 
 func TestMatchUnmatchedLeaves_ExpressionExemption(t *testing.T) {
@@ -835,12 +779,13 @@ func fnOld2() {
 
 		testutil.AssertMappedText(t, rootOld, rootNew, []byte(srcCode), []byte(dstCode), m.Src(),
 			"targetLabels := 1", "targetLabels := 1")
-		for i := range setupOld.Children {
-			child := setupOld.Children[i]
-			if !m.Has(child) {
-				t.Errorf("expected child %v to be paired", child)
-			}
-		}
+		testutil.AssertMappedText(t, rootOld, rootNew, []byte(srcCode), []byte(dstCode), m.Src(),
+			"targetLabels", "targetLabels")
+		testutil.AssertMappedText(t, rootOld, rootNew, []byte(srcCode), []byte(dstCode), m.Src(),
+			":=", ":=")
+		testutil.AssertMappedTextQuery(t, rootOld, rootNew, []byte(srcCode), []byte(dstCode), m.Src(),
+			testutil.TextQuery{Text: "1", Occurrence: 2},
+			testutil.TextQuery{Text: "1", Occurrence: 1})
 	})
 
 	t.Run("skips ambiguous candidate in target block", func(t *testing.T) {
@@ -862,7 +807,6 @@ func fnNew() {
 		rootOld := parseSnippet(t, srcCode, "test.go")
 		rootNew := parseSnippet(t, dstCode, "test.go")
 
-		setupOld := findFirstNode(rootOld, func(n *treesitter.ASTNode) bool { return n.Type == "short_var_declaration" })
 		anchorOld := findFirstNode(rootOld, func(n *treesitter.ASTNode) bool {
 			return n.Type == "expression_statement" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "doHeavyWork" }) != nil
 		})
@@ -875,10 +819,7 @@ func fnNew() {
 
 		RecoverCohortSiblings(rootOld, rootNew, m)
 
-		if m.Has(setupOld) {
-			dstNode := m.Get(setupOld)
-			t.Errorf("expected ambiguous candidate not to be paired, but was mapped to %v", dstNode)
-		}
+		testutil.AssertUnmappedText(t, rootOld, []byte(srcCode), m.Src(), "x := 1")
 	})
 
 	t.Run("preserves bijectivity with multiple source candidates", func(t *testing.T) {
@@ -900,17 +841,9 @@ func fnNew() {
 		rootOld := parseSnippet(t, srcCode, "test.go")
 		rootNew := parseSnippet(t, dstCode, "test.go")
 
-		declsOld := findAllNodesByType(rootOld, "short_var_declaration")
-		if len(declsOld) < 2 {
-			t.Fatalf("expected at least 2 short_var_declarations in rootOld, got %d", len(declsOld))
-		}
-		setupOld1 := declsOld[0]
-		setupOld2 := declsOld[1]
-
 		anchorOld := findFirstNode(rootOld, func(n *treesitter.ASTNode) bool {
 			return n.Type == "expression_statement" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "doHeavyWork" }) != nil
 		})
-		setupNew := findFirstNode(rootNew, func(n *treesitter.ASTNode) bool { return n.Type == "short_var_declaration" })
 		anchorNew := findFirstNode(rootNew, func(n *treesitter.ASTNode) bool {
 			return n.Type == "expression_statement" && findFirstNode(n, func(c *treesitter.ASTNode) bool { return c.Label == "doHeavyWork" }) != nil
 		})
@@ -920,16 +853,11 @@ func fnNew() {
 
 		RecoverCohortSiblings(rootOld, rootNew, m)
 
-		mappedCount := 0
-		if m.Get(setupOld1) == setupNew {
-			mappedCount++
-		}
-		if m.Get(setupOld2) == setupNew {
-			mappedCount++
-		}
-		if mappedCount != 1 {
-			t.Errorf("expected exactly 1 source node mapped to setupNew, got %d", mappedCount)
-		}
+		testutil.AssertMappedTextQuery(t, rootOld, rootNew, []byte(srcCode), []byte(dstCode), m.Src(),
+			testutil.TextQuery{Text: "x := 1", Occurrence: 1},
+			testutil.TextQuery{Text: "x := 1", Occurrence: 1})
+		testutil.AssertUnmappedTextQuery(t, rootOld, []byte(srcCode), m.Src(),
+			testutil.TextQuery{Text: "x := 1", Occurrence: 2})
 	})
 
 	t.Run("safely handles nil inputs and non-block containers", func(t *testing.T) {
@@ -945,14 +873,11 @@ func fnNew() {
 
 		leftOld := findFirstNode(rootOld, func(n *treesitter.ASTNode) bool { return n.Label == "x" })
 		leftNew := findFirstNode(rootNew, func(n *treesitter.ASTNode) bool { return n.Label == "x" })
-		rightOld := findFirstNode(rootOld, func(n *treesitter.ASTNode) bool { return n.Label == "y" })
 
 		m.Add(leftOld, leftNew)
 		RecoverCohortSiblings(rootOld, rootNew, m)
 
-		if m.Has(rightOld) {
-			t.Errorf("expected non-block child rightOld not to be paired by RecoverCohortSiblings")
-		}
+		testutil.AssertUnmappedText(t, rootOld, []byte(srcCode), m.Src(), "y", "identifier")
 	})
 }
 
@@ -983,23 +908,14 @@ func f() {
 		t.Fatal("failed to find blocks")
 	}
 
-	stmtSrc := findFirstNode(blockSrc, func(n *treesitter.ASTNode) bool { return n.Type == "short_var_declaration" })
-	stmtDst := findFirstNode(blockDst, func(n *treesitter.ASTNode) bool { return n.Type == "short_var_declaration" })
-	if stmtSrc == nil || stmtDst == nil {
-		t.Fatal("failed to find short_var_declarations")
-	}
-	idSrc := findFirstNode(stmtSrc, func(n *treesitter.ASTNode) bool { return n.Label == "err" })
-
 	m := NewMapping()
 	m.Add(rootSrc, rootDst)
 	m.Add(blockSrc, blockDst)
 
 	MatchUnmatchedLeaves(rootSrc, rootDst, m, nil)
 
-	if m.Has(idSrc) {
-		dstNode := m.Get(idSrc)
-		t.Errorf("expected 'err' across unrelated short_var_declarations to be rejected by statement boundary invariant, got mapped to %v", dstNode)
-	}
+	testutil.AssertUnmappedTextQuery(t, rootSrc, []byte(srcCode), m.Src(),
+		testutil.TextQuery{Text: "err", Occurrence: 1, Type: "identifier"})
 }
 
 func TestRecoverCohortSiblings_RelocatedCohort(t *testing.T) {
