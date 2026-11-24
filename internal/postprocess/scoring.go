@@ -168,10 +168,22 @@ func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
 		return nil
 	}
+	r = cmp.Or(r, rules.Get(n.GetLanguage()))
 	for _, c := range n.Children {
 		isBlock := (r != nil && r.IsBlock(c.Type)) || (r == nil && rules.IsBlock(c.Type))
 		if isBlock {
 			return c
+		}
+	}
+	for _, c := range n.Children {
+		isWrapOrClause := (r != nil && (r.IsWrapper(c.Type) || r.IsClause(c.Type))) ||
+			(r == nil && (rules.IsWrapper(c.Type) || rules.IsClause(c.Type)))
+		if isWrapOrClause {
+			for _, inner := range c.Children {
+				if (r != nil && r.IsBlock(inner.Type)) || (r == nil && rules.IsBlock(inner.Type)) {
+					return inner
+				}
+			}
 		}
 	}
 	if r != nil && !r.IsDeclaration(n.Type) && !r.IsBlock(n.Type) && r.IsCall(n.Type) {

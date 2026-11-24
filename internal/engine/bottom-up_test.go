@@ -4997,3 +4997,133 @@ func TestHasForeignHeaderOwner_MergedSequentialIfStatements_Python(t *testing.T)
 			"log_second(item.second)", "log_second(item.second)", "expression_statement")
 	})
 }
+
+func TestHasForeignHeaderOwner_MergedSequentialIfStatements_Rust(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `fn process(item: &Item) {
+    pre_check();
+    if item.first.is_some() {
+        log_first(&item.first);
+    }
+    if item.second.is_some() {
+        log_second(&item.second);
+    }
+    post_check();
+}
+`
+		dst := `fn process(item: &Item) {
+    pre_check();
+    if item.first.is_some() && item.second.is_some() && item.first.len() > 0 {
+        log_first(&item.first);
+        log_second(&item.second);
+    }
+    post_check();
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.rs")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.rs")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// Enclosing function maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn process(item: &Item)", "fn process(item: &Item)", "function_item")
+
+		// Surrounding statements map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"pre_check();", "pre_check();", "expression_statement")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"post_check();", "post_check();", "expression_statement")
+
+		// First if expression matches the consolidated if expression in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"if item.first.is_some()", "if item.first.is_some()", "if_expression")
+
+		// Second if expression is unmapped (deleted)
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"if item.second.is_some()", "if_expression")
+
+		// First log statement maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"log_first(&item.first);", "log_first(&item.first);", "expression_statement")
+
+		// Second log statement maps to destination
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"log_second(&item.second);", "log_second(&item.second);", "expression_statement")
+	})
+}
+
+func TestHasForeignHeaderOwner_MergedSequentialIfStatements_Zig(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `fn process(item: Item) void {
+    pre_check();
+    if (item.first != null) {
+        log_first(item.first);
+    }
+    if (item.second != null) {
+        log_second(item.second);
+    }
+    post_check();
+}
+`
+		dst := `fn process(item: Item) void {
+    pre_check();
+    if (item.first != null and item.second != null and item.first.len > 0) {
+        log_first(item.first);
+        log_second(item.second);
+    }
+    post_check();
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.zig")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.zig")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// Enclosing function maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn process(item: Item) void", "fn process(item: Item) void", "function_declaration")
+
+		// Surrounding statements map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"pre_check();", "pre_check();", "expression_statement")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"post_check();", "post_check();", "expression_statement")
+
+		// First if statement matches the consolidated if statement in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"if (item.first != null)", "if (item.first != null and item.second != null and item.first.len > 0)", "if_statement")
+
+		// Second if statement is unmapped (deleted)
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"if (item.second != null)", "if_statement")
+
+		// First log statement maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"log_first(item.first);", "log_first(item.first);", "expression_statement")
+
+		// Second log statement maps to destination
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"log_second(item.second);", "log_second(item.second);", "expression_statement")
+	})
+}

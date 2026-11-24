@@ -1082,6 +1082,22 @@ func isMergedSiblingContainer(srcParent, dstParent *treesitter.ASTNode, ms *engi
 	if mappedDstParent == nil || mappedDstParent == srcParent {
 		return false
 	}
+	r := rules.Get(srcParent.GetLanguage())
+	stmt1 := engine.FindEnclosingStatement(mappedDstParent, r)
+	stmt2 := engine.FindEnclosingStatement(srcParent, r)
+	dstStmt := engine.FindEnclosingStatement(dstParent, r)
+	if stmt1 != nil && stmt2 != nil && dstStmt != nil && stmt1 != stmt2 && stmt1.Parent != nil && stmt1.Parent == stmt2.Parent {
+		if ms.Src()[stmt1] == dstStmt || ms.Dst()[dstStmt] == stmt1 {
+			return true
+		}
+		c1 := mappedDstParent.Parent
+		for c1 != nil && c1 != stmt1.Parent {
+			if ms.Src()[c1] == dstParent.Parent || ms.Src()[c1] == dstStmt || ms.Dst()[dstParent.Parent] == c1 {
+				return true
+			}
+			c1 = c1.Parent
+		}
+	}
 	p1 := mappedDstParent.Parent
 	p2 := srcParent.Parent
 	if p1 == nil || p2 == nil || p1.Parent == nil || p1.Parent != p2.Parent {

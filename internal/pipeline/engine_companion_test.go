@@ -693,6 +693,96 @@ func process(ja Action) {
 `)
 }
 
+func TestPipeline_MergedSequentialIfStatements_Rust(t *testing.T) {
+	src := `fn process(item: &Item) {
+	if item.first.is_some() {
+		log_first(&item.first);
+	}
+
+	if item.second.is_some() {
+		log_second(&item.second);
+	}
+}
+`
+	dst := `fn process(item: &Item) {
+	if item.first.is_some() && item.second.is_some() && item.first.len() > 0 {
+		log_first(&item.first);
+		log_second(&item.second);
+	}
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "a.rs", "b.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn process(item: &Item) {
+	if item.first.is_some() {
+		log_first(&item.first);
+	}
+
+	<del>if item.second.is_some() {</del>
+		<mov>log_second(&item.second);</mov>
+	<del>}</del>
+}
+`)
+
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn process(item: &Item) {
+	if item.first.is_some() <ins>&& item.second.is_some() && item.first.len() > 0</ins> {
+		log_first(&item.first);
+		<mov>log_second(&item.second);</mov>
+	}
+}
+`)
+}
+
+func TestPipeline_MergedSequentialIfStatements_Zig(t *testing.T) {
+	src := `fn process(item: Item) void {
+	if (item.first != null) {
+		log_first(item.first);
+	}
+
+	if (item.second != null) {
+		log_second(item.second);
+	}
+}
+`
+	dst := `fn process(item: Item) void {
+	if (item.first != null and item.second != null and item.first.len > 0) {
+		log_first(item.first);
+		log_second(item.second);
+	}
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "a.zig", "b.zig", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `fn process(item: Item) void {
+	if (item.first != null) {
+		log_first(item.first);
+	}
+
+	<del>if (item.second != null) {</del>
+		<mov>log_second(item.second);</mov>
+	<del>}</del>
+}
+`)
+
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `fn process(item: Item) void {
+	if (item.first != null <ins>and item.second != null and item.first.len > 0</ins>) {
+		log_first(item.first);
+		<mov>log_second(item.second);</mov>
+	}
+}
+`)
+}
+
 func TestPipeline_IfElseBlockArgumentAdditionRecovery(t *testing.T) {
 	src := []byte(`package main
 

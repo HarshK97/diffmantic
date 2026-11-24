@@ -681,15 +681,26 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 		return false
 	}
 
+	unwrapExpr := func(n *treesitter.ASTNode) *treesitter.ASTNode {
+		if n == nil {
+			return nil
+		}
+		isExprStmt := (r != nil && r.IsExpressionStatement(n.Type)) || (r == nil && rules.IsExpressionStatement(n.Type))
+		if isExprStmt && len(n.Children) > 0 {
+			return n.Children[0]
+		}
+		return n
+	}
+
 	getConstruct := func(n *treesitter.ASTNode) *treesitter.ASTNode {
 		if n == nil {
 			return nil
 		}
 		if findBodyBlock(n, r) != nil {
-			return n
+			return unwrapExpr(n)
 		}
 		if n.Parent != nil && findBodyBlock(n.Parent, r) == n {
-			return n.Parent
+			return unwrapExpr(n.Parent)
 		}
 		return nil
 	}
@@ -719,7 +730,11 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 		}
 
 		for _, child := range constr.Children {
-			if child == body {
+			if child == body || child.Contains(body) {
+				continue
+			}
+			isClause := (r != nil && r.IsClause(child.Type)) || (r == nil && rules.IsClause(child.Type))
+			if isClause {
 				continue
 			}
 			checkNode(child)
@@ -734,10 +749,10 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 		return effectiveForeign > 0 && effectiveForeign >= shared
 	}
 
-	if hasMismatch(constr2, cmp.Or(constr1, t1), m.Dst()) {
+	if hasMismatch(constr2, cmp.Or(constr1, unwrapExpr(t1)), m.Dst()) {
 		return true
 	}
-	if hasMismatch(constr1, cmp.Or(constr2, c), m.Src()) {
+	if hasMismatch(constr1, cmp.Or(constr2, unwrapExpr(c)), m.Src()) {
 		return true
 	}
 
@@ -752,7 +767,7 @@ func headerHasLogicalOperator(constr, body *treesitter.ASTNode, r *rules.Rules) 
 	}
 	r = cmp.Or(r, rules.Get(constr.GetLanguage()))
 	for _, child := range constr.Children {
-		if child == body {
+		if child == body || child.Contains(body) {
 			break
 		}
 		if hasLogicalOp(child, r) {
@@ -797,7 +812,18 @@ func isAdjacentSiblingGuardClause(target, mappedNode *treesitter.ASTNode, r *rul
 	if stmtTarget == nil || stmtMapped == nil || stmtTarget == stmtMapped {
 		return false
 	}
-	if findBodyBlock(stmtTarget, r) == nil || findBodyBlock(stmtMapped, r) == nil {
+	findConstructBody := func(stmt *treesitter.ASTNode) *treesitter.ASTNode {
+		if b := findBodyBlock(stmt, r); b != nil {
+			return b
+		}
+		for _, c := range stmt.Children {
+			if b := findBodyBlock(c, r); b != nil {
+				return b
+			}
+		}
+		return nil
+	}
+	if findConstructBody(stmtTarget) == nil || findConstructBody(stmtMapped) == nil {
 		return false
 	}
 	parent := stmtTarget.Parent
