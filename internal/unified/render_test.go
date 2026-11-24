@@ -8,7 +8,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/pipeline"
 	"github.com/HarshK97/diffmantic/internal/serialize"
 	"github.com/HarshK97/diffmantic/internal/testutil"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func fullEnvelopeOpts() serialize.EnvelopeOptions {
@@ -1142,11 +1141,6 @@ func TestRender_ShowStyleChanges(t *testing.T) {
 }
 
 func TestPython_StyleNormalization_FullEngine(t *testing.T) {
-	r := rules.Get("python")
-	if r == nil {
-		t.Fatal("rules for python not found")
-	}
-
 	src := []byte(`def process_data(items, factor):
     """Calculate normalized scores."""
     total = 0
@@ -1190,14 +1184,15 @@ func TestPython_StyleNormalization_FullEngine(t *testing.T) {
 	if dr.MatchResult == nil || dr.MatchResult.Mappings == nil {
 		t.Fatal("expected non-nil mappings")
 	}
-	for _, n := range dr.SrcAST.Descendants() {
-		if r.IsContainerDeclaration(n.Type) {
-			mapped := dr.MatchResult.Mappings.Src()[n]
-			if mapped == nil || !r.IsContainerDeclaration(mapped.Type) {
-				t.Errorf("expected enclosing declaration %s to map in place", n.Type)
-			}
-		}
-	}
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"def process_data(items, factor):", "def process_data(items, factor):",
+	)
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"total = 0", "total = 0",
+	)
+	testutil.AssertMappedText(t, dr.SrcAST, dr.DstAST, src, dst, dr.MatchResult.Mappings.Src(),
+		"return total", "return total",
+	)
 
 	// 4. Default unified diff: suppressed (empty string, matching Difftastic).
 	outDefault := Render("data.py", "data.py", src, dst, dr.Envelope, RenderOptions{ShowStyleChanges: false})

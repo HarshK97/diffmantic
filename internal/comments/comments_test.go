@@ -1117,9 +1117,7 @@ func check() {
 		if srcComments[0].AnchorNode == nil || dstComments[0].AnchorNode == nil {
 			t.Fatalf("expected comments to remain anchored, got src=%+v dst=%+v", srcComments[0], dstComments[0])
 		}
-		if got := match.Mappings.Src()[srcComments[0].AnchorNode]; got != dstComments[0].AnchorNode {
-			t.Errorf("comment anchor did not map in place: got %v, want %v", got, dstComments[0].AnchorNode)
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(), "target(\"unchanged\")", "target(\"unchanged\")")
 
 		result := DiffComments(srcComments, dstComments, match.Mappings)
 		if len(result.Actions) != 2 {
@@ -1439,32 +1437,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     pub paging_mode: String,
 }
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.rs")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+			newAST, err := treesitter.Parse(newBytes, "test.rs")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: struct Opt must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected struct_item to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"pub struct Opt", "pub struct Opt",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("rust")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: field declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"pub width: Option<String>", "pub width: Option<String>",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"pub paging_mode: String", "pub paging_mode: String",
+			)
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
 			res := DiffComments(srcComments, dstComments, mr.Mappings)
@@ -1476,8 +1474,8 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
 			for _, act := range res.Actions {
 				if act.Type == actions.Update {
 					// Make sure the pager comment doesn't pair with the width comment across fields.
-					if (act.Node != nil && act.DestNode != nil && act.Node.StartRow == 6 && act.DestNode.StartRow == 2) ||
-						((strings.Contains(act.Node.Label, "default") || strings.Contains(act.Node.Label, "pager")) &&
+					if act.Node != nil && act.DestNode != nil &&
+						((strings.Contains(act.Node.Label, "default pager") || strings.Contains(act.Node.Label, "pager")) &&
 							(strings.Contains(act.DestNode.Label, "equivalent") || strings.Contains(act.DestNode.Label, "holding"))) {
 						foundCrossFieldUpdate = true
 					}
@@ -1532,32 +1530,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     }
 }
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.ts")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.ts")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.ts")
+			newAST, err := treesitter.Parse(newBytes, "test.ts")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: class Component must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected class_declaration to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"class Component", "class Component",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("typescript")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: method declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"onClick()", "onClick()",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"onKeydown()", "onKeydown()",
+			)
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
 			res := DiffComments(srcComments, dstComments, mr.Mappings)
@@ -1617,32 +1615,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     def handle_second(self):
         return "second"
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.py")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.py")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.py")
+			newAST, err := treesitter.Parse(newBytes, "test.py")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: class Controller must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected class_definition to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"class Controller:", "class Controller:",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("python")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: method declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"def handle_first(self):", "def handle_first(self):",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"def handle_second(self):", "def handle_second(self):",
+			)
 
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
@@ -1697,32 +1695,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     paging: []const u8,
 };
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.zig")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.zig")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.zig")
+			newAST, err := treesitter.Parse(newBytes, "test.zig")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: struct Config must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected struct to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"const Config = struct", "const Config = struct",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("zig")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: field declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"width: u32", "width: u32",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"paging: []const u8", "paging: []const u8",
+			)
 
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
