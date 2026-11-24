@@ -1899,6 +1899,126 @@ func f() {
 	})
 }
 
+func TestBottomUp_InlinedVar_BinaryChain(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func check(r *Rules, n1 *Node) {
+	var isIgnored bool
+	isStmtOrDecl := (r != nil && (r.IsStatement(n1.Type) || r.IsDeclaration(n1.Type))) ||
+		(r == nil && (rules.IsStatement(n1.Type) || rules.IsDeclaration(n1.Type)))
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !isStmtOrDecl) || r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	} else {
+		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
+			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
+			(rules.IsWrapper(n1.Type) && !isStmtOrDecl) || rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
+	}
+}
+`)
+
+		newSrc := []byte(`package main
+
+func check(r *Rules, n1 *Node) {
+	var isIgnored bool
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !r.IsStatement(n1.Type) && !r.IsDeclaration(n1.Type)) ||
+			r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	} else {
+		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
+			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
+			(rules.IsWrapper(n1.Type) && !rules.IsStatement(n1.Type) && !rules.IsDeclaration(n1.Type)) ||
+			rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
+	}
+}
+`)
+
+		oldTree, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		newTree, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if oldTree.HasError || oldTree.ParseErrorCount > 0 {
+			t.Fatalf("expected oldTree to have zero parse errors, got %d", oldTree.ParseErrorCount)
+		}
+		if newTree.HasError || newTree.ParseErrorCount > 0 {
+			t.Fatalf("expected newTree to have zero parse errors, got %d", newTree.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(oldTree, newTree, oldSrc, newSrc, part)
+		m := mr.Mappings
+
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "func check", "func check", "function_declaration")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "var isIgnored bool", "var isIgnored bool", "var_declaration")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "if r != nil", "if r != nil", "if_statement")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "isIgnored = r.IsDelimiter", "isIgnored = r.IsDelimiter", "assignment_statement")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "isIgnored = rules.IsDelimiter", "isIgnored = rules.IsDelimiter", "assignment_statement")
+
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsDelimiter(n1.Type, n1.Label)", "r.IsDelimiter(n1.Type, n1.Label)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsOperatorLiteral(n1.Type)", "r.IsOperatorLiteral(n1.Type)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsIdentifier(n1.Type)", "r.IsIdentifier(n1.Type)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsWrapper(n1.Type)", "r.IsWrapper(n1.Type)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsBlock(n1.Type)", "r.IsBlock(n1.Type)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsFlattened(n1.Type)", "r.IsFlattened(n1.Type)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsPunctuation(n1.Type)", "r.IsPunctuation(n1.Type)")
+		testutil.AssertMappedText(t, oldTree, newTree, oldSrc, newSrc, m.Src(), "r.IsPunctuation(n1.Label)", "r.IsPunctuation(n1.Label)")
+
+		// Sibling binary expressions chaining untouched operands should map
+		// symmetrically instead of cross-pairing with outer expressions.
+		findBinWithRHS := func(tree *treesitter.ASTNode, src []byte, rhsText string) *treesitter.ASTNode {
+			for _, n := range tree.PreOrder() {
+				if n.Type == "binary_expression" && len(n.Children) >= 3 {
+					rhs := n.Children[len(n.Children)-1]
+					if string(src[rhs.StartByte:rhs.EndByte]) == rhsText {
+						return n
+					}
+				}
+			}
+			return nil
+		}
+
+		oldBlockBin := findBinWithRHS(oldTree, oldSrc, "r.IsBlock(n1.Type)")
+		newBlockBin := findBinWithRHS(newTree, newSrc, "r.IsBlock(n1.Type)")
+		if oldBlockBin == nil || newBlockBin == nil {
+			t.Fatalf("failed to locate r.IsBlock binary expressions: old=%v new=%v", oldBlockBin, newBlockBin)
+		}
+		if got := m.Src()[oldBlockBin]; got != newBlockBin {
+			t.Errorf("expected r.IsBlock binary expression to map in place, got %v", got)
+		}
+
+		oldPunctBin := findBinWithRHS(oldTree, oldSrc, "r.IsPunctuation(n1.Type)")
+		newPunctBin := findBinWithRHS(newTree, newSrc, "r.IsPunctuation(n1.Type)")
+		if oldPunctBin == nil || newPunctBin == nil {
+			t.Fatalf("failed to locate r.IsPunctuation binary expressions: old=%v new=%v", oldPunctBin, newPunctBin)
+		}
+		if got := m.Src()[oldPunctBin]; got != newPunctBin {
+			t.Errorf("expected r.IsPunctuation binary expression to map in place, got %v", got)
+		}
+
+		oldElseBlockBin := findBinWithRHS(oldTree, oldSrc, "rules.IsBlock(n1.Type)")
+		newElseBlockBin := findBinWithRHS(newTree, newSrc, "rules.IsBlock(n1.Type)")
+		if oldElseBlockBin == nil || newElseBlockBin == nil {
+			t.Fatalf("failed to locate rules.IsBlock binary expressions: old=%v new=%v", oldElseBlockBin, newElseBlockBin)
+		}
+		if got := m.Src()[oldElseBlockBin]; got != newElseBlockBin {
+			t.Errorf("expected rules.IsBlock binary expression to map in place, got %v", got)
+		}
+	})
+}
+
 func TestContestContainers_LinePartition(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		oldSrc := []byte(`package main
