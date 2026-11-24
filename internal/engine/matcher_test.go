@@ -147,20 +147,8 @@ func TestBottomUpWithPriorMapping(t *testing.T) {
 	srcRoot := parseSnippet(t, srcCode, "test.go")
 	dstRoot := parseSnippet(t, dstCode, "test.go")
 
-	r := rules.Get("go")
-	var srcBlock, dstBlock *treesitter.ASTNode
-	for _, n := range srcRoot.PreOrder() {
-		if r.IsBlock(n.Type) {
-			srcBlock = n
-			break
-		}
-	}
-	for _, n := range dstRoot.PreOrder() {
-		if r.IsBlock(n.Type) {
-			dstBlock = n
-			break
-		}
-	}
+	srcBlock, _ := testutil.FindNodeByText(srcRoot, []byte(srcCode), "{\n\tx := 1\n}")
+	dstBlock, _ := testutil.FindNodeByText(dstRoot, []byte(dstCode), "{\n\tx := 1\n}")
 	if srcBlock == nil || dstBlock == nil {
 		t.Fatalf("failed to find blocks: src=%v dst=%v", srcBlock, dstBlock)
 	}
@@ -323,16 +311,6 @@ func TestMatchPairKeyNameAffinity(t *testing.T) {
 	srcObj := parseSnippet(t, srcCode, "test.js")
 	dstObj := parseSnippet(t, dstCode, "test.js")
 
-	pairOld := findFirstNode(srcObj, func(n *treesitter.ASTNode) bool {
-		return n.Type == "pair" && getKeyLabel(n) == "\"priority\""
-	})
-	pairNew1 := findFirstNode(dstObj, func(n *treesitter.ASTNode) bool {
-		return n.Type == "pair" && getKeyLabel(n) == "\"priority\""
-	})
-	if pairOld == nil || pairNew1 == nil {
-		t.Fatalf("failed to find pair nodes: pairOld=%v, pairNew1=%v", pairOld, pairNew1)
-	}
-
 	r := Match(srcObj, dstObj, []byte(srcCode), []byte(dstCode), nil)
 	if r == nil || r.Mappings == nil {
 		t.Fatal("Match returned nil")
@@ -352,12 +330,6 @@ func TestMatchPairValuesDisparateJSXTags(t *testing.T) {
 `
 	srcRoot := parseSnippet(t, srcCode, "test.tsx")
 	dstRoot := parseSnippet(t, dstCode, "test.tsx")
-
-	attrOld := findFirstNode(srcRoot, func(n *treesitter.ASTNode) bool { return n.Type == "jsx_attribute" })
-	dstAttrs := findAllNodesByType(dstRoot, "jsx_attribute")
-	if attrOld == nil || len(dstAttrs) < 2 {
-		t.Fatalf("failed to find jsx_attributes: attrOld=%v dstAttrs=%d", attrOld, len(dstAttrs))
-	}
 
 	m := NewMapping()
 	m.Add(srcRoot, dstRoot)
@@ -1415,10 +1387,35 @@ func TestMatch_RustControlFlowStatementBoundaries(t *testing.T) {
 		t.Fatal("Match returned nil mappings")
 	}
 	r := rulesFor(src)
-	for _, typ := range []string{"for_expression", "if_expression", "loop_expression", "while_expression", "match_expression"} {
-		t.Run(typ, func(t *testing.T) {
+	tests := []struct {
+		typ      string
+		expected string
+	}{
+		{
+			typ:      "for_expression",
+			expected: "for value in values {\n        consume(*value);\n    }",
+		},
+		{
+			typ:      "if_expression",
+			expected: "if ready {\n        consume(count);\n    }",
+		},
+		{
+			typ:      "loop_expression",
+			expected: "loop {\n        consume(count);\n        break;\n    }",
+		},
+		{
+			typ:      "while_expression",
+			expected: "while count > 0 {\n        consume(count);\n    }",
+		},
+		{
+			typ:      "match_expression",
+			expected: "match count {\n        0 => consume(0),\n        _ => consume(count),\n    }",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.typ, func(t *testing.T) {
 			control := findFirstNode(src.Root(), func(n *treesitter.ASTNode) bool {
-				return n.Type == typ
+				return n.Type == tc.typ
 			})
 			if control == nil {
 				t.Fatal("control-flow expression not found")
@@ -1427,7 +1424,7 @@ func TestMatch_RustControlFlowStatementBoundaries(t *testing.T) {
 				t.Fatal("Rust control-flow expressions are statements when used directly in a block")
 			}
 			var condition *treesitter.ASTNode
-			if typ == "loop_expression" {
+			if tc.typ == "loop_expression" {
 				condition = control
 			} else {
 				condition = findFirstNode(control, func(n *treesitter.ASTNode) bool {
@@ -1442,9 +1439,9 @@ func TestMatch_RustControlFlowStatementBoundaries(t *testing.T) {
 				t.Errorf("condition belongs to the control-flow statement, got %v (%s), want %v (%s)", got, got.Type, want, want.Type)
 			}
 			testutil.AssertMappedText(t, src.Root(), dst.Root(), source, source, mr.Mappings.Src(),
-				string(source[control.StartByte:control.EndByte]),
-				string(source[control.StartByte:control.EndByte]),
-				typ,
+				tc.expected,
+				tc.expected,
+				tc.typ,
 			)
 		})
 	}

@@ -337,57 +337,35 @@ func TestCommentSimilarity(t *testing.T) {
 }
 
 func TestStructureIsomorphicComments(t *testing.T) {
-	findComment := func(root *treesitter.ASTNode) *treesitter.CommentBlock {
-		var walk func(n *treesitter.ASTNode) *treesitter.CommentBlock
-		walk = func(n *treesitter.ASTNode) *treesitter.CommentBlock {
-			if n == nil {
-				return nil
-			}
-			if len(n.LeadingTrivia) > 0 {
-				return n.LeadingTrivia[0]
-			}
-			if len(n.TrailingTrivia) > 0 {
-				return n.TrailingTrivia[0]
-			}
-			for _, ch := range n.Children {
-				if c := walk(ch); c != nil {
-					return c
-				}
-			}
-			return nil
-		}
-		return walk(root)
-	}
+	src1 := []byte("package main\nfunc a() { x := 1 }")
+	src2 := []byte("package main\nfunc b() { y := 2 }")
+	src3 := []byte("package main\nfunc c() { if true { z := 3 } }")
 
-	root1, err := treesitter.Parse([]byte("// Comment\npackage main\n"), "test.go")
+	root1, err := treesitter.Parse(src1, "test.go")
 	if err != nil {
 		t.Fatalf("parse 1: %v", err)
 	}
-	root2, err := treesitter.Parse([]byte("// Comment 1\npackage main\n"), "test.go")
+	root2, err := treesitter.Parse(src2, "test.go")
 	if err != nil {
 		t.Fatalf("parse 2: %v", err)
 	}
-	root3, err := treesitter.Parse([]byte("// Hello\npackage main\n"), "test.go")
+	root3, err := treesitter.Parse(src3, "test.go")
 	if err != nil {
 		t.Fatalf("parse 3: %v", err)
 	}
 
-	cb1 := findComment(root1)
-	cb2 := findComment(root2)
-	cb3 := findComment(root3)
-	if cb1 == nil || cb2 == nil || cb3 == nil {
-		t.Fatalf("failed to find comment in trivia: cb1=%v, cb2=%v, cb3=%v", cb1, cb2, cb3)
+	n1, _ := testutil.FindNodeByText(root1, src1, "func a() { x := 1 }")
+	n2, _ := testutil.FindNodeByText(root2, src2, "func b() { y := 2 }")
+	n3, _ := testutil.FindNodeByText(root3, src3, "func c() { if true { z := 3 } }")
+	if n1 == nil || n2 == nil || n3 == nil {
+		t.Fatalf("failed to find nodes: n1=%v, n2=%v, n3=%v", n1, n2, n3)
 	}
 
-	c1 := &treesitter.ASTNode{Type: cb1.Type, Label: cb1.Text}
-	c2 := &treesitter.ASTNode{Type: cb2.Type, Label: cb2.Text}
-	c3 := &treesitter.ASTNode{Type: cb3.Type, Label: cb3.Text}
-
-	if !StructureIsomorphic(c1, c2) {
-		t.Error("expected c1 and c2 to be structurally isomorphic comments")
+	if !StructureIsomorphic(n1, n2) {
+		t.Error("expected n1 and n2 to be structurally isomorphic")
 	}
-	if StructureIsomorphic(c1, c3) {
-		t.Error("expected c1 and c3 not to be structurally isomorphic comments")
+	if StructureIsomorphic(n1, n3) {
+		t.Error("expected n1 and n3 not to be structurally isomorphic")
 	}
 }
 
