@@ -11,459 +11,481 @@ import (
 
 func TestRevokeOrphanedGlue(t *testing.T) {
 	// Parent with orphaned glue: operator matched, sibling subtree unmatched.
-	parent := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Node("call_expression", "", testutil.Leaf("identifier", "NewMapping")),
-	)
-	glue, unmatched := parent.Children[1], parent.Children[2]
-	dstParent := testutil.Node("other_construct", "",
-		testutil.Leaf("identifier", "y"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-	)
+	srcBytes := []byte("package main\nfunc f() {\n\tm := NewMapping()\n}")
+	dstBytes := []byte("package main\nfunc g() {\n\ty := 1\n}")
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	glue, err := testutil.FindNodeByText(srcTree, srcBytes, ":=")
+	if err != nil {
+		t.Fatalf("find glue: %v", err)
+	}
+	dstGlue, err := testutil.FindNodeByText(dstTree, dstBytes, ":=")
+	if err != nil {
+		t.Fatalf("find dstGlue: %v", err)
+	}
 	m := NewMapping()
-	m.Add(glue, dstParent.Children[1])
+	m.Add(glue, dstGlue)
 	RevokeOrphanedGlue(m)
-	if m.Has(glue) {
-		t.Fatal("reparented orphaned glue should be revoked")
-	}
-	if m.Has(unmatched) {
-		t.Fatal("unmatched sibling should stay unmapped")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), ":=")
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "NewMapping()")
 
 	// Reparented glue revoked even when siblings mapped elsewhere
 	// (scattered matches in repetitive code): glue must never move.
 	m5 := NewMapping()
-	srcScat := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "a"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "b"),
-	)
-	dstScat := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "c"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "d"),
-	)
-	m5.Add(srcScat.Children[0], testutil.Leaf("identifier", "elsewhere"))
-	m5.Add(srcScat.Children[1], dstScat.Children[1])
-	m5.Add(srcScat.Children[2], testutil.Leaf("identifier", "elsewhere2"))
+	srcScatBytes := []byte("package main\nfunc f() {\n\ta := b\n}")
+	dstScatBytes := []byte("package main\nfunc g() {\n\tc := d\n}")
+	elsewhereBytes := []byte("package main\nfunc h() {\n\t_ = elsewhere\n\t_ = elsewhere2\n}")
+	srcScatTree, err := treesitter.Parse(srcScatBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcScat: %v", err)
+	}
+	dstScatTree, err := treesitter.Parse(dstScatBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstScat: %v", err)
+	}
+	elsewhereTree, err := treesitter.Parse(elsewhereBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse elsewhere: %v", err)
+	}
+	srcScatA, _ := testutil.FindNodeByText(srcScatTree, srcScatBytes, "a")
+	srcScatGlue, _ := testutil.FindNodeByText(srcScatTree, srcScatBytes, ":=")
+	srcScatB, _ := testutil.FindNodeByText(srcScatTree, srcScatBytes, "b")
+	dstScatGlue, _ := testutil.FindNodeByText(dstScatTree, dstScatBytes, ":=")
+	ew1, _ := testutil.FindNodeByText(elsewhereTree, elsewhereBytes, "elsewhere")
+	ew2, _ := testutil.FindNodeByText(elsewhereTree, elsewhereBytes, "elsewhere2")
+
+	m5.Add(srcScatA, ew1)
+	m5.Add(srcScatGlue, dstScatGlue)
+	m5.Add(srcScatB, ew2)
 	RevokeOrphanedGlue(m5)
-	if m5.Has(srcScat.Children[1]) {
-		t.Fatal("reparented glue with scattered siblings should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcScatTree, srcScatBytes, m5.Src(), ":=")
+
 	// Stationary glue (same container): kept even with unmatched sibling.
-	dstSame := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-	)
-	m4 := NewMapping()
-	m4.Add(parent, dstSame)
-	m4.Add(glue, dstSame.Children[1])
-	RevokeOrphanedGlue(m4)
-	if !m4.Has(glue) {
-		t.Fatal("stationary glue should be kept")
+	srcSameBytes := []byte("package main\nfunc f() {\n\tm := NewMapping()\n}")
+	dstSameBytes := []byte("package main\nfunc f() {\n\tm := 1\n}")
+	srcSameTree, err := treesitter.Parse(srcSameBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcSame: %v", err)
 	}
+	dstSameTree, err := treesitter.Parse(dstSameBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstSame: %v", err)
+	}
+	srcFunc, _ := testutil.FindNodeByText(srcSameTree, srcSameBytes, "func f() {\n\tm := NewMapping()\n}")
+	dstFunc, _ := testutil.FindNodeByText(dstSameTree, dstSameBytes, "func f() {\n\tm := 1\n}")
+	srcBlock, _ := testutil.FindNodeByText(srcSameTree, srcSameBytes, "{\n\tm := NewMapping()\n}")
+	dstBlock, _ := testutil.FindNodeByText(dstSameTree, dstSameBytes, "{\n\tm := 1\n}")
+	srcDecl, _ := testutil.FindNodeByText(srcSameTree, srcSameBytes, "m := NewMapping()")
+	dstDecl, _ := testutil.FindNodeByText(dstSameTree, dstSameBytes, "m := 1")
+	srcSameGlue, _ := testutil.FindNodeByText(srcSameTree, srcSameBytes, ":=")
+	dstSameGlue, _ := testutil.FindNodeByText(dstSameTree, dstSameBytes, ":=")
+	m4 := NewMapping()
+	m4.Add(srcFunc, dstFunc)
+	m4.Add(srcBlock, dstBlock)
+	m4.Add(srcDecl, dstDecl)
+	m4.Add(srcSameGlue, dstSameGlue)
+	RevokeOrphanedGlue(m4)
+	testutil.AssertMappedText(t, srcSameTree, dstSameTree, srcSameBytes, dstSameBytes, m4.Src(), ":=", ":=")
 
 	// Fully matched construct: glue kept.
 	m2 := NewMapping()
-	parent2 := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "x"),
-	)
-	dstFull := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "m"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "x"),
-	)
-	m2.Add(parent2, dstFull)
-	m2.Add(parent2.Children[0], dstFull.Children[0])
-	m2.Add(parent2.Children[1], dstFull.Children[1])
-	m2.Add(parent2.Children[2], dstFull.Children[2])
-	RevokeOrphanedGlue(m2)
-	if !m2.Has(parent2.Children[1]) {
-		t.Fatal("glue in fully matched construct should be kept")
+	srcFullBytes := []byte("package main\nfunc f() {\n\tm := x\n}")
+	dstFullBytes := []byte("package main\nfunc f() {\n\tm := x\n}")
+	srcFullTree, err := treesitter.Parse(srcFullBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcFull: %v", err)
 	}
+	dstFullTree, err := treesitter.Parse(dstFullBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstFull: %v", err)
+	}
+	srcFullDecl, _ := testutil.FindNodeByText(srcFullTree, srcFullBytes, "m := x")
+	dstFullDecl, _ := testutil.FindNodeByText(dstFullTree, dstFullBytes, "m := x")
+	srcFullM, _ := testutil.FindNodeByText(srcFullTree, srcFullBytes, "m")
+	dstFullM, _ := testutil.FindNodeByText(dstFullTree, dstFullBytes, "m")
+	srcFullGlue, _ := testutil.FindNodeByText(srcFullTree, srcFullBytes, ":=")
+	dstFullGlue, _ := testutil.FindNodeByText(dstFullTree, dstFullBytes, ":=")
+	srcFullX, _ := testutil.FindNodeByText(srcFullTree, srcFullBytes, "x")
+	dstFullX, _ := testutil.FindNodeByText(dstFullTree, dstFullBytes, "x")
+
+	m2.Add(srcFullDecl, dstFullDecl)
+	m2.Add(srcFullM, dstFullM)
+	m2.Add(srcFullGlue, dstFullGlue)
+	m2.Add(srcFullX, dstFullX)
+	RevokeOrphanedGlue(m2)
+	testutil.AssertMappedText(t, srcFullTree, dstFullTree, srcFullBytes, dstFullBytes, m2.Src(), ":=", ":=")
 
 	// Moving container with zero non-glue children matched:
 	// Reparented across blocks, only glue matched -> revoked.
-	srcBlock := testutil.Node("block", "")
-	dstBlock := testutil.Node("block", "")
-	srcMoving := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "srcVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "oldVal"),
-	)
-	srcMoving.Parent = srcBlock
-	dstMoving := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "dstVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "newVal"),
-	)
-	dstMoving.Parent = dstBlock
+	srcMoveBytes := []byte("package main\nfunc f() {\n\tsrcVar := oldVal\n}")
+	dstMoveBytes := []byte("package main\nfunc g() {\n\tdstVar := newVal\n}")
+	srcMoveTree, err := treesitter.Parse(srcMoveBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcMove: %v", err)
+	}
+	dstMoveTree, err := treesitter.Parse(dstMoveBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstMove: %v", err)
+	}
+	srcMoveDecl, _ := testutil.FindNodeByText(srcMoveTree, srcMoveBytes, "srcVar := oldVal")
+	dstMoveDecl, _ := testutil.FindNodeByText(dstMoveTree, dstMoveBytes, "dstVar := newVal")
+	srcMoveGlue, _ := testutil.FindNodeByText(srcMoveTree, srcMoveBytes, ":=")
+	dstMoveGlue, _ := testutil.FindNodeByText(dstMoveTree, dstMoveBytes, ":=")
 	mMoving := NewMapping()
-	mMoving.Add(srcMoving, dstMoving)
-	mMoving.Add(srcMoving.Children[1], dstMoving.Children[1])
+	mMoving.Add(srcMoveDecl, dstMoveDecl)
+	mMoving.Add(srcMoveGlue, dstMoveGlue)
 	RevokeOrphanedGlue(mMoving)
-	if mMoving.Has(srcMoving) {
-		t.Fatal("moving container with zero non-glue matches should be revoked")
-	}
-	if mMoving.Has(srcMoving.Children[1]) {
-		t.Fatal("glue inside revoked moving container should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcMoveTree, srcMoveBytes, mMoving.Src(), "srcVar := oldVal")
+	testutil.AssertUnmappedText(t, srcMoveTree, srcMoveBytes, mMoving.Src(), ":=")
 
 	// Moving container with only a bare identifier or single-child wrapper matched:
 	// bare tokens (height = 1) do not have structural mass to anchor a moving container across blocks.
-	srcMoveLeaf := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "commonVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "oldVal"),
-	)
-	srcMoveLeaf.Parent = srcBlock
-	dstMoveLeaf := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "commonVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "newVal"),
-	)
-	dstMoveLeaf.Parent = dstBlock
+	srcMoveLeafBytes := []byte("package main\nfunc f() {\n\tcommonVar := oldVal\n}")
+	dstMoveLeafBytes := []byte("package main\nfunc g() {\n\tcommonVar := newVal\n}")
+	srcMoveLeafTree, err := treesitter.Parse(srcMoveLeafBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcMoveLeaf: %v", err)
+	}
+	dstMoveLeafTree, err := treesitter.Parse(dstMoveLeafBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstMoveLeaf: %v", err)
+	}
+	srcLeafDecl, _ := testutil.FindNodeByText(srcMoveLeafTree, srcMoveLeafBytes, "commonVar := oldVal")
+	dstLeafDecl, _ := testutil.FindNodeByText(dstMoveLeafTree, dstMoveLeafBytes, "commonVar := newVal")
+	srcCommonVar, _ := testutil.FindNodeByText(srcMoveLeafTree, srcMoveLeafBytes, "commonVar")
+	dstCommonVar, _ := testutil.FindNodeByText(dstMoveLeafTree, dstMoveLeafBytes, "commonVar")
+	srcLeafGlue, _ := testutil.FindNodeByText(srcMoveLeafTree, srcMoveLeafBytes, ":=")
+	dstLeafGlue, _ := testutil.FindNodeByText(dstMoveLeafTree, dstMoveLeafBytes, ":=")
 	mRevokeLeaf := NewMapping()
-	mRevokeLeaf.Add(srcMoveLeaf, dstMoveLeaf)
-	mRevokeLeaf.Add(srcMoveLeaf.Children[0], dstMoveLeaf.Children[0])
-	mRevokeLeaf.Add(srcMoveLeaf.Children[1], dstMoveLeaf.Children[1])
+	mRevokeLeaf.Add(srcLeafDecl, dstLeafDecl)
+	mRevokeLeaf.Add(srcCommonVar, dstCommonVar)
+	mRevokeLeaf.Add(srcLeafGlue, dstLeafGlue)
 	RevokeOrphanedGlue(mRevokeLeaf)
-	if mRevokeLeaf.Has(srcMoveLeaf) {
-		t.Fatal("moving container anchored solely by glue and bare identifier should be revoked")
-	}
-	if mRevokeLeaf.Has(srcMoveLeaf.Children[1]) {
-		t.Fatal("glue inside revoked moving container should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeLeaf.Src(), "commonVar := oldVal")
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeLeaf.Src(), ":=")
 
 	// Single-child wrapper (expression_list -> identifier, effectiveHeight = 1): revoked.
-	srcLHSWrap := testutil.Node("expression_list", "", testutil.Leaf("identifier", "m"))
-	srcLHSWrap.Language = "go"
-	dstLHSWrap := testutil.Node("expression_list", "", testutil.Leaf("identifier", "m"))
-	dstLHSWrap.Language = "go"
-	srcMoveWrap := testutil.Node("short_var_declaration", "",
-		srcLHSWrap,
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "oldVal"),
-	)
-	srcMoveWrap.Language = "go"
-	srcMoveWrap.Parent = srcBlock
-	dstMoveWrap := testutil.Node("short_var_declaration", "",
-		dstLHSWrap,
-		testutil.Leaf("assignment_operator_literal", ":="),
-		testutil.Leaf("identifier", "newVal"),
-	)
-	dstMoveWrap.Language = "go"
-	dstMoveWrap.Parent = dstBlock
+	srcLHSWrap, _ := testutil.FindNodeByTextQuery(srcMoveLeafTree, srcMoveLeafBytes, testutil.TextQuery{Text: "commonVar", Type: "expression_list"})
+	dstLHSWrap, _ := testutil.FindNodeByTextQuery(dstMoveLeafTree, dstMoveLeafBytes, testutil.TextQuery{Text: "commonVar", Type: "expression_list"})
 	mRevokeWrap := NewMapping()
-	mRevokeWrap.Add(srcMoveWrap, dstMoveWrap)
+	mRevokeWrap.Add(srcLeafDecl, dstLeafDecl)
 	mRevokeWrap.Add(srcLHSWrap, dstLHSWrap)
-	mRevokeWrap.Add(srcLHSWrap.Children[0], dstLHSWrap.Children[0])
-	mRevokeWrap.Add(srcMoveWrap.Children[1], dstMoveWrap.Children[1])
+	mRevokeWrap.Add(srcCommonVar, dstCommonVar)
+	mRevokeWrap.Add(srcLeafGlue, dstLeafGlue)
 	RevokeOrphanedGlue(mRevokeWrap)
-	if mRevokeWrap.Has(srcMoveWrap) {
-		t.Fatal("moving container with only a 1-child wrapper LHS matched should be revoked")
-	}
-	if mRevokeWrap.Has(srcMoveWrap.Children[1]) {
-		t.Fatal("glue inside revoked moving container should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeWrap.Src(), "commonVar := oldVal")
+	testutil.AssertUnmappedText(t, srcMoveLeafTree, srcMoveLeafBytes, mRevokeWrap.Src(), ":=")
 
 	// Moving container with matched compound child (effectiveHeight >= 2, e.g. RHS call_expression):
 	// Reparented across blocks, compound RHS and glue matched -> preserved.
-	srcRHSCall := testutil.Node("call_expression", "",
-		testutil.Leaf("identifier", "compute"),
-		testutil.Node("argument_list", "", testutil.Leaf("identifier", "x")),
-	)
-	dstRHSCall := testutil.Node("call_expression", "",
-		testutil.Leaf("identifier", "compute"),
-		testutil.Node("argument_list", "", testutil.Leaf("identifier", "x")),
-	)
-	srcMoveOK := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "oldVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		srcRHSCall,
-	)
-	srcMoveOK.Parent = srcBlock
-	dstMoveOK := testutil.Node("short_var_declaration", "",
-		testutil.Leaf("identifier", "newVar"),
-		testutil.Leaf("assignment_operator_literal", ":="),
-		dstRHSCall,
-	)
-	dstMoveOK.Parent = dstBlock
+	srcCompoundBytes := []byte("package main\nfunc f() {\n\toldVar := compute(x)\n}")
+	dstCompoundBytes := []byte("package main\nfunc g() {\n\tnewVar := compute(x)\n}")
+	srcCompoundTree, err := treesitter.Parse(srcCompoundBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcCompound: %v", err)
+	}
+	dstCompoundTree, err := treesitter.Parse(dstCompoundBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstCompound: %v", err)
+	}
+	srcCompDecl, _ := testutil.FindNodeByText(srcCompoundTree, srcCompoundBytes, "oldVar := compute(x)")
+	dstCompDecl, _ := testutil.FindNodeByText(dstCompoundTree, dstCompoundBytes, "newVar := compute(x)")
+	srcRHSWrap, _ := testutil.FindNodeByTextQuery(srcCompoundTree, srcCompoundBytes, testutil.TextQuery{Text: "compute(x)", Type: "expression_list"})
+	dstRHSWrap, _ := testutil.FindNodeByTextQuery(dstCompoundTree, dstCompoundBytes, testutil.TextQuery{Text: "compute(x)", Type: "expression_list"})
+	srcRHSCall, _ := testutil.FindNodeByText(srcCompoundTree, srcCompoundBytes, "compute(x)")
+	dstRHSCall, _ := testutil.FindNodeByText(dstCompoundTree, dstCompoundBytes, "compute(x)")
+	srcCompGlue, _ := testutil.FindNodeByText(srcCompoundTree, srcCompoundBytes, ":=")
+	dstCompGlue, _ := testutil.FindNodeByText(dstCompoundTree, dstCompoundBytes, ":=")
 	mPreserve := NewMapping()
-	mPreserve.Add(srcMoveOK, dstMoveOK)
+	mPreserve.Add(srcCompDecl, dstCompDecl)
+	mPreserve.Add(srcRHSWrap, dstRHSWrap)
 	mPreserve.Add(srcRHSCall, dstRHSCall)
-	mPreserve.Add(srcMoveOK.Children[1], dstMoveOK.Children[1])
+	mPreserve.Add(srcCompGlue, dstCompGlue)
 	RevokeOrphanedGlue(mPreserve)
-	if !mPreserve.Has(srcMoveOK) {
-		t.Fatal("moving container with matched compound child (height >= 2) should be preserved")
-	}
-	if !mPreserve.Has(srcMoveOK.Children[1]) {
-		t.Fatal("glue inside valid moving container with compound child should be preserved")
-	}
+	testutil.AssertMappedText(t, srcCompoundTree, dstCompoundTree, srcCompoundBytes, dstCompoundBytes, mPreserve.Src(), "oldVar := compute(x)", "newVar := compute(x)")
+	testutil.AssertMappedText(t, srcCompoundTree, dstCompoundTree, srcCompoundBytes, dstCompoundBytes, mPreserve.Src(), ":=", ":=")
 
 	// Keyword glue recognition: if keyword across moving blocks with no non-glue matches.
-	srcIf := testutil.Node("if_statement", "",
-		testutil.Leaf("if", "if"),
-		testutil.Leaf("identifier", "condA"),
-	)
-	srcIf.Children[0].IsKeyword = true
-	srcIf.Parent = srcBlock
-	dstIf := testutil.Node("if_statement", "",
-		testutil.Leaf("if", "if"),
-		testutil.Leaf("identifier", "condB"),
-	)
-	dstIf.Children[0].IsKeyword = true
-	dstIf.Parent = dstBlock
+	srcIfBytes := []byte("package main\nfunc f() {\n\tif condA {}\n}")
+	dstIfBytes := []byte("package main\nfunc g() {\n\tif condB {}\n}")
+	srcIfTree, err := treesitter.Parse(srcIfBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse srcIf: %v", err)
+	}
+	dstIfTree, err := treesitter.Parse(dstIfBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dstIf: %v", err)
+	}
+	srcIf, _ := testutil.FindNodeByText(srcIfTree, srcIfBytes, "if condA {}")
+	dstIf, _ := testutil.FindNodeByText(dstIfTree, dstIfBytes, "if condB {}")
+	srcKw, _ := testutil.FindNodeByTextQuery(srcIfTree, srcIfBytes, testutil.TextQuery{Text: "if", Type: "if"})
+	dstKw, _ := testutil.FindNodeByTextQuery(dstIfTree, dstIfBytes, testutil.TextQuery{Text: "if", Type: "if"})
 	mKw := NewMapping()
 	mKw.Add(srcIf, dstIf)
-	mKw.Add(srcIf.Children[0], dstIf.Children[0])
+	mKw.Add(srcKw, dstKw)
 	RevokeOrphanedGlue(mKw)
-	if mKw.Has(srcIf) {
-		t.Fatal("moving if_statement anchored solely by if keyword should be revoked")
-	}
-	if mKw.Has(srcIf.Children[0]) {
-		t.Fatal("if keyword glue should be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcIfTree, srcIfBytes, mKw.Src(), "if condA {}")
+	testutil.AssertUnmappedText(t, srcIfTree, srcIfBytes, mKw.Src(), "if", "if")
 
 	// A moved statement with only leaf tokens (like let far_future = 10_000_000)
 	// should be preserved when both sides are isomorphic.
-	srcIso := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	srcIso.Children[0].IsKeyword = true
-	srcIso.Parent = srcBlock
-	dstIso := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	dstIso.Children[0].IsKeyword = true
-	dstIso.Parent = dstBlock
+	srcIsoBytes := []byte("fn f() {\n\tlet far_future = 10_000_000;\n}")
+	dstIsoBytes := []byte("fn g() {\n\tlet far_future = 10_000_000;\n}")
+	srcIsoTree, err := treesitter.Parse(srcIsoBytes, "test.rs")
+	if err != nil {
+		t.Fatalf("parse srcIso: %v", err)
+	}
+	dstIsoTree, err := treesitter.Parse(dstIsoBytes, "test.rs")
+	if err != nil {
+		t.Fatalf("parse dstIso: %v", err)
+	}
+	srcLet, _ := testutil.FindNodeByText(srcIsoTree, srcIsoBytes, "let far_future = 10_000_000;")
+	dstLet, _ := testutil.FindNodeByText(dstIsoTree, dstIsoBytes, "let far_future = 10_000_000;")
 	mIso := NewMapping()
-	mIso.Add(srcIso, dstIso)
-	mIso.Add(srcIso.Children[0], dstIso.Children[0]) // let
-	mIso.Add(srcIso.Children[1], dstIso.Children[1]) // far_future
-	mIso.Add(srcIso.Children[2], dstIso.Children[2]) // =
-	mIso.Add(srcIso.Children[3], dstIso.Children[3]) // 10_000_000
+	mIso.Add(srcLet, dstLet)
+	for i := range srcLet.Children {
+		if i < len(dstLet.Children) {
+			mIso.Add(srcLet.Children[i], dstLet.Children[i])
+		}
+	}
 	RevokeOrphanedGlue(mIso)
-	if !mIso.Has(srcIso) {
-		t.Fatal("moving isomorphic container with leaf payload should be preserved")
-	}
-	if !mIso.Has(srcIso.Children[0]) {
-		t.Fatal("glue inside moving isomorphic container should be preserved")
-	}
+	testutil.AssertMappedText(t, srcIsoTree, dstIsoTree, srcIsoBytes, dstIsoBytes, mIso.Src(), "let far_future = 10_000_000;", "let far_future = 10_000_000;")
+	testutil.AssertMappedText(t, srcIsoTree, dstIsoTree, srcIsoBytes, dstIsoBytes, mIso.Src(), "let", "let", "let")
 
 	// A moved statement should also stay mapped if all non-glue children match,
 	// even when the destination adds a keyword like mut.
-	srcAllNonGlue := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	srcAllNonGlue.Children[0].IsKeyword = true
-	srcAllNonGlue.Parent = srcBlock
-	dstAllNonGlue := testutil.Node("let_declaration", "",
-		testutil.Leaf("let", "let"),
-		testutil.Leaf("mutable_specifier", "mut"),
-		testutil.Leaf("identifier", "far_future"),
-		testutil.Leaf("assignment_operator_literal", "="),
-		testutil.Leaf("integer_literal", "10_000_000"),
-	)
-	dstAllNonGlue.Children[0].IsKeyword = true
-	dstAllNonGlue.Children[1].IsKeyword = true
-	dstAllNonGlue.Parent = dstBlock
-	mAllNonGlue := NewMapping()
-	mAllNonGlue.Add(srcAllNonGlue, dstAllNonGlue)
-	mAllNonGlue.Add(srcAllNonGlue.Children[0], dstAllNonGlue.Children[0]) // let
-	mAllNonGlue.Add(srcAllNonGlue.Children[1], dstAllNonGlue.Children[2]) // far_future
-	mAllNonGlue.Add(srcAllNonGlue.Children[2], dstAllNonGlue.Children[3]) // =
-	mAllNonGlue.Add(srcAllNonGlue.Children[3], dstAllNonGlue.Children[4]) // 10_000_000
-	RevokeOrphanedGlue(mAllNonGlue)
-	if !mAllNonGlue.Has(srcAllNonGlue) {
-		t.Fatal("moving container with all non-glue children matched should be preserved")
+	dstMutBytes := []byte("fn g() {\n\tlet mut far_future = 10_000_000;\n}")
+	dstMutTree, err := treesitter.Parse(dstMutBytes, "test.rs")
+	if err != nil {
+		t.Fatalf("parse dstMut: %v", err)
 	}
+	dstMutLet, _ := testutil.FindNodeByText(dstMutTree, dstMutBytes, "let mut far_future = 10_000_000;")
+	srcLetKw, _ := testutil.FindNodeByTextQuery(srcIsoTree, srcIsoBytes, testutil.TextQuery{Text: "let", Type: "let"})
+	dstLetKw, _ := testutil.FindNodeByTextQuery(dstMutTree, dstMutBytes, testutil.TextQuery{Text: "let", Type: "let"})
+	srcIdent, _ := testutil.FindNodeByText(srcIsoTree, srcIsoBytes, "far_future")
+	dstIdent, _ := testutil.FindNodeByText(dstMutTree, dstMutBytes, "far_future")
+	srcEq, _ := testutil.FindNodeByText(srcIsoTree, srcIsoBytes, "=")
+	dstEq, _ := testutil.FindNodeByText(dstMutTree, dstMutBytes, "=")
+	srcInt, _ := testutil.FindNodeByText(srcIsoTree, srcIsoBytes, "10_000_000")
+	dstInt, _ := testutil.FindNodeByText(dstMutTree, dstMutBytes, "10_000_000")
+
+	mAllNonGlue := NewMapping()
+	mAllNonGlue.Add(srcLet, dstMutLet)
+	mAllNonGlue.Add(srcLetKw, dstLetKw)
+	mAllNonGlue.Add(srcIdent, dstIdent)
+	mAllNonGlue.Add(srcEq, dstEq)
+	mAllNonGlue.Add(srcInt, dstInt)
+	RevokeOrphanedGlue(mAllNonGlue)
+	testutil.AssertMappedText(t, srcIsoTree, dstMutTree, srcIsoBytes, dstMutBytes, mAllNonGlue.Src(), "let far_future = 10_000_000;", "let mut far_future = 10_000_000;")
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_RHSMatched(t *testing.T) {
-	lhsOld := testutil.Leaf("identifier", "oldVar")
-	opOld := testutil.Leaf("comparison_operator_literal", "==")
-	rhs := testutil.Leaf("identifier", "commonVal")
-	srcExpr := testutil.Node("binary_expression", "", lhsOld, opOld, rhs)
-
-	lhsNew := testutil.Leaf("identifier", "newVar")
-	opNew := testutil.Leaf("comparison_operator_literal", "==")
-	rhsDst := testutil.Leaf("identifier", "commonVal")
-	dstExpr := testutil.Node("binary_expression", "", lhsNew, opNew, rhsDst)
+	srcBytes := []byte("package main\nfunc f() {\n\t_ = oldVar == commonVal\n}")
+	dstBytes := []byte("package main\nfunc f() {\n\t_ = newVar == commonVal\n}")
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcFunc, _ := testutil.FindNodeByText(srcTree, srcBytes, "func f() {\n\t_ = oldVar == commonVal\n}", "function_declaration")
+	dstFunc, _ := testutil.FindNodeByText(dstTree, dstBytes, "func f() {\n\t_ = newVar == commonVal\n}", "function_declaration")
+	srcRHS, _ := testutil.FindNodeByText(srcTree, srcBytes, "commonVal", "identifier")
+	dstRHS, _ := testutil.FindNodeByText(dstTree, dstBytes, "commonVal", "identifier")
 
 	m := NewMapping()
-	m.Add(rhs, rhsDst)
+	m.Add(srcFunc, dstFunc)
+	m.Add(srcRHS, dstRHS)
 
 	RecoverGlueAnchors(m)
 
-	if !m.Has(srcExpr) || m.Src()[srcExpr] != dstExpr {
-		t.Fatalf("parent binary_expression should be mapped to dstExpr, got %v", m.Src()[srcExpr])
-	}
-	if !m.Has(opOld) || m.Src()[opOld] != opNew {
-		t.Fatalf("operator == should be mapped to opNew, got %v", m.Src()[opOld])
-	}
-	if !m.Has(lhsOld) || m.Src()[lhsOld] != lhsNew {
-		t.Fatalf("LHS oldVar should be recovered and mapped to newVar, got %v", m.Src()[lhsOld])
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(),
+		"oldVar == commonVal",
+		"newVar == commonVal",
+		"binary_expression",
+	)
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(),
+		"oldVar",
+		"newVar",
+		"identifier",
+	)
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_LHSMatched(t *testing.T) {
-	lhs := testutil.Leaf("identifier", "commonVal")
-	opOld := testutil.Leaf("comparison_operator_literal", "==")
-	rhsOld := testutil.Leaf("identifier", "oldRHS")
-	srcExpr := testutil.Node("binary_expression", "", lhs, opOld, rhsOld)
-
-	lhsDst := testutil.Leaf("identifier", "commonVal")
-	opNew := testutil.Leaf("comparison_operator_literal", "==")
-	rhsNew := testutil.Leaf("identifier", "newRHS")
-	dstExpr := testutil.Node("binary_expression", "", lhsDst, opNew, rhsNew)
+	srcBytes := []byte("package main\nfunc f() {\n\t_ = commonVal == oldRHS\n}")
+	dstBytes := []byte("package main\nfunc f() {\n\t_ = commonVal == newRHS\n}")
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcFunc, _ := testutil.FindNodeByText(srcTree, srcBytes, "func f() {\n\t_ = commonVal == oldRHS\n}", "function_declaration")
+	dstFunc, _ := testutil.FindNodeByText(dstTree, dstBytes, "func f() {\n\t_ = commonVal == newRHS\n}", "function_declaration")
+	srcLHS, _ := testutil.FindNodeByText(srcTree, srcBytes, "commonVal", "identifier")
+	dstLHS, _ := testutil.FindNodeByText(dstTree, dstBytes, "commonVal", "identifier")
 
 	m := NewMapping()
-	m.Add(lhs, lhsDst)
+	m.Add(srcFunc, dstFunc)
+	m.Add(srcLHS, dstLHS)
 
 	RecoverGlueAnchors(m)
 
-	if !m.Has(srcExpr) || m.Src()[srcExpr] != dstExpr {
-		t.Fatalf("parent binary_expression should be mapped to dstExpr, got %v", m.Src()[srcExpr])
-	}
-	if !m.Has(opOld) || m.Src()[opOld] != opNew {
-		t.Fatalf("operator == should be mapped to opNew, got %v", m.Src()[opOld])
-	}
-	if !m.Has(rhsOld) || m.Src()[rhsOld] != rhsNew {
-		t.Fatalf("RHS oldRHS should be recovered and mapped to newRHS, got %v", m.Src()[rhsOld])
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(),
+		"commonVal == oldRHS",
+		"commonVal == newRHS",
+		"binary_expression",
+	)
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(),
+		"oldRHS",
+		"newRHS",
+		"identifier",
+	)
 }
 
 func TestRecoverGlueAnchors_BinaryExpression_OppositeSidesNotMatched(t *testing.T) {
 	// x = y (y is on RHS) vs y = z (y is on LHS)
-	xOld := testutil.Leaf("identifier", "x")
-	xOld.StartByte = 0
-	opOld := testutil.Leaf("=", "=")
-	opOld.StartByte = 2
-	yOld := testutil.Leaf("identifier", "y")
-	yOld.StartByte = 4
-	srcExpr := testutil.Node("assignment_expression", "", xOld, opOld, yOld)
-
-	yNew := testutil.Leaf("identifier", "y")
-	yNew.StartByte = 0
-	opNew := testutil.Leaf("=", "=")
-	opNew.StartByte = 2
-	zNew := testutil.Leaf("identifier", "z")
-	zNew.StartByte = 4
-	dstExpr := testutil.Node("assignment_expression", "", yNew, opNew, zNew)
+	srcBytes := []byte("package main\nfunc f() {\n\tx = y\n}")
+	dstBytes := []byte("package main\nfunc f() {\n\ty = z\n}")
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcY, _ := testutil.FindNodeByText(srcTree, srcBytes, "y", "identifier")
+	dstY, _ := testutil.FindNodeByText(dstTree, dstBytes, "y", "identifier")
 
 	m := NewMapping()
-	m.Add(yOld, yNew)
+	m.Add(srcY, dstY)
 
 	RecoverGlueAnchors(m)
 
-	if m.Has(srcExpr) || m.HasDst(dstExpr) {
-		t.Fatalf("assignment expressions should not be paired when matched operand sits on opposite sides of operator")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "x = y", "assignment_statement")
+	testutil.AssertUnmappedText(t, dstTree, dstBytes, m.Dst(), "y = z", "assignment_statement")
 }
 
 func TestRecoverGlueAnchors_ControlFlow_BodyMatched(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Leaf("identifier", "oldCond")
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "stmt1"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	condNew := testutil.Leaf("identifier", "newCond")
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "stmt1"))
-	dstIf := testutil.Node("if_statement", "", kwNew, condNew, bodyNew)
+	srcBytes := []byte("package main\nfunc f() {\n\tif oldCond {\n\t\tstmt1()\n\t}\n}")
+	dstBytes := []byte("package main\nfunc f() {\n\tif newCond {\n\t\tstmt1()\n\t}\n}")
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcFunc, _ := testutil.FindNodeByText(srcTree, srcBytes, "func f() {\n\tif oldCond {\n\t\tstmt1()\n\t}\n}", "function_declaration")
+	dstFunc, _ := testutil.FindNodeByText(dstTree, dstBytes, "func f() {\n\tif newCond {\n\t\tstmt1()\n\t}\n}", "function_declaration")
+	srcBody, _ := testutil.FindNodeByText(srcTree, srcBytes, "{\n\t\tstmt1()\n\t}", "block")
+	dstBody, _ := testutil.FindNodeByText(dstTree, dstBytes, "{\n\t\tstmt1()\n\t}", "block")
 
 	m := NewMapping()
-	m.Add(bodyOld, bodyNew)
+	m.Add(srcFunc, dstFunc)
+	m.Add(srcBody, dstBody)
 
 	RecoverGlueAnchors(m)
 
-	if !m.Has(srcIf) || m.Src()[srcIf] != dstIf {
-		t.Fatalf("parent if_statement should be mapped to dstIf, got %v", m.Src()[srcIf])
-	}
-	if !m.Has(kwOld) || m.Src()[kwOld] != kwNew {
-		t.Fatalf("if keyword should be mapped to kwNew, got %v", m.Src()[kwOld])
-	}
-	if !m.Has(condOld) || m.Src()[condOld] != condNew {
-		t.Fatalf("condition oldCond should be recovered and mapped to newCond, got %v", m.Src()[condOld])
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(),
+		"if oldCond {\n\t\tstmt1()\n\t}",
+		"if newCond {\n\t\tstmt1()\n\t}",
+		"if_statement",
+	)
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(),
+		"oldCond",
+		"newCond",
+		"identifier",
+	)
 }
 
 func TestRecoverGlueAnchors_BoilerplateGuard(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "err"),
-		testutil.Leaf("comparison_operator_literal", "!="),
-		testutil.Leaf("identifier", "nil"),
-	)
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "stmtA"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-	srcIf.StartRow = 10
-
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	condNew := testutil.Node("binary_expression", "",
-		testutil.Leaf("identifier", "err"),
-		testutil.Leaf("comparison_operator_literal", "!="),
-		testutil.Leaf("identifier", "nil"),
-	)
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "stmtB"))
-	dstIf := testutil.Node("if_statement", "", kwNew, condNew, bodyNew)
-	dstIf.StartRow = 80
+	src := "package main\nfunc f() {\n\tif err != nil {\n\t\tstmtA()\n\t}\n}"
+	dst := "package main\nfunc f() {\n" + strings.Repeat("\t// line padding\n", 70) + "\tif err != nil {\n\t\tstmtB()\n\t}\n}"
+	srcBytes := []byte(src)
+	dstBytes := []byte(dst)
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
+	srcCond, _ := testutil.FindNodeByText(srcTree, srcBytes, "err != nil")
+	dstCond, _ := testutil.FindNodeByText(dstTree, dstBytes, "err != nil")
 
 	m := NewMapping()
-	m.Add(condOld, condNew)
+	m.Add(srcCond, dstCond)
 
 	RecoverGlueAnchors(m)
 
-	if m.Has(srcIf) {
-		t.Fatalf("boilerplate err != nil condition across distant lines should NOT claim foreign if_statement")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "if err != nil {\n\t\tstmtA()\n\t}")
 }
 
 func TestIsOperatorGlue(t *testing.T) {
 	r := rules.Get("go")
+	src := `package main
+func ops() {
+	a = b
+	c := b
+	_ = a == b
+	_ = a != b
+	_ = a + b
+	a += b
+	_ = a & b
+	_ = a || b
+	_ = a < b
+	_ = err
+	_ = foo
+	_ = s[1:2]
+	_ = []int{1, 2}
+}
+`
+	srcBytes := []byte(src)
+	tree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+
 	tests := []struct {
-		name string
-		node *treesitter.ASTNode
-		want bool
+		name  string
+		query testutil.TextQuery
+		want  bool
 	}{
-		{"assign", testutil.Leaf("=", "="), true},
-		{"short_var", testutil.Leaf(":=", ":="), true},
-		{"equal", testutil.Leaf("==", "=="), true},
-		{"not_equal", testutil.Leaf("!=", "!="), true},
-		{"plus", testutil.Leaf("+", "+"), true},
-		{"plus_assign", testutil.Leaf("+=", "+="), true},
-		{"bitwise_and", testutil.Leaf("&", "&"), true},
-		{"logical_or", testutil.Leaf("||", "||"), true},
-		{"less_than", testutil.Leaf("<", "<"), true},
-		{"operator_literal", testutil.Leaf("comparison_operator_literal", "=="), true},
-		{"identifier_err", testutil.Leaf("identifier", "err"), false},
-		{"identifier_foo", testutil.Leaf("identifier", "foo"), false},
-		{"colon_alone", testutil.Leaf(":", ":"), false},
-		{"comma_delimiter", testutil.Leaf(",", ","), false},
-		{"semicolon_delimiter", testutil.Leaf(";", ";"), false},
-		{"paren_left", testutil.Leaf("(", "("), false},
-		{"brace_right", testutil.Leaf("}", "}"), false},
+		{"assign", testutil.TextQuery{Text: "=", Occurrence: 1}, true},
+		{"short_var", testutil.TextQuery{Text: ":="}, true},
+		{"equal", testutil.TextQuery{Text: "=="}, true},
+		{"not_equal", testutil.TextQuery{Text: "!="}, true},
+		{"plus", testutil.TextQuery{Text: "+", Occurrence: 1}, true},
+		{"plus_assign", testutil.TextQuery{Text: "+="}, true},
+		{"bitwise_and", testutil.TextQuery{Text: "&"}, true},
+		{"logical_or", testutil.TextQuery{Text: "||"}, true},
+		{"less_than", testutil.TextQuery{Text: "<"}, true},
+		{"identifier_err", testutil.TextQuery{Text: "err"}, false},
+		{"identifier_foo", testutil.TextQuery{Text: "foo"}, false},
+		{"slice_expression_has_children", testutil.TextQuery{Text: "s[1:2]"}, false},
+		{"composite_literal_has_children", testutil.TextQuery{Text: "[]int{1, 2}"}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isOperatorGlue(tc.node, r); got != tc.want {
+			node, err := testutil.FindNodeByTextQuery(tree, srcBytes, tc.query)
+			if err != nil {
+				t.Fatalf("find node %s: %v", tc.name, err)
+			}
+			if got := isOperatorGlue(node, r); got != tc.want {
 				t.Errorf("isOperatorGlue(%v) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
@@ -471,140 +493,112 @@ func TestIsOperatorGlue(t *testing.T) {
 }
 
 func TestIsBoilerplateCondition(t *testing.T) {
-	rGo := rules.Get("go")
-	rPy := rules.Get("python")
-	rJava := rules.Get("java")
-	rRust := rules.Get("rust")
-
 	tests := []struct {
-		name string
-		cond *treesitter.ASTNode
-		r    *rules.Rules
-		want bool
+		name     string
+		src      string
+		ext      string
+		condText string
+		want     bool
 	}{
 		{
-			name: "go_err_not_nil",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "err"),
-				testutil.Leaf("!=", "!="),
-				testutil.Leaf("identifier", "nil"),
-			),
-			r:    rGo,
-			want: true,
+			name:     "go_err_not_nil",
+			src:      "package main\nfunc f() {\n\tif err != nil {}\n}",
+			ext:      "test.go",
+			condText: "err != nil",
+			want:     true,
 		},
 		{
-			name: "go_single_var_ok",
-			cond: testutil.Leaf("identifier", "ok"),
-			r:    rGo,
-			want: true,
+			name:     "go_single_var_ok",
+			src:      "package main\nfunc f() {\n\tif ok {}\n}",
+			ext:      "test.go",
+			condText: "ok",
+			want:     true,
 		},
 		{
-			name: "go_negated_var",
-			cond: testutil.Node("unary_expression", "",
-				testutil.Leaf("!", "!"),
-				testutil.Leaf("identifier", "ok"),
-			),
-			r:    rGo,
-			want: true,
+			name:     "go_negated_var",
+			src:      "package main\nfunc f() {\n\tif !ok {}\n}",
+			ext:      "test.go",
+			condText: "!ok",
+			want:     true,
 		},
 		{
-			name: "go_compare_zero",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "count"),
-				testutil.Leaf("==", "=="),
-				testutil.Leaf("int_literal", "0"),
-			),
-			r:    rGo,
-			want: true,
+			name:     "go_compare_zero",
+			src:      "package main\nfunc f() {\n\tif count == 0 {}\n}",
+			ext:      "test.go",
+			condText: "count == 0",
+			want:     true,
 		},
 		{
-			name: "java_null_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "ptr"),
-				testutil.Leaf("==", "=="),
-				testutil.Leaf("null_literal", "null"),
-			),
-			r:    rJava,
-			want: true,
+			name:     "java_null_check",
+			src:      "class C {\n\tvoid f() {\n\t\tif (ptr == null) {}\n\t}\n}",
+			ext:      "test.java",
+			condText: "ptr == null",
+			want:     true,
 		},
 		{
-			name: "python_none_check",
-			cond: testutil.Node("comparison", "",
-				testutil.Leaf("identifier", "val"),
-				testutil.Leaf("is", "is"),
-				testutil.Leaf("none", "None"),
-			),
-			r:    rPy,
-			want: true,
+			name:     "python_none_check",
+			src:      "def f():\n    if val is None:\n        pass",
+			ext:      "test.py",
+			condText: "val is None",
+			want:     true,
 		},
 		{
-			name: "rust_none_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "opt"),
-				testutil.Leaf("!=", "!="),
-				testutil.Leaf("identifier", "None"),
-			),
-			r:    rRust,
-			want: true,
+			name:     "rust_none_check",
+			src:      "fn f() {\n\tif opt != None {}\n}",
+			ext:      "test.rs",
+			condText: "opt != None",
+			want:     true,
 		},
 		{
-			name: "c_null_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "ptr"),
-				testutil.Leaf("!=", "!="),
-				testutil.Leaf("identifier", "NULL"),
-			),
-			r:    rules.Get("c"),
-			want: true,
+			name:     "c_null_check",
+			src:      "void f() {\n\tif (ptr != NULL) {}\n}",
+			ext:      "test.c",
+			condText: "ptr != NULL",
+			want:     true,
 		},
 		{
-			name: "js_undefined_check",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "arg"),
-				testutil.Leaf("!==", "!=="),
-				testutil.Leaf("identifier", "undefined"),
-			),
-			r:    rules.Get("javascript"),
-			want: true,
+			name:     "js_undefined_check",
+			src:      "function f() {\n\tif (arg !== undefined) {}\n}",
+			ext:      "test.js",
+			condText: "arg !== undefined",
+			want:     true,
 		},
 		{
-			name: "two_variables_compare",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "a"),
-				testutil.Leaf("==", "=="),
-				testutil.Leaf("identifier", "b"),
-			),
-			r:    rGo,
-			want: false,
+			name:     "two_variables_compare",
+			src:      "package main\nfunc f() {\n\tif a == b {}\n}",
+			ext:      "test.go",
+			condText: "a == b",
+			want:     false,
 		},
 		{
-			name: "two_variables_ordered",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Leaf("identifier", "min"),
-				testutil.Leaf("<", "<"),
-				testutil.Leaf("identifier", "max"),
-			),
-			r:    rGo,
-			want: false,
+			name:     "two_variables_ordered",
+			src:      "package main\nfunc f() {\n\tif min < max {}\n}",
+			ext:      "test.go",
+			condText: "min < max",
+			want:     false,
 		},
 		{
-			name: "compound_call_condition",
-			cond: testutil.Node("binary_expression", "",
-				testutil.Node("call_expression", "",
-					testutil.Leaf("identifier", "len"),
-					testutil.Leaf("identifier", "items"),
-				),
-				testutil.Leaf(">", ">"),
-				testutil.Leaf("int_literal", "0"),
-			),
-			r:    rGo,
-			want: false,
+			name:     "compound_call_condition",
+			src:      "package main\nfunc f() {\n\tif len(items) > 0 {}\n}",
+			ext:      "test.go",
+			condText: "len(items) > 0",
+			want:     false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isBoilerplateCondition(tc.cond, tc.r); got != tc.want {
+			srcBytes := []byte(tc.src)
+			tree, err := treesitter.Parse(srcBytes, tc.ext)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			cond, err := testutil.FindNodeByText(tree, srcBytes, tc.condText)
+			if err != nil {
+				t.Fatalf("find cond %s: %v", tc.name, err)
+			}
+			r := rulesFor(cond)
+			if got := isBoilerplateCondition(cond, r); got != tc.want {
 				t.Errorf("isBoilerplateCondition(%s) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
@@ -612,22 +606,25 @@ func TestIsBoilerplateCondition(t *testing.T) {
 }
 
 func TestRevokeOrphanedGlue_RelocatedControlFlowAnchoredSolelyByKeyword(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr"))
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "ret"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-	srcIf.StartRow = 10
+	src := "package main\nfunc f() {\n\tif isErr() {\n\t\treturn\n\t}\n}"
+	dst := "package main\nfunc f() {\n" + strings.Repeat("\t// line padding\n", 35) + "\tif !isErr() {\n\t\tlogErr()\n\t}\n}"
+	srcBytes := []byte(src)
+	dstBytes := []byte(dst)
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	unaryCond := testutil.Node("unary_expression", "", testutil.Leaf("!", "!"), testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr")))
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "logErr"))
-	dstIf := testutil.Node("if_statement", "", kwNew, unaryCond, bodyNew)
-	dstIf.StartRow = 46
-
-	outerBlockSrc := testutil.Node("block", "", srcIf)
-	outerBlockDst := testutil.Node("block", "", dstIf)
+	outerBlockSrc, _ := testutil.FindNodeByText(srcTree, srcBytes, "{\n\tif isErr() {\n\t\treturn\n\t}\n}")
+	outerBlockDst, _ := testutil.FindNodeByText(dstTree, dstBytes, dst[strings.Index(dst, "{\n\t//"):])
+	srcIf, _ := testutil.FindNodeByText(srcTree, srcBytes, "if isErr() {\n\t\treturn\n\t}")
+	dstIf, _ := testutil.FindNodeByText(dstTree, dstBytes, "if !isErr() {\n\t\tlogErr()\n\t}")
+	kwOld, _ := testutil.FindNodeByTextQuery(srcTree, srcBytes, testutil.TextQuery{Text: "if", Type: "if"})
+	kwNew, _ := testutil.FindNodeByTextQuery(dstTree, dstBytes, testutil.TextQuery{Text: "if", Type: "if"})
 
 	m := NewMapping()
 	m.Add(outerBlockSrc, outerBlockDst)
@@ -636,45 +633,43 @@ func TestRevokeOrphanedGlue_RelocatedControlFlowAnchoredSolelyByKeyword(t *testi
 
 	RevokeOrphanedGlue(m)
 
-	if m.Has(srcIf) {
-		t.Fatal("relocated if_statement anchored solely by if keyword across lines must be revoked")
-	}
-	if m.Has(kwOld) {
-		t.Fatal("if keyword of revoked if_statement must be revoked")
-	}
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "if isErr() {\n\t\treturn\n\t}")
+	testutil.AssertUnmappedText(t, srcTree, srcBytes, m.Src(), "if", "if")
 }
 
 func TestRevokeOrphanedGlue_AdjacentControlFlowAnchoredByKeywordPreserved(t *testing.T) {
-	kwOld := testutil.Leaf("if", "if")
-	kwOld.IsKeyword = true
-	condOld := testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr"))
-	bodyOld := testutil.Node("block", "", testutil.Leaf("identifier", "ret"))
-	srcIf := testutil.Node("if_statement", "", kwOld, condOld, bodyOld)
-	srcIf.StartRow = 10
+	src := "package main\nfunc f() {\n\tif isErr() {\n\t\treturn\n\t}\n}"
+	dst := "package main\nfunc f() {\n\t_ = 1\n\tif !isErr() {\n\t\tlogErr()\n\t}\n}"
+	srcBytes := []byte(src)
+	dstBytes := []byte(dst)
+	srcTree, err := treesitter.Parse(srcBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	kwNew := testutil.Leaf("if", "if")
-	kwNew.IsKeyword = true
-	unaryCond := testutil.Node("unary_expression", "", testutil.Leaf("!", "!"), testutil.Node("call_expression", "", testutil.Leaf("identifier", "isErr")))
-	bodyNew := testutil.Node("block", "", testutil.Leaf("identifier", "logErr"))
-	dstIf := testutil.Node("if_statement", "", kwNew, unaryCond, bodyNew)
-	dstIf.StartRow = 11
-
-	outerBlockSrc := testutil.Node("block", "", srcIf)
-	outerBlockDst := testutil.Node("block", "", dstIf)
+	srcFunc, _ := testutil.FindNodeByText(srcTree, srcBytes, "func f() {\n\tif isErr() {\n\t\treturn\n\t}\n}")
+	dstFunc, _ := testutil.FindNodeByText(dstTree, dstBytes, "func f() {\n\t_ = 1\n\tif !isErr() {\n\t\tlogErr()\n\t}\n}")
+	outerBlockSrc, _ := testutil.FindNodeByText(srcTree, srcBytes, "{\n\tif isErr() {\n\t\treturn\n\t}\n}")
+	outerBlockDst, _ := testutil.FindNodeByText(dstTree, dstBytes, "{\n\t_ = 1\n\tif !isErr() {\n\t\tlogErr()\n\t}\n}")
+	srcIf, _ := testutil.FindNodeByText(srcTree, srcBytes, "if isErr() {\n\t\treturn\n\t}")
+	dstIf, _ := testutil.FindNodeByText(dstTree, dstBytes, "if !isErr() {\n\t\tlogErr()\n\t}")
+	kwOld, _ := testutil.FindNodeByTextQuery(srcTree, srcBytes, testutil.TextQuery{Text: "if", Type: "if"})
+	kwNew, _ := testutil.FindNodeByTextQuery(dstTree, dstBytes, testutil.TextQuery{Text: "if", Type: "if"})
 
 	m := NewMapping()
+	m.Add(srcFunc, dstFunc)
 	m.Add(outerBlockSrc, outerBlockDst)
 	m.Add(srcIf, dstIf)
 	m.Add(kwOld, kwNew)
 
 	RevokeOrphanedGlue(m)
 
-	if !m.Has(srcIf) {
-		t.Fatal("adjacent if_statement on nearby line in same block should be preserved")
-	}
-	if !m.Has(kwOld) {
-		t.Fatal("if keyword of adjacent if_statement should be preserved")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(), "if isErr() {\n\t\treturn\n\t}", "if !isErr() {\n\t\tlogErr()\n\t}")
+	testutil.AssertMappedText(t, srcTree, dstTree, srcBytes, dstBytes, m.Src(), "if", "if", "if")
 }
 
 func TestRevokeOrphanedGlue_BareJumpPreservedInMovingBlock(t *testing.T) {
@@ -724,121 +719,44 @@ func helperExtracted(items []int) {
 			t.Fatal("Match returned nil")
 		}
 
-		var srcBreak, dstBreak *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "break_statement" {
-				srcBreak = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "break_statement" {
-				dstBreak = n
-			}
-		}
-
-		if srcBreak == nil || dstBreak == nil {
-			t.Fatalf("failed to locate break_statement: src=%v, dst=%v", srcBreak, dstBreak)
-		}
-		if mr.Mappings.Src()[srcBreak] != dstBreak {
-			t.Errorf("expected break_statement inside moved loop block to be preserved and mapped to dstBreak, got %v", mr.Mappings.Src()[srcBreak])
-		}
-
 		// Whole-snippet verification: all loop statements and outer functions accounted for
-		var srcProcOld, dstProcOld, srcOtherCaller, dstHelperExtracted *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "function_declaration" {
-				for _, c := range n.Children {
-					if c.Type == "identifier" {
-						switch c.Label {
-						case "processOld":
-							srcProcOld = n
-						case "otherCaller":
-							srcOtherCaller = n
-						}
-					}
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "function_declaration" {
-				for _, c := range n.Children {
-					if c.Type == "identifier" {
-						switch c.Label {
-						case "processOld":
-							dstProcOld = n
-						case "helperExtracted":
-							dstHelperExtracted = n
-						}
-					}
-				}
-			}
-		}
+		// Enclosing function processOld maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func processOld(items []int)",
+			"func processOld(items []int)",
+		)
 
-		if srcProcOld == nil || dstProcOld == nil || srcOtherCaller == nil || dstHelperExtracted == nil {
-			t.Fatalf("missing function declarations: srcProcOld=%v, dstProcOld=%v, srcOtherCaller=%v, dstHelperExtracted=%v",
-				srcProcOld, dstProcOld, srcOtherCaller, dstHelperExtracted)
-		}
-		if mr.Mappings.Src()[srcProcOld] != dstProcOld {
-			t.Errorf("expected processOld to map in place, got %v", mr.Mappings.Src()[srcProcOld])
-		}
-		if mr.Mappings.Has(srcOtherCaller) {
-			t.Errorf("expected deleted otherCaller to remain unmapped, got %v", mr.Mappings.Src()[srcOtherCaller])
-		}
-		if mr.Mappings.Dst()[dstHelperExtracted] != nil {
-			t.Errorf("expected inserted helperExtracted to remain unmapped, got %v", mr.Mappings.Dst()[dstHelperExtracted])
-		}
+		// Deleted otherCaller and inserted helperExtracted
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"func otherCaller()",
+		)
+		testutil.AssertUnmappedText(t, dstAST, []byte(dst), mr.Mappings.Dst(),
+			"func helperExtracted(items []int)",
+		)
 
-		// Verify loop and its sibling/child statements
-		var srcFor, dstFor *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "for_statement" {
-				srcFor = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "for_statement" {
-				dstFor = n
-			}
-		}
-		if srcFor == nil || dstFor == nil {
-			t.Fatalf("missing for_statement: src=%v, dst=%v", srcFor, dstFor)
-		}
-		if mr.Mappings.Src()[srcFor] != dstFor {
-			t.Errorf("expected for_statement to map to extracted helper, got %v", mr.Mappings.Src()[srcFor])
-		}
+		// Loop maps to extracted helper
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"for _, item := range items",
+			"for _, item := range items",
+		)
 
-		// Verify handle(item) and println("hello") statements are mapped
-		var srcHandle, dstHandle, srcPrintln, dstPrintln *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "expression_statement" {
-				text := src[n.StartByte:n.EndByte]
-				if strings.Contains(text, "handle") {
-					srcHandle = n
-				} else if strings.Contains(text, "println") {
-					srcPrintln = n
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "expression_statement" {
-				text := dst[n.StartByte:n.EndByte]
-				if strings.Contains(text, "handle") {
-					dstHandle = n
-				} else if strings.Contains(text, "println") {
-					dstPrintln = n
-				}
-			}
-		}
-		if srcHandle == nil || dstHandle == nil || srcPrintln == nil || dstPrintln == nil {
-			t.Fatalf("missing call statements: srcHandle=%v, dstHandle=%v, srcPrintln=%v, dstPrintln=%v",
-				srcHandle, dstHandle, srcPrintln, dstPrintln)
-		}
-		if mr.Mappings.Src()[srcHandle] != dstHandle {
-			t.Errorf("expected handle(item) to remain mapped, got %v", mr.Mappings.Src()[srcHandle])
-		}
-		if mr.Mappings.Src()[srcPrintln] != dstPrintln {
-			t.Errorf("expected println('hello') to map to moved caller, got %v", mr.Mappings.Src()[srcPrintln])
-		}
+		// Target break_statement inside moved loop block is preserved and mapped
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"break",
+			"break",
+		)
+
+		// Sibling statement handle(item) remains mapped
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"handle(item)",
+			"handle(item)",
+		)
+
+		// println("hello") maps to moved caller
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			`println("hello")`,
+			`println("hello")`,
+		)
 	})
 }
 
@@ -883,106 +801,33 @@ func Helper(x any) bool {
 			t.Fatal("Match returned nil")
 		}
 
-		var srcBinary, dstBinary *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "binary_expression" && len(n.Children) == 3 && n.Children[1].Label == "!=" {
-				srcBinary = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "binary_expression" && len(n.Children) == 3 && n.Children[1].Label == "!=" {
-				dstBinary = n
-				break
-			}
-		}
-
-		if srcBinary == nil || dstBinary == nil {
-			t.Fatalf("failed to locate binary_expression: src=%v, dst=%v", srcBinary, dstBinary)
-		}
-		if mr.Mappings.Src()[srcBinary] != dstBinary {
-			t.Errorf("expected moving scalar binary expression (x != nil) to remain mapped, got %v", mr.Mappings.Src()[srcBinary])
-		}
-
 		// Whole-snippet verification: both functions and their statements map in place
-		var srcProcess, dstProcess, srcHelper, dstHelper *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "function_declaration" {
-				for _, c := range n.Children {
-					if c.Type == "identifier" {
-						switch c.Label {
-						case "Process":
-							srcProcess = n
-						case "Helper":
-							srcHelper = n
-						}
-					}
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "function_declaration" {
-				for _, c := range n.Children {
-					if c.Type == "identifier" {
-						switch c.Label {
-						case "Process":
-							dstProcess = n
-						case "Helper":
-							dstHelper = n
-						}
-					}
-				}
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func Process(x any)",
+			"func Process(x any)",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func Helper(x any) bool",
+			"func Helper(x any) bool",
+		)
 
-		if srcProcess == nil || dstProcess == nil || srcHelper == nil || dstHelper == nil {
-			t.Fatalf("missing function declarations: srcProcess=%v, dstProcess=%v, srcHelper=%v, dstHelper=%v",
-				srcProcess, dstProcess, srcHelper, dstHelper)
-		}
-		if mr.Mappings.Src()[srcProcess] != dstProcess {
-			t.Errorf("expected Process to map in place, got %v", mr.Mappings.Src()[srcProcess])
-		}
-		if mr.Mappings.Src()[srcHelper] != dstHelper {
-			t.Errorf("expected Helper to map in place, got %v", mr.Mappings.Src()[srcHelper])
-		}
+		// Target moving scalar binary expression (x != nil) remains mapped
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"x != nil",
+			"x != nil",
+		)
 
-		// Verify println("valid") stays stationary
-		var srcPrintln, dstPrintln *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "expression_statement" && strings.Contains(src[n.StartByte:n.EndByte], "println") {
-				srcPrintln = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "expression_statement" && strings.Contains(dst[n.StartByte:n.EndByte], "println") {
-				dstPrintln = n
-			}
-		}
-		if srcPrintln == nil || dstPrintln == nil {
-			t.Fatalf("missing println statements: src=%v, dst=%v", srcPrintln, dstPrintln)
-		}
-		if mr.Mappings.Src()[srcPrintln] != dstPrintln {
-			t.Errorf("expected println('valid') to map in place, got %v", mr.Mappings.Src()[srcPrintln])
-		}
+		// Stationary println("valid")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			`println("valid")`,
+			`println("valid")`,
+		)
 
-		// Verify return statement in Helper maps
-		var srcReturn, dstReturn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "return_statement" {
-				srcReturn = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "return_statement" {
-				dstReturn = n
-			}
-		}
-		if srcReturn == nil || dstReturn == nil {
-			t.Fatalf("missing return statements: src=%v, dst=%v", srcReturn, dstReturn)
-		}
-		if mr.Mappings.Src()[srcReturn] != dstReturn {
-			t.Errorf("expected return statement to map in place, got %v", mr.Mappings.Src()[srcReturn])
-		}
+		// Return statement in Helper maps
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"return false",
+			"return x != nil && validate(x)",
+		)
 	})
 }
 
@@ -1030,106 +875,34 @@ func renderTest(left, right, lastSrcLineIdx, lastDstLineIdx int, sText, dText st
 		}
 
 		// 1. Enclosing context: outer func renderTest maps in place
-		var srcFunc, dstFunc *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_declaration" {
-				srcFunc = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_declaration" {
-				dstFunc = n
-				break
-			}
-		}
-		if srcFunc == nil || dstFunc == nil {
-			t.Fatalf("missing function_declaration: src=%v, dst=%v", srcFunc, dstFunc)
-		}
-		if mr.Mappings.Src()[srcFunc] != dstFunc {
-			t.Errorf("expected outer function to map in place, got %v", mr.Mappings.Src()[srcFunc])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func renderTest",
+			"func renderTest",
+		)
 
 		// 2. Surrounding sequence: isEOFLine declaration maps in place
-		var srcEOFDecl, dstEOFDecl *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "isEOFLine") {
-				srcEOFDecl = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "isEOFLine") {
-				dstEOFDecl = n
-				break
-			}
-		}
-		if srcEOFDecl == nil || dstEOFDecl == nil {
-			t.Fatalf("missing isEOFLine declaration: src=%v, dst=%v", srcEOFDecl, dstEOFDecl)
-		}
-		if mr.Mappings.Src()[srcEOFDecl] != dstEOFDecl {
-			t.Errorf("expected isEOFLine declaration to map in place, got %v", mr.Mappings.Src()[srcEOFDecl])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"isEOFLine :=",
+			"isEOFLine :=",
+		)
 
 		// 3. Stationary body: upd++ maps in place
-		var srcUpd, dstUpd *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "inc_statement" && strings.Contains(src[n.StartByte:n.EndByte], "upd++") {
-				srcUpd = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "inc_statement" && strings.Contains(dst[n.StartByte:n.EndByte], "upd++") {
-				dstUpd = n
-				break
-			}
-		}
-		if srcUpd == nil || dstUpd == nil {
-			t.Fatalf("missing upd++ statement: src=%v, dst=%v", srcUpd, dstUpd)
-		}
-		if mr.Mappings.Src()[srcUpd] != dstUpd {
-			t.Errorf("expected upd++ statement to map in place, got %v", mr.Mappings.Src()[srcUpd])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"upd++",
+			"upd++",
+		)
 
 		// 4. Target operand: sText != dText must map to sText != dText
-		var srcSTextBin, dstSTextBin *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsExpression(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "sText != dText") && n.EndByte-n.StartByte <= 16 {
-				srcSTextBin = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsExpression(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "sText != dText") && n.EndByte-n.StartByte <= 16 {
-				dstSTextBin = n
-				break
-			}
-		}
-		if srcSTextBin == nil || dstSTextBin == nil {
-			t.Fatalf("missing sText != dText node: src=%v, dst=%v", srcSTextBin, dstSTextBin)
-		}
-		if mr.Mappings.Src()[srcSTextBin] != dstSTextBin {
-			t.Errorf("expected sText != dText to map, got %v", mr.Mappings.Src()[srcSTextBin])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"sText != dText",
+			"sText != dText",
+		)
 
 		// 5. Outer binary expression: sText != dText || ... must NOT map to sText != dText || isEOFChange
-		var srcOuterBin, dstOuterBin *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsExpression(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "sText != dText || (isEOFLine") {
-				srcOuterBin = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsExpression(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "sText != dText || isEOFChange") {
-				dstOuterBin = n
-				break
-			}
-		}
-		if srcOuterBin != nil && mr.Mappings.Src()[srcOuterBin] == dstOuterBin {
-			t.Errorf("outer binary expression must NOT map to dstOuterBin across mutated operands")
-		}
+		testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"sText != dText || (isEOFLine && srcEndsWithNL != dstEndsWithNL)",
+			"sText != dText || isEOFChange",
+		)
 	})
 }
 
@@ -1193,108 +966,46 @@ mod test_utils {
 			t.Fatal("Match returned nil")
 		}
 
-		r := rulesFor(srcAST)
-
 		// Enclosing function, module, and declaration list must stay mapped in place.
-		var srcTopFn, dstTopFn, srcMod, dstMod, srcDeclList, dstDeclList *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(src[n.StartByte:n.EndByte], "top_helper") {
-				srcTopFn = n
-			}
-			if n.Type == "mod_item" {
-				srcMod = n
-			}
-			if n.Type == "declaration_list" && n.Parent == srcMod {
-				srcDeclList = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(dst[n.StartByte:n.EndByte], "top_helper") {
-				dstTopFn = n
-			}
-			if n.Type == "mod_item" {
-				dstMod = n
-			}
-			if n.Type == "declaration_list" && n.Parent == dstMod {
-				dstDeclList = n
-			}
-		}
-		if srcTopFn == nil || dstTopFn == nil || mr.Mappings.Src()[srcTopFn] != dstTopFn {
-			t.Errorf("expected top_helper function to map in place, got %v", mr.Mappings.Src()[srcTopFn])
-		}
-		if srcMod == nil || dstMod == nil || mr.Mappings.Src()[srcMod] != dstMod {
-			t.Errorf("expected mod_item to map in place, got %v", mr.Mappings.Src()[srcMod])
-		}
-		if srcDeclList == nil || dstDeclList == nil || mr.Mappings.Src()[srcDeclList] != dstDeclList {
-			t.Errorf("expected declaration_list to map in place, got %v", mr.Mappings.Src()[srcDeclList])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn top_helper()",
+			"fn top_helper()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"mod test_utils",
+			"mod test_utils",
+			"mod_item",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"use std::fs::remove_file;",
+			"use std::fs::remove_file;",
+			"declaration_list",
+		)
 
 		// Surrounding statements must stay mapped without disruption.
-		var srcStdUse, dstStdUse, srcTestFn, dstTestFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "remove_file") {
-				srcStdUse = n
-			}
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(src[n.StartByte:n.EndByte], "test_diff_highlight_defaults") {
-				srcTestFn = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "remove_file") {
-				dstStdUse = n
-			}
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" && strings.Contains(dst[n.StartByte:n.EndByte], "test_diff_highlight_defaults") {
-				dstTestFn = n
-			}
-		}
-		if srcStdUse == nil || dstStdUse == nil || mr.Mappings.Src()[srcStdUse] != dstStdUse {
-			t.Errorf("expected use std::fs::remove_file to map in place, got %v", mr.Mappings.Src()[srcStdUse])
-		}
-		if srcTestFn == nil || dstTestFn == nil || mr.Mappings.Src()[srcTestFn] != dstTestFn {
-			t.Errorf("expected test function to map in place, got %v", mr.Mappings.Src()[srcTestFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"use std::fs::remove_file;",
+			"use std::fs::remove_file;",
+			"use_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn test_diff_highlight_defaults()",
+			"fn test_diff_highlight_defaults()",
+		)
 
 		// Target use declaration must stay mapped despite upstream line drift.
-		var srcTargetUse, dstTargetUse *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "integration_test_utils") {
-				srcTargetUse = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "integration_test_utils") {
-				dstTargetUse = n
-				break
-			}
-		}
-		if srcTargetUse == nil || dstTargetUse == nil {
-			t.Fatalf("failed to locate target use_declaration: src=%v, dst=%v", srcTargetUse, dstTargetUse)
-		}
-		if mr.Mappings.Src()[srcTargetUse] != dstTargetUse {
-			t.Errorf("expected target use_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcTargetUse])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"use crate::tests::integration_test_utils::integration_test_utils;",
+			"use crate::tests::integration_test_utils;",
+			"use_declaration",
+		)
 
 		// Shared path prefix must stay mapped in place.
-		var srcInnerScope, dstInnerScope *treesitter.ASTNode
-		for _, n := range srcTargetUse.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && src[n.StartByte:n.EndByte] == "crate::tests::integration_test_utils" {
-				srcInnerScope = n
-				break
-			}
-		}
-		for _, n := range dstTargetUse.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && dst[n.StartByte:n.EndByte] == "crate::tests::integration_test_utils" {
-				dstInnerScope = n
-				break
-			}
-		}
-		if srcInnerScope == nil || dstInnerScope == nil {
-			t.Fatalf("failed to locate inner scoped_identifier: src=%v, dst=%v", srcInnerScope, dstInnerScope)
-		}
-		if mr.Mappings.Src()[srcInnerScope] != dstInnerScope {
-			t.Errorf("expected inner scoped_identifier to map in place, got %v", mr.Mappings.Src()[srcInnerScope])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"crate::tests::integration_test_utils",
+			"crate::tests::integration_test_utils",
+			"scoped_identifier",
+		)
 	})
 
 	t.Run("FullEngine_CPP", func(t *testing.T) {
@@ -1342,108 +1053,45 @@ namespace test_env {
 			t.Fatal("Match returned nil")
 		}
 
-		r := rulesFor(srcAST)
-
 		// Enclosing function, namespace, and declaration list must stay mapped.
-		var srcSetupFn, dstSetupFn, srcNs, dstNs, srcDeclList, dstDeclList *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(src[n.StartByte:n.EndByte], "setup") {
-				srcSetupFn = n
-			}
-			if n.Type == "namespace_definition" {
-				srcNs = n
-			}
-			if n.Type == "declaration_list" && n.Parent == srcNs {
-				srcDeclList = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(dst[n.StartByte:n.EndByte], "setup") {
-				dstSetupFn = n
-			}
-			if n.Type == "namespace_definition" {
-				dstNs = n
-			}
-			if n.Type == "declaration_list" && n.Parent == dstNs {
-				dstDeclList = n
-			}
-		}
-		if srcSetupFn == nil || dstSetupFn == nil || mr.Mappings.Src()[srcSetupFn] != dstSetupFn {
-			t.Errorf("expected setup function to map in place, got %v", mr.Mappings.Src()[srcSetupFn])
-		}
-		if srcNs == nil || dstNs == nil || mr.Mappings.Src()[srcNs] != dstNs {
-			t.Errorf("expected namespace_definition to map in place, got %v", mr.Mappings.Src()[srcNs])
-		}
-		if srcDeclList == nil || dstDeclList == nil || mr.Mappings.Src()[srcDeclList] != dstDeclList {
-			t.Errorf("expected declaration_list to map in place, got %v", mr.Mappings.Src()[srcDeclList])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void setup()",
+			"void setup()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"namespace test_env",
+			"namespace test_env",
+			"namespace_definition",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void init() {}",
+			"void init() {}",
+			"declaration_list",
+		)
 
 		// Surrounding statements must stay mapped.
-		var srcInitFn, dstInitFn, srcTeardownFn, dstTeardownFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(src[n.StartByte:n.EndByte], "init") {
-				srcInitFn = n
-			}
-			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(src[n.StartByte:n.EndByte], "teardown") {
-				srcTeardownFn = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(dst[n.StartByte:n.EndByte], "init") {
-				dstInitFn = n
-			}
-			if r.IsDeclaration(n.Type) && n.Type == "function_definition" && strings.Contains(dst[n.StartByte:n.EndByte], "teardown") {
-				dstTeardownFn = n
-			}
-		}
-		if srcInitFn == nil || dstInitFn == nil || mr.Mappings.Src()[srcInitFn] != dstInitFn {
-			t.Errorf("expected init function to map in place, got %v", mr.Mappings.Src()[srcInitFn])
-		}
-		if srcTeardownFn == nil || dstTeardownFn == nil || mr.Mappings.Src()[srcTeardownFn] != dstTeardownFn {
-			t.Errorf("expected teardown function to map in place, got %v", mr.Mappings.Src()[srcTeardownFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void init() {}",
+			"void init() {}",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"void teardown() {}",
+			"void teardown() {}",
+		)
 
 		// Target using declaration must stay mapped despite upstream line drift.
-		var srcUsing, dstUsing *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "baz") {
-				srcUsing = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "baz") {
-				dstUsing = n
-				break
-			}
-		}
-		if srcUsing == nil || dstUsing == nil {
-			t.Fatalf("failed to locate target using_declaration: src=%v, dst=%v", srcUsing, dstUsing)
-		}
-		if mr.Mappings.Src()[srcUsing] != dstUsing {
-			t.Errorf("expected target using_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcUsing])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"using foo::bar::baz;",
+			"using bar::baz;",
+			"using_declaration",
+		)
 
 		// Shared qualified identifier must stay mapped.
-		var srcInnerQual, dstInnerQual *treesitter.ASTNode
-		for _, n := range srcUsing.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Type == "qualified_identifier" && src[n.StartByte:n.EndByte] == "bar::baz" {
-				srcInnerQual = n
-				break
-			}
-		}
-		for _, n := range dstUsing.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Type == "qualified_identifier" && dst[n.StartByte:n.EndByte] == "bar::baz" {
-				dstInnerQual = n
-				break
-			}
-		}
-		if srcInnerQual == nil || dstInnerQual == nil {
-			t.Fatalf("failed to locate inner qualified_identifier: src=%v, dst=%v", srcInnerQual, dstInnerQual)
-		}
-		if mr.Mappings.Src()[srcInnerQual] != dstInnerQual {
-			t.Errorf("expected inner qualified_identifier to map in place, got %v", mr.Mappings.Src()[srcInnerQual])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"bar::baz",
+			"bar::baz",
+			"qualified_identifier",
+		)
 	})
 
 	t.Run("FullEngine_Zig", func(t *testing.T) {
@@ -1491,99 +1139,40 @@ const test_mod = struct {
 			t.Fatal("Match returned nil")
 		}
 
-		r := rulesFor(srcAST)
-
 		// Enclosing function and module struct must stay mapped.
-		var srcSetupFn, dstSetupFn, srcTestMod, dstTestMod *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "fn setup") {
-				srcSetupFn = n
-			}
-			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "const test_mod") {
-				srcTestMod = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "fn setup") {
-				dstSetupFn = n
-			}
-			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "const test_mod") {
-				dstTestMod = n
-			}
-		}
-		if srcSetupFn == nil || dstSetupFn == nil || mr.Mappings.Src()[srcSetupFn] != dstSetupFn {
-			t.Errorf("expected setup function to map in place, got %v", mr.Mappings.Src()[srcSetupFn])
-		}
-		if srcTestMod == nil || dstTestMod == nil || mr.Mappings.Src()[srcTestMod] != dstTestMod {
-			t.Errorf("expected test_mod declaration to map in place, got %v", mr.Mappings.Src()[srcTestMod])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn setup() void",
+			"fn setup() void",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"const test_mod = struct",
+			"const test_mod = struct",
+			"variable_declaration",
+		)
 
 		// Surrounding functions must stay mapped.
-		var srcBeforeFn, dstBeforeFn, srcAfterFn, dstAfterFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "fn before") {
-				srcBeforeFn = n
-			}
-			if r.IsDeclaration(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "fn after") {
-				srcAfterFn = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "fn before") {
-				dstBeforeFn = n
-			}
-			if r.IsDeclaration(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "fn after") {
-				dstAfterFn = n
-			}
-		}
-		if srcBeforeFn == nil || dstBeforeFn == nil || mr.Mappings.Src()[srcBeforeFn] != dstBeforeFn {
-			t.Errorf("expected before function to map in place, got %v", mr.Mappings.Src()[srcBeforeFn])
-		}
-		if srcAfterFn == nil || dstAfterFn == nil || mr.Mappings.Src()[srcAfterFn] != dstAfterFn {
-			t.Errorf("expected after function to map in place, got %v", mr.Mappings.Src()[srcAfterFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn before() void",
+			"fn before() void",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"fn after() void",
+			"fn after() void",
+		)
 
 		// Target usingnamespace declaration must stay mapped despite upstream line drift.
-		var srcUsing, dstUsing *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "usingnamespace") {
-				srcUsing = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "usingnamespace") {
-				dstUsing = n
-				break
-			}
-		}
-		if srcUsing == nil || dstUsing == nil {
-			t.Fatalf("failed to locate target using_namespace_declaration: src=%v, dst=%v", srcUsing, dstUsing)
-		}
-		if mr.Mappings.Src()[srcUsing] != dstUsing {
-			t.Errorf("expected target using_namespace_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcUsing])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"pub usingnamespace foo.bar.baz;",
+			"pub usingnamespace foo.bar;",
+			"using_namespace_declaration",
+		)
 
 		// Shared field expression must stay mapped.
-		var srcInnerField, dstInnerField *treesitter.ASTNode
-		for _, n := range srcUsing.Descendants() {
-			if r.IsExpression(n.Type) && n.Type == "field_expression" && src[n.StartByte:n.EndByte] == "foo.bar" {
-				srcInnerField = n
-				break
-			}
-		}
-		for _, n := range dstUsing.Descendants() {
-			if r.IsExpression(n.Type) && n.Type == "field_expression" && dst[n.StartByte:n.EndByte] == "foo.bar" {
-				dstInnerField = n
-				break
-			}
-		}
-		if srcInnerField == nil || dstInnerField == nil {
-			t.Fatalf("failed to locate inner field_expression: src=%v, dst=%v", srcInnerField, dstInnerField)
-		}
-		if mr.Mappings.Src()[srcInnerField] != dstInnerField {
-			t.Errorf("expected inner field_expression to map in place, got %v", mr.Mappings.Src()[srcInnerField])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"foo.bar",
+			"foo.bar",
+			"field_expression",
+		)
 	})
 
 	t.Run("FullEngine_Java", func(t *testing.T) {
@@ -1631,73 +1220,28 @@ class TargetTest {
 			t.Fatal("Match returned nil")
 		}
 
-		r := rulesFor(srcAST)
-
 		// Enclosing package and class declarations must stay mapped.
-		var srcPkg, dstPkg, srcClass, dstClass *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "package_declaration" {
-				srcPkg = n
-			}
-			if r.IsDeclaration(n.Type) && n.Type == "class_declaration" {
-				srcClass = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "package_declaration" {
-				dstPkg = n
-			}
-			if r.IsDeclaration(n.Type) && n.Type == "class_declaration" {
-				dstClass = n
-			}
-		}
-		if srcPkg == nil || dstPkg == nil || mr.Mappings.Src()[srcPkg] != dstPkg {
-			t.Errorf("expected package_declaration to map in place, got %v", mr.Mappings.Src()[srcPkg])
-		}
-		if srcClass == nil || dstClass == nil || mr.Mappings.Src()[srcClass] != dstClass {
-			t.Errorf("expected class_declaration to map in place, got %v", mr.Mappings.Src()[srcClass])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"package test_pkg;",
+			"package test_pkg;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"class TargetTest",
+			"class TargetTest",
+		)
 
 		// Target import declaration must stay mapped despite upstream line drift.
-		var srcImport, dstImport *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(src[n.StartByte:n.EndByte], "com.example.foo") {
-				srcImport = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsImport(n.Type) && strings.Contains(dst[n.StartByte:n.EndByte], "com.example.foo") {
-				dstImport = n
-				break
-			}
-		}
-		if srcImport == nil || dstImport == nil {
-			t.Fatalf("failed to locate target import_declaration: src=%v, dst=%v", srcImport, dstImport)
-		}
-		if mr.Mappings.Src()[srcImport] != dstImport {
-			t.Errorf("expected target import_declaration to map in place despite upstream drift, got %v", mr.Mappings.Src()[srcImport])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"import com.example.foo.Bar;",
+			"import com.example.foo;",
+			"import_declaration",
+		)
 
 		// Shared scoped identifier must stay mapped.
-		var srcInnerScope, dstInnerScope *treesitter.ASTNode
-		for _, n := range srcImport.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && src[n.StartByte:n.EndByte] == "com.example.foo" {
-				srcInnerScope = n
-				break
-			}
-		}
-		for _, n := range dstImport.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Type == "scoped_identifier" && dst[n.StartByte:n.EndByte] == "com.example.foo" {
-				dstInnerScope = n
-				break
-			}
-		}
-		if srcInnerScope == nil || dstInnerScope == nil {
-			t.Fatalf("failed to locate inner scoped_identifier: src=%v, dst=%v", srcInnerScope, dstInnerScope)
-		}
-		if mr.Mappings.Src()[srcInnerScope] != dstInnerScope {
-			t.Errorf("expected inner scoped_identifier to map in place, got %v", mr.Mappings.Src()[srcInnerScope])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"com.example.foo",
+			"com.example.foo",
+			"scoped_identifier",
+		)
 	})
 }

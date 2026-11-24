@@ -7,29 +7,40 @@ import (
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	t.Run("drops move when wrapper is removed", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		oldWrapper := mkNode("friend_declaration", "")
-		oldWrapper.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = append(oldClass.Children, oldWrapper)
-		oldWrapper.Parent = oldClass
-		oldWrapper.Children = append(oldWrapper.Children, oldFn)
-		oldFn.Parent = oldWrapper
+		src := []byte("class A { friend void foo() {} };\n")
+		dst := []byte("class A { void foo() {} };\n")
+		srcTree, err := treesitter.Parse(src, "src.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = append(newClass.Children, newFn)
-		newFn.Parent = newClass
+		oldClass, err := testutil.FindNodeByText(srcTree, src, "class A { friend void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find oldClass: %v", err)
+		}
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newClass, err := testutil.FindNodeByText(dstTree, dst, "class A { void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find newClass: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldClass, newClass)
@@ -45,23 +56,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops move when wrapper is added", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = append(oldClass.Children, oldFn)
-		oldFn.Parent = oldClass
+		src := []byte("class A { void foo() {} };\n")
+		dst := []byte("class A { friend void foo() {} };\n")
+		srcTree, err := treesitter.Parse(src, "src.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		newWrapper := mkNode("friend_declaration", "")
-		newWrapper.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = append(newClass.Children, newWrapper)
-		newWrapper.Parent = newClass
-		newWrapper.Children = append(newWrapper.Children, newFn)
-		newFn.Parent = newWrapper
+		oldClass, err := testutil.FindNodeByText(srcTree, src, "class A { void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find oldClass: %v", err)
+		}
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newClass, err := testutil.FindNodeByText(dstTree, dst, "class A { friend void foo() {} }", "class_specifier")
+		if err != nil {
+			t.Fatalf("find newClass: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldClass, newClass)
@@ -77,19 +98,25 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves genuine move across different containers", func(t *testing.T) {
-		oldClassA := mkNode("class_specifier", "A")
-		oldClassA.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClassA.Children = append(oldClassA.Children, oldFn)
-		oldFn.Parent = oldClassA
+		src := []byte("class A { void foo() {} };\n")
+		dst := []byte("class B { void foo() {} };\n")
+		srcTree, err := treesitter.Parse(src, "src.cpp")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.cpp")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClassB := mkNode("class_specifier", "B")
-		newClassB.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClassB.Children = append(newClassB.Children, newFn)
-		newFn.Parent = newClassB
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "void foo() {}", "function_definition")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldFn, newFn)
@@ -104,58 +131,54 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops move when Go var_declaration is converted to short_var_declaration", func(t *testing.T) {
-		oldStmtList := mkNode("statement_list", "")
-		oldStmtList.Language = "go"
-		oldVarDecl := mkNode("var_declaration", "")
-		oldVarDecl.Language = "go"
-		oldVarKeyword := mkNode("var", "var")
-		oldVarKeyword.Language = "go"
-		oldVarSpec := mkNode("var_spec", "")
-		oldVarSpec.Language = "go"
-		oldID := mkNode("identifier", "fc")
-		oldID.Language = "go"
-		oldEq := mkNode("assignment_operator_literal", "=")
-		oldEq.Language = "go"
-		oldFn := mkNode("func_literal", "")
-		oldFn.Language = "go"
+		src := []byte("package main\nfunc f() {\n\tvar fc = func() {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tfc := func() {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldStmtList.Children = []*treesitter.ASTNode{oldVarDecl}
-		oldVarDecl.Parent = oldStmtList
-		oldVarDecl.Children = []*treesitter.ASTNode{oldVarKeyword, oldVarSpec}
-		oldVarKeyword.Parent = oldVarDecl
-		oldVarSpec.Parent = oldVarDecl
-		oldVarSpec.Children = []*treesitter.ASTNode{oldID, oldEq, oldFn}
-		oldID.Parent = oldVarSpec
-		oldEq.Parent = oldVarSpec
-		oldFn.Parent = oldVarSpec
-
-		newStmtList := mkNode("statement_list", "")
-		newStmtList.Language = "go"
-		newShortVar := mkNode("short_var_declaration", "")
-		newShortVar.Language = "go"
-		newExprList := mkNode("expression_list", "")
-		newExprList.Language = "go"
-		newID := mkNode("identifier", "fc")
-		newID.Language = "go"
-		newWalrus := mkNode("assignment_operator_literal", ":=")
-		newWalrus.Language = "go"
-		newFn := mkNode("func_literal", "")
-		newFn.Language = "go"
-
-		newStmtList.Children = []*treesitter.ASTNode{newShortVar}
-		newShortVar.Parent = newStmtList
-		newExprList.Children = []*treesitter.ASTNode{newID}
-		newID.Parent = newExprList
-		newShortVar.Children = []*treesitter.ASTNode{newExprList, newWalrus, newFn}
-		newExprList.Parent = newShortVar
-		newWalrus.Parent = newShortVar
-		newFn.Parent = newShortVar
+		srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tvar fc = func() {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tfc := func() {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		oldVarSpec, err := testutil.FindNodeByText(srcTree, src, "fc = func() {}", "var_spec")
+		if err != nil {
+			t.Fatalf("find oldVarSpec: %v", err)
+		}
+		newShortVar, err := testutil.FindNodeByText(dstTree, dst, "fc := func() {}", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find newShortVar: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, src, "fc", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dst, "fc", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
+		oldFn, err := testutil.FindNodeByText(srcTree, src, "func() {}", "func_literal")
+		if err != nil {
+			t.Fatalf("find oldFn: %v", err)
+		}
+		newFn, err := testutil.FindNodeByText(dstTree, dst, "func() {}", "func_literal")
+		if err != nil {
+			t.Fatalf("find newFn: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldStmtList, newStmtList)
+		ms.Add(srcBlock, dstBlock)
 		ms.Add(oldVarSpec, newShortVar)
 		ms.Add(oldID, newID)
-		ms.Add(oldEq, newWalrus)
 		ms.Add(oldFn, newFn)
 
 		es := actions.NewEditScript()
@@ -169,25 +192,41 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when arguments are swapped within mapped argument_list", func(t *testing.T) {
-		oldArgs := mkNode("argument_list", "")
-		oldArgs.Language = "go"
-		oldArg1 := mkNode("call_expression", "info.Mode().Perm()")
-		oldArg1.Language = "go"
-		oldArg2 := mkNode("identifier", "mode")
-		oldArg2.Language = "go"
-		oldArgs.Children = []*treesitter.ASTNode{oldArg1, oldArg2}
-		oldArg1.Parent = oldArgs
-		oldArg2.Parent = oldArgs
+		src := []byte("package main\nfunc f() { call(info.Mode().Perm(), mode) }\n")
+		dst := []byte("package main\nfunc f() { call(mode, info.Mode().Perm()) }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newArgs := mkNode("argument_list", "")
-		newArgs.Language = "go"
-		newArg1 := mkNode("identifier", "mode")
-		newArg1.Language = "go"
-		newArg2 := mkNode("call_expression", "info.Mode().Perm()")
-		newArg2.Language = "go"
-		newArgs.Children = []*treesitter.ASTNode{newArg1, newArg2}
-		newArg1.Parent = newArgs
-		newArg2.Parent = newArgs
+		oldArgs, err := testutil.FindNodeByText(srcTree, src, "(info.Mode().Perm(), mode)", "argument_list")
+		if err != nil {
+			t.Fatalf("find oldArgs: %v", err)
+		}
+		newArgs, err := testutil.FindNodeByText(dstTree, dst, "(mode, info.Mode().Perm())", "argument_list")
+		if err != nil {
+			t.Fatalf("find newArgs: %v", err)
+		}
+		oldArg1, err := testutil.FindNodeByText(srcTree, src, "info.Mode().Perm()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldArg1: %v", err)
+		}
+		oldArg2, err := testutil.FindNodeByText(srcTree, src, "mode", "identifier")
+		if err != nil {
+			t.Fatalf("find oldArg2: %v", err)
+		}
+		newArg1, err := testutil.FindNodeByText(dstTree, dst, "mode", "identifier")
+		if err != nil {
+			t.Fatalf("find newArg1: %v", err)
+		}
+		newArg2, err := testutil.FindNodeByText(dstTree, dst, "info.Mode().Perm()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newArg2: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldArgs, newArgs)
@@ -204,30 +243,32 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops move when TypeScript declaration is wrapped in export_statement", func(t *testing.T) {
-		oldProg := mkNode("program", "")
-		oldProg.Language = "typescript"
-		oldTypeDecl := mkNode("type_alias_declaration", "type Foo = number")
-		oldTypeDecl.Language = "typescript"
-		oldProg.Children = []*treesitter.ASTNode{oldTypeDecl}
-		oldTypeDecl.Parent = oldProg
+		src := []byte("type Foo = number;\n")
+		dst := []byte("export type Foo = number;\n")
+		srcTree, err := treesitter.Parse(src, "src.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newProg := mkNode("program", "")
-		newProg.Language = "typescript"
-		newExportStmt := mkNode("export_statement", "export type Foo = number")
-		newExportStmt.Language = "typescript"
-		newExportKw := mkNode("export", "export")
-		newExportKw.Language = "typescript"
-		newTypeDecl := mkNode("type_alias_declaration", "type Foo = number")
-		newTypeDecl.Language = "typescript"
-
-		newProg.Children = []*treesitter.ASTNode{newExportStmt}
-		newExportStmt.Parent = newProg
-		newExportStmt.Children = []*treesitter.ASTNode{newExportKw, newTypeDecl}
-		newExportKw.Parent = newExportStmt
-		newTypeDecl.Parent = newExportStmt
+		oldTypeDecl, err := testutil.FindNodeByText(srcTree, src, "type Foo = number;", "type_alias_declaration")
+		if err != nil {
+			t.Fatalf("find oldTypeDecl: %v", err)
+		}
+		newTypeDecl, err := testutil.FindNodeByText(dstTree, dst, "type Foo = number;", "type_alias_declaration")
+		if err != nil {
+			t.Fatalf("find newTypeDecl: %v", err)
+		}
+		newExportKw, err := testutil.FindNodeByText(dstTree, dst, "export", "export")
+		if err != nil {
+			t.Fatalf("find newExportKw: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldProg, newProg)
+		ms.Add(srcTree, dstTree)
 		ms.Add(oldTypeDecl, newTypeDecl)
 
 		es := actions.NewEditScript()
@@ -244,26 +285,42 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when variable declaration is hoisted out of if_statement", func(t *testing.T) {
-		oldBlock := mkNode("block", "")
-		oldBlock.Language = "go"
-		oldIf := mkNode("if_statement", "")
-		oldIf.Language = "go"
-		oldDecl := mkNode("short_var_declaration", "r := rulesFor(t1)")
-		oldDecl.Language = "go"
-		oldBlock.Children = []*treesitter.ASTNode{oldIf}
-		oldIf.Parent = oldBlock
-		oldIf.Children = []*treesitter.ASTNode{oldDecl}
-		oldDecl.Parent = oldIf
+		src := []byte("package main\nfunc f() {\n\tif r := rulesFor(t1); r != nil {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tr := rulesFor(t1)\n\tif r != nil {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newBlock := mkNode("block", "")
-		newBlock.Language = "go"
-		newDecl := mkNode("short_var_declaration", "r := rulesFor(t1)")
-		newDecl.Language = "go"
-		newIf := mkNode("if_statement", "")
-		newIf.Language = "go"
-		newBlock.Children = []*treesitter.ASTNode{newDecl, newIf}
-		newDecl.Parent = newBlock
-		newIf.Parent = newBlock
+		oldBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tif r := rulesFor(t1); r != nil {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldBlock: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if r := rulesFor(t1); r != nil {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		oldDecl, err := testutil.FindNodeByText(srcTree, src, "r := rulesFor(t1)", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find oldDecl: %v", err)
+		}
+
+		newBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tr := rulesFor(t1)\n\tif r != nil {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newBlock: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if r != nil {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		newDecl, err := testutil.FindNodeByText(dstTree, dst, "r := rulesFor(t1)", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find newDecl: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldBlock, newBlock)
@@ -283,45 +340,25 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when expression is passed into a new function argument list", func(t *testing.T) {
-		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "javascript"
-		oldArgs := mkNode("arguments", "")
-		oldArgs.Language = "javascript"
-		oldArg := mkNode("argument", "")
-		oldArg.Language = "javascript"
-		oldExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		oldExpr.Language = "javascript"
+		src := []byte("call(localId.toString());\n")
+		dst := []byte("outer(nested(localId.toString()));\n")
+		srcTree, err := treesitter.Parse(src, "src.js")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.js")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldCall.Children = []*treesitter.ASTNode{oldArgs}
-		oldArgs.Parent = oldCall
-		oldArgs.Children = []*treesitter.ASTNode{oldArg}
-		oldArg.Parent = oldArgs
-		oldArg.Children = []*treesitter.ASTNode{oldExpr}
-		oldExpr.Parent = oldArg
-
-		newOuterCall := mkNode("call_expression", "")
-		newOuterCall.Language = "javascript"
-		newOuterArgs := mkNode("arguments", "")
-		newOuterArgs.Language = "javascript"
-		newNestedCall := mkNode("call_expression", "")
-		newNestedCall.Language = "javascript"
-		newNestedArgs := mkNode("arguments", "")
-		newNestedArgs.Language = "javascript"
-		newArg := mkNode("argument", "")
-		newArg.Language = "javascript"
-		newExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		newExpr.Language = "javascript"
-
-		newOuterCall.Children = []*treesitter.ASTNode{newOuterArgs}
-		newOuterArgs.Parent = newOuterCall
-		newOuterArgs.Children = []*treesitter.ASTNode{newNestedCall}
-		newNestedCall.Parent = newOuterArgs
-		newNestedCall.Children = []*treesitter.ASTNode{newNestedArgs}
-		newNestedArgs.Parent = newNestedCall
-		newNestedArgs.Children = []*treesitter.ASTNode{newArg}
-		newArg.Parent = newNestedArgs
-		newArg.Children = []*treesitter.ASTNode{newExpr}
-		newExpr.Parent = newArg
+		oldExpr, err := testutil.FindNodeByText(srcTree, src, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldExpr: %v", err)
+		}
+		newExpr, err := testutil.FindNodeByText(dstTree, dst, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newExpr: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldExpr, newExpr)
@@ -336,59 +373,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move across lines when argument is wrapped in nested function calls", func(t *testing.T) {
-		oldCall := mkNode("call_expression", "")
-		oldCall.Language = "javascript"
-		oldArgs := mkNode("arguments", "")
-		oldArgs.Language = "javascript"
-		oldArg := mkNode("argument", "")
-		oldArg.Language = "javascript"
-		oldExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		oldExpr.Language = "javascript"
-		oldExpr.StartRow, oldExpr.EndRow = 98, 98
+		src := []byte("package main\nfunc f() {\n\tpack(\n\t\tlocalId.toString(),\n\t)\n}\n")
+		dst := []byte("package main\nfunc f() {\n\thex2bin(\n\t\tthisCall(\n\t\t\tlocalId.toString(),\n\t\t),\n\t)\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldName := mkNode("name", "pack")
-		oldName.Language = "javascript"
-		oldCall.Children = []*treesitter.ASTNode{oldName, oldArgs}
-		oldName.Parent = oldCall
-		oldArgs.Parent = oldCall
-		oldArgs.Children = []*treesitter.ASTNode{oldArg}
-		oldArg.Parent = oldArgs
-		oldArg.Children = []*treesitter.ASTNode{oldExpr}
-		oldExpr.Parent = oldArg
-
-		newOuterCall := mkNode("call_expression", "")
-		newOuterCall.Language = "javascript"
-		newOuterName := mkNode("name", "hex2bin")
-		newOuterName.Language = "javascript"
-		newOuterArgs := mkNode("arguments", "")
-		newOuterArgs.Language = "javascript"
-		newOuterCall.Children = []*treesitter.ASTNode{newOuterName, newOuterArgs}
-		newOuterName.Parent = newOuterCall
-		newOuterArgs.Parent = newOuterCall
-
-		newNestedCall := mkNode("call_expression", "")
-		newNestedCall.Language = "javascript"
-		newReceiver := mkNode("variable_name", "$this")
-		newReceiver.Language = "javascript"
-		newNestedArgs := mkNode("arguments", "")
-		newNestedArgs.Language = "javascript"
-		newNestedCall.Children = []*treesitter.ASTNode{newReceiver, newNestedArgs}
-		newReceiver.Parent = newNestedCall
-		newNestedArgs.Parent = newNestedCall
-
-		newOuterArgs.Children = []*treesitter.ASTNode{newNestedCall}
-		newNestedCall.Parent = newOuterArgs
-
-		newArg := mkNode("argument", "")
-		newArg.Language = "javascript"
-		newExpr := mkNode("member_call_expression", "$localIdentifier->toString()")
-		newExpr.Language = "javascript"
-		newExpr.StartRow, newExpr.EndRow = 99, 99
-
-		newNestedArgs.Children = []*treesitter.ASTNode{newArg}
-		newArg.Parent = newNestedArgs
-		newArg.Children = []*treesitter.ASTNode{newExpr}
-		newExpr.Parent = newArg
+		oldCall, err := testutil.FindNodeByText(srcTree, src, "pack(\n\t\tlocalId.toString(),\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldCall: %v", err)
+		}
+		newOuterCall, err := testutil.FindNodeByText(dstTree, dst, "hex2bin(\n\t\tthisCall(\n\t\t\tlocalId.toString(),\n\t\t),\n\t)", "call_expression")
+		if err != nil {
+			t.Fatalf("find newOuterCall: %v", err)
+		}
+		oldExpr, err := testutil.FindNodeByText(srcTree, src, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldExpr: %v", err)
+		}
+		newExpr, err := testutil.FindNodeByText(dstTree, dst, "localId.toString()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newExpr: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldCall, newOuterCall)
@@ -404,41 +415,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when identifier moves from named import to namespace import", func(t *testing.T) {
-		oldImport := mkNode("import_statement", "")
-		oldImport.Language = "typescript"
-		oldClause := mkNode("import_clause", "")
-		oldClause.Language = "typescript"
-		oldNamed := mkNode("named_imports", "")
-		oldNamed.Language = "typescript"
-		oldSpec := mkNode("import_specifier", "")
-		oldSpec.Language = "typescript"
-		oldID := mkNode("identifier", "util")
-		oldID.Language = "typescript"
+		src := []byte("import { util } from './module';\n")
+		dst := []byte("import * as util from './module';\n")
+		srcTree, err := treesitter.Parse(src, "src.ts")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.ts")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldImport.Children = []*treesitter.ASTNode{oldClause}
-		oldClause.Parent = oldImport
-		oldClause.Children = []*treesitter.ASTNode{oldNamed}
-		oldNamed.Parent = oldClause
-		oldNamed.Children = []*treesitter.ASTNode{oldSpec}
-		oldSpec.Parent = oldNamed
-		oldSpec.Children = []*treesitter.ASTNode{oldID}
-		oldID.Parent = oldSpec
-
-		newImport := mkNode("import_statement", "")
-		newImport.Language = "typescript"
-		newClause := mkNode("import_clause", "")
-		newClause.Language = "typescript"
-		newNamespace := mkNode("namespace_import", "")
-		newNamespace.Language = "typescript"
-		newID := mkNode("identifier", "util")
-		newID.Language = "typescript"
-
-		newImport.Children = []*treesitter.ASTNode{newClause}
-		newClause.Parent = newImport
-		newClause.Children = []*treesitter.ASTNode{newNamespace}
-		newNamespace.Parent = newClause
-		newNamespace.Children = []*treesitter.ASTNode{newID}
-		newID.Parent = newNamespace
+		oldImport, err := testutil.FindNodeByText(srcTree, src, "import { util } from './module';", "import_statement")
+		if err != nil {
+			t.Fatalf("find oldImport: %v", err)
+		}
+		newImport, err := testutil.FindNodeByText(dstTree, dst, "import * as util from './module';", "import_statement")
+		if err != nil {
+			t.Fatalf("find newImport: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, src, "util", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dst, "util", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldImport, newImport)
@@ -454,29 +457,33 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when expression moves from RHS to LHS operand slot in comparison", func(t *testing.T) {
-		oldBin := mkNode("binary_expression", "!=")
-		oldBin.Language = "zig"
-		oldLHS := mkNode("field_expression", "stream.positional")
-		oldLHS.Language = "zig"
-		oldRHS := mkNode("field_expression", "arg.param")
-		oldRHS.Language = "zig"
-		oldBin.Children = []*treesitter.ASTNode{oldLHS, oldRHS}
-		oldLHS.Parent = oldBin
-		oldRHS.Parent = oldBin
+		src := []byte("package main\nfunc f() { _ = streamPos != argParam }\n")
+		dst := []byte("package main\nfunc f() { _ = call(argParam) != posVal }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newBin := mkNode("binary_expression", "!=")
-		newBin.Language = "zig"
-		newCall := mkNode("call_expression", "")
-		newCall.Language = "zig"
-		newLHS := mkNode("field_expression", "arg.param")
-		newLHS.Language = "zig"
-		newCall.Children = []*treesitter.ASTNode{newLHS}
-		newLHS.Parent = newCall
-		newRHS := mkNode("enum_literal", ".positional")
-		newRHS.Language = "zig"
-		newBin.Children = []*treesitter.ASTNode{newCall, newRHS}
-		newCall.Parent = newBin
-		newRHS.Parent = newBin
+		oldBin, err := testutil.FindNodeByText(srcTree, src, "streamPos != argParam", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldBin: %v", err)
+		}
+		newBin, err := testutil.FindNodeByText(dstTree, dst, "call(argParam) != posVal", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newBin: %v", err)
+		}
+		oldRHS, err := testutil.FindNodeByText(srcTree, src, "argParam", "identifier")
+		if err != nil {
+			t.Fatalf("find oldRHS: %v", err)
+		}
+		newLHS, err := testutil.FindNodeByText(dstTree, dst, "argParam", "identifier")
+		if err != nil {
+			t.Fatalf("find newLHS: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldBin, newBin)
@@ -492,42 +499,41 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops Move when operand stays stationary within expanding conditional binary expression", func(t *testing.T) {
-		oldIf := mkNode("if_statement", "")
-		oldIf.Language = "c"
-		oldParen := mkNode("parenthesized_expression", "")
-		oldParen.Language = "c"
-		oldField := mkNode("field_expression", "server.allow_access_expired")
-		oldField.Language = "c"
-		oldField.StartRow = 10
-		oldField.EndRow = 10
-		oldField.StartCol = 8
-		oldField.EndCol = 35
-		oldIf.Children = []*treesitter.ASTNode{oldParen}
-		oldParen.Parent = oldIf
-		oldParen.Children = []*treesitter.ASTNode{oldField}
-		oldField.Parent = oldParen
+		src := []byte("void f() { if (server.allow_access_expired) {} }\n")
+		dst := []byte("void f() { if (subtractExpiredFields && server.allow_access_expired) {} }\n")
+		srcTree, err := treesitter.Parse(src, "src.c")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.c")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newIf := mkNode("if_statement", "")
-		newIf.Language = "c"
-		newParen := mkNode("parenthesized_expression", "")
-		newParen.Language = "c"
-		newBin := mkNode("binary_expression", "&&")
-		newBin.Language = "c"
-		newLHS := mkNode("identifier", "subtractExpiredFields")
-		newLHS.Language = "c"
-		newField := mkNode("field_expression", "server.allow_access_expired")
-		newField.Language = "c"
-		newField.StartRow = 12
-		newField.EndRow = 12
-		newField.StartCol = 33
-		newField.EndCol = 60
-		newIf.Children = []*treesitter.ASTNode{newParen}
-		newParen.Parent = newIf
-		newParen.Children = []*treesitter.ASTNode{newBin}
-		newBin.Parent = newParen
-		newBin.Children = []*treesitter.ASTNode{newLHS, newField}
-		newLHS.Parent = newBin
-		newField.Parent = newBin
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (server.allow_access_expired) {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if (subtractExpiredFields && server.allow_access_expired) {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldParen, err := testutil.FindNodeByText(srcTree, src, "(server.allow_access_expired)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find oldParen: %v", err)
+		}
+		newParen, err := testutil.FindNodeByText(dstTree, dst, "(subtractExpiredFields && server.allow_access_expired)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find newParen: %v", err)
+		}
+		oldField, err := testutil.FindNodeByText(srcTree, src, "server.allow_access_expired", "field_expression")
+		if err != nil {
+			t.Fatalf("find oldField: %v", err)
+		}
+		newField, err := testutil.FindNodeByText(dstTree, dst, "server.allow_access_expired", "field_expression")
+		if err != nil {
+			t.Fatalf("find newField: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldIf, newIf)
@@ -544,40 +550,41 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops Move when binary condition expression is pruned in Go if statement", func(t *testing.T) {
-		oldIf := mkNode("if_statement", "")
-		oldIf.Language = "go"
-		oldIfKw := mkNode("if", "if")
-		oldIfKw.Language = "go"
-		oldOuterBin := mkNode("binary_expression", "||")
-		oldOuterBin.Language = "go"
-		oldInnerBin := mkNode("binary_expression", "||")
-		oldInnerBin.Language = "go"
-		oldCall := mkNode("call_expression", "r.IsCall(n.Type)")
-		oldCall.Language = "go"
-		oldBlock := mkNode("block", "")
-		oldBlock.Language = "go"
+		src := []byte("package main\nfunc f() {\n\tif (a || b) || r.IsCall() {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif a || b {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldIf.Children = []*treesitter.ASTNode{oldIfKw, oldOuterBin, oldBlock}
-		oldIfKw.Parent = oldIf
-		oldOuterBin.Parent = oldIf
-		oldBlock.Parent = oldIf
-		oldOuterBin.Children = []*treesitter.ASTNode{oldInnerBin, oldCall}
-		oldInnerBin.Parent = oldOuterBin
-		oldCall.Parent = oldOuterBin
-
-		newIf := mkNode("if_statement", "")
-		newIf.Language = "go"
-		newIfKw := mkNode("if", "if")
-		newIfKw.Language = "go"
-		newCondition := mkNode("binary_expression", "||")
-		newCondition.Language = "go"
-		newBlock := mkNode("block", "")
-		newBlock.Language = "go"
-
-		newIf.Children = []*treesitter.ASTNode{newIfKw, newCondition, newBlock}
-		newIfKw.Parent = newIf
-		newCondition.Parent = newIf
-		newBlock.Parent = newIf
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (a || b) || r.IsCall() {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if a || b {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldInnerBin, err := testutil.FindNodeByText(srcTree, src, "a || b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldInnerBin: %v", err)
+		}
+		newCondition, err := testutil.FindNodeByText(dstTree, dst, "a || b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newCondition: %v", err)
+		}
+		oldBlock, err := testutil.FindNodeByText(srcTree, src, "{}", "block")
+		if err != nil {
+			t.Fatalf("find oldBlock: %v", err)
+		}
+		newBlock, err := testutil.FindNodeByText(dstTree, dst, "{}", "block")
+		if err != nil {
+			t.Fatalf("find newBlock: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldIf, newIf)
@@ -594,64 +601,80 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("drops Move when boolean operator precedence or parens rebalance within if condition", func(t *testing.T) {
-		// Old: if (A || B) || C { block }
-		oldAId := mkNode("identifier", "A")
-		oldBId := mkNode("identifier", "B")
-		oldCId := mkNode("identifier", "C")
-		oldA := mkNode("binary_expression", "==", oldAId)
-		oldB := mkNode("binary_expression", "<=", oldBId)
-		oldC := mkNode("call_expression", "", oldCId)
-		oldLeftBin := mkNode("binary_expression", "||", oldA, oldB)
-		oldRootBin := mkNode("binary_expression", "||", oldLeftBin, oldC)
-		oldBlock := mkNode("block", "")
-		oldIf := mkNode("if_statement", "", mkNode("if", "if"), oldRootBin, oldBlock)
-		oldOuterBlock := mkNode("block", "", oldIf)
-		setLanguageRecursive(oldOuterBlock, "go")
+		src := []byte("package main\nfunc f() {\n\tif (a == 1 || b <= 2) || c() {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif a == 1 && (b <= 2 || c()) {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		// New: if A && (B || C) { block }
-		newAId := mkNode("identifier", "A")
-		newBId := mkNode("identifier", "B")
-		newCId := mkNode("identifier", "C")
-		newA := mkNode("binary_expression", "==", newAId)
-		newB := mkNode("binary_expression", "<=", newBId)
-		newC := mkNode("call_expression", "", newCId)
-		newRightBin := mkNode("binary_expression", "||", newB, newC)
-		newParen := mkNode("parenthesized_expression", "", newRightBin)
-		newRootBin := mkNode("binary_expression", "&&", newA, newParen)
-		newBlock := mkNode("block", "")
-		newIf := mkNode("if_statement", "", mkNode("if", "if"), newRootBin, newBlock)
-		newOuterBlock := mkNode("block", "", newIf)
-		setLanguageRecursive(newOuterBlock, "go")
-
-		oldA.StartByte, oldA.EndByte = 10, 20
-		oldAId.StartByte, oldAId.EndByte = 10, 20
-		oldB.StartByte, oldB.EndByte = 30, 40
-		oldBId.StartByte, oldBId.EndByte = 30, 40
-		oldC.StartByte, oldC.EndByte = 50, 60
-		oldCId.StartByte, oldCId.EndByte = 50, 60
-		oldLeftBin.StartByte, oldLeftBin.EndByte = 10, 40
-		oldRootBin.StartByte, oldRootBin.EndByte = 10, 60
-
-		newA.StartByte, newA.EndByte = 10, 20
-		newAId.StartByte, newAId.EndByte = 10, 20
-		newB.StartByte, newB.EndByte = 35, 45
-		newBId.StartByte, newBId.EndByte = 35, 45
-		newC.StartByte, newC.EndByte = 55, 65
-		newCId.StartByte, newCId.EndByte = 55, 65
-		newRightBin.StartByte, newRightBin.EndByte = 35, 65
-		newParen.StartByte, newParen.EndByte = 34, 66
-		newRootBin.StartByte, newRootBin.EndByte = 10, 66
+		oldOuterBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tif (a == 1 || b <= 2) || c() {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldOuterBlock: %v", err)
+		}
+		newOuterBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tif a == 1 && (b <= 2 || c()) {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newOuterBlock: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (a == 1 || b <= 2) || c() {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if a == 1 && (b <= 2 || c()) {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldA, err := testutil.FindNodeByText(srcTree, src, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldA: %v", err)
+		}
+		newA, err := testutil.FindNodeByText(dstTree, dst, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newA: %v", err)
+		}
+		oldB, err := testutil.FindNodeByText(srcTree, src, "b <= 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldB: %v", err)
+		}
+		newB, err := testutil.FindNodeByText(dstTree, dst, "b <= 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newB: %v", err)
+		}
+		oldC, err := testutil.FindNodeByText(srcTree, src, "c()", "call_expression")
+		if err != nil {
+			t.Fatalf("find oldC: %v", err)
+		}
+		newC, err := testutil.FindNodeByText(dstTree, dst, "c()", "call_expression")
+		if err != nil {
+			t.Fatalf("find newC: %v", err)
+		}
+		oldLeftBin, err := testutil.FindNodeByText(srcTree, src, "a == 1 || b <= 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldLeftBin: %v", err)
+		}
+		newRightBin, err := testutil.FindNodeByText(dstTree, dst, "b <= 2 || c()", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newRightBin: %v", err)
+		}
+		oldRootBin, err := testutil.FindNodeByText(srcTree, src, "(a == 1 || b <= 2) || c()", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldRootBin: %v", err)
+		}
+		newRootBin, err := testutil.FindNodeByText(dstTree, dst, "a == 1 && (b <= 2 || c())", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newRootBin: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldOuterBlock, newOuterBlock)
 		ms.Add(oldIf, newIf)
-		ms.Add(oldBlock, newBlock)
 		ms.Add(oldA, newA)
-		ms.Add(oldAId, newAId)
 		ms.Add(oldB, newB)
-		ms.Add(oldBId, newBId)
 		ms.Add(oldC, newC)
-		ms.Add(oldCId, newCId)
 		ms.Add(oldLeftBin, newRootBin)
 		ms.Add(oldRootBin, newRightBin)
 
@@ -666,46 +689,63 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves Move when operands are swapped across intermediate expressions", func(t *testing.T) {
-		oldAId := mkNode("identifier", "A")
-		oldBId := mkNode("identifier", "B")
-		oldA := mkNode("binary_expression", "==", oldAId)
-		oldB := mkNode("binary_expression", "==", oldBId)
-		oldRootBin := mkNode("binary_expression", "||", oldA, oldB)
-		oldIf := mkNode("if_statement", "", oldRootBin)
-		oldOuterBlock := mkNode("block", "", oldIf)
-		setLanguageRecursive(oldOuterBlock, "go")
+		src := []byte("package main\nfunc f() {\n\tif a == 1 || b == 2 {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif (b == 2) || a == 1 {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		oldA.StartByte, oldA.EndByte = 10, 20
-		oldA.StartCol, oldA.EndCol = 10, 20
-		oldAId.StartByte, oldAId.EndByte = 10, 20
-		oldB.StartByte, oldB.EndByte = 30, 40
-		oldBId.StartByte, oldBId.EndByte = 30, 40
-
-		newAId := mkNode("identifier", "A")
-		newBId := mkNode("identifier", "B")
-		newA := mkNode("binary_expression", "==", newAId)
-		newB := mkNode("binary_expression", "==", newBId)
-		newParen := mkNode("parenthesized_expression", "", newB)
-		newRootBin := mkNode("binary_expression", "||", newParen, newA)
-		newIf := mkNode("if_statement", "", newRootBin)
-		newOuterBlock := mkNode("block", "", newIf)
-		setLanguageRecursive(newOuterBlock, "go")
-
-		// B is now before A in document order.
-		newParen.StartByte, newParen.EndByte = 10, 24
-		newB.StartByte, newB.EndByte = 12, 22
-		newBId.StartByte, newBId.EndByte = 12, 22
-		newA.StartByte, newA.EndByte = 26, 36
-		newA.StartCol, newA.EndCol = 26, 36
-		newAId.StartByte, newAId.EndByte = 26, 36
+		oldOuterBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tif a == 1 || b == 2 {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldOuterBlock: %v", err)
+		}
+		newOuterBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tif (b == 2) || a == 1 {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newOuterBlock: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if a == 1 || b == 2 {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if (b == 2) || a == 1 {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldA, err := testutil.FindNodeByText(srcTree, src, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldA: %v", err)
+		}
+		newA, err := testutil.FindNodeByText(dstTree, dst, "a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newA: %v", err)
+		}
+		oldB, err := testutil.FindNodeByText(srcTree, src, "b == 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldB: %v", err)
+		}
+		newB, err := testutil.FindNodeByText(dstTree, dst, "b == 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newB: %v", err)
+		}
+		oldRootBin, err := testutil.FindNodeByText(srcTree, src, "a == 1 || b == 2", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldRootBin: %v", err)
+		}
+		newRootBin, err := testutil.FindNodeByText(dstTree, dst, "(b == 2) || a == 1", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newRootBin: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldOuterBlock, newOuterBlock)
 		ms.Add(oldIf, newIf)
 		ms.Add(oldA, newA)
-		ms.Add(oldAId, newAId)
 		ms.Add(oldB, newB)
-		ms.Add(oldBId, newBId)
 		ms.Add(oldRootBin, newRootBin)
 
 		es := actions.NewEditScript()
@@ -718,24 +758,57 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("does not treat operator-only shell inside same statement as stationary expression move", func(t *testing.T) {
-		oldOp := mkNode("logical_operator_literal", "&&")
-		oldBin := mkNode("binary_expression", "&&", mkNode("identifier", "a"), oldOp, mkNode("identifier", "b"))
-		oldParen := mkNode("parenthesized_expression", "", oldBin)
-		oldRoot := mkNode("binary_expression", "||", oldParen, mkNode("identifier", "keep"))
-		oldIf := mkNode("if_statement", "", oldRoot)
-		oldOuter := mkNode("block", "", oldIf)
-		setLanguageRecursive(oldOuter, "go")
+		src := []byte("package main\nfunc f() {\n\tif (a && b) || keep {}\n}\n")
+		dst := []byte("package main\nfunc f() {\n\tif (c && d) || other {}\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newOp := mkNode("logical_operator_literal", "&&")
-		newBin := mkNode("binary_expression", "&&", mkNode("identifier", "c"), newOp, mkNode("identifier", "d"))
-		newParen := mkNode("parenthesized_expression", "", newBin)
-		newRoot := mkNode("binary_expression", "||", newParen, mkNode("identifier", "other"))
-		newIf := mkNode("if_statement", "", newRoot)
-		newOuter := mkNode("block", "", newIf)
-		setLanguageRecursive(newOuter, "go")
-
-		oldParen.StartCol, oldParen.EndCol = 3, 11
-		newParen.StartCol, newParen.EndCol = 3, 15
+		oldOuter, err := testutil.FindNodeByText(srcTree, src, "{\n\tif (a && b) || keep {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find oldOuter: %v", err)
+		}
+		newOuter, err := testutil.FindNodeByText(dstTree, dst, "{\n\tif (c && d) || other {}\n}", "block")
+		if err != nil {
+			t.Fatalf("find newOuter: %v", err)
+		}
+		oldIf, err := testutil.FindNodeByText(srcTree, src, "if (a && b) || keep {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find oldIf: %v", err)
+		}
+		newIf, err := testutil.FindNodeByText(dstTree, dst, "if (c && d) || other {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find newIf: %v", err)
+		}
+		oldParen, err := testutil.FindNodeByText(srcTree, src, "(a && b)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find oldParen: %v", err)
+		}
+		newParen, err := testutil.FindNodeByText(dstTree, dst, "(c && d)", "parenthesized_expression")
+		if err != nil {
+			t.Fatalf("find newParen: %v", err)
+		}
+		oldBin, err := testutil.FindNodeByText(srcTree, src, "a && b", "binary_expression")
+		if err != nil {
+			t.Fatalf("find oldBin: %v", err)
+		}
+		newBin, err := testutil.FindNodeByText(dstTree, dst, "c && d", "binary_expression")
+		if err != nil {
+			t.Fatalf("find newBin: %v", err)
+		}
+		oldOp, err := testutil.FindNodeByText(srcTree, src, "&&", "logical_operator_literal")
+		if err != nil {
+			t.Fatalf("find oldOp: %v", err)
+		}
+		newOp, err := testutil.FindNodeByText(dstTree, dst, "&&", "logical_operator_literal")
+		if err != nil {
+			t.Fatalf("find newOp: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(oldOuter, newOuter)
@@ -754,87 +827,83 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 	})
 
 	t.Run("preserves move when wrapper unwrap depth exceeds limit", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		w1 := mkNode("friend_declaration", "")
-		w1.Language = "cpp"
-		w2 := mkNode("friend_declaration", "")
-		w2.Language = "cpp"
-		w3 := mkNode("friend_declaration", "")
-		w3.Language = "cpp"
-		w4 := mkNode("friend_declaration", "")
-		w4.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = []*treesitter.ASTNode{w1}
-		w1.Parent = oldClass
-		w1.Children = []*treesitter.ASTNode{w2}
-		w2.Parent = w1
-		w2.Children = []*treesitter.ASTNode{w3}
-		w3.Parent = w2
-		w3.Children = []*treesitter.ASTNode{w4}
-		w4.Parent = w3
-		w4.Children = []*treesitter.ASTNode{oldFn}
-		oldFn.Parent = w4
+		srcGo := []byte("package main\nfunc f() {\n\t_ = ((((foo))))\n}\n")
+		dstGo := []byte("package main\nfunc f() {\n\t_ = foo\n}\n")
+		srcTree, err := treesitter.Parse(srcGo, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dstGo, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = []*treesitter.ASTNode{newFn}
-		newFn.Parent = newClass
+		srcBlock, err := testutil.FindNodeByText(srcTree, srcGo, "{\n\t_ = ((((foo))))\n}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dstGo, "{\n\t_ = foo\n}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, srcGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dstGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldClass, newClass)
-		ms.Add(oldFn, newFn)
+		ms.Add(srcBlock, dstBlock)
+		ms.Add(oldID, newID)
 
 		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldFn, DestNode: newFn})
+		es.Add(actions.Action{Type: actions.Move, Node: oldID, DestNode: newID})
 
 		result := normalizeStationaryWrapperMoves(es, ms)
-		// With maxUnwrapDepth = 3, 4 hops cannot unwrap to oldClass, so move is preserved
+		// With maxUnwrapDepth = 3, 4 hops cannot unwrap to srcBlock, so move is preserved
 		if result.Size() != 1 {
 			t.Fatalf("expected move to be preserved across >3 wrapper hops, got %d actions", result.Size())
 		}
 	})
 
 	t.Run("preserves move when wrapper unwrap is asymmetric", func(t *testing.T) {
-		oldClass := mkNode("class_specifier", "")
-		oldClass.Language = "cpp"
-		w1 := mkNode("friend_declaration", "")
-		w1.Language = "cpp"
-		w2 := mkNode("friend_declaration", "")
-		w2.Language = "cpp"
-		w3 := mkNode("friend_declaration", "")
-		w3.Language = "cpp"
-		oldFn := mkNode("function_definition", "foo")
-		oldFn.Language = "cpp"
-		oldClass.Children = []*treesitter.ASTNode{w1}
-		w1.Parent = oldClass
-		w1.Children = []*treesitter.ASTNode{w2}
-		w2.Parent = w1
-		w2.Children = []*treesitter.ASTNode{w3}
-		w3.Parent = w2
-		w3.Children = []*treesitter.ASTNode{oldFn}
-		oldFn.Parent = w3
+		srcGo := []byte("package main\nfunc f() {\n\t_ = (((foo)))\n}\n")
+		dstGo := []byte("package main\nfunc f() {\n\t_ = (foo)\n}\n")
+		srcTree, err := treesitter.Parse(srcGo, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dstGo, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		newClass := mkNode("class_specifier", "")
-		newClass.Language = "cpp"
-		nw1 := mkNode("friend_declaration", "")
-		nw1.Language = "cpp"
-		newFn := mkNode("function_definition", "foo")
-		newFn.Language = "cpp"
-		newClass.Children = []*treesitter.ASTNode{nw1}
-		nw1.Parent = newClass
-		nw1.Children = []*treesitter.ASTNode{newFn}
-		newFn.Parent = nw1
+		srcBlock, err := testutil.FindNodeByText(srcTree, srcGo, "{\n\t_ = (((foo)))\n}", "block")
+		if err != nil {
+			t.Fatalf("find srcBlock: %v", err)
+		}
+		dstBlock, err := testutil.FindNodeByText(dstTree, dstGo, "{\n\t_ = (foo)\n}", "block")
+		if err != nil {
+			t.Fatalf("find dstBlock: %v", err)
+		}
+		oldID, err := testutil.FindNodeByText(srcTree, srcGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find oldID: %v", err)
+		}
+		newID, err := testutil.FindNodeByText(dstTree, dstGo, "foo", "identifier")
+		if err != nil {
+			t.Fatalf("find newID: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		ms.Add(oldClass, newClass)
-		ms.Add(oldFn, newFn)
+		ms.Add(srcBlock, dstBlock)
+		ms.Add(oldID, newID)
 
 		es := actions.NewEditScript()
-		es.Add(actions.Action{Type: actions.Move, Node: oldFn, DestNode: newFn})
+		es.Add(actions.Action{Type: actions.Move, Node: oldID, DestNode: newID})
 
 		result := normalizeStationaryWrapperMoves(es, ms)
 		// srcDepth = 3, dstDepth = 1, diff = 2 > 1 → asymmetric unwrap, move is preserved
@@ -842,51 +911,6 @@ func TestNormalizeStationaryWrapperMoves(t *testing.T) {
 			t.Fatalf("expected move to be preserved across asymmetric unwrap depths, got %d actions", result.Size())
 		}
 	})
-}
-
-func findContainerDecl(root *treesitter.ASTNode, r *rules.Rules, name string) *treesitter.ASTNode {
-	if root == nil || r == nil {
-		return nil
-	}
-	for _, n := range root.PreOrder() {
-		if r.IsContainerDeclaration(n.Type) && declarationName(n) == name {
-			return n
-		}
-	}
-	return nil
-}
-
-func declarationName(n *treesitter.ASTNode) string {
-	for _, child := range n.Children {
-		if rules.Get(n.GetLanguage()).IsIdentifier(child.Type) && child.Label != "" {
-			return child.Label
-		}
-	}
-	return ""
-}
-
-func findNodeContaining(root *treesitter.ASTNode, r *rules.Rules, source []byte, fragment string, classify func(*rules.Rules, string) bool) *treesitter.ASTNode {
-	for _, n := range root.Descendants() {
-		if classify(r, n.Type) && strings.Contains(string(source[n.StartByte:n.EndByte]), fragment) {
-			return n
-		}
-	}
-	return nil
-}
-
-func findStatementByName(root *treesitter.ASTNode, r *rules.Rules, source []byte, name string) *treesitter.ASTNode {
-	return findNodeContaining(root, r, source, name, func(r *rules.Rules, nodeType string) bool {
-		return r.IsLocalVarDeclaration(nodeType) || r.IsAssignment(nodeType)
-	})
-}
-
-func findDirectDelimitedChild(root *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
-	for _, n := range root.Children {
-		if r.IsDelimitedContainer(n.Type) {
-			return n
-		}
-	}
-	return nil
 }
 
 func assertNoActionOn(t *testing.T, es *actions.EditScript, node *treesitter.ASTNode) {
@@ -912,40 +936,71 @@ func TestSameScopeDeclaration(t *testing.T) {
 	})
 
 	t.Run("nil mapping returns false", func(t *testing.T) {
-		src := mkNode("identifier", "x")
-		src.Language = "go"
-		dst := mkNode("identifier", "y")
-		dst.Language = "go"
-		if sameScopeDeclaration(src, dst, nil, r) {
+		src := []byte("package main\nvar x = 1\nvar y = 2\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		xNode, err := testutil.FindNodeByText(tree, src, "x", "identifier")
+		if err != nil {
+			t.Fatalf("find x: %v", err)
+		}
+		yNode, err := testutil.FindNodeByText(tree, src, "y", "identifier")
+		if err != nil {
+			t.Fatalf("find y: %v", err)
+		}
+		if sameScopeDeclaration(xNode, yNode, nil, r) {
 			t.Error("expected false for nil mapping")
 		}
 	})
 
 	t.Run("both outside any container returns true", func(t *testing.T) {
 		ms := engine.NewMapping()
-		src := mkNode("identifier", "x")
-		src.Language = "go"
-		dst := mkNode("identifier", "y")
-		dst.Language = "go"
-		if !sameScopeDeclaration(src, dst, ms, r) {
+		src := []byte("package main\nvar x = 1\nvar y = 2\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		xNode, err := testutil.FindNodeByText(tree, src, "x", "identifier")
+		if err != nil {
+			t.Fatalf("find x: %v", err)
+		}
+		yNode, err := testutil.FindNodeByText(tree, src, "y", "identifier")
+		if err != nil {
+			t.Fatalf("find y: %v", err)
+		}
+		if !sameScopeDeclaration(xNode, yNode, ms, r) {
 			t.Error("expected true when both nodes are outside any container")
 		}
 	})
 
 	t.Run("matched enclosing containers returns true", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
-
-		dstFunc := mkNode("function_declaration", "bar")
-		dstFunc.Language = "go"
-		dstStmt := mkNode("expression_statement", "")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+		src := []byte("package main\nfunc foo() { stmtA() }\n")
+		dst := []byte("package main\nfunc bar() { stmtB() }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func foo()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func bar()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtB()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcFunc, dstFunc)
@@ -956,19 +1011,24 @@ func TestSameScopeDeclaration(t *testing.T) {
 	})
 
 	t.Run("unmatched enclosing containers returns false", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
-
-		dstFunc := mkNode("function_declaration", "bar")
-		dstFunc.Language = "go"
-		dstStmt := mkNode("expression_statement", "")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstStmt}
+		src := []byte("package main\nfunc foo() { stmtA() }\n")
+		dst := []byte("package main\nfunc bar() { stmtB() }\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtB()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		// srcFunc and dstFunc are NOT mapped to each other.
@@ -979,43 +1039,45 @@ func TestSameScopeDeclaration(t *testing.T) {
 	})
 
 	t.Run("one inside container one outside returns false", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "foo")
-		srcFunc.Language = "go"
-		srcStmt := mkNode("expression_statement", "")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcStmt}
-
-		dst := mkNode("expression_statement", "")
-		dst.Language = "go"
+		src := []byte("package main\nfunc foo() { stmtA() }\n")
+		dst := []byte("package main\nvar _ = stmtB()\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "stmtA()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "stmtB()", "call_expression")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
-		if sameScopeDeclaration(srcStmt, dst, ms, r) {
+		if sameScopeDeclaration(srcStmt, dstStmt, ms, r) {
 			t.Error("expected false when only one node is inside a container")
 		}
 	})
 
 	t.Run("Unit/distinct closures in same outer function returns false", func(t *testing.T) {
-		outerFunc := mkNode("function_declaration", "outer")
-		outerFunc.Language = "go"
-
-		c1 := mkNode("func_literal", "")
-		c1.Language = "go"
-		c1.Parent = outerFunc
-
-		c2 := mkNode("func_literal", "")
-		c2.Language = "go"
-		c2.Parent = outerFunc
-
-		stmt1 := mkNode("expression_statement", "")
-		stmt1.Language = "go"
-		stmt1.Parent = c1
-		c1.Children = []*treesitter.ASTNode{stmt1}
-
-		stmt2 := mkNode("expression_statement", "")
-		stmt2.Language = "go"
-		stmt2.Parent = c2
-		c2.Children = []*treesitter.ASTNode{stmt2}
+		src := []byte("package main\nfunc outer() {\n\tc1 := func() { stmtOne() }\n\tc2 := func() { stmtTwo() }\n\t_, _ = c1, c2\n}\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		stmt1, err := testutil.FindNodeByText(tree, src, "stmtOne()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find stmt1: %v", err)
+		}
+		stmt2, err := testutil.FindNodeByText(tree, src, "stmtTwo()", "expression_statement")
+		if err != nil {
+			t.Fatalf("find stmt2: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		// c1 and c2 are in the same outer function, but are distinct unmapped closures.
@@ -1089,40 +1151,31 @@ func execute() {
 			}
 		}
 
-		// 3. Whole-snippet verification: cleanup closure and stop() statement map in place.
-		var srcStop, dstStop *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "stop") {
-				srcStop = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "stop") {
-				dstStop = n
-				break
-			}
-		}
-		if srcStop == nil || dstStop == nil {
-			t.Fatal("expected to find stop() call expressions in src and dst")
-		}
-		if matchResult.Mappings.Get(srcStop) != dstStop {
-			t.Errorf("expected stationary stop() to map in place, got %v", matchResult.Mappings.Get(srcStop))
-		}
+		// 3. Whole-snippet verification: enclosing function, cleanup closure, and stop() map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "package main", "package main")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "func execute()", "func execute()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "stop()", "stop()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "cleanup()", "cleanup()")
 
 		// 4. return nil in dst must be recorded as an Insert, not a Move.
+		returnNil, err := testutil.FindNodeByText(dstAST, dst, "return nil")
+		if err != nil {
+			t.Fatalf("find return nil: %v", err)
+		}
 		hasReturnNilInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Insert && a.Node != nil && r.IsJumpStatement(a.Node.Type) &&
-				strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "return nil")
+			return a.Type == actions.Insert && a.Node != nil && a.Node.ID == returnNil.ID
 		})
 		if !hasReturnNilInsert {
 			t.Error("expected return nil in cleanup to be recorded as an Insert")
 		}
 
 		// 5. Entire deleted validate closure must be recorded as a Delete.
+		validateClosure, err := testutil.FindNodeByText(srcAST, src, "validate :=", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find validate closure: %v", err)
+		}
 		hasValidateDelete := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Delete && a.Node != nil && r.IsLocalVarDeclaration(a.Node.Type) &&
-				strings.Contains(string(src[a.Node.StartByte:a.Node.EndByte]), "validate :=")
+			return a.Type == actions.Delete && a.Node != nil && a.Node.ID == validateClosure.ID
 		})
 		if !hasValidateDelete {
 			t.Error("expected deleted validate closure to be recorded as a Delete")
@@ -1186,24 +1239,55 @@ func processItems(items []int) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		srcFunc := findContainerDecl(srcAST, r, "processItems")
-		dstFunc := findContainerDecl(dstAST, r, "processItems")
+		srcFunc, err := testutil.FindNodeByText(srcAST, src, "func processItems(items []int)")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstAST, dst, "func processItems(items []int)")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
 
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
-				callee := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(callee, "precedingInit") || strings.Contains(callee, "succeedingDone") {
-					t.Errorf("expected stationary call to not have Move action, got %v", a)
-				}
+		srcInit, err := testutil.FindNodeByText(srcAST, src, "precedingInit()")
+		if err != nil {
+			t.Fatalf("find srcInit: %v", err)
+		}
+		srcDone, err := testutil.FindNodeByText(srcAST, src, "succeedingDone(currCommon, currDice, currAffinity)")
+		if err != nil {
+			t.Fatalf("find srcDone: %v", err)
+		}
+		assertNoActionOn(t, normalized, srcInit)
+		assertNoActionOn(t, normalized, srcDone)
+
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "func processItems(items []int)", "func processItems(items []int)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "items []int", "items []int")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "succeedingDone(currCommon, currDice, currAffinity)", "succeedingDone(currCommon, currDice, currAffinity)")
+
+		for _, item := range []struct {
+			srcStmt string
+			dstStmt string
+			call    string
+		}{
+			{srcStmt: "currCommon := common(items)", dstStmt: "currCommon = common(items)", call: "common(items)"},
+			{srcStmt: "currDice := dice(items)", dstStmt: "currDice = dice(items)", call: "dice(items)"},
+			{srcStmt: "currAffinity := affinity(items)", dstStmt: "currAffinity = affinity(items)", call: "affinity(items)"},
+		} {
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), item.srcStmt, item.dstStmt)
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), item.call, item.call)
+
+			stmtNode, err := testutil.FindNodeByText(srcAST, src, item.srcStmt)
+			if err != nil {
+				t.Fatalf("find %q: %v", item.srcStmt, err)
+			}
+			if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+				return a.Type == actions.Move && a.Node == stmtNode
+			}) {
+				t.Errorf("stmt %q has no Move action, want extraction into closure", item.srcStmt)
 			}
 		}
-
-		if srcFunc == nil || dstFunc == nil || matchResult.Mappings.Src()[srcFunc] != dstFunc {
-			t.Fatalf("processItems mapping = %v, want destination processItems", matchResult.Mappings.Src()[srcFunc])
-		}
-		assertExtractedStatements(t, srcFunc, dstFunc, r, src, dst, matchResult, normalized)
 	})
 
 	t.Run("FullEngine/typescript arrow function extraction recognizes scope", func(t *testing.T) {
@@ -1260,40 +1344,35 @@ func processItems(items []int) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		srcFunc := findContainerDecl(srcAST, r, "processItems")
-		dstFunc := findContainerDecl(dstAST, r, "processItems")
+		srcFunc, err := testutil.FindNodeByText(srcAST, src, "function processItems(items: number[])")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstAST, dst, "function processItems(items: number[])")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
 
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
-				callee := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(callee, "precedingInit") {
-					t.Errorf("expected stationary call to not have Move action, got %v", a)
-				}
-			}
+		srcInit, err := testutil.FindNodeByText(srcAST, src, "precedingInit()")
+		if err != nil {
+			t.Fatalf("find srcInit: %v", err)
 		}
+		assertNoActionOn(t, normalized, srcInit)
 
-		var srcReduce, dstReduce *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "reduce") {
-				srcReduce = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "reduce") {
-				dstReduce = n
-				break
-			}
-		}
-		if srcReduce == nil || dstReduce == nil {
-			t.Fatalf("failed to locate reduce calls: src=%v dst=%v", srcReduce, dstReduce)
-		}
-		if matchResult.Mappings.Get(srcReduce) != dstReduce {
-			t.Errorf("expected items.reduce(...) to map across into arrow function, got %v", matchResult.Mappings.Get(srcReduce))
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "function processItems(items: number[])", "function processItems(items: number[])")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "items.reduce((a, b) => a + b, 0)", "items.reduce((a, b) => a + b, 0)")
 
+		srcReduce, err := testutil.FindNodeByText(srcAST, src, "items.reduce((a, b) => a + b, 0)")
+		if err != nil {
+			t.Fatalf("find srcReduce: %v", err)
+		}
+		dstReduce, err := testutil.FindNodeByText(dstAST, dst, "items.reduce((a, b) => a + b, 0)")
+		if err != nil {
+			t.Fatalf("find dstReduce: %v", err)
+		}
 		if !sameScopeDeclaration(srcReduce, dstReduce, matchResult.Mappings, r) {
 			t.Errorf("expected sameScopeDeclaration to return true for arrow function inside processItems")
 		}
@@ -1353,40 +1432,35 @@ func processItems(items []int) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		srcFunc := findContainerDecl(srcAST, r, "process_items")
-		dstFunc := findContainerDecl(dstAST, r, "process_items")
+		srcFunc, err := testutil.FindNodeByText(srcAST, src, "fn process_items(items: &[i32])")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstAST, dst, "fn process_items(items: &[i32])")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
 
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsCall(a.Node.Type) {
-				callee := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(callee, "preceding_init") {
-					t.Errorf("expected stationary call to not have Move action, got %v", a)
-				}
-			}
+		srcInit, err := testutil.FindNodeByText(srcAST, src, "preceding_init()")
+		if err != nil {
+			t.Fatalf("find srcInit: %v", err)
 		}
+		assertNoActionOn(t, normalized, srcInit)
 
-		var srcSum, dstSum *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "sum") {
-				srcSum = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "sum") {
-				dstSum = n
-				break
-			}
-		}
-		if srcSum == nil || dstSum == nil {
-			t.Fatalf("failed to locate sum calls: src=%v dst=%v", srcSum, dstSum)
-		}
-		if matchResult.Mappings.Get(srcSum) != dstSum {
-			t.Errorf("expected sum call to map across into closure_expression, got %v", matchResult.Mappings.Get(srcSum))
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "fn process_items(items: &[i32])", "fn process_items(items: &[i32])")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "preceding_init()", "preceding_init()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "items.iter().map(|x| x * 2).sum::<i32>()", "items.iter().map(|x| x * 2).sum::<i32>()")
 
+		srcSum, err := testutil.FindNodeByText(srcAST, src, "items.iter().map(|x| x * 2).sum::<i32>()")
+		if err != nil {
+			t.Fatalf("find srcSum: %v", err)
+		}
+		dstSum, err := testutil.FindNodeByText(dstAST, dst, "items.iter().map(|x| x * 2).sum::<i32>()")
+		if err != nil {
+			t.Fatalf("find dstSum: %v", err)
+		}
 		if !sameScopeDeclaration(srcSum, dstSum, matchResult.Mappings, r) {
 			t.Errorf("expected sameScopeDeclaration to return true for closure_expression inside process_items")
 		}
@@ -1394,7 +1468,7 @@ func processItems(items []int) {
 }
 
 func TestClosureScopeBoundaries(t *testing.T) {
-	t.Run("FullEngine/java closure does not cross method and class boundaries", func(t *testing.T) {
+	t.Run("FullEngine/java closure across method and class boundaries is unmapped and out of scope", func(t *testing.T) {
 		r := rules.Get("java")
 		src := []byte(`class Outer {
     int value = compute();
@@ -1434,43 +1508,34 @@ func TestClosureScopeBoundaries(t *testing.T) {
 		if mr == nil || mr.Mappings == nil {
 			t.Fatal("Match returned nil")
 		}
-		for _, name := range []string{"Outer", "Inner", "run"} {
-			srcDecl := findContainerDecl(srcAST, r, name)
-			dstDecl := findContainerDecl(dstAST, r, name)
-			if srcDecl == nil || dstDecl == nil || mr.Mappings.Src()[srcDecl] != dstDecl {
-				t.Errorf("%s mapping = %v, want in-place destination declaration", name, mr.Mappings.Src()[srcDecl])
-			}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "class Outer", "class Outer")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "static class Inner", "static class Inner")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "void run()", "void run()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "succeedingDone()", "succeedingDone()")
+
+		// Whole-snippet unmapped assertions: cross-scope compute() and field declaration remain unmapped.
+		testutil.AssertUnmappedText(t, srcAST.Root(), src, mr.Mappings.Src(), "compute()")
+		testutil.AssertUnmappedText(t, dstAST.Root(), dst, mr.Mappings.Dst(), "compute()")
+		testutil.AssertUnmappedText(t, srcAST.Root(), src, mr.Mappings.Src(), "int value = compute();")
+
+		srcCompute, err := testutil.FindNodeByText(srcAST, src, "compute()")
+		if err != nil {
+			t.Fatalf("find srcCompute: %v", err)
 		}
-		for _, name := range []string{"precedingInit", "succeedingDone"} {
-			srcCall := findNodeContaining(srcAST, r, src, name+"(", (*rules.Rules).IsCall)
-			dstCall := findNodeContaining(dstAST, r, dst, name+"(", (*rules.Rules).IsCall)
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
-			}
-		}
-		var srcCompute, dstCompute *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && string(src[n.StartByte:n.EndByte]) == "compute()" {
-				srcCompute = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && string(dst[n.StartByte:n.EndByte]) == "compute()" {
-				dstCompute = n
-				break
-			}
-		}
-		if srcCompute == nil || dstCompute == nil {
-			t.Fatalf("compute calls not found: src=%v dst=%v", srcCompute, dstCompute)
+		dstCompute, err := testutil.FindNodeByText(dstAST, dst, "compute()")
+		if err != nil {
+			t.Fatalf("find dstCompute: %v", err)
 		}
 		srcField := srcCompute.Parent.Parent
 		dstLambda := dstCompute.Parent
 		if srcField == nil || !r.IsDeclaration(srcField.Type) || dstLambda == nil || !r.IsClosure(dstLambda.Type) {
 			t.Fatalf("unexpected parsed scopes: field=%v lambda=%v", srcField, dstLambda)
 		}
-		mr.Mappings.Add(srcField, dstLambda)
-		srcOuter := findContainerDecl(srcAST, r, "Outer")
+		srcOuter, err := testutil.FindNodeByText(srcAST, src, "class Outer")
+		if err != nil {
+			t.Fatalf("find srcOuter: %v", err)
+		}
 		if sameScopeDeclaration(srcField, dstCompute, mr.Mappings, r) {
 			t.Error("sameScopeDeclaration() = true across Outer field and Inner.run lambda, want false")
 		}
@@ -1483,9 +1548,67 @@ func TestClosureScopeBoundaries(t *testing.T) {
 		if sameScopeDeclaration(dstCompute, srcOuter, mr.Mappings, r) {
 			t.Error("sameScopeDeclaration() = true from Inner.run lambda to mapped Outer, want false")
 		}
-		mr.Mappings.Add(srcCompute, dstCompute)
 		if sameScopeDeclaration(srcCompute, dstCompute, mr.Mappings, r) {
-			t.Error("sameScopeDeclaration() = true for mapped calls across Outer and Inner.run, want false")
+			t.Error("sameScopeDeclaration() = true for calls across Outer and Inner.run, want false")
+		}
+	})
+
+	t.Run("FullEngine/java closure within method boundary maps in place", func(t *testing.T) {
+		r := rules.Get("java")
+		src := []byte(`class Outer {
+    static class Inner {
+        void run() {
+            precedingInit();
+            compute();
+            succeedingDone();
+        }
+    }
+}
+`)
+		dst := []byte(`class Outer {
+    static class Inner {
+        void run() {
+            precedingInit();
+            use(() -> compute());
+            succeedingDone();
+        }
+    }
+}
+`)
+		srcAST, err := treesitter.Parse(src, "Outer.java")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "Outer.java")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("snippets must parse cleanly: src=%d dst=%d", srcAST.ParseErrorCount, dstAST.ParseErrorCount)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "class Outer", "class Outer")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "static class Inner", "static class Inner")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "void run()", "void run()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "succeedingDone()", "succeedingDone()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "compute()", "compute()")
+
+		srcCompute, err := testutil.FindNodeByText(srcAST, src, "compute()")
+		if err != nil {
+			t.Fatalf("find srcCompute: %v", err)
+		}
+		dstCompute, err := testutil.FindNodeByText(dstAST, dst, "compute()")
+		if err != nil {
+			t.Fatalf("find dstCompute: %v", err)
+		}
+		if !sameScopeDeclaration(srcCompute, dstCompute, mr.Mappings, r) {
+			t.Error("sameScopeDeclaration() = false for call mapped into lambda within same method, want true")
 		}
 	})
 
@@ -1548,137 +1671,111 @@ func processItems(items []int) {
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		srcFunc := findContainerDecl(srcAST, r, "processItems")
-		dstFunc := findContainerDecl(dstAST, r, "processItems")
-		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
-			t.Fatalf("processItems mapping = %v, want destination processItems", mr.Mappings.Src()[srcFunc])
+		srcFunc, err := testutil.FindNodeByText(srcAST, src, "func processItems(items []int)")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstAST, dst, "func processItems(items []int)")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
 		}
 		assertNoActionOn(t, normalized, srcFunc)
 		assertNoActionOn(t, normalized, dstFunc)
-		for _, name := range []string{"precedingInit", "succeedingDone"} {
-			srcCall := findNodeContaining(srcFunc, r, src, name+"(", (*rules.Rules).IsCall)
-			dstCall := findNodeContaining(dstFunc, r, dst, name+"(", (*rules.Rules).IsCall)
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
+
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "func processItems(items []int)", "func processItems(items []int)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "precedingInit()", "precedingInit()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "succeedingDone(currCommon, currDice, currAffinity)", "succeedingDone(currCommon, currDice, currAffinity)")
+
+		for _, item := range []struct {
+			srcStmt string
+			dstStmt string
+			call    string
+		}{
+			{srcStmt: "currCommon = common(items)", dstStmt: "currCommon := common(items)", call: "common(items)"},
+			{srcStmt: "currDice = dice(items)", dstStmt: "currDice := dice(items)", call: "dice(items)"},
+			{srcStmt: "currAffinity = affinity(items)", dstStmt: "currAffinity := affinity(items)", call: "affinity(items)"},
+		} {
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), item.srcStmt, item.dstStmt)
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), item.call, item.call)
+
+			srcStmt, err := testutil.FindNodeByText(srcAST, src, item.srcStmt)
+			if err != nil {
+				t.Fatalf("find srcStmt on %q: %v", item.srcStmt, err)
 			}
-			assertNoActionOn(t, normalized, srcCall)
-			assertNoActionOn(t, normalized, dstCall)
-		}
-		var srcClosure *treesitter.ASTNode
-		for _, n := range srcFunc.Descendants() {
-			if r.IsClosure(n.Type) {
-				srcClosure = n
-				break
+			dstStmt, err := testutil.FindNodeByText(dstAST, dst, item.dstStmt)
+			if err != nil {
+				t.Fatalf("find dstStmt on %q: %v", item.dstStmt, err)
 			}
-		}
-		if srcClosure == nil {
-			t.Fatal("ensureMetrics closure not found")
-		}
-		for _, name := range []string{"currCommon", "currDice", "currAffinity"} {
-			srcStmt := findStatementByName(srcClosure, r, src, name)
-			dstStmt := findStatementByName(dstFunc, r, dst, name)
-			if srcStmt == nil || dstStmt == nil {
-				t.Fatalf("%s statement not found: src=%v dst=%v", name, srcStmt, dstStmt)
-			}
-			if got := mr.Mappings.Src()[srcStmt]; got != dstStmt {
-				t.Errorf("%s mapping = %v, want inlined destination declaration", name, got)
-			}
+
 			if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
 				return a.Type == actions.Move && a.Node == srcStmt
 			}) {
-				t.Errorf("%s has no Move action, want closure inlining", name)
+				t.Errorf("stmt %q has no Move action, want closure inlining", item.srcStmt)
 			}
 			if !sameScopeDeclaration(srcStmt, dstStmt, mr.Mappings, r) {
-				t.Errorf("sameScopeDeclaration() = false for inlined %s, want true", name)
-			}
-			srcRHS := findNodeContaining(srcStmt, r, src, "(", (*rules.Rules).IsCall)
-			dstRHS := findNodeContaining(dstStmt, r, dst, "(", (*rules.Rules).IsCall)
-			if srcRHS == nil || dstRHS == nil || mr.Mappings.Src()[srcRHS] != dstRHS {
-				t.Errorf("%s RHS mapping = %v, want destination call", name, mr.Mappings.Src()[srcRHS])
+				t.Errorf("sameScopeDeclaration() = false for inlined stmt %q, want true", item.srcStmt)
 			}
 		}
 	})
 }
 
-func assertExtractedStatements(t *testing.T, srcFunc, dstFunc *treesitter.ASTNode, r *rules.Rules, src, dst []byte, mr *engine.MatchResult, normalized *actions.EditScript) {
-	t.Helper()
-	var dstClosure *treesitter.ASTNode
-	for _, n := range dstFunc.Descendants() {
-		if r.IsClosure(n.Type) {
-			dstClosure = n
-			break
-		}
-	}
-	if dstClosure == nil {
-		t.Fatal("extracted closure not found")
-	}
-	srcParams := findDirectDelimitedChild(srcFunc, r)
-	dstParams := findDirectDelimitedChild(dstFunc, r)
-	if srcParams == nil || dstParams == nil || mr.Mappings.Src()[srcParams] != dstParams {
-		t.Errorf("parameter list mapping = %v, want destination parameters", mr.Mappings.Src()[srcParams])
-	}
-	for _, name := range []string{"currCommon", "currDice", "currAffinity"} {
-		srcStmt := findStatementByName(srcFunc, r, src, name)
-		dstStmt := findStatementByName(dstClosure, r, dst, name)
-		if srcStmt == nil || dstStmt == nil {
-			t.Fatalf("%s statement not found: src=%v dst=%v", name, srcStmt, dstStmt)
-		}
-		if got := mr.Mappings.Src()[srcStmt]; got != dstStmt {
-			t.Errorf("%s mapping = %v, want assignment inside extracted closure", name, got)
-		}
-		if !slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Move && a.Node == srcStmt
-		}) {
-			t.Errorf("%s has no Move action, want extraction into closure", name)
-		}
-		srcRHS := findNodeContaining(srcStmt, r, src, "(", (*rules.Rules).IsCall)
-		dstRHS := findNodeContaining(dstStmt, r, dst, "(", (*rules.Rules).IsCall)
-		if srcRHS == nil || dstRHS == nil || mr.Mappings.Src()[srcRHS] != dstRHS {
-			t.Errorf("%s RHS mapping = %v, want destination call", name, mr.Mappings.Src()[srcRHS])
-		}
-	}
-}
-
 func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T) {
 	// Setup: stationary expression restructuring on the same line within the same statement.
-	outerBlock := mkNode("block", "")
-	outerBlock.Language = "go"
+	src := []byte("package main\n" + strings.Repeat("\n", 9) + "func f() {\n\tcallFoo()\n}\n")
+	dst := []byte("package main\n" + strings.Repeat("\n", 49) + "func f() {\n\tcallFoo()\n}\n")
+	srcTree, err := treesitter.Parse(src, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	stmt1 := mkNode("expression_statement", "")
-	stmt1.Language = "go"
-	stmt1.Parent = outerBlock
-	stmt1.StartRow = 10
-
-	call1 := mkNode("call_expression", "")
-	call1.Language = "go"
-	call1.Parent = stmt1
-	call1.StartRow = 10
-
-	stmt2 := mkNode("expression_statement", "")
-	stmt2.Language = "go"
-	stmt2.Parent = outerBlock
-	stmt2.StartRow = 50
-
-	call2 := mkNode("call_expression", "")
-	call2.Language = "go"
-	call2.Parent = stmt2
-	call2.StartRow = 50
-
-	id1 := mkNode("identifier", "foo")
-	id1.Language = "go"
-	id1.Parent = call1
-
-	id2 := mkNode("identifier", "foo")
-	id2.Language = "go"
-	id2.Parent = call2
-
-	call1.Children = []*treesitter.ASTNode{id1}
-	call2.Children = []*treesitter.ASTNode{id2}
-	stmt1.Children = []*treesitter.ASTNode{call1}
-	stmt2.Children = []*treesitter.ASTNode{call2}
+	srcFunc, err := testutil.FindNodeByText(srcTree, src, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find srcFunc: %v", err)
+	}
+	dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func f()", "function_declaration")
+	if err != nil {
+		t.Fatalf("find dstFunc: %v", err)
+	}
+	srcBlock, err := testutil.FindNodeByText(srcTree, src, "{\n\tcallFoo()\n}", "block")
+	if err != nil {
+		t.Fatalf("find srcBlock: %v", err)
+	}
+	dstBlock, err := testutil.FindNodeByText(dstTree, dst, "{\n\tcallFoo()\n}", "block")
+	if err != nil {
+		t.Fatalf("find dstBlock: %v", err)
+	}
+	stmt1, err := testutil.FindNodeByText(srcTree, src, "callFoo()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmt1: %v", err)
+	}
+	stmt2, err := testutil.FindNodeByText(dstTree, dst, "callFoo()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmt2: %v", err)
+	}
+	call1, err := testutil.FindNodeByText(srcTree, src, "callFoo()", "call_expression")
+	if err != nil {
+		t.Fatalf("find call1: %v", err)
+	}
+	call2, err := testutil.FindNodeByText(dstTree, dst, "callFoo()", "call_expression")
+	if err != nil {
+		t.Fatalf("find call2: %v", err)
+	}
+	id1, err := testutil.FindNodeByText(srcTree, src, "callFoo", "identifier")
+	if err != nil {
+		t.Fatalf("find id1: %v", err)
+	}
+	id2, err := testutil.FindNodeByText(dstTree, dst, "callFoo", "identifier")
+	if err != nil {
+		t.Fatalf("find id2: %v", err)
+	}
 
 	ms := engine.NewMapping()
-	ms.Add(outerBlock, outerBlock)
+	ms.Add(srcFunc, dstFunc)
+	ms.Add(srcBlock, dstBlock)
 	ms.Add(stmt1, stmt2)
 	ms.Add(call1, call2)
 	ms.Add(id1, id2)
@@ -1695,9 +1792,7 @@ func TestNormalizeMovesByStructure_StationaryExpressionMoveDropped(t *testing.T)
 			t.Errorf("expected stationary expression Move to be dropped from edit script, got %v", a.Type)
 		}
 	}
-	if !ms.Has(call1) {
-		t.Errorf("expected stationary expression call1 to remain in mapping")
-	}
+	testutil.AssertMappedText(t, srcTree, dstTree, src, dst, ms.Src(), "callFoo()", "callFoo()")
 }
 
 func TestTSXSelfClosingTagConversion(t *testing.T) {
@@ -1713,7 +1808,8 @@ func TestTSXSelfClosingTagConversion(t *testing.T) {
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1731,35 +1827,25 @@ func TestNormalizeStationaryMove_CrossScopeCoordinateCollision(t *testing.T) {
 	r := rules.Get("go")
 
 	t.Run("preserves move across unmapped functions with identical coordinates", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "oldFn")
-		srcFunc.Language = "go"
-		srcBody := mkNode("block", "")
-		srcBody.Language = "go"
-		srcBody.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+		src := []byte("package main\nfunc oldFn() {\n\tx := 1\n}\n")
+		dst := []byte("package main\nfunc newFn() {\n\tx := 1\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcStmt := mkNode("short_var_declaration", "x := 1")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBody
-		srcBody.Children = []*treesitter.ASTNode{srcStmt}
-		srcStmt.StartRow, srcStmt.EndRow = 10, 10
-		srcStmt.StartCol, srcStmt.EndCol = 4, 10
-		srcStmt.EndByte = 100
-
-		dstFunc := mkNode("function_declaration", "newFn")
-		dstFunc.Language = "go"
-		dstBody := mkNode("block", "")
-		dstBody.Language = "go"
-		dstBody.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstBody}
-
-		dstStmt := mkNode("short_var_declaration", "x := 1")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBody
-		dstBody.Children = []*treesitter.ASTNode{dstStmt}
-		dstStmt.StartRow, dstStmt.EndRow = 10, 10
-		dstStmt.StartCol, dstStmt.EndCol = 4, 10
-		dstStmt.EndByte = 100
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcStmt, dstStmt)
@@ -1781,35 +1867,33 @@ func TestNormalizeStationaryMove_CrossScopeCoordinateCollision(t *testing.T) {
 	})
 
 	t.Run("drops move within mapped functions with identical coordinates", func(t *testing.T) {
-		srcFunc := mkNode("function_declaration", "fn")
-		srcFunc.Language = "go"
-		srcBody := mkNode("block", "")
-		srcBody.Language = "go"
-		srcBody.Parent = srcFunc
-		srcFunc.Children = []*treesitter.ASTNode{srcBody}
+		src := []byte("package main\nfunc fn() {\n\tx := 1\n}\n")
+		dst := []byte("package main\nfunc fn() {\n\tx := 1\n}\n")
+		srcTree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstTree, err := treesitter.Parse(dst, "dst.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
 
-		srcStmt := mkNode("short_var_declaration", "x := 1")
-		srcStmt.Language = "go"
-		srcStmt.Parent = srcBody
-		srcBody.Children = []*treesitter.ASTNode{srcStmt}
-		srcStmt.StartRow, srcStmt.EndRow = 10, 10
-		srcStmt.StartCol, srcStmt.EndCol = 4, 10
-		srcStmt.EndByte = 100
-
-		dstFunc := mkNode("function_declaration", "fn")
-		dstFunc.Language = "go"
-		dstBody := mkNode("block", "")
-		dstBody.Language = "go"
-		dstBody.Parent = dstFunc
-		dstFunc.Children = []*treesitter.ASTNode{dstBody}
-
-		dstStmt := mkNode("short_var_declaration", "x := 1")
-		dstStmt.Language = "go"
-		dstStmt.Parent = dstBody
-		dstBody.Children = []*treesitter.ASTNode{dstStmt}
-		dstStmt.StartRow, dstStmt.EndRow = 10, 10
-		dstStmt.StartCol, dstStmt.EndCol = 4, 10
-		dstStmt.EndByte = 100
+		srcFunc, err := testutil.FindNodeByText(srcTree, src, "func fn()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find srcFunc: %v", err)
+		}
+		dstFunc, err := testutil.FindNodeByText(dstTree, dst, "func fn()", "function_declaration")
+		if err != nil {
+			t.Fatalf("find dstFunc: %v", err)
+		}
+		srcStmt, err := testutil.FindNodeByText(srcTree, src, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find srcStmt: %v", err)
+		}
+		dstStmt, err := testutil.FindNodeByText(dstTree, dst, "x := 1", "short_var_declaration")
+		if err != nil {
+			t.Fatalf("find dstStmt: %v", err)
+		}
 
 		ms := engine.NewMapping()
 		ms.Add(srcFunc, dstFunc)
@@ -1865,7 +1949,8 @@ var rules = &Rules{
 		t.Fatalf("failed to parse dst: %v", err)
 	}
 
-	matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+	part := engine.NewLinePartition(src, dst)
+	matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 	script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 	normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1881,28 +1966,56 @@ func TestAreChainedStatements(t *testing.T) {
 	r := rules.Get("go")
 
 	t.Run("returns true for matching chained if_statements", func(t *testing.T) {
-		base := mkNode("if_statement", "")
-		base.Language = "go"
-		parent := mkNode("if_statement", "")
-		parent.Language = "go"
-		if !areChainedStatements(base, parent, r) {
+		src := []byte("package main\nfunc f() { if a {} else if b {} }\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if1, err := testutil.FindNodeByText(tree, src, "if a {} else if b {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find if1: %v", err)
+		}
+		if2, err := testutil.FindNodeByText(tree, src, "if b {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find if2: %v", err)
+		}
+		origParent := if1.Parent
+		if1.Parent = nil
+		defer func() { if1.Parent = origParent }()
+		if !areChainedStatements(if2, if1, r) {
 			t.Errorf("expected areChainedStatements to return true for matching if_statements")
 		}
 	})
 
 	t.Run("returns false for non-statement nodes with identical types", func(t *testing.T) {
-		base := mkNode("identifier", "x")
-		base.Language = "go"
-		parent := mkNode("identifier", "y")
-		parent.Language = "go"
+		src := []byte("package main\nfunc f() { varAlpha := varBeta }\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		base, err := testutil.FindNodeByText(tree, src, "varAlpha", "identifier")
+		if err != nil {
+			t.Fatalf("find base: %v", err)
+		}
+		parent, err := testutil.FindNodeByText(tree, src, "varBeta", "identifier")
+		if err != nil {
+			t.Fatalf("find parent: %v", err)
+		}
 		if areChainedStatements(base, parent, r) {
 			t.Errorf("expected areChainedStatements to return false for non-statement identifier nodes")
 		}
 	})
 
 	t.Run("returns false when base is nil or parent is nil", func(t *testing.T) {
-		base := mkNode("if_statement", "")
-		base.Language = "go"
+		src := []byte("package main\nfunc f() { if a {} }\n")
+		tree, err := treesitter.Parse(src, "src.go")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		base, err := testutil.FindNodeByText(tree, src, "if a {}", "if_statement")
+		if err != nil {
+			t.Fatalf("find base: %v", err)
+		}
 		if areChainedStatements(base, nil, r) || areChainedStatements(nil, base, r) {
 			t.Errorf("expected areChainedStatements to return false for nil nodes")
 		}
@@ -1939,7 +2052,8 @@ var pairs = []LineAlignmentPair{
 			t.Fatalf("failed to parse dst: %v", err)
 		}
 
-		matchResult := engine.Match(srcAST, dstAST, src, dst, nil)
+		part := engine.NewLinePartition(src, dst)
+		matchResult := engine.Match(srcAST, dstAST, src, dst, part)
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
@@ -1955,33 +2069,22 @@ var pairs = []LineAlignmentPair{
 		}
 
 		// 3. Entire deleted collection element must be deleted
+		deletedElem, err := testutil.FindNodeByText(srcAST, src, "{LeftLine: -1, RightLine: 1}", "literal_element")
+		if err != nil {
+			t.Fatalf("find deleted element: %v", err)
+		}
 		hasElementDelete := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Delete && a.Node != nil && string(src[a.Node.StartByte:a.Node.EndByte]) == "{LeftLine: -1, RightLine: 1}"
+			return a.Type == actions.Delete && a.Node != nil && a.Node.ID == deletedElem.ID
 		})
 		if !hasElementDelete {
 			t.Error("expected entire deleted collection element to be deleted")
 		}
 
-		// 4. Whole-snippet verification: untouched second element {LeftLine: 4, RightLine: -1} maps in place
-		var srcUntouchedElem, dstUntouchedElem *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "literal_value" && string(src[n.StartByte:n.EndByte]) == "{LeftLine: 4, RightLine: -1}" {
-				srcUntouchedElem = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "literal_value" && string(dst[n.StartByte:n.EndByte]) == "{LeftLine: 4, RightLine: -1}" {
-				dstUntouchedElem = n
-				break
-			}
-		}
-		if srcUntouchedElem == nil || dstUntouchedElem == nil {
-			t.Fatalf("missing untouched literal_value: src=%v, dst=%v", srcUntouchedElem, dstUntouchedElem)
-		}
-		if matchResult.Mappings.Src()[srcUntouchedElem] != dstUntouchedElem {
-			t.Errorf("expected untouched element {LeftLine: 4, RightLine: -1} to map in place, got %v", matchResult.Mappings.Src()[srcUntouchedElem])
-		}
+		// 4. Whole-snippet verification: package, var declaration, and untouched element map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "package test", "package test")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "var pairs = []LineAlignmentPair{", "var pairs = []LineAlignmentPair{")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "{LeftLine: 4, RightLine: -1}", "{LeftLine: 4, RightLine: -1}")
+		testutil.AssertUnmappedText(t, srcAST, src, matchResult.Mappings.Src(), "{LeftLine: -1, RightLine: 1}")
 	})
 }
 
@@ -2047,39 +2150,29 @@ func f() {
 		if move.Node == nil || move.Node.Type != "argument_list" {
 			t.Errorf("expected moved node to be argument_list, got %v", move.Node)
 		}
-		moveContent := strings.TrimSpace(string(src[move.Node.StartByte:move.Node.EndByte]))
-		if !strings.Contains(moveContent, "longArg()") {
-			t.Errorf("expected moved argument_list to contain longArg(), got %q", moveContent)
+		longArgCall, err := testutil.FindNodeByText(srcAST, src, "longArg()", "call_expression")
+		if err != nil {
+			t.Fatalf("find longArg call: %v", err)
+		}
+		if !move.Node.Contains(longArgCall) {
+			t.Errorf("expected moved argument_list to contain longArg()")
 		}
 
 		// 3. The other() call arguments should be recorded as an insert
+		otherCall, err := testutil.FindNodeByText(dstAST, dst, "other()", "call_expression")
+		if err != nil {
+			t.Fatalf("find other call: %v", err)
+		}
 		hasOtherInsert := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Insert && a.Node != nil && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "other()")
+			return a.Type == actions.Insert && a.Node != nil && a.Node.Contains(otherCall)
 		})
 		if !hasOtherInsert {
 			t.Error("expected chained call argument_list with other() to be inserted")
 		}
 
 		// 4. Package and function headers still map in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Type == "function_declaration" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Type == "function_declaration" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatalf("missing function_declaration: src=%v, dst=%v", srcFn, dstFn)
-		}
-		if matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function_declaration to map in place, got %v", matchResult.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "package test", "package test")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "func f()", "func f()")
 	})
 }
 
@@ -2131,77 +2224,18 @@ func process(root *Node) {
 			}
 
 			// 2. Surrounding sequence: setup() and cleanup() must map in place without disruption.
-			var srcSetup, dstSetup *treesitter.ASTNode
-			var srcCleanup, dstCleanup *treesitter.ASTNode
-			var srcCall, dstCall *treesitter.ASTNode
-			var srcArgList, dstArgList *treesitter.ASTNode
-			var srcArg, dstArg *treesitter.ASTNode
-
-			for _, n := range srcAST.Descendants() {
-				if r.IsCall(n.Type) {
-					switch string(src[n.StartByte:n.EndByte]) {
-					case "setup()":
-						srcSetup = n
-					case "cleanup()":
-						srcCleanup = n
-					case "EnsureIndex(root)":
-						srcCall = n
-						for _, child := range n.Children {
-							if r.IsDelimitedContainer(child.Type) {
-								srcArgList = child
-								for _, arg := range child.Children {
-									if r.IsIdentifier(arg.Type) && string(src[arg.StartByte:arg.EndByte]) == "root" {
-										srcArg = arg
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			for _, n := range dstAST.Descendants() {
-				if r.IsCall(n.Type) {
-					switch string(dst[n.StartByte:n.EndByte]) {
-					case "setup()":
-						dstSetup = n
-					case "cleanup()":
-						dstCleanup = n
-					case "EnsureIndex(root)":
-						dstCall = n
-						for _, child := range n.Children {
-							if r.IsDelimitedContainer(child.Type) {
-								dstArgList = child
-								for _, arg := range child.Children {
-									if r.IsIdentifier(arg.Type) && string(dst[arg.StartByte:arg.EndByte]) == "root" {
-										dstArg = arg
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			if srcSetup == nil || dstSetup == nil || matchResult.Mappings.Src()[srcSetup] != dstSetup {
-				t.Errorf("expected setup() to map in place, got %v", matchResult.Mappings.Src()[srcSetup])
-			}
-			if srcCleanup == nil || dstCleanup == nil || matchResult.Mappings.Src()[srcCleanup] != dstCleanup {
-				t.Errorf("expected cleanup() to map in place, got %v", matchResult.Mappings.Src()[srcCleanup])
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "setup()", "setup()")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "cleanup()", "cleanup()")
 
 			// 3. Target construct: EnsureIndex(root) must map in place, and its argument list must map in place.
-			if srcCall == nil || dstCall == nil || matchResult.Mappings.Src()[srcCall] != dstCall {
-				t.Fatalf("expected EnsureIndex(root) to map in place, got %v", matchResult.Mappings.Src()[srcCall])
-			}
-			if srcArgList == nil || dstArgList == nil || matchResult.Mappings.Src()[srcArgList] != dstArgList {
-				t.Errorf("expected argument_list to map in place, got %v", matchResult.Mappings.Src()[srcArgList])
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "EnsureIndex(root)", "EnsureIndex(root)")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "(root)", "(root)")
 
 			// 4. Stationary operand: root identifier inside argument list must map in place.
-			if srcArg == nil || dstArg == nil || matchResult.Mappings.Src()[srcArg] != dstArg {
-				t.Errorf("expected argument root to map in place, got %v", matchResult.Mappings.Src()[srcArg])
-			}
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+				testutil.TextQuery{Text: "root", Occurrence: 2},
+				testutil.TextQuery{Text: "root", Occurrence: 2},
+			)
 
 			// 5. Zero Move actions anywhere in the snippet: EnsureIndex(root) stays stationary context.
 			for _, a := range normalized.Actions() {
@@ -2313,87 +2347,16 @@ func process() {
 			}
 
 			// 2. Surrounding sequence: setup() and cleanup() must map in place without disruption.
-			var srcSetup, dstSetup *treesitter.ASTNode
-			var srcCleanup, dstCleanup *treesitter.ASTNode
-			var srcSlice, dstSlice *treesitter.ASTNode
-			var srcFileBytes, dstFileBytes *treesitter.ASTNode
-			var srcGapStart, dstGapStart *treesitter.ASTNode
-			var srcGapEnd, dstGapEnd *treesitter.ASTNode
-
-			for _, n := range srcAST.Descendants() {
-				if r.IsCall(n.Type) {
-					switch string(src[n.StartByte:n.EndByte]) {
-					case "setup()":
-						srcSetup = n
-					case "cleanup()":
-						srcCleanup = n
-					}
-				}
-				if r.IsIndexed(n.Type) && string(src[n.StartByte:n.EndByte]) == "fileBytes[gapStart:gapEnd]" {
-					srcSlice = n
-					for _, c := range n.Children {
-						if r.IsIdentifier(c.Type) {
-							switch string(src[c.StartByte:c.EndByte]) {
-							case "fileBytes":
-								srcFileBytes = c
-							case "gapStart":
-								srcGapStart = c
-							case "gapEnd":
-								srcGapEnd = c
-							}
-						}
-					}
-				}
-			}
-
-			for _, n := range dstAST.Descendants() {
-				if r.IsCall(n.Type) {
-					switch string(dst[n.StartByte:n.EndByte]) {
-					case "setup()":
-						dstSetup = n
-					case "cleanup()":
-						dstCleanup = n
-					}
-				}
-				if r.IsIndexed(n.Type) && string(dst[n.StartByte:n.EndByte]) == "fileBytes[gapStart:gapEnd]" {
-					dstSlice = n
-					for _, c := range n.Children {
-						if r.IsIdentifier(c.Type) {
-							switch string(dst[c.StartByte:c.EndByte]) {
-							case "fileBytes":
-								dstFileBytes = c
-							case "gapStart":
-								dstGapStart = c
-							case "gapEnd":
-								dstGapEnd = c
-							}
-						}
-					}
-				}
-			}
-
-			if srcSetup == nil || dstSetup == nil || matchResult.Mappings.Src()[srcSetup] != dstSetup {
-				t.Errorf("expected setup() to map in place, got %v", matchResult.Mappings.Src()[srcSetup])
-			}
-			if srcCleanup == nil || dstCleanup == nil || matchResult.Mappings.Src()[srcCleanup] != dstCleanup {
-				t.Errorf("expected cleanup() to map in place, got %v", matchResult.Mappings.Src()[srcCleanup])
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "setup()", "setup()")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "cleanup()", "cleanup()")
 
 			// 3. Target construct: extracted slice must be mapped and preserved as Move.
-			if srcSlice == nil || dstSlice == nil || matchResult.Mappings.Src()[srcSlice] != dstSlice {
-				t.Fatalf("expected slice_expression to map, got %v", matchResult.Mappings.Src()[srcSlice])
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "fileBytes[gapStart:gapEnd]", "fileBytes[gapStart:gapEnd]")
 
 			// 4. Stationary operands: identifiers inside slice must map in place without corruption.
-			if srcFileBytes == nil || dstFileBytes == nil || matchResult.Mappings.Src()[srcFileBytes] != dstFileBytes {
-				t.Errorf("expected fileBytes to map, got %v", matchResult.Mappings.Src()[srcFileBytes])
-			}
-			if srcGapStart == nil || dstGapStart == nil || matchResult.Mappings.Src()[srcGapStart] != dstGapStart {
-				t.Errorf("expected gapStart to map, got %v", matchResult.Mappings.Src()[srcGapStart])
-			}
-			if srcGapEnd == nil || dstGapEnd == nil || matchResult.Mappings.Src()[srcGapEnd] != dstGapEnd {
-				t.Errorf("expected gapEnd to map, got %v", matchResult.Mappings.Src()[srcGapEnd])
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "fileBytes", "fileBytes")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "gapStart", "gapStart")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "gapEnd", "gapEnd")
 
 			// 5. Action verification: exactly one Move action for the extracted slice expression.
 			var moveActions []actions.Action
@@ -2404,6 +2367,10 @@ func process() {
 			}
 			if len(moveActions) != 1 {
 				t.Fatalf("expected exactly 1 move action for extracted slice, got %d: %v", len(moveActions), moveActions)
+			}
+			srcSlice, err := testutil.FindNodeByText(srcAST, src, "fileBytes[gapStart:gapEnd]")
+			if err != nil {
+				t.Fatalf("find srcSlice: %v", err)
 			}
 			if moveActions[0].Node != srcSlice {
 				t.Errorf("expected move action on slice_expression, got node: %v", moveActions[0].Node)
@@ -2457,9 +2424,13 @@ func process() {
 			}
 
 			// 2. Extracted multiline slice must be preserved as Move
+			sliceNode, err := testutil.FindNodeByText(srcAST, src, "fileBytes[gapStart:gapEnd]")
+			if err != nil {
+				t.Fatalf("find sliceNode: %v", err)
+			}
 			var hasSliceMove bool
 			for _, a := range normalized.Actions() {
-				if a.Type == actions.Move && a.Node != nil && r.IsIndexed(a.Node.Type) && string(src[a.Node.StartByte:a.Node.EndByte]) == "fileBytes[gapStart:gapEnd]" {
+				if a.Type == actions.Move && a.Node != nil && a.Node.ID == sliceNode.ID {
 					hasSliceMove = true
 					break
 				}
@@ -2520,9 +2491,13 @@ func process() {
 			}
 
 			// 2. Extracted condition err != nil is preserved as Move into the variable declaration
+			condNode, err := testutil.FindNodeByText(srcAST, src, "err != nil")
+			if err != nil {
+				t.Fatalf("find condNode: %v", err)
+			}
 			var hasMove bool
 			for _, a := range normalized.Actions() {
-				if a.Type == actions.Move && a.Node != nil && r.IsExpression(a.Node.Type) && string(src[a.Node.StartByte:a.Node.EndByte]) == "err != nil" {
+				if a.Type == actions.Move && a.Node != nil && a.Node.ID == condNode.ID {
 					hasMove = true
 					break
 				}
@@ -2588,33 +2563,16 @@ func TestProcess(t *testing.T) {
 		}
 
 		// 2. Surrounding sequence: res := getResult() and res.Cleanup() map in place
-		var srcPre, dstPre, srcPost, dstPost *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "res := getResult()" {
-				srcPre = n
-			}
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "res.Cleanup()" {
-				srcPost = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "res := getResult()" {
-				dstPre = n
-			}
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "res.Cleanup()" {
-				dstPost = n
-			}
-		}
-		if srcPre == nil || dstPre == nil || matchResult.Mappings.Src()[srcPre] != dstPre {
-			t.Errorf("expected preceding statement res := getResult() to map in place")
-		}
-		if srcPost == nil || dstPost == nil || matchResult.Mappings.Src()[srcPost] != dstPost {
-			t.Errorf("expected succeeding statement res.Cleanup() to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "res := getResult()", "res := getResult()")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "res.Cleanup()", "res.Cleanup()")
 
 		// 3. Move action: res.Envelope == nil moves into the new guard if
+		guardNode, err := testutil.FindNodeByText(srcAST, src, "res.Envelope == nil")
+		if err != nil {
+			t.Fatalf("find guardNode: %v", err)
+		}
 		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
-			return a.Type == actions.Move && a.Node != nil && string(src[a.Node.StartByte:a.Node.EndByte]) == "res.Envelope == nil"
+			return a.Type == actions.Move && a.Node != nil && a.Node.ID == guardNode.ID
 		})
 		if !hasMove {
 			t.Errorf("expected Move action on res.Envelope == nil to be preserved into new guard if statement, but none found: %v", normalized.Actions())
@@ -2680,22 +2638,7 @@ fallback:
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: outer function declaration doesn't get touched.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsContainerDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsContainerDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected enclosing function declaration to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "func Evaluate(node, dstNode *Node) bool", "func Evaluate(node, dstNode *Node) bool")
 		for _, a := range normalized.Actions() {
 			if a.Node != nil && (r.IsDeclaration(a.Node.Type) || r.IsContainerDeclaration(a.Node.Type)) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
@@ -2703,60 +2646,16 @@ fallback:
 		}
 
 		// 2. Surrounding sequence: guard check and trailing log/return statements map in place.
-		var srcGuard, dstGuard, srcLog, dstLog, srcRet, dstRet *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) {
-				text := string(src[n.StartByte:n.EndByte])
-				if strings.HasPrefix(text, "if node == nil") {
-					srcGuard = n
-				} else if text == "logMatch(match)" {
-					srcLog = n
-				} else if text == "return match" {
-					srcRet = n
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) {
-				text := string(dst[n.StartByte:n.EndByte])
-				if strings.HasPrefix(text, "if node == nil") {
-					dstGuard = n
-				} else if text == "logMatch(match)" {
-					dstLog = n
-				} else if text == "return match" {
-					dstRet = n
-				}
-			}
-		}
-		if srcGuard == nil || dstGuard == nil || matchResult.Mappings.Src()[srcGuard] != dstGuard {
-			t.Errorf("expected guard if statement to map in place")
-		}
-		if srcLog == nil || dstLog == nil || matchResult.Mappings.Src()[srcLog] != dstLog {
-			t.Errorf("expected succeeding statement logMatch(match) to map in place")
-		}
-		if srcRet == nil || dstRet == nil || matchResult.Mappings.Src()[srcRet] != dstRet {
-			t.Errorf("expected succeeding statement return match to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "if node == nil || dstNode == nil", "if node == nil || dstNode == nil")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "logMatch(match)", "logMatch(match)")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "return match", "return match")
 
 		// 3. Target statement: the labeled assignment maps in place and drops its move.
-		var srcTarget, dstTarget *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && string(src[n.StartByte:n.EndByte]) == "match := node.Kind == dstNode.Kind" {
-				srcTarget = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && string(dst[n.StartByte:n.EndByte]) == "match := node.Kind == dstNode.Kind" {
-				dstTarget = n
-				break
-			}
-		}
-		if srcTarget == nil || dstTarget == nil {
-			t.Fatalf("failed to locate target statement in ASTs")
-		}
-		if matchResult.Mappings.Src()[srcTarget] != dstTarget {
-			t.Errorf("expected target statement to map in place")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "match := node.Kind == dstNode.Kind", "match := node.Kind == dstNode.Kind")
+
+		srcTarget, err := testutil.FindNodeByText(srcAST, src, "match := node.Kind == dstNode.Kind")
+		if err != nil {
+			t.Fatalf("find srcTarget: %v", err)
 		}
 
 		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
@@ -2774,29 +2673,8 @@ fallback:
 		}
 
 		// 4. Stationary operands: inner selector expressions stay mapped in place.
-		var srcKind, dstKind, srcDstKind, dstDstKind *treesitter.ASTNode
-		for _, n := range srcTarget.Descendants() {
-			switch string(src[n.StartByte:n.EndByte]) {
-			case "node.Kind":
-				srcKind = n
-			case "dstNode.Kind":
-				srcDstKind = n
-			}
-		}
-		for _, n := range dstTarget.Descendants() {
-			switch string(dst[n.StartByte:n.EndByte]) {
-			case "node.Kind":
-				dstKind = n
-			case "dstNode.Kind":
-				dstDstKind = n
-			}
-		}
-		if srcKind == nil || dstKind == nil || matchResult.Mappings.Src()[srcKind] != dstKind {
-			t.Errorf("expected inner operand node.Kind to map in place")
-		}
-		if srcDstKind == nil || dstDstKind == nil || matchResult.Mappings.Src()[srcDstKind] != dstDstKind {
-			t.Errorf("expected inner operand dstNode.Kind to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "node.Kind", "node.Kind")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "dstNode.Kind", "dstNode.Kind")
 	})
 }
 
@@ -2841,53 +2719,30 @@ pub fn run() {}
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: make sure the enclosing function stays mapped in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function run to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "pub fn run() {}", "pub fn run() {}")
 
 		// 2. Surrounding sequence: existing import symbols stay anchored.
-		var srcEntry, dstEntry *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "GitConfigEntry" {
-				srcEntry = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "GitConfigEntry" {
-				dstEntry = n
-				break
-			}
-		}
-		if srcEntry == nil || dstEntry == nil || matchResult.Mappings.Src()[srcEntry] != dstEntry {
-			t.Errorf("expected GitConfigEntry to map to GitConfigEntry in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "GitConfigEntry", "GitConfigEntry")
 
 		// 3. Target & wrappers: none of the existing import paths or symbols should be marked as moved.
+		sideBySide, err := testutil.FindNodeByText(srcAST, src, "side_by_side")
+		if err != nil {
+			t.Fatalf("find side_by_side: %v", err)
+		}
+		gitConfigEntry, err := testutil.FindNodeByText(srcAST, src, "GitConfigEntry")
+		if err != nil {
+			t.Fatalf("find GitConfigEntry: %v", err)
+		}
+		gitConfigPath, err := testutil.FindNodeByText(srcAST, src, "git_config")
+		if err != nil {
+			t.Fatalf("find git_config: %v", err)
+		}
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Move && a.Node != nil {
-				nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(nodeText, "side_by_side") {
-					t.Errorf("unexpected Move action on side_by_side: %v", a)
-				}
-				if strings.Contains(nodeText, "GitConfigEntry") {
-					t.Errorf("unexpected Move action on GitConfigEntry: %v", a)
-				}
-				if strings.Contains(nodeText, "git_config") {
-					t.Errorf("unexpected Move action on git_config: %v", a)
+				for _, unmovable := range []*treesitter.ASTNode{sideBySide, gitConfigEntry, gitConfigPath} {
+					if a.Node.ID == unmovable.ID || a.Node.Contains(unmovable) {
+						t.Errorf("unexpected Move action on stationary import node %s: %v", unmovable.Type, a)
+					}
 				}
 			}
 		}
@@ -2905,39 +2760,8 @@ pub fn run() {}
 		}
 
 		// 5. Stationary operands: existing path identifiers stay mapped in place.
-		var srcSide, dstSide *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "side_by_side" {
-				srcSide = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "side_by_side" {
-				dstSide = n
-				break
-			}
-		}
-		if srcSide == nil || dstSide == nil || matchResult.Mappings.Src()[srcSide] != dstSide {
-			t.Errorf("expected side_by_side identifier to map in place")
-		}
-
-		var srcGitConfig, dstGitConfig *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "git_config" {
-				srcGitConfig = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "git_config" {
-				dstGitConfig = n
-				break
-			}
-		}
-		if srcGitConfig == nil || dstGitConfig == nil || matchResult.Mappings.Src()[srcGitConfig] != dstGitConfig {
-			t.Errorf("expected git_config identifier to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "side_by_side", "side_by_side")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "git_config", "git_config")
 	})
 }
 
@@ -2988,59 +2812,23 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: function get_style and parameter state map in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function get_style to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "fn get_style(state: State) -> &'static Style", "fn get_style(state: State) -> &'static Style")
 
 		// 2. Surrounding sequence: HunkPlus, CommitMeta, FileMeta, and default wildcard map in place.
-		for _, label := range []string{"HunkPlus", "CommitMeta", "FileMeta"} {
-			var sNode, dNode *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if n.Label == label {
-					sNode = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if n.Label == label {
-					dNode = n
-					break
-				}
-			}
-			if sNode == nil || dNode == nil || matchResult.Mappings.Src()[sNode] != dNode {
-				t.Errorf("expected surrounding arm %s to map in place", label)
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "HunkPlus", "HunkPlus")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "CommitMeta", "CommitMeta")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "FileMeta", "FileMeta")
 
 		// 3. Target & wrappers: State::HunkHeader stays matched without Move or Delete actions.
-		var srcHunkHeader, dstHunkHeader *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "HunkHeader" {
-				srcHunkHeader = n
-				break
-			}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "HunkHeader", "HunkHeader")
+
+		srcHunkHeader, err := testutil.FindNodeByText(srcAST, src, "HunkHeader")
+		if err != nil {
+			t.Fatalf("find srcHunkHeader: %v", err)
 		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "HunkHeader" {
-				dstHunkHeader = n
-				break
-			}
-		}
-		if srcHunkHeader == nil || dstHunkHeader == nil || matchResult.Mappings.Src()[srcHunkHeader] != dstHunkHeader {
-			t.Fatalf("expected HunkHeader identifier to map in place")
+		dstHunkHeader, err := testutil.FindNodeByText(dstAST, dst, "HunkHeader")
+		if err != nil {
+			t.Fatalf("find dstHunkHeader: %v", err)
 		}
 
 		for _, a := range normalized.Actions() {
@@ -3050,13 +2838,17 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 
 		// 4. Target & insertions: tuple_struct_pattern and SubmoduleLog are inserted.
+		submoduleArm, err := testutil.FindNodeByText(dstAST, dst, "SubmoduleLog", "match_arm")
+		if err != nil {
+			t.Fatalf("find SubmoduleLog match_arm: %v", err)
+		}
 		var foundTupleStructInsert, foundSubmoduleLogInsert bool
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Insert && a.Node != nil {
 				if r.IsWrapper(a.Node.Type) && a.Node.Type == "tuple_struct_pattern" {
 					foundTupleStructInsert = true
 				}
-				if a.Node.Type == "match_arm" && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "SubmoduleLog") {
+				if a.Node.ID == submoduleArm.ID {
 					foundSubmoduleLogInsert = true
 				}
 			}
@@ -3069,22 +2861,7 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 
 		// 5. Stationary operands: hunk_header_style arm body maps in place.
-		var srcStyle, dstStyle *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "hunk_header_style" {
-				srcStyle = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "hunk_header_style" {
-				dstStyle = n
-				break
-			}
-		}
-		if srcStyle == nil || dstStyle == nil || matchResult.Mappings.Src()[srcStyle] != dstStyle {
-			t.Errorf("expected hunk_header_style to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "hunk_header_style", "hunk_header_style")
 	})
 
 	t.Run("Python_FullEngine", func(t *testing.T) {
@@ -3141,59 +2918,23 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: function get_style maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if pyRules.IsDeclaration(n.Type) && n.Type == "function_definition" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if pyRules.IsDeclaration(n.Type) && n.Type == "function_definition" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function get_style to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "def get_style(state):", "def get_style(state):")
 
 		// 2. Surrounding sequence: HUNK_PLUS, COMMIT_META, FILE_META map in place.
-		for _, label := range []string{"HUNK_PLUS", "COMMIT_META", "FILE_META"} {
-			var sNode, dNode *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if n.Label == label {
-					sNode = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if n.Label == label {
-					dNode = n
-					break
-				}
-			}
-			if sNode == nil || dNode == nil || matchResult.Mappings.Src()[sNode] != dNode {
-				t.Errorf("expected surrounding arm %s to map in place", label)
-			}
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "HUNK_PLUS", "HUNK_PLUS")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "COMMIT_META", "COMMIT_META")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "FILE_META", "FILE_META")
 
 		// 3. Target & wrappers: State.HUNK_HEADER identifier stays matched without Move or Delete actions.
-		var srcHunkHeader, dstHunkHeader *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "HUNK_HEADER" {
-				srcHunkHeader = n
-				break
-			}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "HUNK_HEADER", "HUNK_HEADER")
+
+		srcHunkHeader, err := testutil.FindNodeByText(srcAST, src, "HUNK_HEADER")
+		if err != nil {
+			t.Fatalf("find srcHunkHeader: %v", err)
 		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "HUNK_HEADER" {
-				dstHunkHeader = n
-				break
-			}
-		}
-		if srcHunkHeader == nil || dstHunkHeader == nil || matchResult.Mappings.Src()[srcHunkHeader] != dstHunkHeader {
-			t.Fatalf("expected HUNK_HEADER identifier to map in place")
+		dstHunkHeader, err := testutil.FindNodeByText(dstAST, dst, "HUNK_HEADER")
+		if err != nil {
+			t.Fatalf("find dstHunkHeader: %v", err)
 		}
 
 		for _, a := range normalized.Actions() {
@@ -3203,13 +2944,17 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 
 		// 4. Target & insertions: class_pattern and SUBMODULE_LOG are inserted.
+		submoduleCase, err := testutil.FindNodeByText(dstAST, dst, "SUBMODULE_LOG", "case_clause")
+		if err != nil {
+			t.Fatalf("find SUBMODULE_LOG case_clause: %v", err)
+		}
 		var foundClassPatternInsert, foundSubmoduleLogInsert bool
 		for _, a := range normalized.Actions() {
 			if a.Type == actions.Insert && a.Node != nil {
 				if pyRules.IsWrapper(a.Node.Type) && a.Node.Type == "class_pattern" {
 					foundClassPatternInsert = true
 				}
-				if a.Node.Type == "case_clause" && strings.Contains(string(dst[a.Node.StartByte:a.Node.EndByte]), "SUBMODULE_LOG") {
+				if a.Node.ID == submoduleCase.ID {
 					foundSubmoduleLogInsert = true
 				}
 			}
@@ -3222,37 +2967,44 @@ func TestStationaryPatternWrapper(t *testing.T) {
 		}
 
 		// 5. Stationary operands: hunk_header_style arm body maps in place.
-		var srcStyle, dstStyle *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if n.Label == "hunk_header_style" {
-				srcStyle = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if n.Label == "hunk_header_style" {
-				dstStyle = n
-				break
-			}
-		}
-		if srcStyle == nil || dstStyle == nil || matchResult.Mappings.Src()[srcStyle] != dstStyle {
-			t.Errorf("expected hunk_header_style to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "hunk_header_style", "hunk_header_style")
 	})
 }
 
 func TestStationaryExpression_ReorderedStatement(t *testing.T) {
 	cases := []struct {
-		name     string
-		filename string
-		lang     string
-		src      []byte
-		dst      []byte
+		name        string
+		filename    string
+		lang        string
+		fnType      string
+		srcFnLine   int
+		dstFnLine   int
+		srcCallLine int
+		dstCallLine int
+		stmtType    string
+		srcStmtLine int
+		dstStmtLine int
+		exprType    string
+		srcExprLine int
+		dstExprLine int
+		src         []byte
+		dst         []byte
 	}{
 		{
-			name:     "Go",
-			filename: "test.go",
-			lang:     "go",
+			name:        "Go",
+			filename:    "test.go",
+			lang:        "go",
+			fnType:      "function_declaration",
+			srcFnLine:   5,
+			dstFnLine:   12,
+			srcCallLine: 8,
+			dstCallLine: 14,
+			stmtType:    "short_var_declaration",
+			srcStmtLine: 7,
+			dstStmtLine: 20,
+			exprType:    "selector_expression",
+			srcExprLine: 7,
+			dstExprLine: 20,
 			src: []byte(`package main
 
 func helper() {}
@@ -3298,9 +3050,20 @@ func foo() {
 `),
 		},
 		{
-			name:     "Rust",
-			filename: "test.rs",
-			lang:     "rust",
+			name:        "Rust",
+			filename:    "test.rs",
+			lang:        "rust",
+			fnType:      "function_item",
+			srcFnLine:   3,
+			dstFnLine:   10,
+			srcCallLine: 6,
+			dstCallLine: 12,
+			stmtType:    "let_declaration",
+			srcStmtLine: 5,
+			dstStmtLine: 18,
+			exprType:    "field_expression",
+			srcExprLine: 5,
+			dstExprLine: 18,
 			src: []byte(`fn helper() {}
 
 fn foo() {
@@ -3341,8 +3104,6 @@ fn foo() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := rules.Get(tc.lang)
-
 			srcAST, err := treesitter.Parse(tc.src, tc.filename)
 			if err != nil {
 				t.Fatalf("parse src: %v", err)
@@ -3362,98 +3123,50 @@ fn foo() {
 			normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 			// 1. Enclosing context: function foo maps in place.
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					srcFn = n
-					break
-				}
+			var fnSig string
+			if tc.lang == "rust" {
+				fnSig = "fn foo()"
+			} else {
+				fnSig = "func foo()"
 			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected function foo to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, tc.src, tc.dst, matchResult.Mappings.Src(), fnSig, fnSig)
 
 			// 2. Surrounding sequence: calculate_width call maps in place.
-			var srcWidth, dstWidth *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(tc.src[n.StartByte:n.EndByte]), "calculate_width") {
-					srcWidth = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(tc.dst[n.StartByte:n.EndByte]), "calculate_width") {
-					dstWidth = n
-					break
-				}
-			}
-			if srcWidth == nil || dstWidth == nil || matchResult.Mappings.Src()[srcWidth] != dstWidth {
-				t.Fatalf("expected calculate_width to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, tc.src, tc.dst, matchResult.Mappings.Src(), "calculate_width", "calculate_width")
 
 			// 3. Target Statement: alignment_spec statement maps in place across versions.
-			var srcStmt, dstStmt *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsStatement(n.Type) && strings.Contains(string(tc.src[n.StartByte:n.EndByte]), "alignment_spec") {
-					srcStmt = n
-					break
-				}
+			var stmtText string
+			if tc.lang == "rust" {
+				stmtText = "let alignment_spec = placeholder.alignment_spec"
+			} else {
+				stmtText = "alignment_spec := placeholder.alignment_spec"
 			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsStatement(n.Type) && strings.Contains(string(tc.dst[n.StartByte:n.EndByte]), "alignment_spec") {
-					dstStmt = n
-					break
-				}
-			}
-			if srcStmt == nil || dstStmt == nil || matchResult.Mappings.Src()[srcStmt] != dstStmt {
-				t.Fatalf("expected alignment_spec statement to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, tc.src, tc.dst, matchResult.Mappings.Src(), stmtText, stmtText)
 
 			// 4. Stationary Operands: placeholder and alignment_spec must NOT be deleted or inserted.
+			fieldExprSrc, err := testutil.FindNodeByText(srcAST, tc.src, "placeholder.alignment_spec")
+			if err != nil {
+				t.Fatalf("find src field_expression: %v", err)
+			}
+			fieldExprDst, err := testutil.FindNodeByText(dstAST, tc.dst, "placeholder.alignment_spec")
+			if err != nil {
+				t.Fatalf("find dst field_expression: %v", err)
+			}
+
 			for _, a := range normalized.Actions() {
 				if a.Node == nil {
 					continue
 				}
-				var text string
-				switch a.Type {
-				case actions.Delete:
-					text = string(tc.src[a.Node.StartByte:a.Node.EndByte])
-				case actions.Insert:
-					text = string(tc.dst[a.Node.StartByte:a.Node.EndByte])
-				default:
-					continue
+				if a.Type == actions.Delete && (a.Node.ID == fieldExprSrc.ID || fieldExprSrc.Contains(a.Node)) {
+					t.Errorf("spurious Delete on stationary payload %s (action: %v)", a.Node.Type, a)
 				}
-				if text == "placeholder" || text == "alignment_spec" || text == "placeholder.alignment_spec" {
-					t.Errorf("spurious %s on stationary payload %q (action: %v)", a.Type, text, a)
+				if a.Type == actions.Insert && (a.Node.ID == fieldExprDst.ID || fieldExprDst.Contains(a.Node)) {
+					t.Errorf("spurious Insert on stationary payload %s (action: %v)", a.Node.Type, a)
 				}
 			}
 
 			// 5. Stationary Operands remain mapped in Mappings.
-			var srcExpr, dstExpr *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if string(tc.src[n.StartByte:n.EndByte]) == "placeholder.alignment_spec" {
-					srcExpr = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if string(tc.dst[n.StartByte:n.EndByte]) == "placeholder.alignment_spec" {
-					dstExpr = n
-					break
-				}
-			}
-			if srcExpr == nil || dstExpr == nil {
-				t.Fatalf("failed to locate placeholder.alignment_spec nodes in AST")
-			}
-			if matchResult.Mappings.Src()[srcExpr] != dstExpr {
-				t.Errorf("expected placeholder.alignment_spec to remain mapped across versions, got %v", matchResult.Mappings.Src()[srcExpr])
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, tc.src, tc.dst, matchResult.Mappings.Src(), "placeholder.alignment_spec", "placeholder.alignment_spec")
 		})
 	}
 }
@@ -3530,84 +3243,26 @@ func TestStationaryWrappedContainerChildWithDeletedSibling(t *testing.T) {
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: enclosing function paint_lines_side_by_side maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Type == "function_item" {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function paint_lines_side_by_side to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "fn paint_lines_side_by_side()", "fn paint_lines_side_by_side()")
 
 		// 2. Surrounding sequence: call arguments minus_line_index, line_numbers_data, and config map in place.
-		var srcCallArgs, dstCallArgs *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && len(n.Children) > 0 && n.Children[0].Label == "paint_left_panel_minus_line" {
-				for _, c := range n.Children {
-					if r.IsDelimitedContainer(c.Type) {
-						srcCallArgs = c
-						break
-					}
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && len(n.Children) > 0 && n.Children[0].Label == "paint_left_panel_minus_line" {
-				for _, c := range n.Children {
-					if r.IsDelimitedContainer(c.Type) {
-						dstCallArgs = c
-						break
-					}
-				}
-			}
-		}
-		if srcCallArgs == nil || dstCallArgs == nil || matchResult.Mappings.Src()[srcCallArgs] != dstCallArgs {
-			t.Fatalf("expected arguments container of paint_left_panel_minus_line to map in place")
-		}
-
-		for _, label := range []string{"minus_line_index", "line_numbers_data", "config"} {
-			var sNode, dNode *treesitter.ASTNode
-			for _, n := range srcCallArgs.Children {
-				if r.IsIdentifier(n.Type) && n.Label == label {
-					sNode = n
-					break
-				}
-			}
-			for _, n := range dstCallArgs.Children {
-				if r.IsIdentifier(n.Type) && n.Label == label {
-					dNode = n
-					break
-				}
-			}
-			if sNode == nil || dNode == nil || matchResult.Mappings.Src()[sNode] != dNode {
-				t.Fatalf("expected surrounding identifier %s to map in place", label)
-			}
-		}
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			testutil.TextQuery{Text: "minus_line_index", Occurrence: 2},
+			testutil.TextQuery{Text: "minus_line_index", Occurrence: 2},
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "line_numbers_data", "line_numbers_data")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "config,", "config,")
 
 		// 3. Target: background_color_extends_to_terminal_width maps in place.
-		var srcTarget, dstTarget *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Label == "background_color_extends_to_terminal_width" {
-				srcTarget = n
-				break
-			}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(), "background_color_extends_to_terminal_width", "background_color_extends_to_terminal_width")
+
+		srcTarget, err := testutil.FindNodeByText(srcAST, src, "background_color_extends_to_terminal_width")
+		if err != nil {
+			t.Fatalf("find srcTarget: %v", err)
 		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsIdentifier(n.Type) && n.Label == "background_color_extends_to_terminal_width" {
-				dstTarget = n
-				break
-			}
-		}
-		if srcTarget == nil || dstTarget == nil || matchResult.Mappings.Src()[srcTarget] != dstTarget {
-			t.Fatalf("expected background_color_extends_to_terminal_width to map in place")
+		dstTarget, err := testutil.FindNodeByText(dstAST, dst, "background_color_extends_to_terminal_width")
+		if err != nil {
+			t.Fatalf("find dstTarget: %v", err)
 		}
 
 		// Target must NOT have any Move action in the normalized edit script.
@@ -3634,7 +3289,6 @@ func TestStationaryWrappedContainerChildWithDeletedSibling(t *testing.T) {
 func TestStationaryIfElseIfLadderMoves(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		t.Run("Rust", func(t *testing.T) {
-			r := rules.Get("rust")
 			src := []byte(`fn paint_line() {
     let prefix = painted_prefix.clone();
     if should_right_fill_background_color {
@@ -3676,45 +3330,11 @@ func TestStationaryIfElseIfLadderMoves(t *testing.T) {
 			normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 			// 1. Enclosing context: enclosing function paint_line maps in place.
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "paint_line") {
-					srcFn = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "paint_line") {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected function paint_line to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "fn paint_line()", "fn paint_line()")
 
 			// 2. Surrounding sequence: prefix declaration and output_buffer call map in place.
-			var srcPrefix, dstPrefix, srcPush, dstPush *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prefix") {
-					srcPrefix = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "push_str") {
-					srcPush = n
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prefix") {
-					dstPrefix = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "push_str") {
-					dstPush = n
-				}
-			}
-			if srcPrefix == nil || dstPrefix == nil || mr.Mappings.Src()[srcPrefix] != dstPrefix {
-				t.Fatalf("expected prefix declaration to map in place")
-			}
-			if srcPush == nil || dstPush == nil || mr.Mappings.Src()[srcPush] != dstPush {
-				t.Fatalf("expected output_buffer.push_str to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "let prefix = painted_prefix.clone();", "let prefix = painted_prefix.clone();")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "output_buffer.push_str(&line);", "output_buffer.push_str(&line);")
 
 			// 3. Target: surviving else if line_is_empty branch must NOT take Move action.
 			for _, a := range normalized.Actions() {
@@ -3865,7 +3485,6 @@ func TestStationaryIfElseIfLadderMoves(t *testing.T) {
 		})
 
 		t.Run("Go", func(t *testing.T) {
-			r := rules.Get("go")
 			src := []byte(`package main
 
 func handleStatus(code int) {
@@ -3911,45 +3530,11 @@ func handleStatus(code int) {
 			normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 			// 1. Enclosing context: enclosing function handleStatus maps in place.
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handleStatus") {
-					srcFn = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handleStatus") {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected function handleStatus to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "func handleStatus(code int)", "func handleStatus(code int)")
 
 			// 2. Surrounding sequence: msg assignment and finalize call map in place.
-			var srcMsg, dstMsg, srcFinalize, dstFinalize *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "msg") {
-					srcMsg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finalize") {
-					srcFinalize = n
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "msg") {
-					dstMsg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finalize") {
-					dstFinalize = n
-				}
-			}
-			if srcMsg == nil || dstMsg == nil || mr.Mappings.Src()[srcMsg] != dstMsg {
-				t.Fatalf("expected msg declaration to map in place")
-			}
-			if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
-				t.Fatalf("expected finalize call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "msg := \"status\"", "msg := \"status\"")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "finalize(msg)", "finalize(msg)")
 
 			// 3. Target: surviving else if code == 3 branch must NOT take Move action.
 			for _, a := range normalized.Actions() {
@@ -3959,26 +3544,10 @@ func handleStatus(code int) {
 			}
 
 			// 4. Stationary Operands: processFinal call maps in place.
-			var srcCall, dstCall *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "processFinal") {
-					srcCall = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "processFinal") {
-					dstCall = n
-					break
-				}
-			}
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Fatalf("expected processFinal call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "processFinal()", "processFinal()")
 		})
 
 		t.Run("Java", func(t *testing.T) {
-			r := rules.Get("java")
 			src := []byte(`class StatusHandler {
     void handleStatus(int code) {
         String msg = "status";
@@ -4024,45 +3593,11 @@ func handleStatus(code int) {
 			normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 			// 1. Enclosing context: enclosing method handleStatus maps in place.
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handleStatus") {
-					srcFn = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handleStatus") {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected method handleStatus to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "void handleStatus(int code)", "void handleStatus(int code)")
 
 			// 2. Surrounding sequence: msg local var declaration and finalize call map in place.
-			var srcMsg, dstMsg, srcFinalize, dstFinalize *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "msg") {
-					srcMsg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finalize") {
-					srcFinalize = n
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "msg") {
-					dstMsg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finalize") {
-					dstFinalize = n
-				}
-			}
-			if srcMsg == nil || dstMsg == nil || mr.Mappings.Src()[srcMsg] != dstMsg {
-				t.Fatalf("expected msg declaration to map in place")
-			}
-			if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
-				t.Fatalf("expected finalize call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "String msg = \"status\";", "String msg = \"status\";")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "finalize(msg);", "finalize(msg);")
 
 			// 3. Target: surviving else if (code == 3) branch must NOT take Move action.
 			for _, a := range normalized.Actions() {
@@ -4072,26 +3607,10 @@ func handleStatus(code int) {
 			}
 
 			// 4. Stationary Operands: processFinal call maps in place.
-			var srcCall, dstCall *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "processFinal") {
-					srcCall = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "processFinal") {
-					dstCall = n
-					break
-				}
-			}
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Fatalf("expected processFinal call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "processFinal();", "processFinal();")
 		})
 
 		t.Run("Zig", func(t *testing.T) {
-			r := rules.Get("zig")
 			src := []byte(`pub fn handleStatus(code: i32) void {
     const msg = "status";
     if (code == 1) {
@@ -4133,45 +3652,11 @@ func handleStatus(code int) {
 			normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 			// 1. Enclosing context: enclosing function handleStatus maps in place.
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handleStatus") {
-					srcFn = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handleStatus") {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected function handleStatus to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "pub fn handleStatus(code: i32) void", "pub fn handleStatus(code: i32) void")
 
 			// 2. Surrounding sequence: msg variable declaration and finalize call map in place.
-			var srcMsg, dstMsg, srcFinalize, dstFinalize *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "msg") {
-					srcMsg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finalize") {
-					srcFinalize = n
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "msg") {
-					dstMsg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finalize") {
-					dstFinalize = n
-				}
-			}
-			if srcMsg == nil || dstMsg == nil || mr.Mappings.Src()[srcMsg] != dstMsg {
-				t.Fatalf("expected msg declaration to map in place")
-			}
-			if srcFinalize == nil || dstFinalize == nil || mr.Mappings.Src()[srcFinalize] != dstFinalize {
-				t.Fatalf("expected finalize call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "const msg = \"status\";", "const msg = \"status\";")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "finalize(msg);", "finalize(msg);")
 
 			// 3. Target: surviving else if (code == 3) branch must NOT take Move action.
 			for _, a := range normalized.Actions() {
@@ -4181,22 +3666,7 @@ func handleStatus(code int) {
 			}
 
 			// 4. Stationary Operands: processFinal call maps in place.
-			var srcCall, dstCall *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "processFinal") {
-					srcCall = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "processFinal") {
-					dstCall = n
-					break
-				}
-			}
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Fatalf("expected processFinal call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "processFinal();", "processFinal();")
 		})
 	})
 }
@@ -4209,7 +3679,6 @@ func handleStatus(code int) {
 func TestStationaryFluentMethodChains(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		t.Run("Rust/IntermediateMethodCallsDeleted", func(t *testing.T) {
-			r := rules.Get("rust")
 			src := []byte(`fn build_cli() {
     let mut config = Config::default();
     let app = Command::new("bat")
@@ -4252,45 +3721,11 @@ func TestStationaryFluentMethodChains(t *testing.T) {
 			}
 
 			// 1. Enclosing context: enclosing function build_cli maps in place.
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "build_cli") {
-					srcFn = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "build_cli") {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected function build_cli to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "fn build_cli()", "fn build_cli()")
 
 			// 2. Surrounding sequence: config variable and validate call map in place.
-			var srcCfg, dstCfg, srcVal, dstVal *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "config") {
-					srcCfg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "validate") {
-					srcVal = n
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "config") {
-					dstCfg = n
-				} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "validate") {
-					dstVal = n
-				}
-			}
-			if srcCfg == nil || dstCfg == nil || mr.Mappings.Src()[srcCfg] != dstCfg {
-				t.Fatalf("expected config variable to map in place")
-			}
-			if srcVal == nil || dstVal == nil || mr.Mappings.Src()[srcVal] != dstVal {
-				t.Fatalf("expected config.validate call to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "let mut config = Config::default();", "let mut config = Config::default();")
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "config.validate();", "config.validate();")
 
 			// 3. Edit actions: zero Move actions on the stationary receiver chain.
 			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
@@ -4298,14 +3733,12 @@ func TestStationaryFluentMethodChains(t *testing.T) {
 
 			for _, a := range normalized.Actions() {
 				if a.Type == actions.Move {
-					t.Fatalf("unexpected Move action on fluent receiver chain: %v (Node=%s [%d:%d])",
-						a, a.Node.Type, a.Node.StartRow, a.Node.EndRow)
+					t.Fatalf("unexpected Move action on fluent receiver chain: %v (Node=%s)", a, a.Node.Type)
 				}
 			}
 		})
 
 		t.Run("TypeScript/IntermediateMethodCallsInserted", func(t *testing.T) {
-			r := rules.Get("typescript")
 			src := []byte(`function buildQuery() {
     const base = new QueryBuilder("users");
     const result = base
@@ -4341,22 +3774,7 @@ func TestStationaryFluentMethodChains(t *testing.T) {
 				t.Fatal("Match returned nil")
 			}
 
-			var srcFn, dstFn *treesitter.ASTNode
-			for _, n := range srcAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "buildQuery") {
-					srcFn = n
-					break
-				}
-			}
-			for _, n := range dstAST.Descendants() {
-				if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "buildQuery") {
-					dstFn = n
-					break
-				}
-			}
-			if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-				t.Fatalf("expected function buildQuery to map in place")
-			}
+			testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "function buildQuery()", "function buildQuery()")
 
 			script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 			normalized := Run(script, mr.Mappings, srcAST, dstAST)
@@ -4372,7 +3790,6 @@ func TestStationaryFluentMethodChains(t *testing.T) {
 
 func TestStationaryWrappedMacroArguments(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("rust")
 		src := []byte(`fn rewrite_options(element_name: &str) {
     let mode = get_mode();
     match mode {
@@ -4433,87 +3850,41 @@ func TestStationaryWrappedMacroArguments(t *testing.T) {
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: enclosing function rewrite_options and match_expression map in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "rewrite_options") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "rewrite_options") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function rewrite_options to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn rewrite_options(element_name: &str)",
+			"fn rewrite_options(element_name: &str)",
+		)
 
 		// 2. Surrounding sequence: Some(1) arm and Some(2) arm map in place without disruption.
-		var srcArm1, dstArm1, srcArm2, dstArm2 *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCaseClause(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "Some(1)") {
-				srcArm1 = n
-			} else if r.IsCaseClause(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "Some(2)") {
-				srcArm2 = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCaseClause(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "Some(1)") {
-				dstArm1 = n
-			} else if r.IsCaseClause(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "Some(2)") {
-				dstArm2 = n
-			}
-		}
-		if srcArm1 == nil || dstArm1 == nil || mr.Mappings.Src()[srcArm1] != dstArm1 {
-			t.Fatalf("expected match arm Some(1) to map in place")
-		}
-		if srcArm2 == nil || dstArm2 == nil || mr.Mappings.Src()[srcArm2] != dstArm2 {
-			t.Fatalf("expected match arm Some(2) to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"Some(1) => {",
+			"Some(1) => {",
+			"match_arm",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"Some(2) => {",
+			"Some(2) => {",
+			"match_arm",
+		)
 
 		// 3. Target: token_tree and operands within the macro invocation must NOT take Move actions.
-		var srcTokenTree *treesitter.ASTNode
-		for _, n := range srcArm2.Descendants() {
-			if r.IsDelimitedContainer(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "--{name}-color") {
-				srcTokenTree = n
-				break
-			}
-		}
-		if srcTokenTree == nil {
-			t.Fatalf("failed to locate srcTokenTree")
-		}
-
 		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node == srcTokenTree {
+			if a.Type == actions.Move {
 				t.Fatalf("unexpected Move action on stationary token_tree: %v", a)
 			}
 		}
 
-		// 4. Stationary Operands: string literal and name = element_name map in place.
-		var srcStr, dstStr *treesitter.ASTNode
-		for _, n := range srcTokenTree.Descendants() {
-			if n.Type == "string_literal" {
-				srcStr = n
-				break
-			}
-		}
-		for _, n := range dstArm2.Descendants() {
-			if n.Type == "string_literal" && strings.Contains(string(dst[n.StartByte:n.EndByte]), "--{name}-color") {
-				dstStr = n
-				break
-			}
-		}
-		if srcStr == nil || dstStr == nil || mr.Mappings.Src()[srcStr] != dstStr {
-			t.Fatalf("expected format string literal to map in place")
-		}
+		// 4. Stationary Operands: string literal maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			`"--{name}-color cannot be used with --{name}-style.`,
+			`"--{name}-color cannot be used with --{name}-style.`,
+			"string_literal",
+		)
 	})
 }
 
 func TestStationaryReferenceExpressionWrapper(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("rust")
 		src := []byte(`fn format_commit() {
     let prefix = "commit: ";
     format_commit_line_captures_with_osc8_commit_hyperlink(captures, repo);
@@ -4548,103 +3919,50 @@ func TestStationaryReferenceExpressionWrapper(t *testing.T) {
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		// 1. Enclosing context: function format_commit stays mapped in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "format_commit") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "format_commit") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function format_commit to map in place")
-		}
+		// 1. Enclosing context: enclosing function format_commit maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn format_commit()",
+			"fn format_commit()",
+		)
 
 		// 2. Surrounding sequence: prefix declaration and output_buffer push call map in place.
-		var srcPrefix, dstPrefix, srcPush, dstPush *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prefix") {
-				srcPrefix = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "push_str") {
-				srcPush = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prefix") {
-				dstPrefix = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "push_str") {
-				dstPush = n
-			}
-		}
-		if srcPrefix == nil || dstPrefix == nil || mr.Mappings.Src()[srcPrefix] != dstPrefix {
-			t.Fatalf("expected prefix declaration to map in place")
-		}
-		if srcPush == nil || dstPush == nil || mr.Mappings.Src()[srcPush] != dstPush {
-			t.Fatalf("expected push_str call to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			`let prefix = "commit: ";`,
+			`let prefix = "commit: ";`,
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"output_buffer.push_str(prefix)",
+			"output_buffer.push_str(prefix)",
+		)
 
 		// 3. Target & Containers: calls to format_commit_line_captures and set_options map in place.
-		var srcCall1, dstCall1, srcCall2, dstCall2 *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "format_commit_line_captures") {
-				srcCall1 = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_options") {
-				srcCall2 = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "format_commit_line_captures") {
-				dstCall1 = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_options") {
-				dstCall2 = n
-			}
-		}
-		if srcCall1 == nil || dstCall1 == nil || mr.Mappings.Src()[srcCall1] != dstCall1 {
-			t.Fatalf("expected format_commit_line_captures call to map in place")
-		}
-		if srcCall2 == nil || dstCall2 == nil || mr.Mappings.Src()[srcCall2] != dstCall2 {
-			t.Fatalf("expected set_options call to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"format_commit_line_captures_with_osc8_commit_hyperlink(captures, repo)",
+			"format_commit_line_captures_with_osc8_commit_hyperlink(captures, &repo)",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"options::set::set_options(&mut opt, git_config, &arg_matches, assets)",
+			"options::set::set_options(&mut opt, &mut git_config, &arg_matches, assets)",
+		)
 
-		// 4. Stationary operands: repo and git_config shouldn't emit move or delete actions.
-		var srcRepo, dstRepo, srcGitConfig, dstGitConfig *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "repo" {
-				srcRepo = n
-			} else if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "git_config" {
-				srcGitConfig = n
-			}
-			if srcRepo != nil && srcGitConfig != nil {
-				break
-			}
+		// 4. Stationary Operands: repo and git_config identifiers map in place and have NO Move or Delete actions.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"repo",
+			"repo",
+			"identifier",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"git_config",
+			"git_config",
+			"identifier",
+		)
+		srcRepo, err := testutil.FindNodeByText(srcAST, src, "repo", "identifier")
+		if err != nil {
+			t.Fatalf("failed to locate srcRepo: %v", err)
 		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "repo" {
-				dstRepo = n
-			} else if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "git_config" {
-				dstGitConfig = n
-			}
-			if dstRepo != nil && dstGitConfig != nil {
-				break
-			}
-		}
-		if srcRepo == nil || dstRepo == nil {
-			t.Fatalf("expected repo identifiers to exist")
-		}
-		if srcGitConfig == nil || dstGitConfig == nil {
-			t.Fatalf("expected git_config identifiers to exist")
-		}
-		if mr.Mappings.Src()[srcRepo] != dstRepo {
-			t.Fatalf("expected repo to map in place to dstRepo, got %v", mr.Mappings.Src()[srcRepo])
-		}
-		if mr.Mappings.Src()[srcGitConfig] != dstGitConfig {
-			t.Fatalf("expected git_config to map in place to dstGitConfig, got %v", mr.Mappings.Src()[srcGitConfig])
+		srcGitConfig, err := testutil.FindNodeByText(srcAST, src, "git_config", "identifier")
+		if err != nil {
+			t.Fatalf("failed to locate srcGitConfig: %v", err)
 		}
 
 		for _, a := range normalized.Actions() {
@@ -4660,7 +3978,6 @@ func TestStationaryReferenceExpressionWrapper(t *testing.T) {
 
 func TestStationaryGenericTypeWrapperUnwrap(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("rust")
 		src := []byte(`fn slide_to_prev_node(nodes: &[&Syntax], start_idx: usize, end_idx: usize) {
     let initial = start_idx;
     if start_idx == 0 {
@@ -4697,72 +4014,34 @@ func TestStationaryGenericTypeWrapperUnwrap(t *testing.T) {
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: slide_to_prev_node maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "slide_to_prev_node") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "slide_to_prev_node") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function slide_to_prev_node to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn slide_to_prev_node",
+			"fn slide_to_prev_node",
+		)
 
 		// 2. Surrounding sequence: initial variable, if condition, and end variable map in place.
-		var srcInit, dstInit, srcIf, dstIf, srcEnd, dstEnd *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "initial") {
-				srcInit = n
-			} else if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "start_idx == 0") {
-				srcIf = n
-			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "end") {
-				srcEnd = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "initial") {
-				dstInit = n
-			} else if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "start_idx == 0") {
-				dstIf = n
-			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "end") {
-				dstEnd = n
-			}
-		}
-		if srcInit == nil || dstInit == nil || mr.Mappings.Src()[srcInit] != dstInit {
-			t.Fatalf("expected initial local var to map in place")
-		}
-		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
-			t.Fatalf("expected if statement to map in place")
-		}
-		if srcEnd == nil || dstEnd == nil || mr.Mappings.Src()[srcEnd] != dstEnd {
-			t.Fatalf("expected end local var to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"let initial = start_idx;",
+			"let initial = start_idx;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if start_idx == 0",
+			"if start_idx == 0",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"let end = end_idx;",
+			"let end = end_idx;",
+		)
 
 		// 3. Target: Syntax type identifier stays stationary with no move or delete actions.
-		var srcSyntax, dstSyntax *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "Syntax" {
-				srcSyntax = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "Syntax" {
-				dstSyntax = n
-				break
-			}
-		}
-		if srcSyntax == nil || dstSyntax == nil {
-			t.Fatalf("expected Syntax identifiers to exist")
-		}
-		if mr.Mappings.Src()[srcSyntax] != dstSyntax {
-			t.Fatalf("expected Syntax to map in place, got %v", mr.Mappings.Src()[srcSyntax])
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"Syntax",
+			"Syntax",
+			"type_identifier",
+		)
+		srcSyntax, err := testutil.FindNodeByText(srcAST, src, "Syntax", "type_identifier")
+		if err != nil {
+			t.Fatalf("failed to locate srcSyntax: %v", err)
 		}
 
 		for _, a := range normalized.Actions() {
@@ -4778,7 +4057,6 @@ func TestStationaryGenericTypeWrapperUnwrap(t *testing.T) {
 
 func TestStationaryGenericTypeWrapperUnwrap_TypeScript(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("typescript")
 		src := []byte(`function slideToPrevNode(nodes: Syntax[], startIdx: number): void {
     let initial = startIdx;
     if (startIdx === 0) {
@@ -4815,72 +4093,34 @@ func TestStationaryGenericTypeWrapperUnwrap_TypeScript(t *testing.T) {
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: function slideToPrevNode stays mapped in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "slideToPrevNode") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "slideToPrevNode") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function slideToPrevNode to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"function slideToPrevNode",
+			"function slideToPrevNode",
+		)
 
 		// 2. Surrounding sequence: initial variable, if condition, and end variable map in place.
-		var srcInit, dstInit, srcIf, dstIf, srcEnd, dstEnd *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "initial") {
-				srcInit = n
-			} else if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "startIdx === 0") {
-				srcIf = n
-			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "end") {
-				srcEnd = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "initial") {
-				dstInit = n
-			} else if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "startIdx === 0") {
-				dstIf = n
-			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "end") {
-				dstEnd = n
-			}
-		}
-		if srcInit == nil || dstInit == nil || mr.Mappings.Src()[srcInit] != dstInit {
-			t.Fatalf("expected initial local var to map in place")
-		}
-		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
-			t.Fatalf("expected if statement to map in place")
-		}
-		if srcEnd == nil || dstEnd == nil || mr.Mappings.Src()[srcEnd] != dstEnd {
-			t.Fatalf("expected end local var to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"let initial = startIdx;",
+			"let initial = startIdx;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if (startIdx === 0)",
+			"if (startIdx === 0)",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"let end = endIdx;",
+			"let end = endIdx;",
+		)
 
 		// 3. Target: Syntax type identifier maps in place and has NO Move or Delete action.
-		var srcSyntax, dstSyntax *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "Syntax" {
-				srcSyntax = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "Syntax" {
-				dstSyntax = n
-				break
-			}
-		}
-		if srcSyntax == nil || dstSyntax == nil {
-			t.Fatalf("expected Syntax identifiers to exist")
-		}
-		if mr.Mappings.Src()[srcSyntax] != dstSyntax {
-			t.Fatalf("expected Syntax to map in place, got %v", mr.Mappings.Src()[srcSyntax])
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"Syntax",
+			"Syntax",
+			"type_identifier",
+		)
+		srcSyntax, err := testutil.FindNodeByText(srcAST, src, "Syntax", "type_identifier")
+		if err != nil {
+			t.Fatalf("failed to locate srcSyntax: %v", err)
 		}
 
 		for _, a := range normalized.Actions() {
@@ -4896,7 +4136,6 @@ func TestStationaryGenericTypeWrapperUnwrap_TypeScript(t *testing.T) {
 
 func TestStationaryGenericTypeWrapperUnwrap_Java(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("java")
 		src := []byte(`class Parser {
     void slideToPrevNode(List<Syntax> nodes, int startIdx) {
         int initial = startIdx;
@@ -4936,73 +4175,39 @@ func TestStationaryGenericTypeWrapperUnwrap_Java(t *testing.T) {
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		// 1. Enclosing context: method slideToPrevNode stays mapped in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "slideToPrevNode") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "slideToPrevNode") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected method slideToPrevNode to map in place")
-		}
+		// 1. Enclosing context: class Parser and method slideToPrevNode stay mapped in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"class Parser",
+			"class Parser",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"void slideToPrevNode",
+			"void slideToPrevNode",
+		)
 
 		// 2. Surrounding sequence: initial variable, if condition, and end variable map in place.
-		var srcInit, dstInit, srcIf, dstIf, srcEnd, dstEnd *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "initial") {
-				srcInit = n
-			} else if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "startIdx == 0") {
-				srcIf = n
-			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "end") {
-				srcEnd = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "initial") {
-				dstInit = n
-			} else if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "startIdx == 0") {
-				dstIf = n
-			} else if r.IsLocalVarDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "end") {
-				dstEnd = n
-			}
-		}
-		if srcInit == nil || dstInit == nil || mr.Mappings.Src()[srcInit] != dstInit {
-			t.Fatalf("expected initial local var to map in place")
-		}
-		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
-			t.Fatalf("expected if statement to map in place")
-		}
-		if srcEnd == nil || dstEnd == nil || mr.Mappings.Src()[srcEnd] != dstEnd {
-			t.Fatalf("expected end local var to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"int initial = startIdx;",
+			"int initial = startIdx;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if (startIdx == 0)",
+			"if (startIdx == 0)",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"int end = endIdx;",
+			"int end = endIdx;",
+		)
 
 		// 3. Target: Syntax type identifier maps in place and has NO Move or Delete action.
-		var srcSyntax, dstSyntax *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(src[n.StartByte:n.EndByte]) == "Syntax" {
-				srcSyntax = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dst[n.StartByte:n.EndByte]) == "Syntax" {
-				dstSyntax = n
-				break
-			}
-		}
-		if srcSyntax == nil || dstSyntax == nil {
-			t.Fatalf("expected Syntax identifiers to exist")
-		}
-		if mr.Mappings.Src()[srcSyntax] != dstSyntax {
-			t.Fatalf("expected Syntax to map in place, got %v", mr.Mappings.Src()[srcSyntax])
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"Syntax",
+			"Syntax",
+			"type_identifier",
+		)
+		srcSyntax, err := testutil.FindNodeByText(srcAST, src, "Syntax", "type_identifier")
+		if err != nil {
+			t.Fatalf("failed to locate srcSyntax: %v", err)
 		}
 
 		for _, a := range normalized.Actions() {
@@ -5021,11 +4226,6 @@ func TestStationaryGenericTypeWrapperUnwrap_Java(t *testing.T) {
 // when its enclosing statement remains stationary.
 func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("rust")
-		if r == nil {
-			t.Fatal("missing rust rules")
-		}
-
 		src := []byte(`pub fn all_matched_lines_filled(lhs_lines: &[&str], rhs_lines: &[&str]) {
     let matched_lines = 1;
     compact_gaps(&ensure_contiguous(&matched_lines));
@@ -5064,73 +4264,33 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		// Enclosing function and surrounding statements stay mapped in place.
-		var srcFn, dstFn, srcLet, dstLet, srcFinish, dstFinish, srcCall, dstCall, srcArg, dstArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Parent == srcAST {
-				srcFn = n
-			} else if r.IsLocalVarDeclaration(n.Type) {
-				srcLet = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finish_processing") {
-				srcFinish = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "compact_gaps") {
-				srcCall = n
-			} else if string(src[n.StartByte:n.EndByte]) == "&matched_lines" {
-				srcArg = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Parent == dstAST {
-				dstFn = n
-			} else if r.IsLocalVarDeclaration(n.Type) {
-				dstLet = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finish_processing") {
-				dstFinish = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "compact_gaps") {
-				dstCall = n
-			} else if string(dst[n.StartByte:n.EndByte]) == "&matched_lines" {
-				dstArg = n
-			}
-		}
+		// 1. Enclosing context: function_item maps in place with zero edit actions.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"pub fn all_matched_lines_filled",
+			"pub fn all_matched_lines_filled",
+		)
 
-		if srcFn == nil || dstFn == nil {
-			t.Fatalf("missing function declaration: src=%v, dst=%v", srcFn, dstFn)
-		}
-		if matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", matchResult.Mappings.Src()[srcFn])
-		}
-		if srcLet == nil || dstLet == nil {
-			t.Fatalf("missing let declaration: src=%v, dst=%v", srcLet, dstLet)
-		}
-		if matchResult.Mappings.Src()[srcLet] != dstLet {
-			t.Errorf("expected preceding let declaration to map in place, got %v", matchResult.Mappings.Src()[srcLet])
-		}
-		if srcFinish == nil || dstFinish == nil {
-			t.Fatalf("missing finish_processing call: src=%v, dst=%v", srcFinish, dstFinish)
-		}
-		if matchResult.Mappings.Src()[srcFinish] != dstFinish {
-			t.Errorf("expected following call finish_processing to map in place, got %v", matchResult.Mappings.Src()[srcFinish])
-		}
-		if srcCall == nil || dstCall == nil {
-			t.Fatalf("missing compact_gaps call: src=%v, dst=%v", srcCall, dstCall)
-		}
-		if matchResult.Mappings.Src()[srcCall] != dstCall {
-			t.Errorf("expected compact_gaps call to map in place, got %v", matchResult.Mappings.Src()[srcCall])
-		}
+		// 2. Surrounding sequence: preceding and following statements map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"let matched_lines = 1;",
+			"let matched_lines = 1;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"finish_processing()",
+			"finish_processing()",
+		)
 
-		// Stationary operand: &matched_lines must map in place without Move or Delete actions.
-		if srcArg == nil || dstArg == nil {
-			t.Fatalf("missing &matched_lines operand: src=%v, dst=%v", srcArg, dstArg)
-		}
-		if matchResult.Mappings.Src()[srcArg] != dstArg {
-			t.Errorf("expected &matched_lines to map in place, got %v", matchResult.Mappings.Src()[srcArg])
-		}
+		// 3. Target call compact_gaps maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"compact_gaps",
+			"compact_gaps",
+			"call_expression",
+		)
+
+		// 4. Stationary operand: &matched_lines must NOT be emitted as a Move.
 		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node == srcArg {
-				t.Errorf("unexpected Move action on stationary argument: %v", a)
-			}
-			if a.Type == actions.Delete && a.Node == srcArg {
-				t.Errorf("unexpected Delete action on stationary argument: %v", a)
+			if a.Type == actions.Move {
+				t.Errorf("expected no Move actions for stationary argument, got Move on %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})
@@ -5138,11 +4298,6 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument(t *testing.T) {
 
 func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Go(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("missing go rules")
-		}
-
 		src := []byte(`package main
 
 func process(lhs, rhs []string) {
@@ -5185,44 +4340,31 @@ func process(lhs, rhs []string) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		var srcFn, dstFn, srcFinish, dstFinish, srcArg, dstArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Parent == srcAST {
-				srcFn = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "finishProcessing") {
-				srcFinish = n
-			} else if string(src[n.StartByte:n.EndByte]) == "&matched" {
-				srcArg = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && n.Parent == dstAST {
-				dstFn = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "finishProcessing") {
-				dstFinish = n
-			} else if string(dst[n.StartByte:n.EndByte]) == "&matched" {
-				dstArg = n
-			}
-		}
+		// 1. Enclosing context and surrounding statements map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func process",
+			"func process",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"matched := 1",
+			"matched := 1",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"finishProcessing()",
+			"finishProcessing()",
+		)
 
-		if srcFn == nil || dstFn == nil || matchResult.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place")
-		}
-		if srcFinish == nil || dstFinish == nil || matchResult.Mappings.Src()[srcFinish] != dstFinish {
-			t.Errorf("expected finishProcessing call to map in place")
-		}
-		if srcArg == nil || dstArg == nil {
-			t.Fatalf("missing &matched operand")
-		}
-		if matchResult.Mappings.Src()[srcArg] != dstArg {
-			t.Errorf("expected &matched to map in place, got %v", matchResult.Mappings.Src()[srcArg])
-		}
+		// 2. Target call compactGaps maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"compactGaps",
+			"compactGaps",
+			"call_expression",
+		)
+
+		// 3. Stationary operand: &matched must NOT be emitted as a Move.
 		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node == srcArg {
-				t.Errorf("unexpected Move action on stationary Go argument: %v", a)
-			}
-			if a.Type == actions.Delete && a.Node == srcArg {
-				t.Errorf("unexpected Delete action on stationary Go argument: %v", a)
+			if a.Type == actions.Move {
+				t.Errorf("unexpected Move action on stationary Go argument, got Move on %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})
@@ -5230,11 +4372,6 @@ func process(lhs, rhs []string) {
 
 func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Java(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
-		r := rules.Get("java")
-		if r == nil {
-			t.Fatal("missing java rules")
-		}
-
 		src := []byte(`class Processor {
     void process(String[] lhs, String[] rhs) {
         int matched = 1;
@@ -5277,32 +4414,35 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Java(t *testing.T) {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		var srcArg, dstArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if string(src[n.StartByte:n.EndByte]) == "data.matched" {
-				srcArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if string(dst[n.StartByte:n.EndByte]) == "data.matched" {
-				dstArg = n
-				break
-			}
-		}
+		// 1. Enclosing context and surrounding statements map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"class Processor",
+			"class Processor",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"void process",
+			"void process",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"int matched = 1;",
+			"int matched = 1;",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"finishProcessing()",
+			"finishProcessing()",
+		)
 
-		if srcArg == nil || dstArg == nil {
-			t.Fatalf("missing data.matched field_access operand")
-		}
-		if matchResult.Mappings.Src()[srcArg] != dstArg {
-			t.Errorf("expected data.matched to map in place, got %v", matchResult.Mappings.Src()[srcArg])
-		}
+		// 2. Target call compactGaps maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"compactGaps",
+			"compactGaps",
+			"method_invocation",
+		)
+
+		// 3. Stationary operand: data.matched must NOT be emitted as a Move.
 		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node == srcArg {
-				t.Errorf("unexpected Move action on stationary Java field_access argument: %v", a)
-			}
-			if a.Type == actions.Delete && a.Node == srcArg {
-				t.Errorf("unexpected Delete action on stationary Java field_access argument: %v", a)
+			if a.Type == actions.Move {
+				t.Errorf("unexpected Move action on stationary Java field_access argument, got Move on %s (id=%d)", a.Node.Type, a.Node.ID)
 			}
 		}
 	})
@@ -5310,7 +4450,6 @@ func TestNormalizeMoves_StationaryMultiLineWrappedArgument_Java(t *testing.T) {
 
 func TestStationaryTailExpressionSemicolonTransition(t *testing.T) {
 	t.Run("FullEngine/SingleLineWithDrift", func(t *testing.T) {
-		r := rules.Get("rust")
 		src := []byte(`fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut u32) {
     set_parent(roots, None);
     set_num_ancestors(roots, 0);
@@ -5347,65 +4486,29 @@ fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut NonZeroU32) {
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: init_info_single maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "init_info_single") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "init_info_single") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function init_info_single to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn init_info_single",
+			"fn init_info_single",
+		)
 
 		// 2. Surrounding sequence: set_parent and set_num_ancestors map in place.
-		var srcParentCall, dstParentCall, srcAncestorsCall, dstAncestorsCall *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_parent") {
-				srcParentCall = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_num_ancestors") {
-				srcAncestorsCall = n
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_parent") {
-				dstParentCall = n
-			} else if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_num_ancestors") {
-				dstAncestorsCall = n
-			}
-		}
-		if srcParentCall == nil || dstParentCall == nil || mr.Mappings.Src()[srcParentCall] != dstParentCall {
-			t.Fatalf("expected set_parent to map in place")
-		}
-		if srcAncestorsCall == nil || dstAncestorsCall == nil || mr.Mappings.Src()[srcAncestorsCall] != dstAncestorsCall {
-			t.Fatalf("expected set_num_ancestors to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"set_parent(roots, None)",
+			"set_parent(roots, None)",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"set_num_ancestors(roots, 0)",
+			"set_num_ancestors(roots, 0)",
+		)
 
 		// 3. Target: set_unique_id call expression maps in place.
-		var srcUniqueCall, dstUniqueCall *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "set_unique_id") {
-				srcUniqueCall = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "set_unique_id") {
-				dstUniqueCall = n
-				break
-			}
-		}
-		if srcUniqueCall == nil || dstUniqueCall == nil {
-			t.Fatalf("expected set_unique_id calls to exist")
-		}
-		if mr.Mappings.Src()[srcUniqueCall] != dstUniqueCall {
-			t.Fatalf("expected set_unique_id to map in place, got %v", mr.Mappings.Src()[srcUniqueCall])
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"set_unique_id(roots, next_id)",
+			"set_unique_id(roots, next_id)",
+		)
+		srcUniqueCall, err := testutil.FindNodeByText(srcAST, src, "set_unique_id(roots, next_id)", "call_expression")
+		if err != nil {
+			t.Fatalf("failed to locate srcUniqueCall: %v", err)
 		}
 
 		// 4. In edit script: set_unique_id must NOT have Delete or Move actions.
@@ -5463,79 +4566,33 @@ fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut NonZeroU32) {
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: dedup_hunks maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "dedup_hunks") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "dedup_hunks") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function dedup_hunks to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn dedup_hunks",
+			"fn dedup_hunks",
+		)
 
 		// 2. Surrounding sequence: if statement maps in place.
-		var srcIf, dstIf *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
-				srcIf = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
-				dstIf = n
-				break
-			}
-		}
-		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
-			t.Fatalf("expected if statement to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if lhs_is_dupe && rhs_is_dupe",
+			"if lhs_is_dupe && rhs_is_dupe",
+		)
 
 		// 3. Target: deduped_lines.push call expression maps in place.
-		var srcPush, dstPush *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "deduped_lines.push") {
-				srcPush = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "deduped_lines.push") {
-				dstPush = n
-				break
-			}
-		}
-		if srcPush == nil || dstPush == nil {
-			t.Fatalf("expected deduped_lines.push calls to exist")
-		}
-		if mr.Mappings.Src()[srcPush] != dstPush {
-			t.Fatalf("expected deduped_lines.push to map in place, got %v", mr.Mappings.Src()[srcPush])
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"deduped_lines.push",
+			"deduped_lines.push",
+			"call_expression",
+		)
+		srcPush, err := testutil.FindNodeByText(srcAST, src, "deduped_lines.push", "call_expression")
+		if err != nil {
+			t.Fatalf("failed to locate srcPush: %v", err)
 		}
 
 		// 4. Stationary Operands: argument sub-expressions map in place.
-		var srcLhsArg, dstLhsArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
-				srcLhsArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
-				dstLhsArg = n
-				break
-			}
-		}
-		if srcLhsArg != nil && dstLhsArg != nil && mr.Mappings.Src()[srcLhsArg] != dstLhsArg {
-			t.Fatalf("expected lhs argument if-expr to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if lhs_is_dupe { None } else { lhs_line }",
+			"if lhs_is_dupe { None } else { lhs_line }",
+		)
 
 		// 5. In edit script: NO Delete or Move on deduped_lines.push, and NO Insert on expression_statement.
 		for _, a := range normalized.Actions() {
@@ -5595,79 +4652,28 @@ fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: &mut NonZeroU32) {
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
 		// 1. Enclosing context: dedup_hunks maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "dedup_hunks") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "dedup_hunks") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function dedup_hunks to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn dedup_hunks", "fn dedup_hunks", "function_item",
+		)
 
 		// 2. Surrounding sequence: if statement maps in place.
-		var srcIf, dstIf *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
-				srcIf = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsStatement(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe && rhs_is_dupe") {
-				dstIf = n
-				break
-			}
-		}
-		if srcIf == nil || dstIf == nil || mr.Mappings.Src()[srcIf] != dstIf {
-			t.Fatalf("expected if statement to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if lhs_is_dupe && rhs_is_dupe", "if lhs_is_dupe && rhs_is_dupe", "if_expression",
+		)
 
 		// 3. Target: deduped_lines.push call expression maps in place.
-		var srcPush, dstPush *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "deduped_lines.push") {
-				srcPush = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "deduped_lines.push") {
-				dstPush = n
-				break
-			}
-		}
-		if srcPush == nil || dstPush == nil {
-			t.Fatalf("expected deduped_lines.push calls to exist")
-		}
-		if mr.Mappings.Src()[srcPush] != dstPush {
-			t.Fatalf("expected deduped_lines.push to map in place, got %v", mr.Mappings.Src()[srcPush])
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"deduped_lines.push", "deduped_lines.push", "call_expression",
+		)
+		srcPush, err := testutil.FindNodeByText(srcAST, src, "deduped_lines.push", "call_expression")
+		if err != nil {
+			t.Fatalf("failed to locate srcPush: %v", err)
 		}
 
 		// 4. Stationary Operands: argument sub-expressions map in place.
-		var srcLhsArg, dstLhsArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if strings.Contains(string(src[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
-				srcLhsArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if strings.Contains(string(dst[n.StartByte:n.EndByte]), "lhs_is_dupe { None }") && r.IsExpression(n.Type) {
-				dstLhsArg = n
-				break
-			}
-		}
-		if srcLhsArg != nil && dstLhsArg != nil && mr.Mappings.Src()[srcLhsArg] != dstLhsArg {
-			t.Fatalf("expected lhs argument if-expr to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"if lhs_is_dupe { None } else { lhs_line }", "if lhs_is_dupe { None } else { lhs_line }", "if_expression",
+		)
 
 		// 5. In edit script: NO Delete or Move on deduped_lines.push, and NO Delete on expression_statement.
 		for _, a := range normalized.Actions() {
@@ -5731,68 +4737,35 @@ func handle(ready bool) {
 		}
 
 		// 1. Enclosing context: enclosing function handle maps in place.
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "handle") {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsDeclaration(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "handle") {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil || mr.Mappings.Src()[srcFn] != dstFn {
-			t.Fatalf("expected function handle to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"func handle(ready bool)", "func handle(ready bool)", "function_declaration",
+		)
 
 		// 2. Surrounding sequence: prepare() and finish() calls map in place.
-		var srcPrep, dstPrep, srcFin, dstFin *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) {
-				text := string(src[n.StartByte:n.EndByte])
-				if strings.Contains(text, "prepare") {
-					srcPrep = n
-				} else if strings.Contains(text, "finish") {
-					srcFin = n
-				}
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) {
-				text := string(dst[n.StartByte:n.EndByte])
-				if strings.Contains(text, "prepare") {
-					dstPrep = n
-				} else if strings.Contains(text, "finish") {
-					dstFin = n
-				}
-			}
-		}
-		if srcPrep == nil || dstPrep == nil || mr.Mappings.Src()[srcPrep] != dstPrep {
-			t.Fatalf("expected prepare call to map in place")
-		}
-		if srcFin == nil || dstFin == nil || mr.Mappings.Src()[srcFin] != dstFin {
-			t.Fatalf("expected finish call to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"prepare()", "prepare()", "call_expression",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"finish()", "finish()", "call_expression",
+		)
 
 		// 3. Edit actions: processTask statement moved across branches (consequence -> alternative),
 		// so it MUST emit a Move action and NOT be treated as stationary.
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		var foundMove bool
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil {
-				text := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(text, "processTask") {
-					foundMove = true
-					break
-				}
-			}
+		processTaskNode, err := testutil.FindNodeByText(srcAST, src, "processTask()", "call_expression")
+		if err != nil {
+			t.Fatalf("find processTaskNode: %v", err)
 		}
-		if !foundMove {
+		stmtNode := engine.FindEnclosingStatement(processTaskNode, r)
+		if stmtNode == nil {
+			stmtNode = processTaskNode
+		}
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && (a.Node == stmtNode || a.Node == processTaskNode)
+		})
+		if !hasMove {
 			t.Fatalf("expected Move action for processTask moving from consequence to alternative, got actions: %v", normalized.Actions())
 		}
 	})
@@ -5836,20 +4809,32 @@ func TestCrossBranchMoveNotStationary_Python(t *testing.T) {
 			t.Fatal("Match returned nil")
 		}
 
+		// 1. Enclosing context and surrounding sequence map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"def handle(ready):", "def handle(ready):", "function_definition",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"prepare()", "prepare()", "call",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"finish()", "finish()", "call",
+		)
+
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		var foundMove bool
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil {
-				text := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(text, "process_task") {
-					foundMove = true
-					break
-				}
-			}
+		targetNode, err := testutil.FindNodeByText(srcAST, src, "process_task()", "call")
+		if err != nil {
+			t.Fatalf("find process_task: %v", err)
 		}
-		if !foundMove {
+		stmtNode := engine.FindEnclosingStatement(targetNode, r)
+		if stmtNode == nil {
+			stmtNode = targetNode
+		}
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && (a.Node == stmtNode || a.Node == targetNode)
+		})
+		if !hasMove {
 			t.Fatalf("expected Move action for process_task moving across branches in Python, got actions: %v", normalized.Actions())
 		}
 	})
@@ -5901,20 +4886,31 @@ func TestCrossBranchMoveNotStationary_Java(t *testing.T) {
 			t.Fatal("Match returned nil")
 		}
 
+		// 1. Enclosing context and surrounding sequence map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"class Handler", "class Handler", "class_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"void handle(boolean ready)", "void handle(boolean ready)", "method_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"prepare();", "prepare();", "expression_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"finish();", "finish();", "expression_statement",
+		)
+
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		var foundMove bool
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil {
-				text := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(text, "processTask") {
-					foundMove = true
-					break
-				}
-			}
+		targetNode, err := testutil.FindNodeByText(srcAST, src, "processTask();", "expression_statement")
+		if err != nil {
+			t.Fatalf("find processTask: %v", err)
 		}
-		if !foundMove {
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && a.Node == targetNode
+		})
+		if !hasMove {
 			t.Fatalf("expected Move action for processTask moving across branches in Java, got actions: %v", normalized.Actions())
 		}
 	})
@@ -5961,20 +4957,28 @@ func TestCrossBranchMoveNotStationary_Rust(t *testing.T) {
 			t.Fatal("Match returned nil")
 		}
 
+		// 1. Enclosing context and surrounding sequence map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn handle(ready: bool)", "fn handle(ready: bool)", "function_item",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"prepare();", "prepare();", "expression_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"finish();", "finish();", "expression_statement",
+		)
+
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		var foundMove bool
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil {
-				text := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(text, "process_task") {
-					foundMove = true
-					break
-				}
-			}
+		targetNode, err := testutil.FindNodeByText(srcAST, src, "process_task();", "expression_statement")
+		if err != nil {
+			t.Fatalf("find process_task: %v", err)
 		}
-		if !foundMove {
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && a.Node == targetNode
+		})
+		if !hasMove {
 			t.Fatalf("expected Move action for process_task moving across branches in Rust, got actions: %v", normalized.Actions())
 		}
 	})
@@ -6021,20 +5025,28 @@ func TestCrossBranchMoveNotStationary_TypeScript(t *testing.T) {
 			t.Fatal("Match returned nil")
 		}
 
+		// 1. Enclosing context and surrounding sequence map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"function handle(ready: boolean)", "function handle(ready: boolean)", "function_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"prepare();", "prepare();", "expression_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"finish();", "finish();", "expression_statement",
+		)
+
 		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
 		normalized := Run(script, mr.Mappings, srcAST, dstAST)
 
-		var foundMove bool
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil {
-				text := string(src[a.Node.StartByte:a.Node.EndByte])
-				if strings.Contains(text, "processTask") {
-					foundMove = true
-					break
-				}
-			}
+		targetNode, err := testutil.FindNodeByText(srcAST, src, "processTask();", "expression_statement")
+		if err != nil {
+			t.Fatalf("find processTask: %v", err)
 		}
-		if !foundMove {
+		hasMove := slices.ContainsFunc(normalized.Actions(), func(a actions.Action) bool {
+			return a.Type == actions.Move && a.Node == targetNode
+		})
+		if !hasMove {
 			t.Fatalf("expected Move action for processTask moving across branches in TypeScript, got actions: %v", normalized.Actions())
 		}
 	})

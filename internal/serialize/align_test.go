@@ -1,8 +1,6 @@
 package serialize
 
 import (
-	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -10,206 +8,335 @@ import (
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
-	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestAlignLines(t *testing.T) {
-	tests := []struct {
-		name     string
-		srcBytes []byte
-		dstBytes []byte
-		want     []LineAlignmentPair
-	}{
-		{
-			name:     "Identical single-line files",
-			srcBytes: []byte("hello"),
-			dstBytes: []byte("hello"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-			},
-		},
-		{
-			name:     "Identical multi-line files",
-			srcBytes: []byte("hello\nworld"),
-			dstBytes: []byte("hello\nworld"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: 1},
-			},
-		},
-		{
-			name:     "Empty old file",
-			srcBytes: []byte(""),
-			dstBytes: []byte("new\nlines"),
-			want: []LineAlignmentPair{
-				{LeftLine: -1, RightLine: 0},
-				{LeftLine: -1, RightLine: 1},
-			},
-		},
-		{
-			name:     "Empty new file",
-			srcBytes: []byte("old\nlines"),
-			dstBytes: []byte(""),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: -1},
-				{LeftLine: 1, RightLine: -1},
-			},
-		},
-		{
-			name:     "Both empty",
-			srcBytes: []byte(""),
-			dstBytes: []byte(""),
-			want: []LineAlignmentPair{
-				{LeftLine: -1, RightLine: 0},
-			},
-		},
-		{
-			name:     "Deleted lines",
-			srcBytes: []byte("line1\nline2\nline3"),
-			dstBytes: []byte("line1\nline3"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: -1},
-				{LeftLine: 2, RightLine: 1},
-			},
-		},
-		{
-			name:     "Inserted lines",
-			srcBytes: []byte("line1\nline3"),
-			dstBytes: []byte("line1\nline2\nline3"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: -1, RightLine: 1},
-				{LeftLine: 1, RightLine: 2},
-			},
-		},
-		{
-			name:     "Single line change in middle",
-			srcBytes: []byte("line1\nline2\nline3"),
-			dstBytes: []byte("line1\nline2_changed\nline3"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: 1},
-				{LeftLine: 2, RightLine: 2},
-			},
-		},
-		{
-			name:     "Unequal length modified block (more insertions)",
-			srcBytes: []byte("header\nold1\nfooter"),
-			dstBytes: []byte("header\nnew1\nnew2\nfooter"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: 1},
-				{LeftLine: -1, RightLine: 2},
-				{LeftLine: 2, RightLine: 3},
-			},
-		},
-		{
-			name:     "Unequal length modified block (more deletions)",
-			srcBytes: []byte("header\nold1\nold2\nfooter"),
-			dstBytes: []byte("header\nnew1\nfooter"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: 1},
-				{LeftLine: 2, RightLine: -1},
-				{LeftLine: 3, RightLine: 2},
-			},
-		},
-		{
-			name:     "Moved block rendered cleanly via line diff",
-			srcBytes: []byte("func foo() {\n  a()\n}\nfunc bar() {\n}"),
-			dstBytes: []byte("func foo() {\n}\nfunc bar() {\n  a()\n}"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},
-				{LeftLine: 1, RightLine: -1},
-				{LeftLine: 2, RightLine: 1},
-				{LeftLine: 3, RightLine: 2},
-				{LeftLine: -1, RightLine: 3},
-				{LeftLine: 4, RightLine: 4},
-			},
-		},
-		{
-			name:     "Aligns unchanged line when statement order shifts around it",
-			srcBytes: []byte("c := init()\nif err != nil {\n  return\n}\n\nc.Next()\nreuse(c)"),
-			dstBytes: []byte("c := init()\nsetStatus(404)\nc.Next()\nif done {\n  log()\n}\nreuse(c)"),
-			want: []LineAlignmentPair{
-				{LeftLine: 0, RightLine: 0},  // c := init()
-				{LeftLine: 1, RightLine: 1},  // if err != nil { <-> setStatus(404)
-				{LeftLine: 2, RightLine: -1}, // return <-> filler
-				{LeftLine: 3, RightLine: -1}, // } <-> filler
-				{LeftLine: 4, RightLine: -1}, // "" <-> filler
-				{LeftLine: 5, RightLine: 2},  // c.Next() <-> c.Next() (ALIGNED!)
-				{LeftLine: -1, RightLine: 3}, // filler <-> if done {
-				{LeftLine: -1, RightLine: 4}, // filler <-> log()
-				{LeftLine: -1, RightLine: 5}, // filler <-> }
-				{LeftLine: 6, RightLine: 6},  // reuse(c) <-> reuse(c)
-			},
-		},
-	}
+	t.Run("Identical single-line files", func(t *testing.T) {
+		src := "hello"
+		dst := "hello"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testutil.AssertLinesAligned(t, src, dst, toTestPairs(got),
+			testutil.Line("hello"),
+			testutil.Line("hello"),
+		)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := AlignLines(tt.srcBytes, tt.dstBytes, nil, nil)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("AlignLines() got = %v, want = %v", got, tt.want)
-			}
-		})
-	}
+	t.Run("Identical multi-line files", func(t *testing.T) {
+		src := "hello\nworld"
+		dst := "hello\nworld"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("hello"),
+			testutil.Line("hello"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("world"),
+			testutil.Line("world"),
+		)
+	})
+
+	t.Run("Empty old file", func(t *testing.T) {
+		src := ""
+		dst := "new\nlines"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testutil.AssertAlignmentGrid(t, src, dst, toTestPairs(got), `
+∅ │ new
+∅ │ lines
+`)
+	})
+
+	t.Run("Empty new file", func(t *testing.T) {
+		src := "old\nlines"
+		dst := ""
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testutil.AssertAlignmentGrid(t, src, dst, toTestPairs(got), `
+old   │ ∅
+lines │ ∅
+`)
+	})
+
+	t.Run("Both empty", func(t *testing.T) {
+		src := ""
+		dst := ""
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testutil.AssertAlignmentGrid(t, src, dst, toTestPairs(got), `
+∅ │ 
+`)
+	})
+
+	t.Run("Deleted lines", func(t *testing.T) {
+		src := "line1\nline2\nline3"
+		dst := "line1\nline3"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line1"),
+			testutil.Line("line1"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line3"),
+			testutil.Line("line3"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("line2"),
+			testutil.Line("line3"),
+		)
+	})
+
+	t.Run("Inserted lines", func(t *testing.T) {
+		src := "line1\nline3"
+		dst := "line1\nline2\nline3"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line1"),
+			testutil.Line("line1"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line3"),
+			testutil.Line("line3"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("line1"),
+			testutil.Line("line2"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("line3"),
+			testutil.Line("line2"),
+		)
+	})
+
+	t.Run("Single line change in middle", func(t *testing.T) {
+		src := "line1\nline2\nline3"
+		dst := "line1\nline2_changed\nline3"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line1"),
+			testutil.Line("line1"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line2"),
+			testutil.Line("line2_changed"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("line3"),
+			testutil.Line("line3"),
+		)
+	})
+
+	t.Run("Unequal length modified block (more insertions)", func(t *testing.T) {
+		src := "header\nold1\nfooter"
+		dst := "header\nnew1\nnew2\nfooter"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("header"),
+			testutil.Line("header"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("old1"),
+			testutil.Line("new1"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("footer"),
+			testutil.Line("footer"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("old1"),
+			testutil.Line("new2"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("footer"),
+			testutil.Line("new2"),
+		)
+	})
+
+	t.Run("Unequal length modified block (more deletions)", func(t *testing.T) {
+		src := "header\nold1\nold2\nfooter"
+		dst := "header\nnew1\nfooter"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("header"),
+			testutil.Line("header"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("old1"),
+			testutil.Line("new1"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("footer"),
+			testutil.Line("footer"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("old2"),
+			testutil.Line("new1"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("old2"),
+			testutil.Line("footer"),
+		)
+	})
+
+	t.Run("Moved block rendered cleanly via line diff", func(t *testing.T) {
+		src := "func foo() {\n  a()\n}\nfunc bar() {\n}"
+		dst := "func foo() {\n}\nfunc bar() {\n  a()\n}"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Nth("func foo() {", 1),
+			testutil.Nth("func foo() {", 1),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Nth("}", 1),
+			testutil.Nth("}", 1),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Nth("func bar() {", 1),
+			testutil.Nth("func bar() {", 1),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Nth("}", 2),
+			testutil.Nth("}", 2),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("a()"),
+			testutil.Nth("}", 1),
+		)
+	})
+
+	t.Run("Aligns unchanged line when statement order shifts around it", func(t *testing.T) {
+		src := "c := init()\nif err != nil {\n  return\n}\n\nc.Next()\nreuse(c)"
+		dst := "c := init()\nsetStatus(404)\nc.Next()\nif done {\n  log()\n}\nreuse(c)"
+		got := AlignLines([]byte(src), []byte(dst), nil, nil)
+		testPairs := toTestPairs(got)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("c := init()"),
+			testutil.Line("c := init()"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("c.Next()"),
+			testutil.Line("c.Next()"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("reuse(c)"),
+			testutil.Line("reuse(c)"),
+		)
+		testutil.AssertLinesAligned(t, src, dst, testPairs,
+			testutil.Line("if err != nil {"),
+			testutil.Line("setStatus(404)"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("c.Next()"),
+			testutil.Line("setStatus(404)"),
+		)
+		testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+			testutil.Line("c.Next()"),
+			testutil.Line("if done {"),
+		)
+	})
 }
 
 func TestAlignLinesWithMapping(t *testing.T) {
 	// Simulate AST mapping for a statement whose line text was rewritten
-	src := []byte("func f() {\n  sh := 1\n  bh := 2\n  return b\n}")
-	dst := []byte("func f() {\n  return struct{\n    x int\n  }{1}\n}")
+	src := "func f() {\n  sh := 1\n  bh := 2\n  return b\n}"
+	dst := "func f() {\n  return struct{\n    x int\n  }{1}\n}"
+
+	srcAST, err := treesitter.Parse([]byte(src), "main.go")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dst), "main.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	parentSrc, err := testutil.FindNodeByText(srcAST, []byte(src), "func f() {", "function_declaration")
+	if err != nil {
+		t.Fatalf("parentSrc: %v", err)
+	}
+	parentDst, err := testutil.FindNodeByText(dstAST, []byte(dst), "func f() {", "function_declaration")
+	if err != nil {
+		t.Fatalf("parentDst: %v", err)
+	}
+	retSrc, err := testutil.FindNodeByText(srcAST, []byte(src), "return b", "return_statement")
+	if err != nil {
+		t.Fatalf("retSrc: %v", err)
+	}
+	retDst, err := testutil.FindNodeByText(dstAST, []byte(dst), "return struct{", "return_statement")
+	if err != nil {
+		t.Fatalf("retDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
-	parentSrc := &treesitter.ASTNode{StartRow: 0, EndRow: 4}
-	parentDst := &treesitter.ASTNode{StartRow: 0, EndRow: 4}
-
-	retSrc := &treesitter.ASTNode{
-		Type:     "return_statement",
-		StartRow: 3,
-		EndRow:   3,
-		Parent:   parentSrc,
-	}
-	retDst := &treesitter.ASTNode{
-		Type:     "return_statement",
-		StartRow: 1,
-		EndRow:   3,
-		Parent:   parentDst,
-	}
 	ms.Add(parentSrc, parentDst)
 	ms.Add(retSrc, retDst)
 
-	got := AlignLines(src, dst, ms, nil)
-	want := []LineAlignmentPair{
-		{LeftLine: 0, RightLine: 0},  // func f() {
-		{LeftLine: 1, RightLine: -1}, // sh := 1
-		{LeftLine: 2, RightLine: -1}, // bh := 2
-		{LeftLine: 3, RightLine: 1},  // return b <-> return struct{ (ALIGNED!)
-		{LeftLine: -1, RightLine: 2}, // filler <-> x int
-		{LeftLine: -1, RightLine: 3}, // filler <-> }{1}
-		{LeftLine: 4, RightLine: 4},  // }
-	}
+	got := AlignLines([]byte(src), []byte(dst), ms, nil)
+	testPairs := toTestPairs(got)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("AlignLines() got = %v, want = %v", got, want)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("func f() {"),
+		testutil.Line("func f() {"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("return b"),
+		testutil.Line("return struct{"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("}"),
+		testutil.Line("}"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("sh := 1"),
+		testutil.Line("return struct{"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("bh := 2"),
+		testutil.Line("return struct{"),
+	)
 }
 
 func TestAlignLinesExtraction(t *testing.T) {
 	// Simulate extraction where an outer if statement is removed and inner body moved out
-	src := []byte("func f() {\n  if ok {\n    doA()\n    doB()\n  }\n  return\n}")
-	dst := []byte("func f() {\n  doA()\n  doB()\n  return\n}")
+	src := "func f() {\n  if ok {\n    doA()\n    doB()\n  }\n  return\n}"
+	dst := "func f() {\n  doA()\n  doB()\n  return\n}"
+
+	srcAST, err := treesitter.Parse([]byte(src), "main.go")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dst), "main.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	innerA, err := testutil.FindNodeByText(srcAST, []byte(src), "doA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("innerA: %v", err)
+	}
+	innerB, err := testutil.FindNodeByText(srcAST, []byte(src), "doB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("innerB: %v", err)
+	}
+	destA, err := testutil.FindNodeByText(dstAST, []byte(dst), "doA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("destA: %v", err)
+	}
+	destB, err := testutil.FindNodeByText(dstAST, []byte(dst), "doB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("destB: %v", err)
+	}
+	parentDst, err := testutil.FindNodeByText(dstAST, []byte(dst), "func f() {", "function_declaration")
+	if err != nil {
+		t.Fatalf("parentDst: %v", err)
+	}
 
 	es := actions.NewEditScript()
-	innerA := &treesitter.ASTNode{StartRow: 2, EndRow: 2}
-	destA := &treesitter.ASTNode{StartRow: 1, EndRow: 1}
-	innerB := &treesitter.ASTNode{StartRow: 3, EndRow: 3}
-	destB := &treesitter.ASTNode{StartRow: 2, EndRow: 2}
-	parentDst := &treesitter.ASTNode{StartRow: 0, EndRow: 4}
-
 	es.Add(actions.Action{
 		Type:     actions.Move,
 		Node:     innerA,
@@ -223,76 +350,145 @@ func TestAlignLinesExtraction(t *testing.T) {
 		Parent:   parentDst,
 	})
 
-	got := AlignLines(src, dst, nil, es)
-	want := []LineAlignmentPair{
-		{LeftLine: 0, RightLine: 0},  // func f() {
-		{LeftLine: 1, RightLine: -1}, // if ok { (deleted container)
-		{LeftLine: 2, RightLine: 1},  // doA()
-		{LeftLine: 3, RightLine: 2},  // doB()
-		{LeftLine: 4, RightLine: -1}, // }
-		{LeftLine: 5, RightLine: 3},  // return
-		{LeftLine: 6, RightLine: 4},  // }
-	}
+	got := AlignLines([]byte(src), []byte(dst), nil, es)
+	testPairs := toTestPairs(got)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("AlignLines() for extraction got = %v, want = %v", got, want)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("func f() {"),
+		testutil.Line("func f() {"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("doA()"),
+		testutil.Line("doA()"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("doB()"),
+		testutil.Line("doB()"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("return"),
+		testutil.Line("return"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Nth("}", 2),
+		testutil.Line("}"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("if ok {"),
+		testutil.Line("doA()"),
+	)
 }
 
 func TestAlignLinesSingleStatementBlock(t *testing.T) {
 	// Simulate single-statement block where parent block has exact same row range as child call
-	src := []byte("elseif tgt == 'msg' then\n  api.nvim_win_set_cursor(ui.wins.msg)\nelseif tgt == 'pager' then")
-	dst := []byte("elseif tgt == 'msg' then\n  -- comment 1\n  -- comment 2\n  fn.win_execute(ui.wins.msg)\nelseif tgt == 'pager' then")
+	src := "if tgt == 'msg' then\n  api.nvim_win_set_cursor(ui.wins.msg)\nelseif tgt == 'pager' then\nend"
+	dst := "if tgt == 'msg' then\n  -- comment 1\n  -- comment 2\n  fn.win_execute(ui.wins.msg)\nelseif tgt == 'pager' then\nend"
+
+	srcAST, err := treesitter.Parse([]byte(src), "test.lua")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dst), "test.lua")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	callSrc, err := testutil.FindNodeByText(srcAST, []byte(src), "api.nvim_win_set_cursor", "function_call")
+	if err != nil {
+		t.Fatalf("callSrc: %v", err)
+	}
+	callDst, err := testutil.FindNodeByText(dstAST, []byte(dst), "fn.win_execute", "function_call")
+	if err != nil {
+		t.Fatalf("callDst: %v", err)
+	}
+	blockSrc := callSrc.Parent
+	blockDst := callDst.Parent
+	if blockSrc == nil || blockDst == nil {
+		t.Fatalf("block parents not found: blockSrc=%v, blockDst=%v", blockSrc, blockDst)
+	}
 
 	ms := engine.NewMapping()
-	blockSrc := &treesitter.ASTNode{Type: "block", StartRow: 1, EndRow: 1}
-	blockDst := &treesitter.ASTNode{Type: "block", StartRow: 3, EndRow: 3}
-	callSrc := &treesitter.ASTNode{Type: "function_call", StartRow: 1, EndRow: 1, Parent: blockSrc}
-	callDst := &treesitter.ASTNode{Type: "function_call", StartRow: 3, EndRow: 3, Parent: blockDst}
-
 	ms.Add(blockSrc, blockDst)
 	ms.Add(callSrc, callDst)
 
-	got := AlignLines(src, dst, ms, nil)
-	want := []LineAlignmentPair{
-		{LeftLine: 0, RightLine: 0},  // elseif tgt == 'msg' then
-		{LeftLine: -1, RightLine: 1}, // filler <-> -- comment 1
-		{LeftLine: -1, RightLine: 2}, // filler <-> -- comment 2
-		{LeftLine: 1, RightLine: 3},  // api.nvim_win_set_cursor <-> fn.win_execute (ALIGNED!)
-		{LeftLine: 2, RightLine: 4},  // elseif tgt == 'pager' then
-	}
+	got := AlignLines([]byte(src), []byte(dst), ms, nil)
+	testPairs := toTestPairs(got)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("AlignLines() got = %v, want = %v", got, want)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("if tgt == 'msg' then"),
+		testutil.Line("if tgt == 'msg' then"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("api.nvim_win_set_cursor(ui.wins.msg)"),
+		testutil.Line("fn.win_execute(ui.wins.msg)"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("elseif tgt == 'pager' then"),
+		testutil.Line("elseif tgt == 'pager' then"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("end"),
+		testutil.Line("end"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("api.nvim_win_set_cursor(ui.wins.msg)"),
+		testutil.Line("-- comment 1"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("api.nvim_win_set_cursor(ui.wins.msg)"),
+		testutil.Line("-- comment 2"),
+	)
 }
 
 func TestAlignLinesContinuationCondition(t *testing.T) {
-	src := []byte("if delta.type == 'workspaces' and\n  kong.default_workspace ~= delta.entity.id\nthen")
-	dst := []byte("if delta.type == 'workspaces' and\n  delta_entity ~= nil and\n  kong.default_workspace ~= delta_entity.id\nthen")
+	src := "if delta.type == 'workspaces' and\n  kong.default_workspace ~= delta.entity.id\nthen\nend"
+	dst := "if delta.type == 'workspaces' and\n  delta_entity ~= nil and\n  kong.default_workspace ~= delta_entity.id\nthen\nend"
+
+	srcAST, err := treesitter.Parse([]byte(src), "test.lua")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse([]byte(dst), "test.lua")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	condSrc, err := testutil.FindNodeByText(srcAST, []byte(src), "kong.default_workspace", "binary_expression")
+	if err != nil {
+		t.Fatalf("condSrc: %v", err)
+	}
+	condDst, err := testutil.FindNodeByText(dstAST, []byte(dst), "kong.default_workspace", "binary_expression")
+	if err != nil {
+		t.Fatalf("condDst: %v", err)
+	}
 
 	ms := engine.NewMapping()
-	rootSrc := &treesitter.ASTNode{Type: "source_file", StartRow: 0, EndRow: 2}
-	rootDst := &treesitter.ASTNode{Type: "source_file", StartRow: 0, EndRow: 3}
-	parentSrc := &treesitter.ASTNode{Type: "binary_expression", StartRow: 0, EndRow: 1, Parent: rootSrc}
-	parentDst := &treesitter.ASTNode{Type: "binary_expression", StartRow: 0, EndRow: 2, Parent: rootDst}
-	condSrc := &treesitter.ASTNode{Type: "binary_expression", StartRow: 1, EndRow: 1, StartCol: 2, EndCol: 44, Parent: parentSrc}
-	condDst := &treesitter.ASTNode{Type: "binary_expression", StartRow: 2, EndRow: 2, StartCol: 2, EndCol: 44, Parent: parentDst}
-
-	ms.Add(rootSrc, rootDst)
+	ms.Add(srcAST, dstAST)
 	ms.Add(condSrc, condDst)
 
-	got := AlignLines(src, dst, ms, nil)
-	want := []LineAlignmentPair{
-		{LeftLine: 0, RightLine: 0},  // if delta.type == 'workspaces' and
-		{LeftLine: -1, RightLine: 1}, // filler <-> delta_entity ~= nil and
-		{LeftLine: 1, RightLine: 2},  // kong.default_workspace ~= ... (ALIGNED!)
-		{LeftLine: 2, RightLine: 3},  // then
-	}
+	got := AlignLines([]byte(src), []byte(dst), ms, nil)
+	testPairs := toTestPairs(got)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("AlignLines() got = %v, want = %v", got, want)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("if delta.type == 'workspaces' and"),
+		testutil.Line("if delta.type == 'workspaces' and"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("kong.default_workspace ~= delta.entity.id"),
+		testutil.Line("kong.default_workspace ~= delta_entity.id"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("then"),
+		testutil.Line("then"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("end"),
+		testutil.Line("end"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("kong.default_workspace ~= delta.entity.id"),
+		testutil.Line("delta_entity ~= nil and"),
+	)
 }
 
 func TestCalculateSimilarityLinear(t *testing.T) {
@@ -361,20 +557,28 @@ func TestAlignLinesAsymmetricGap(t *testing.T) {
 	srcLines = append(srcLines, "  return", "}")
 	dstLines = append(dstLines, "  return", "}")
 
-	srcBytes := []byte(strings.Join(srcLines, "\n"))
-	dstBytes := []byte(strings.Join(dstLines, "\n"))
+	srcStr := strings.Join(srcLines, "\n")
+	dstStr := strings.Join(dstLines, "\n")
 
-	got := AlignLines(srcBytes, dstBytes, nil, nil)
-	if len(got) == 0 {
-		t.Fatalf("expected non-empty alignment grid")
-	}
-	if got[0].LeftLine != 0 || got[0].RightLine != 0 {
-		t.Errorf("first line mismatch: %+v", got[0])
-	}
-	last := got[len(got)-1]
-	if last.LeftLine != len(srcLines)-1 || last.RightLine != len(dstLines)-1 {
-		t.Errorf("last line mismatch: %+v", last)
-	}
+	got := AlignLines([]byte(srcStr), []byte(dstStr), nil, nil)
+	testPairs := toTestPairs(got)
+
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("package main"),
+		testutil.Line("package main"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("func LongFunction() {"),
+		testutil.Line("func LongFunction() {"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("return"),
+		testutil.Line("return"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("}"),
+		testutil.Line("}"),
+	)
 }
 
 func TestAlignLinesBanded(t *testing.T) {
@@ -394,65 +598,72 @@ func TestAlignLinesBanded(t *testing.T) {
 	srcLines = append(srcLines, "  return", "}")
 	dstLines = append(dstLines, "  return", "}")
 
-	srcBytes := []byte(strings.Join(srcLines, "\n"))
-	dstBytes := []byte(strings.Join(dstLines, "\n"))
+	srcStr := strings.Join(srcLines, "\n")
+	dstStr := strings.Join(dstLines, "\n")
 
-	got := AlignLines(srcBytes, dstBytes, nil, nil)
-	if len(got) == 0 {
-		t.Fatalf("expected non-empty alignment grid")
-	}
+	got := AlignLines([]byte(srcStr), []byte(dstStr), nil, nil)
+	testPairs := toTestPairs(got)
 
-	// Verify top and bottom lines align
-	if got[0].LeftLine != 0 || got[0].RightLine != 0 {
-		t.Errorf("first line mismatch: %+v", got[0])
-	}
-	last := got[len(got)-1]
-	if last.LeftLine != len(srcLines)-1 || last.RightLine != len(dstLines)-1 {
-		t.Errorf("last line mismatch: %+v (expected LeftLine=%d, RightLine=%d)", last, len(srcLines)-1, len(dstLines)-1)
-	}
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("package main"),
+		testutil.Line("package main"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("func LongFunction() {"),
+		testutil.Line("func LongFunction() {"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("return"),
+		testutil.Line("return"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("}"),
+		testutil.Line("}"),
+	)
 }
 
 func TestAlignLines_DataContainerAndASTMappingPrior(t *testing.T) {
-	// Old JSON has validations with additionalProperties: false
-	// New JSON has validations with additionalProperties: false, followed by inserted upload_validations with identical duplicate additionalProperties: false
-	src := []byte(`{
-  "validations": {
-    "required": true,
-    "additionalProperties": false
-  },
-  "assignee": "test"
-}`)
-	dst := []byte(`{
-  "validations": {
-    "required": true,
-    "additionalProperties": false
-  },
-  "upload_validations": {
-    "required": true,
-    "additionalProperties": false
-  },
-  "assignee": "test"
-}`)
+	// Old Python dictionary has validations with additionalProperties: False
+	// New Python dictionary has validations with additionalProperties: False, followed by inserted upload_validations with identical duplicate additionalProperties: False
+	srcStr := "d = {\n  \"validations\": {\n    \"required\": True,\n    \"additionalProperties\": False,\n  },\n  \"assignee\": \"test\",\n}\n"
+	dstStr := "d = {\n  \"validations\": {\n    \"required\": True,\n    \"additionalProperties\": False,\n  },\n  \"upload_validations\": {\n    \"required\": True,\n    \"additionalProperties\": False,\n  },\n  \"assignee\": \"test\",\n}\n"
 
-	// Construct mock Mapping pairing the first additionalProperties (src line 3) with dst line 3
+	src := []byte(srcStr)
+	dst := []byte(dstStr)
+
+	srcAST, err := treesitter.Parse(src, "test.py")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "test.py")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
+
+	n1, err := testutil.FindNodeByTextQuery(srcAST, src, testutil.TextQuery{Text: "additionalProperties", Type: "pair", Occurrence: 1})
+	if err != nil {
+		t.Fatalf("n1: %v", err)
+	}
+	n2, err := testutil.FindNodeByTextQuery(dstAST, dst, testutil.TextQuery{Text: "additionalProperties", Type: "pair", Occurrence: 1})
+	if err != nil {
+		t.Fatalf("n2: %v", err)
+	}
+
 	ms := engine.NewMapping()
-	n1 := &treesitter.ASTNode{Type: "pair", Label: "additionalProperties", StartRow: 3, EndRow: 3, Language: "json"}
-	n2 := &treesitter.ASTNode{Type: "pair", Label: "additionalProperties", StartRow: 3, EndRow: 3, Language: "json"}
 	ms.Add(n1, n2)
 
 	got := AlignLines(src, dst, ms, nil)
+	testPairs := toTestPairs(got)
 
-	// Verify that src line 3 ("additionalProperties": false) aligns with dst line 3 (not dst line 7)
-	foundMappedPair := false
-	for _, p := range got {
-		if p.LeftLine == 3 && p.RightLine == 3 {
-			foundMappedPair = true
-			break
-		}
-	}
-	if !foundMappedPair {
-		t.Errorf("expected src line 3 to align with dst line 3 via AST mapping, got alignment grid: %+v", got)
-	}
+	// Verify that src line 3 ("additionalProperties": False) aligns with dst line 3 (not dst line 7)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("\"additionalProperties\": False,"),
+		testutil.Nth("\"additionalProperties\": False,", 1),
+	)
+	testutil.AssertLinesNotAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("\"additionalProperties\": False,"),
+		testutil.Nth("\"additionalProperties\": False,", 2),
+	)
 }
 
 func TestAlignLines_MassiveGap(t *testing.T) {
@@ -469,39 +680,31 @@ func TestAlignLines_MassiveGap(t *testing.T) {
 		dstLines = append(dstLines, "inserted_line")
 	}
 
-	srcBytes := []byte(strings.Join(srcLines, "\n"))
-	dstBytes := []byte(strings.Join(dstLines, "\n"))
+	srcStr := strings.Join(srcLines, "\n")
+	dstStr := strings.Join(dstLines, "\n")
 
-	grid := AlignLines(srcBytes, dstBytes, nil, nil)
-	if len(grid) == 0 {
-		t.Fatal("expected non-empty alignment grid")
-	}
+	grid := AlignLines([]byte(srcStr), []byte(dstStr), nil, nil)
+	testPairs := toTestPairs(grid)
 
 	// Verify the middle anchor was aligned
-	foundMiddle := false
-	for _, pair := range grid {
-		if pair.LeftLine == 2000 && pair.RightLine == 0 {
-			foundMiddle = true
-			break
-		}
-	}
-	if !foundMiddle {
-		t.Errorf("expected middle anchor (2000, 0) to align in grid")
-	}
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("stable_middle_line"),
+		testutil.Line("stable_middle_line"),
+	)
 }
 
 func TestAlignLines_PunctuationLineGuard(t *testing.T) {
 	// Deleted if block vs inserted multi-block function with a coincidental `\t}` at line 3.
-	src := []byte(strings.Join([]string{
+	srcStr := strings.Join([]string{
 		"func Add() {",
 		"\tif _, exists := m.src[t1]; !exists {",
 		"\t\tm.Pairs = append(m.Pairs, Pair{Src: t1, Dst: t2})",
 		"\t}",
 		"\tm.src[t1] = t2",
 		"}",
-	}, "\n"))
+	}, "\n")
 
-	dst := []byte(strings.Join([]string{
+	dstStr := strings.Join([]string{
 		"func Add() {",
 		"\tif t1 == nil || t2 == nil {",
 		"\t\treturn",
@@ -512,18 +715,28 @@ func TestAlignLines_PunctuationLineGuard(t *testing.T) {
 		"\tm.Pairs = append(m.Pairs, Pair{Src: t1, Dst: t2})",
 		"\tm.src[t1] = t2",
 		"}",
-	}, "\n"))
+	}, "\n")
 
-	grid := AlignLines(src, dst, nil, nil)
+	grid := AlignLines([]byte(srcStr), []byte(dstStr), nil, nil)
+	testPairs := toTestPairs(grid)
+
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("func Add() {"),
+		testutil.Line("func Add() {"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Line("m.src[t1] = t2"),
+		testutil.Line("m.src[t1] = t2"),
+	)
+	testutil.AssertLinesAligned(t, srcStr, dstStr, testPairs,
+		testutil.Nth("}", 2),
+		testutil.Nth("}", 3),
+	)
 	// Line 3 on left (`\t}`) must not be anchored to Line 3 on right (`\t}`).
-	for _, pair := range grid {
-		if pair.LeftLine == 3 && pair.RightLine == 3 {
-			t.Errorf("unexpected false alignment on unmapped punctuation line 3: got LeftLine=3, RightLine=3")
-		}
-		if pair.LeftLine == 4 && pair.RightLine != 8 {
-			t.Errorf("expected common tail m.src[t1] = t2 (left 4) to align with right 8, got %d", pair.RightLine)
-		}
-	}
+	testutil.AssertLinesNotAligned(t, srcStr, dstStr, testPairs,
+		testutil.Nth("}", 1),
+		testutil.Nth("}", 1),
+	)
 }
 
 func TestAlignLines_InPlaceClosureMove(t *testing.T) {
@@ -588,20 +801,16 @@ func TestAlignLines_InPlaceClosureMove(t *testing.T) {
 	es.Add(actions.Action{Type: actions.Move, Node: oldB, DestNode: newB})
 
 	alignment := AlignLines([]byte(src), []byte(dst), ms, es)
+	testPairs := toTestPairs(alignment)
 
-	alignedMap := make(map[int]int)
-	for _, p := range alignment {
-		if p.LeftLine != -1 {
-			alignedMap[p.LeftLine] = p.RightLine
-		}
-	}
-
-	if alignedMap[1] != 2 {
-		t.Errorf("expected left line 1 (let a = 1) to align with right line 2, got %d (grid: %+v)", alignedMap[1], alignment)
-	}
-	if alignedMap[2] != 3 {
-		t.Errorf("expected left line 2 (let b = 2) to align with right line 3, got %d (grid: %+v)", alignedMap[2], alignment)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("let a = 1;"),
+		testutil.Line("let a = 1;"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("let b = 2;"),
+		testutil.Line("let b = 2;"),
+	)
 }
 
 func TestAlignLines_AttachedElseClause(t *testing.T) {
@@ -645,10 +854,21 @@ func TestAlignLines_AttachedElseClause(t *testing.T) {
 				}
 			}
 			got := AlignLines(tc.src, tc.dst, res.Mappings, es)
-			for _, p := range got {
-				if p.LeftLine == tc.wantLine && p.RightLine != tc.wantLine {
-					t.Errorf("AlignLines(%s) left line %d aligned with right line %d, want %d (grid: %+v)", tc.name, tc.wantLine, p.RightLine, tc.wantLine, got)
-				}
+			testPairs := toTestPairs(got)
+
+			testutil.AssertLinesAligned(t, string(tc.src), string(tc.dst), testPairs,
+				testutil.Line("a = 1;"),
+				testutil.Line("a = 1;"),
+			)
+			testutil.AssertLinesAligned(t, string(tc.src), string(tc.dst), testPairs,
+				testutil.Line("after();"),
+				testutil.Line("after();"),
+			)
+			if strings.Contains(string(tc.src), "b = 2;") && strings.Contains(string(tc.dst), "b = 2;") {
+				testutil.AssertLinesAligned(t, string(tc.src), string(tc.dst), testPairs,
+					testutil.Line("b = 2;"),
+					testutil.Line("b = 2;"),
+				)
 			}
 		})
 	}
@@ -692,35 +912,21 @@ func TestAlignLines_ExtractedClosureIntraMoveAlignment(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-
-	alignedMap := make(map[int]int)
-	for _, p := range alignment {
-		if p.LeftLine != -1 {
-			alignedMap[p.LeftLine] = p.RightLine
-		}
-	}
+	testPairs := toTestPairs(alignment)
 
 	// Verify that the switch header and its cases align across the closure boundary.
-	want := map[int]int{
-		1: 2, // switch format {
-		2: 3, // case "json":
-		4: 5, // case "text":
-	}
-	for left, wantRight := range want {
-		if got := alignedMap[left]; got != wantRight {
-			t.Errorf("expected left line %d to align with right line %d, got %d", left, wantRight, got)
-		}
-	}
-}
-
-func alignedLeftToRight(alignment []LineAlignmentPair) map[int]int {
-	m := make(map[int]int, len(alignment))
-	for _, p := range alignment {
-		if p.LeftLine != -1 {
-			m[p.LeftLine] = p.RightLine
-		}
-	}
-	return m
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("switch format {"),
+		testutil.Line("switch format {"),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line(`case "json":`),
+		testutil.Line(`case "json":`),
+	)
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line(`case "text":`),
+		testutil.Line(`case "text":`),
+	)
 }
 
 func TestAlignLines_UnchangedControlFlowAndBracePrecedence(t *testing.T) {
@@ -772,24 +978,28 @@ func TestAlignLines_UnchangedControlFlowAndBracePrecedence(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-	alignedMap := alignedLeftToRight(alignment)
+	testPairs := toTestPairs(alignment)
 
 	// Line 8 on left (`\t\t} else {`) must align with line 6 on right (`\t\t} else {`).
-	if alignedMap[8] != 6 {
-		t.Errorf("expected left line 8 (} else {) to align with right line 6, got %d", alignedMap[8])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("} else {"),
+		testutil.Line("} else {"),
+	)
 	// Line 12 on left (`\t\t}`) must align with line 11 on right (`\t\t}`).
-	if alignedMap[12] != 11 {
-		t.Errorf("expected left line 12 (closing if) to align with right line 11, got %d", alignedMap[12])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Nth("}", 3),
+		testutil.Nth("}", 3),
+	)
 	// Line 13 on left (`\t\tbreak`) must align with line 12 on right (`\t\tbreak`).
-	if alignedMap[13] != 12 {
-		t.Errorf("expected left line 13 (break) to align with right line 12, got %d", alignedMap[13])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("break"),
+		testutil.Line("break"),
+	)
 	// Line 14 on left (`\t}`) must align with line 13 on right (`\t}`).
-	if alignedMap[14] != 13 {
-		t.Errorf("expected left line 14 (closing for loop) to align with right line 13, got %d", alignedMap[14])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Nth("}", 4),
+		testutil.Nth("}", 4),
+	)
 }
 
 func TestAlignLines_StationaryStatementPrecedenceOverMove(t *testing.T) {
@@ -823,18 +1033,20 @@ func TestAlignLines_StationaryStatementPrecedenceOverMove(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-	alignedMap := alignedLeftToRight(alignment)
+	testPairs := toTestPairs(alignment)
 
 	// Line 3 on left (`\tanchors := mergeAnchors(primary, text)`) must align with
 	// line 3 on right (`\tanchors := collectStationaryMoveAnchors(inPlaceStatements, tier1)`).
-	if alignedMap[3] != 3 {
-		t.Errorf("expected left line 3 (anchors :=) to align with right line 3, got %d", alignedMap[3])
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("anchors := mergeAnchors(primary, text)"),
+		testutil.Line("anchors := collectStationaryMoveAnchors(inPlaceStatements, tier1)"),
+	)
 	// Line 4 on left (`\tinPlaceStatements := ...`) moved above `anchors :=` on the right,
 	// so on the left it cannot align with line 1 on right without crossing `anchors :=`.
-	if alignedMap[4] == 1 {
-		t.Errorf("expected left line 4 (inPlaceStatements) not to cross anchors := and align with right line 1")
-	}
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("inPlaceStatements := collectMappedStatements(fn)"),
+		testutil.Line("inPlaceStatements := collectMappedStatements(fn)"),
+	)
 }
 
 func TestStationaryIndex_Crosses(t *testing.T) {
@@ -946,53 +1158,78 @@ func TestAlignLines_StationaryElsePrecedenceOverInsertedClause(t *testing.T) {
 	postprocess.Run(es, mr.Mappings, oldTree, newTree)
 
 	alignment := AlignLines([]byte(src), []byte(dst), mr.Mappings, es)
-	alignedMap := alignedLeftToRight(alignment)
+	testPairs := toTestPairs(alignment)
 
 	// Line 6 on left (`\t} else {`) must align with line 6 on right (`\t} else if pair.LeftLine == -1 ...`),
 	// not with line 10 on right (`\t} else {`).
-	if alignedMap[6] != 6 {
-		t.Errorf("expected left line 6 (} else {) to align with right line 6 (} else if), got %d (grid: %+v)", alignedMap[6], alignment)
-	}
+	testutil.AssertLinesAligned(t, src, dst, testPairs,
+		testutil.Line("} else {"),
+		testutil.Line("} else if pair.LeftLine == -1 && pair.RightLine >= 0 {"),
+	)
+	testutil.AssertLinesNotAligned(t, src, dst, testPairs,
+		testutil.Line("} else {"),
+		testutil.Line("} else {"),
+	)
 }
 
 func TestCollectMoveRanges_MacroStructuralFilter_Tier4(t *testing.T) {
-	// Micro-move: sub-statement identifier (size 1), not a statement, block, or declaration.
-	microSrc := &treesitter.ASTNode{Type: "identifier", Label: "x", StartRow: 5, EndRow: 5, Language: "go"}
-	microDst := &treesitter.ASTNode{Type: "identifier", Label: "x", StartRow: 50, EndRow: 50, Language: "go"}
+	src := []byte("package main\n\nfunc main() {\n\tx := 1\n\tfoo()\n\ta := b + c + d\n}\n")
+	dst := []byte("package main\n\nfunc other() {\n\t// spacer\n\t// spacer\n\t// spacer\n\t// spacer\n\t// spacer\n\t// spacer\n\tx := 1\n\tfoo()\n\ta := b + c + d\n}\n")
 
-	// Macro-move 1: statement node (size 2).
-	stmtSrc := &treesitter.ASTNode{
-		Type:     "expression_statement",
-		StartRow: 10,
-		EndRow:   10,
-		Language: "go",
-		Children: []*treesitter.ASTNode{{Type: "identifier", Label: "foo", Language: "go"}},
+	srcAST, err := treesitter.Parse(src, "main.go")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
 	}
-	stmtDst := &treesitter.ASTNode{
-		Type:     "expression_statement",
-		StartRow: 60,
-		EndRow:   60,
-		Language: "go",
-		Children: []*treesitter.ASTNode{{Type: "identifier", Label: "foo", Language: "go"}},
+	dstAST, err := treesitter.Parse(dst, "main.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
 	}
 
-	// Macro-move 2: non-statement node with Size() >= 4 (complex expression).
-	c1 := &treesitter.ASTNode{Type: "identifier", Label: "a", Language: "go"}
-	c2 := &treesitter.ASTNode{Type: "+", Label: "+", Language: "go"}
-	c3 := &treesitter.ASTNode{Type: "identifier", Label: "b", Language: "go"}
-	largeExprSrc := &treesitter.ASTNode{
-		Type:     "binary_expression",
-		StartRow: 20,
-		EndRow:   20,
-		Language: "go",
-		Children: []*treesitter.ASTNode{c1, c2, c3},
+	var microSrc, microDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "identifier" && n.Label == "x" {
+			microSrc = n
+			break
+		}
 	}
-	largeExprDst := &treesitter.ASTNode{
-		Type:     "binary_expression",
-		StartRow: 70,
-		EndRow:   70,
-		Language: "go",
-		Children: []*treesitter.ASTNode{c1, c2, c3},
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "identifier" && n.Label == "x" {
+			microDst = n
+			break
+		}
+	}
+
+	var stmtSrc, stmtDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "expression_statement" {
+			stmtSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "expression_statement" {
+			stmtDst = n
+			break
+		}
+	}
+
+	var largeExprSrc, largeExprDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "binary_expression" && n.Size() >= 4 {
+			largeExprSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "binary_expression" && n.Size() >= 4 {
+			largeExprDst = n
+			break
+		}
+	}
+
+	if microSrc == nil || microDst == nil || stmtSrc == nil || stmtDst == nil || largeExprSrc == nil || largeExprDst == nil {
+		t.Fatalf("nodes not found: microSrc=%v, microDst=%v, stmtSrc=%v, stmtDst=%v, largeExprSrc=%v, largeExprDst=%v",
+			microSrc, microDst, stmtSrc, stmtDst, largeExprSrc, largeExprDst)
 	}
 
 	ms := engine.NewMapping()
@@ -1016,8 +1253,8 @@ func TestCollectMoveRanges_MacroStructuralFilter_Tier4(t *testing.T) {
 	}
 
 	for _, m := range moves {
-		if m.sStart == 5 && m.dStart == 50 {
-			t.Errorf("micro-move on line 5->50 should be excluded from line alignment moveRange")
+		if m.sStart == int(microSrc.StartRow) && m.dStart == int(microDst.StartRow) {
+			t.Errorf("micro-move on line %d->%d should be excluded from line alignment moveRange", microSrc.StartRow, microDst.StartRow)
 		}
 	}
 }
@@ -1212,65 +1449,33 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 		es = postprocess.Run(es, mr.Mappings, srcAST, dstAST)
 
 		// 1. Whole-Snippet Verification: Assert enclosing context maps in place
-		r := rules.Get("go")
-		var funcMapped bool
-		for _, p := range mr.Mappings.Pairs {
-			if p.Src != nil && p.Dst != nil && r.IsDeclaration(p.Src.Type) && p.Src.Type == p.Dst.Type {
-				funcMapped = true
-				break
-			}
-		}
-		if !funcMapped {
-			t.Fatalf("expected enclosing function declaration to map in place")
-		}
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"func processStreamJob", "func processStreamJob", "function_declaration",
+		)
 
-		// 2. Alignment Verification
+		// 2. Alignment Verification: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor,
+		// and NOT displaced by the moved if-block.
 		grid := AlignLines(srcBytes, dstBytes, mr.Mappings, es)
+		testPairs := toTestPairs(grid)
 
-		srcLines := strings.Split(oldSrc, "\n")
-		dstLines := strings.Split(newSrc, "\n")
-
-		oldVarLine, newVarLine := -1, -1
-		for i, l := range srcLines {
-			if strings.TrimSpace(l) == "var buf bytes.Buffer" {
-				oldVarLine = i
-				break
-			}
-		}
-		for j, l := range dstLines {
-			if strings.TrimSpace(l) == "var buf bytes.Buffer" {
-				newVarLine = j
-				break
-			}
-		}
-
-		if oldVarLine < 0 || newVarLine < 0 {
-			t.Fatalf("could not find 'var buf bytes.Buffer' in test snippets (old:%d, new:%d)", oldVarLine, newVarLine)
-		}
-
-		// Verify alignment: var buf bytes.Buffer MUST be aligned together as Tier 1 unchanged anchor.
-		var foundVarBufPair bool
-		for _, p := range grid {
-			if p.LeftLine == oldVarLine && p.RightLine == newVarLine {
-				foundVarBufPair = true
-				break
-			}
-		}
-
-		if !foundVarBufPair {
-			var alignDump strings.Builder
-			for _, p := range grid {
-				var lText, rText string
-				if p.LeftLine >= 0 && p.LeftLine < len(srcLines) {
-					lText = srcLines[p.LeftLine]
-				}
-				if p.RightLine >= 0 && p.RightLine < len(dstLines) {
-					rText = dstLines[p.RightLine]
-				}
-				fmt.Fprintf(&alignDump, "L:%2d %-35s | R:%2d %-35s\n", p.LeftLine+1, lText, p.RightLine+1, rText)
-			}
-			t.Fatalf("expected var buf bytes.Buffer (old L:%d, new R:%d) to be aligned, but it was displaced by an in-place move:\n%s",
-				oldVarLine+1, newVarLine+1, alignDump.String())
-		}
+		testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("var buf bytes.Buffer"),
+			testutil.Line("var buf bytes.Buffer"),
+		)
+		testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("var buf bytes.Buffer"),
+			testutil.Line("if bytes.Equal(job.srcBytes, job.dstBytes) && cfg.Format != \"json\" {"),
+		)
 	})
+}
+
+func toTestPairs(grid []LineAlignmentPair) []testutil.LineAlignmentPair {
+	res := make([]testutil.LineAlignmentPair, len(grid))
+	for i, p := range grid {
+		res[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
+	return res
 }

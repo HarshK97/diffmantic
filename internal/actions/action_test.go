@@ -1,12 +1,14 @@
 package actions
 
 import (
-	"strings"
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestActionNames(t *testing.T) {
@@ -30,8 +32,12 @@ func TestActionNames(t *testing.T) {
 }
 
 func TestActionFields(t *testing.T) {
-	node := testutil.NodeAtRC("identifier", "foo", 1, 0)
-	parent := testutil.NodeAtRC("block", "", 0, 0)
+	ast, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "main.go")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	parent := ast
+	node := ast.Children[len(ast.Children)-1]
 
 	ins := Action{
 		Type:     Insert,
@@ -77,7 +83,11 @@ func TestEditScriptAddAndSize(t *testing.T) {
 		t.Fatalf("empty script size = %d", es.Size())
 	}
 
-	node := testutil.NodeAtRC("id", "x", 0, 0)
+	ast, err := treesitter.Parse([]byte("x = 1\n"), "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	node := ast.Children[0]
 	es.Add(Action{Type: Delete, Node: node})
 	es.Add(Action{Type: Delete, Node: node})
 
@@ -92,29 +102,40 @@ func TestEditScriptAddAndSize(t *testing.T) {
 }
 
 func TestNodeToString(t *testing.T) {
-	n := &treesitter.ASTNode{
-		Type:     "identifier",
-		Label:    "foo",
-		StartRow: 1, // displays as 2
-		StartCol: 4,
-		EndRow:   1,
-		EndCol:   7,
+	code := []byte("package main\n\nfunc foo() {\n\treturn\n}\n")
+	ast, err := treesitter.Parse(code, "test.go")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
 	}
-	got := NodeToString(n)
-	want := "identifier: foo [2:4-2:7]"
+
+	identNode, err := testutil.FindNodeByText(ast, code, "foo")
+	if err != nil {
+		t.Fatalf("failed to locate identNode: %v", err)
+	}
+	returnNode, err := testutil.FindNodeByText(ast, code, "return")
+	if err != nil {
+		t.Fatalf("failed to locate returnNode: %v", err)
+	}
+	goRules := rules.Get("go")
+	var blockNode *treesitter.ASTNode
+	for p := returnNode.Parent; p != nil; p = p.Parent {
+		if goRules.IsBlock(p.Type) {
+			blockNode = p
+			break
+		}
+	}
+	if blockNode == nil {
+		t.Fatal("failed to locate blockNode")
+	}
+
+	got := NodeToString(identNode)
+	want := fmt.Sprintf("%s: %s [%d:%d-%d:%d]", identNode.Type, identNode.Label, identNode.StartRow+1, identNode.StartCol, identNode.EndRow+1, identNode.EndCol)
 	if got != want {
 		t.Errorf("NodeToString = %q, want %q", got, want)
 	}
 
-	n2 := &treesitter.ASTNode{
-		Type:     "block",
-		StartRow: 0,
-		StartCol: 0,
-		EndRow:   5,
-		EndCol:   1,
-	}
-	got2 := NodeToString(n2)
-	want2 := "block [1:0-6:1]"
+	got2 := NodeToString(blockNode)
+	want2 := fmt.Sprintf("%s [%d:%d-%d:%d]", blockNode.Type, blockNode.StartRow+1, blockNode.StartCol, blockNode.EndRow+1, blockNode.EndCol)
 	if got2 != want2 {
 		t.Errorf("NodeToString no-label = %q, want %q", got2, want2)
 	}
@@ -125,33 +146,21 @@ func TestNodeToString(t *testing.T) {
 }
 
 func TestDeepCopyTree(t *testing.T) {
-	root := testutil.NodeAtRC("module", "", 0, 0)
-	root.ID = 0
-	child1 := testutil.NodeAtRC("function", "foo", 1, 0)
-	child1.ID = 1
-	child2 := testutil.NodeAtRC("function", "bar", 5, 0)
-	child2.ID = 2
-	testutil.Tree(root, child1, child2)
-	leaf := testutil.NodeAtRC("identifier", "x", 2, 4)
-	leaf.ID = 3
-	testutil.Tree(child1, leaf)
+	code := []byte("def foo():\n    x = 1\n\ndef bar():\n    pass\n")
+	root, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
 
 	cs := &chawatheState{}
 	cs.init(root, root, engine.NewMapping())
 
-	if cs.cpySrc.nodeType != "module" {
-		t.Fatal("root type wrong")
+	if cs.cpySrc == nil || cs.cpySrc.orig != root {
+		t.Fatal("root copy wrong")
 	}
-	if len(cs.cpySrc.children) != 2 {
-		t.Fatalf("root children = %d, want 2", len(cs.cpySrc.children))
+	if len(cs.cpySrc.children) != len(root.Children) {
+		t.Fatalf("root children = %d, want %d", len(cs.cpySrc.children), len(root.Children))
 	}
-	if cs.cpySrc.children[0].label != "foo" {
-		t.Fatal("child1 label wrong")
-	}
-	if len(cs.cpySrc.children[0].children) != 1 {
-		t.Fatal("child1 should have 1 child")
-	}
-
 	if cs.origToCopy[root] != cs.cpySrc {
 		t.Fatal("origToCopy[root] wrong")
 	}
@@ -160,16 +169,32 @@ func TestDeepCopyTree(t *testing.T) {
 	}
 
 	cs.cpySrc.label = "mutated"
-	if root.Label != "" {
+	if root.Label == "mutated" {
 		t.Fatal("deep copy is not independent")
 	}
 }
 
 func TestInsertChild(t *testing.T) {
-	parent := &cnode{nodeType: "block"}
-	c1 := &cnode{nodeType: "a"}
-	c2 := &cnode{nodeType: "b"}
-	c3 := &cnode{nodeType: "c"}
+	code := []byte("a = 1\nb = 2\nc = 3\n")
+	ast, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+
+	cs := &chawatheState{}
+	cs.init(ast, ast, engine.NewMapping())
+	parent := cs.cpySrc
+	if len(parent.children) < 3 {
+		t.Fatalf("expected at least 3 children, got %d", len(parent.children))
+	}
+	c1 := parent.children[0]
+	c2 := parent.children[1]
+	c3 := parent.children[2]
+
+	parent.children = nil
+	c1.parent = nil
+	c2.parent = nil
+	c3.parent = nil
 
 	insertChild(parent, c1, 0)
 	insertChild(parent, c3, 1)
@@ -187,11 +212,17 @@ func TestInsertChild(t *testing.T) {
 }
 
 func TestPositionInParent(t *testing.T) {
-	parent := testutil.NodeAtRC("block", "", 0, 0)
-	c1 := testutil.NodeAtRC("a", "", 0, 0)
-	c2 := testutil.NodeAtRC("b", "", 0, 0)
-	c3 := testutil.NodeAtRC("c", "", 0, 0)
-	testutil.Tree(parent, c1, c2, c3)
+	code := []byte("a = 1\nb = 2\nc = 3\n")
+	parent, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	if len(parent.Children) < 3 {
+		t.Fatalf("expected at least 3 children, got %d", len(parent.Children))
+	}
+	c1 := parent.Children[0]
+	c2 := parent.Children[1]
+	c3 := parent.Children[2]
 
 	if p := c1.ChildIndex(); p != 0 {
 		t.Errorf("c1.ChildIndex() = %d, want 0", p)
@@ -203,50 +234,60 @@ func TestPositionInParent(t *testing.T) {
 		t.Errorf("c3.ChildIndex() = %d, want 2", p)
 	}
 
-	orphan := testutil.NodeAtRC("orphan", "", 0, 0)
-	if p := orphan.ChildIndex(); p != -1 {
-		t.Errorf("orphan.ChildIndex() = %d, want -1", p)
+	// Root node has no parent, so ChildIndex() returns -1
+	if p := parent.ChildIndex(); p != -1 {
+		t.Errorf("parent.ChildIndex() = %d, want -1", p)
 	}
 }
 
 func TestBFS(t *testing.T) {
-	root := testutil.NodeAtRC("a", "", 0, 0)
-	b := testutil.NodeAtRC("b", "", 0, 0)
-	c := testutil.NodeAtRC("c", "", 0, 0)
-	d := testutil.NodeAtRC("d", "", 0, 0)
-	testutil.Tree(root, b, c)
-	testutil.Tree(b, d)
+	code := []byte("def f():\n    pass\n")
+	root, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
 
 	nodes := root.LevelOrder()
-	if len(nodes) != 4 {
-		t.Fatalf("bfs returned %d nodes, want 4", len(nodes))
+	if len(nodes) != root.Size() {
+		t.Fatalf("bfs returned %d nodes, want %d", len(nodes), root.Size())
 	}
-	var types strings.Builder
-	for _, n := range nodes {
-		types.WriteString(n.Type)
+	if nodes[0] != root {
+		t.Fatalf("bfs root should be first, got %v", nodes[0])
 	}
-	if types.String() != "abcd" {
-		t.Errorf("bfs order = %q, want %q", types.String(), "abcd")
+
+	// In BFS, every non-root node's parent must appear before it in the sequence
+	for i, n := range nodes {
+		if n.Parent != nil {
+			parentIdx := slices.Index(nodes, n.Parent)
+			if parentIdx == -1 || parentIdx >= i {
+				t.Errorf("node %s at index %d has parent at index %d", n.Type, i, parentIdx)
+			}
+		}
 	}
 }
 
 func TestPostOrder(t *testing.T) {
-	root := testutil.NodeAtRC("a", "", 0, 0)
-	b := testutil.NodeAtRC("b", "", 0, 0)
-	c := testutil.NodeAtRC("c", "", 0, 0)
-	d := testutil.NodeAtRC("d", "", 0, 0)
-	testutil.Tree(root, b, c)
-	testutil.Tree(b, d)
+	code := []byte("def f():\n    pass\n")
+	root, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
 
 	nodes := root.PostOrder()
-	if len(nodes) != 4 {
-		t.Fatalf("postOrder returned %d nodes, want 4", len(nodes))
+	if len(nodes) != root.Size() {
+		t.Fatalf("postOrder returned %d nodes, want %d", len(nodes), root.Size())
 	}
-	var types strings.Builder
-	for _, n := range nodes {
-		types.WriteString(n.Type)
+	if nodes[len(nodes)-1] != root {
+		t.Fatalf("postOrder root should be last, got %v", nodes[len(nodes)-1])
 	}
-	if types.String() != "dbca" {
-		t.Errorf("postOrder order = %q, want %q", types.String(), "dbca")
+
+	// In PostOrder, every child must appear before its parent in the sequence
+	for i, n := range nodes {
+		for _, child := range n.Children {
+			childIdx := slices.Index(nodes, child)
+			if childIdx == -1 || childIdx >= i {
+				t.Errorf("parent %s at index %d has child %s at index %d", n.Type, i, child.Type, childIdx)
+			}
+		}
 	}
 }

@@ -1,13 +1,13 @@
 package comments
 
 import (
-	"bytes"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -327,8 +327,31 @@ func TestDiffCommentsScopedLCSNoCrossover(t *testing.T) {
 }
 
 func TestDiffCommentsRenamedFunction(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration", StartByte: 0, EndByte: 200}
-	dstDecl := &treesitter.ASTNode{ID: 25, Type: "function_declaration", StartByte: 0, EndByte: 200}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc bar() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(srcDecl, dstDecl)
@@ -381,8 +404,31 @@ func TestDiffCommentsRenamedFunction(t *testing.T) {
 }
 
 func TestDiffCommentsLeadingDocstringRenamed(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
-	dstDecl := &treesitter.ASTNode{ID: 25, Type: "function_declaration"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc bar() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(srcDecl, dstDecl)
@@ -418,8 +464,31 @@ func TestDiffCommentsLeadingDocstringRenamed(t *testing.T) {
 }
 
 func TestDiffCommentsBranchIsolation(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
-	dstDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(srcDecl, dstDecl)
@@ -454,8 +523,31 @@ func TestDiffCommentsBranchIsolation(t *testing.T) {
 }
 
 func TestDiffCommentsUnmappedStrictIsolation(t *testing.T) {
-	srcDecl := &treesitter.ASTNode{ID: 10, Type: "function_declaration"}
-	dstDecl := &treesitter.ASTNode{ID: 99, Type: "function_declaration"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc foo() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc bar() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var srcDecl, dstDecl *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			srcDecl = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			dstDecl = n
+			break
+		}
+	}
+	if srcDecl == nil || dstDecl == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	// Unmapped declarations (mappings does NOT map srcDecl to dstDecl)
 	mappings := engine.NewMapping()
@@ -529,16 +621,55 @@ public class TestClass {
 }
 
 func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
-	declSrc := &treesitter.ASTNode{Type: "function_declaration", Language: "lua"}
-	declDst := &treesitter.ASTNode{Type: "function_declaration", Language: "lua"}
+	luaCode := []byte("function f()\n    if a then\n        x = 1\n    else\n        y = 2\n    end\nend\n")
+	srcAST, err := treesitter.ParseWithLanguage(luaCode, "lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.ParseWithLanguage(luaCode, "lua")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// Branch 1 in src and dst (mapped to each other)
-	block1Src := &treesitter.ASTNode{Type: "block", Parent: declSrc, Language: "lua"}
-	block1Dst := &treesitter.ASTNode{Type: "block", Parent: declDst, Language: "lua"}
+	var declSrc, declDst *treesitter.ASTNode
+	var block1Src, block1Dst, block2Src, block2Dst *treesitter.ASTNode
+	var stmt1Dst, stmt2Src *treesitter.ASTNode
 
-	// Branch 2 in src and dst (mapped to each other)
-	block2Src := &treesitter.ASTNode{Type: "block", Parent: declSrc, Language: "lua"}
-	block2Dst := &treesitter.ASTNode{Type: "block", Parent: declDst, Language: "lua"}
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			declSrc = n
+		}
+		if n.Type == "assignment_statement" {
+			for _, c := range n.Children {
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "y" {
+					stmt2Src = n
+					block2Src = n.Parent
+				}
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "x" {
+					block1Src = n.Parent
+				}
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			declDst = n
+		}
+		if n.Type == "assignment_statement" {
+			for _, c := range n.Children {
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "x" {
+					stmt1Dst = n
+					block1Dst = n.Parent
+				}
+				if c.Type == "variable_list" && len(c.Children) > 0 && c.Children[0].Label == "y" {
+					block2Dst = n.Parent
+				}
+			}
+		}
+	}
+	if declSrc == nil || declDst == nil || block1Src == nil || block1Dst == nil || block2Src == nil || block2Dst == nil || stmt2Src == nil || stmt1Dst == nil {
+		t.Fatal("failed to find function, blocks, and statements in parsed lua snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(declSrc, declDst)
@@ -546,7 +677,6 @@ func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
 	mappings.Add(block2Src, block2Dst)
 
 	// Comment in src block 2:
-	stmt2Src := &treesitter.ASTNode{Type: "assignment_statement", Parent: block2Src, Language: "lua"}
 	sc := CommentBlock{
 		Text:          "-- TODO: Need to track exact whitespace length for each level.",
 		StartRow:      10,
@@ -555,7 +685,6 @@ func TestDiffCommentsCrossBlockFuzzyMatchRejection(t *testing.T) {
 	}
 
 	// Comment in dst block 1 (similar wording, but in a completely different branch!):
-	stmt1Dst := &treesitter.ASTNode{Type: "assignment_statement", Parent: block1Dst, Language: "lua"}
 	dc := CommentBlock{
 		Text:          "-- Track the leading whitespace for each indent level so that we can dedent",
 		StartRow:      12,
@@ -620,9 +749,34 @@ func TestDiffCommentsGlobalBestScorePreventsGreedyTheft(t *testing.T) {
 func TestDiffCommentsAnchorFirstPrecedenceOverUnanchoredExactMatch(t *testing.T) {
 	// Make sure an edited comment on a mapped statement isn't stolen by an
 	// unmapped deleted statement that happens to share identical text.
-	stmtSrc1 := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 5, Language: "go"}
-	stmtDst1 := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 5, Language: "go"}
-	stmtSrcDeleted := &treesitter.ASTNode{Type: "assignment_statement", StartRow: 10, Language: "go"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {\n\ta := 1\n\tb := 2\n}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {\n\ta := 1\n}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stmtSrc1, stmtSrcDeleted, stmtDst1 *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "short_var_declaration" {
+			if stmtSrc1 == nil {
+				stmtSrc1 = n
+			} else if stmtSrcDeleted == nil {
+				stmtSrcDeleted = n
+			}
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "short_var_declaration" {
+			stmtDst1 = n
+			break
+		}
+	}
+	if stmtSrc1 == nil || stmtSrcDeleted == nil || stmtDst1 == nil {
+		t.Fatal("failed to find short_var_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(stmtSrc1, stmtDst1)
@@ -670,8 +824,31 @@ func TestDiffCommentsAnchorFirstGlobalBestScorePreventsGreedyTheft(t *testing.T)
 	// When multiple comments share the same mapped anchor, the pair with
 	// higher similarity should match first, even if the lower similarity
 	// comment appears earlier in document order.
-	stmtSrc := &treesitter.ASTNode{Type: "function_declaration", StartRow: 10, Language: "go"}
-	stmtDst := &treesitter.ASTNode{Type: "function_declaration", StartRow: 10, Language: "go"}
+	srcAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstAST, err := treesitter.Parse([]byte("package main\n\nfunc main() {}\n"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stmtSrc, stmtDst *treesitter.ASTNode
+	for _, n := range srcAST.Descendants() {
+		if n.Type == "function_declaration" {
+			stmtSrc = n
+			break
+		}
+	}
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "function_declaration" {
+			stmtDst = n
+			break
+		}
+	}
+	if stmtSrc == nil || stmtDst == nil {
+		t.Fatal("failed to find function_declaration nodes in parsed snippets")
+	}
 
 	mappings := engine.NewMapping()
 	mappings.Add(stmtSrc, stmtDst)
@@ -916,48 +1093,21 @@ func check() {
 			t.Fatalf("expected parseable snippets, got old=%d new=%d errors", oldAST.ParseErrorCount, newAST.ParseErrorCount)
 		}
 
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("missing Go rules")
-		}
-		findAtRow := func(root *treesitter.ASTNode, row uint32, matches func(string) bool) *treesitter.ASTNode {
-			var found *treesitter.ASTNode
-			var visit func(*treesitter.ASTNode)
-			visit = func(node *treesitter.ASTNode) {
-				if node == nil || found != nil {
-					return
-				}
-				if node.StartRow == row && matches(node.Type) {
-					found = node
-					return
-				}
-				for _, child := range node.Children {
-					visit(child)
-				}
-			}
-			visit(root)
-			return found
-		}
-
 		part := engine.NewLinePartition(oldSrc, newSrc)
 		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
-		assertMapped := func(name string, src, dst *treesitter.ASTNode) {
-			t.Helper()
-			if src == nil || dst == nil {
-				t.Fatalf("missing %s node: src=%v dst=%v", name, src, dst)
-			}
-			if got := match.Mappings.Src()[src]; got != dst {
-				t.Errorf("%s did not map in place: got %v, want %v", name, got, dst)
-			}
-		}
 
-		assertMapped("function declaration", findAtRow(oldAST, 2, r.IsDeclaration), findAtRow(newAST, 2, r.IsDeclaration))
-		assertMapped("function block", findAtRow(oldAST, 2, r.IsBlock), findAtRow(newAST, 2, r.IsBlock))
-		assertMapped("preceding statement", findAtRow(oldAST, 3, r.IsStatement), findAtRow(newAST, 3, r.IsStatement))
-		assertMapped("target statement", findAtRow(oldAST, 5, r.IsStatement), findAtRow(newAST, 5, r.IsStatement))
-		assertMapped("following statement", findAtRow(oldAST, 6, r.IsStatement), findAtRow(newAST, 6, r.IsStatement))
-		assertMapped("target call", findAtRow(oldAST, 5, r.IsCall), findAtRow(newAST, 5, r.IsCall))
-		assertMapped("target arguments", findAtRow(oldAST, 5, r.IsDelimitedContainer), findAtRow(newAST, 5, r.IsDelimitedContainer))
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"func check()", "func check()",
+		)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"before()", "before()",
+		)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			`target("unchanged")`, `target("unchanged")`,
+		)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"after()", "after()",
+		)
 
 		srcComments := ExtractComments(oldAST)
 		dstComments := ExtractComments(newAST)
@@ -967,7 +1117,7 @@ func check() {
 		if srcComments[0].AnchorNode == nil || dstComments[0].AnchorNode == nil {
 			t.Fatalf("expected comments to remain anchored, got src=%+v dst=%+v", srcComments[0], dstComments[0])
 		}
-		assertMapped("comment anchor", srcComments[0].AnchorNode, dstComments[0].AnchorNode)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(), "target(\"unchanged\")", "target(\"unchanged\")")
 
 		result := DiffComments(srcComments, dstComments, match.Mappings)
 		if len(result.Actions) != 2 {
@@ -1287,32 +1437,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     pub paging_mode: String,
 }
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.rs")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.rs")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.rs")
+			newAST, err := treesitter.Parse(newBytes, "test.rs")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: struct Opt must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected struct_item to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"pub struct Opt", "pub struct Opt",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("rust")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: field declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"pub width: Option<String>", "pub width: Option<String>",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"pub paging_mode: String", "pub paging_mode: String",
+			)
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
 			res := DiffComments(srcComments, dstComments, mr.Mappings)
@@ -1324,8 +1474,8 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
 			for _, act := range res.Actions {
 				if act.Type == actions.Update {
 					// Make sure the pager comment doesn't pair with the width comment across fields.
-					if (act.Node != nil && act.DestNode != nil && act.Node.StartRow == 6 && act.DestNode.StartRow == 2) ||
-						((strings.Contains(act.Node.Label, "default") || strings.Contains(act.Node.Label, "pager")) &&
+					if act.Node != nil && act.DestNode != nil &&
+						((strings.Contains(act.Node.Label, "default pager") || strings.Contains(act.Node.Label, "pager")) &&
 							(strings.Contains(act.DestNode.Label, "equivalent") || strings.Contains(act.DestNode.Label, "holding"))) {
 						foundCrossFieldUpdate = true
 					}
@@ -1380,32 +1530,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     }
 }
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.ts")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.ts")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.ts")
+			newAST, err := treesitter.Parse(newBytes, "test.ts")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: class Component must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected class_declaration to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"class Component", "class Component",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("typescript")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: method declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"onClick()", "onClick()",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"onKeydown()", "onKeydown()",
+			)
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
 			res := DiffComments(srcComments, dstComments, mr.Mappings)
@@ -1465,32 +1615,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     def handle_second(self):
         return "second"
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.py")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.py")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.py")
+			newAST, err := treesitter.Parse(newBytes, "test.py")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: class Controller must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected class_definition to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"class Controller:", "class Controller:",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("python")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: method declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"def handle_first(self):", "def handle_first(self):",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"def handle_second(self):", "def handle_second(self):",
+			)
 
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
@@ -1545,32 +1695,32 @@ func TestAttributedDeclarationCommentScoping(t *testing.T) {
     paging: []const u8,
 };
 `
-			oldAST, err := treesitter.Parse([]byte(oldSrc), "test.zig")
+			oldBytes := []byte(oldSrc)
+			newBytes := []byte(newSrc)
+			oldAST, err := treesitter.Parse(oldBytes, "test.zig")
 			if err != nil {
 				t.Fatalf("parse oldSrc: %v", err)
 			}
-			newAST, err := treesitter.Parse([]byte(newSrc), "test.zig")
+			newAST, err := treesitter.Parse(newBytes, "test.zig")
 			if err != nil {
 				t.Fatalf("parse newSrc: %v", err)
 			}
 
-			part := engine.NewLinePartition([]byte(oldSrc), []byte(newSrc))
-			mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
+			part := engine.NewLinePartition(oldBytes, newBytes)
+			mr := engine.Match(oldAST, newAST, oldBytes, newBytes, part)
 
 			// 1. Enclosing Context: struct Config must map in place
-			if mr.Mappings.Src()[oldAST] != newAST {
-				t.Errorf("expected struct to map in place")
-			}
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"const Config = struct", "const Config = struct",
+			)
 
-			// 2. Surrounding Sequence & Target Declarations: all declarations must map in place
-			r := rules.Get("zig")
-			for _, n := range oldAST.Descendants() {
-				if r.IsDeclaration(n.Type) {
-					if mr.Mappings.Src()[n] == nil {
-						t.Errorf("expected declaration %s at row %d to map in place", n.Type, n.StartRow)
-					}
-				}
-			}
+			// 2. Surrounding Sequence & Target Declarations: field declarations must map in place
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"width: u32", "width: u32",
+			)
+			testutil.AssertMappedText(t, oldAST, newAST, oldBytes, newBytes, mr.Mappings.Src(),
+				"paging: []const u8", "paging: []const u8",
+			)
 
 			srcComments := ExtractComments(oldAST)
 			dstComments := ExtractComments(newAST)
@@ -1664,55 +1814,26 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 			t.Fatalf("expected 0 parse errors, got old=%d new=%d", oldAST.ParseErrorCount, newAST.ParseErrorCount)
 		}
 
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("missing Go rules")
-		}
-
-		findAtRow := func(root *treesitter.ASTNode, row uint32, matches func(string) bool) *treesitter.ASTNode {
-			var found *treesitter.ASTNode
-			var visit func(*treesitter.ASTNode)
-			visit = func(node *treesitter.ASTNode) {
-				if node == nil || found != nil {
-					return
-				}
-				if node.StartRow == row && matches(node.Type) {
-					found = node
-					return
-				}
-				for _, child := range node.Children {
-					visit(child)
-				}
-			}
-			visit(root)
-			return found
-		}
-
 		part := engine.NewLinePartition(oldSrc, newSrc)
 		match := engine.Match(oldAST, newAST, oldSrc, newSrc, part)
 
-		assertMapped := func(name string, src, dst *treesitter.ASTNode) {
-			t.Helper()
-			if src == nil || dst == nil {
-				t.Fatalf("missing %s node: src=%v dst=%v", name, src, dst)
-			}
-			if got := match.Mappings.Src()[src]; got != dst {
-				t.Errorf("%s did not map in place: got %v, want %v", name, got, dst)
-			}
-		}
-
 		// 1. Enclosing context
-		assertMapped("function declaration", findAtRow(oldAST, 2, r.IsDeclaration), findAtRow(newAST, 2, r.IsDeclaration))
-		assertMapped("function block", findAtRow(oldAST, 2, r.IsBlock), findAtRow(newAST, 2, r.IsBlock))
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"func checkRecovery", "func checkRecovery",
+		)
 
 		// 2. Surrounding sequence
-		assertMapped("preceding statement", findAtRow(oldAST, 3, r.IsStatement), findAtRow(newAST, 3, r.IsStatement))
-		assertMapped("following statement", findAtRow(oldAST, 14, r.IsStatement), findAtRow(newAST, 19, r.IsStatement))
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"before()", "before()",
+		)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"after()", "after()",
+		)
 
 		// 3. Inner if moved into the new block
-		innerIfSrc := findAtRow(oldAST, 9, r.IsStatement)
-		innerIfDst := findAtRow(newAST, 14, r.IsStatement)
-		assertMapped("inner if statement", innerIfSrc, innerIfDst)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, match.Mappings.Src(),
+			"if len(u1) != len(u2)", "if len(u1) != len(u2)", "if_statement",
+		)
 
 		// 4. Verify comments extraction & diffing
 		srcComments := ExtractComments(oldAST)
@@ -1721,17 +1842,24 @@ func checkRecovery(u1, u2 *Node, r *Rules) bool {
 			t.Fatalf("expected 3 comment blocks on each side, got src=%d dst=%d", len(srcComments), len(dstComments))
 		}
 
-		// In source, comments attach to outer if (row 8)
-		outerIfSrc := findAtRow(oldAST, 8, r.IsStatement)
+		// In source, comments attach to outer if
+		outerIfSrc, err := testutil.FindNodeByText(oldAST, oldSrc, "if r != nil && r.IsDelimited(u1)", "if_statement")
+		if err != nil {
+			t.Fatalf("failed to find outer if in source: %v", err)
+		}
 		for i, c := range srcComments {
 			if c.AnchorNode != outerIfSrc {
-				t.Errorf("expected srcComments[%d] anchor to be outer if (row 8), got %+v", i, c.AnchorNode)
+				t.Errorf("expected srcComments[%d] anchor to be outer if, got %+v", i, c.AnchorNode)
 			}
 		}
-		// In dest, comments attach to inner if (row 14)
+		// In dest, comments attach to inner if
+		innerIfDst, err := testutil.FindNodeByText(newAST, newSrc, "if len(u1) != len(u2)", "if_statement")
+		if err != nil {
+			t.Fatalf("failed to find inner if in dest: %v", err)
+		}
 		for i, c := range dstComments {
 			if c.AnchorNode != innerIfDst {
-				t.Errorf("expected dstComments[%d] anchor to be inner if (row 14), got %+v", i, c.AnchorNode)
+				t.Errorf("expected dstComments[%d] anchor to be inner if, got %+v", i, c.AnchorNode)
 			}
 		}
 
@@ -1801,22 +1929,12 @@ use crate::cli;
 		}
 
 		// Surviving use declarations map in place
-		var oldClap, newClap *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("clap")) {
-				oldClap = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("clap")) {
-				newClap = n
-				break
-			}
-		}
-		if oldClap == nil || newClap == nil || matchResult.Mappings.Src()[oldClap] != newClap {
-			t.Errorf("expected use structopt::clap to map in place")
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(),
+			"use structopt::clap;", "use structopt::clap;",
+		)
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(),
+			"use crate::cli;", "use crate::cli;",
+		)
 
 		oldComments := ExtractComments(oldAST)
 		newComments := ExtractComments(newAST)
@@ -1886,22 +2004,8 @@ func main() {
 		}
 
 		// Surviving import specs map in place
-		var oldIO, newIO *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("io")) {
-				oldIO = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsImport(n.Type) && bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("io")) {
-				newIO = n
-				break
-			}
-		}
-		if oldIO == nil || newIO == nil || matchResult.Mappings.Src()[oldIO] != newIO {
-			t.Errorf("expected io import spec to map in place")
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"io"`, `"io"`, "import_spec")
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"os"`, `"os"`, "import_spec")
 
 		oldComments := ExtractComments(oldAST)
 		newComments := ExtractComments(newAST)
@@ -1970,31 +2074,8 @@ func main() {
 		}
 
 		// Both imports survive and map to each other
-		var oldFmt, newFmt, oldOS, newOS *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsImport(n.Type) {
-				if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("fmt")) {
-					oldFmt = n
-				} else if bytes.Contains(oldSrc[n.StartByte:n.EndByte], []byte("os")) {
-					oldOS = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsImport(n.Type) {
-				if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("fmt")) {
-					newFmt = n
-				} else if bytes.Contains(newSrc[n.StartByte:n.EndByte], []byte("os")) {
-					newOS = n
-				}
-			}
-		}
-		if oldFmt == nil || newFmt == nil || matchResult.Mappings.Src()[oldFmt] != newFmt {
-			t.Fatalf("expected fmt import to map in place")
-		}
-		if oldOS == nil || newOS == nil || matchResult.Mappings.Src()[oldOS] != newOS {
-			t.Fatalf("expected os import to map in place")
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"fmt"`, `"fmt"`, "import_spec")
+		testutil.AssertMappedText(t, oldAST, newAST, oldSrc, newSrc, matchResult.Mappings.Src(), `"os"`, `"os"`, "import_spec")
 
 		oldComments := ExtractComments(oldAST)
 		newComments := ExtractComments(newAST)

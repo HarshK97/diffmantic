@@ -9,66 +9,72 @@ import (
 	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-// setParentAndRange links a node to its parent and sets its byte range.
-func setParentAndRange(node, parent *treesitter.ASTNode, startByte, endByte uint32) {
-	node.Parent = parent
-	node.StartByte = startByte
-	node.EndByte = endByte
-	if parent != nil {
-		parent.Children = append(parent.Children, node)
-	}
-}
-
 func TestRoundTrip(t *testing.T) {
-	// Let's build a source (before) tree:
-	// module
-	//  ├── function (foo)
-	//  │    ├── identifier (x)
-	//  │    └── identifier (y)
-	//  └── function (bar)
-	src := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(src, nil, 0, 100)
+	srcCode := []byte(`def foo():
+    x = 1
+    y = 2
 
-	srcFoo := &treesitter.ASTNode{Type: "function", Label: "foo"}
-	setParentAndRange(srcFoo, src, 10, 50)
+def bar():
+    pass
+`)
+	dstCode := []byte(`def foo():
+    pass
 
-	srcX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(srcX, srcFoo, 15, 20)
+def bar():
+    z = 3
+    x = 1
+`)
+	src, err := treesitter.Parse(srcCode, "src.py")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	srcY := &treesitter.ASTNode{Type: "identifier", Label: "y"}
-	setParentAndRange(srcY, srcFoo, 25, 30)
+	srcFoo, err := testutil.FindNodeByText(src, srcCode, "def foo():\n    x = 1\n    y = 2", "function_definition")
+	if err != nil {
+		t.Fatalf("find srcFoo: %v", err)
+	}
+	srcBar, err := testutil.FindNodeByText(src, srcCode, "def bar():\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("find srcBar: %v", err)
+	}
+	srcBarIdent, err := testutil.FindNodeByText(srcBar, srcCode, "bar", "identifier")
+	if err != nil {
+		t.Fatalf("find srcBarIdent: %v", err)
+	}
+	srcX, err := testutil.FindNodeByText(srcFoo, srcCode, "x", "identifier")
+	if err != nil {
+		t.Fatalf("find srcX: %v", err)
+	}
+	srcY, err := testutil.FindNodeByText(srcFoo, srcCode, "y", "identifier")
+	if err != nil {
+		t.Fatalf("find srcY: %v", err)
+	}
 
-	srcBar := &treesitter.ASTNode{Type: "function", Label: "bar"}
-	setParentAndRange(srcBar, src, 60, 90)
-
-	// Let's build a destination (after) tree:
-	// module
-	//  ├── function (foo)
-	//  │    └── identifier (x)  <-- y deleted
-	//  └── function (bar)
-	//       ├── identifier (z)  <-- z inserted
-	//       └── identifier (x)  <-- x moved here from foo
-	dst := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(dst, nil, 0, 100)
-
-	dstFoo := &treesitter.ASTNode{Type: "function", Label: "foo"}
-	setParentAndRange(dstFoo, dst, 10, 40)
-
-	dstX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(dstX, dstFoo, 15, 20)
-
-	dstBar := &treesitter.ASTNode{Type: "function", Label: "bar"}
-	setParentAndRange(dstBar, dst, 50, 95)
-
-	dstZ := &treesitter.ASTNode{Type: "identifier", Label: "z"}
-	setParentAndRange(dstZ, dstBar, 55, 60)
-
-	dstMovedX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(dstMovedX, dstBar, 65, 70)
+	dstFoo, err := testutil.FindNodeByText(dst, dstCode, "def foo():\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("find dstFoo: %v", err)
+	}
+	dstBar, err := testutil.FindNodeByText(dst, dstCode, "def bar():\n    z = 3\n    x = 1", "function_definition")
+	if err != nil {
+		t.Fatalf("find dstBar: %v", err)
+	}
+	dstZ, err := testutil.FindNodeByText(dstBar, dstCode, "z", "identifier")
+	if err != nil {
+		t.Fatalf("find dstZ: %v", err)
+	}
+	dstMovedX, err := testutil.FindNodeByText(dstBar, dstCode, "x", "identifier")
+	if err != nil {
+		t.Fatalf("find dstMovedX: %v", err)
+	}
 
 	// Create Mappings:
 	ms := engine.NewMapping()
@@ -96,10 +102,10 @@ func TestRoundTrip(t *testing.T) {
 		Subtree: true, // test subtree delete
 	})
 
-	// 3. Update action (update srcBar from "bar" to "new_bar")
+	// 3. Update action (update srcBarIdent from "bar" to "new_bar")
 	es.Add(actions.Action{
 		Type:  actions.Update,
-		Node:  srcBar,
+		Node:  srcBarIdent,
 		Value: "new_bar",
 	})
 
@@ -113,7 +119,7 @@ func TestRoundTrip(t *testing.T) {
 	})
 
 	opts := EnvelopeOptions{IncludeActions: true, IncludeAlignment: true, IncludeHighlights: true}
-	jsonData, err := MarshalWithOptions(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte), opts)
+	jsonData, err := MarshalWithOptions(es, ms, src, dst, srcCode, dstCode, opts)
 	if err != nil {
 		t.Fatalf("Marshal failed: %v", err)
 	}
@@ -198,8 +204,8 @@ func TestRoundTrip(t *testing.T) {
 	if oldParent4["tree"] != "before" {
 		t.Errorf("move old_parent should be 'before', got %v", oldParent4["tree"])
 	}
-	if int(act4["old_position"].(float64)) != 0 {
-		t.Errorf("move old_position should be 0, got %v", act4["old_position"])
+	if int(act4["old_position"].(float64)) != srcX.ChildIndex() {
+		t.Errorf("move old_position should be %d, got %v", srcX.ChildIndex(), act4["old_position"])
 	}
 	if int(act4["position"].(float64)) != 1 {
 		t.Errorf("move position should be 1, got %v", act4["position"])
@@ -215,17 +221,30 @@ func TestNilEditScript(t *testing.T) {
 }
 
 func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
-	src := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(src, nil, 0, 100)
+	srcCode := []byte("def foo():\n    x = 1\n")
+	dstCode := []byte("def foo():\n    pass\n")
 
-	srcFoo := &treesitter.ASTNode{Type: "function", Label: "foo"}
-	setParentAndRange(srcFoo, src, 10, 50)
+	src, err := treesitter.Parse(srcCode, "src.py")
+	if err != nil {
+		t.Fatalf("parse src failed: %v", err)
+	}
+	dst, err := treesitter.Parse(dstCode, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	srcX := &treesitter.ASTNode{Type: "identifier", Label: "x"}
-	setParentAndRange(srcX, srcFoo, 15, 20)
-
-	dst := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(dst, nil, 0, 100)
+	var srcFoo, srcX *treesitter.ASTNode
+	for _, n := range src.Descendants() {
+		if n.Type == "function_definition" && srcFoo == nil {
+			srcFoo = n
+		}
+		if n.Type == "identifier" && n.Label == "x" && srcX == nil {
+			srcX = n
+		}
+	}
+	if srcFoo == nil || srcX == nil {
+		t.Fatalf("nodes not found: srcFoo=%v, srcX=%v", srcFoo, srcX)
+	}
 
 	// Create an empty mapping
 	ms := engine.NewMapping()
@@ -240,7 +259,7 @@ func TestMarshalErrorUnmappedMoveParent(t *testing.T) {
 	})
 
 	opts := EnvelopeOptions{IncludeActions: true}
-	_, err := MarshalWithOptions(es, ms, src, dst, make([]byte, src.EndByte), make([]byte, dst.EndByte), opts)
+	_, err = MarshalWithOptions(es, ms, src, dst, srcCode, dstCode, opts)
 	if err == nil {
 		t.Fatal("expected Marshal to fail due to unmapped move parent, but it succeeded")
 	}
@@ -282,24 +301,15 @@ func TestBuildLineDiffEnvelopeWithOptions_ModifiedLines(t *testing.T) {
 		t.Fatal("expected right highlights for inserted line")
 	}
 
-	// Verify sub-line word-level highlights isolating "old" vs "new"
-	hLeft := env.LeftHighlights[0]
-	if hLeft.Line != 1 || hLeft.Action != "update" {
-		t.Errorf("expected left highlight on line 1 with action 'update', got %+v", hLeft)
-	}
-	srcLine1 := "\tprintln(\"old\")"
-	if srcLine1[hLeft.StartCol:hLeft.EndCol] != "old" {
-		t.Errorf("expected left highlight to isolate 'old', got %q", srcLine1[hLeft.StartCol:hLeft.EndCol])
-	}
-
-	hRight := env.RightHighlights[0]
-	if hRight.Line != 1 || hRight.Action != "update" {
-		t.Errorf("expected right highlight on line 1 with action 'update', got %+v", hRight)
-	}
-	dstLine1 := "\tprintln(\"new\")"
-	if dstLine1[hRight.StartCol:hRight.EndCol] != "new" {
-		t.Errorf("expected right highlight to isolate 'new', got %q", dstLine1[hRight.StartCol:hRight.EndCol])
-	}
+	// intentionally no postprocess.Run: isolates line diff highlight synthesis from AST matching
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `func main() {
+	println("<upd>old</upd>")
+}
+`)
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `func main() {
+	println("<upd>new</upd>")
+}
+`)
 }
 
 func TestBuildLineDiffEnvelopeWithOptions_WordDiff_AsymmetricAndSpacers(t *testing.T) {
@@ -319,58 +329,17 @@ func TestBuildLineDiffEnvelopeWithOptions_WordDiff_AsymmetricAndSpacers(t *testi
 		t.Fatal("expected non-nil envelope")
 	}
 
-	// Line 1 (foo(a) -> foo(a, b)):
-	// Left side should have NO highlights on line 1 because 'foo', '(', 'a', ')' all matched.
-	// Right side should have an 'insert' highlight on line 1 isolating ', b'.
-	for _, h := range env.LeftHighlights {
-		if h.Line == 1 {
-			t.Errorf("unexpected left highlight on line 1 for pure insertion: %+v", h)
-		}
-	}
-	var rightLine1Spans []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 1 {
-			rightLine1Spans = append(rightLine1Spans, h)
-		}
-	}
-	if len(rightLine1Spans) != 1 {
-		t.Fatalf("expected 1 right highlight on line 1, got %d: %+v", len(rightLine1Spans), rightLine1Spans)
-	}
-	if rightLine1Spans[0].Action != "insert" {
-		t.Errorf("expected action 'insert', got %q", rightLine1Spans[0].Action)
-	}
-	dstLine1 := "foo(a, b)"
-	if dstLine1[rightLine1Spans[0].StartCol:rightLine1Spans[0].EndCol] != ", b" {
-		t.Errorf("expected right highlight to isolate ', b', got %q", dstLine1[rightLine1Spans[0].StartCol:rightLine1Spans[0].EndCol])
-	}
-
-	// Line 2: spacer line "deleted_line" on left should emit whole-line delete highlight
-	var leftLine2Spans []HighlightSpan
-	for _, h := range env.LeftHighlights {
-		if h.Line == 2 {
-			leftLine2Spans = append(leftLine2Spans, h)
-		}
-	}
-	if len(leftLine2Spans) != 1 {
-		t.Fatalf("expected 1 left highlight on line 2, got %d: %+v", len(leftLine2Spans), leftLine2Spans)
-	}
-	if leftLine2Spans[0].Action != "delete" || leftLine2Spans[0].StartCol != 0 || leftLine2Spans[0].EndCol != len("deleted_line") {
-		t.Errorf("expected whole-line delete on line 2, got %+v", leftLine2Spans[0])
-	}
-
-	// Line 3 on right: spacer line "inserted_line" should emit whole-line insert highlight
-	var rightLine3Spans []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 3 {
-			rightLine3Spans = append(rightLine3Spans, h)
-		}
-	}
-	if len(rightLine3Spans) != 1 {
-		t.Fatalf("expected 1 right highlight on line 3, got %d: %+v", len(rightLine3Spans), rightLine3Spans)
-	}
-	if rightLine3Spans[0].Action != "insert" || rightLine3Spans[0].StartCol != 0 || rightLine3Spans[0].EndCol != len("inserted_line") {
-		t.Errorf("expected whole-line insert on line 3, got %+v", rightLine3Spans[0])
-	}
+	// intentionally no postprocess.Run: isolates line diff word-diff highlight synthesis
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `header
+foo(a)
+<del>deleted_line</del>
+footer
+`)
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `header
+foo(a<ins>, b</ins>)
+footer
+<ins>inserted_line</ins>
+`)
 }
 
 func TestBuildLineDiffEnvelopeWithOptions_ShowStyleChanges(t *testing.T) {
@@ -403,79 +372,83 @@ func TestBuildLineDiffEnvelopeWithOptions_ShowStyleChanges(t *testing.T) {
 }
 
 func TestAdjustRangeForContainerDeclarationChild(t *testing.T) {
-	kw := &treesitter.ASTNode{Type: "friend", StartByte: 10, EndByte: 16, StartRow: 1, EndRow: 1}
-	fn := &treesitter.ASTNode{Type: "function_definition", StartByte: 17, EndByte: 80, StartRow: 1, EndRow: 4}
-	container := &treesitter.ASTNode{
-		Type: "friend_declaration", StartByte: 10, EndByte: 80, StartRow: 1, EndRow: 4,
-		Children: []*treesitter.ASTNode{kw, fn},
+	code := []byte("class A {\n    friend void foo() {\n    }\n};\n")
+	ast, err := treesitter.Parse(code, "test.cpp")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	container.Language = "cpp"
-	kw.Parent = container
-	fn.Parent = container
+
+	container, err := testutil.FindNodeByText(ast, code, "friend void foo() {\n    }", "friend_declaration")
+	if err != nil {
+		t.Fatalf("expected friend_declaration node: %v", err)
+	}
 
 	start := container.StartByte
 	end := container.EndByte
 
 	adjustRangeForContainer(container, &start, &end, nil)
 
-	if start != 10 || end != 17 {
-		t.Errorf("expected container range sliced to [10, 17], got [%d, %d]", start, end)
+	fnChild, err := testutil.FindNodeByText(ast, code, "void foo() {\n    }", "function_definition")
+	if err != nil {
+		t.Fatalf("expected function_definition child: %v", err)
+	}
+
+	if start != container.StartByte || end != fnChild.StartByte {
+		t.Errorf("expected container range sliced to [%d, %d], got [%d, %d]", container.StartByte, fnChild.StartByte, start, end)
 	}
 }
 
 func TestAdjustRangeForContainerParenWrapper(t *testing.T) {
-	inner := &treesitter.ASTNode{Type: "identifier", StartByte: 1, EndByte: 9, StartRow: 1, EndRow: 1}
-	paren := &treesitter.ASTNode{
-		Type:      "parenthesized_expression",
-		StartByte: 0,
-		EndByte:   10,
-		StartRow:  1,
-		EndRow:    1,
-		Children:  []*treesitter.ASTNode{inner},
+	code := []byte("int x = (12345678);\n")
+	ast, err := treesitter.Parse(code, "test.c")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	paren.Language = "cpp"
-	inner.Parent = paren
+
+	paren, err := testutil.FindNodeByText(ast, code, "(12345678)", "parenthesized_expression")
+	if err != nil {
+		t.Fatalf("expected parenthesized_expression node: %v", err)
+	}
 
 	start := paren.StartByte
 	end := paren.EndByte
 
-	code := []byte("(12345678)")
 	hasFooter, fStart, fEnd := adjustRangeForContainer(paren, &start, &end, code)
 	if !hasFooter {
 		t.Fatal("expected paren wrapper to report footer")
 	}
-	if start != 0 || end != 1 {
-		t.Errorf("expected header range [0, 1], got [%d, %d]", start, end)
+	if string(code[start:end]) != "(" {
+		t.Errorf("expected opening delimiter '(', got %q [%d, %d]", string(code[start:end]), start, end)
 	}
-	if fStart != 9 || fEnd != 10 {
-		t.Errorf("expected footer range [9, 10], got [%d, %d]", fStart, fEnd)
+	if string(code[fStart:fEnd]) != ")" {
+		t.Errorf("expected closing delimiter ')', got %q [%d, %d]", string(code[fStart:fEnd]), fStart, fEnd)
 	}
 }
 
 func TestAdjustRangeForContainerImplicitLengthArrayType(t *testing.T) {
-	dots := &treesitter.ASTNode{Type: "...", StartByte: 1, EndByte: 4, StartRow: 1, EndRow: 1}
-	typeIdent := &treesitter.ASTNode{Type: "type_identifier", StartByte: 4, EndByte: 10, StartRow: 1, EndRow: 1}
-	arr := &treesitter.ASTNode{
-		Type:      "implicit_length_array_type",
-		StartByte: 0,
-		EndByte:   10,
-		StartRow:  1,
-		EndRow:    1,
-		Children:  []*treesitter.ASTNode{dots, typeIdent},
+	code := []byte("package main\n\nvar x = [...]string{}\n")
+	ast, err := treesitter.Parse(code, "test.go")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
 	}
-	arr.Language = "go"
-	dots.Parent = arr
-	typeIdent.Parent = arr
+
+	arr, err := testutil.FindNodeByText(ast, code, "[...]string", "implicit_length_array_type")
+	if err != nil {
+		t.Fatalf("expected implicit_length_array_type node: %v", err)
+	}
 
 	start := arr.StartByte
 	end := arr.EndByte
 
-	hasFooter, fStart, fEnd := adjustRangeForContainer(arr, &start, &end, []byte("[...]string"))
-	if hasFooter {
-		t.Errorf("expected no footer delimiter for implicit length array, got [%d, %d]", fStart, fEnd)
+	hasFooter, fStart, fEnd := adjustRangeForContainer(arr, &start, &end, code)
+	if !hasFooter {
+		t.Errorf("expected closing delimiter footer for implicit length array")
 	}
-	if start != 0 || end != 1 {
-		t.Errorf("expected container header range [0, 1] for '[', got [%d, %d]", start, end)
+	if string(code[start:end]) != "[" {
+		t.Errorf("expected container header range '[' for implicit length array, got %q [%d, %d]", string(code[start:end]), start, end)
+	}
+	if string(code[fStart:fEnd]) != "]" {
+		t.Errorf("expected closing delimiter ']', got %q [%d, %d]", string(code[fStart:fEnd]), fStart, fEnd)
 	}
 }
 
@@ -486,15 +459,9 @@ func TestAdjustRangeForContainerTupleStructPatternWrapper(t *testing.T) {
 		t.Fatalf("parse failed: %v", err)
 	}
 
-	var pat *treesitter.ASTNode
-	for _, n := range ast.Descendants() {
-		if n.Type == "tuple_struct_pattern" {
-			pat = n
-			break
-		}
-	}
-	if pat == nil {
-		t.Fatal("expected tuple_struct_pattern node")
+	pat, err := testutil.FindNodeByText(ast, code, "State::HunkHeader(_, _)", "tuple_struct_pattern")
+	if err != nil {
+		t.Fatalf("expected tuple_struct_pattern node: %v", err)
 	}
 
 	start := pat.StartByte
@@ -514,20 +481,27 @@ func TestAdjustRangeForContainerTupleStructPatternWrapper(t *testing.T) {
 
 func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	// A block container with an inner statement and closing brace:
-	// line 0: {
-	// line 1:     x = 1
-	// line 2: }
-	srcBytes := []byte("{\n    x = 1\n}\n")
-	dstBytes := []byte("{\n    x = 1\n}\n")
+	// func f() {
+	//     x := 1
+	// }
+	srcBytes := []byte("func f() {\n    x := 1\n}\n")
+	dstBytes := []byte("func f() {\n    x := 1\n}\n")
 
-	root := &treesitter.ASTNode{Type: "source_file"}
-	setParentAndRange(root, nil, 0, uint32(len(dstBytes)))
+	dstAST, err := treesitter.Parse(dstBytes, "test.go")
+	if err != nil {
+		t.Fatalf("parse dst failed: %v", err)
+	}
 
-	blockNode := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
-	setParentAndRange(blockNode, root, 0, uint32(len(dstBytes)-1))
-
-	innerStmt := &treesitter.ASTNode{Type: "assignment", StartRow: 1, EndRow: 1}
-	setParentAndRange(innerStmt, blockNode, 2, 11) // "x = 1\n"
+	var blockNode *treesitter.ASTNode
+	for _, n := range dstAST.Descendants() {
+		if n.Type == "block" {
+			blockNode = n
+			break
+		}
+	}
+	if blockNode == nil {
+		t.Fatal("expected block node in dst")
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{
@@ -540,7 +514,7 @@ func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 		IncludeActions:    true,
 		IncludeHighlights: true,
 	}
-	env, err := BuildEnvelopeWithOptions(es, nil, nil, root, srcBytes, dstBytes, opts)
+	env, err := BuildEnvelopeWithOptions(es, nil, nil, dstAST, srcBytes, dstBytes, opts)
 	if err != nil {
 		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 	}
@@ -552,20 +526,19 @@ func TestASTActionPurityAndVisualDelimiterHighlights(t *testing.T) {
 	if env.Actions[0].Action != "insert" || env.Actions[0].Node.Type != "block" {
 		t.Errorf("expected 1 insert action on block, got %+v", env.Actions[0])
 	}
-	if env.Actions[0].Node.StartByte != 0 || env.Actions[0].Node.EndByte != 2 {
-		t.Errorf("expected header range 0..2, got %d..%d", env.Actions[0].Node.StartByte, env.Actions[0].Node.EndByte)
+	if env.Actions[0].Node.StartByte != blockNode.StartByte {
+		t.Errorf("expected header start %d, got %d", blockNode.StartByte, env.Actions[0].Node.StartByte)
 	}
 
-	// Check that the closing brace '}' still gets highlighted on line 2.
-	var foundClosingBrace bool
-	for _, hl := range env.RightHighlights {
-		if hl.Line == 2 && hl.Action == "insert" {
-			foundClosingBrace = true
-		}
-	}
-	if !foundClosingBrace {
-		t.Errorf("expected closing brace highlight span on line 2 in RightHighlights, got %+v", env.RightHighlights)
-	}
+	// intentionally no postprocess.Run: isolates delimiter highlight synthesis from move normalization
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(env.LeftHighlights), `func f() {
+    x := 1
+}
+`)
+	testutil.AssertTagged(t, string(dstBytes), toTestSpans(env.RightHighlights), `func f() <ins>{</ins>
+    x := 1
+<ins>}</ins>
+`)
 }
 
 func TestIndentationAndCommentFooterExclusion(t *testing.T) {
@@ -574,14 +547,15 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 	//     pass
 	// \n
 	pyCode := []byte("def foo():\n    pass\n\n")
-	root := &treesitter.ASTNode{Type: "module", Language: "python"}
-	setParentAndRange(root, nil, 0, uint32(len(pyCode)))
+	pyAST, err := treesitter.Parse(pyCode, "test.py")
+	if err != nil {
+		t.Fatalf("parse py failed: %v", err)
+	}
 
-	funcDef := &treesitter.ASTNode{Type: "function_definition", StartRow: 0, EndRow: 1}
-	setParentAndRange(funcDef, root, 0, uint32(len(pyCode)))
-
-	body := &treesitter.ASTNode{Type: "block", StartRow: 1, EndRow: 1}
-	setParentAndRange(body, funcDef, 11, 19)
+	funcDef, err := testutil.FindNodeByText(pyAST, pyCode, "def foo():\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("expected function_definition in pyAST: %v", err)
+	}
 
 	start := funcDef.StartByte
 	end := funcDef.EndByte
@@ -591,36 +565,35 @@ func TestIndentationAndCommentFooterExclusion(t *testing.T) {
 	}
 
 	// Trailing comments should not be treated as closing delimiter
-	codeWithComment := []byte("{\n    x = 1\n    // trailing comment\n")
-	cRoot := &treesitter.ASTNode{Type: "source_file", Language: "go"}
-	setParentAndRange(cRoot, nil, 0, uint32(len(codeWithComment)))
+	pyCommentCode := []byte("def foo():\n    x = 1\n    # trailing comment\n")
+	pyCommentAST, err := treesitter.Parse(pyCommentCode, "test.py")
+	if err != nil {
+		t.Fatalf("parse pyComment failed: %v", err)
+	}
 
-	bNode := &treesitter.ASTNode{Type: "block", StartRow: 0, EndRow: 2}
-	setParentAndRange(bNode, cRoot, 0, uint32(len(codeWithComment)))
+	pyBlock, err := testutil.FindNodeByText(pyCommentAST, pyCommentCode, "x = 1", "block")
+	if err != nil {
+		t.Fatalf("expected block in pyCommentAST: %v", err)
+	}
 
-	stmt := &treesitter.ASTNode{Type: "assignment", StartRow: 1, EndRow: 1}
-	setParentAndRange(stmt, bNode, 2, 11)
-
-	bStart := bNode.StartByte
-	bEnd := bNode.EndByte
-	hasCommentFooter, _, _ := adjustRangeForContainer(bNode, &bStart, &bEnd, codeWithComment)
+	bStart := pyBlock.StartByte
+	bEnd := pyBlock.EndByte
+	hasCommentFooter, _, _ := adjustRangeForContainer(pyBlock, &bStart, &bEnd, pyCommentCode)
 	if hasCommentFooter {
 		t.Errorf("expected hasCommentFooter=false for sliced region containing comments")
 	}
 
 	// Python subscripts use bracket delimiters ([ ]), so they need closing footers.
-	pySubscriptCode := []byte("cookie_dict[cookie.name]")
-	pySubRoot := &treesitter.ASTNode{Type: "module", Language: "python"}
-	setParentAndRange(pySubRoot, nil, 0, uint32(len(pySubscriptCode)))
+	pySubscriptCode := []byte("cookie_dict[cookie.name]\n")
+	pySubAST, err := treesitter.Parse(pySubscriptCode, "test.py")
+	if err != nil {
+		t.Fatalf("parse pySubscript failed: %v", err)
+	}
 
-	subscript := &treesitter.ASTNode{Type: "subscript", StartRow: 0, EndRow: 0}
-	setParentAndRange(subscript, pySubRoot, 0, uint32(len(pySubscriptCode)))
-
-	receiver := &treesitter.ASTNode{Type: "identifier", StartRow: 0, EndRow: 0}
-	setParentAndRange(receiver, subscript, 0, 11)
-
-	index := &treesitter.ASTNode{Type: "attribute", StartRow: 0, EndRow: 0}
-	setParentAndRange(index, subscript, 12, 23)
+	subscript, err := testutil.FindNodeByText(pySubAST, pySubscriptCode, "cookie_dict[cookie.name]", "subscript")
+	if err != nil {
+		t.Fatalf("expected subscript in pySubAST: %v", err)
+	}
 
 	subStart := subscript.StartByte
 	subEnd := subscript.EndByte
@@ -830,13 +803,43 @@ func TestAssignMoveColors(t *testing.T) {
 	})
 
 	t.Run("child co-mover under equivalent parent type inherits parent color", func(t *testing.T) {
-		parentSrc := &treesitter.ASTNode{Type: "assignment_statement", StartByte: 20, EndByte: 35, Language: "go"}
-		childSrc := &treesitter.ASTNode{Type: "expression_list", StartByte: 20, EndByte: 29, Parent: parentSrc, Language: "go"}
-		parentSrc.Children = []*treesitter.ASTNode{childSrc}
+		srcAST, err := treesitter.Parse([]byte("package main\n\nfunc f() {\n\ta = 1\n}\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse([]byte("package main\n\nfunc f() {\n\ta := 1\n}\n"), "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		parentDst := &treesitter.ASTNode{Type: "short_var_declaration", StartByte: 80, EndByte: 95, Language: "go"}
-		childDst := &treesitter.ASTNode{Type: "expression_list", StartByte: 80, EndByte: 89, Parent: parentDst, Language: "go"}
-		parentDst.Children = []*treesitter.ASTNode{childDst}
+		var parentSrc, childSrc, parentDst, childDst *treesitter.ASTNode
+		for _, d := range srcAST.Descendants() {
+			if d.Type == "assignment_statement" {
+				parentSrc = d
+				for _, c := range d.Children {
+					if c.Type == "expression_list" {
+						childSrc = c
+						break
+					}
+				}
+				break
+			}
+		}
+		for _, d := range dstAST.Descendants() {
+			if d.Type == "short_var_declaration" {
+				parentDst = d
+				for _, c := range d.Children {
+					if c.Type == "expression_list" {
+						childDst = c
+						break
+					}
+				}
+				break
+			}
+		}
+		if parentSrc == nil || childSrc == nil || parentDst == nil || childDst == nil {
+			t.Fatal("failed to find assignment and expression_list nodes in parsed snippets")
+		}
 
 		// Move 0 and Move 1 conflict on adjacent lines, so Move 1 gets color 1.
 		// Move 2 is a child of Move 1 (with only DestStartByte set, relying on EquivalentTypes matching),
@@ -851,7 +854,7 @@ func TestAssignMoveColors(t *testing.T) {
 			{
 				Action:        "move",
 				ASTNode:       parentSrc,
-				Node:          &NodeRef{Type: "assignment_statement", StartByte: 20, EndByte: 35},
+				Node:          &NodeRef{Type: parentSrc.Type, StartByte: parentSrc.StartByte, EndByte: parentSrc.EndByte},
 				DestStartByte: ptr(uint32(80)),
 				DestEndByte:   ptr(uint32(95)),
 			},
@@ -859,9 +862,9 @@ func TestAssignMoveColors(t *testing.T) {
 				Action:        "move",
 				ASTNode:       childSrc,
 				DestASTNode:   childDst,
-				Node:          &NodeRef{Type: "expression_list", StartByte: 20, EndByte: 29},
-				OldParent:     &NodeRef{Type: "assignment_statement", StartByte: 20, EndByte: 35},
-				Parent:        &NodeRef{Type: "short_var_declaration", StartByte: 80, EndByte: 95},
+				Node:          &NodeRef{Type: childSrc.Type, StartByte: childSrc.StartByte, EndByte: childSrc.EndByte},
+				OldParent:     &NodeRef{Type: parentSrc.Type, StartByte: parentSrc.StartByte, EndByte: parentSrc.EndByte},
+				Parent:        &NodeRef{Type: parentDst.Type, StartByte: 80, EndByte: 95},
 				DestStartByte: ptr(uint32(80)),
 				DestEndByte:   ptr(uint32(89)),
 			},
@@ -876,22 +879,48 @@ func TestAssignMoveColors(t *testing.T) {
 	})
 
 	t.Run("Container header and enclosed body co-mover share move color without interference", func(t *testing.T) {
-		srcBytes := []byte("line0\nif cond {\n\tbody()\n}\n")
-		dstBytes := []byte("other0\nif cond {\n\tbody()\n}\n")
+		srcBytes := []byte("package main\n\nfunc f() {\n\tline0()\n\tif cond {\n\t\tbody()\n\t}\n}\n")
+		dstBytes := []byte("package main\n\nfunc f() {\n\tother0()\n\tif cond {\n\t\tbody()\n\t}\n}\n")
 		srcOffsets := BuildLineIndex(srcBytes)
 		dstOffsets := BuildLineIndex(dstBytes)
 
-		srcBody := &treesitter.ASTNode{Type: "expression_statement", StartByte: 16, EndByte: 23, Language: "go"}
-		srcBlock := &treesitter.ASTNode{Type: "block", StartByte: 14, EndByte: 25, Children: []*treesitter.ASTNode{srcBody}, Language: "go"}
-		srcBody.Parent = srcBlock
-		srcIf := &treesitter.ASTNode{Type: "if_statement", StartByte: 6, EndByte: 25, Children: []*treesitter.ASTNode{srcBlock}, Language: "go"}
-		srcBlock.Parent = srcIf
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		dstBody := &treesitter.ASTNode{Type: "expression_statement", StartByte: 17, EndByte: 24, Language: "go"}
-		dstBlock := &treesitter.ASTNode{Type: "block", StartByte: 15, EndByte: 26, Children: []*treesitter.ASTNode{dstBody}, Language: "go"}
-		dstBody.Parent = dstBlock
-		dstIf := &treesitter.ASTNode{Type: "if_statement", StartByte: 7, EndByte: 26, Children: []*treesitter.ASTNode{dstBlock}, Language: "go"}
-		dstBlock.Parent = dstIf
+		var srcIf, srcBody, dstIf, dstBody *treesitter.ASTNode
+		for _, d := range srcAST.Descendants() {
+			if d.Type == "if_statement" {
+				srcIf = d
+			}
+			if d.Type == "expression_statement" && len(d.Children) > 0 && d.Children[0].Type == "call_expression" {
+				for _, c := range d.Children[0].Children {
+					if c.Type == "identifier" && c.Label == "body" {
+						srcBody = d
+					}
+				}
+			}
+		}
+		for _, d := range dstAST.Descendants() {
+			if d.Type == "if_statement" {
+				dstIf = d
+			}
+			if d.Type == "expression_statement" && len(d.Children) > 0 && d.Children[0].Type == "call_expression" {
+				for _, c := range d.Children[0].Children {
+					if c.Type == "identifier" && c.Label == "body" {
+						dstBody = d
+					}
+				}
+			}
+		}
+		if srcIf == nil || srcBody == nil || dstIf == nil || dstBody == nil {
+			t.Fatal("failed to find if_statement and body expression_statement in parsed snippets")
+		}
 
 		actions := []Action{
 			{
@@ -905,17 +934,17 @@ func TestAssignMoveColors(t *testing.T) {
 				GroupID:       "group-1",
 				ASTNode:       srcBody,
 				DestASTNode:   dstBody,
-				Node:          &NodeRef{Type: "expression_statement", StartByte: 16, EndByte: 23},
-				DestStartByte: ptr(uint32(17)),
-				DestEndByte:   ptr(uint32(24)),
+				Node:          &NodeRef{Type: srcBody.Type, StartByte: srcBody.StartByte, EndByte: srcBody.EndByte},
+				DestStartByte: ptr(dstBody.StartByte),
+				DestEndByte:   ptr(dstBody.EndByte),
 			},
 			{
 				Action:        "move",
 				ASTNode:       srcIf,
 				DestASTNode:   dstIf,
-				Node:          &NodeRef{Type: "if_statement", StartByte: 6, EndByte: 15},
-				DestStartByte: ptr(uint32(7)),
-				DestEndByte:   ptr(uint32(16)),
+				Node:          &NodeRef{Type: srcIf.Type, StartByte: srcIf.StartByte, EndByte: srcIf.EndByte},
+				DestStartByte: ptr(dstIf.StartByte),
+				DestEndByte:   ptr(dstIf.EndByte),
 			},
 		}
 
@@ -1091,9 +1120,27 @@ func process() {
 			t.Errorf("expected grouped co-movers to share MoveColorIndex 0, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 
-		// Whole-snippet context line purity
-		assertContextLinesPure(t, env.LeftHighlights, []int{4, 5})
-		assertContextLinesPure(t, env.RightHighlights, []int{5, 6, 7, 8})
+		// Whole-snippet context line purity and co-mover move highlights
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process() {
+	keep1()
+	<mov>moveA()</mov>
+	<mov>moveB()</mov>
+	keep2()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	keep1()
+	keep2()
+	<ins>if true {</ins>
+		<mov>moveA()</mov>
+		<mov>moveB()</mov>
+	<ins>}</ins>
+}
+`)
 	})
 
 	t.Run("diverging moves from nearby source get distinct colors", func(t *testing.T) {
@@ -1133,9 +1180,33 @@ func process() {
 			t.Errorf("expected diverging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 
-		// Whole-snippet context line purity
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4})
-		assertContextLinesPure(t, env.RightHighlights, []int{4, 5, 6, 10, 11, 12})
+		// Whole-snippet context line purity and contrasting move color slots
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process() {
+	<mov>moveA()</mov>
+	<mov1>moveB()</mov1>
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	keep1()
+	<ins>if cond1 {</ins>
+		<mov>moveA()</mov>
+	<ins>}</ins>
+	keep2()
+	keep3()
+	keep4()
+	<ins>if cond2 {</ins>
+		<mov1>moveB()</mov1>
+	<ins>}</ins>
+}
+`)
 	})
 
 	t.Run("converging moves to nearby destination get distinct colors", func(t *testing.T) {
@@ -1177,9 +1248,35 @@ func process() {
 			t.Errorf("expected converging moves to get distinct colors 0 and 1, got %d and %d", moves[0].MoveColorIndex, moves[1].MoveColorIndex)
 		}
 
-		// Whole-snippet context line purity
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 10, 11, 12})
-		assertContextLinesPure(t, env.RightHighlights, []int{7, 8, 9, 10})
+		// Whole-snippet context line purity and converging moves
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process() {
+	<mov>if </mov><mUpd>cond1</mUpd><mov> {</mov>
+<mov>		moveA()</mov>
+<mov>	}</mov>
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+	<del>if cond2 {</del>
+		<mov1>moveB()</mov1>
+	<del>}</del>
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	keep1()
+	keep2()
+	keep3()
+	keep4()
+	<mov>if </mov><mUpd>condTarget</mUpd><mov> {</mov>
+<mov>		moveA()</mov>
+<mov>	}</mov>
+	<mov1>moveB()</mov1>
+}
+`)
 	})
 
 	t.Run("dominant cohort gets slot 0 and reordered outlier gets slot 1", func(t *testing.T) {
@@ -1274,24 +1371,54 @@ func run() {
 			t.Errorf("expected sunk guard to get MoveColorIndex 1 (Magenta), got %d", color)
 		}
 
-		// 3. Highlight spans reflect their assigned color slots
-		for _, h := range env.RightHighlights {
-			if h.Action != "move" {
-				continue
-			}
-			// Lines 14..17 are step1..step4 (cohort -> slot 0 / Cyan)
-			if h.Line >= 14 && h.Line <= 17 {
-				if h.ColorIndex != 0 {
-					t.Errorf("expected cohort highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
-			// Lines 18..20 are the sunk guard (outlier -> slot 1 / Magenta)
-			if h.Line >= 18 && h.Line <= 20 {
-				if h.ColorIndex != 1 {
-					t.Errorf("expected outlier guard highlight on line %d to have ColorIndex 1, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
-		}
+		// 3. Whole-snippet tagged assertions: cohort in slot 0 (<mov>), sunk guard in slot 1 (<mov1>),
+		// and stationary statements step5..step15 remain unhighlighted context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func run() {
+	<mov1>if err != nil {</mov1>
+<mov1>		return</mov1>
+<mov1>	}</mov1>
+	<mov>step1()</mov>
+	<mov>step2()</mov>
+	<mov>step3()</mov>
+	<mov>step4()</mov>
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+	step12()
+	step13()
+	step14()
+	step15()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func run() {
+	step5()
+	step6()
+	step7()
+	step8()
+	step9()
+	step10()
+	step11()
+	step12()
+	step13()
+	step14()
+	step15()
+	<mov>step1()</mov>
+	<mov>step2()</mov>
+	<mov>step3()</mov>
+	<mov>step4()</mov>
+	<mov1>if err != nil {</mov1>
+<mov1>		return</mov1>
+<mov1>	}</mov1>
+}
+`)
 
 		// 4. Whole-snippet verification: enclosing package and func declarations have no edit actions
 		for _, a := range env.Actions {
@@ -1299,10 +1426,6 @@ func run() {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-
-		// 5. Whole-snippet context line purity: stationary statements step5..step15 remain unhighlighted
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9})
-		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17, 18, 19, 20})
 	})
 
 	t.Run("container header and body co-movers share move color without fracture", func(t *testing.T) {
@@ -1348,40 +1471,36 @@ func run() {
 			}
 		}
 
-		// 2. Whole-snippet context line purity: stationary statements step1..step3 remain unhighlighted.
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8})
-		assertContextLinesPure(t, env.RightHighlights, []int{6, 7, 8, 9, 10, 11})
+		// 2. Whole-snippet tagged assertions: container header, body statements, and closing delimiter
+		// all share move ColorIndex 0 (<mov>) without fracture, and stationary statements step1..step3 stay context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// 3. Container header, body statements, and closing delimiter all share move ColorIndex 0 without fracture.
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected left move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected right move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
+func run() {
+	<mov>extra()</mov>
+	<mov>if cond {</mov>
+		<mov>body1()</mov>
+		<mov>body2()</mov>
+	<mov>}</mov>
+	<mov>workMovedIn()</mov>
+	step1()
+	step2()
+	step3()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
 
-		// 4. Specifically verify opening '{' and closing '}' delimiters on right side share ColorIndex 0.
-		var foundOpeningBrace, foundClosingBrace bool
-		for _, h := range env.RightHighlights {
-			if h.Line == 7 && h.StartCol <= 9 && h.EndCol >= 10 && h.Action == "move" && h.ColorIndex == 0 {
-				foundOpeningBrace = true
-			}
-			if h.Line == 11 && h.StartCol == 1 && h.EndCol == 2 && h.Action == "move" && h.ColorIndex == 0 {
-				foundClosingBrace = true
-			}
-		}
-		if !foundOpeningBrace {
-			t.Errorf("expected right opening brace highlight span on line 7 with ColorIndex 0, got %+v", env.RightHighlights)
-		}
-		if !foundClosingBrace {
-			t.Errorf("expected right closing brace highlight span on line 11 with ColorIndex 0, got %+v", env.RightHighlights)
-		}
+func run() {
+	step1()
+	step2()
+	step3()
+	<mov>extra()</mov>
+	<mov>if cond {</mov>
+		<mov>workMovedIn()</mov>
+		<mov>body1()</mov>
+		<mov>body2()</mov>
+	<mov>}</mov>
+}
+`)
 	})
 
 	t.Run("parallel unnesting moves share move color slot 0", func(t *testing.T) {
@@ -1480,19 +1599,6 @@ func process(cleanLine string) {
 			}
 		}
 
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected left move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.ColorIndex != 0 {
-				t.Errorf("expected right move span on line %d [%d..%d] to have ColorIndex 0, got %d",
-					h.Line, h.StartCol, h.EndCol, h.ColorIndex)
-			}
-		}
-
 		// Whole-snippet verification: enclosing package and func declarations have no edit actions.
 		for _, a := range env.Actions {
 			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
@@ -1500,19 +1606,48 @@ func process(cleanLine string) {
 			}
 		}
 
-		// Surrounding func declaration and index branch stay untouched as context.
-		for _, h := range env.LeftHighlights {
-			if h.Line <= 4 || h.Line >= 22 {
-				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
+		// Whole-snippet tagged assertions: parallel unnested branches share MoveColorIndex 0 (<mov>),
+		// and enclosing func declaration and index branch stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <del>strings.HasPrefix(cleanLine, "rename from ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><del>; p != "" {</del>
+			<mov>current.oldPath = p</mov>
+		<del>}</del>
+	} else if <del>strings.HasPrefix(cleanLine, "rename to ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><del>; p != "" {</del>
+			<mov>current.newPath = p</mov>
+		<del>}</del>
+	} else if <del>strings.HasPrefix(cleanLine, "--- ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "--- ")</mov><del>; p != "" {</del>
+			<mov>current.oldPath = p</mov>
+		<del>}</del>
+	} else <del>if strings.HasPrefix(cleanLine, "+++ ") {</del>
+		if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+			current.newPath = p
 		}
-		for _, h := range env.RightHighlights {
-			if h.Line <= 4 || h.Line >= 14 {
-				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
-		}
+	<del>}</del>
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><ins>; p != ""</ins> {
+		<mov>current.oldPath = p</mov>
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><ins>; p != ""</ins> {
+		<mov>current.newPath = p</mov>
+	} else if <mov>p := parseHeaderPath(cleanLine, "--- ")</mov><ins>; p != ""</ins> {
+		<mov>current.oldPath = p</mov>
+	} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+		current.newPath = p
+	}
+}
+`)
 	})
 
 	t.Run("extracted condition does not taint body statement move", func(t *testing.T) {
@@ -1594,19 +1729,57 @@ func check() (bool, float64) {
 				bodyMove.MoveColorIndex)
 		}
 
-		// Surrounding func declaration and postCheck stay untouched as context.
-		for _, h := range env.LeftHighlights {
-			if h.Line <= 2 || (h.Line >= 8 && h.Line <= 16) {
-				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line+1, h.Action, h.StartCol, h.EndCol)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Line <= 2 || (h.Line >= 21 && h.Line <= 29) {
-				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line+1, h.Action, h.StartCol, h.EndCol)
-			}
-		}
+		// Whole-snippet tagged assertions: extracted condition and body statement both share MoveColorIndex 0 (<mov>),
+		// and post-check statements stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func check() (bool, float64) {
+	<del>if</del> <mov>(r != nil && r.IsDelimited(u1.Type)) || (r == nil && rules.IsDelimited(u1.Type))</mov> <del>{</del>
+		<mov>if (len(u1.Children) == 0) != (len(u2.Children) == 0) {</mov>
+<mov>			return false, 0.0</mov>
+<mov>		}</mov>
+	<del>}</del>
+
+	cScore := 1.0
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func check() (bool, float64) {
+	<ins>isDelim1 :=</ins> <mov>(r != nil && r.IsDelimited(u1.Type)) || (r == nil && rules.IsDelimited(u1.Type))</mov>
+	<ins>isDelim2 := (r != nil && r.IsDelimited(u2.Type)) || (r == nil && rules.IsDelimited(u2.Type))</ins>
+	<ins>if isDelim1 != isDelim2 {</ins>
+<ins>		return false, 0.0</ins>
+<ins>	}</ins>
+	<ins>if isDelim1 && isDelim2 {</ins>
+		<mov>if (len(u1.Children) == 0) != (len(u2.Children) == 0) {</mov>
+<mov>			return false, 0.0</mov>
+<mov>		}</mov>
+		<ins>if len(u1.Children) == 0 && len(u2.Children) == 0 {</ins>
+<ins>			return true, 1.0</ins>
+<ins>		}</ins>
+		<ins>leafSim := substantiveLeafSimilarity(u1, u2, r)</ins>
+		<ins>if leafSim >= 0.40 {</ins>
+<ins>			return true, leafSim</ins>
+<ins>		}</ins>
+		<ins>return false, 0.0</ins>
+	<ins>}</ins>
+
+	cScore := 1.0
+	leafSim := substantiveLeafSimilarity(u1, u2, r)
+	compositeScore := 0.50*cScore + 0.50*leafSim
+	if compositeScore < 0.50 {
+		return false, 0.0
+	}
+	return true, compositeScore
+}
+`)
 	})
 
 	t.Run("downward lockstep cohort moves share move color slot 0", func(t *testing.T) {
@@ -1699,8 +1872,50 @@ func process(cleanLine string) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-		assertContextLinesPure(t, env.LeftHighlights, []int{5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17})
-		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 6, 7, 10, 11, 12, 13, 14})
+
+		// Whole-snippet tagged assertions: downward lockstep cohort moves share MoveColorIndex 0 (<mov>),
+		// and preamble/trailing statements stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func process(cleanLine string) {
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <del>strings.HasPrefix(cleanLine, "rename from ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><del>; p != "" {</del>
+			<mov>current.oldPath = p</mov>
+		<del>}</del>
+	} else if <del>strings.HasPrefix(cleanLine, "rename to ")</del> {
+		<del>if</del> <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><del>; p != "" {</del>
+			<mov>current.newPath = p</mov>
+		<del>}</del>
+	} else <del>if strings.HasPrefix(cleanLine, "+++ ") {</del>
+		if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+			current.newPath = p
+		}
+	<del>}</del>
+	finish()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process(cleanLine string) {
+	<ins>a := prepareA(cleanLine)</ins>
+	<ins>b := prepareB(a)</ins>
+	<ins>c := prepareC(b)</ins>
+	<ins>d := prepareD(c)</ins>
+	<ins>use(d)</ins>
+	if strings.HasPrefix(cleanLine, "index ") {
+		current.oldOID = 1
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename from ")</mov><ins>; p != ""</ins> {
+		<mov>current.oldPath = p</mov>
+	} else if <mov>p := parseHeaderPath(cleanLine, "rename to ")</mov><ins>; p != ""</ins> {
+		<mov>current.newPath = p</mov>
+	} else if p := parseHeaderPath(cleanLine, "+++ "); p != "" {
+		current.newPath = p
+	}
+	finish()
+}
+`)
 	})
 
 	t.Run("converging moves exceeding lockstep delta difference keep distinct colors", func(t *testing.T) {
@@ -1775,18 +1990,43 @@ func run() {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
-		for _, h := range env.LeftHighlights {
-			if h.Line <= 2 || h.Line >= 23 {
-				t.Errorf("left line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Line <= 2 || h.Line >= 5 {
-				t.Errorf("right line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-					h.Line, h.Action, h.StartCol, h.EndCol)
-			}
-		}
+
+		// Whole-snippet tagged assertions: converging moves keep distinct color slots (<mov> and <mov1>),
+		// and enclosing func declaration and tail() stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func run() {
+	<del>if skip1() {</del>
+<del>		logStep("1")</del>
+<del>		logStep("2")</del>
+<del>		logStep("3")</del>
+<del>		logStep("4")</del>
+<del>		logStep("5")</del>
+<del>	}</del>
+	<del>if mode == "a" {</del>
+		<mov>first()</mov>
+	<del>}</del>
+	<del>if skip2() {</del>
+<del>		logStep("6")</del>
+<del>		logStep("7")</del>
+<del>		logStep("8")</del>
+<del>		logStep("9")</del>
+<del>		logStep("10")</del>
+<del>	}</del>
+	<del>if mode == "b" {</del>
+		<mov1>second()</mov1>
+	<del>}</del>
+	tail()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func run() {
+	<mov>first()</mov>
+	<mov1>second()</mov1>
+	tail()
+}
+`)
 	})
 
 	t.Run("reordered statement inside moved container takes contrasting slot 1", func(t *testing.T) {
@@ -1843,299 +2083,163 @@ func process() {
 			}
 		}
 
-		// 2. Whole-snippet context line purity: stationary statements extraHeader1..3 and extraFooter1..3 remain unhighlighted.
-		assertContextLinesPure(t, env.LeftHighlights, []int{6, 7, 8, 9, 10, 11, 12})
-		assertContextLinesPure(t, env.RightHighlights, []int{9, 10, 11, 12, 13, 14, 15, 16, 17, 18})
+		// 2. Whole-snippet tagged assertions: in-order container and statements share slot 0 (<mov>),
+		// while the reordered statement takes contrasting slot 1 (<mov1>/<mUpd1>),
+		// and extraHeader/extraFooter statements stay untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// 3. Move color verification: in-order statements share container color 0 (Cyan),
-		// while the reordered statement (canPair -> sim in else branch) receives contrasting color 1 (Magenta).
-		var foundReorderedLeft, foundReorderedRight bool
-		for _, h := range env.LeftHighlights {
-			// Old line 10: canPair[i][j] = ok
-			if h.Line == 9 && h.Action == "move" {
-				if h.ColorIndex != 1 {
-					t.Errorf("expected left move span on line 10 to have contrasting ColorIndex 1 (Magenta), got %d", h.ColorIndex)
-				} else {
-					foundReorderedLeft = true
-				}
-			}
-		}
-		for _, h := range env.RightHighlights {
-			// New line 16: sim[i][j] = -1.0
-			if h.Line == 15 && h.Action == "move" {
-				if h.ColorIndex != 1 {
-					t.Errorf("expected right move span on line 16 to have contrasting ColorIndex 1 (Magenta), got %d", h.ColorIndex)
-				} else {
-					foundReorderedRight = true
-				}
-			}
-		}
+func process() {
+	extraHeader1()
+	extraHeader2()
+	extraHeader3()
+	<mov>for i := range n1 {</mov>
+		<mov>for j := range n2 {</mov>
+			<mov>calc()</mov>
+			<mUpd1>canPair</mUpd1><mov1>[i][j] = </mov1><del>ok</del>
+			<mov>sim[i][j] = score</mov>
+		<mov>}</mov>
+	<mov>}</mov>
+	extraFooter1()
+	extraFooter2()
+	extraFooter3()
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
 
-		if !foundReorderedLeft {
-			t.Errorf("expected to find left move span on line 10 with ColorIndex 1, got %+v", env.LeftHighlights)
-		}
-		if !foundReorderedRight {
-			t.Errorf("expected to find right move span on line 16 with ColorIndex 1, got %+v", env.RightHighlights)
-		}
+func process() {
+	extraHeader1()
+	extraHeader2()
+	extraHeader3()
+	extraFooter1()
+	extraFooter2()
+	extraFooter3()
+	<mov>for i := range n1 {</mov>
+		<mov>for j := range n2 {</mov>
+			<mov>calc()</mov>
+			<ins>if ok {</ins>
+				<mov>sim[i][j] = score</mov>
+			<ins>} else {</ins>
+				<mUpd1>sim</mUpd1><mov1>[i][j] = </mov1><ins>-1.0</ins>
+			<ins>}</ins>
+		<mov>}</mov>
+	<mov>}</mov>
+}
+`)
 	})
 }
 
 func TestAdjustRangeForContainer_LeadingTrivia(t *testing.T) {
-	fileBytes := []byte("{\n    // comment\n    if (x) {}\n}")
-	block := &treesitter.ASTNode{
-		Type:      "block",
-		Language:  "java",
-		StartByte: 0,
-		EndByte:   32,
-		StartRow:  0,
-		EndRow:    3,
+	fileBytes := []byte("class Test {\n    void foo() {\n        // comment\n        if (x) {}\n    }\n}")
+	ast, err := treesitter.ParseWithLanguage(fileBytes, "java")
+	if err != nil {
+		t.Fatal(err)
 	}
-	stmt := &treesitter.ASTNode{
-		Type:      "if_statement",
-		StartByte: 17,
-		EndByte:   30,
-		StartRow:  2,
-		EndRow:    2,
-		Parent:    block,
-		LeadingTrivia: []*treesitter.CommentBlock{
-			{
-				StartByte: 6,
-				EndByte:   16,
-				StartRow:  1,
-				EndRow:    1,
-			},
-		},
-	}
-	block.Children = []*treesitter.ASTNode{stmt}
 
-	start := uint32(0)
-	end := uint32(32)
+	block, err := testutil.FindNodeByText(ast, fileBytes, "{\n        // comment\n        if (x) {}\n    }", "block")
+	if err != nil {
+		t.Fatalf("expected method block: %v", err)
+	}
+	stmt, err := testutil.FindNodeByText(ast, fileBytes, "if (x) {}", "if_statement")
+	if err != nil {
+		t.Fatalf("expected if_statement: %v", err)
+	}
+	if len(stmt.LeadingTrivia) == 0 {
+		t.Fatal("expected if_statement to have attached LeadingTrivia")
+	}
+
+	start := block.StartByte
+	end := block.EndByte
 	hasFooter, fStart, fEnd := adjustRangeForContainer(block, &start, &end, fileBytes)
 
-	if end != 6 {
-		t.Errorf("expected container prologue end to be clamped to 6 (start of comment), got %d", end)
+	expectedEnd := stmt.LeadingTrivia[0].StartByte
+	if end != expectedEnd {
+		t.Errorf("expected container prologue end to be clamped to %d (start of comment), got %d", expectedEnd, end)
 	}
 	if !hasFooter {
 		t.Errorf("expected container to have footer for closing brace")
 	}
-	if fStart != 30 || fEnd != 32 {
-		t.Errorf("expected footer [30, 32], got [%d, %d]", fStart, fEnd)
+	if fStart >= fEnd || string(fileBytes[fStart:fEnd]) != "}" {
+		t.Errorf("expected closing brace footer, got [%d, %d] %q", fStart, fEnd, string(fileBytes[fStart:fEnd]))
 	}
 }
 
 func TestAdjustRangeForContainer_MultilineWrapperWithBlock(t *testing.T) {
-	fileBytes := []byte("model(|| {\n    let a = 1;\n});")
-	exprStmt := &treesitter.ASTNode{
-		Type:      "expression_statement",
-		Language:  "rust",
-		StartByte: 0,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-	}
-	callExpr := &treesitter.ASTNode{
-		Type:      "call_expression",
-		Language:  "rust",
-		StartByte: 0,
-		EndByte:   29,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    exprStmt,
-	}
-	exprStmt.Children = []*treesitter.ASTNode{callExpr}
-
-	args := &treesitter.ASTNode{
-		Type:      "arguments",
-		Language:  "rust",
-		StartByte: 5,
-		EndByte:   29,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    callExpr,
-	}
-	callExpr.Children = []*treesitter.ASTNode{
-		{Type: "identifier", StartByte: 0, EndByte: 5, StartRow: 0, EndRow: 0, Parent: callExpr},
-		args,
+	fileBytes := []byte("fn main() {\n    model(|| {\n        let a = 1;\n    });\n}")
+	ast, err := treesitter.ParseWithLanguage(fileBytes, "rust")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	closure := &treesitter.ASTNode{
-		Type:      "closure_expression",
-		Language:  "rust",
-		StartByte: 6,
-		EndByte:   27,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    args,
+	exprStmt, err := testutil.FindNodeByText(ast, fileBytes, "model(|| {\n        let a = 1;\n    });", "expression_statement")
+	if err != nil {
+		t.Fatalf("expected expression_statement: %v", err)
 	}
-	args.Children = []*treesitter.ASTNode{closure}
-
-	block := &treesitter.ASTNode{
-		Type:      "block",
-		Language:  "rust",
-		StartByte: 9,
-		EndByte:   27,
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    closure,
+	callExpr, err := testutil.FindNodeByText(ast, fileBytes, "model(|| {\n        let a = 1;\n    })", "call_expression")
+	if err != nil {
+		t.Fatalf("expected call_expression: %v", err)
 	}
-	closure.Children = []*treesitter.ASTNode{
-		{Type: "closure_parameters", StartByte: 6, EndByte: 8, StartRow: 0, EndRow: 0, Parent: closure},
-		block,
+	block, err := testutil.FindNodeByText(ast, fileBytes, "{\n        let a = 1;\n    }", "block")
+	if err != nil {
+		t.Fatalf("expected closure block: %v", err)
 	}
-
-	stmt := &treesitter.ASTNode{
-		Type:      "let_declaration",
-		Language:  "rust",
-		StartByte: 15,
-		EndByte:   25,
-		StartRow:  1,
-		EndRow:    1,
-		Parent:    block,
-	}
-	block.Children = []*treesitter.ASTNode{stmt}
 
 	t.Run("expression_statement", func(t *testing.T) {
-		start := uint32(0)
-		end := uint32(len(fileBytes))
+		start := exprStmt.StartByte
+		end := exprStmt.EndByte
 		hasFooter, fStart, fEnd := adjustRangeForContainer(exprStmt, &start, &end, fileBytes)
-		if end != 9 {
-			t.Errorf("expected exprStmt end to be clamped to 9 (start of block), got %d", end)
+		if end != block.StartByte {
+			t.Errorf("expected exprStmt end to be clamped to %d (start of block), got %d", block.StartByte, end)
 		}
 		if !hasFooter {
 			t.Errorf("expected exprStmt to have closing footer")
 		}
-		if fStart != 27 || fEnd != 29 {
-			t.Errorf("expected exprStmt footer [27, 29], got [%d, %d]", fStart, fEnd)
+		if string(fileBytes[fStart:fEnd]) != "}" {
+			t.Errorf("expected exprStmt closing footer '}', got [%d, %d] %q", fStart, fEnd, string(fileBytes[fStart:fEnd]))
 		}
 	})
 
 	t.Run("call_expression", func(t *testing.T) {
-		start := uint32(0)
-		end := uint32(28)
+		start := callExpr.StartByte
+		end := callExpr.EndByte
 		hasFooter, fStart, fEnd := adjustRangeForContainer(callExpr, &start, &end, fileBytes)
-		if end != 9 {
-			t.Errorf("expected callExpr end to be clamped to 9 (start of block), got %d", end)
+		if end != block.StartByte {
+			t.Errorf("expected callExpr end to be clamped to %d (start of block), got %d", block.StartByte, end)
 		}
 		if !hasFooter {
 			t.Errorf("expected callExpr to have closing footer")
 		}
-		if fStart != 27 || fEnd != 28 {
-			t.Errorf("expected callExpr footer [27, 28], got [%d, %d]", fStart, fEnd)
+		if string(fileBytes[fStart:fEnd]) != "}" {
+			t.Errorf("expected callExpr closing footer '}', got [%d, %d] %q", fStart, fEnd, string(fileBytes[fStart:fEnd]))
 		}
 	})
 }
 
 func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T) {
-	fileBytes := []byte("opDeleted := slices.ContainsFunc(result.Actions(), func() {\n\treturn\n})")
-	shortVar := &treesitter.ASTNode{
-		Type:      "short_var_declaration",
-		Language:  "go",
-		StartByte: 0,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-	}
-	lhsList := &treesitter.ASTNode{
-		Type:      "expression_list",
-		Language:  "go",
-		StartByte: 0,
-		EndByte:   9,
-		StartRow:  0,
-		EndRow:    0,
-		Parent:    shortVar,
-	}
-	colonEq := &treesitter.ASTNode{
-		Type:      ":=",
-		Language:  "go",
-		StartByte: 10,
-		EndByte:   12,
-		StartRow:  0,
-		EndRow:    0,
-		Parent:    shortVar,
-	}
-	rhsList := &treesitter.ASTNode{
-		Type:      "expression_list",
-		Language:  "go",
-		StartByte: 13,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    shortVar,
-	}
-	shortVar.Children = []*treesitter.ASTNode{lhsList, colonEq, rhsList}
-
-	callExpr := &treesitter.ASTNode{
-		Type:      "call_expression",
-		Language:  "go",
-		StartByte: 13,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    rhsList,
-	}
-	rhsList.Children = []*treesitter.ASTNode{callExpr}
-
-	argList := &treesitter.ASTNode{
-		Type:      "argument_list",
-		Language:  "go",
-		StartByte: 32,
-		EndByte:   uint32(len(fileBytes)),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    callExpr,
-	}
-	callExpr.Children = []*treesitter.ASTNode{
-		{Type: "selector_expression", Language: "go", StartByte: 13, EndByte: 32, StartRow: 0, EndRow: 0, Parent: callExpr},
-		argList,
+	fileBytes := []byte("package main\n\nfunc f() {\n\topDeleted := slices.ContainsFunc(result.Actions(), func() {\n\t\treturn\n\t})\n}\n")
+	ast, err := treesitter.Parse(fileBytes, "test.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	firstArgCall := &treesitter.ASTNode{
-		Type:      "call_expression",
-		Language:  "go",
-		StartByte: 33,
-		EndByte:   49,
-		StartRow:  0,
-		EndRow:    0,
-		Parent:    argList,
+	shortVar, err := testutil.FindNodeByText(ast, fileBytes, "opDeleted := slices.ContainsFunc(result.Actions(), func() {\n\t\treturn\n\t})", "short_var_declaration")
+	if err != nil {
+		t.Fatalf("expected short_var_declaration: %v", err)
 	}
-	funcLit := &treesitter.ASTNode{
-		Type:      "func_literal",
-		Language:  "go",
-		StartByte: 51,
-		EndByte:   uint32(len(fileBytes) - 1),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    argList,
+	rhsList, err := testutil.FindNodeByText(ast, fileBytes, "slices.ContainsFunc(result.Actions(), func() {\n\t\treturn\n\t})", "expression_list")
+	if err != nil {
+		t.Fatalf("expected expression_list: %v", err)
 	}
-	argList.Children = []*treesitter.ASTNode{firstArgCall, funcLit}
+	argList, err := testutil.FindNodeByText(ast, fileBytes, "(result.Actions(), func() {\n\t\treturn\n\t})", "argument_list")
+	if err != nil {
+		t.Fatalf("expected argument_list: %v", err)
+	}
 
-	block := &treesitter.ASTNode{
-		Type:      "block",
-		Language:  "go",
-		StartByte: 58,
-		EndByte:   uint32(len(fileBytes) - 1),
-		StartRow:  0,
-		EndRow:    2,
-		Parent:    funcLit,
-	}
-	funcLit.Children = []*treesitter.ASTNode{block}
-	retStmt := &treesitter.ASTNode{
-		Type:      "return_statement",
-		Language:  "go",
-		StartByte: 61,
-		EndByte:   67,
-		StartRow:  1,
-		EndRow:    1,
-		Parent:    block,
-	}
-	block.Children = []*treesitter.ASTNode{retStmt}
-
-	// Make sure the var declaration header clamps before the multiline RHS (byte 13) and doesn't claim a closing delimiter.
-	start := uint32(0)
-	end := uint32(len(fileBytes))
+	// Make sure the var declaration header clamps before the multiline RHS and doesn't claim a closing delimiter.
+	start := shortVar.StartByte
+	end := shortVar.EndByte
 	hasFooter, _, _ := adjustRangeForContainer(shortVar, &start, &end, fileBytes)
-	if end != 13 {
-		t.Errorf("expected short_var_declaration prologue end to clamp to 13, got %d", end)
+	if end != rhsList.StartByte {
+		t.Errorf("expected short_var_declaration prologue end to clamp to %d, got %d", rhsList.StartByte, end)
 	}
 	if hasFooter {
 		t.Errorf("expected short_var_declaration not to claim a closing footer")
@@ -2148,8 +2252,8 @@ func TestAdjustRangeForContainer_TrailingBlockChildAndMultiArgList(t *testing.T)
 	if !argHasFooter {
 		t.Fatalf("expected 2-arg argument_list to preserve its closing ')' footer")
 	}
-	if argFStart != uint32(len(fileBytes)-1) || argFEnd != uint32(len(fileBytes)) {
-		t.Errorf("expected argument_list footer [%d, %d], got [%d, %d]", len(fileBytes)-1, len(fileBytes), argFStart, argFEnd)
+	if argFStart != argList.EndByte-1 || argFEnd != argList.EndByte {
+		t.Errorf("expected argument_list footer [%d, %d], got [%d, %d]", argList.EndByte-1, argList.EndByte, argFStart, argFEnd)
 	}
 }
 
@@ -2207,16 +2311,24 @@ func TestAdjustRangeForContainer_FullEngine(t *testing.T) {
 		t.Errorf("expected else_clause prologue to clamp to byte 54, got %d", elseAct.Node.EndByte)
 	}
 
-	// 2. Verify right highlights on moved lines inside else block have no phantom insert spans.
-	for _, h := range env.RightHighlights {
-		if h.Line >= 4 && h.Line <= 6 && h.Action == "insert" && h.StartCol == 0 {
-			t.Errorf("found spurious insert highlight on moved line %d: %+v", h.Line, h)
-		}
-	}
-
-	// 3. Whole-snippet context line purity: fn f() void { and closing } must have zero highlights
-	assertContextLinesPure(t, env.LeftHighlights, []int{1, 2, 3})
-	assertContextLinesPure(t, env.RightHighlights, []int{1, 2, 3, 4, 5, 6, 7})
+	// 2. Whole-snippet tagged assertions: else_clause prologue and new branches are inserted (<ins>),
+	// moved lines inside else block have no phantom insert spans (<mov>), and enclosing function stays context.
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn f() void {
+    <mov>a();</mov>
+    <mov>b();</mov>
+    <mov>c();</mov>
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn f() void {
+    <ins>if (cond) {</ins>
+<ins>        x();</ins>
+<ins>    } else {</ins>
+        <mov>a();</mov>
+        <mov>b();</mov>
+        <mov>c();</mov>
+    <ins>}</ins>
+}
+`)
 }
 
 func TestCollectMappedTrailingDelimiters(t *testing.T) {
@@ -2357,25 +2469,21 @@ func TestCollectMappedTrailingDelimiters_FullEngine(t *testing.T) {
 			t.Errorf("expected 0 AST actions for stationary elements, got %d", len(env.Actions))
 		}
 
-		// 2. Verify right highlights contain the inserted comma on line 4 (0-indexed).
-		var commaSpan *HighlightSpan
-		for i := range env.RightHighlights {
-			h := &env.RightHighlights[i]
-			if h.Line == 4 && h.Action == "insert" {
-				commaSpan = h
-				break
-			}
-		}
-		if commaSpan == nil {
-			t.Fatalf("expected insert highlight span for added trailing comma on line 4, got %+v", env.RightHighlights)
-		}
-		if commaSpan.StartCol != 2 || commaSpan.EndCol != 3 {
-			t.Errorf("expected comma highlight at cols 2..3, got %d..%d", commaSpan.StartCol, commaSpan.EndCol)
-		}
+		// 2. Whole-snippet tagged assertions: line 4 is the only edited line with inserted comma.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package p
 
-		// Whole-snippet context line purity: line 4 is the only edited line
-		assertContextLinesPure(t, env.LeftHighlights, nil)
-		assertContextLinesPure(t, env.RightHighlights, []int{4})
+var x = []int{
+	1,
+	2
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package p
+
+var x = []int{
+	1,
+	2<ins>,</ins>
+}
+`)
 	})
 
 	t.Run("binary expression refactored to call highlights inserted comma between stationary args", func(t *testing.T) {
@@ -2404,22 +2512,19 @@ func TestCollectMappedTrailingDelimiters_FullEngine(t *testing.T) {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Verify line 3 has an insert highlight covering the comma after a.Type (cols 25..26).
-		var commaSpan *HighlightSpan
-		for i := range env.RightHighlights {
-			h := &env.RightHighlights[i]
-			if h.Line == 3 && h.Action == "insert" && h.StartCol == 25 && h.EndCol == 26 {
-				commaSpan = h
-				break
-			}
-		}
-		if commaSpan == nil {
-			t.Fatalf("expected insert highlight span for comma after a.Type at cols 25..26 on line 3, got %+v", env.RightHighlights)
-		}
+		// Whole-snippet tagged assertions: inserted comma and call wrapper around stationary args a.Type and b.Type.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package p
 
-		// Whole-snippet context line purity: only line 3 has highlights
-		assertContextLinesPure(t, env.LeftHighlights, []int{3})
-		assertContextLinesPure(t, env.RightHighlights, []int{3})
+func f() bool {
+	return a.Type <del>==</del> b.Type
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package p
+
+func f() bool {
+	return <ins>TypesMatch(</ins>a.Type<ins>,</ins> b.Type<ins>, r)</ins>
+}
+`)
 	})
 }
 
@@ -2522,57 +2627,46 @@ func CalculateTax(subtotal int) int {
 			t.Errorf("expected 1:1 AST action purity (len == 1), got %d: %+v", len(env.Actions), env.Actions)
 		}
 
-		// The doc comment on line 2 must move along with the function on line 3 using the same color.
-		var leftCommentSpans, leftFuncSpans []HighlightSpan
-		for _, h := range env.LeftHighlights {
-			switch h.Line {
-			case 2:
-				leftCommentSpans = append(leftCommentSpans, h)
-			case 3:
-				leftFuncSpans = append(leftFuncSpans, h)
-			}
-		}
-		if len(leftCommentSpans) == 0 {
-			t.Fatalf("expected move highlight on left doc comment line 2, got none (highlights: %+v)", env.LeftHighlights)
-		}
-		if leftCommentSpans[0].Action != "move" {
-			t.Errorf("expected left comment action to be 'move', got %q", leftCommentSpans[0].Action)
-		}
-		if len(leftFuncSpans) == 0 {
-			t.Fatalf("expected move highlight on left function line 3, got none")
-		}
-		if leftCommentSpans[0].ColorIndex != leftFuncSpans[0].ColorIndex {
-			t.Errorf("expected left comment ColorIndex (%d) to match function ColorIndex (%d)",
-				leftCommentSpans[0].ColorIndex, leftFuncSpans[0].ColorIndex)
-		}
+		// Whole-snippet tagged assertions: doc comment moves along with function (<mov>),
+		// and surrounding stationary functions remain untouched context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// On the right side, the doc comment on line 14 should also take the move highlight.
-		var rightCommentSpans, rightFuncSpans []HighlightSpan
-		for _, h := range env.RightHighlights {
-			switch h.Line {
-			case 14:
-				rightCommentSpans = append(rightCommentSpans, h)
-			case 15:
-				rightFuncSpans = append(rightFuncSpans, h)
-			}
-		}
-		if len(rightCommentSpans) == 0 {
-			t.Fatalf("expected move highlight on right doc comment line 14, got none (highlights: %+v)", env.RightHighlights)
-		}
-		if rightCommentSpans[0].Action != "move" {
-			t.Errorf("expected right comment action to be 'move', got %q", rightCommentSpans[0].Action)
-		}
-		if len(rightFuncSpans) == 0 {
-			t.Fatalf("expected move highlight on right function line 15, got none")
-		}
-		if rightCommentSpans[0].ColorIndex != rightFuncSpans[0].ColorIndex {
-			t.Errorf("expected right comment ColorIndex (%d) to match function ColorIndex (%d)",
-				rightCommentSpans[0].ColorIndex, rightFuncSpans[0].ColorIndex)
-		}
+<mov>// CalculateTax computes order tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
 
-		// Surrounding stationary functions shouldn't have any highlights.
-		assertContextLinesPure(t, env.LeftHighlights, []int{2, 3, 4, 5})
-		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>// CalculateTax computes order tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 	})
 
 	t.Run("MovedFunctionWithInsertedDocCommentWord", func(t *testing.T) {
@@ -2656,35 +2750,46 @@ func CalculateTax(subtotal int) int {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Left comment moved as-is; the added word on the right is an insert.
-		hasMoveLeft := false
-		for _, h := range env.LeftHighlights {
-			if h.Line == 2 && h.Action == "move" {
-				hasMoveLeft = true
-			}
-		}
-		if !hasMoveLeft {
-			t.Errorf("expected left comment line 2 to contain a move span, got: %+v", env.LeftHighlights)
-		}
+		// Whole-snippet tagged assertions: unchanged comment words move (<mov>), inserted word is <ins>,
+		// and untouched functions stay unhighlighted context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		hasInsertRight := false
-		hasMoveRight := false
-		for _, h := range env.RightHighlights {
-			if h.Line == 14 {
-				hasInsertRight = hasInsertRight || h.Action == "insert"
-				hasMoveRight = hasMoveRight || h.Action == "move"
-			}
-		}
-		if !hasInsertRight {
-			t.Errorf("expected right comment line 14 to contain 'insert' span, got: %+v", env.RightHighlights)
-		}
-		if !hasMoveRight {
-			t.Errorf("expected right comment line 14 to contain 'move' span, got: %+v", env.RightHighlights)
-		}
+<mov>// CalculateTax computes standard tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
 
-		// Untouched functions stay unhighlighted.
-		assertContextLinesPure(t, env.LeftHighlights, []int{2, 3, 4, 5})
-		assertContextLinesPure(t, env.RightHighlights, []int{14, 15, 16, 17})
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>// CalculateTax computes standard </mov><ins>regional</ins><mov> tax.</mov>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 	})
 
 	t.Run("DeletedCommentOnMovedFunction", func(t *testing.T) {
@@ -2767,31 +2872,45 @@ func CalculateTax(subtotal int) int {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// The deleted comment on line 2 should take delete, not move.
-		var leftCommentSpans []HighlightSpan
-		for _, h := range env.LeftHighlights {
-			if h.Line == 2 {
-				leftCommentSpans = append(leftCommentSpans, h)
-			}
-		}
-		if len(leftCommentSpans) == 0 {
-			t.Fatalf("expected delete highlight on left doc comment line 2, got none")
-		}
-		for _, s := range leftCommentSpans {
-			if s.Action == "move" {
-				t.Errorf("deleted comment must NOT take 'move' highlight, got %+v", s)
-			}
-			if s.Action != "delete" {
-				t.Errorf("expected deleted comment to take 'delete' highlight, got %q", s.Action)
-			}
-		}
+		// Whole-snippet tagged assertions: deleted doc comment takes <del> (not <mov>),
+		// moved function takes <mov>, and line 13 on right stays pure unadorned context.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// Make sure line 13 on the right stays pure context since no comment was added there.
-		for _, h := range env.RightHighlights {
-			if h.Line == 13 {
-				t.Errorf("expected line 13 on right to be pure context, got highlight %+v", h)
-			}
-		}
+<del>// CalculateTax computes order tax.</del>
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+`)
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func stationaryOne() int {
+	return 1
+}
+
+func stationaryTwo() int {
+	return 2
+}
+
+func stationaryThree() int {
+	return 3
+}
+
+<mov>func CalculateTax(subtotal int) int {</mov>
+<mov>	return subtotal * 2</mov>
+<mov>}</mov>
+`)
 	})
 
 	t.Run("LineAlignmentCommentInversionShielding", func(t *testing.T) {
@@ -3030,45 +3149,49 @@ fn _make_process_from_less_path() -> Command {
 		t.Errorf("extracted block leaked parent match_arm GroupID %q", extractedBlockGid)
 	}
 
-	// Opening and closing braces on the left should both get color 0 (cyan).
-	leftOpeningBraceColor, leftClosingBraceColor := -1, -1
-	for _, h := range env.LeftHighlights {
-		if h.Line == 2 && h.Action == "move" {
-			leftOpeningBraceColor = h.ColorIndex
-		}
-		if h.Line == 15 && h.Action == "move" {
-			leftClosingBraceColor = h.ColorIndex
-		}
-	}
-	if leftOpeningBraceColor != 0 {
-		t.Errorf("expected left opening brace on line 2 to have ColorIndex 0 (Cyan), got %d", leftOpeningBraceColor)
-	}
-	if leftClosingBraceColor != 0 {
-		t.Errorf("expected left closing brace on line 15 to have ColorIndex 0 (Cyan), got %d", leftClosingBraceColor)
-	}
+	// 3. Whole-snippet tagged assertions: match expression moves with color slot 0 (<mov>),
+	// extracted block statements in _make_process_from_less_path have contrasting color slot 1 (<mov1>),
+	// delimiter symmetry on opening and closing braces is maintained, and try_pager preamble/tail stay context.
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    <mov>match pagerflags.split_first() {</mov>
+        <mov>Some((_, _)) =></mov> <mov1>{</mov1>
+<mov1>            let mut process = Command::new("less");</mov1>
+<mov1>            process.arg("-R");</mov1>
+<mov1>            process.arg("-F");</mov1>
+<mov1>            process.arg("-X");</mov1>
+<mov1>            process.arg("-K");</mov1>
+<mov1>            process.arg("-i");</mov1>
+<mov1>            process.env("LESSCHARSET", "UTF-8");</mov1>
+<mov1>            process.env("LESSHISTFILE", "/dev/null");</mov1>
+<mov1>            </mov1><del>Ok(process)</del>
+<mov1>        }</mov1>
+        <mov>None => </mov><del>Ok(</del><mov>Command::new("cat")</mov><del>)</del><mov>,</mov>
+    <mov>}</mov><del>;</del>
+    process.wait()
+}
+`)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn try_pager(pager: Option<String>) -> Result<()> {
+    let pagerflags = ["--RAW-CONTROL-CHARS"];
+    <ins>Ok(</ins><mov>match pagerflags.split_first() {</mov>
+        <mov>Some((_, _)) =></mov> <ins>{</ins>
+<ins>            _make_process_from_less_path()</ins>
+<ins>        }</ins>
+        <mov>None => Command::new("cat"),</mov>
+    <mov>}</mov><ins>)</ins>;
+    process.wait()
+}
 
-	// Same on the right: the braces around match should match each other in color 0.
-	rightClosingBraceColor := -1
-	for _, h := range env.RightHighlights {
-		if h.Line == 7 && h.Action == "move" {
-			rightClosingBraceColor = h.ColorIndex
-		}
-	}
-	if rightClosingBraceColor != 0 {
-		t.Errorf("expected right closing brace on line 7 to have ColorIndex 0 (Cyan), got %d", rightClosingBraceColor)
-	}
-
-	// Statements moved into the helper function should get the contrasting color (magenta/mauve).
-	var foundExtractedMoveHighlights bool
-	for _, h := range env.RightHighlights {
-		if h.Line >= 12 && h.Line <= 21 && h.Action == "move" {
-			foundExtractedMoveHighlights = true
-			if h.ColorIndex != 1 {
-				t.Errorf("expected extracted statement highlight on right line %d to have contrasting ColorIndex 1 (Mauve), got %d", h.Line, h.ColorIndex)
-			}
-		}
-	}
-	if !foundExtractedMoveHighlights {
-		t.Errorf("expected right move highlights on extracted lines 12..21, got none")
-	}
+<ins>fn _make_process_from_less_path() -> Command</ins> <mov1>{</mov1>
+<mov1>    let mut process = Command::new("less");</mov1>
+<mov1>    process.arg("-R");</mov1>
+<mov1>    process.arg("-F");</mov1>
+<mov1>    process.arg("-X");</mov1>
+<mov1>    process.arg("-K");</mov1>
+<mov1>    process.arg("-i");</mov1>
+<mov1>    process.env("LESSCHARSET", "UTF-8");</mov1>
+<mov1>    process.env("LESSHISTFILE", "/dev/null");</mov1>
+    <ins>process</ins>
+<mov1>}</mov1>
+`)
 }

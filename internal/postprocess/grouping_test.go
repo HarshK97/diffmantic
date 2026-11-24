@@ -1,36 +1,43 @@
 package postprocess
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/HarshK97/diffmantic/internal/actions"
 	"github.com/HarshK97/diffmantic/internal/engine"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-func setParentAndRange(node, parent *treesitter.ASTNode, startByte, endByte uint32) {
-	node.Parent = parent
-	node.StartByte = startByte
-	node.EndByte = endByte
-	if parent != nil {
-		parent.Children = append(parent.Children, node)
-	}
-}
-
 func TestGroupMoves(t *testing.T) {
-	oldParent := &treesitter.ASTNode{Type: "if_statement"}
-	newParent := &treesitter.ASTNode{Type: "block"}
+	srcBytes := []byte("package main\nfunc f() {\n\tstmtA()\n\tstmtB()\n\tstmtC()\n}\n")
+	dstBytes := []byte("package main\nfunc g() {\n\tstmtA()\n\tstmtB()\n\tstmtC()\n}\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	c1 := &treesitter.ASTNode{Type: "comparison_operator"}
-	setParentAndRange(c1, oldParent, 10, 20)
-
-	c2 := &treesitter.ASTNode{Type: "block"}
-	setParentAndRange(c2, oldParent, 21, 30)
-
-	c3 := &treesitter.ASTNode{Type: "assignment_operator_literal"}
-	setParentAndRange(c3, oldParent, 31, 32)
+	c1, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmtA: %v", err)
+	}
+	c2, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmtB: %v", err)
+	}
+	c3, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtC()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmtC: %v", err)
+	}
+	newParent, err := testutil.FindNodeByText(dstTree, dstBytes, "{\n\tstmtA()\n\tstmtB()\n\tstmtC()\n}", "block")
+	if err != nil {
+		t.Fatalf("find newParent: %v", err)
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: c1, Parent: newParent})
@@ -56,23 +63,29 @@ func TestGroupMoves(t *testing.T) {
 }
 
 func TestGroupMovesSerialization(t *testing.T) {
-	srcRoot := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(srcRoot, nil, 0, 100)
+	srcBytes := []byte("def old_fn(arg_one, arg_two):\n    pass\n")
+	dstBytes := []byte("def new_fn(arg_one, arg_two):\n    pass\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.py")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	oldParent := &treesitter.ASTNode{Type: "function_definition"}
-	setParentAndRange(oldParent, srcRoot, 10, 90)
-
-	n1 := &treesitter.ASTNode{Type: "identifier"}
-	setParentAndRange(n1, oldParent, 15, 20)
-
-	n2 := &treesitter.ASTNode{Type: "parameters"}
-	setParentAndRange(n2, oldParent, 21, 30)
-
-	dstRoot := &treesitter.ASTNode{Type: "module"}
-	setParentAndRange(dstRoot, nil, 0, 100)
-
-	newParent := &treesitter.ASTNode{Type: "function_definition"}
-	setParentAndRange(newParent, dstRoot, 10, 90)
+	n1, err := testutil.FindNodeByText(srcTree, srcBytes, "arg_one", "identifier")
+	if err != nil {
+		t.Fatalf("find arg_one: %v", err)
+	}
+	n2, err := testutil.FindNodeByText(srcTree, srcBytes, "arg_two", "identifier")
+	if err != nil {
+		t.Fatalf("find arg_two: %v", err)
+	}
+	newParent, err := testutil.FindNodeByText(dstTree, dstBytes, "def new_fn(arg_one, arg_two):\n    pass", "function_definition")
+	if err != nil {
+		t.Fatalf("find new_fn: %v", err)
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: n1, Parent: newParent})
@@ -89,20 +102,37 @@ func TestGroupMovesSerialization(t *testing.T) {
 }
 
 func TestGroupMoves_SwappedOrderExcluded(t *testing.T) {
-	oldParent := &treesitter.ASTNode{Type: "block"}
-	newParent := &treesitter.ASTNode{Type: "block"}
+	srcBytes := []byte("package main\nfunc f() {\n\tstmtA()\n\tstmtB()\n}\n")
+	dstBytes := []byte("package main\nfunc g() {\n\tstmtB()\n\tstmtA()\n}\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	// a: src 10..20 -> dst 50..60
-	srcA := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(srcA, oldParent, 10, 20)
-	dstA := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(dstA, newParent, 50, 60)
-
-	// b: src 30..40 -> dst 20..30 (inverted order relative to a)
-	srcB := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(srcB, oldParent, 30, 40)
-	dstB := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(dstB, newParent, 20, 30)
+	srcA, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find srcA: %v", err)
+	}
+	srcB, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find srcB: %v", err)
+	}
+	dstA, err := testutil.FindNodeByText(dstTree, dstBytes, "stmtA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dstA: %v", err)
+	}
+	dstB, err := testutil.FindNodeByText(dstTree, dstBytes, "stmtB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dstB: %v", err)
+	}
+	newParent, err := testutil.FindNodeByText(dstTree, dstBytes, "{\n\tstmtB()\n\tstmtA()\n}", "block")
+	if err != nil {
+		t.Fatalf("find newParent: %v", err)
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: srcA, DestNode: dstA, Parent: newParent})
@@ -117,18 +147,33 @@ func TestGroupMoves_SwappedOrderExcluded(t *testing.T) {
 }
 
 func TestGroupMoves_ContainerExcluded(t *testing.T) {
-	oldParent := &treesitter.ASTNode{Type: "block"}
-	newParent := &treesitter.ASTNode{Type: "block"}
+	srcBytes := []byte("package main\nfunc f() {\n\t{\n\t\tstmtA()\n\t\tstmtB()\n\t}\n}\n")
+	dstBytes := []byte("package main\nfunc g() {\n\tstmtA()\n\tstmtB()\n}\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	// outer container enclosing inner1 and inner2
-	outer := &treesitter.ASTNode{Type: "statement_list"}
-	setParentAndRange(outer, oldParent, 10, 80)
-
-	inner1 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(inner1, oldParent, 15, 30)
-
-	inner2 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(inner2, oldParent, 40, 60)
+	outer, err := testutil.FindNodeByText(srcTree, srcBytes, "{\n\t\tstmtA()\n\t\tstmtB()\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find outer: %v", err)
+	}
+	inner1, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find inner1: %v", err)
+	}
+	inner2, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find inner2: %v", err)
+	}
+	newParent, err := testutil.FindNodeByText(dstTree, dstBytes, "{\n\tstmtA()\n\tstmtB()\n}", "block")
+	if err != nil {
+		t.Fatalf("find newParent: %v", err)
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: outer, Parent: newParent})
@@ -146,14 +191,29 @@ func TestGroupMoves_ContainerExcluded(t *testing.T) {
 }
 
 func TestGroupMoves_UnresolvedDstNoFalseSwap(t *testing.T) {
-	oldParent := &treesitter.ASTNode{Type: "block"}
-	newParent := &treesitter.ASTNode{Type: "block"}
+	srcBytes := []byte("package main\nfunc f() {\n\tstmtA()\n\tstmtB()\n}\n")
+	dstBytes := []byte("package main\nfunc g() {\n\tstmtA()\n\tstmtB()\n}\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	n1 := &treesitter.ASTNode{Type: "identifier"}
-	setParentAndRange(n1, oldParent, 10, 20)
-
-	n2 := &treesitter.ASTNode{Type: "identifier"}
-	setParentAndRange(n2, oldParent, 30, 40)
+	n1, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtA()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmtA: %v", err)
+	}
+	n2, err := testutil.FindNodeByText(srcTree, srcBytes, "stmtB()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmtB: %v", err)
+	}
+	newParent, err := testutil.FindNodeByText(dstTree, dstBytes, "{\n\tstmtA()\n\tstmtB()\n}", "block")
+	if err != nil {
+		t.Fatalf("find newParent: %v", err)
+	}
 
 	// Neither has DestNode or ms; offsets default to 0 and must not falsely trigger swap detection
 	es := actions.NewEditScript()
@@ -168,17 +228,33 @@ func TestGroupMoves_UnresolvedDstNoFalseSwap(t *testing.T) {
 }
 
 func TestGroupMovesPropagateToBlock(t *testing.T) {
-	oldFuncBody := &treesitter.ASTNode{Type: "block"}
-	newFuncBody := &treesitter.ASTNode{Type: "block"}
+	srcBytes := []byte("package main\nfunc f() {\n\tif true {\n\t\tfoo()\n\t}\n\tbar()\n}\n")
+	dstBytes := []byte("package main\nfunc g() {\n}\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	stmt := &treesitter.ASTNode{Type: "if_statement", Language: "go"}
-	setParentAndRange(stmt, oldFuncBody, 10, 50)
-
-	stmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "go"}
-	setParentAndRange(stmt2, oldFuncBody, 51, 60)
-
-	stmtBlock := &treesitter.ASTNode{Type: "block", Language: "go"}
-	setParentAndRange(stmtBlock, stmt, 20, 50)
+	stmt, err := testutil.FindNodeByText(srcTree, srcBytes, "if true {\n\t\tfoo()\n\t}", "if_statement")
+	if err != nil {
+		t.Fatalf("find if: %v", err)
+	}
+	stmt2, err := testutil.FindNodeByText(srcTree, srcBytes, "bar()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find bar: %v", err)
+	}
+	stmtBlock, err := testutil.FindNodeByText(srcTree, srcBytes, "{\n\t\tfoo()\n\t}", "block")
+	if err != nil {
+		t.Fatalf("find if block: %v", err)
+	}
+	newFuncBody, err := testutil.FindNodeByText(dstTree, dstBytes, "{\n}", "block")
+	if err != nil {
+		t.Fatalf("find new block: %v", err)
+	}
 
 	es := actions.NewEditScript()
 	// stmt and stmt2 share funcBody as parent -> get grouped into group-1
@@ -252,102 +328,106 @@ func bar() {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
-		// Outer package and function declarations shouldn't have any edit actions.
+		// Whole-Snippet Verification:
+		// 1. Enclosing context declarations (foo, bar) map in place with no edit actions.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func foo()", "func foo()", "function_declaration",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func bar()", "func bar()", "function_declaration",
+		)
 		for _, a := range normalized.Actions() {
 			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
 
-		// println("prologue") didn't move, so it maps in place.
-		var srcPrologue, dstPrologue *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "println") {
-				srcPrologue = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "println") {
-				dstPrologue = n
-				break
-			}
-		}
-		if srcPrologue == nil || dstPrologue == nil {
-			t.Fatal("failed to find println() call nodes")
-		}
-		if matchResult.Mappings.Src()[srcPrologue] != dstPrologue {
-			t.Errorf("expected stationary println() to map in place, got %v", matchResult.Mappings.Src()[srcPrologue])
-		}
-
-		// Argument literal "prologue" maps in place.
-		var srcArg, dstArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(src[n.StartByte:n.EndByte]) == `"prologue"` {
-				srcArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(dst[n.StartByte:n.EndByte]) == `"prologue"` {
-				dstArg = n
-				break
-			}
-		}
-		if srcArg == nil || dstArg == nil {
-			t.Fatal("failed to find 'prologue' literal nodes")
-		}
-		if matchResult.Mappings.Src()[srcArg] != dstArg {
-			t.Errorf("expected literal 'prologue' to map in place, got %v", matchResult.Mappings.Src()[srcArg])
-		}
+		// 2. Stationary statements and literals map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			`println("prologue")`, `println("prologue")`, "call_expression",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			`"prologue"`, `"prologue"`, "interpreted_string_literal",
+		)
 
 		// Statements that moved in order stay in group-1; only hoisted stmtD is ungrouped.
-		groupMap := make(map[string]string)
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
-				text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
-				groupMap[text] = a.GroupID
+		findMoveGroupID := func(node *treesitter.ASTNode) (string, bool) {
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move && a.Node != nil && (a.Node.ID == node.ID || a.Node.Contains(node)) {
+					return a.GroupID, true
+				}
 			}
+			return "", false
 		}
 
 		for _, stmt := range []string{"stmtA()", "stmtB()", "stmtC()"} {
-			if gid, ok := groupMap[stmt]; !ok || gid != "group-1" {
+			node, err := testutil.FindNodeByText(srcAST, src, stmt)
+			if err != nil {
+				t.Fatalf("find node for %s: %v", stmt, err)
+			}
+			if gid, ok := findMoveGroupID(node); !ok || gid != "group-1" {
 				t.Errorf("expected in-order statement %s to have GroupID group-1, got %q", stmt, gid)
 			}
 		}
 
-		if gid, ok := groupMap["stmtD()"]; !ok || gid != "" {
+		nodeD, err := testutil.FindNodeByText(srcAST, src, "stmtD()")
+		if err != nil {
+			t.Fatalf("find node for stmtD(): %v", err)
+		}
+		if gid, ok := findMoveGroupID(nodeD); !ok || gid != "" {
 			t.Errorf("expected out-of-order statement stmtD() to have empty GroupID, got %q", gid)
 		}
 	})
 }
 
 func TestGroupMoves_LIS_SunkStatementUngrouped(t *testing.T) {
-	oldParent := &treesitter.ASTNode{Type: "block"}
-	newParent := &treesitter.ASTNode{Type: "block"}
-
 	// Statement 1 was moved to the end:
-	// src: 1(10..20), 2(30..40), 3(50..60)
-	// dst: 2(10..20), 3(30..40), 1(50..60)
-	src1 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(src1, oldParent, 10, 20)
-	dst1 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(dst1, newParent, 50, 60)
+	// src: stmt1(), stmt2(), stmt3()
+	// dst: stmt2(), stmt3(), stmt1()
+	srcBytes := []byte("package main\nfunc f() {\n\tstmt1()\n\tstmt2()\n\tstmt3()\n}\n")
+	dstBytes := []byte("package main\nfunc g() {\n\tstmt2()\n\tstmt3()\n\tstmt1()\n}\n")
+	srcTree, err := treesitter.Parse(srcBytes, "src.go")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dstBytes, "dst.go")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	src2 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(src2, oldParent, 30, 40)
-	dst2 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(dst2, newParent, 10, 20)
-
-	src3 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(src3, oldParent, 50, 60)
-	dst3 := &treesitter.ASTNode{Type: "expression_statement"}
-	setParentAndRange(dst3, newParent, 30, 40)
+	src1, err := testutil.FindNodeByText(srcTree, srcBytes, "stmt1()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find src1: %v", err)
+	}
+	src2, err := testutil.FindNodeByText(srcTree, srcBytes, "stmt2()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find src2: %v", err)
+	}
+	src3, err := testutil.FindNodeByText(srcTree, srcBytes, "stmt3()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find src3: %v", err)
+	}
+	dst1, err := testutil.FindNodeByText(dstTree, dstBytes, "stmt1()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dst1: %v", err)
+	}
+	dst2, err := testutil.FindNodeByText(dstTree, dstBytes, "stmt2()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dst2: %v", err)
+	}
+	dst3, err := testutil.FindNodeByText(dstTree, dstBytes, "stmt3()", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dst3: %v", err)
+	}
+	dstBlock, err := testutil.FindNodeByText(dstTree, dstBytes, "{\n\tstmt2()\n\tstmt3()\n\tstmt1()\n}", "block")
+	if err != nil {
+		t.Fatalf("find dstBlock: %v", err)
+	}
 
 	es := actions.NewEditScript()
-	es.Add(actions.Action{Type: actions.Move, Node: src1, DestNode: dst1, Parent: newParent})
-	es.Add(actions.Action{Type: actions.Move, Node: src2, DestNode: dst2, Parent: newParent})
-	es.Add(actions.Action{Type: actions.Move, Node: src3, DestNode: dst3, Parent: newParent})
+	es.Add(actions.Action{Type: actions.Move, Node: src1, DestNode: dst1, Parent: dstBlock})
+	es.Add(actions.Action{Type: actions.Move, Node: src2, DestNode: dst2, Parent: dstBlock})
+	es.Add(actions.Action{Type: actions.Move, Node: src3, DestNode: dst3, Parent: dstBlock})
 
 	grouped := GroupMoves(es, nil)
 	acts := grouped.Actions()
@@ -363,19 +443,24 @@ func TestGroupMoves_LIS_SunkStatementUngrouped(t *testing.T) {
 }
 
 func TestGroupingParent_DelimiterlessBlocks(t *testing.T) {
-	root := &treesitter.ASTNode{Type: "module", Language: "python"}
-	fn := &treesitter.ASTNode{Type: "function_definition", Language: "python"}
-	setParentAndRange(fn, root, 0, 100)
+	code := []byte("def f():\n    x = 1\n    y = 2\n")
+	tree, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("parse python: %v", err)
+	}
 
-	// In Python, block has no delimiters and shares StartRow with its first statement
-	block := &treesitter.ASTNode{Type: "block", Language: "python", StartRow: 1, EndRow: 2}
-	setParentAndRange(block, fn, 20, 100)
-
-	stmt1 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 1, EndRow: 1}
-	setParentAndRange(stmt1, block, 24, 50)
-
-	stmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 2, EndRow: 2}
-	setParentAndRange(stmt2, block, 54, 80)
+	stmt1, err := testutil.FindNodeByText(tree, code, "x = 1", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmt1: %v", err)
+	}
+	stmt2, err := testutil.FindNodeByText(tree, code, "y = 2", "expression_statement")
+	if err != nil {
+		t.Fatalf("find stmt2: %v", err)
+	}
+	block, err := testutil.FindNodeByText(tree, code, "x = 1\n    y = 2", "block")
+	if err != nil {
+		t.Fatalf("find block: %v", err)
+	}
 
 	p1 := groupingParent(stmt1)
 	p2 := groupingParent(stmt2)
@@ -389,30 +474,37 @@ func TestGroupingParent_DelimiterlessBlocks(t *testing.T) {
 }
 
 func TestGrouping_SingleLineCompoundStatements(t *testing.T) {
-	// Source tree: if cond: a = 1; b = 2 (all on row 0)
-	srcRoot := &treesitter.ASTNode{Type: "module", Language: "python", StartRow: 0, EndRow: 0}
-	srcIf := &treesitter.ASTNode{Type: "if_statement", Language: "python", StartRow: 0, EndRow: 0}
-	setParentAndRange(srcIf, srcRoot, 0, 30)
+	src := []byte("if cond: a = 1; b = 2\n")
+	dst := []byte("def f():\n    a = 1\n    b = 2\n")
+	srcTree, err := treesitter.Parse(src, "src.py")
+	if err != nil {
+		t.Fatalf("parse src: %v", err)
+	}
+	dstTree, err := treesitter.Parse(dst, "dst.py")
+	if err != nil {
+		t.Fatalf("parse dst: %v", err)
+	}
 
-	srcBlock := &treesitter.ASTNode{Type: "block", Language: "python", StartRow: 0, EndRow: 0}
-	setParentAndRange(srcBlock, srcIf, 9, 30)
-
-	srcStmt1 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 0, EndRow: 0}
-	setParentAndRange(srcStmt1, srcBlock, 9, 18)
-
-	srcStmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 0, EndRow: 0}
-	setParentAndRange(srcStmt2, srcBlock, 20, 29)
-
-	// Destination tree: target block
-	dstRoot := &treesitter.ASTNode{Type: "module", Language: "python", StartRow: 0, EndRow: 10}
-	dstBlock := &treesitter.ASTNode{Type: "block", Language: "python", StartRow: 1, EndRow: 3}
-	setParentAndRange(dstBlock, dstRoot, 10, 80)
-
-	dstStmt1 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 1, EndRow: 1}
-	setParentAndRange(dstStmt1, dstBlock, 15, 24)
-
-	dstStmt2 := &treesitter.ASTNode{Type: "expression_statement", Language: "python", StartRow: 2, EndRow: 2}
-	setParentAndRange(dstStmt2, dstBlock, 29, 38)
+	srcStmt1, err := testutil.FindNodeByText(srcTree, src, "a = 1", "expression_statement")
+	if err != nil {
+		t.Fatalf("find srcStmt1: %v", err)
+	}
+	srcStmt2, err := testutil.FindNodeByText(srcTree, src, "b = 2", "expression_statement")
+	if err != nil {
+		t.Fatalf("find srcStmt2: %v", err)
+	}
+	dstStmt1, err := testutil.FindNodeByText(dstTree, dst, "a = 1", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dstStmt1: %v", err)
+	}
+	dstStmt2, err := testutil.FindNodeByText(dstTree, dst, "b = 2", "expression_statement")
+	if err != nil {
+		t.Fatalf("find dstStmt2: %v", err)
+	}
+	dstBlock, err := testutil.FindNodeByText(dstTree, dst, "a = 1\n    b = 2", "block")
+	if err != nil {
+		t.Fatalf("find dstBlock: %v", err)
+	}
 
 	es := actions.NewEditScript()
 	es.Add(actions.Action{Type: actions.Move, Node: srcStmt1, DestNode: dstStmt1, Parent: dstBlock})
@@ -472,6 +564,12 @@ def dest_fn():
 
 	// Whole-Snippet Verification:
 	// 1. Enclosing context declarations (source_fn, dest_fn) map in place with no edit actions.
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		"def source_fn():", "def source_fn():", "function_definition",
+	)
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		"def dest_fn():", "def dest_fn():", "function_definition",
+	)
 	for _, a := range normalized.Actions() {
 		if a.Node != nil && r.IsContainerDeclaration(a.Node.Type) {
 			t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
@@ -479,81 +577,39 @@ def dest_fn():
 	}
 
 	// 2. Preceding stationary statement: print("prologue") maps in place.
-	var srcPrologue, dstPrologue *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prologue") {
-			srcPrologue = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prologue") {
-			dstPrologue = n
-			break
-		}
-	}
-	if srcPrologue == nil || dstPrologue == nil {
-		t.Fatal("failed to find prologue call nodes")
-	}
-	if matchResult.Mappings.Src()[srcPrologue] != dstPrologue {
-		t.Errorf("expected prologue call to map in place, got %v", matchResult.Mappings.Src()[srcPrologue])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`print("prologue")`, `print("prologue")`, "call",
+	)
 
 	// 3. Succeeding stationary statement: print("epilogue") maps in place.
-	var srcEpilogue, dstEpilogue *treesitter.ASTNode
-	for _, n := range srcAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "epilogue") {
-			srcEpilogue = n
-			break
-		}
-	}
-	for _, n := range dstAST.Descendants() {
-		if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "epilogue") {
-			dstEpilogue = n
-			break
-		}
-	}
-	if srcEpilogue == nil || dstEpilogue == nil {
-		t.Fatal("failed to find epilogue call nodes")
-	}
-	if matchResult.Mappings.Src()[srcEpilogue] != dstEpilogue {
-		t.Errorf("expected epilogue call to map in place, got %v", matchResult.Mappings.Src()[srcEpilogue])
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`print("epilogue")`, `print("epilogue")`, "call",
+	)
 
 	// 4. Stationary argument literals ("prologue", "epilogue") map in place.
-	for _, argName := range []string{`"prologue"`, `"epilogue"`} {
-		var sArg, dArg *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(src[n.StartByte:n.EndByte]) == argName {
-				sArg = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsFlattened(n.Type) && string(dst[n.StartByte:n.EndByte]) == argName {
-				dArg = n
-				break
-			}
-		}
-		if sArg == nil || dArg == nil {
-			t.Fatalf("failed to find literal %s", argName)
-		}
-		if matchResult.Mappings.Src()[sArg] != dArg {
-			t.Errorf("expected literal %s to map in place, got %v", argName, matchResult.Mappings.Src()[sArg])
-		}
-	}
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`"prologue"`, `"prologue"`, "string",
+	)
+	testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+		`"epilogue"`, `"epilogue"`, "string",
+	)
 
 	// 5. Target statements moved_one() and moved_two() move together and receive identical GroupID "group-1".
-	groupMap := make(map[string]string)
-	for _, a := range normalized.Actions() {
-		if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
-			text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
-			groupMap[text] = a.GroupID
+	findMoveGroupID := func(node *treesitter.ASTNode) (string, bool) {
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil && (a.Node.ID == node.ID || a.Node.Contains(node)) {
+				return a.GroupID, true
+			}
 		}
+		return "", false
 	}
 
 	for _, stmt := range []string{"moved_one()", "moved_two()"} {
-		if gid, ok := groupMap[stmt]; !ok || gid != "group-1" {
+		node, err := testutil.FindNodeByText(srcAST, src, stmt)
+		if err != nil {
+			t.Fatalf("find node for %s: %v", stmt, err)
+		}
+		if gid, ok := findMoveGroupID(node); !ok || gid != "group-1" {
 			t.Errorf("expected co-moving Python statement %s to have GroupID group-1, got %q", stmt, gid)
 		}
 	}
@@ -610,45 +666,44 @@ func process() error {
 		script := actions.GenerateEditScript(srcAST, dstAST, matchResult.Mappings)
 		normalized := Run(script, matchResult.Mappings, srcAST, dstAST)
 
+		// Whole-Snippet Verification:
+		// 1. Enclosing context declaration maps in place with no edit actions.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			"func process() error", "func process() error", "function_declaration",
+		)
 		for _, a := range normalized.Actions() {
 			if a.Node != nil && r.IsDeclaration(a.Node.Type) {
 				t.Errorf("expected context declaration %s to have no edit actions, got %v", a.Node.Type, a)
 			}
 		}
 
-		var srcPrepare, dstPrepare *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), "prepare") {
-				srcPrepare = n
-				break
+		// 2. Preceding stationary statement: prepare() maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, matchResult.Mappings.Src(),
+			`prepare()`, `prepare()`, "call_expression",
+		)
+
+		findMoveGroupID := func(node *treesitter.ASTNode) (string, bool) {
+			for _, a := range normalized.Actions() {
+				if a.Type == actions.Move && a.Node != nil && (a.Node.ID == node.ID || a.Node.Contains(node)) {
+					return a.GroupID, true
+				}
 			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), "prepare") {
-				dstPrepare = n
-				break
-			}
-		}
-		if srcPrepare == nil || dstPrepare == nil {
-			t.Fatal("failed to find prepare() call nodes")
-		}
-		if matchResult.Mappings.Src()[srcPrepare] != dstPrepare {
-			t.Errorf("expected stationary prepare() to map in place, got %v", matchResult.Mappings.Src()[srcPrepare])
+			return "", false
 		}
 
-		groupMap := make(map[string]string)
-		for _, a := range normalized.Actions() {
-			if a.Type == actions.Move && a.Node != nil && r.IsStatement(a.Node.Type) {
-				text := strings.TrimSpace(string(src[a.Node.StartByte:a.Node.EndByte]))
-				groupMap[text] = a.GroupID
-			}
+		ifNode, err := testutil.FindNodeByText(srcAST, src, "if count > limit {\n\t\treturn flush()\n\t}", "if_statement")
+		if err != nil {
+			t.Fatalf("find if statement: %v", err)
+		}
+		if gid, ok := findMoveGroupID(ifNode); !ok || gid == "" {
+			t.Errorf("expected dominant if statement to have non-empty GroupID, got %q", gid)
 		}
 
-		ifText := "if count > limit {\n\t\treturn flush()\n\t}"
-		if gid, ok := groupMap[ifText]; !ok || gid == "" {
-			t.Errorf("expected dominant if statement to have non-empty GroupID, got %q (all groups: %+v)", gid, groupMap)
+		countNode, err := testutil.FindNodeByText(srcAST, src, "count++", "inc_statement")
+		if err != nil {
+			t.Fatalf("find count++: %v", err)
 		}
-		if gid, ok := groupMap["count++"]; !ok || gid != "" {
+		if gid, ok := findMoveGroupID(countNode); !ok || gid != "" {
 			t.Errorf("expected reordered smaller statement count++ to have empty GroupID, got %q", gid)
 		}
 	})

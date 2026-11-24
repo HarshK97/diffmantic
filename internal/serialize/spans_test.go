@@ -9,6 +9,7 @@ import (
 	"github.com/HarshK97/diffmantic/internal/comments"
 	"github.com/HarshK97/diffmantic/internal/engine"
 	"github.com/HarshK97/diffmantic/internal/postprocess"
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
@@ -39,15 +40,7 @@ func TestBuildHighlightSpansGapMerging(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(leftSpans) != 1 {
-		t.Fatalf("expected 1 merged highlight span, got %d", len(leftSpans))
-	}
-
-	span := leftSpans[0]
-	if span.Line != 0 || span.StartCol != 4 || span.EndCol != 20 || span.Action != "move" {
-		t.Errorf("expected merged span line=0 cols 4..20 action='move', got line=%d cols %d..%d action=%s",
-			span.Line, span.StartCol, span.EndCol, span.Action)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "    <mov>for cookie in cj</mov>:\n")
 }
 
 func TestBuildHighlightSpansInterleavedActions(t *testing.T) {
@@ -80,19 +73,7 @@ func TestBuildHighlightSpansInterleavedActions(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	var moveSpans []HighlightSpan
-	for _, s := range leftSpans {
-		if s.Action == "move" {
-			moveSpans = append(moveSpans, s)
-		}
-	}
-
-	if len(moveSpans) != 1 {
-		t.Fatalf("expected 1 merged move span, got %d", len(moveSpans))
-	}
-	if moveSpans[0].StartCol != 4 || moveSpans[0].EndCol != 20 {
-		t.Errorf("expected merged move span cols 4..20, got %d..%d", moveSpans[0].StartCol, moveSpans[0].EndCol)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "<del>    </del><mov>for cookie in cj</mov><del>:</del>\n")
 }
 
 func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
@@ -113,12 +94,7 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(leftSpans) != 1 {
-		t.Fatalf("expected 1 coalesced delete span (same action merges), got %d: %+v", len(leftSpans), leftSpans)
-	}
-	if leftSpans[0].StartCol != 0 || leftSpans[0].EndCol != 18 {
-		t.Errorf("expected coalesced span [0,18), got [%d,%d)", leftSpans[0].StartCol, leftSpans[0].EndCol)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "<del>def hello_world():</del>\n")
 
 	// Also test when inner starts at same start col (e.g. 0..3 and 0..18)
 	// Partitioner: inner wins [0,3), outer wins [3,18), same action coalesces → 1 span
@@ -134,12 +110,7 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	}
 
 	coalignedSpans := BuildHighlightSpans(fileBytes, actionsCoaligned, "left")
-	if len(coalignedSpans) != 1 {
-		t.Fatalf("expected 1 coalesced delete span for coaligned start, got %d: %+v", len(coalignedSpans), coalignedSpans)
-	}
-	if coalignedSpans[0].StartCol != 0 || coalignedSpans[0].EndCol != 18 {
-		t.Errorf("expected coalesced span [0,18), got [%d,%d)", coalignedSpans[0].StartCol, coalignedSpans[0].EndCol)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(coalignedSpans), "<del>def hello_world():</del>\n")
 }
 
 func TestBuildHighlightSpansRightSideMoveNodeLen(t *testing.T) {
@@ -232,101 +203,70 @@ end
 		}
 
 		r := rules.Get("lua")
-		var srcFunc, dstFunc, dstClosure *treesitter.ASTNode
-		for _, n := range srcAST.Descendants() {
-			if r.IsContainerDeclaration(n.Type) {
-				srcFunc = n
-				break
-			}
-		}
-		for _, n := range dstAST.Descendants() {
-			if r.IsContainerDeclaration(n.Type) {
-				dstFunc = n
-				break
-			}
-		}
-		if srcFunc == nil || dstFunc == nil || mr.Mappings.Src()[srcFunc] != dstFunc {
-			t.Errorf("processItems mapping = %v, want destination processItems", mr.Mappings.Src()[srcFunc])
-		}
-		for _, n := range dstFunc.Descendants() {
-			if r.IsClosure(n.Type) {
-				dstClosure = n
-				break
-			}
-		}
-		if dstClosure == nil {
-			t.Fatal("ensureMetrics closure not found")
-		}
-		var srcParams, dstParams *treesitter.ASTNode
-		for _, n := range srcFunc.Children {
-			if r.IsDelimitedContainer(n.Type) {
-				srcParams = n
-			}
-		}
-		for _, n := range dstFunc.Children {
-			if r.IsDelimitedContainer(n.Type) {
-				dstParams = n
-			}
-		}
-		if srcParams == nil || dstParams == nil {
-			t.Fatalf("parameter lists not found: src=%v dst=%v", srcParams, dstParams)
-		}
-		if got := mr.Mappings.Src()[srcParams]; got != dstParams {
-			t.Errorf("parameter list mapping = %v, want destination parameters", got)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"processItems", "processItems", "function_declaration",
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "(items)", Type: "parameters", Occurrence: 1},
+			testutil.TextQuery{Text: "(items)", Type: "parameters", Occurrence: 1},
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"precedingInit()", "precedingInit()", "function_call",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"succeedingDone", "succeedingDone", "function_call",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"currTotal = total(items)", "currTotal = total(items)", "assignment_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"currDouble = twice(currTotal)", "currDouble = twice(currTotal)", "assignment_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"currAffinity = score(currDouble)", "currAffinity = score(currDouble)", "assignment_statement",
+		)
+
+		dstClosure, err := testutil.FindNodeByText(dstAST, dst, "function()", "function_definition")
+		if err != nil {
+			t.Fatalf("ensureMetrics closure not found: %v", err)
 		}
 
-		findCall := func(root *treesitter.ASTNode, source []byte, name string) *treesitter.ASTNode {
-			for _, n := range root.Descendants() {
-				if r.IsCall(n.Type) && strings.HasPrefix(string(source[n.StartByte:n.EndByte]), name+"(") {
-					return n
-				}
-			}
-			return nil
-		}
-		for _, name := range []string{"precedingInit", "succeedingDone"} {
-			srcCall := findCall(srcFunc, src, name)
-			dstCall := findCall(dstFunc, dst, name)
-			if srcCall == nil || dstCall == nil || mr.Mappings.Src()[srcCall] != dstCall {
-				t.Errorf("%s mapping = %v, want in-place destination call", name, mr.Mappings.Src()[srcCall])
-			}
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(env.LeftHighlights), `local function processItems(items)
+    precedingInit()
+    local <mov>currTotal = total(items)</mov>
+    local <mov>currDouble = twice(currTotal)</mov>
+    local <mov>currAffinity = score(currDouble)</mov>
+    succeedingDone(currTotal, currDouble, currAffinity)
+end
+`)
 
-		for _, name := range []string{"currTotal", "currDouble", "currAffinity"} {
-			var srcAssign, dstAssign *treesitter.ASTNode
-			for _, n := range srcFunc.Descendants() {
-				if r.IsAssignment(n.Type) && strings.Contains(string(src[n.StartByte:n.EndByte]), name) {
-					srcAssign = n
-					break
-				}
-			}
-			for _, n := range dstClosure.Descendants() {
-				if r.IsAssignment(n.Type) && strings.Contains(string(dst[n.StartByte:n.EndByte]), name) {
-					dstAssign = n
-					break
-				}
-			}
-			if srcAssign == nil || dstAssign == nil || mr.Mappings.Src()[srcAssign] != dstAssign {
-				t.Errorf("%s mapping = %v, want assignment inside ensureMetrics", name, mr.Mappings.Src()[srcAssign])
-			}
-		}
+		testutil.AssertTagged(t, string(dst), toTestSpans(env.RightHighlights), `local function processItems(items)
+    precedingInit()
+    local <ins>currTotal = 0</ins>
+    local <ins>currDouble = 0</ins>
+    local <ins>currAffinity = 0</ins>
 
-		dstLines := strings.Split(string(dst), "\n")
-		for _, span := range env.RightHighlights {
-			if span.Action != "move" || span.Line < 0 || span.Line >= len(dstLines) {
-				continue
-			}
-			line := dstLines[span.Line]
-			if span.StartCol < 0 || span.EndCol > len(line) || span.StartCol >= span.EndCol {
-				t.Fatalf("invalid move span: %+v", span)
-			}
-			text := line[span.StartCol:span.EndCol]
-			if strings.TrimSpace(text) == "" {
-				t.Errorf("move span contains only indentation on line %d: %+v", span.Line+1, span)
-			}
-			if strings.TrimSpace(line) == "end" && span.StartCol < len(line)-len(strings.TrimLeft(line, " \t")) {
-				t.Errorf("move span colors indentation before inserted end on line %d: %+v", span.Line+1, span)
-			}
-		}
+    <ins>step01()</ins>
+    <ins>step02()</ins>
+    <ins>step03()</ins>
+    <ins>step04()</ins>
+    <ins>step05()</ins>
+    <ins>step06()</ins>
+    <ins>step07()</ins>
+    <ins>step08()</ins>
+    <ins>step09()</ins>
+    <ins>step10()</ins>
+    <ins>step11()</ins>
+
+    <ins>local ensureMetrics = function()</ins>
+<ins>        </ins><mov>currTotal = total(items)</mov>
+<ins>        </ins><mov>currDouble = twice(currTotal)</mov>
+<ins>        </ins><mov>currAffinity = score(currDouble)</mov>
+<ins>    end</ins>
+    <ins>ensureMetrics()</ins>
+    succeedingDone(currTotal, currDouble, currAffinity)
+end
+`)
 		var closingEnd *treesitter.ASTNode
 		for _, n := range dstClosure.Children {
 			if r.IsKeyword(n.Type, n.Label) && n.Label == "end" {
@@ -356,12 +296,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 9 || spans[0].EndCol != 13 {
-			t.Errorf("expected span cols 9..13 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "func f(x <ins>gin.</ins>HandlerFunc) {}\n")
 	})
 
 	t.Run("absorbs leading dot in member access", func(t *testing.T) {
@@ -375,12 +310,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 8 || spans[0].EndCol != 14 {
-			t.Errorf("expected span cols 8..14 covering '.field', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "x := obj<ins>.field</ins>\n")
 	})
 
 	t.Run("absorbs trailing scope resolution ::", func(t *testing.T) {
@@ -394,12 +324,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 0 || spans[0].EndCol != 5 {
-			t.Errorf("expected span cols 0..5 covering 'std::', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "<ins>std::</ins>vector<int> v;\n")
 	})
 
 	t.Run("does not absorb variadic ellipsis ...", func(t *testing.T) {
@@ -413,13 +338,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		// Don't absorb leading "...", but still absorb trailing "." -> "gin." (cols 15..19)
-		if spans[0].StartCol != 15 || spans[0].EndCol != 19 {
-			t.Errorf("expected span cols 15..19 covering 'gin.', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "func f(args ...<ins>gin.</ins>HandlerFunc) {}\n")
 	})
 
 	t.Run("absorbs leading comma for appended argument", func(t *testing.T) {
@@ -433,12 +352,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 8 || spans[0].EndCol != 11 {
-			t.Errorf("expected span cols 8..11 covering ', c', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(a, b<ins>, c</ins>)\n")
 	})
 
 	t.Run("absorbs trailing comma for prepended argument", func(t *testing.T) {
@@ -452,12 +366,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span cols 4..6 covering 'a,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(<ins>a,</ins> b)\n")
 	})
 
 	t.Run("absorbs leading comma for deleted intermediate argument", func(t *testing.T) {
@@ -472,12 +381,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "left")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 7 || spans[0].EndCol != 9 {
-			t.Errorf("expected span cols 7..9 covering 'b,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(a, <del>b,</del> c)\n")
 	})
 
 	t.Run("absorbs multiline trailing comma", func(t *testing.T) {
@@ -493,13 +397,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].Line != 2 || spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span line 2 cols 4..6 covering 'b,', got line %d cols %d..%d",
-				spans[0].Line, spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(\n    a,\n    <ins>b,</ins>\n)\n")
 	})
 
 	t.Run("absorbs leading comma in array literal", func(t *testing.T) {
@@ -513,12 +411,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 9 || spans[0].EndCol != 12 {
-			t.Errorf("expected span cols 9..12 covering ', 3', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "x = [1, 2<ins>, 3</ins>]\n")
 	})
 
 	t.Run("absorbs trailing comma for moved elements on left and right", func(t *testing.T) {
@@ -538,26 +431,10 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		}
 
 		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
-		if len(leftSpans) != 2 {
-			t.Fatalf("expected 2 left spans (move element + delete comma), got %d: %+v", len(leftSpans), leftSpans)
-		}
-		if leftSpans[0].Line != 1 || leftSpans[0].StartCol != 4 || leftSpans[0].EndCol != 15 || leftSpans[0].Action != "move" {
-			t.Errorf("expected left span 0 covering '{name: \"a\"}' as move, got %+v", leftSpans[0])
-		}
-		if leftSpans[1].Line != 1 || leftSpans[1].StartCol != 15 || leftSpans[1].EndCol != 16 || leftSpans[1].Action != "delete" {
-			t.Errorf("expected left span 1 covering ',' as delete, got %+v", leftSpans[1])
-		}
+		testutil.AssertTagged(t, string(leftSrc), toTestSpans(leftSpans), "vals := []T{\n    <mov>{name: \"a\"}</mov><del>,</del>\n    {name: \"b\"},\n}\n")
 
 		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
-		if len(rightSpans) != 2 {
-			t.Fatalf("expected 2 right spans (move element + insert comma), got %d: %+v", len(rightSpans), rightSpans)
-		}
-		if rightSpans[0].Line != 2 || rightSpans[0].StartCol != 4 || rightSpans[0].EndCol != 15 || rightSpans[0].Action != "move" {
-			t.Errorf("expected right span 0 covering '{name: \"a\"}' as move, got %+v", rightSpans[0])
-		}
-		if rightSpans[1].Line != 2 || rightSpans[1].StartCol != 15 || rightSpans[1].EndCol != 16 || rightSpans[1].Action != "insert" {
-			t.Errorf("expected right span 1 covering ',' as insert, got %+v", rightSpans[1])
-		}
+		testutil.AssertTagged(t, string(rightSrc), toTestSpans(rightSpans), "vals := []T{\n    {name: \"b\"},\n    <mov>{name: \"a\"}</mov><ins>,</ins>\n}\n")
 	})
 
 	t.Run("absorbs leading comma for moved last element on left and right", func(t *testing.T) {
@@ -576,26 +453,10 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 		}
 
 		leftSpans := BuildHighlightSpans(leftSrc, actions, "left")
-		if len(leftSpans) != 2 {
-			t.Fatalf("expected 2 left spans (delete leading comma + move element), got %d: %+v", len(leftSpans), leftSpans)
-		}
-		if leftSpans[0].Line != 0 || leftSpans[0].StartCol != 5 || leftSpans[0].EndCol != 6 || leftSpans[0].Action != "delete" {
-			t.Errorf("expected left span 0 covering ',' as delete, got %+v", leftSpans[0])
-		}
-		if leftSpans[1].Line != 0 || leftSpans[1].StartCol != 7 || leftSpans[1].EndCol != 8 || leftSpans[1].Action != "move" {
-			t.Errorf("expected left span 1 covering 'b' as move, got %+v", leftSpans[1])
-		}
+		testutil.AssertTagged(t, string(leftSrc), toTestSpans(leftSpans), "foo(a<del>,</del> <mov>b</mov>)")
 
 		rightSpans := BuildHighlightSpans(rightSrc, actions, "right")
-		if len(rightSpans) != 2 {
-			t.Fatalf("expected 2 right spans (insert leading comma + move element), got %d: %+v", len(rightSpans), rightSpans)
-		}
-		if rightSpans[0].Line != 0 || rightSpans[0].StartCol != 5 || rightSpans[0].EndCol != 6 || rightSpans[0].Action != "insert" {
-			t.Errorf("expected right span 0 covering ',' as insert, got %+v", rightSpans[0])
-		}
-		if rightSpans[1].Line != 0 || rightSpans[1].StartCol != 7 || rightSpans[1].EndCol != 8 || rightSpans[1].Action != "move" {
-			t.Errorf("expected right span 1 covering 'b' as move, got %+v", rightSpans[1])
-		}
+		testutil.AssertTagged(t, string(rightSrc), toTestSpans(rightSpans), "bar(x<ins>,</ins> <mov>b</mov>)")
 	})
 
 	t.Run("does not absorb commas for non-delimited containers", func(t *testing.T) {
@@ -608,12 +469,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 4 || spans[0].EndCol != 7 {
-			t.Errorf("expected span cols 4..7 covering 'foo', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "block {\n    <ins>foo</ins>,\n}\n")
 	})
 
 	t.Run("bounds safety when parent extends beyond file length", func(t *testing.T) {
@@ -627,12 +483,7 @@ func TestAbsorbConnectorDelimiters(t *testing.T) {
 			},
 		}
 		spans := BuildHighlightSpans(src, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span cols 4..6 covering 'a,', got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(src), toTestSpans(spans), "foo(<ins>a,</ins> b)")
 	})
 }
 
@@ -653,16 +504,7 @@ func TestBuildHighlightSpansWithDelimiterSpan(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, []Action{act}, "left", delims...)
-	if len(leftSpans) != 2 {
-		t.Fatalf("expected 2 delete spans (header and closing delimiter), got %d: %+v", len(leftSpans), leftSpans)
-	}
-
-	if leftSpans[0].Line != 0 || leftSpans[0].Action != "delete" {
-		t.Errorf("expected header span on line 0, got %+v", leftSpans[0])
-	}
-	if leftSpans[1].Line != 2 || leftSpans[1].StartCol != 0 || leftSpans[1].EndCol != 1 || leftSpans[1].Action != "delete" {
-		t.Errorf("expected delimiter span on line 2 cols 0..1 action='delete', got %+v", leftSpans[1])
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "<del>func foo() {</del>\n    return 42\n<del>}</del>\n")
 }
 
 func TestNestedMoveActionsKeepsOutermost(t *testing.T) {
@@ -692,12 +534,7 @@ func TestPartitionDisjointSpans_MoveDeleteOverlap(t *testing.T) {
 		{Action: "delete", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 6}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 span after partition, got %d: %+v", len(spans), spans)
-	}
-	if spans[0].Action != "move" {
-		t.Errorf("expected move to win tiebreak, got %s", spans[0].Action)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>abcdef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_CoextensiveDuplicates(t *testing.T) {
@@ -708,9 +545,7 @@ func TestPartitionDisjointSpans_CoextensiveDuplicates(t *testing.T) {
 		{Action: "delete", Node: &NodeRef{Type: "b", StartByte: 0, EndByte: 11}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 coalesced span for coextensive duplicates, got %d: %+v", len(spans), spans)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<del>hello world</del>\n")
 }
 
 func TestPartitionDisjointSpans_UpdateInsideMove(t *testing.T) {
@@ -722,19 +557,7 @@ func TestPartitionDisjointSpans_UpdateInsideMove(t *testing.T) {
 		{Action: "update", Node: &NodeRef{Type: "id", StartByte: 2, EndByte: 4}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 3 {
-		t.Fatalf("expected 3 spans (move, move_update, move), got %d: %+v", len(spans), spans)
-	}
-	// Find the middle span
-	for _, s := range spans {
-		if s.StartCol == 2 && s.EndCol == 4 {
-			if s.Action != "move_update" {
-				t.Errorf("expected move_update for update inside move, got %s", s.Action)
-			}
-			return
-		}
-	}
-	t.Error("expected move_update span at [2,4)")
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>ab</mov><mUpd>cd</mUpd><mov>ef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_ThreeWayNesting(t *testing.T) {
@@ -747,19 +570,7 @@ func TestPartitionDisjointSpans_ThreeWayNesting(t *testing.T) {
 		{Action: "update", Node: &NodeRef{Type: "id", StartByte: 2, EndByte: 5}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 3 {
-		t.Fatalf("expected 3 disjoint spans, got %d: %+v", len(spans), spans)
-	}
-	// Verify update segment is promoted to moveUpdate (inside original move)
-	for _, s := range spans {
-		if s.StartCol == 2 && s.EndCol == 5 {
-			if s.Action != "move_update" {
-				t.Errorf("expected moveUpdate at [2,5) (inside move), got %s", s.Action)
-			}
-			return
-		}
-	}
-	t.Error("expected moveUpdate span at [2,5)")
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>01</mov><mUpd>234</mUpd><mov>56789abcdef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_NilActionRefFallback(t *testing.T) {
@@ -771,14 +582,7 @@ func TestPartitionDisjointSpans_NilActionRefFallback(t *testing.T) {
 		{Action: "delete", Node: nil}, // nil Node → ActionRef will be nil on the span
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	// The nil-Node delete won't produce a span at all (addSpan requires non-nil Node for delete)
-	// So only the move span survives
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 span (nil-Node delete produces nothing), got %d: %+v", len(spans), spans)
-	}
-	if spans[0].Action != "move" {
-		t.Errorf("expected move, got %s", spans[0].Action)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>abcdef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_DisjointSpansUnchanged(t *testing.T) {
@@ -789,12 +593,7 @@ func TestPartitionDisjointSpans_DisjointSpansUnchanged(t *testing.T) {
 		{Action: "insert", Node: &NodeRef{Type: "b", StartByte: 6, EndByte: 11}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 delete span (insert not on left), got %d: %+v", len(spans), spans)
-	}
-	if spans[0].StartCol != 0 || spans[0].EndCol != 5 || spans[0].Action != "delete" {
-		t.Errorf("expected delete [0,5), got %+v", spans[0])
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<del>hello</del> world\n")
 }
 
 func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
@@ -904,40 +703,12 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 
 	actions := []Action{singleLineAct, multiLineAct, groupedSingleLineAct}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-
-	var singleSpan, multiSpan, groupedSingleSpan *HighlightSpan
-	for i := range spans {
-		if spans[i].Line == 0 && spans[i].Action == "move" {
-			singleSpan = &spans[i]
-		}
-		if spans[i].Line == 1 && spans[i].Action == "move" {
-			multiSpan = &spans[i]
-		}
-		if spans[i].Line == 4 && spans[i].Action == "move" {
-			groupedSingleSpan = &spans[i]
-		}
-	}
-
-	if singleSpan == nil {
-		t.Fatalf("expected move span on line 0")
-	}
-	if singleSpan.ColorIndex != 1 {
-		t.Errorf("expected single-line move to retain ColorIndex 1 (Magenta), got %d", singleSpan.ColorIndex)
-	}
-
-	if multiSpan == nil {
-		t.Fatalf("expected move span on line 1")
-	}
-	if multiSpan.ColorIndex != 1 {
-		t.Errorf("expected multiline move in group to honor ColorIndex 1 (Magenta), got %d", multiSpan.ColorIndex)
-	}
-
-	if groupedSingleSpan == nil {
-		t.Fatalf("expected grouped single-line move span on line 4")
-	}
-	if groupedSingleSpan.ColorIndex != 1 {
-		t.Errorf("expected single-line move in GroupID to share ColorIndex 1 (Magenta), got %d", groupedSingleSpan.ColorIndex)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), `foo(<mov1>a</mov1>, b)
+<mov1>func MultiLine() {</mov1>
+<mov1>    return 42</mov1>
+<mov1>}</mov1>
+<mov1>ms.Remove(d)</mov1>
+`)
 
 	t.Run("single line with trailing newline", func(t *testing.T) {
 		stmtBytes := []byte("return 42\n")
@@ -949,12 +720,7 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 			DestEndByte:    ptr(uint32(60)),
 		}
 		stmtSpans := BuildHighlightSpans(stmtBytes, []Action{stmtAct}, "left")
-		if len(stmtSpans) == 0 {
-			t.Fatalf("expected highlight span")
-		}
-		if stmtSpans[0].ColorIndex != 1 {
-			t.Errorf("expected statement with trailing newline to retain ColorIndex 1, got %d", stmtSpans[0].ColorIndex)
-		}
+		testutil.AssertTagged(t, string(stmtBytes), toTestSpans(stmtSpans), "<mov1>return 42</mov1>\n")
 	})
 }
 
@@ -1012,21 +778,34 @@ func process() {
 	}
 
 	// finish() is single-line on both sides, grouped with a multiline if-statement.
-	// Both sides keep ColorIndex 0 so the group shares one color.
-	for _, h := range env.LeftHighlights {
-		if h.Line == 9 && h.Action == "move" && h.ColorIndex != 0 {
-			t.Errorf("expected left finish() move highlight to have ColorIndex 0, got %d", h.ColorIndex)
-		}
-	}
-	for _, h := range env.RightHighlights {
-		if h.Line == 11 && h.Action == "move" && h.ColorIndex != 0 {
-			t.Errorf("expected right finish() move highlight to have ColorIndex 0, got %d", h.ColorIndex)
-		}
-	}
+	// Both sides keep ColorIndex 0 (<mov>) so the group shares one color.
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-	// Whole-snippet context line purity: unchanged lines must have zero highlights
-	assertContextLinesPure(t, env.LeftHighlights, []int{3, 6, 7, 8, 9})
-	assertContextLinesPure(t, env.RightHighlights, []int{5, 6, 7, 8, 9, 10, 11})
+func process() {
+	<mov>isolatedMove()</mov>
+	stationaryA()
+	stationaryB()
+	<mov>if check() {</mov>
+<mov>		doWork()</mov>
+<mov>	}</mov>
+	<mov>finish()</mov>
+}
+`)
+
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() {
+	stationaryA()
+	stationaryB()
+	<mov>isolatedMove()</mov>
+	<ins>if wrapper() {</ins>
+		<mov>if check() {</mov>
+<mov>			doWork()</mov>
+<mov>		}</mov>
+		<mov>finish()</mov>
+	<ins>}</ins>
+}
+`)
 }
 
 func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.T) {
@@ -1051,30 +830,10 @@ func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.
 	}
 
 	spans := BuildHighlightSpans(srcBytes, actions, "left", closingDelimiter)
-
-	var openSpan, closeSpan *HighlightSpan
-	for i := range spans {
-		if spans[i].Line == 0 && spans[i].Action == "move" {
-			openSpan = &spans[i]
-		}
-		if spans[i].Line == 2 && spans[i].Action == "move" {
-			closeSpan = &spans[i]
-		}
-	}
-
-	if openSpan == nil {
-		t.Fatalf("expected opening brace move span on line 0")
-	}
-	if openSpan.ColorIndex != 1 {
-		t.Errorf("expected opening delimiter to have ColorIndex 1 (Magenta), got %d", openSpan.ColorIndex)
-	}
-
-	if closeSpan == nil {
-		t.Fatalf("expected closing delimiter move span on line 2")
-	}
-	if closeSpan.ColorIndex != 1 {
-		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Magenta), got %d", closeSpan.ColorIndex)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spans), `<mov1>{</mov1>
+    foo()
+<mov1>}</mov1>
+`)
 }
 
 func TestBuildHighlightSpans_MultilineConstructMutesHeaderAndDelimiter(t *testing.T) {
@@ -1102,34 +861,13 @@ func TestBuildHighlightSpans_MultilineConstructMutesHeaderAndDelimiter(t *testin
 	}
 
 	spans := BuildHighlightSpans(srcBytes, actions, "left", closingDelimiter)
-
-	var openSpan, closeSpan *HighlightSpan
-	for i := range spans {
-		if spans[i].Line == 0 && spans[i].Action == "move" {
-			openSpan = &spans[i]
-		}
-		if spans[i].Line == 9 && spans[i].Action == "move" {
-			closeSpan = &spans[i]
-		}
-	}
-
-	if openSpan == nil || closeSpan == nil {
-		t.Fatalf("expected both opening and closing move spans, got open=%v, close=%v", openSpan, closeSpan)
-	}
-	if openSpan.ColorIndex != 0 {
-		t.Errorf("expected multiline construct header to mute to ColorIndex 0 (Teal), got %d", openSpan.ColorIndex)
-	}
-	if closeSpan.ColorIndex != 0 {
-		t.Errorf("expected multiline construct closing delimiter to mute to ColorIndex 0 (Teal), got %d", closeSpan.ColorIndex)
-	}
+	expected := "<mov>if cond {</mov>\n" + strings.Repeat("    stmt()\n", 8) + "<mov>}</mov>\n"
+	testutil.AssertTagged(t, src, toTestSpans(spans), expected)
 }
 
 func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 	t.Run("ZigSwitchCaseArrow", func(t *testing.T) {
 		fileBytes := []byte("        .explicit => |lib_name| try w.print();\n")
-		// .explicit: bytes 8..17
-		// =>: bytes 18..20
-		// |lib_name|: bytes 21..31
 		parent := &NodeRef{
 			Type:      "switch_case",
 			StartByte: 8,
@@ -1150,21 +888,11 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 		}
 
 		spans := BuildHighlightSpans(fileBytes, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 merged span for case pattern and payload, got %d: %+v", len(spans), spans)
-		}
-		if spans[0].StartCol != 8 || spans[0].EndCol != 31 {
-			t.Errorf("expected span cols 8..31, got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
-		if spans[0].Action != "insert" {
-			t.Errorf("expected action 'insert', got %q", spans[0].Action)
-		}
+		testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "        <ins>.explicit => |lib_name|</ins> try w.print();\n")
 	})
 
 	t.Run("RustMatchArmArrow", func(t *testing.T) {
 		fileBytes := []byte("    Some(v) => foo();\n")
-		// Some(v): bytes 4..11
-		// =>: bytes 12..14
 		parent := &NodeRef{
 			Type:      "match_arm",
 			StartByte: 4,
@@ -1180,19 +908,11 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 		}
 
 		spans := BuildHighlightSpans(fileBytes, actions, "right")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		// Some(v) => should be absorbed (without trailing space)
-		if spans[0].StartCol != 4 || spans[0].EndCol != 14 {
-			t.Errorf("expected span cols 4..14 (including '=>'), got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "    <ins>Some(v) =></ins> foo();\n")
 	})
 
 	t.Run("JavaSwitchRuleArrow", func(t *testing.T) {
 		fileBytes := []byte("    case 1 -> foo();\n")
-		// case 1: bytes 4..10
-		// ->: bytes 11..13
 		parent := &NodeRef{
 			Type:      "switch_rule",
 			StartByte: 4,
@@ -1208,42 +928,38 @@ func TestCaseClauseDelimiterAbsorption(t *testing.T) {
 		}
 
 		spans := BuildHighlightSpans(fileBytes, actions, "left")
-		if len(spans) != 1 {
-			t.Fatalf("expected 1 span, got %d", len(spans))
-		}
-		// case 1 -> should be absorbed (without trailing space)
-		if spans[0].StartCol != 4 || spans[0].EndCol != 13 {
-			t.Errorf("expected span cols 4..13 (including '->'), got %d..%d", spans[0].StartCol, spans[0].EndCol)
-		}
+		testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "    <del>case 1 -></del> foo();\n")
 	})
 }
 
 func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *testing.T) {
 	t.Run("TriviaAdjacentCommaAbsorbed", func(t *testing.T) {
-		fileBytes := []byte("foo(a, b);\n")
-		// a: bytes 4..5
-		// ,: bytes 5..6
-		astIndex := &treesitter.ASTIndex{
-			SyntaxTrivia: []treesitter.SyntaxTriviaBlock{
-				{
-					TrailingStart: 5,
-					TrailingEnd:   6,
-				},
-			},
+		fileBytes := []byte("package main\n\nfunc main() {\n\tfoo(a, b)\n}\n")
+		root, err := treesitter.Parse(fileBytes, "main.go")
+		if err != nil || root == nil {
+			t.Fatal("failed to parse Go source")
 		}
-		astNode := &treesitter.ASTNode{
-			ID:        0,
-			StartByte: 4,
-			EndByte:   5,
-			Index:     astIndex,
+
+		var childA, argListNode *treesitter.ASTNode
+		for _, d := range root.Descendants() {
+			if d.Type == "argument_list" {
+				argListNode = d
+				if len(d.Children) > 0 {
+					childA = d.Children[0]
+				}
+				break
+			}
+		}
+		if childA == nil || argListNode == nil {
+			t.Fatal("expected to find childA and argListNode")
 		}
 
 		actions := []Action{
 			{
 				Action:  "delete",
-				Node:    &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
-				ASTNode: astNode,
-				Parent:  &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 9},
+				Node:    &NodeRef{Type: childA.Type, StartByte: childA.StartByte, EndByte: childA.EndByte},
+				ASTNode: childA,
+				Parent:  &NodeRef{Type: argListNode.Type, StartByte: argListNode.StartByte, EndByte: argListNode.EndByte},
 			},
 		}
 
@@ -1251,38 +967,44 @@ func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *tes
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// "a," should be absorbed (endCol at 6, exactly trivia.TrailingEnd)
-		if spans[0].StartCol != 4 || spans[0].EndCol != 6 {
-			t.Errorf("expected span cols 4..6, got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		// "a," should be absorbed (endCol includes comma)
+		trivia := childA.SyntaxTrivia()
+		if trivia == nil {
+			t.Fatal("expected childA to have syntax trivia")
+		}
+		expectedEndCol := int(childA.StartCol) + int(trivia.TrailingEnd-childA.StartByte)
+		if spans[0].StartCol != int(childA.StartCol) || spans[0].EndCol != expectedEndCol {
+			t.Errorf("expected span cols %d..%d, got %d..%d", childA.StartCol, expectedEndCol, spans[0].StartCol, spans[0].EndCol)
 		}
 	})
 
 	t.Run("TriviaInterveningCommentNotSwallowed", func(t *testing.T) {
-		fileBytes := []byte("foo(a /* comment */, b);\n")
-		// a: bytes 4..5
-		// /* comment */: bytes 6..19
-		// ,: bytes 19..20
-		astIndex := &treesitter.ASTIndex{
-			SyntaxTrivia: []treesitter.SyntaxTriviaBlock{
-				{
-					TrailingStart: 19,
-					TrailingEnd:   20,
-				},
-			},
+		fileBytes := []byte("package main\n\nfunc main() {\n\tfoo(a /* comment */, b)\n}\n")
+		root, err := treesitter.Parse(fileBytes, "main.go")
+		if err != nil || root == nil {
+			t.Fatal("failed to parse Go source")
 		}
-		astNode := &treesitter.ASTNode{
-			ID:        0,
-			StartByte: 4,
-			EndByte:   5,
-			Index:     astIndex,
+
+		var childA, argListNode *treesitter.ASTNode
+		for _, d := range root.Descendants() {
+			if d.Type == "argument_list" {
+				argListNode = d
+				if len(d.Children) > 0 {
+					childA = d.Children[0]
+				}
+				break
+			}
+		}
+		if childA == nil || argListNode == nil {
+			t.Fatal("expected to find childA and argListNode")
 		}
 
 		actions := []Action{
 			{
 				Action:  "delete",
-				Node:    &NodeRef{Type: "identifier", StartByte: 4, EndByte: 5},
-				ASTNode: astNode,
-				Parent:  &NodeRef{Type: "argument_list", StartByte: 3, EndByte: 23},
+				Node:    &NodeRef{Type: childA.Type, StartByte: childA.StartByte, EndByte: childA.EndByte},
+				ASTNode: childA,
+				Parent:  &NodeRef{Type: argListNode.Type, StartByte: argListNode.StartByte, EndByte: argListNode.EndByte},
 			},
 		}
 
@@ -1290,9 +1012,10 @@ func TestBuildHighlightSpans_SyntaxTriviaAbsorptionAndCommentPreservation(t *tes
 		if len(spans) != 1 {
 			t.Fatalf("expected 1 span, got %d", len(spans))
 		}
-		// Keep the span at endCol 5 so it doesn't swallow the comment.
-		if spans[0].StartCol != 4 || spans[0].EndCol != 5 {
-			t.Errorf("expected span cols 4..5 (comment preserved untouched), got %d..%d", spans[0].StartCol, spans[0].EndCol)
+		// Keep the span at childA.EndCol so it doesn't swallow the comment.
+		if spans[0].StartCol != int(childA.StartCol) || spans[0].EndCol != int(childA.EndCol) {
+			t.Errorf("expected span cols %d..%d (comment preserved untouched), got %d..%d",
+				childA.StartCol, childA.EndCol, spans[0].StartCol, spans[0].EndCol)
 		}
 	})
 }
@@ -1337,18 +1060,8 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 			}
 
 			spans := BuildHighlightSpans(fileBytes, actions, "left")
-			if len(spans) != 3 {
-				t.Fatalf("expected 3 separate delete spans (callee, leading args, trailing arg), got %d: %+v", len(spans), spans)
-			}
-			if spans[0].StartCol != 0 || spans[0].EndCol != 18 {
-				t.Errorf("expected callee span [0..18] without '(', got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
-			}
-			if spans[1].StartCol != 19 || spans[1].EndCol != 30 {
-				t.Errorf("expected leading args span [19..30] ('result, ms,'), got [%d..%d]", spans[1].StartCol, spans[1].EndCol)
-			}
-			if spans[2].StartCol != 37 || spans[2].EndCol != 46 {
-				t.Errorf("expected trailing arg span [37..46] (', dstNode') without ')', got [%d..%d]", spans[2].StartCol, spans[2].EndCol)
-			}
+			testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans),
+				"<del>demoteMoveToDelIns</del>(<del>result, ms,</del> a.Node<del>, dstNode</del>)\n")
 		})
 
 		t.Run("BridgesOpeningParenAndClosesTrailingParenWhenEntireCallInteriorDeleted", func(t *testing.T) {
@@ -1377,12 +1090,7 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 			}
 
 			spans := BuildHighlightSpans(fileBytes, actions, "left")
-			if len(spans) != 1 {
-				t.Fatalf("expected 1 merged span covering 'foo(a, b)', got %d: %+v", len(spans), spans)
-			}
-			if spans[0].StartCol != 0 || spans[0].EndCol != 9 {
-				t.Errorf("expected balanced span [0..9] covering 'foo(a, b)', got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
-			}
+			testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<del>foo(a, b)</del>\n")
 		})
 
 		t.Run("DoesNotBridgeUnmatchedClosingBraceInGap", func(t *testing.T) {
@@ -1401,15 +1109,7 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 			}
 
 			spans := BuildHighlightSpans(fileBytes, actions, "right")
-			if len(spans) != 2 {
-				t.Fatalf("expected 2 separate insert spans without swallowing '}', got %d: %+v", len(spans), spans)
-			}
-			if spans[0].StartCol != 18 || spans[0].EndCol != 21 {
-				t.Errorf("expected span 0 [18..21], got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
-			}
-			if spans[1].StartCol != 23 || spans[1].EndCol != 24 {
-				t.Errorf("expected span 1 [23..24], got [%d..%d]", spans[1].StartCol, spans[1].EndCol)
-			}
+			testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "return .{ .name = <ins>val</ins> }<ins>;</ins>\n")
 		})
 	})
 
@@ -1439,6 +1139,7 @@ func process(target string) {
 		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
 		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
 
+		// intentionally no postprocess.Run: isolates serialization bracket gap merging from move normalization
 		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
 			IncludeHighlights: true,
 		})
@@ -1446,63 +1147,36 @@ func process(target string) {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// On left line 3 (`\toldHelper("first", target)`):
-		// oldHelper (1..10) is updated, "first", (11..18) is updated,
-		// and '(' at column 10 must NOT be swallowed into an update span.
-		var leftLine3 []HighlightSpan
-		for _, h := range env.LeftHighlights {
-			if h.Line == 3 {
-				leftLine3 = append(leftLine3, h)
-			}
-		}
-		if len(leftLine3) != 2 {
-			t.Fatalf("expected 2 separate update spans on left line 3, got %d: %+v", len(leftLine3), leftLine3)
-		}
-		if leftLine3[0].StartCol != 1 || leftLine3[0].EndCol != 10 {
-			t.Errorf("expected left callee span [1..10], got [%d..%d]", leftLine3[0].StartCol, leftLine3[0].EndCol)
-		}
-		if leftLine3[1].StartCol != 11 || leftLine3[1].EndCol != 18 {
-			t.Errorf("expected left arg span [11..18], got [%d..%d]", leftLine3[1].StartCol, leftLine3[1].EndCol)
-		}
+		// Whole-snippet tagged assertions: callee and first arg updated, '(' and 'target' silent context,
+		// and all other lines (package, func declaration, closing brace) completely silent.
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		// On right line 3 (`\tnewHelper("second", target)`):
-		// newHelper (1..10) is updated, "second", (11..19) is updated,
-		// and '(' at column 10 must remain unhighlighted context.
-		var rightLine3 []HighlightSpan
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 {
-				rightLine3 = append(rightLine3, h)
-			}
-		}
-		if len(rightLine3) != 2 {
-			t.Fatalf("expected 2 separate update spans on right line 3, got %d: %+v", len(rightLine3), rightLine3)
-		}
-		if rightLine3[0].StartCol != 1 || rightLine3[0].EndCol != 10 {
-			t.Errorf("expected right callee span [1..10], got [%d..%d]", rightLine3[0].StartCol, rightLine3[0].EndCol)
-		}
-		if rightLine3[1].StartCol != 11 || rightLine3[1].EndCol != 19 {
-			t.Errorf("expected right arg span [11..19], got [%d..%d]", rightLine3[1].StartCol, rightLine3[1].EndCol)
-		}
+func process(target string) {
+	<upd>oldHelper</upd>(<upd>"first"</upd>, target)
+}
+`)
 
-		// Whole-snippet context line purity: unchanged lines (0, 1, 2, 4) must have zero highlights
-		assertContextLinesPure(t, env.LeftHighlights, []int{3})
-		assertContextLinesPure(t, env.RightHighlights, []int{3})
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process(target string) {
+	<upd>newHelper</upd>(<upd>"second"</upd>, target)
+}
+`)
 	})
 }
 
-// assertContextLinesPure verifies that lines outside of allowedLines have zero highlight spans.
-func assertContextLinesPure(t *testing.T, spans []HighlightSpan, allowedLines []int) {
-	t.Helper()
-	allowed := make(map[int]bool, len(allowedLines))
-	for _, l := range allowedLines {
-		allowed[l] = true
-	}
-	for _, s := range spans {
-		if !allowed[s.Line] {
-			t.Errorf("line %d expected to be pure context (white), but found %s highlight span [%d..%d]",
-				s.Line, s.Action, s.StartCol, s.EndCol)
+func toTestSpans(spans []HighlightSpan) []testutil.Span {
+	res := make([]testutil.Span, len(spans))
+	for i, s := range spans {
+		res[i] = testutil.Span{
+			Line:       s.Line,
+			StartCol:   s.StartCol,
+			EndCol:     s.EndCol,
+			Action:     s.Action,
+			ColorIndex: s.ColorIndex,
 		}
 	}
+	return res
 }
 
 func TestResolveMoveColor(t *testing.T) {
@@ -1653,6 +1327,7 @@ func handleCondition() error {
 		mr := engine.Match(oldAST, newAST, []byte(oldSrc), []byte(newSrc), part)
 		es := actions.GenerateEditScript(oldAST, newAST, mr.Mappings)
 
+		// intentionally no postprocess.Run: isolates container footer delimiter move serialization from move normalization
 		env, err := BuildEnvelopeWithOptions(es, mr.Mappings, oldAST, newAST, []byte(oldSrc), []byte(newSrc), EnvelopeOptions{
 			IncludeHighlights: true,
 			IncludeActions:    true,
@@ -1661,31 +1336,57 @@ func handleCondition() error {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// Line 16 is handleCondition's closing brace; it should highlight as a move matching line 9's opening brace.
-		var closingBraceSpans []HighlightSpan
+		// Preserve explicit closing brace span count to guard against touching span fragmentation.
+		closingBraceCount := 0
 		for _, h := range env.RightHighlights {
 			if h.Line == 16 {
-				closingBraceSpans = append(closingBraceSpans, h)
+				closingBraceCount++
 			}
 		}
-		if len(closingBraceSpans) != 1 {
-			t.Fatalf("expected exactly 1 highlight span on right line 16, got %d: %+v", len(closingBraceSpans), closingBraceSpans)
-		}
-		if closingBraceSpans[0].Action != "move" {
-			t.Errorf("expected closing brace to have action 'move', got %q: %+v", closingBraceSpans[0].Action, closingBraceSpans[0])
-		}
-		if closingBraceSpans[0].StartCol != 0 || closingBraceSpans[0].EndCol != 1 {
-			t.Errorf("expected closing brace span [0..1], got [%d..%d]", closingBraceSpans[0].StartCol, closingBraceSpans[0].EndCol)
+		if closingBraceCount != 1 {
+			t.Fatalf("expected exactly 1 highlight span on right line 16, got %d", closingBraceCount)
 		}
 
-		// Untouched lines (package declaration, outer return) shouldn't get stray highlights.
-		assertContextLinesPure(t, env.LeftHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
-		assertContextLinesPure(t, env.RightHighlights, []int{3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16})
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func Process(condition bool) error {
+	<del>if condition</del> <mov>{</mov>
+<mov>		step1 := validate()</mov>
+<mov>		step2 := transform(step1)</mov>
+<mov>		step3 := persist(step2)</mov>
+<mov>		notify(step3)</mov>
+<mov>		logAudit(step3)</mov>
+<mov>		return nil</mov>
+<mov>	}</mov>
+	return nil
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func Process(condition bool) error {
+	<ins>if condition {</ins>
+		<ins>return handleCondition()</ins>
+	<ins>}</ins>
+	return nil
+}
+
+<ins>func handleCondition() error</ins> <mov>{</mov>
+<mov>	step1 := validate()</mov>
+<mov>	step2 := transform(step1)</mov>
+<mov>	step3 := persist(step2)</mov>
+<mov>	notify(step3)</mov>
+<mov>	logAudit(step3)</mov>
+<mov>	return nil</mov>
+<mov>}</mov>
+`)
 
 		// Inlined back: closing brace on line 10 should stay a move instead of taking a delete footer.
 		partRev := engine.NewLinePartition([]byte(newSrc), []byte(oldSrc))
 		mrRev := engine.Match(newAST, oldAST, []byte(newSrc), []byte(oldSrc), partRev)
 		esRev := actions.GenerateEditScript(newAST, oldAST, mrRev.Mappings)
+
+		// intentionally no postprocess.Run: isolates reverse container footer delimiter move serialization from move normalization
 		envRev, err := BuildEnvelopeWithOptions(esRev, mrRev.Mappings, newAST, oldAST, []byte(newSrc), []byte(oldSrc), EnvelopeOptions{
 			IncludeHighlights: true,
 		})
@@ -1693,21 +1394,49 @@ func handleCondition() error {
 			t.Fatalf("BuildEnvelopeWithOptions reverse failed: %v", err)
 		}
 
-		var revRightLine10 []HighlightSpan
+		revClosingCount := 0
 		for _, h := range envRev.RightHighlights {
 			if h.Line == 10 {
-				revRightLine10 = append(revRightLine10, h)
+				revClosingCount++
 			}
 		}
-		if len(revRightLine10) != 1 {
-			t.Fatalf("expected exactly 1 highlight span on reverse right line 10, got %d: %+v", len(revRightLine10), revRightLine10)
-		}
-		if revRightLine10[0].Action != "move" {
-			t.Errorf("expected reverse inlined closing brace to have action 'move', got %q: %+v", revRightLine10[0].Action, revRightLine10[0])
+		if revClosingCount != 1 {
+			t.Fatalf("expected exactly 1 highlight span on reverse right line 10, got %d", revClosingCount)
 		}
 
-		assertContextLinesPure(t, envRev.LeftHighlights, []int{3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16})
-		assertContextLinesPure(t, envRev.RightHighlights, []int{3, 4, 5, 6, 7, 8, 9, 10})
+		testutil.AssertTagged(t, newSrc, toTestSpans(envRev.LeftHighlights), `package main
+
+func Process(condition bool) error {
+	<del>if condition {</del>
+		<del>return handleCondition()</del>
+	<del>}</del>
+	return nil
+}
+
+<del>func handleCondition() error</del> <mov>{</mov>
+<mov>	step1 := validate()</mov>
+<mov>	step2 := transform(step1)</mov>
+<mov>	step3 := persist(step2)</mov>
+<mov>	notify(step3)</mov>
+<mov>	logAudit(step3)</mov>
+<mov>	return nil</mov>
+<mov>}</mov>
+`)
+
+		testutil.AssertTagged(t, oldSrc, toTestSpans(envRev.RightHighlights), `package main
+
+func Process(condition bool) error {
+	<ins>if condition</ins> <mov>{</mov>
+<mov>		step1 := validate()</mov>
+<mov>		step2 := transform(step1)</mov>
+<mov>		step3 := persist(step2)</mov>
+<mov>		notify(step3)</mov>
+<mov>		logAudit(step3)</mov>
+<mov>		return nil</mov>
+<mov>	}</mov>
+	return nil
+}
+`)
 	})
 }
 
@@ -1734,22 +1463,8 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 	}
 
 	spans := BuildHighlightSpans(srcBytes, []Action{act}, "left", extra)
-	var commentSpans []HighlightSpan
-	for _, s := range spans {
-		if s.Line == 0 {
-			commentSpans = append(commentSpans, s)
-		}
-	}
-
-	if len(commentSpans) == 0 {
-		t.Fatalf("expected highlight span on line 0 for comment trivia, got none")
-	}
-	if commentSpans[0].Action != "move" {
-		t.Errorf("expected comment action to be 'move', got %q", commentSpans[0].Action)
-	}
-	if commentSpans[0].ColorIndex != 1 {
-		t.Errorf("expected comment ColorIndex to match anchor (1), got %d", commentSpans[0].ColorIndex)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spans),
+		"<mov1>// Doc for relocated function</mov1>\n<mov1>func Relocated() {}</mov1>\n")
 
 	// An update action inside the moved comment promotes to move_update.
 	updAct := Action{
@@ -1762,18 +1477,8 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 		OrigEndByte:   16,
 	}
 	spansWithUpd := BuildHighlightSpans(srcBytes, []Action{act, updAct}, "left", extra)
-	hasMoveUpdate := false
-	for _, s := range spansWithUpd {
-		if s.Line == 0 && s.Action == "move_update" {
-			hasMoveUpdate = true
-			if s.ColorIndex != 1 {
-				t.Errorf("expected move_update ColorIndex to match anchor (1), got %d", s.ColorIndex)
-			}
-		}
-	}
-	if !hasMoveUpdate {
-		t.Errorf("expected comment update inside move to promote to 'move_update', got: %+v", spansWithUpd)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spansWithUpd),
+		"<mov1>// Doc </mov1><mUpd1>for reloc</mUpd1><mov1>ated function</mov1>\n<mov1>func Relocated() {}</mov1>\n")
 
 	// Deleted comments shouldn't get marked as moved, even if attached to a moved node.
 	delAct := Action{
@@ -1786,20 +1491,8 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 		OrigEndByte:   29,
 	}
 	spansWithDel := BuildHighlightSpans(srcBytes, []Action{act, delAct}, "left")
-	hasDelete := false
-	for _, s := range spansWithDel {
-		if s.Line == 0 {
-			if s.Action == "move" {
-				t.Errorf("expected deleted comment not to take 'move', got: %+v", s)
-			}
-			if s.Action == "delete" {
-				hasDelete = true
-			}
-		}
-	}
-	if !hasDelete {
-		t.Errorf("expected deleted comment to take 'delete' highlight, got: %+v", spansWithDel)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spansWithDel),
+		"<del>// Doc for relocated function</del>\n<mov1>func Relocated() {}</mov1>\n")
 }
 
 func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
@@ -1824,20 +1517,16 @@ func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
 		leftSpans := BuildHighlightSpans(leftBytes, []Action{act}, "left")
 		rightSpans := BuildHighlightSpans(rightBytes, []Action{act}, "right")
 
-		if len(leftSpans) == 0 || len(rightSpans) == 0 {
-			t.Fatalf("expected highlight spans on both sides, got left=%d right=%d", len(leftSpans), len(rightSpans))
-		}
-
-		for _, s := range leftSpans {
-			if s.Action == "move" && s.ColorIndex != 0 {
-				t.Errorf("expected left span to collapse to ColorIndex 0, got %d", s.ColorIndex)
-			}
-		}
-		for _, s := range rightSpans {
-			if s.Action == "move" && s.ColorIndex != 0 {
-				t.Errorf("expected right span to collapse to ColorIndex 0, got %d", s.ColorIndex)
-			}
-		}
+		testutil.AssertTagged(t, string(leftBytes), toTestSpans(leftSpans), `<mov>if a {</mov>
+<mov>	return 1</mov>
+<mov>}</mov>
+`)
+		testutil.AssertTagged(t, string(rightBytes), toTestSpans(rightSpans), `<mov>if a &&</mov>
+<mov>	b {</mov>
+<mov>	return 1</mov>
+<mov>	return 2</mov>
+<mov>}</mov>
+`)
 
 		smallAct := Action{
 			Action:         "move",
@@ -1853,16 +1542,16 @@ func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
 		}
 		leftSmall := BuildHighlightSpans(leftBytes, []Action{smallAct}, "left")
 		rightSmall := BuildHighlightSpans(rightBytes, []Action{smallAct}, "right")
-		for _, s := range leftSmall {
-			if s.Action == "move" && s.ColorIndex != 1 {
-				t.Errorf("expected small left span to retain ColorIndex 1, got %d", s.ColorIndex)
-			}
-		}
-		for _, s := range rightSmall {
-			if s.Action == "move" && s.ColorIndex != 1 {
-				t.Errorf("expected small right span to retain ColorIndex 1, got %d", s.ColorIndex)
-			}
-		}
+		testutil.AssertTagged(t, string(leftBytes), toTestSpans(leftSmall), `<mov1>if a {</mov1>
+<mov1>	return 1</mov1>
+<mov1>}</mov1>
+`)
+		testutil.AssertTagged(t, string(rightBytes), toTestSpans(rightSmall), `<mov1>if a &&</mov1>
+<mov1>	b {</mov1>
+<mov1>	return 1</mov1>
+<mov1>	return 2</mov1>
+<mov1>}</mov1>
+`)
 	})
 
 	t.Run("FullEngine", func(t *testing.T) {
@@ -1918,40 +1607,33 @@ func process() error {
 		if err != nil {
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
-		var srcPrepare, dstPrepare *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string([]byte(oldSrc)[n.StartByte:n.EndByte]), "prepare") {
-				srcPrepare = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsCall(n.Type) && strings.Contains(string([]byte(newSrc)[n.StartByte:n.EndByte]), "prepare") {
-				dstPrepare = n
-				break
-			}
-		}
-		if srcPrepare == nil || dstPrepare == nil {
-			t.Fatal("failed to find prepare() call nodes")
-		}
-		if mr.Mappings.Src()[srcPrepare] != dstPrepare {
-			t.Errorf("expected stationary prepare() to map in place, got %v", mr.Mappings.Src()[srcPrepare])
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-		leftCountColor, rightCountColor := -1, -1
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.Line == 4 {
-				leftCountColor = h.ColorIndex
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.Line == 9 {
-				rightCountColor = h.ColorIndex
-			}
-		}
-		if leftCountColor != 1 || rightCountColor != 1 {
-			t.Errorf("expected count++ to get ColorIndex 1 (Magenta) symmetrically, got left=%d right=%d", leftCountColor, rightCountColor)
-		}
+func process() error {
+	prepare()
+	<mov1>count++</mov1>
+	<mov>if count > limit {</mov>
+<mov>		return flush()</mov>
+<mov>	}</mov>
+	<mov>return nil</mov>
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func process() error {
+	prepare()
+	<ins>if checkCondition() {</ins>
+		<mov>if count > limit {</mov>
+<mov>			return flush(</mov>
+<mov>			)</mov>
+<mov>		}</mov>
+		<mov1>count++</mov1>
+		<mov>return nil</mov>
+	<ins>}</ins>
+	<ins>return nil</ins>
+}
+`)
 
 		var movedIf *Action
 		for i := range env.Actions {
@@ -1963,21 +1645,6 @@ func process() error {
 		}
 		if movedIf == nil {
 			t.Fatal("expected a move that grows from three lines to four")
-		}
-
-		for _, h := range env.LeftHighlights {
-			if h.Action == "move" && h.Line >= 5 && h.Line <= 7 {
-				if h.ColorIndex != 0 {
-					t.Errorf("expected dominant if statement left highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
-		}
-		for _, h := range env.RightHighlights {
-			if h.Action == "move" && h.Line >= 5 && h.Line <= 8 {
-				if h.ColorIndex != 0 {
-					t.Errorf("expected dominant if statement right highlight on line %d to have ColorIndex 0, got %d", h.Line+1, h.ColorIndex)
-				}
-			}
 		}
 	})
 }
@@ -2027,27 +1694,17 @@ func TestBuildHighlightSpans_PatternWrapperHighlight_FullEngine(t *testing.T) {
 	}
 
 	// State::HunkHeader stays unhighlighted as context; only (_, _) is inserted.
-	var line5Highlights []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 5 {
-			line5Highlights = append(line5Highlights, h)
-		}
-	}
-	if len(line5Highlights) == 0 {
-		t.Fatalf("expected right highlight spans on line 5 for '(_, _)', got 0")
-	}
-	var foundParensInsert bool
-	for _, h := range line5Highlights {
-		if h.StartCol < 25 {
-			t.Errorf("expected State::HunkHeader (cols 8..25) to have no highlight, got span [%d..%d] (%s)", h.StartCol, h.EndCol, h.Action)
-		}
-		if h.StartCol >= 25 && h.Action == "insert" {
-			foundParensInsert = true
-		}
-	}
-	if !foundParensInsert {
-		t.Errorf("expected insert highlight on '(_, _)' on line 5")
-	}
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn get_style(state: State) -> &'static Style {
+    match state {
+        State::HunkPlus(_) => &self.plus_style,
+        State::CommitMeta => &self.commit_style,
+        State::FileMeta => &self.file_style,
+        State::HunkHeader<ins>(_, _)</ins> => &self.hunk_header_style,
+        <ins>State::SubmoduleLog => &self.file_style,</ins>
+        _ => unreachable!(),
+    }
+}
+`)
 }
 
 func TestBuildHighlightSpans_PythonPatternWrapperHighlight_FullEngine(t *testing.T) {
@@ -2103,27 +1760,21 @@ func TestBuildHighlightSpans_PythonPatternWrapperHighlight_FullEngine(t *testing
 
 	// Line 9 (0-indexed line 8: `        case State.HUNK_HEADER(a, b):`)
 	// State.HUNK_HEADER (cols 13..30) stays unhighlighted as context; only (a, b) is inserted.
-	var line8Highlights []HighlightSpan
-	for _, h := range env.RightHighlights {
-		if h.Line == 8 {
-			line8Highlights = append(line8Highlights, h)
-		}
-	}
-	if len(line8Highlights) == 0 {
-		t.Fatalf("expected right highlight spans on line 8 for '(a, b)', got 0")
-	}
-	var foundParensInsert bool
-	for _, h := range line8Highlights {
-		if h.StartCol < 30 {
-			t.Errorf("expected State.HUNK_HEADER (cols 13..30) to have no highlight, got span [%d..%d] (%s)", h.StartCol, h.EndCol, h.Action)
-		}
-		if h.StartCol >= 30 && h.Action == "insert" {
-			foundParensInsert = true
-		}
-	}
-	if !foundParensInsert {
-		t.Errorf("expected insert highlight on '(a, b)' on line 8")
-	}
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `def get_style(state):
+    match state:
+        case State.HUNK_PLUS:
+            return self.plus_style
+        case State.COMMIT_META:
+            return self.commit_style
+        case State.FILE_META:
+            return self.file_style
+        case State.HUNK_HEADER<ins>(a, b)</ins>:
+            return self.hunk_header_style
+        <ins>case State.SUBMODULE_LOG:</ins>
+<ins>            return self.file_style</ins>
+        case _:
+            pass
+`)
 }
 
 func TestBuildHighlightSpans_MoveWithDeletedChildAdjacentToSiblingDelete(t *testing.T) {
@@ -2262,33 +1913,37 @@ func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
 		t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 	}
 
-	// Line 8 in oldSrc (0-indexed 7) is:
-	// `\t\tif (r != nil && (r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type))) ||`
-	// Line length is 78.
-	// Columns:
-	// \t\tif (r != nil && ( is 0..19.
-	// r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) is 19..73.
-	// )) || is 73..78.
-	var line7Left []HighlightSpan
-	for _, h := range env.LeftHighlights {
-		if h.Line == 7 {
-			line7Left = append(line7Left, h)
-		}
-	}
+	testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
 
-	for _, h := range line7Left {
-		// Make sure no delete span covers the surviving operand [19..73].
-		if h.StartCol < 73 && h.EndCol > 19 {
-			t.Errorf("found spurious delete highlight over stationary operand on line 7: %+v", h)
+func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
+	if n == nil {
+		return ""
+	}
+	for _, c := range n.Children {
+		if <del>(r != nil && (</del>r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type)<del>)) ||</del>
+			<del>(r == nil && (rules.IsOperatorLiteral(c.Type) || rules.IsPunctuation(c.Type)))</del> {
+			return c.Label
 		}
 	}
+	return ""
+}
+`)
 
-	// Destination line should be clean context with zero highlights.
-	for _, h := range env.RightHighlights {
-		if h.Line == 7 {
-			t.Errorf("found unexpected highlight on destination line 7: %+v", h)
+	testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func getBinaryOperatorLabel(n *ASTNode, r *Rules) string {
+	if n == nil {
+		return ""
+	}
+	<ins>r = cmp.Or(r, rules.Get(""))</ins>
+	for _, c := range n.Children {
+		if r.IsOperatorLiteral(c.Type) || r.IsPunctuation(c.Type) {
+			return c.Label
 		}
 	}
+	return ""
+}
+`)
 }
 
 func TestInsertedCommentInMovedBlock_PreservesInsert(t *testing.T) {
@@ -2368,98 +2023,28 @@ fn stationary_two() {}
 			t.Fatalf("BuildEnvelopeWithOptions failed: %v", err)
 		}
 
-		// 1. Stationary functions shouldn't drift.
-		var srcS1, dstS1, srcMain, dstMain *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				for _, ch := range n.Children {
-					if r.IsIdentifier(ch.Type) {
-						switch string(srcBytes[ch.StartByte:ch.EndByte]) {
-						case "stationary_one":
-							srcS1 = n
-						case "main":
-							srcMain = n
-						}
-					}
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				for _, ch := range n.Children {
-					if r.IsIdentifier(ch.Type) {
-						switch string(dstBytes[ch.StartByte:ch.EndByte]) {
-						case "stationary_one":
-							dstS1 = n
-						case "main":
-							dstMain = n
-						}
-					}
-				}
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn stationary_one() {}
+fn stationary_two() {}
 
-		if srcS1 == nil || dstS1 == nil || srcMain == nil || dstMain == nil {
-			t.Fatal("failed to find declaration nodes")
-		}
-		if mr.Mappings.Src()[srcS1] != dstS1 {
-			t.Errorf("expected stationary_one to map in place, got %v", mr.Mappings.Src()[srcS1])
-		}
-		if mr.Mappings.Src()[srcMain] != dstMain {
-			t.Errorf("expected main to map to destination main, got %v", mr.Mappings.Src()[srcMain])
-		}
+<mov>fn main() -> std::io::Result<()> {</mov>
+<mov>    let exit_code = run_app()?;</mov>
+<mov>    // when you call process::exit, no destructors are called</mov>
+<mov>    process::exit(exit_code);</mov>
+<mov>}</mov>
+`)
 
-		// 2. Lines 1-2 are new comments: they should highlight as insert, not move_update.
-		for _, line := range []int{1, 2} {
-			var lineSpans []HighlightSpan
-			for _, h := range env.RightHighlights {
-				if h.Line == line && h.StartCol >= 4 {
-					lineSpans = append(lineSpans, h)
-				}
-			}
-			if len(lineSpans) == 0 {
-				t.Fatalf("expected comment highlight on destination line %d, got none", line)
-			}
-			for _, s := range lineSpans {
-				if s.Action == "move_update" {
-					t.Errorf("comment on line %d incorrectly took 'move_update' instead of 'insert': %+v", line, s)
-				} else if s.Action != "insert" {
-					t.Errorf("expected comment on line %d to have 'insert' action, got %q", line, s.Action)
-				}
-			}
-		}
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `<mov>fn main() -> std::io::Result<()> {</mov>
+    <ins>// Ignore ctrl-c (SIGINT) to avoid leaving an orphaned pager process.</ins>
+    <ins>// See https://github.com/dandavison/delta/issues/681</ins>
+    <ins>ctrlc::set_handler(|| {});</ins>
+<mov>    let exit_code = run_app()?;</mov>
+<mov>    // when you call process::exit, no destructors are called</mov>
+<mov>    process::exit(exit_code);</mov>
+<mov>}</mov>
 
-		// 3. New statement inside the moved block is an insert.
-		var line3Spans []HighlightSpan
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 && h.StartCol >= 4 {
-				line3Spans = append(line3Spans, h)
-			}
-		}
-		if len(line3Spans) == 0 {
-			t.Fatalf("expected inserted statement highlight on destination line 3, got none")
-		}
-		for _, s := range line3Spans {
-			if s.Action != "insert" {
-				t.Errorf("expected inserted statement on line 3 to have 'insert' action, got %q", s.Action)
-			}
-		}
-
-		// 4. The comment that moved with main() stays a move.
-		var line5Spans []HighlightSpan
-		for _, h := range env.RightHighlights {
-			if h.Line == 5 {
-				line5Spans = append(line5Spans, h)
-			}
-		}
-		if len(line5Spans) == 0 {
-			t.Fatalf("expected moved comment highlight on destination line 5, got none")
-		}
-		for _, s := range line5Spans {
-			if s.Action != "move" {
-				t.Errorf("expected moved comment on line 5 to have 'move' action, got %q", s.Action)
-			}
-		}
+fn stationary_one() {}
+fn stationary_two() {}
+`)
 	})
 }
 
@@ -2525,63 +2110,39 @@ func TestBuildHighlightSpans_MultilineStatementInsertCarveout_FullEngine(t *test
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn set_terminal_title_to", "fn set_terminal_title_to", "function_item",
+		)
 
 		// 2. String literal is mapped in place
-		var srcStr, dstStr *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"{osc_command}{safe_title}{osc_end}"` {
-				srcStr = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"{osc_command}{safe_title}{osc_end}"` {
-				dstStr = n
-				break
-			}
-		}
-		if srcStr == nil || dstStr == nil {
-			t.Fatal("failed to find string literal nodes")
-		}
-		if mr.Mappings.Src()[srcStr] != dstStr {
-			t.Fatalf("expected string literal to be mapped, got %v", mr.Mappings.Src()[srcStr])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"{osc_command}{safe_title}{osc_end}"`, `"{osc_command}{safe_title}{osc_end}"`, "string_literal",
+		)
 
-		// 3. Highlight span check on line containing the string literal:
-		// Destination line 6 (0-indexed: line 6): `        "{osc_command}{safe_title}{osc_end}"`
-		// It MUST NOT have an "insert" highlight covering the stationary string literal!
-		for _, h := range env.RightHighlights {
-			if h.Line == 6 && h.Action == "insert" {
-				t.Errorf("found spurious insert highlight covering stationary string literal on line %d: %+v", h.Line, h)
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn set_terminal_title_to(new_terminal_title: String) {
+    let osc_command = "\x1b]0;";
+    let osc_end = "\x07";
+    let safe_title = bat::sanitize(&new_terminal_title);
+    write!(io::stdout(), "{osc_command}{safe_title}{osc_end}")<del>.unwrap()</del>;
+    <del>io::stdout().flush().unwrap();</del>
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn set_terminal_title_to(new_terminal_title: String) <ins>-> Result<()></ins> {
+    let osc_command = "\x1b]0;";
+    let osc_end = "\x07";
+    let safe_title = bat::sanitize(&new_terminal_title);
+    write!(
+        io::stdout(),
+        "{osc_command}{safe_title}{osc_end}"
+    )<ins>?;</ins>
+    <ins>io::stdout().flush()?;</ins>
+    <ins>Ok(())</ins>
+}
+`)
 	})
 
 	t.Run("Go multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
-		r := rules.Get("go")
-		if r == nil {
-			t.Fatal("rules for go not found")
-		}
-
 		oldSrc := `package main
 
 func bar() {
@@ -2636,63 +2197,39 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"func bar()", "func bar()", "function_declaration",
+		)
 
 		// 2. Stationary arguments map in place
-		var srcArg1, dstArg1 *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"arg1"` {
-				srcArg1 = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"arg1"` {
-				dstArg1 = n
-				break
-			}
-		}
-		if srcArg1 == nil || dstArg1 == nil {
-			t.Fatal("failed to find 'arg1' nodes")
-		}
-		if mr.Mappings.Src()[srcArg1] != dstArg1 {
-			t.Fatalf("expected arg1 to map in place, got %v", mr.Mappings.Src()[srcArg1])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"arg1"`, `"arg1"`, "interpreted_string_literal",
+		)
 
-		// 3. Source lines 4 and 5 (0-indexed: "arg1", "arg2") must NOT be painted with "delete".
-		for _, line := range []int{4, 5} {
-			for _, h := range env.LeftHighlights {
-				if h.Line == line && h.Action == "delete" {
-					t.Errorf("found spurious delete highlight on stationary line %d: %+v", line, h)
-				}
-			}
-		}
+		// 3. Highlight span verification
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `package main
+
+func bar() {
+	foo(
+		"arg1",
+		"arg2",
+	)
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `package main
+
+func bar() {
+	<ins>result :=</ins> foo(
+		"arg1",
+		"arg2",
+	)
+	<ins>_ = result</ins>
+}
+`)
 	})
 
 	t.Run("Rust let declaration wrapping match expression does not bleed insert over stationary match arms", func(t *testing.T) {
-		r := rules.Get("rust")
-		if r == nil {
-			t.Fatal("rules for rust not found")
-		}
-
 		oldSrc := `fn main() {
     match shell.as_str() {
         "bash" => println!("{}", completions::BASH_COMPLETION),
@@ -2743,62 +2280,37 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn main()", "fn main()", "function_item",
+		)
 
 		// 2. Stationary match arm maps in place
-		var srcArm, dstArm *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if strings.Contains(n.Label, "No completion") {
-				srcArm = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if strings.Contains(n.Label, "No completion") {
-				dstArm = n
-				break
-			}
-		}
-		if srcArm == nil || dstArm == nil {
-			t.Fatal("failed to find unreachable match arm nodes")
-		}
-		if mr.Mappings.Src()[srcArm] != dstArm {
-			t.Fatalf("expected unreachable match arm to map in place, got %v", mr.Mappings.Src()[srcArm])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`_ => unreachable!("No completion for shell '{shell}' available."),`,
+			`_ => unreachable!("No completion for shell '{shell}' available."),`,
+			"match_arm",
+		)
 
-		// 3. Destination line 3 (0-indexed: line 3: `        _ => unreachable!...`)
-		// The unreachable arm is 100% stationary and must NOT have a spurious insert highlight at StartCol == 0.
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 && h.Action == "insert" && h.StartCol <= 8 {
-				t.Errorf("found spurious insert highlight covering stationary match arm on line %d: %+v", h.Line, h)
-			}
-		}
+		// 3. Highlight span verification
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn main() {
+    match shell.as_str() {
+        "bash" => <del>println!("{}", completions::BASH_COMPLETION),</del>
+        _ => unreachable!("No completion for shell '{shell}' available."),
+    }
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn main() {
+    <ins>let completion =</ins> match shell.as_str() {
+        "bash" => <ins>completions::BASH_COMPLETION,</ins>
+        _ => unreachable!("No completion for shell '{shell}' available."),
+    }<ins>;</ins>
+    <ins>writeln!(io::stdout(), "{completion}")?;</ins>
+}
+`)
 	})
 
 	t.Run("C multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
-		r := rules.Get("c")
-		if r == nil {
-			t.Fatal("rules for c not found")
-		}
-
 		oldSrc := `void test() {
     foo(
         "arg1",
@@ -2849,63 +2361,35 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declarations")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function declaration to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"void test()", "void test()", "function_definition",
+		)
 
 		// 2. Stationary arguments map in place
-		var srcArg1, dstArg1 *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"arg1"` {
-				srcArg1 = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"arg1"` {
-				dstArg1 = n
-				break
-			}
-		}
-		if srcArg1 == nil || dstArg1 == nil {
-			t.Fatal("failed to find 'arg1' nodes")
-		}
-		if mr.Mappings.Src()[srcArg1] != dstArg1 {
-			t.Errorf("expected arg1 to map in place, got %v", mr.Mappings.Src()[srcArg1])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"arg1"`, `"arg1"`, "string_literal",
+		)
 
-		// 3. Source lines 2 and 3 (0-indexed: "arg1", "arg2") must NOT be painted with "delete".
-		for _, line := range []int{2, 3} {
-			for _, h := range env.LeftHighlights {
-				if h.Line == line && h.Action == "delete" {
-					t.Errorf("found spurious delete highlight on stationary line %d: %+v", line, h)
-				}
-			}
-		}
+		// 3. Highlight span verification: stationary arguments on lines 2 and 3 are not deleted
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `void test() {
+    foo(
+        "arg1",
+        "arg2"
+    )<del>;</del>
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `void test() {
+    <ins>int res = foo(</ins>
+<ins>        "arg1",</ins>
+<ins>        "arg2"</ins>
+<ins>    );</ins>
+    <ins>return;</ins>
+}
+`)
 	})
 
 	t.Run("Java multiline call deletion does not bleed delete over stationary arguments", func(t *testing.T) {
-		r := rules.Get("java")
-		if r == nil {
-			t.Fatal("rules for java not found")
-		}
-
 		oldSrc := `class Test {
     void run() {
         foo(
@@ -2960,55 +2444,36 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing class and method map in place
-		var srcClass, dstClass *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcClass = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstClass = n
-				break
-			}
-		}
-		if srcClass == nil || dstClass == nil {
-			t.Fatal("failed to find class declarations")
-		}
-		if mr.Mappings.Src()[srcClass] != dstClass {
-			t.Errorf("expected class declaration to map in place, got %v", mr.Mappings.Src()[srcClass])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"class Test", "class Test", "class_declaration",
+		)
 
 		// 2. Stationary arguments map in place
-		var srcArg1, dstArg1 *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if n.Label == `"arg1"` {
-				srcArg1 = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if n.Label == `"arg1"` {
-				dstArg1 = n
-				break
-			}
-		}
-		if srcArg1 == nil || dstArg1 == nil {
-			t.Fatal("failed to find 'arg1' nodes")
-		}
-		if mr.Mappings.Src()[srcArg1] != dstArg1 {
-			t.Errorf("expected arg1 to map in place, got %v", mr.Mappings.Src()[srcArg1])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			`"arg1"`, `"arg1"`, "string_literal",
+		)
 
-		// 3. Source lines 3 and 4 (0-indexed: "arg1", "arg2") must NOT be painted with "delete".
-		for _, line := range []int{3, 4} {
-			for _, h := range env.LeftHighlights {
-				if h.Line == line && h.Action == "delete" {
-					t.Errorf("found spurious delete highlight on stationary line %d: %+v", line, h)
-				}
-			}
-		}
+		// 3. Highlight span verification: stationary arguments on lines 3 and 4 are not deleted
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `class Test {
+    void run() {
+        foo(
+            "arg1",
+            "arg2"
+        )<del>;</del>
+    }
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `class Test {
+    void run() {
+        <ins>int res = foo(</ins>
+<ins>            "arg1",</ins>
+<ins>            "arg2"</ins>
+<ins>        );</ins>
+        <ins>return;</ins>
+    }
+}
+`)
 	})
 
 	t.Run("FullEngine/Rust macro token tree does not bleed insert span over stationary children", func(t *testing.T) {
@@ -3074,103 +2539,44 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function declaration maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declaration nodes")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"fn print_trailing", "fn print_trailing", "function_item",
+		)
 
-		// 2. Surrounding sequence: let declarations and macro invocation identifiers map in place
-		var srcMax, dstMax, srcCur, dstCur *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsIdentifier(n.Type) {
-				switch string(srcBytes[n.StartByte:n.EndByte]) {
-				case "cursor_max":
-					srcMax = n
-				case "cursor":
-					srcCur = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsIdentifier(n.Type) {
-				switch string(dstBytes[n.StartByte:n.EndByte]) {
-				case "cursor_max":
-					dstMax = n
-				case "cursor":
-					dstCur = n
-				}
-			}
-		}
-		if srcMax == nil || dstMax == nil || srcCur == nil || dstCur == nil {
-			t.Fatal("failed to find cursor identifiers")
-		}
-		if mr.Mappings.Src()[srcMax] != dstMax {
-			t.Errorf("expected cursor_max to map in place, got %v", mr.Mappings.Src()[srcMax])
-		}
-		if mr.Mappings.Src()[srcCur] != dstCur {
-			t.Errorf("expected cursor to map in place, got %v", mr.Mappings.Src()[srcCur])
-		}
+		// 2. Surrounding sequence: let declarations map in place
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"let cursor_max = 100;", "let cursor_max = 100;", "let_declaration",
+		)
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"let cursor = 10;", "let cursor = 10;", "let_declaration",
+		)
 
-		// 3. Right highlights on line 6 (0-indexed: ansi_style.paint(...))
-		// The inserted token_tree delimiters must be carved out so `cursor` is NOT engulfed in an insert span.
-		// `cursor` is at column 58..64 in line 6: `        ansi_style.paint(" ".repeat(cursor_max.saturating_sub(cursor)))`
-		line6 := `        ansi_style.paint(" ".repeat(cursor_max.saturating_sub(cursor)))`
-		cursorColStart := strings.Index(line6, "cursor)")
-		cursorColEnd := cursorColStart + len("cursor")
-		foundEngulfing := false
-		for _, h := range env.RightHighlights {
-			if h.Line == 6 && h.Action == "insert" {
-				if h.StartCol <= cursorColStart && h.EndCol >= cursorColEnd {
-					foundEngulfing = true
-					t.Errorf("found insert highlight span [%d, %d] engulfing stationary child 'cursor' [%d, %d]: %+v",
-						h.StartCol, h.EndCol, cursorColStart, cursorColEnd, h)
-				}
-			}
-		}
-		if !foundEngulfing {
-			// Verify that the opening and closing delimiters ARE highlighted
-			hasOpener := false
-			hasCloser := false
-			for _, h := range env.RightHighlights {
-				if h.Line == 6 && h.Action == "insert" {
-					if strings.Contains(line6[h.StartCol:h.EndCol], ".saturating_sub(") {
-						hasOpener = true
-					}
-					if line6[h.StartCol:h.EndCol] == ")" {
-						hasCloser = true
-					}
-				}
-			}
-			if !hasOpener {
-				t.Errorf("expected insert highlight covering .saturating_sub(, but none found")
-			}
-			if !hasCloser {
-				t.Errorf("expected insert highlight covering closing delimiter ), but none found")
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `fn print_trailing() -> Result<()> {
+    let cursor_max = 100;
+    let cursor = 10;
+    write!(
+        handle,
+        "{}",
+        ansi_style.paint(" ".repeat(cursor_max <del>-</del> cursor))
+    )?;
+    Ok(())
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `fn print_trailing() -> Result<()> {
+    let cursor_max = 100;
+    let cursor = 10;
+    write!(
+        handle,
+        "{}",
+        ansi_style.paint(" ".repeat(cursor_max<ins>.saturating_sub(</ins>cursor<ins>)</ins>))
+    )?;
+    Ok(())
+}
+`)
 	})
 
 	t.Run("FullEngine/C initializer list does not bleed insert span over stationary children", func(t *testing.T) {
-		r := rules.Get("c")
-		if r == nil {
-			t.Fatal("rules for c not found")
-		}
-
 		oldSrc := `void foo() {
     int item = 10;
     int a = item;
@@ -3216,99 +2622,39 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing function declaration maps in place
-		var srcFn, dstFn *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcFn = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstFn = n
-				break
-			}
-		}
-		if srcFn == nil || dstFn == nil {
-			t.Fatal("failed to find function declaration nodes")
-		}
-		if mr.Mappings.Src()[srcFn] != dstFn {
-			t.Errorf("expected function to map in place, got %v", mr.Mappings.Src()[srcFn])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"void foo()", "void foo()", "function_definition",
+		)
 
 		// 2. Surrounding sequence: 'int item = 10;' maps in place
-		var srcItemDecl, dstItemDecl, srcItemUse, dstItemUse *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(srcBytes[n.StartByte:n.EndByte]) == "item" {
-				if srcItemDecl == nil {
-					srcItemDecl = n
-				} else {
-					srcItemUse = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dstBytes[n.StartByte:n.EndByte]) == "item" {
-				if dstItemDecl == nil {
-					dstItemDecl = n
-				} else {
-					dstItemUse = n
-				}
-			}
-		}
-		if srcItemDecl == nil || dstItemDecl == nil || srcItemUse == nil || dstItemUse == nil {
-			t.Fatal("failed to find item identifiers")
-		}
-		if mr.Mappings.Src()[srcItemDecl] != dstItemDecl {
-			t.Errorf("expected item declaration to map in place, got %v", mr.Mappings.Src()[srcItemDecl])
-		}
-		if mr.Mappings.Src()[srcItemUse] != dstItemUse {
-			t.Errorf("expected item use to map in place, got %v", mr.Mappings.Src()[srcItemUse])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"int item = 10;", "int item = 10;", "declaration",
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+		)
 
 		// 3. Right highlights on line 2 (0-indexed: int a[] = { item };)
 		// The inserted initializer_list delimiters must be carved out so `item` is NOT engulfed in an insert span.
-		line2 := "    int a[] = { item };"
-		itemColStart := strings.Index(line2, "item")
-		itemColEnd := itemColStart + len("item")
-		foundEngulfing := false
-		for _, h := range env.RightHighlights {
-			if h.Line == 2 && h.Action == "insert" {
-				if h.StartCol <= itemColStart && h.EndCol >= itemColEnd {
-					foundEngulfing = true
-					t.Errorf("found insert highlight span [%d, %d] engulfing stationary child 'item' [%d, %d]: %+v",
-						h.StartCol, h.EndCol, itemColStart, itemColEnd, h)
-				}
-			}
-		}
-		if !foundEngulfing {
-			hasOpener := false
-			hasCloser := false
-			for _, h := range env.RightHighlights {
-				if h.Line == 2 && h.Action == "insert" {
-					if line2[h.StartCol:h.EndCol] == "{" {
-						hasOpener = true
-					}
-					if line2[h.StartCol:h.EndCol] == "}" {
-						hasCloser = true
-					}
-				}
-			}
-			if !hasOpener {
-				t.Errorf("expected insert highlight covering opening delimiter {, but none found")
-			}
-			if !hasCloser {
-				t.Errorf("expected insert highlight covering closing delimiter }, but none found")
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `void foo() {
+    int item = 10;
+    int a = item;
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `void foo() {
+    int item = 10;
+    int a[] = <ins>{</ins> item <ins>}</ins>;
+}
+`)
 	})
 
 	t.Run("FullEngine/Java array initializer does not bleed insert span over stationary children", func(t *testing.T) {
-		r := rules.Get("java")
-		if r == nil {
-			t.Fatal("rules for java not found")
-		}
-
 		oldSrc := `class Test {
     void run() {
         int item = 10;
@@ -3358,90 +2704,39 @@ func bar() {
 
 		// Whole-Snippet Verification:
 		// 1. Enclosing class and method declarations map in place
-		var srcClass, dstClass *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				srcClass = n
-				break
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsDeclaration(n.Type) {
-				dstClass = n
-				break
-			}
-		}
-		if srcClass == nil || dstClass == nil {
-			t.Fatal("failed to find class declarations")
-		}
-		if mr.Mappings.Src()[srcClass] != dstClass {
-			t.Errorf("expected class declaration to map in place, got %v", mr.Mappings.Src()[srcClass])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"class Test", "class Test", "class_declaration",
+		)
 
 		// 2. Surrounding sequence: 'int item = 10;' maps in place
-		var srcItemDecl, dstItemDecl, srcItemUse, dstItemUse *treesitter.ASTNode
-		for _, n := range oldAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(srcBytes[n.StartByte:n.EndByte]) == "item" {
-				if srcItemDecl == nil {
-					srcItemDecl = n
-				} else {
-					srcItemUse = n
-				}
-			}
-		}
-		for _, n := range newAST.Descendants() {
-			if r.IsIdentifier(n.Type) && string(dstBytes[n.StartByte:n.EndByte]) == "item" {
-				if dstItemDecl == nil {
-					dstItemDecl = n
-				} else {
-					dstItemUse = n
-				}
-			}
-		}
-		if srcItemDecl == nil || dstItemDecl == nil || srcItemUse == nil || dstItemUse == nil {
-			t.Fatal("failed to find item identifiers")
-		}
-		if mr.Mappings.Src()[srcItemDecl] != dstItemDecl {
-			t.Errorf("expected item declaration to map in place, got %v", mr.Mappings.Src()[srcItemDecl])
-		}
-		if mr.Mappings.Src()[srcItemUse] != dstItemUse {
-			t.Errorf("expected item use to map in place, got %v", mr.Mappings.Src()[srcItemUse])
-		}
+		testutil.AssertMappedText(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"int item = 10;", "int item = 10;", "local_variable_declaration",
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, oldAST, newAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+			testutil.TextQuery{Text: "item", Type: "identifier", Occurrence: 2},
+		)
 
 		// 3. Right highlights on line 3 (0-indexed: int[] a = { item };)
 		// The inserted array_initializer delimiters must be carved out so `item` is NOT engulfed in an insert span.
-		line3 := "        int[] a = { item };"
-		itemColStart := strings.Index(line3, "item")
-		itemColEnd := itemColStart + len("item")
-		foundEngulfing := false
-		for _, h := range env.RightHighlights {
-			if h.Line == 3 && h.Action == "insert" {
-				if h.StartCol <= itemColStart && h.EndCol >= itemColEnd {
-					foundEngulfing = true
-					t.Errorf("found insert highlight span [%d, %d] engulfing stationary child 'item' [%d, %d]: %+v",
-						h.StartCol, h.EndCol, itemColStart, itemColEnd, h)
-				}
-			}
-		}
-		if !foundEngulfing {
-			hasOpener := false
-			hasCloser := false
-			for _, h := range env.RightHighlights {
-				if h.Line == 3 && h.Action == "insert" {
-					if line3[h.StartCol:h.EndCol] == "{" {
-						hasOpener = true
-					}
-					if line3[h.StartCol:h.EndCol] == "}" {
-						hasCloser = true
-					}
-				}
-			}
-			if !hasOpener {
-				t.Errorf("expected insert highlight covering opening delimiter {, but none found")
-			}
-			if !hasCloser {
-				t.Errorf("expected insert highlight covering closing delimiter }, but none found")
-			}
-		}
+		testutil.AssertTagged(t, oldSrc, toTestSpans(env.LeftHighlights), `class Test {
+    void run() {
+        int item = 10;
+        int a = item;
+    }
+}
+`)
+
+		testutil.AssertTagged(t, newSrc, toTestSpans(env.RightHighlights), `class Test {
+    void run() {
+        int item = 10;
+        int<ins>[]</ins> a = <ins>{</ins> item <ins>}</ins>;
+    }
+}
+`)
 	})
 }

@@ -4,12 +4,20 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/HarshK97/diffmantic/internal/testutil"
 	"github.com/HarshK97/diffmantic/internal/treesitter"
+	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
 func TestEditScriptActionsSlice(t *testing.T) {
+	ast, err := treesitter.Parse([]byte("x = 1\n"), "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	node := ast.Children[0]
+
 	es := NewEditScript()
-	a := Action{Type: Update, Node: &treesitter.ASTNode{Type: "id", Label: "x"}, Value: "y"}
+	a := Action{Type: Update, Node: node, Value: "y"}
 	es.Add(a)
 
 	acts := es.Actions()
@@ -31,12 +39,34 @@ func TestFprintActionsNil(t *testing.T) {
 
 func TestFprintActionsContainsDetails(t *testing.T) {
 	// Verify subtree and move details appear in formatted output.
+	code := []byte("def foo():\n    x = 1\n")
+	ast, err := treesitter.Parse(code, "test.py")
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	fnNode := ast.Children[0]
+
+	idNode, err := testutil.FindNodeByText(ast, code, "x")
+	if err != nil {
+		t.Fatalf("failed to find identifier x: %v", err)
+	}
+
+	pyRules := rules.Get("python")
+	var blockNode *treesitter.ASTNode
+	for p := idNode.Parent; p != nil; p = p.Parent {
+		if pyRules.IsBlock(p.Type) {
+			blockNode = p
+			break
+		}
+	}
+	if blockNode == nil {
+		t.Fatal("failed to find block node in parsed snippet")
+	}
+
 	es := NewEditScript()
-	node := &treesitter.ASTNode{Type: "block", Label: ""}
-	parent := &treesitter.ASTNode{Type: "func"}
-	es.Add(Action{Type: Insert, Node: node, Parent: parent, Position: 2, Subtree: true})
-	es.Add(Action{Type: Move, Node: node, Parent: parent, Position: 1})
-	es.Add(Action{Type: Update, Node: &treesitter.ASTNode{Type: "id", Label: "old"}, Value: "new"})
+	es.Add(Action{Type: Insert, Node: blockNode, Parent: fnNode, Position: 2, Subtree: true})
+	es.Add(Action{Type: Move, Node: blockNode, Parent: fnNode, Position: 1})
+	es.Add(Action{Type: Update, Node: idNode, Value: "new"})
 
 	var buf bytes.Buffer
 	_ = FprintActions(&buf, es)
