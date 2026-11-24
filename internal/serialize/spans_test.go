@@ -40,15 +40,7 @@ func TestBuildHighlightSpansGapMerging(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(leftSpans) != 1 {
-		t.Fatalf("expected 1 merged highlight span, got %d", len(leftSpans))
-	}
-
-	span := leftSpans[0]
-	if span.Line != 0 || span.StartCol != 4 || span.EndCol != 20 || span.Action != "move" {
-		t.Errorf("expected merged span line=0 cols 4..20 action='move', got line=%d cols %d..%d action=%s",
-			span.Line, span.StartCol, span.EndCol, span.Action)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "    <mov>for cookie in cj</mov>:\n")
 }
 
 func TestBuildHighlightSpansInterleavedActions(t *testing.T) {
@@ -81,19 +73,7 @@ func TestBuildHighlightSpansInterleavedActions(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	var moveSpans []HighlightSpan
-	for _, s := range leftSpans {
-		if s.Action == "move" {
-			moveSpans = append(moveSpans, s)
-		}
-	}
-
-	if len(moveSpans) != 1 {
-		t.Fatalf("expected 1 merged move span, got %d", len(moveSpans))
-	}
-	if moveSpans[0].StartCol != 4 || moveSpans[0].EndCol != 20 {
-		t.Errorf("expected merged move span cols 4..20, got %d..%d", moveSpans[0].StartCol, moveSpans[0].EndCol)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "<del>    </del><mov>for cookie in cj</mov><del>:</del>\n")
 }
 
 func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
@@ -114,12 +94,7 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(leftSpans) != 1 {
-		t.Fatalf("expected 1 coalesced delete span (same action merges), got %d: %+v", len(leftSpans), leftSpans)
-	}
-	if leftSpans[0].StartCol != 0 || leftSpans[0].EndCol != 18 {
-		t.Errorf("expected coalesced span [0,18), got [%d,%d)", leftSpans[0].StartCol, leftSpans[0].EndCol)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "<del>def hello_world():</del>\n")
 
 	// Also test when inner starts at same start col (e.g. 0..3 and 0..18)
 	// Partitioner: inner wins [0,3), outer wins [3,18), same action coalesces → 1 span
@@ -135,12 +110,7 @@ func TestBuildHighlightSpansInnerSpanPreservation(t *testing.T) {
 	}
 
 	coalignedSpans := BuildHighlightSpans(fileBytes, actionsCoaligned, "left")
-	if len(coalignedSpans) != 1 {
-		t.Fatalf("expected 1 coalesced delete span for coaligned start, got %d: %+v", len(coalignedSpans), coalignedSpans)
-	}
-	if coalignedSpans[0].StartCol != 0 || coalignedSpans[0].EndCol != 18 {
-		t.Errorf("expected coalesced span [0,18), got [%d,%d)", coalignedSpans[0].StartCol, coalignedSpans[0].EndCol)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(coalignedSpans), "<del>def hello_world():</del>\n")
 }
 
 func TestBuildHighlightSpansRightSideMoveNodeLen(t *testing.T) {
@@ -534,16 +504,7 @@ func TestBuildHighlightSpansWithDelimiterSpan(t *testing.T) {
 	}
 
 	leftSpans := BuildHighlightSpans(fileBytes, []Action{act}, "left", delims...)
-	if len(leftSpans) != 2 {
-		t.Fatalf("expected 2 delete spans (header and closing delimiter), got %d: %+v", len(leftSpans), leftSpans)
-	}
-
-	if leftSpans[0].Line != 0 || leftSpans[0].Action != "delete" {
-		t.Errorf("expected header span on line 0, got %+v", leftSpans[0])
-	}
-	if leftSpans[1].Line != 2 || leftSpans[1].StartCol != 0 || leftSpans[1].EndCol != 1 || leftSpans[1].Action != "delete" {
-		t.Errorf("expected delimiter span on line 2 cols 0..1 action='delete', got %+v", leftSpans[1])
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(leftSpans), "<del>func foo() {</del>\n    return 42\n<del>}</del>\n")
 }
 
 func TestNestedMoveActionsKeepsOutermost(t *testing.T) {
@@ -573,12 +534,7 @@ func TestPartitionDisjointSpans_MoveDeleteOverlap(t *testing.T) {
 		{Action: "delete", Node: &NodeRef{Type: "stmt", StartByte: 0, EndByte: 6}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 span after partition, got %d: %+v", len(spans), spans)
-	}
-	if spans[0].Action != "move" {
-		t.Errorf("expected move to win tiebreak, got %s", spans[0].Action)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>abcdef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_CoextensiveDuplicates(t *testing.T) {
@@ -589,9 +545,7 @@ func TestPartitionDisjointSpans_CoextensiveDuplicates(t *testing.T) {
 		{Action: "delete", Node: &NodeRef{Type: "b", StartByte: 0, EndByte: 11}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 coalesced span for coextensive duplicates, got %d: %+v", len(spans), spans)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<del>hello world</del>\n")
 }
 
 func TestPartitionDisjointSpans_UpdateInsideMove(t *testing.T) {
@@ -603,19 +557,7 @@ func TestPartitionDisjointSpans_UpdateInsideMove(t *testing.T) {
 		{Action: "update", Node: &NodeRef{Type: "id", StartByte: 2, EndByte: 4}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 3 {
-		t.Fatalf("expected 3 spans (move, move_update, move), got %d: %+v", len(spans), spans)
-	}
-	// Find the middle span
-	for _, s := range spans {
-		if s.StartCol == 2 && s.EndCol == 4 {
-			if s.Action != "move_update" {
-				t.Errorf("expected move_update for update inside move, got %s", s.Action)
-			}
-			return
-		}
-	}
-	t.Error("expected move_update span at [2,4)")
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>ab</mov><mUpd>cd</mUpd><mov>ef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_ThreeWayNesting(t *testing.T) {
@@ -628,19 +570,7 @@ func TestPartitionDisjointSpans_ThreeWayNesting(t *testing.T) {
 		{Action: "update", Node: &NodeRef{Type: "id", StartByte: 2, EndByte: 5}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 3 {
-		t.Fatalf("expected 3 disjoint spans, got %d: %+v", len(spans), spans)
-	}
-	// Verify update segment is promoted to moveUpdate (inside original move)
-	for _, s := range spans {
-		if s.StartCol == 2 && s.EndCol == 5 {
-			if s.Action != "move_update" {
-				t.Errorf("expected moveUpdate at [2,5) (inside move), got %s", s.Action)
-			}
-			return
-		}
-	}
-	t.Error("expected moveUpdate span at [2,5)")
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>01</mov><mUpd>234</mUpd><mov>56789abcdef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_NilActionRefFallback(t *testing.T) {
@@ -652,14 +582,7 @@ func TestPartitionDisjointSpans_NilActionRefFallback(t *testing.T) {
 		{Action: "delete", Node: nil}, // nil Node → ActionRef will be nil on the span
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	// The nil-Node delete won't produce a span at all (addSpan requires non-nil Node for delete)
-	// So only the move span survives
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 span (nil-Node delete produces nothing), got %d: %+v", len(spans), spans)
-	}
-	if spans[0].Action != "move" {
-		t.Errorf("expected move, got %s", spans[0].Action)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<mov>abcdef</mov>\n")
 }
 
 func TestPartitionDisjointSpans_DisjointSpansUnchanged(t *testing.T) {
@@ -670,12 +593,7 @@ func TestPartitionDisjointSpans_DisjointSpansUnchanged(t *testing.T) {
 		{Action: "insert", Node: &NodeRef{Type: "b", StartByte: 6, EndByte: 11}},
 	}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 delete span (insert not on left), got %d: %+v", len(spans), spans)
-	}
-	if spans[0].StartCol != 0 || spans[0].EndCol != 5 || spans[0].Action != "delete" {
-		t.Errorf("expected delete [0,5), got %+v", spans[0])
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<del>hello</del> world\n")
 }
 
 func TestPartitionLineSpans_DifferentMoveColorsNotCoalesced(t *testing.T) {
@@ -785,40 +703,12 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 
 	actions := []Action{singleLineAct, multiLineAct, groupedSingleLineAct}
 	spans := BuildHighlightSpans(fileBytes, actions, "left")
-
-	var singleSpan, multiSpan, groupedSingleSpan *HighlightSpan
-	for i := range spans {
-		if spans[i].Line == 0 && spans[i].Action == "move" {
-			singleSpan = &spans[i]
-		}
-		if spans[i].Line == 1 && spans[i].Action == "move" {
-			multiSpan = &spans[i]
-		}
-		if spans[i].Line == 4 && spans[i].Action == "move" {
-			groupedSingleSpan = &spans[i]
-		}
-	}
-
-	if singleSpan == nil {
-		t.Fatalf("expected move span on line 0")
-	}
-	if singleSpan.ColorIndex != 1 {
-		t.Errorf("expected single-line move to retain ColorIndex 1 (Magenta), got %d", singleSpan.ColorIndex)
-	}
-
-	if multiSpan == nil {
-		t.Fatalf("expected move span on line 1")
-	}
-	if multiSpan.ColorIndex != 1 {
-		t.Errorf("expected multiline move in group to honor ColorIndex 1 (Magenta), got %d", multiSpan.ColorIndex)
-	}
-
-	if groupedSingleSpan == nil {
-		t.Fatalf("expected grouped single-line move span on line 4")
-	}
-	if groupedSingleSpan.ColorIndex != 1 {
-		t.Errorf("expected single-line move in GroupID to share ColorIndex 1 (Magenta), got %d", groupedSingleSpan.ColorIndex)
-	}
+	testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), `foo(<mov1>a</mov1>, b)
+<mov1>func MultiLine() {</mov1>
+<mov1>    return 42</mov1>
+<mov1>}</mov1>
+<mov1>ms.Remove(d)</mov1>
+`)
 
 	t.Run("single line with trailing newline", func(t *testing.T) {
 		stmtBytes := []byte("return 42\n")
@@ -830,12 +720,7 @@ func TestBuildHighlightSpans_AdaptiveMoveColor(t *testing.T) {
 			DestEndByte:    ptr(uint32(60)),
 		}
 		stmtSpans := BuildHighlightSpans(stmtBytes, []Action{stmtAct}, "left")
-		if len(stmtSpans) == 0 {
-			t.Fatalf("expected highlight span")
-		}
-		if stmtSpans[0].ColorIndex != 1 {
-			t.Errorf("expected statement with trailing newline to retain ColorIndex 1, got %d", stmtSpans[0].ColorIndex)
-		}
+		testutil.AssertTagged(t, string(stmtBytes), toTestSpans(stmtSpans), "<mov1>return 42</mov1>\n")
 	})
 }
 
@@ -945,30 +830,10 @@ func TestBuildHighlightSpans_SegmentedContainerClosingDelimiterColor(t *testing.
 	}
 
 	spans := BuildHighlightSpans(srcBytes, actions, "left", closingDelimiter)
-
-	var openSpan, closeSpan *HighlightSpan
-	for i := range spans {
-		if spans[i].Line == 0 && spans[i].Action == "move" {
-			openSpan = &spans[i]
-		}
-		if spans[i].Line == 2 && spans[i].Action == "move" {
-			closeSpan = &spans[i]
-		}
-	}
-
-	if openSpan == nil {
-		t.Fatalf("expected opening brace move span on line 0")
-	}
-	if openSpan.ColorIndex != 1 {
-		t.Errorf("expected opening delimiter to have ColorIndex 1 (Magenta), got %d", openSpan.ColorIndex)
-	}
-
-	if closeSpan == nil {
-		t.Fatalf("expected closing delimiter move span on line 2")
-	}
-	if closeSpan.ColorIndex != 1 {
-		t.Errorf("expected closing delimiter to retain matching ColorIndex 1 (Magenta), got %d", closeSpan.ColorIndex)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spans), `<mov1>{</mov1>
+    foo()
+<mov1>}</mov1>
+`)
 }
 
 func TestBuildHighlightSpans_MultilineConstructMutesHeaderAndDelimiter(t *testing.T) {
@@ -996,26 +861,8 @@ func TestBuildHighlightSpans_MultilineConstructMutesHeaderAndDelimiter(t *testin
 	}
 
 	spans := BuildHighlightSpans(srcBytes, actions, "left", closingDelimiter)
-
-	var openSpan, closeSpan *HighlightSpan
-	for i := range spans {
-		if spans[i].Line == 0 && spans[i].Action == "move" {
-			openSpan = &spans[i]
-		}
-		if spans[i].Line == 9 && spans[i].Action == "move" {
-			closeSpan = &spans[i]
-		}
-	}
-
-	if openSpan == nil || closeSpan == nil {
-		t.Fatalf("expected both opening and closing move spans, got open=%v, close=%v", openSpan, closeSpan)
-	}
-	if openSpan.ColorIndex != 0 {
-		t.Errorf("expected multiline construct header to mute to ColorIndex 0 (Teal), got %d", openSpan.ColorIndex)
-	}
-	if closeSpan.ColorIndex != 0 {
-		t.Errorf("expected multiline construct closing delimiter to mute to ColorIndex 0 (Teal), got %d", closeSpan.ColorIndex)
-	}
+	expected := "<mov>if cond {</mov>\n" + strings.Repeat("    stmt()\n", 8) + "<mov>}</mov>\n"
+	testutil.AssertTagged(t, src, toTestSpans(spans), expected)
 }
 
 func TestCaseClauseDelimiterAbsorption(t *testing.T) {
@@ -1213,18 +1060,8 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 			}
 
 			spans := BuildHighlightSpans(fileBytes, actions, "left")
-			if len(spans) != 3 {
-				t.Fatalf("expected 3 separate delete spans (callee, leading args, trailing arg), got %d: %+v", len(spans), spans)
-			}
-			if spans[0].StartCol != 0 || spans[0].EndCol != 18 {
-				t.Errorf("expected callee span [0..18] without '(', got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
-			}
-			if spans[1].StartCol != 19 || spans[1].EndCol != 30 {
-				t.Errorf("expected leading args span [19..30] ('result, ms,'), got [%d..%d]", spans[1].StartCol, spans[1].EndCol)
-			}
-			if spans[2].StartCol != 37 || spans[2].EndCol != 46 {
-				t.Errorf("expected trailing arg span [37..46] (', dstNode') without ')', got [%d..%d]", spans[2].StartCol, spans[2].EndCol)
-			}
+			testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans),
+				"<del>demoteMoveToDelIns</del>(<del>result, ms,</del> a.Node<del>, dstNode</del>)\n")
 		})
 
 		t.Run("BridgesOpeningParenAndClosesTrailingParenWhenEntireCallInteriorDeleted", func(t *testing.T) {
@@ -1253,12 +1090,7 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 			}
 
 			spans := BuildHighlightSpans(fileBytes, actions, "left")
-			if len(spans) != 1 {
-				t.Fatalf("expected 1 merged span covering 'foo(a, b)', got %d: %+v", len(spans), spans)
-			}
-			if spans[0].StartCol != 0 || spans[0].EndCol != 9 {
-				t.Errorf("expected balanced span [0..9] covering 'foo(a, b)', got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
-			}
+			testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "<del>foo(a, b)</del>\n")
 		})
 
 		t.Run("DoesNotBridgeUnmatchedClosingBraceInGap", func(t *testing.T) {
@@ -1277,15 +1109,7 @@ func TestBuildHighlightSpans_BalancedBracketGapMerging(t *testing.T) {
 			}
 
 			spans := BuildHighlightSpans(fileBytes, actions, "right")
-			if len(spans) != 2 {
-				t.Fatalf("expected 2 separate insert spans without swallowing '}', got %d: %+v", len(spans), spans)
-			}
-			if spans[0].StartCol != 18 || spans[0].EndCol != 21 {
-				t.Errorf("expected span 0 [18..21], got [%d..%d]", spans[0].StartCol, spans[0].EndCol)
-			}
-			if spans[1].StartCol != 23 || spans[1].EndCol != 24 {
-				t.Errorf("expected span 1 [23..24], got [%d..%d]", spans[1].StartCol, spans[1].EndCol)
-			}
+			testutil.AssertTagged(t, string(fileBytes), toTestSpans(spans), "return .{ .name = <ins>val</ins> }<ins>;</ins>\n")
 		})
 	})
 
@@ -1639,22 +1463,8 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 	}
 
 	spans := BuildHighlightSpans(srcBytes, []Action{act}, "left", extra)
-	var commentSpans []HighlightSpan
-	for _, s := range spans {
-		if s.Line == 0 {
-			commentSpans = append(commentSpans, s)
-		}
-	}
-
-	if len(commentSpans) == 0 {
-		t.Fatalf("expected highlight span on line 0 for comment trivia, got none")
-	}
-	if commentSpans[0].Action != "move" {
-		t.Errorf("expected comment action to be 'move', got %q", commentSpans[0].Action)
-	}
-	if commentSpans[0].ColorIndex != 1 {
-		t.Errorf("expected comment ColorIndex to match anchor (1), got %d", commentSpans[0].ColorIndex)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spans),
+		"<mov1>// Doc for relocated function</mov1>\n<mov1>func Relocated() {}</mov1>\n")
 
 	// An update action inside the moved comment promotes to move_update.
 	updAct := Action{
@@ -1667,18 +1477,8 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 		OrigEndByte:   16,
 	}
 	spansWithUpd := BuildHighlightSpans(srcBytes, []Action{act, updAct}, "left", extra)
-	hasMoveUpdate := false
-	for _, s := range spansWithUpd {
-		if s.Line == 0 && s.Action == "move_update" {
-			hasMoveUpdate = true
-			if s.ColorIndex != 1 {
-				t.Errorf("expected move_update ColorIndex to match anchor (1), got %d", s.ColorIndex)
-			}
-		}
-	}
-	if !hasMoveUpdate {
-		t.Errorf("expected comment update inside move to promote to 'move_update', got: %+v", spansWithUpd)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spansWithUpd),
+		"<mov1>// Doc </mov1><mUpd1>for reloc</mUpd1><mov1>ated function</mov1>\n<mov1>func Relocated() {}</mov1>\n")
 
 	// Deleted comments shouldn't get marked as moved, even if attached to a moved node.
 	delAct := Action{
@@ -1691,20 +1491,8 @@ func TestCommentTriviaHighlighting_Unit(t *testing.T) {
 		OrigEndByte:   29,
 	}
 	spansWithDel := BuildHighlightSpans(srcBytes, []Action{act, delAct}, "left")
-	hasDelete := false
-	for _, s := range spansWithDel {
-		if s.Line == 0 {
-			if s.Action == "move" {
-				t.Errorf("expected deleted comment not to take 'move', got: %+v", s)
-			}
-			if s.Action == "delete" {
-				hasDelete = true
-			}
-		}
-	}
-	if !hasDelete {
-		t.Errorf("expected deleted comment to take 'delete' highlight, got: %+v", spansWithDel)
-	}
+	testutil.AssertTagged(t, string(srcBytes), toTestSpans(spansWithDel),
+		"<del>// Doc for relocated function</del>\n<mov1>func Relocated() {}</mov1>\n")
 }
 
 func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
@@ -1729,20 +1517,16 @@ func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
 		leftSpans := BuildHighlightSpans(leftBytes, []Action{act}, "left")
 		rightSpans := BuildHighlightSpans(rightBytes, []Action{act}, "right")
 
-		if len(leftSpans) == 0 || len(rightSpans) == 0 {
-			t.Fatalf("expected highlight spans on both sides, got left=%d right=%d", len(leftSpans), len(rightSpans))
-		}
-
-		for _, s := range leftSpans {
-			if s.Action == "move" && s.ColorIndex != 0 {
-				t.Errorf("expected left span to collapse to ColorIndex 0, got %d", s.ColorIndex)
-			}
-		}
-		for _, s := range rightSpans {
-			if s.Action == "move" && s.ColorIndex != 0 {
-				t.Errorf("expected right span to collapse to ColorIndex 0, got %d", s.ColorIndex)
-			}
-		}
+		testutil.AssertTagged(t, string(leftBytes), toTestSpans(leftSpans), `<mov>if a {</mov>
+<mov>	return 1</mov>
+<mov>}</mov>
+`)
+		testutil.AssertTagged(t, string(rightBytes), toTestSpans(rightSpans), `<mov>if a &&</mov>
+<mov>	b {</mov>
+<mov>	return 1</mov>
+<mov>	return 2</mov>
+<mov>}</mov>
+`)
 
 		smallAct := Action{
 			Action:         "move",
@@ -1758,16 +1542,16 @@ func TestBuildHighlightSpans_BidirectionalMoveColorConsistency(t *testing.T) {
 		}
 		leftSmall := BuildHighlightSpans(leftBytes, []Action{smallAct}, "left")
 		rightSmall := BuildHighlightSpans(rightBytes, []Action{smallAct}, "right")
-		for _, s := range leftSmall {
-			if s.Action == "move" && s.ColorIndex != 1 {
-				t.Errorf("expected small left span to retain ColorIndex 1, got %d", s.ColorIndex)
-			}
-		}
-		for _, s := range rightSmall {
-			if s.Action == "move" && s.ColorIndex != 1 {
-				t.Errorf("expected small right span to retain ColorIndex 1, got %d", s.ColorIndex)
-			}
-		}
+		testutil.AssertTagged(t, string(leftBytes), toTestSpans(leftSmall), `<mov1>if a {</mov1>
+<mov1>	return 1</mov1>
+<mov1>}</mov1>
+`)
+		testutil.AssertTagged(t, string(rightBytes), toTestSpans(rightSmall), `<mov1>if a &&</mov1>
+<mov1>	b {</mov1>
+<mov1>	return 1</mov1>
+<mov1>	return 2</mov1>
+<mov1>}</mov1>
+`)
 	})
 
 	t.Run("FullEngine", func(t *testing.T) {

@@ -10,17 +10,6 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-func toPipelineTestPairs(grid []serialize.LineAlignmentPair) []testutil.LineAlignmentPair {
-	res := make([]testutil.LineAlignmentPair, len(grid))
-	for i, p := range grid {
-		res[i] = testutil.LineAlignmentPair{
-			LeftLine:  p.LeftLine,
-			RightLine: p.RightLine,
-		}
-	}
-	return res
-}
-
 func TestPipeline_AdaptiveMoveColor(t *testing.T) {
 	// Companion for TestBuildHighlightSpans_AdaptiveMoveColor_FullEngine:
 	// An isolated move takes color slot 0 (Cyan, <mov>). An adjacent move group
@@ -401,7 +390,13 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
-	testPairs := toPipelineTestPairs(res.Envelope.LineAlignment)
+	testPairs := make([]testutil.LineAlignmentPair, len(res.Envelope.LineAlignment))
+	for i, p := range res.Envelope.LineAlignment {
+		testPairs[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
 	testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
 		testutil.Line("var buf bytes.Buffer"),
 		testutil.Line("var buf bytes.Buffer"),
