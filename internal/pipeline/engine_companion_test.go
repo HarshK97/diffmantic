@@ -3165,3 +3165,135 @@ pub fn execute_app() -> bool {
 }
 `)
 }
+
+func TestPipeline_InlinedVar_BinaryChain_NoSpuriousMoves(t *testing.T) {
+	src := `package main
+
+func check(r *Rules, n1 *Node) {
+	var isIgnored bool
+	isStmtOrDecl := (r != nil && (r.IsStatement(n1.Type) || r.IsDeclaration(n1.Type))) ||
+		(r == nil && (rules.IsStatement(n1.Type) || rules.IsDeclaration(n1.Type)))
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !isStmtOrDecl) || r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	} else {
+		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
+			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
+			(rules.IsWrapper(n1.Type) && !isStmtOrDecl) || rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
+	}
+}
+`
+
+	dst := `package main
+
+func check(r *Rules, n1 *Node) {
+	var isIgnored bool
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !r.IsStatement(n1.Type) && !r.IsDeclaration(n1.Type)) ||
+			r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	} else {
+		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
+			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
+			(rules.IsWrapper(n1.Type) && !rules.IsStatement(n1.Type) && !rules.IsDeclaration(n1.Type)) ||
+			rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
+	}
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `package main
+
+func check(r *Rules, n1 *Node) {
+	var isIgnored bool
+	<del>isStmtOrDecl := (r != nil && (r.IsStatement(n1.Type) || r.IsDeclaration(n1.Type))) ||</del>
+<del>		(r == nil && (rules.IsStatement(n1.Type) || rules.IsDeclaration(n1.Type)))</del>
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !<del>isStmtOrDecl</del>) || r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	} else {
+		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
+			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
+			(rules.IsWrapper(n1.Type) && !<del>isStmtOrDecl</del>) || rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
+	}
+}
+`
+
+	expectedRight := `package main
+
+func check(r *Rules, n1 *Node) {
+	var isIgnored bool
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) <ins>&& !r.IsStatement(n1.Type)</ins> && !<ins>r.IsDeclaration(n1.Type)</ins>) ||
+			r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	} else {
+		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
+			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
+			(rules.IsWrapper(n1.Type) <ins>&& !rules.IsStatement(n1.Type)</ins> && !<ins>rules.IsDeclaration(n1.Type)</ins>) ||
+			rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
+			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
+	}
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}
+
+func TestPipeline_InlinedVar_BinaryChain_Rust(t *testing.T) {
+	src := `fn check(r: Option<&Rules>, n: &Node) {
+	let is_stmt_or_decl = (r.is_some() && (is_stmt(n) || is_decl(n))) ||
+		(r.is_none() && (is_stmt_legacy(n) || is_decl_legacy(n)));
+	let is_ignored = is_delim(n) || is_op(n) || is_ident(n) ||
+		(is_wrapper(n) && !is_stmt_or_decl) || is_block(n) || is_punct(n);
+}
+`
+
+	dst := `fn check(r: Option<&Rules>, n: &Node) {
+	let is_ignored = is_delim(n) || is_op(n) || is_ident(n) ||
+		(is_wrapper(n) && !is_stmt(n) && !is_decl(n)) || is_block(n) || is_punct(n);
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "a.rs", "b.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `fn check(r: Option<&Rules>, n: &Node) {
+	<del>let is_stmt_or_decl = (r.is_some() && (is_stmt(n) || is_decl(n))) ||</del>
+<del>		(r.is_none() && (is_stmt_legacy(n) || is_decl_legacy(n)));</del>
+	let is_ignored = is_delim(n) || is_op(n) || is_ident(n) ||
+		(is_wrapper(n) && !<del>is_stmt_or_decl</del>) || is_block(n) || is_punct(n);
+}
+`
+
+	expectedRight := `fn check(r: Option<&Rules>, n: &Node) {
+	let is_ignored = is_delim(n) || is_op(n) || is_ident(n) ||
+		(is_wrapper(n) && !<ins>is_stmt(n) && !is_decl(n)</ins>) || is_block(n) || is_punct(n);
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}

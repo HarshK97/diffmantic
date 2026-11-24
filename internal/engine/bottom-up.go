@@ -1773,7 +1773,32 @@ func hasSplitStatementDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules
 		return false
 	}
 
-	checkSplit := func(root, target *treesitter.ASTNode, targetMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+	isInlinedVarDecl := func(stmt, target *treesitter.ASTNode, revMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
+		if stmt == nil || target == nil || revMap[stmt] != nil {
+			return false
+		}
+		decl1 := stmt.EnclosingContainerDeclaration(r)
+		decl2 := target.EnclosingContainerDeclaration(r)
+		if decl1 != decl2 || (decl1 == nil && stmt.Root() != target.Root()) {
+			return false
+		}
+		targetNames := getAssignmentTargetNames(stmt, r)
+		if len(targetNames) == 0 {
+			return false
+		}
+		var targetNodes []*treesitter.ASTNode
+		if target.Index != nil && target.PreSize > 0 {
+			targetNodes = target.Index.Nodes[target.ID : target.ID+target.PreSize]
+		} else {
+			targetNodes = target.PreOrder()
+		}
+		return slices.ContainsFunc(targetNodes, func(desc *treesitter.ASTNode) bool {
+			isID := (r != nil && r.IsIdentifier(desc.Type)) || (r == nil && rules.IsIdentifier(desc.Type))
+			return isID && desc.Label != "" && slices.Contains(targetNames, desc.Label)
+		})
+	}
+
+	checkSplit := func(root, target *treesitter.ASTNode, targetMap, reverseMap map[*treesitter.ASTNode]*treesitter.ASTNode) bool {
 		var nodes []*treesitter.ASTNode
 		if root.Index != nil {
 			if root.PreSize > 1 {
@@ -1800,7 +1825,9 @@ func hasSplitStatementDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules
 					stmtTarget = FindImmediateStatement(target, r)
 				}
 				if stmtD2 != nil && stmtTarget != nil && stmtD2 != stmtTarget {
-					hasOutsideStmt = true
+					if reverseMap == nil || !isInlinedVarDecl(stmtD2, target, reverseMap) {
+						hasOutsideStmt = true
+					}
 				}
 			}
 			if hasInside && hasOutsideStmt {
@@ -1810,10 +1837,10 @@ func hasSplitStatementDescendant(t1, c *treesitter.ASTNode, m *Mapping, r *rules
 		return false
 	}
 
-	if checkSplit(t1, c, m.Src()) {
+	if checkSplit(t1, c, m.Src(), nil) {
 		return true
 	}
-	return checkSplit(c, t1, m.Dst())
+	return checkSplit(c, t1, m.Dst(), m.Src())
 }
 
 // hasAsymmetricOperatorOperands reports whether t1 and c2Parent are binary or comparison
