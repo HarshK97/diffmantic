@@ -1597,3 +1597,125 @@ fn init_info_single<'a>(roots: &[&'a Syntax<'a>], next_id: <ins>&mut NonZeroU32<
 }
 `)
 }
+
+func TestPipeline_Postprocess_SameLineCrossStatementMove_ThresholdBypass(t *testing.T) {
+	src := `package main
+
+func foo() {
+	name1 := getDeclarationName(s1)
+	if name1 == "" {
+		name1 = getClosureDeclarationName(s1, r)
+	}
+	name2 := getDeclarationName(s2)
+	if name2 == "" {
+		name2 = getClosureDeclarationName(s2, r)
+	}
+}
+`
+
+	dst := `package main
+
+func foo() {
+	r = cmp.Or(r, rulesFor(t1))
+	scope1 := getScopeName(s1.Parent)
+	scope2 := getScopeName(s2.Parent)
+	sameScope := (scope1 == "" && scope2 == "") || (scope1 != "" && scope2 != "" && scope1 == scope2)
+
+	name1 := cmp.Or(getDeclarationName(s1), getClosureDeclarationName(s1, r))
+	name2 := cmp.Or(getDeclarationName(s2), getClosureDeclarationName(s2, r))
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `package main
+
+func foo() {
+	name1 := getDeclarationName(s1)
+	<del>if name1 == "" {</del>
+<del>		name1 = getClosureDeclarationName(s1, r)</del>
+<del>	}</del>
+	name2 := getDeclarationName(s2)
+	<del>if name2 == "" {</del>
+<del>		name2 = getClosureDeclarationName(s2, r)</del>
+<del>	}</del>
+}
+`
+
+	expectedRight := `package main
+
+func foo() {
+	<ins>r = cmp.Or(r, rulesFor(t1))</ins>
+	<ins>scope1 := getScopeName(s1.Parent)</ins>
+	<ins>scope2 := getScopeName(s2.Parent)</ins>
+	<ins>sameScope := (scope1 == "" && scope2 == "") || (scope1 != "" && scope2 != "" && scope1 == scope2)</ins>
+
+	name1 := <ins>cmp.Or(</ins>getDeclarationName(s1)<ins>, getClosureDeclarationName(s1, r))</ins>
+	name2 := <ins>cmp.Or(</ins>getDeclarationName(s2)<ins>, getClosureDeclarationName(s2, r))</ins>
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}
+
+func TestPipeline_Postprocess_SameLineCrossStatementMove_ThresholdBypass_Rust(t *testing.T) {
+	src := `fn foo() {
+    let mut name1 = get_declaration_name(s1);
+    if name1.is_empty() {
+        name1 = get_closure_declaration_name(s1, r);
+    }
+    let mut name2 = get_declaration_name(s2);
+    if name2.is_empty() {
+        name2 = get_closure_declaration_name(s2, r);
+    }
+}
+`
+	dst := `fn foo() {
+    r = resolve_rules(t1);
+    let scope1 = get_scope_name(&s1);
+    let scope2 = get_scope_name(&s2);
+    let same_scope = scope1 == scope2;
+
+    let name1 = get_declaration_name(s1).or_else(|| get_closure_declaration_name(s1, r));
+    let name2 = get_declaration_name(s2).or_else(|| get_closure_declaration_name(s2, r));
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "a.rs", "b.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `fn foo() {
+    let <del>mut</del> name1 = get_declaration_name(s1);
+    <del>if name1.is_empty() {</del>
+<del>        name1 = get_closure_declaration_name(s1, r);</del>
+<del>    }</del>
+    let <del>mut</del> name2 = get_declaration_name(s2);
+    <del>if name2.is_empty() {</del>
+<del>        name2 = get_closure_declaration_name(s2, r);</del>
+<del>    }</del>
+}
+`
+
+	expectedRight := `fn foo() {
+    <ins>r = resolve_rules(t1);</ins>
+    <ins>let scope1 = get_scope_name(&s1);</ins>
+    <ins>let scope2 = get_scope_name(&s2);</ins>
+    <ins>let same_scope = scope1 == scope2;</ins>
+
+    let name1 = get_declaration_name(s1)<ins>.or_else(|| get_closure_declaration_name(s1, r))</ins>;
+    let name2 = get_declaration_name(s2)<ins>.or_else(|| get_closure_declaration_name(s2, r))</ins>;
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}
