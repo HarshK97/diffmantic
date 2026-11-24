@@ -16,9 +16,9 @@ func isDelimitedOrBlockContainer(n *treesitter.ASTNode, r *rules.Rules) bool {
 		return false
 	}
 	if r != nil {
-		return r.IsWrapper(n.Type) || r.IsBlock(n.Type) || r.IsDelimitedContainer(n.Type)
+		return r.IsWrapper(n.Type) || r.IsBlock(n.Type) || r.IsDelimitedContainer(n.Type) || r.IsCaseClause(n.Type)
 	}
-	return rules.IsWrapper(n.Type) || rules.IsBlock(n.Type) || rules.IsDelimitedContainer(n.Type)
+	return rules.IsWrapper(n.Type) || rules.IsBlock(n.Type) || rules.IsDelimitedContainer(n.Type) || rules.IsCaseClause(n.Type)
 }
 
 // isPayloadLeaf reports whether d is a content leaf. Jump keywords (return,
@@ -367,6 +367,32 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 	return max(score, 1)
 }
 
+// isControlFlowInitStatement checks whether a node is a local variable declaration or assignment
+// sitting in the header (init clause) of a control-flow construct (if/for/switch) rather than its body.
+func isControlFlowInitStatement(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || n.Parent == nil || r == nil {
+		return false
+	}
+	p := n.Parent
+	body := findBodyBlock(p, r)
+	if body == n || (body != nil && body.Contains(n)) {
+		return false
+	}
+	return r.IsLocalVarDeclaration(n.Type) || r.IsAssignment(n.Type)
+}
+
+// isInnerStatementBlock reports whether b is a statement block or case clause that is nested
+// inside a control-flow statement rather than being the top-level body of a function or closure.
+func isInnerStatementBlock(b *treesitter.ASTNode, r *rules.Rules) bool {
+	if b == nil || r == nil || (!r.IsBlock(b.Type) && !r.IsCaseClause(b.Type)) {
+		return false
+	}
+	if b.Parent == nil {
+		return false
+	}
+	return !r.IsContainerDeclaration(b.Parent.Type) && !r.IsClosure(b.Parent.Type)
+}
+
 // requiredMoveThreshold computes the dynamic threshold T for a Move action
 // based on construct mobility, scope preservation, and line distance.
 func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) int {
@@ -384,8 +410,36 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 		lineDist = -lineDist
 	}
 
+	srcStmt := engine.FindEnclosingStatement(src, r)
+	dstStmt := engine.FindEnclosingStatement(dst, r)
+
+	// Control-flow init statements (like `if x := 1; ...`) count as their own statements.
+	// Pulling one out of an if/for/switch header shouldn't be penalized with T=20 like a random expression.
+	if isControlFlowInitStatement(src, r) {
+		srcStmt = src
+	}
+	if isControlFlowInitStatement(dst, r) {
+		dstStmt = dst
+	}
+
 	// Same-line inline shifts within the same enclosing scope.
 	if lineDist == 0 && sameScopeDeclaration(src, dst, ms, r) {
+		// If an expression jumps across different statement blocks, don't let a coincidental
+		// same line number collapse the threshold to 1. That would let expressions
+		// from deleted blocks steal matches in outer statements.
+		isContainerMap := (r.IsStatement(src.Type) || r.IsDeclaration(src.Type) || r.IsBlock(src.Type) || r.IsDelimitedContainer(src.Type)) && ms.Get(src) == dst
+		if !isContainerMap && ms.Get(srcStmt) != dstStmt && (src != srcStmt || dst != dstStmt) {
+			srcBlock := srcStmt.Parent
+			dstBlock := dstStmt.Parent
+			if isInnerStatementBlock(srcBlock, r) || isInnerStatementBlock(dstBlock, r) {
+				crossBlock := srcBlock != nil && dstBlock != nil &&
+					srcBlock != dstBlock && ms.Src()[srcBlock] != dstBlock && ms.Dst()[dstBlock] != srcBlock
+				if crossBlock {
+					return 20
+				}
+			}
+		}
+
 		// Don't treat same-line shifts between different struct fields (crossKey)
 		// or different declarations (crossDecl) as trivial moves. Without this,
 		// a bare token like a lifetime, type, or identifier can "move" into
@@ -407,30 +461,6 @@ func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 	// declarations across distant files.
 	if r.IsDeclaration(src.Type) && r.IsDeclaration(dst.Type) {
 		return 20
-	}
-
-	srcStmt := engine.FindEnclosingStatement(src, r)
-	dstStmt := engine.FindEnclosingStatement(dst, r)
-
-	// Treat control-flow init statements as independent statement boundaries so
-	// moving an init statement out of an if/for/switch header doesn't get treated
-	// as an expression extraction/inlining with a prohibitive T=20 threshold.
-	isInitStmt := func(n *treesitter.ASTNode) bool {
-		if n == nil || n.Parent == nil {
-			return false
-		}
-		p := n.Parent
-		body := findBodyBlock(p, r)
-		if body == n || (body != nil && body.Contains(n)) {
-			return false
-		}
-		return r.IsLocalVarDeclaration(n.Type) || r.IsAssignment(n.Type)
-	}
-	if isInitStmt(src) {
-		srcStmt = src
-	}
-	if isInitStmt(dst) {
-		dstStmt = dst
 	}
 
 	// Moves within the same function or declaration.
