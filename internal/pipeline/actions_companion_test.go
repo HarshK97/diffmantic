@@ -90,22 +90,7 @@ func TestPipeline_PythonStatementSwap(t *testing.T) {
 	}
 
 	// Verify directional badges
-	srcLines := strings.Split(string(src), "\n")
-	dstLines := strings.Split(string(dst), "\n")
-	srcOffsets := serialize.BuildLineIndex(src)
-	dstOffsets := serialize.BuildLineIndex(dst)
-
-	isPairChanged := make([]bool, len(res.Envelope.LineAlignment))
-	for i, pair := range res.Envelope.LineAlignment {
-		if pair.LeftLine == 1 || pair.RightLine == 21 {
-			isPairChanged[i] = true
-		}
-	}
-	changeIntervals := renderutil.BuildChangeIntervals(isPairChanged)
-	hunks := renderutil.MergeHunks(changeIntervals, len(res.Envelope.LineAlignment), 3)
-
-	pyRules := rules.Get("python")
-	badges := renderutil.BuildMoveBadges(res.Envelope.Actions, hunks, res.Envelope.LineAlignment, srcOffsets, dstOffsets, srcLines, dstLines, pyRules)
+	badges := buildPipelineBadges(res, 3, "python")
 
 	badgeSrc, hasSrc := badges.SrcLineBadges[1]
 	if !hasSrc || !strings.Contains(badgeSrc, "➔") {
