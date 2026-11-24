@@ -1918,7 +1918,6 @@ func configureApp() {
 	})
 
 	t.Run("FullEngine_Java", func(t *testing.T) {
-		t.Skip("temporarily skipped during rebase; pending BottomUp method chain callee update")
 		src := `class AppConfig {
     void configureApp() {
         int flags = 0;
@@ -2007,8 +2006,8 @@ func configureApp() {
 
 		// 6. Argument literal 'true' must not be stolen across mismatched callees.
 		testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
-			testutil.TextQuery{Text: "true", Type: "boolean_literal", Occurrence: 1},
-			testutil.TextQuery{Text: "true", Type: "boolean_literal", Occurrence: 1},
+			testutil.TextQuery{Text: "true", Type: "true", Occurrence: 1},
+			testutil.TextQuery{Text: "true", Type: "true", Occurrence: 1},
 		)
 	})
 }
