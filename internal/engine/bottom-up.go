@@ -702,12 +702,16 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 			return false
 		}
 		body := findBodyBlock(constr, r)
-		shared, foreign := 0, 0
+		hasLogicalHeader := headerHasLogicalOperator(constr, body, r)
+		shared, foreign, sibling := 0, 0, 0
 
 		checkNode := func(n *treesitter.ASTNode) {
 			if mappedNode, ok := mapped[n]; ok {
 				if target.Contains(mappedNode) || target == mappedNode {
 					shared++
+				} else if hasLogicalHeader && isAdjacentSiblingGuardClause(target, mappedNode, r) {
+					// Don't treat sibling conditions as foreign when they merge into a compound header.
+					sibling++
 				} else {
 					foreign++
 				}
@@ -723,7 +727,11 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 				checkNode(d)
 			}
 		}
-		return foreign > 0 && foreign >= shared
+		effectiveForeign := foreign
+		if shared == 0 {
+			effectiveForeign += sibling
+		}
+		return effectiveForeign > 0 && effectiveForeign >= shared
 	}
 
 	if hasMismatch(constr2, cmp.Or(constr1, t1), m.Dst()) {
@@ -734,6 +742,86 @@ func hasForeignHeaderOwner(t1, c *treesitter.ASTNode, m *Mapping, r *rules.Rules
 	}
 
 	return false
+}
+
+// headerHasLogicalOperator reports whether the condition header of constr contains a logical operator (&&, ||, and, or).
+// It inspects only children preceding the body block so else branches and body statements are never scanned.
+func headerHasLogicalOperator(constr, body *treesitter.ASTNode, r *rules.Rules) bool {
+	if constr == nil || body == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(constr.GetLanguage()))
+	for _, child := range constr.Children {
+		if child == body {
+			break
+		}
+		if hasLogicalOp(child, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLogicalOp(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if isLogicalOperator(n, r) {
+		return true
+	}
+	for _, child := range n.Children {
+		if hasLogicalOp(child, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLogicalOperator reports whether n is an aliased logical operator token (&&, ||, and, or, ??).
+func isLogicalOperator(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil || len(n.Children) > 0 {
+		return false
+	}
+	if r != nil {
+		return r.IsLogicalOperator(n.Type)
+	}
+	return rules.IsLogicalOperator(n.Type)
+}
+
+// isAdjacentSiblingGuardClause reports whether mappedNode belongs to an adjacent sibling conditional statement
+// in the same enclosing scope as target.
+func isAdjacentSiblingGuardClause(target, mappedNode *treesitter.ASTNode, r *rules.Rules) bool {
+	if target == nil || mappedNode == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(target.GetLanguage()), rules.Get(mappedNode.GetLanguage()))
+	stmtTarget := FindEnclosingStatement(target, r)
+	stmtMapped := FindEnclosingStatement(mappedNode, r)
+	if stmtTarget == nil || stmtMapped == nil || stmtTarget == stmtMapped {
+		return false
+	}
+	if findBodyBlock(stmtTarget, r) == nil || findBodyBlock(stmtMapped, r) == nil {
+		return false
+	}
+	parent := stmtTarget.Parent
+	if parent == nil || parent != stmtMapped.Parent {
+		return false
+	}
+
+	idxTarget := stmtTarget.ChildIndex()
+	idxMapped := stmtMapped.ChildIndex()
+	if idxTarget == -1 || idxMapped == -1 {
+		return false
+	}
+
+	minIdx := min(idxTarget, idxMapped)
+	maxIdx := max(idxTarget, idxMapped)
+	for i := minIdx + 1; i < maxIdx; i++ {
+		c := parent.Children[i]
+		isStmtOrDecl := (r != nil && (r.IsStatement(c.Type) || r.IsDeclaration(c.Type))) ||
+			(r == nil && (rules.IsStatement(c.Type) || rules.IsDeclaration(c.Type)))
+		if isStmtOrDecl {
+			return false
+		}
+	}
+	return true
 }
 
 // candidate finds the best unmatched node in T2 to pair with t1 using unified affinity scoring.
@@ -894,6 +982,10 @@ func RollupMatchedContainers(t1Root, t2Root *treesitter.ASTNode, m *Mapping) {
 
 			m.Add(t1, bestParent)
 			reconcileDeclarationSignatures(t1, bestParent, m, r)
+			if srcBody != nil && dstBody != nil && !m.Has(srcBody) && !m.HasDst(dstBody) && TypesMatch(srcBody.Type, dstBody.Type, r) {
+				m.Add(srcBody, dstBody)
+				Recover(srcBody, dstBody, m)
+			}
 			if hasUnmappedChild(t1, m.Has) && hasUnmappedChild(bestParent, m.HasDst) {
 				Recover(t1, bestParent, m)
 			}

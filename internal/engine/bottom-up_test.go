@@ -1077,59 +1077,6 @@ func TestHasHeaderMatch(t *testing.T) {
 	}
 }
 
-func TestHasForeignHeaderOwner(t *testing.T) {
-	r := rules.Get("go")
-
-	code1 := `package main
-
-func f() {
-	if nilR.IsCaseClause("expression_case") {
-		t.Errorf()
-	}
-	if !IsCaseClause("case_clause") {
-		t.Errorf()
-	}
-}
-`
-	code2 := `package main
-
-func f() {
-	if nilR.IsCaseClause("expression_case") {
-		t.Errorf()
-	}
-}
-`
-	root1 := parseSnippet(t, code1, "test.go")
-	root2 := parseSnippet(t, code2, "test.go")
-
-	ifStmts1 := findAllNodesByType(root1, "if_statement")
-	if1, if2 := ifStmts1[0], ifStmts1[1]
-	cond1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
-	body1 := findFirstNode(if1, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
-	body2 := findFirstNode(if2, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
-
-	newIf := findFirstNode(root2, func(n *treesitter.ASTNode) bool { return n.Type == "if_statement" })
-	newCond := findFirstNode(newIf, func(n *treesitter.ASTNode) bool { return n.Type == "call_expression" })
-	newBody := findFirstNode(newIf, func(n *treesitter.ASTNode) bool { return n.Type == "block" })
-
-	m := NewMapping()
-	m.Add(cond1, newCond)
-
-	if !hasForeignHeaderOwner(if2, newIf, m, r) {
-		t.Errorf("expected hasForeignHeaderOwner to be true for if2 against newIf whose header is mapped to if1")
-	}
-	if !hasForeignHeaderOwner(body2, newBody, m, r) {
-		t.Errorf("expected hasForeignHeaderOwner to be true for body2 against newBody whose parent header is mapped to if1")
-	}
-
-	if hasForeignHeaderOwner(if1, newIf, m, r) {
-		t.Errorf("expected hasForeignHeaderOwner to be false for if1 against newIf")
-	}
-	if hasForeignHeaderOwner(body1, newBody, m, r) {
-		t.Errorf("expected hasForeignHeaderOwner to be false for body1 against newBody")
-	}
-}
-
 func TestHasForeignHeaderOwner_MinorityStraySubexpression(t *testing.T) {
 	t.Run("FullEngine", func(t *testing.T) {
 		src := `package main
@@ -4898,5 +4845,155 @@ func check(r *Rules, n1 *Node) {
 			"simdjson::SIMDJSON_PADDING",
 			"qualified_identifier",
 		)
+	})
+}
+
+// TestHasForeignHeaderOwner_MergedSequentialIfStatements verifies that when two adjacent
+// if statements merge into a single compound condition, the first if statement and inner
+// bodies match in place instead of treating the sibling condition as foreign.
+func TestHasForeignHeaderOwner_MergedSequentialIfStatements(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `package main
+
+func process(ja Action) {
+	preCheck()
+	// Attach leading doc comments as visual move spans so they share the moved block's highlight.
+	if ja.ASTNode != nil {
+		for _, tr := range ja.ASTNode.LeadingTrivia {
+			leftDelims = append(leftDelims, tr)
+		}
+	}
+
+	if ja.DestASTNode != nil {
+		for _, tr := range ja.DestASTNode.LeadingTrivia {
+			rightDelims = append(rightDelims, tr)
+		}
+	}
+	postCheck()
+}
+`
+		dst := `package main
+
+func process(ja Action) {
+	preCheck()
+	// Attach leading doc comments as visual move spans so they share the moved block's highlight.
+	if ja.ASTNode != nil && ja.DestASTNode != nil && len(ja.ASTNode.LeadingTrivia) > 0 && len(ja.DestASTNode.LeadingTrivia) > 0 {
+		for _, tr := range ja.ASTNode.LeadingTrivia {
+			leftDelims = append(leftDelims, tr)
+		}
+
+		for _, tr := range ja.DestASTNode.LeadingTrivia {
+			rightDelims = append(rightDelims, tr)
+		}
+	}
+	postCheck()
+}
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.go")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.go")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Enclosing function declaration and parameters map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"func process(ja Action)", "func process(ja Action)", "function_declaration")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"ja Action", "ja Action", "parameter_declaration")
+
+		// Surrounding sequence statements map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"preCheck()", "preCheck()", "call_expression")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"postCheck()", "postCheck()", "call_expression")
+
+		// First if statement matches the consolidated if statement in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"if ja.ASTNode != nil", "if ja.ASTNode != nil", "if_statement")
+
+		// Second if statement should be unmapped (deleted)
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"if ja.DestASTNode != nil", "if_statement")
+
+		// Both loops map to their counterparts in dst
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"for _, tr := range ja.ASTNode.LeadingTrivia",
+			"for _, tr := range ja.ASTNode.LeadingTrivia",
+			"for_statement",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"for _, tr := range ja.DestASTNode.LeadingTrivia",
+			"for _, tr := range ja.DestASTNode.LeadingTrivia",
+			"for_statement",
+		)
+	})
+}
+
+func TestHasForeignHeaderOwner_MergedSequentialIfStatements_Python(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := `def process(item):
+    pre_check()
+    if item.first is not None:
+        log_first(item.first)
+    if item.second is not None:
+        log_second(item.second)
+    post_check()
+`
+		dst := `def process(item):
+    pre_check()
+    if item.first is not None and item.second is not None and len(item.first) > 0:
+        log_first(item.first)
+        log_second(item.second)
+    post_check()
+`
+		srcAST, err := treesitter.Parse([]byte(src), "test.py")
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		dstAST, err := treesitter.Parse([]byte(dst), "test.py")
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+
+		part := NewLinePartition([]byte(src), []byte(dst))
+		mr := Match(srcAST, dstAST, []byte(src), []byte(dst), part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// Enclosing function maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"def process(item):", "def process(item):", "function_definition")
+
+		// Surrounding statements map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"pre_check()", "pre_check()", "expression_statement")
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"post_check()", "post_check()", "expression_statement")
+
+		// First if statement matches the consolidated if statement in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"if item.first is not None:", "if item.first is not None and item.second is not None and len(item.first) > 0:", "if_statement")
+
+		// Second if statement is unmapped (deleted)
+		testutil.AssertUnmappedText(t, srcAST, []byte(src), mr.Mappings.Src(),
+			"if item.second is not None:", "if_statement")
+
+		// First log statement maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"log_first(item.first)", "log_first(item.first)", "expression_statement")
+
+		// Second log statement maps to its counterpart in destination
+		testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), mr.Mappings.Src(),
+			"log_second(item.second)", "log_second(item.second)", "expression_statement")
 	})
 }

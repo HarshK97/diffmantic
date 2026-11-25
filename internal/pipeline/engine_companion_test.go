@@ -622,6 +622,77 @@ func renderTest(left, right, lastSrcLineIdx, lastDstLineIdx int, sText, dText st
 `)
 }
 
+func TestPipeline_MergedSequentialIfStatements(t *testing.T) {
+	src := `package main
+
+func process(ja Action) {
+	if ja.ASTNode != nil {
+		for _, tr := range ja.ASTNode.LeadingTrivia {
+			leftDelims = append(leftDelims, tr)
+		}
+	}
+
+	if ja.DestASTNode != nil {
+		for _, tr := range ja.DestASTNode.LeadingTrivia {
+			rightDelims = append(rightDelims, tr)
+		}
+	}
+}
+`
+	dst := `package main
+
+func process(ja Action) {
+	if ja.ASTNode != nil && ja.DestASTNode != nil && len(ja.ASTNode.LeadingTrivia) > 0 && len(ja.DestASTNode.LeadingTrivia) > 0 {
+		for _, tr := range ja.ASTNode.LeadingTrivia {
+			leftDelims = append(leftDelims, tr)
+		}
+
+		for _, tr := range ja.DestASTNode.LeadingTrivia {
+			rightDelims = append(rightDelims, tr)
+		}
+	}
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `package main
+
+func process(ja Action) {
+	if ja.ASTNode != nil {
+		for _, tr := range ja.ASTNode.LeadingTrivia {
+			leftDelims = append(leftDelims, tr)
+		}
+	}
+
+	<del>if ja.DestASTNode != nil {</del>
+		<mov>for _, tr := range ja.DestASTNode.LeadingTrivia {</mov>
+<mov>			rightDelims = append(rightDelims, tr)</mov>
+<mov>		}</mov>
+	<del>}</del>
+}
+`)
+
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `package main
+
+func process(ja Action) {
+	if ja.ASTNode != nil <ins>&& ja.DestASTNode != nil && len(ja.ASTNode.LeadingTrivia) > 0 && len(ja.DestASTNode.LeadingTrivia) > 0</ins> {
+		for _, tr := range ja.ASTNode.LeadingTrivia {
+			leftDelims = append(leftDelims, tr)
+		}
+
+		<mov>for _, tr := range ja.DestASTNode.LeadingTrivia {</mov>
+<mov>			rightDelims = append(rightDelims, tr)</mov>
+<mov>		}</mov>
+	}
+}
+`)
+}
+
 func TestPipeline_IfElseBlockArgumentAdditionRecovery(t *testing.T) {
 	src := []byte(`package main
 
