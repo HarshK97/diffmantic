@@ -407,6 +407,238 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 	)
 }
 
+func TestPipeline_UnmappedBlocks_StackedCleanly_Alignment(t *testing.T) {
+	// Replaced functions should render as clean stacked blocks without interleaved braces or returns.
+	oldSrc := `package main
+
+func DeletedWorker(id int) error {
+	if id < 0 {
+		return nil
+	}
+	cleanup()
+	return nil
+}
+
+func SurvivingHelper() string {
+	return "ok"
+}
+`
+	newSrc := `package main
+
+func InsertedWorker(name string) (bool, error) {
+	if name == "" {
+		return false, nil
+	}
+	execute()
+	return true, nil
+}
+
+func SurvivingHelper() string {
+	return "ok"
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "old.go", "new.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testPairs := make([]testutil.LineAlignmentPair, len(res.Envelope.LineAlignment))
+	for i, p := range res.Envelope.LineAlignment {
+		testPairs[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
+
+	testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("func SurvivingHelper() string {"),
+		testutil.Line("func SurvivingHelper() string {"),
+	)
+
+	// Closing braces shouldn't match across unrelated functions.
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Nth("}", 2),
+		testutil.Nth("}", 2),
+	)
+
+	// Return statements shouldn't match across unrelated functions.
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Nth("return nil", 2),
+		testutil.Line("return true, nil"),
+	)
+}
+
+func TestPipeline_UnmappedBlocks_StackedCleanly_Python(t *testing.T) {
+	oldSrc := `def old_worker(x):
+    if x < 0:
+        return None
+    cleanup()
+    return None
+
+def surviving_helper():
+    return "ok"
+`
+	newSrc := `def new_worker(name):
+    if name == "":
+        return False
+    execute()
+    return True
+
+def surviving_helper():
+    return "ok"
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "old.py", "new.py", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testPairs := make([]testutil.LineAlignmentPair, len(res.Envelope.LineAlignment))
+	for i, p := range res.Envelope.LineAlignment {
+		testPairs[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
+
+	testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("def surviving_helper():"),
+		testutil.Line("def surviving_helper():"),
+	)
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("    if x < 0:"),
+		testutil.Line("    if name == \"\":"),
+	)
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Nth("    return None", 2),
+		testutil.Line("    return True"),
+	)
+}
+
+func TestPipeline_UnmappedBlocks_StackedCleanly_Rust(t *testing.T) {
+	oldSrc := `fn old_worker(id: i32) -> Result<(), ()> {
+    if id < 0 {
+        return Ok(());
+    }
+    cleanup();
+    Ok(())
+}
+
+fn surviving_helper() -> &'static str {
+    "ok"
+}
+`
+	newSrc := `fn new_worker(name: &str) -> Result<bool, ()> {
+    if name.is_empty() {
+        return Ok(false);
+    }
+    execute();
+    Ok(true)
+}
+
+fn surviving_helper() -> &'static str {
+    "ok"
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "old.rs", "new.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testPairs := make([]testutil.LineAlignmentPair, len(res.Envelope.LineAlignment))
+	for i, p := range res.Envelope.LineAlignment {
+		testPairs[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
+
+	testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("fn surviving_helper() -> &'static str {"),
+		testutil.Line("fn surviving_helper() -> &'static str {"),
+	)
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Nth("}", 2),
+		testutil.Nth("}", 2),
+	)
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("    Ok(())"),
+		testutil.Line("    Ok(true)"),
+	)
+}
+
+func TestPipeline_AttachedCommentAnchorBonding_Alignment(t *testing.T) {
+	// Inserted comments attached to surviving statements should stay bonded directly above them.
+	oldSrc := `package main
+
+func OldTask() {
+	// Old task comment above deleted work
+	oldWork()
+}
+
+func Process() error {
+	return doAction()
+}
+`
+	newSrc := `package main
+
+func Process() error {
+	// Execute the primary process action
+	return doAction()
+}
+`
+	res, err := Run([]byte(oldSrc), []byte(newSrc), "old.go", "new.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	testPairs := make([]testutil.LineAlignmentPair, len(res.Envelope.LineAlignment))
+	for i, p := range res.Envelope.LineAlignment {
+		testPairs[i] = testutil.LineAlignmentPair{
+			LeftLine:  p.LeftLine,
+			RightLine: p.RightLine,
+		}
+	}
+
+	testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("func Process() error {"),
+		testutil.Line("func Process() error {"),
+	)
+	testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("return doAction()"),
+		testutil.Line("return doAction()"),
+	)
+
+	// Don't align newly inserted comments with deleted comments from old tasks.
+	testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+		testutil.Line("// Old task comment above deleted work"),
+		testutil.Line("// Execute the primary process action"),
+	)
+}
+
 func TestPipeline_AssignMoveColors_DivergingMoves(t *testing.T) {
 	// Companion for TestAssignMoveColors_FullEngine:
 	// Diverging moves from nearby source get distinct colors (<mov> vs <mov1>).

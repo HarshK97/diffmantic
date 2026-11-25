@@ -40,24 +40,31 @@ func isImportNode(node *treesitter.ASTNode, lang string) bool {
 
 // isAnchorCompatible checks whether both comments attach to statements that mapped to each other.
 func isAnchorCompatible(sc, dc *CommentBlock, mappings *engine.Mapping) bool {
-	if mappings == nil || mappings.Src() == nil {
+	if mappings == nil || mappings.Src() == nil || mappings.Dst() == nil {
 		return true
 	}
-	if sc == nil || dc == nil || sc.AnchorNode == nil || dc.AnchorNode == nil {
+	if sc == nil || dc == nil {
 		return true
 	}
-	if mappings.Src()[sc.AnchorNode] == dc.AnchorNode {
+	if sc.AnchorNode != nil && dc.AnchorNode != nil && mappings.Src()[sc.AnchorNode] == dc.AnchorNode {
 		return true
 	}
 	// If the source anchor mapped to a surviving statement elsewhere, the comment moved away from it: reject.
-	if mappings.Src()[sc.AnchorNode] != nil {
+	if sc.AnchorNode != nil && mappings.Src()[sc.AnchorNode] != nil {
 		return false
 	}
 	// If the source anchor was deleted from under an identical comment, permit pairing only for imports at the file root.
-	if sc.Text == dc.Text && sc.EnclosingDecl == nil && dc.EnclosingDecl == nil {
+	if sc.AnchorNode != nil && dc.AnchorNode != nil && sc.Text == dc.Text && sc.EnclosingDecl == nil && dc.EnclosingDecl == nil {
 		if isImportNode(sc.AnchorNode, sc.Language) && isImportNode(dc.AnchorNode, dc.Language) {
 			return true
 		}
+	}
+	// If the destination statement survived from elsewhere in the file, this comment was added to it: don't bond with an old deleted comment.
+	if dc.AnchorNode != nil && mappings.Dst()[dc.AnchorNode] != nil {
+		return false
+	}
+	if sc.AnchorNode == nil && dc.AnchorNode == nil {
+		return true
 	}
 	return false
 }

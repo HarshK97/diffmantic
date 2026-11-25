@@ -92,8 +92,10 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 		return isBlock && !movedNodes[n1] && !movedNodes[n2]
 	})
 
+	unmappedSrc, unmappedDst := collectUnmappedBlocks(es, ms, srcLines, dstLines)
+
 	// Tier 1: Unchanged lines (declarations, comments, and identical text).
-	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched, stmtIdx, inPlaceStatements)
+	tier1 := collectUnchangedAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings, stationaryStatements, matched, stmtIdx, inPlaceStatements, unmappedSrc, unmappedDst)
 
 	// Tier 2: Stationary AST statements with surviving structural content.
 	tier2 := collectStationaryStatementAnchors(srcLines, dstLines, stationaryStatements, tier1)
@@ -115,7 +117,8 @@ func AlignLines(srcBytes, dstBytes []byte, ms *engine.Mapping, es *actions.EditS
 
 	scratch := alignScratchPool.Get().(*alignScratch)
 	defer alignScratchPool.Put(scratch)
-	return emitGrid(srcLines, dstLines, anchors, moves, gotohMappedStatements, scratch)
+	isASTMode := ms != nil || es != nil
+	return emitGrid(srcLines, dstLines, anchors, moves, gotohMappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 }
 
 func collectMovedNodes(es *actions.EditScript, ms *engine.Mapping) map[*treesitter.ASTNode]bool {
@@ -486,6 +489,7 @@ func collectUnchangedAnchors(
 	matched map[int]int,
 	stmtIdx *stationaryIndex,
 	inPlaceStatements map[int]int,
+	unmappedSrc, unmappedDst map[int]bool,
 ) []anchor {
 	primary := collectDeclarationAndCommentAnchors(srcLines, dstLines, ms, movedNodes, moves, commentLineMappings)
 	cands := make([]anchor, 0, len(primary)+len(stationaryStatements))
@@ -496,6 +500,9 @@ func collectUnchangedAnchors(
 	// 2. Stationary AST statements and verified closing delimiters where text matches
 	for s, d := range stationaryStatements {
 		if s < 0 || s >= len(srcLines) || d < 0 || d >= len(dstLines) {
+			continue
+		}
+		if (unmappedSrc != nil && unmappedSrc[s]) || (unmappedDst != nil && unmappedDst[d]) {
 			continue
 		}
 		sTrim := strings.TrimSpace(srcLines[s])
@@ -509,6 +516,10 @@ func collectUnchangedAnchors(
 	for s := range len(srcLines) {
 		d, ok := matched[s]
 		if !ok || d < 0 || d >= len(dstLines) {
+			continue
+		}
+		// Don't let identical lines inside deleted or inserted functions become Tier 1 anchors.
+		if (unmappedSrc != nil && unmappedSrc[s]) || (unmappedDst != nil && unmappedDst[d]) {
 			continue
 		}
 		// If already handled as a stationary statement, skip to avoid duplicate or conflicting candidates.
@@ -824,20 +835,135 @@ func emitGrid(
 	anchors []anchor,
 	moves []moveRange,
 	mappedStatements map[int]int,
+	unmappedSrc, unmappedDst map[int]bool,
+	isASTMode bool,
 	scratch *alignScratch,
 ) []LineAlignmentPair {
-	var grid []LineAlignmentPair
+	grid := make([]LineAlignmentPair, 0, max(len(srcLines), len(dstLines)))
 	currSrc := 0
 	currDst := 0
 
 	for _, a := range anchors {
-		grid = alignGapGotoh(grid, srcLines, dstLines, currSrc, a.src, currDst, a.dst, moves, mappedStatements, scratch)
+		// When the whole gap is a deleted block on the left and an inserted block on the right,
+		// stack them cleanly instead of letting Gotoh interleave them.
+		if isAllUnmapped(unmappedSrc, srcLines, currSrc, a.src) && isAllUnmapped(unmappedDst, dstLines, currDst, a.dst) {
+			for s := currSrc; s < a.src; s++ {
+				grid = append(grid, LineAlignmentPair{LeftLine: s, RightLine: -1})
+			}
+			for d := currDst; d < a.dst; d++ {
+				grid = append(grid, LineAlignmentPair{LeftLine: -1, RightLine: d})
+			}
+		} else {
+			grid = alignGapGotoh(grid, srcLines, dstLines, currSrc, a.src, currDst, a.dst, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
+		}
+
 		grid = append(grid, LineAlignmentPair{LeftLine: a.src, RightLine: a.dst})
 		currSrc = a.src + 1
 		currDst = a.dst + 1
 	}
 
-	return alignGapGotoh(grid, srcLines, dstLines, currSrc, len(srcLines), currDst, len(dstLines), moves, mappedStatements, scratch)
+	gapSrcEnd := len(srcLines)
+	gapDstEnd := len(dstLines)
+	if isAllUnmapped(unmappedSrc, srcLines, currSrc, gapSrcEnd) && isAllUnmapped(unmappedDst, dstLines, currDst, gapDstEnd) {
+		for s := currSrc; s < gapSrcEnd; s++ {
+			grid = append(grid, LineAlignmentPair{LeftLine: s, RightLine: -1})
+		}
+		for d := currDst; d < gapDstEnd; d++ {
+			grid = append(grid, LineAlignmentPair{LeftLine: -1, RightLine: d})
+		}
+		return grid
+	}
+
+	return alignGapGotoh(grid, srcLines, dstLines, currSrc, gapSrcEnd, currDst, gapDstEnd, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
+}
+
+func isAllUnmapped(unmapped map[int]bool, lines []string, start, end int) bool {
+	if start >= end || len(unmapped) == 0 {
+		return false
+	}
+	hasNonBlank := false
+	for i := start; i < end; i++ {
+		if i >= 0 && i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if !unmapped[i] {
+			return false
+		}
+		hasNonBlank = true
+	}
+	return hasNonBlank
+}
+
+func collectUnmappedBlocks(es *actions.EditScript, ms *engine.Mapping, srcLines, dstLines []string) (map[int]bool, map[int]bool) {
+	unmappedSrc := make(map[int]bool)
+	unmappedDst := make(map[int]bool)
+	if es == nil {
+		return unmappedSrc, unmappedDst
+	}
+
+	for _, a := range es.Actions() {
+		if a.Node == nil {
+			continue
+		}
+		var r *rules.Rules
+		if lang := a.Node.GetLanguage(); lang != "" {
+			r = rules.Get(lang)
+		}
+		isContainerDecl := (r != nil && r.IsContainerDeclaration(a.Node.Type)) || (r == nil && rules.IsContainerDeclaration(a.Node.Type))
+		isTopBlock := ((r != nil && r.IsBlock(a.Node.Type)) || (r == nil && rules.IsBlock(a.Node.Type))) &&
+			(a.Node.Parent == nil || a.Node.Parent.Parent == nil)
+		if !isContainerDecl && !isTopBlock {
+			continue
+		}
+
+		if a.Type == actions.Delete && (ms == nil || ms.Src()[a.Node] == nil) {
+			hasMappedDescendant := false
+			if ms != nil {
+				for _, d := range a.Node.Descendants() {
+					if d != nil && ms.Src()[d] != nil {
+						hasMappedDescendant = true
+						break
+					}
+				}
+			}
+			if !hasMappedDescendant {
+				start := int(a.Node.StartRow)
+				for _, tr := range a.Node.LeadingTrivia {
+					if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) {
+						start = min(start, tr.StartRow)
+					}
+				}
+				end := int(a.Node.EndRow)
+				for row := start; row <= end && row < len(srcLines); row++ {
+					unmappedSrc[row] = true
+				}
+			}
+		} else if a.Type == actions.Insert && (ms == nil || ms.Dst()[a.Node] == nil) {
+			hasMappedDescendant := false
+			if ms != nil {
+				for _, d := range a.Node.Descendants() {
+					if d != nil && ms.Dst()[d] != nil {
+						hasMappedDescendant = true
+						break
+					}
+				}
+			}
+			if !hasMappedDescendant {
+				start := int(a.Node.StartRow)
+				for _, tr := range a.Node.LeadingTrivia {
+					if tr != nil && (tr.IsComment || rules.IsComment(tr.Type)) {
+						start = min(start, tr.StartRow)
+					}
+				}
+				end := int(a.Node.EndRow)
+				for row := start; row <= end && row < len(dstLines); row++ {
+					unmappedDst[row] = true
+				}
+			}
+		}
+	}
+
+	return unmappedSrc, unmappedDst
 }
 
 const maxGotohMatrixCells = 1000000
@@ -848,6 +974,8 @@ func alignGapGotoh(
 	sStart, sEnd, dStart, dEnd int,
 	moves []moveRange,
 	mappedStatements map[int]int,
+	unmappedSrc, unmappedDst map[int]bool,
+	isASTMode bool,
 	scratch *alignScratch,
 ) []LineAlignmentPair {
 	srcCount := sEnd - sStart
@@ -888,12 +1016,12 @@ func alignGapGotoh(
 				currSrc := sStart
 				currDst := dStart
 				for _, sa := range subAnchors {
-					grid = alignGapGotoh(grid, srcLines, dstLines, currSrc, sa.src, currDst, sa.dst, moves, mappedStatements, scratch)
+					grid = alignGapGotoh(grid, srcLines, dstLines, currSrc, sa.src, currDst, sa.dst, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 					grid = append(grid, LineAlignmentPair{LeftLine: sa.src, RightLine: sa.dst})
 					currSrc = sa.src + 1
 					currDst = sa.dst + 1
 				}
-				return alignGapGotoh(grid, srcLines, dstLines, currSrc, sEnd, currDst, dEnd, moves, mappedStatements, scratch)
+				return alignGapGotoh(grid, srcLines, dstLines, currSrc, sEnd, currDst, dEnd, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 			}
 		}
 
@@ -908,9 +1036,9 @@ func alignGapGotoh(
 	}
 
 	if srcCount <= 40 || dstCount <= 40 || srcCount*dstCount <= 3600 {
-		return alignGapGotohDense(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, scratch)
+		return alignGapGotohDense(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 	}
-	return alignGapGotohBanded(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, scratch)
+	return alignGapGotohBanded(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 }
 
 const maxPooledDPSize = 262144
@@ -936,6 +1064,8 @@ func alignGapGotohDense(
 	sStart, sEnd, dStart, dEnd int,
 	moves []moveRange,
 	mappedStatements map[int]int,
+	unmappedSrc, unmappedDst map[int]bool,
+	isASTMode bool,
 	scratch *alignScratch,
 ) []LineAlignmentPair {
 	m := sEnd - sStart
@@ -977,7 +1107,7 @@ func alignGapGotohDense(
 		for j := 1; j <= n; j++ {
 			dIdx := dStart + j - 1
 			dLine := dstLines[dIdx]
-			score := lineMatchScore(sLine, dLine, sIdx, dIdx, moves, mappedStatements, scratch)
+			score := lineMatchScore(sLine, dLine, sIdx, dIdx, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 
 			prevM := dp[offM+prevRowIdx+j-1]
 			prevIx := dp[offIx+prevRowIdx+j-1]
@@ -1076,6 +1206,8 @@ func alignGapGotohBanded(
 	sStart, sEnd, dStart, dEnd int,
 	moves []moveRange,
 	mappedStatements map[int]int,
+	unmappedSrc, unmappedDst map[int]bool,
+	isASTMode bool,
 	scratch *alignScratch,
 ) []LineAlignmentPair {
 	m := sEnd - sStart
@@ -1117,7 +1249,7 @@ func alignGapGotohBanded(
 		for j := jMinCurr; j <= jMaxCurr; j++ {
 			dIdx := dStart + j - 1
 			dLine := dstLines[dIdx]
-			score := lineMatchScore(sLine, dLine, sIdx, dIdx, moves, mappedStatements, scratch)
+			score := lineMatchScore(sLine, dLine, sIdx, dIdx, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 
 			// Diagonal match: sIdx vs dIdx
 			diagIdx := (i-1)*stride + (j - 1)
@@ -1177,7 +1309,7 @@ func alignGapGotohBanded(
 			rawMin := min(int(math.Floor(center)), i, i+n-m) - k
 			rawMax := max(int(math.Ceil(center)), i, i+n-m) + k
 			if (rawMin > 1 && j == rawMin) || (rawMax < n && j == rawMax) {
-				return alignGapGotohDense(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, scratch)
+				return alignGapGotohDense(grid, srcLines, dstLines, sStart, sEnd, dStart, dEnd, moves, mappedStatements, unmappedSrc, unmappedDst, isASTMode, scratch)
 			}
 		}
 
@@ -1281,13 +1413,24 @@ func selectState(mVal, ixVal, iyVal, i, j int) int {
 	return 2
 }
 
+func isCommentLine(s string) bool {
+	return strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/*") || strings.HasPrefix(s, "#") || strings.HasPrefix(s, "--") || strings.HasPrefix(s, ";")
+}
+
 func lineMatchScore(
 	sLine, dLine string,
 	sIdx, dIdx int,
 	moves []moveRange,
 	mappedStatements map[int]int,
+	unmappedSrc, unmappedDst map[int]bool,
+	isASTMode bool,
 	scratch *alignScratch,
 ) int {
+	// Never align lines from unmapped deleted functions with unmapped inserted functions.
+	if (unmappedSrc != nil && unmappedSrc[sIdx]) || (unmappedDst != nil && unmappedDst[dIdx]) {
+		return -1000
+	}
+
 	bonus := 0
 	if targetDst, ok := mappedStatements[sIdx]; ok {
 		if targetDst == dIdx {
@@ -1332,8 +1475,23 @@ func lineMatchScore(
 		return bonus
 	}
 
-	// Continuous Edit Similarity (No rigid cliff-edges)
+	if isASTMode {
+		// Never align a comment line with a code line in AST mode.
+		if isCommentLine(sTrim) != isCommentLine(dTrim) {
+			return -1000
+		}
+
+		// Don't let bare brackets or semicolons match across a gap unless they were already mapped.
+		if bonus == 0 && ((len(sTrim) <= 5 && rules.IsPunctuation(sTrim)) || (len(dTrim) <= 5 && rules.IsPunctuation(dTrim))) {
+			return -1000
+		}
+	}
+
+	// Continuous Edit Similarity
 	sim := calculateSimilarity(sTrim, dTrim, scratch)
+	if isASTMode {
+		return int(math.Round(60.0*sim)) - 35 + bonus
+	}
 	return int(math.Round(20.0*sim)) - 10 + bonus
 }
 
@@ -1344,11 +1502,6 @@ func calculateSimilarity(a, b string, scratch *alignScratch) float64 {
 	la := len(a)
 	lb := len(b)
 	if la < 2 || lb < 2 {
-		return 0.0
-	}
-
-	// Skip bigram comparison early if line lengths differ by more than 3x.
-	if la > 3*lb || lb > 3*la {
 		return 0.0
 	}
 
