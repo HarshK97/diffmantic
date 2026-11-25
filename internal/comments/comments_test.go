@@ -2143,3 +2143,43 @@ import (
 		}
 	})
 }
+
+func TestIsAnchorCompatible(t *testing.T) {
+	nodeA := &treesitter.ASTNode{ID: 1, Type: "expression_statement"}
+	nodeB := &treesitter.ASTNode{ID: 2, Type: "expression_statement"}
+	nodeOther := &treesitter.ASTNode{ID: 3, Type: "expression_statement"}
+
+	m := engine.NewMapping()
+	m.Add(nodeA, nodeB)
+
+	// Both anchors map to each other -> compatible
+	scMapped := &CommentBlock{AnchorNode: nodeA, Text: "// comment"}
+	dcMapped := &CommentBlock{AnchorNode: nodeB, Text: "// comment"}
+	if !isAnchorCompatible(scMapped, dcMapped, m) {
+		t.Errorf("expected mapped anchors to be compatible")
+	}
+
+	// Destination anchor survived from elsewhere, but source comment is new/unrelated -> rejected
+	scUnrelated := &CommentBlock{AnchorNode: nodeOther, Text: "// old task"}
+	if isAnchorCompatible(scUnrelated, dcMapped, m) {
+		t.Errorf("expected unmapped source with surviving destination anchor to be rejected")
+	}
+
+	// Source anchor survived to elsewhere, but destination comment attached to something else -> rejected
+	dcUnrelated := &CommentBlock{AnchorNode: nodeOther, Text: "// new task"}
+	if isAnchorCompatible(scMapped, dcUnrelated, m) {
+		t.Errorf("expected surviving source anchor with foreign destination to be rejected")
+	}
+
+	// Both anchors nil -> compatible
+	scNil := &CommentBlock{Text: "// floating"}
+	dcNil := &CommentBlock{Text: "// floating"}
+	if !isAnchorCompatible(scNil, dcNil, m) {
+		t.Errorf("expected unanchored comments to be compatible")
+	}
+
+	// Nil mappings -> defensive fallback compatible
+	if !isAnchorCompatible(scMapped, dcMapped, nil) {
+		t.Errorf("expected nil mapping to be compatible")
+	}
+}

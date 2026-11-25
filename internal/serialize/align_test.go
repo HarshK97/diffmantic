@@ -1469,6 +1469,84 @@ func processStreamJob(ctx context.Context, job *diffJob, cfg StreamConfig) {
 	})
 }
 
+func TestAlignLines_UnmappedBlocks_StackedCleanly_FullEngine(t *testing.T) {
+	t.Run("FullEngine_UnmappedBlocks_StackedCleanly", func(t *testing.T) {
+		oldSrc := `package main
+
+func UnrelatedOldTask() {
+	if true {
+		doOldA()
+		return
+	}
+}
+
+func Process() {
+	doProcess()
+}
+`
+		newSrc := `package main
+
+func UnrelatedNewHandler() {
+	if false {
+		doNewB()
+		return
+	}
+}
+
+func Process() {
+	doProcess()
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, "old.go")
+		if err != nil {
+			t.Fatalf("parse oldSrc: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "new.go")
+		if err != nil {
+			t.Fatalf("parse newSrc: %v", err)
+		}
+
+		part := engine.NewLinePartition(srcBytes, dstBytes)
+		mr := engine.Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		es := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		es = postprocess.Run(es, mr.Mappings, srcAST, dstAST)
+
+		// Make sure the surrounding helper still maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+			"func Process", "func Process", "function_declaration",
+		)
+
+		// Deleted and inserted functions should stack cleanly, without interleaved braces or returns.
+		grid := AlignLines(srcBytes, dstBytes, mr.Mappings, es)
+		testPairs := toTestPairs(grid)
+
+		testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("func Process() {"),
+			testutil.Line("func Process() {"),
+		)
+		testutil.AssertLinesAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("	doProcess()"),
+			testutil.Line("	doProcess()"),
+		)
+
+		testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("	if true {"),
+			testutil.Line("	if false {"),
+		)
+		testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("		return"),
+			testutil.Line("		return"),
+		)
+		testutil.AssertLinesNotAligned(t, oldSrc, newSrc, testPairs,
+			testutil.Line("		doOldA()"),
+			testutil.Line("		doNewB()"),
+		)
+	})
+}
+
 func toTestPairs(grid []LineAlignmentPair) []testutil.LineAlignmentPair {
 	res := make([]testutil.LineAlignmentPair, len(grid))
 	for i, p := range grid {
