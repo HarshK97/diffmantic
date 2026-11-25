@@ -677,6 +677,11 @@ func (r *Rules) IsOperatorLiteral(nodeType string) bool {
 	return strings.HasSuffix(nodeType, "_operator_literal")
 }
 
+// IsLogicalOperator reports whether nodeType is an aliased logical operator literal (&&, ||, and, or, ??).
+func (r *Rules) IsLogicalOperator(nodeType string) bool {
+	return nodeType == "logical_operator_literal"
+}
+
 // IsSentinel reports whether label is a built-in sentinel identifier (like NULL, None, or undefined).
 func (r *Rules) IsSentinel(label string) bool {
 	if r == nil || label == "" {
@@ -823,6 +828,11 @@ func IsWrapper(nodeType string) bool {
 // IsOperatorLiteral reports whether nodeType is configured as an operator literal in any language rule set.
 func IsOperatorLiteral(nodeType string) bool {
 	return defaultRules.IsOperatorLiteral(nodeType)
+}
+
+// IsLogicalOperator reports whether nodeType is configured as a logical operator literal in any language rule set.
+func IsLogicalOperator(nodeType string) bool {
+	return defaultRules.IsLogicalOperator(nodeType)
 }
 
 // IsKeyword reports whether nodeType or label is configured as a keyword in any language rule set.

@@ -63,10 +63,11 @@ func isStationaryMove(node, dstNode *treesitter.ASTNode, ms *engine.Mapping, r *
 
 	// Can't be stationary if it hopped containers, like when dstParent mapped to an
 	// old container that never held this node.
-	if mappedDstParent := ms.Dst()[dstParent]; mappedDstParent != nil && !mappedDstParent.Contains(node) {
+	isMergedSibling := isMergedSiblingContainer(srcParent, dstParent, ms)
+	if mappedDstParent := ms.Dst()[dstParent]; mappedDstParent != nil && !mappedDstParent.Contains(node) && !isMergedSibling {
 		return false
 	}
-	if mappedSrcParent := ms.Src()[srcParent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dstNode) {
+	if mappedSrcParent := ms.Src()[srcParent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dstNode) && !isMergedSibling {
 		return false
 	}
 
@@ -986,10 +987,11 @@ func isStationarySpineMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *
 	}
 
 	// If either parent mapped to a completely different container, this isn't stationary.
-	if mappedDstParent := ms.Dst()[dst.Parent]; mappedDstParent != nil && !mappedDstParent.Contains(src) && mappedDstParent != anchorSrc {
+	isMergedSibling := isMergedSiblingContainer(src.Parent, dst.Parent, ms)
+	if mappedDstParent := ms.Dst()[dst.Parent]; mappedDstParent != nil && !mappedDstParent.Contains(src) && mappedDstParent != anchorSrc && !isMergedSibling {
 		return false
 	}
-	if mappedSrcParent := ms.Src()[src.Parent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dst) && mappedSrcParent != anchorDst {
+	if mappedSrcParent := ms.Src()[src.Parent]; mappedSrcParent != nil && !mappedSrcParent.Contains(dst) && mappedSrcParent != anchorDst && !isMergedSibling {
 		return false
 	}
 
@@ -1066,6 +1068,26 @@ func hasSpineControlChain(spine []*treesitter.ASTNode, anchor *treesitter.ASTNod
 		}
 	}
 	return false
+}
+
+// isMergedSiblingContainer reports whether dstParent and srcParent belong to
+// sibling conditionals that were folded into a single consolidated construct.
+// When an adjacent sibling was folded into this construct, its statements
+// are not considered to have moved across containers.
+func isMergedSiblingContainer(srcParent, dstParent *treesitter.ASTNode, ms *engine.Mapping) bool {
+	if srcParent == nil || dstParent == nil || dstParent.Parent == nil {
+		return false
+	}
+	mappedDstParent := ms.Dst()[dstParent]
+	if mappedDstParent == nil || mappedDstParent == srcParent {
+		return false
+	}
+	p1 := mappedDstParent.Parent
+	p2 := srcParent.Parent
+	if p1 == nil || p2 == nil || p1.Parent == nil || p1.Parent != p2.Parent {
+		return false
+	}
+	return ms.Src()[p1] == dstParent.Parent || ms.Dst()[dstParent.Parent] == p1
 }
 
 // isReceiverOrCalleeEdge checks whether child occupies a callee or receiver edge under parent.
