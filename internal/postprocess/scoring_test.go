@@ -1055,3 +1055,71 @@ func NewExtractedHandler() {
 		}
 	})
 }
+
+func TestMoveScoring_TokenNodeStandaloneMoveDemotion_Zig_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`fn scorePartner(src: *Node, dst: *Node) bool {
+    const is_decl = (r != null and (isDeclaration(src) or isDeclaration(dst))) or
+        (r == null and (rules.isDeclaration(src) or rules.isDeclaration(dst)));
+    return is_decl;
+}
+`)
+		dst := []byte(`fn scorePartner(src: *Node, dst: *Node) bool {
+    const is_decl = (r != null and (isDeclaration(src) or isLocalVar(src) or isDeclaration(dst) or isLocalVar(dst))) or
+        (r == null and (rules.isDeclaration(src) or rules.isLocalVar(src) or rules.isDeclaration(dst) or rules.isLocalVar(dst)));
+    return is_decl;
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "score.zig")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "score.zig")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Whole-Snippet Verification:
+		// 1. Enclosing function declaration maps in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"fn scorePartner", "fn scorePartner", "function_declaration",
+		)
+
+		// 2. Return statement and target declaration map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			"return is_decl;", "return is_decl;", "expression_statement",
+		)
+
+		// 3. Unchanged operands map in place.
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "isDeclaration(src)", Occurrence: 1},
+			testutil.TextQuery{Text: "isDeclaration(src)", Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, src, dst, mr.Mappings.Src(),
+			testutil.TextQuery{Text: "isDeclaration(dst)", Occurrence: 1},
+			testutil.TextQuery{Text: "isDeclaration(dst)", Occurrence: 1},
+		)
+
+		es := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(es, mr.Mappings, srcAST, dstAST)
+
+		// Standalone operator literals must not have Move actions.
+		r := rules.Get("zig")
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				if r.IsOperatorLiteral(a.Node.Type) {
+					nodeText := string(src[a.Node.StartByte:a.Node.EndByte])
+					t.Fatalf("operator literal %q (%s) emitted standalone Move action: %+v",
+						nodeText, a.Node.Type, a)
+				}
+			}
+		}
+	})
+}

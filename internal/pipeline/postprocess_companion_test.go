@@ -1885,3 +1885,43 @@ func getScopeName(n *ASTNode) string {
 		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
 	})
 }
+
+func TestPipeline_Postprocess_BinaryExprChainExpansion_Zig_Visual(t *testing.T) {
+	src := `fn scorePartner(src: *Node, dst: *Node) bool {
+    const is_decl = (r != null and (isDeclaration(src) or isDeclaration(dst))) or
+        (r == null and (rules.isDeclaration(src) or rules.isDeclaration(dst)));
+    return is_decl;
+}
+`
+
+	dst := `fn scorePartner(src: *Node, dst: *Node) bool {
+    const is_decl = (r != null and (isDeclaration(src) or isLocalVar(src) or isDeclaration(dst) or isLocalVar(dst))) or
+        (r == null and (rules.isDeclaration(src) or rules.isLocalVar(src) or rules.isDeclaration(dst) or rules.isLocalVar(dst)));
+    return is_decl;
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "a.zig", "b.zig", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `fn scorePartner(src: *Node, dst: *Node) bool {
+    const is_decl = (r != null and (isDeclaration(src) or isDeclaration(dst))) or
+        (r == null and (rules.isDeclaration(src) or rules.isDeclaration(dst)));
+    return is_decl;
+}
+`
+
+	expectedRight := `fn scorePartner(src: *Node, dst: *Node) bool {
+    const is_decl = (r != null and (isDeclaration(src) <ins>or isLocalVar(src)</ins> or isDeclaration(dst) <ins>or isLocalVar(dst)</ins>)) or
+        (r == null and (rules.isDeclaration(src) <ins>or rules.isLocalVar(src) or</ins> rules.isDeclaration(dst) or <ins>rules.isLocalVar(dst)</ins>));
+    return is_decl;
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}

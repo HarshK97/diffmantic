@@ -296,13 +296,55 @@ func subtreeLines(n *treesitter.ASTNode) uint32 {
 	return 0
 }
 
-// isTokenNode reports whether n is a bare token (operator, punctuation, type, or identifier).
+// isTokenNode reports whether n is a bare syntactic token (operator literal, keyword, punctuation, or trailing separator).
 func isTokenNode(n *treesitter.ASTNode, r *rules.Rules) bool {
 	if n == nil || r == nil {
 		return false
 	}
-	return r.IsOperatorLiteral(n.Type) || r.IsPunctuation(n.Type) ||
-		r.IsType(n.Type) || r.IsIdentifier(n.Type)
+	return r.IsOperatorLiteral(n.Type) ||
+		r.IsPunctuation(n.Type) || (n.Label != "" && r.IsPunctuation(n.Label)) ||
+		r.IsTrailingSeparator(n.Type) || (n.Label != "" && r.IsTrailingSeparator(n.Label)) ||
+		n.IsKeyword || r.IsKeyword(n.Type, n.Label)
+}
+
+// isParentConstructMoving reports whether any parent or enclosing construct of src is moving.
+func isParentConstructMoving(src *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules, explicitMoves map[*treesitter.ASTNode]bool) bool {
+	if src == nil || ms == nil || r == nil {
+		return false
+	}
+	srcParentStmt := engine.FindEnclosingStatement(src, r)
+	for curr := src.Parent; curr != nil; curr = curr.Parent {
+		if explicitMoves != nil && explicitMoves[curr] {
+			return true
+		}
+		mappedDst := ms.Src()[curr]
+		if mappedDst == nil {
+			continue
+		}
+		if r.IsDeclaration(curr.Type) {
+			if !sameScopeDeclaration(curr, mappedDst, ms, r) {
+				return true
+			}
+			break
+		}
+		if r.IsStatement(curr.Type) {
+			if !isStatementStationary(curr, mappedDst, ms, r) {
+				return true
+			}
+			break
+		}
+		if r.IsExpression(curr.Type) {
+			if srcParentStmt != nil {
+				dstParentStmt := engine.FindEnclosingStatement(mappedDst, r)
+				if dstParentStmt != nil {
+					if ms.Src()[srcParentStmt] != dstParentStmt || !isStatementStationary(srcParentStmt, dstParentStmt, ms, r) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // moveStructuralScore scores how structurally significant a node is.
@@ -315,8 +357,8 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 		return 0
 	}
 
-	// Token clamp: bare tokens, operators, punctuation, types, identifiers.
-	if isTokenNode(node, r) {
+	// Token clamp: bare tokens, operators, punctuation, keywords, separators, types, identifiers.
+	if isTokenNode(node, r) || r.IsType(node.Type) || r.IsIdentifier(node.Type) {
 		return 1
 	}
 
@@ -397,6 +439,12 @@ func isInnerStatementBlock(b *treesitter.ASTNode, r *rules.Rules) bool {
 // based on construct mobility, scope preservation, and line distance.
 func requiredMoveThreshold(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) int {
 	if src == nil || dst == nil || ms == nil || r == nil {
+		return 50
+	}
+
+	// Syntax tokens (operator literals, keywords, punctuation, trailing separators)
+	// cannot move independently when their parent construct does not move.
+	if isTokenNode(src, r) && !isParentConstructMoving(src, ms, r, nil) {
 		return 50
 	}
 
