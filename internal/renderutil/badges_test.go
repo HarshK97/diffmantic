@@ -10,7 +10,8 @@ import (
 	"github.com/HarshK97/diffmantic/internal/treesitter/rules"
 )
 
-func TestBuildMoveBadges_DeclarationMove(t *testing.T) {
+func buildDeclarationMoveBadges(t *testing.T) MoveBadges {
+	t.Helper()
 	goRules := rules.Get("go")
 
 	srcContent := "package main\n\nfunc OldFunc() {\n\tprintln(\"old\")\n}\n\nfunc Unchanged() {\n}\n"
@@ -24,20 +25,20 @@ func TestBuildMoveBadges_DeclarationMove(t *testing.T) {
 
 	srcAST, err := treesitter.Parse([]byte(srcContent), "test.go")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("parse srcContent: %v", err)
 	}
 	dstAST, err := treesitter.Parse([]byte(dstContent), "test.go")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("parse dstContent: %v", err)
 	}
 
 	srcFunc, err := testutil.FindNodeByText(srcAST, []byte(srcContent), "func OldFunc() {\n\tprintln(\"old\")\n}", "function_declaration")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("find srcFunc: %v", err)
 	}
 	dstFunc, err := testutil.FindNodeByText(dstAST, []byte(dstContent), "func OldFunc() {\n\tprintln(\"old\")\n}", "function_declaration")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("find dstFunc: %v", err)
 	}
 
 	actions := []serialize.Action{
@@ -71,9 +72,13 @@ func TestBuildMoveBadges_DeclarationMove(t *testing.T) {
 		{LeftLine: -1, RightLine: 7},
 	}
 
-	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
-	if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "➔ L6") {
-		t.Errorf("expected SrcLineBadges[2] to contain '➔ L6', got %q", badge)
+	return BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
+}
+
+func TestBuildMoveBadges_DeclarationMove(t *testing.T) {
+	badges := buildDeclarationMoveBadges(t)
+	if badge, ok := badges.SrcLineBadges[2]; !ok || !strings.Contains(badge, "→ L6") {
+		t.Errorf("expected SrcLineBadges[2] to contain '→ L6', got %q", badge)
 	}
 	if badge, ok := badges.DstLineBadges[5]; !ok || !strings.Contains(badge, "↳ L3") {
 		t.Errorf("expected DstLineBadges[5] to contain '↳ L3', got %q", badge)
@@ -143,8 +148,8 @@ func TestBuildMoveBadges_SingleLineStatementMove(t *testing.T) {
 	}
 
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
-	if badge, ok := badges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "➔ L4") {
-		t.Errorf("expected SrcLineBadges[4] to contain '➔ L4', got %q", badge)
+	if badge, ok := badges.SrcLineBadges[4]; !ok || !strings.Contains(badge, "→ L4") {
+		t.Errorf("expected SrcLineBadges[4] to contain '→ L4', got %q", badge)
 	}
 	if badge, ok := badges.DstLineBadges[3]; !ok || !strings.Contains(badge, "↳ L5") {
 		t.Errorf("expected DstLineBadges[3] to contain '↳ L5', got %q", badge)
@@ -236,7 +241,7 @@ func TestBuildMoveBadges_SuppressedWhenOpeningIsDeletedOrInserted(t *testing.T) 
 
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, tsxRules)
 
-	// Since line 2's opening tag was deleted on source, no '➔ L3' should appear on line 2
+	// Since line 2's opening tag was deleted on source, no '→ L3' should appear on line 2
 	if badge, exists := badges.SrcLineBadges[2]; exists {
 		t.Errorf("expected no SrcLineBadges on line 2 when opening is deleted, got %q", badge)
 	}
@@ -409,8 +414,8 @@ func TestBuildMoveBadges_HierarchicalSuppression(t *testing.T) {
 	badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	// Parent move must have directional badges
-	if badge, ok := badges.SrcLineBadges[3]; !ok || !strings.Contains(badge, "➔ L11") {
-		t.Errorf("expected parent move badge on line 3 '➔ L11', got %q", badge)
+	if badge, ok := badges.SrcLineBadges[3]; !ok || !strings.Contains(badge, "→ L11") {
+		t.Errorf("expected parent move badge on line 3 '→ L11', got %q", badge)
 	}
 	if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "↳ L4") {
 		t.Errorf("expected parent move badge on dest line 10 '↳ L4', got %q", badge)
@@ -433,8 +438,8 @@ func TestBuildMoveBadges_HierarchicalSuppression(t *testing.T) {
 	}
 
 	// Extracted statement (line 7 moved to dest line 25 outside parent) must NOT be suppressed
-	if badge, ok := badges.SrcLineBadges[7]; !ok || !strings.Contains(badge, "➔ L26") {
-		t.Errorf("expected extracted statement on line 7 to have '➔ L26', got %q", badge)
+	if badge, ok := badges.SrcLineBadges[7]; !ok || !strings.Contains(badge, "→ L26") {
+		t.Errorf("expected extracted statement on line 7 to have '→ L26', got %q", badge)
 	}
 	if badge, ok := badges.DstLineBadges[25]; !ok || !strings.Contains(badge, "↳ L8") {
 		t.Errorf("expected extracted statement on dest line 25 to have '↳ L8', got %q", badge)
@@ -527,8 +532,8 @@ func TestBuildMoveBadges_AlignmentDistanceThreshold(t *testing.T) {
 	if badge, exists := badges.DstLineBadges[3]; exists {
 		t.Errorf("expected aligned multi-line if_statement on dst line 3 to suppress badge, got %q", badge)
 	}
-	if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "➔ L37") {
-		t.Errorf("expected distant same-hunk one-liner on src line 6 to have '➔ L37', got %q", badge)
+	if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "→ L37") {
+		t.Errorf("expected distant same-hunk one-liner on src line 6 to have '→ L37', got %q", badge)
 	}
 	if badge, ok := badges.DstLineBadges[36]; !ok || !strings.Contains(badge, "↳ L7") {
 		t.Errorf("expected distant same-hunk one-liner on dst line 36 to have '↳ L7', got %q", badge)
@@ -939,8 +944,8 @@ func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 		badges := BuildMoveBadges(actions, hunks, pairs, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 		// First flat run: only the leading statement keeps its badge (line 3 -> dst line 10)
-		if badge, ok := badges.SrcLineBadges[3]; !ok || !strings.Contains(badge, "➔ L11") {
-			t.Errorf("expected line 3 badge '➔ L11', got %q", badge)
+		if badge, ok := badges.SrcLineBadges[3]; !ok || !strings.Contains(badge, "→ L11") {
+			t.Errorf("expected line 3 badge '→ L11', got %q", badge)
 		}
 		if badge, ok := badges.DstLineBadges[10]; !ok || !strings.Contains(badge, "↳ L4") {
 			t.Errorf("expected dst line 10 badge '↳ L4', got %q", badge)
@@ -957,16 +962,16 @@ func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 		}
 
 		// Multiline compound statements stay badged as landmarks (line 6 -> dst line 13)
-		if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "➔ L14") {
-			t.Errorf("expected if statement line 6 badge '➔ L14', got %q", badge)
+		if badge, ok := badges.SrcLineBadges[6]; !ok || !strings.Contains(badge, "→ L14") {
+			t.Errorf("expected if statement line 6 badge '→ L14', got %q", badge)
 		}
 		if badge, ok := badges.DstLineBadges[13]; !ok || !strings.Contains(badge, "↳ L7") {
 			t.Errorf("expected dst if statement line 13 badge '↳ L7', got %q", badge)
 		}
 
 		// Trailing run starts fresh after the compound statement (line 9 -> dst line 16)
-		if badge, ok := badges.SrcLineBadges[9]; !ok || !strings.Contains(badge, "➔ L17") {
-			t.Errorf("expected line 9 badge '➔ L17', got %q", badge)
+		if badge, ok := badges.SrcLineBadges[9]; !ok || !strings.Contains(badge, "→ L17") {
+			t.Errorf("expected line 9 badge '→ L17', got %q", badge)
 		}
 		if badge, ok := badges.DstLineBadges[16]; !ok || !strings.Contains(badge, "↳ L10") {
 			t.Errorf("expected dst line 16 badge '↳ L10', got %q", badge)
@@ -1080,4 +1085,19 @@ func TestBuildMoveBadges_ContiguousFlatStatementCollapse(t *testing.T) {
 			t.Errorf("expected line 1 code not to be trivia")
 		}
 	})
+}
+
+func TestBuildMoveBadges_ArrowPortability(t *testing.T) {
+	badges := buildDeclarationMoveBadges(t)
+	badge, ok := badges.SrcLineBadges[2]
+	if !ok {
+		t.Fatalf("expected SrcLineBadges[2] to exist")
+	}
+	// Minimal terminal fonts and screenshot tools often render Dingbats U+2794 as a missing-glyph box.
+	if !strings.Contains(badge, "→") {
+		t.Errorf("expected SrcLineBadges[2] to contain portable arrow '→', got %q", badge)
+	}
+	if strings.Contains(badge, "➔") {
+		t.Errorf("expected SrcLineBadges[2] NOT to contain non-portable dingbat '➔', got %q", badge)
+	}
 }

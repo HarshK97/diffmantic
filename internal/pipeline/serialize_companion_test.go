@@ -1226,8 +1226,8 @@ func Pad20() {}
 	badges := buildPipelineBadges(res, 3, "go")
 
 	badgeSrc, hasSrc := badges.SrcLineBadges[2]
-	if !hasSrc || !strings.Contains(badgeSrc, "➔ L24") {
-		t.Errorf("expected SrcLineBadges[2] to contain '➔ L24', got %q", badgeSrc)
+	if !hasSrc || !strings.Contains(badgeSrc, "→ L24") {
+		t.Errorf("expected SrcLineBadges[2] to contain '→ L24', got %q", badgeSrc)
 	}
 	if color := badges.SrcLineBadgeColors[2]; color != 0 {
 		t.Errorf("expected SrcLineBadgeColors[2] to be 0 (Cyan), got %d", color)
@@ -1300,8 +1300,8 @@ func Foo() {
 	badges := buildPipelineBadges(res, 3, "go")
 
 	badgeSrc, hasSrc := badges.SrcLineBadges[4]
-	if !hasSrc || !strings.Contains(badgeSrc, "➔ L4") {
-		t.Errorf("expected SrcLineBadges[4] to contain '➔ L4', got %q", badgeSrc)
+	if !hasSrc || !strings.Contains(badgeSrc, "→ L4") {
+		t.Errorf("expected SrcLineBadges[4] to contain '→ L4', got %q", badgeSrc)
 	}
 	badgeDst, hasDst := badges.DstLineBadges[3]
 	if !hasDst || !strings.Contains(badgeDst, "↳ L5") {
@@ -1446,8 +1446,8 @@ fn pad20() {}
 
 	// Outer impl block at source line 2 gets badged pointing to destination line 24 (1-based)
 	badgeSrc, hasSrc := badges.SrcLineBadges[2]
-	if !hasSrc || !strings.Contains(badgeSrc, "➔ L24") {
-		t.Errorf("expected outer impl at SrcLineBadges[2] to contain '➔ L24', got %q", badgeSrc)
+	if !hasSrc || !strings.Contains(badgeSrc, "→ L24") {
+		t.Errorf("expected outer impl at SrcLineBadges[2] to contain '→ L24', got %q", badgeSrc)
 	}
 
 	// Inner method at source line 3 MUST NOT get a redundant badge
@@ -1608,4 +1608,203 @@ func TestPipeline_MoveBadges_ColorSynchronization_TwoMoves_Python(t *testing.T) 
 	if color, ok := badges.SrcLineBadgeColors[2]; !ok || color != 1 {
 		t.Errorf("expected SrcLineBadgeColors[2] to be color 1 (Magenta), got %d (has: %v)", color, ok)
 	}
+}
+
+func TestPipeline_Cpp_WrappedLambdaCapture_Highlight(t *testing.T) {
+	src := `static int identity(int value) { return value; }
+
+static int choose(int value) {
+    return identity([&] {
+        if (value > 0) {
+            int process = value * 2;
+            process++;
+            return identity(process);
+        }
+        return identity(0);
+    }());
+}
+`
+	dst := `static int identity(int value) { return value; }
+
+static int makeProcess(int value) {
+    int process = value * 2;
+    process++;
+    return process;
+}
+
+static int choose(int value) {
+    return identity(identity([&] {
+        if (value > 0) {
+            return makeProcess(value);
+        }
+        return 0;
+    }()));
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "test.cpp", "test.cpp", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights),
+		`static int identity(int value) { return value; }
+
+static int choose(int value) {
+    return identity([&] {
+        if (value > 0) {
+            <mov>int process = value * 2;</mov>
+            <mov>process++;</mov>
+            return <upd>identity(process)</upd>;
+        }
+        return <del>identity(0);</del>
+    }());
+}
+`)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights),
+		`static int identity(int value) { return value; }
+
+<ins>static int makeProcess(int value) {</ins>
+    <mov>int process = value * 2;</mov>
+    <mov>process++;</mov>
+    <ins>return process;</ins>
+<ins>}</ins>
+
+static int choose(int value) {
+    return identity(<ins>identity(</ins>[&] {
+        if (value > 0) {
+            return <upd>makeProcess(value)</upd>;
+        }
+        return <ins>0;</ins>
+    }()));
+}
+`)
+}
+
+func TestPipeline_TypeScript_WrappedArrowClosure_Highlight(t *testing.T) {
+	src := `function identity<T>(v: T): T { return v; }
+
+function choose(value: number): number {
+    return identity((() => {
+        if (value > 0) {
+            let process = value * 2;
+            process++;
+            return identity(process);
+        }
+        return identity(0);
+    })());
+}
+`
+	dst := `function identity<T>(v: T): T { return v; }
+
+function makeProcess(value: number): number {
+    let process = value * 2;
+    process++;
+    return process;
+}
+
+function choose(value: number): number {
+    return identity(identity((() => {
+        if (value > 0) {
+            return makeProcess(value);
+        }
+        return 0;
+    })()));
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "test.ts", "test.ts", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights),
+		`function identity<T>(v: T): T { return v; }
+
+<ins>function makeProcess(value: number): number {</ins>
+    <mov>let process = value * 2;</mov>
+    <mov>process++;</mov>
+    <ins>return process;</ins>
+<ins>}</ins>
+
+function choose(value: number): number {
+    return identity(<ins>identity(</ins>(() => {
+        if (value > 0) {
+            return <upd>makeProcess(value)</upd>;
+        }
+        return <ins>0;</ins>
+    })()));
+}
+`)
+}
+
+func TestPipeline_Rust_WrappedClosure_Highlight(t *testing.T) {
+	src := `fn identity(value: i32) -> i32 { value }
+
+fn choose(value: i32) -> i32 {
+    identity((|| {
+        if value > 0 {
+            let mut process = value * 2;
+            process += 1;
+            return identity(process);
+        }
+        identity(0)
+    })())
+}
+`
+	dst := `fn identity(value: i32) -> i32 { value }
+
+fn make_process(value: i32) -> i32 {
+    let mut process = value * 2;
+    process += 1;
+    process
+}
+
+fn choose(value: i32) -> i32 {
+    identity(identity((|| {
+        if value > 0 {
+            return make_process(value);
+        }
+        0
+    })()))
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+			IncludeAlignment:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights),
+		`fn identity(value: i32) -> i32 { value }
+
+<ins>fn make_process(value: i32) -> i32 {</ins>
+    <mov>let mut process = value * 2;</mov>
+    <mov>process += 1;</mov>
+    <ins>process</ins>
+<ins>}</ins>
+
+fn choose(value: i32) -> i32 {
+    identity(<ins>identity(</ins>(|| {
+        if value > 0 {
+            return <upd>make_process(value)</upd>;
+        }
+        <ins>0</ins>
+    })()))
+}
+`)
 }

@@ -93,8 +93,8 @@ func TestPipeline_PythonStatementSwap(t *testing.T) {
 	badges := buildPipelineBadges(res, 3, "python")
 
 	badgeSrc, hasSrc := badges.SrcLineBadges[1]
-	if !hasSrc || !strings.Contains(badgeSrc, "➔") {
-		t.Errorf("expected SrcLineBadges[1] to contain '➔', got %q", badgeSrc)
+	if !hasSrc || !strings.Contains(badgeSrc, "→") {
+		t.Errorf("expected SrcLineBadges[1] to contain '→', got %q", badgeSrc)
 	}
 	badgeDst, hasDst := badges.DstLineBadges[21]
 	if !hasDst || !strings.Contains(badgeDst, "↳") {
@@ -422,8 +422,8 @@ func TestPipeline_GoStatementSwap(t *testing.T) {
 	badges := renderutil.BuildMoveBadges(res.Envelope.Actions, hunks, res.Envelope.LineAlignment, srcOffsets, dstOffsets, srcLines, dstLines, goRules)
 
 	badgeSrc, hasSrc := badges.SrcLineBadges[3]
-	if !hasSrc || !strings.Contains(badgeSrc, "➔") {
-		t.Errorf("expected SrcLineBadges[3] to contain '➔', got %q", badgeSrc)
+	if !hasSrc || !strings.Contains(badgeSrc, "→") {
+		t.Errorf("expected SrcLineBadges[3] to contain '→', got %q", badgeSrc)
 	}
 	badgeDst, hasDst := badges.DstLineBadges[23]
 	if !hasDst || !strings.Contains(badgeDst, "↳") {

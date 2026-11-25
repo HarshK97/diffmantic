@@ -1190,7 +1190,7 @@ func adjustRangeForContainer(n *treesitter.ASTNode, start, end *uint32, fileByte
 		return false, 0, 0
 	}
 	r := rules.Get(n.GetLanguage())
-	if r == nil || !r.IsBlock(n.Type) {
+	if r != nil && !r.IsBlock(n.Type) && !r.IsDelimitedContainer(n.Type) {
 		if block := findDirectOrEnclosedBlock(n, r); block != nil {
 			if block.StartByte > *start && block.StartByte < *end {
 				origEnd := *end
