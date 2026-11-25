@@ -150,14 +150,14 @@ func TestSliceLineToColumn_MoveBadge(t *testing.T) {
 	scratch := &RenderScratch{}
 	var buf bytes.Buffer
 
-	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, renderutil.LineContextAligned, true, false, &buf)
+	err := scratch.SliceLineToColumn("func Foo()", " → L42", nil, 20, renderutil.LineContextAligned, true, false, &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	got := buf.String()
-	if !strings.Contains(got, "➔ L42") {
-		t.Errorf("expected badge '➔ L42', got %q", got)
+	if !strings.Contains(got, "→ L42") {
+		t.Errorf("expected badge '→ L42', got %q", got)
 	}
 	if runewidth.StringWidth(got) != 20 {
 		t.Errorf("expected total display width 20, got %d: %q", runewidth.StringWidth(got), got)
@@ -169,25 +169,25 @@ func TestSliceLineToColumn_MoveBadge_MultiColor(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Slot 0 (Cyan): color.Move0Fg
-	err := scratch.SliceLineToColumn("func Foo()", " ➔ L42", nil, 20, renderutil.LineContextAligned, true, true, &buf, 0)
+	err := scratch.SliceLineToColumn("func Foo()", " → L42", nil, 20, renderutil.LineContextAligned, true, true, &buf, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	got := buf.String()
-	if !strings.Contains(got, color.Move0Fg+" ➔ L42"+color.Reset) {
+	if !strings.Contains(got, color.Move0Fg+" → L42"+color.Reset) {
 		t.Errorf("expected badge with Move0Fg, got %q", got)
 	}
 
 	// Slot 1 (Magenta): color.Move1Fg
 	buf.Reset()
-	err = scratch.SliceLineToColumn("func Bar()", " ➔ L50", nil, 20, renderutil.LineContextAligned, true, true, &buf, 1)
+	err = scratch.SliceLineToColumn("func Bar()", " → L50", nil, 20, renderutil.LineContextAligned, true, true, &buf, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	got = buf.String()
-	if !strings.Contains(got, color.Move1Fg+" ➔ L50"+color.Reset) {
+	if !strings.Contains(got, color.Move1Fg+" → L50"+color.Reset) {
 		t.Errorf("expected badge with Move1Fg, got %q", got)
 	}
 }
@@ -358,8 +358,8 @@ func TestRender_DeclarationMove_CleanHunkHeaderWithLineBadges(t *testing.T) {
 	if strings.Contains(got, "moved to") || strings.Contains(got, "moved from") {
 		t.Errorf("expected hunk headers to not contain 'moved to' or 'moved from', got:\n%s", got)
 	}
-	if !strings.Contains(got, "➔ L") {
-		t.Errorf("expected line badge '➔ L' on moved source declaration, got:\n%s", got)
+	if !strings.Contains(got, "→ L") {
+		t.Errorf("expected line badge '→ L' on moved source declaration, got:\n%s", got)
 	}
 	if !strings.Contains(got, "↳ L") {
 		t.Errorf("expected line badge '↳ L' on moved destination declaration, got:\n%s", got)
@@ -389,7 +389,7 @@ func TestRender_SideBySideDisableAnnotations_SuppressesMoveBadges(t *testing.T) 
 	}
 	got := buf.String()
 
-	if strings.Contains(got, "➔") || strings.Contains(got, "↳") || strings.Contains(got, "moved") {
+	if strings.Contains(got, "→") || strings.Contains(got, "↳") || strings.Contains(got, "moved") {
 		t.Errorf("expected zero move annotations when DisableAnnotations=true, got:\n%s", got)
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 // MoveBadges contains line-level arrow annotations for moves.
 type MoveBadges struct {
-	SrcLineBadges      map[int]string // Source line index -> " ➔ L{dst}"
+	SrcLineBadges      map[int]string // Source line index -> " → L{dst}"
 	DstLineBadges      map[int]string // Destination line index -> " ↳ L{src}"
 	SrcLineBadgeColors map[int]int    // Source line index -> Color index (0: Cyan, 1: Magenta)
 	DstLineBadgeColors map[int]int    // Destination line index -> Color index (0: Cyan, 1: Magenta)
@@ -250,7 +250,7 @@ func BuildMoveBadges(
 
 		if c.inSrc && c.sStart >= 0 && c.sStart < len(srcLines) && !isDeleted && !suppressSrc {
 			if _, exists := meta.SrcLineBadges[c.sStart]; !exists {
-				meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" ➔ L%d", c.dStart+1)
+				meta.SrcLineBadges[c.sStart] = fmt.Sprintf(" → L%d", c.dStart+1)
 				lines := max(c.sEnd-c.sStart+1, c.dEnd-c.dStart+1)
 				if c.act != nil && (c.act.SrcLineCount > 0 || c.act.DstLineCount > 0) {
 					lines = max(c.act.SrcLineCount, c.act.DstLineCount)

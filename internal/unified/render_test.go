@@ -205,7 +205,7 @@ func TestRender_Tier1_IntraHunkMoveCleanliness(t *testing.T) {
 
 	// One-line shifts in the same hunk don't get badges. You can already see
 	// where they went.
-	if strings.Contains(got, "←") || strings.Contains(got, "➔") || strings.Contains(got, "↳") || strings.Contains(got, "moved to line") {
+	if strings.Contains(got, "←") || strings.Contains(got, "→") || strings.Contains(got, "↳") || strings.Contains(got, "moved to line") {
 		t.Errorf("expected zero right-margin trailing ghost annotations for intra-hunk move, got:\n%s", got)
 	}
 	if !strings.Contains(got, "c.Writer.setStatus(404)") {
@@ -276,9 +276,9 @@ func TestRender_Tier3_CrossHunkSubBlockMicroBadge(t *testing.T) {
 	if strings.Contains(got, "← moved to line") {
 		t.Errorf("expected legacy '← moved to line' to be removed, got:\n%s", got)
 	}
-	if strings.Contains(got, "➔ L") || strings.Contains(got, "↳ L") {
+	if strings.Contains(got, "→ L") || strings.Contains(got, "↳ L") {
 		// Bounded micro-badge present
-		if strings.Contains(got, "line2 ➔ L") {
+		if strings.Contains(got, "line2 → L") {
 			t.Errorf("expected micro-badge only on line 1, not subsequent line, got:\n%s", got)
 		}
 	}
@@ -314,7 +314,7 @@ func TestRender_DisableAnnotationsOption(t *testing.T) {
 
 	got := Render("a.txt", "b.txt", src, dst, env, RenderOptions{Color: false, ContextLines: 3, LineNumbers: false, DisableAnnotations: true})
 
-	if strings.Contains(got, "➔") || strings.Contains(got, "↳") || strings.Contains(got, "moved") {
+	if strings.Contains(got, "→") || strings.Contains(got, "↳") || strings.Contains(got, "moved") {
 		t.Errorf("expected zero move annotations when DisableAnnotations=true, got:\n%s", got)
 	}
 }
@@ -396,8 +396,8 @@ func TestRender_DeclarationMove_CleanHunkHeaderWithLineBadges(t *testing.T) {
 	if strings.Contains(got, "moved to") || strings.Contains(got, "moved from") {
 		t.Errorf("expected hunk headers to not contain 'moved to' or 'moved from', got:\n%s", got)
 	}
-	if !strings.Contains(got, "➔ L") {
-		t.Errorf("expected line badge '➔ L' on moved source declaration, got:\n%s", got)
+	if !strings.Contains(got, "→ L") {
+		t.Errorf("expected line badge '→ L' on moved source declaration, got:\n%s", got)
 	}
 	if !strings.Contains(got, "↳ L") {
 		t.Errorf("expected line badge '↳ L' on moved destination declaration, got:\n%s", got)
@@ -459,11 +459,11 @@ func TestRender_Tier3_MultiMoveHunk(t *testing.T) {
 	if strings.Contains(got, "← moved to line") {
 		t.Errorf("expected zero legacy arrow annotations, got:\n%s", got)
 	}
-	if !strings.Contains(got, "-lineA ➔ L10") {
-		t.Errorf("expected '-lineA ➔ L10' badge on lineA, got:\n%s", got)
+	if !strings.Contains(got, "-lineA → L10") {
+		t.Errorf("expected '-lineA → L10' badge on lineA, got:\n%s", got)
 	}
-	if !strings.Contains(got, "-lineB ➔ L9") {
-		t.Errorf("expected '-lineB ➔ L9' badge on lineB, got:\n%s", got)
+	if !strings.Contains(got, "-lineB → L9") {
+		t.Errorf("expected '-lineB → L9' badge on lineB, got:\n%s", got)
 	}
 }
 

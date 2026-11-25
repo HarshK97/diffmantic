@@ -309,7 +309,7 @@ func TestMaxVisibleLineDisplayWidth(t *testing.T) {
 		}
 		hunks := []Interval{{Start: 0, End: 0}}
 
-		srcBadges := map[int]string{0: " ➔ L40"} // width 6
+		srcBadges := map[int]string{0: " → L40"} // width 6
 		dstBadges := map[int]string{0: " ↳ L10"} // width 6
 
 		got := MaxVisibleLineDisplayWidth(hunks, pairs, srcLines, dstLines, srcBadges, dstBadges, 4)
