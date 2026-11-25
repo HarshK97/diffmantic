@@ -146,6 +146,7 @@ var zigRules = &Rules{
 		"arguments",
 		"parameters",
 		"try_expression",
+		"block_expression",
 	},
 	Pairs: []string{
 		"field_initializer",
