@@ -3241,13 +3241,13 @@ func check(r *Rules, n1 *Node) {
 	if r != nil {
 		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
 			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
-			(r.IsWrapper(n1.Type) <ins>&& !r.IsStatement(n1.Type)</ins> && !<ins>r.IsDeclaration(n1.Type)</ins>) ||
+			(r.IsWrapper(n1.Type) && !<ins>r.IsStatement(n1.Type) && !r.IsDeclaration(n1.Type)</ins>) ||
 			r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
 			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
 	} else {
 		isIgnored = rules.IsDelimiter(n1.Type, n1.Label) ||
 			rules.IsOperatorLiteral(n1.Type) || rules.IsIdentifier(n1.Type) ||
-			(rules.IsWrapper(n1.Type) <ins>&& !rules.IsStatement(n1.Type)</ins> && !<ins>rules.IsDeclaration(n1.Type)</ins>) ||
+			(rules.IsWrapper(n1.Type) && !<ins>rules.IsStatement(n1.Type) && !rules.IsDeclaration(n1.Type)</ins>) ||
 			rules.IsBlock(n1.Type) || rules.IsFlattened(n1.Type) ||
 			rules.IsPunctuation(n1.Type) || rules.IsPunctuation(n1.Label)
 	}

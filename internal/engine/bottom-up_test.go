@@ -4736,3 +4736,167 @@ func TestBottomUp_NestedBinaryExpressionOperatorInversion_TypeScript(t *testing.
 		)
 	})
 }
+
+func TestBottomUp_FullEngine_BinaryExpressionOperatorAffinity(t *testing.T) {
+	t.Run("FullEngine_InlinedBinaryChain_OperatorAffinity_Go", func(t *testing.T) {
+		r := rules.Get("go")
+
+		oldSrc := []byte(`package test
+
+func check(r *Rules, n1 *Node) {
+	preCheck()
+	var isIgnored bool
+	isStmtOrDecl := (r != nil && (r.IsStatement(n1.Type) || r.IsDeclaration(n1.Type))) ||
+		(r == nil && (rules.IsStatement(n1.Type) || rules.IsDeclaration(n1.Type)))
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !isStmtOrDecl) || r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	}
+	postCheck(isIgnored)
+}
+`)
+		newSrc := []byte(`package test
+
+func check(r *Rules, n1 *Node) {
+	preCheck()
+	var isIgnored bool
+	if r != nil {
+		isIgnored = r.IsDelimiter(n1.Type, n1.Label) ||
+			r.IsOperatorLiteral(n1.Type) || r.IsIdentifier(n1.Type) ||
+			(r.IsWrapper(n1.Type) && !r.IsStatement(n1.Type) && !r.IsDeclaration(n1.Type)) ||
+			r.IsBlock(n1.Type) || r.IsFlattened(n1.Type) ||
+			r.IsPunctuation(n1.Type) || r.IsPunctuation(n1.Label)
+	}
+	postCheck(isIgnored)
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function declaration maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "func check", "func check", "function_declaration")
+
+		// 2. Surrounding statements (preCheck, var isIgnored, postCheck) map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "preCheck()", "preCheck()", "call_expression")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "var isIgnored bool", "var isIgnored bool", "var_declaration")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "postCheck(isIgnored)", "postCheck(isIgnored)", "call_expression")
+
+		// 3. Stationary operand r.IsWrapper(n1.Type) maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "r.IsWrapper(n1.Type)", "r.IsWrapper(n1.Type)", "call_expression")
+
+		// 4. Operator tokens must not invert: && must not map to || and || must not map to &&
+		for p1, p2 := range mr.Mappings.Src() {
+			op1 := findOperatorGlue(p1, r)
+			op2 := findOperatorGlue(p2, r)
+			if op1 != nil && op2 != nil {
+				if op1.Label == "&&" && op2.Label == "||" {
+					t.Errorf("operator inversion detected: %s mapped to %s", op1.Label, op2.Label)
+				}
+				if op1.Label == "||" && op2.Label == "&&" {
+					t.Errorf("operator inversion detected: %s mapped to %s", op1.Label, op2.Label)
+				}
+			}
+		}
+
+		// 5. Stationary expressions in the binary chain map in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "r.IsDelimiter(n1.Type, n1.Label)", "r.IsDelimiter(n1.Type, n1.Label)", "call_expression")
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "r.IsBlock(n1.Type)", "r.IsBlock(n1.Type)", "call_expression")
+	})
+
+	t.Run("FullEngine_BinaryExpr_ComparisonOperatorAffinity_Cpp", func(t *testing.T) {
+		r := rules.Get("cpp")
+
+		oldSrc := []byte(`bool need_allocation(const char *buf, size_t len) {
+  preCheck();
+  return ((reinterpret_cast<uintptr_t>(buf + len - 1) % page_size()) <
+          simdjson::SIMDJSON_PADDING);
+}
+`)
+		newSrc := []byte(`bool need_allocation(const char *buf, size_t len) {
+  preCheck();
+  return ((reinterpret_cast<uintptr_t>(buf + len - 1) % page_size())
+    + simdjson::SIMDJSON_PADDING > static_cast<uintptr_t>(page_size()));
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.cpp")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.cpp")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("srcAST has syntax errors: %d", srcAST.ParseErrorCount)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dstAST has syntax errors: %d", dstAST.ParseErrorCount)
+		}
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing function definition maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"bool need_allocation(const char *buf, size_t len)",
+			"bool need_allocation(const char *buf, size_t len)",
+			"function_definition",
+		)
+
+		// 2. Surrounding statement preCheck() maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(), "preCheck();", "preCheck();", "expression_statement")
+
+		// 3. Stationary modulo sub-expression maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"reinterpret_cast<uintptr_t>(buf + len - 1) % page_size()",
+			"reinterpret_cast<uintptr_t>(buf + len - 1) % page_size()",
+			"binary_expression",
+		)
+
+		// 4. Operator < must NOT map to > across mismatched comparison operators
+		for p1, p2 := range mr.Mappings.Src() {
+			op1 := findOperatorGlue(p1, r)
+			op2 := findOperatorGlue(p2, r)
+			if op1 != nil && op2 != nil {
+				if op1.Label == "<" && op2.Label == ">" {
+					t.Logf("mismatched: p1=%s (%d-%d), p2=%s (%d-%d)", p1.Type, p1.StartByte, p1.EndByte, p2.Type, p2.StartByte, p2.EndByte)
+					t.Errorf("operator inversion/mutation detected: < mapped to >")
+				}
+			}
+		}
+
+		// 5. Stationary operand simdjson::SIMDJSON_PADDING must map to simdjson::SIMDJSON_PADDING
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"simdjson::SIMDJSON_PADDING",
+			"simdjson::SIMDJSON_PADDING",
+			"qualified_identifier",
+		)
+	})
+}

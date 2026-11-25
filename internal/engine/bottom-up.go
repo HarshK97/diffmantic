@@ -448,15 +448,50 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		}
 	}
 
-	depthPenalty := 0.0
-	if anc1 != nil && anc2 != nil {
-		d1 := effectiveDepthTo(t1, anc1, r)
-		d2 := effectiveDepthTo(c, anc2, r)
-		diff := math.Abs(float64(d1 - d2))
-		depthPenalty = min(0.30, w.DepthCoeff*diff)
+	opScore := 0.0
+	isExpr := (r != nil && r.IsExpression(t1.Type)) || (r == nil && rules.IsExpression(t1.Type))
+	if isExpr {
+		op1 := findOperatorGlue(t1, r)
+		op2 := findOperatorGlue(c, r)
+		if op1 != nil && op2 != nil {
+			if op1.Label == op2.Label {
+				// Bonus for matching binary operators (e.g. keeping && with &&, || with ||)
+				// to prevent operator inversion when condition chains expand.
+				opScore = 0.25
+			} else if hasMatchingOperatorCandidateInScope(t1, c, op1.Label, m, r) {
+				// Penalize mismatched operators when a candidate with the correct operator
+				// is available in scope, avoiding spurious operator mutates (e.g. < to >).
+				opScore = -0.35
+			}
+		}
 	}
 
-	return (w.Sim * sim) + (w.Dice * dice) + (w.Scope * scopeScore) + (w.Pos * posScore) + (w.Label * lblScore) + keyBonus - depthPenalty
+	depthPenalty := 0.0
+	if anc1 != nil && anc2 != nil {
+		s1 := findActualEnclosingStatement(t1, r)
+		s2 := findActualEnclosingStatement(c, r)
+		inMappedStmt := isExpr && s1 != nil && s2 != nil && m.Src()[s1] == s2
+		if !inMappedStmt && isExpr && s1 != nil && s2 != nil {
+			for p1 := s1; p1 != nil && !inMappedStmt; p1 = findActualEnclosingStatement(p1, r) {
+				if mappedP1 := m.Src()[p1]; mappedP1 != nil {
+					for p2 := s2; p2 != nil; p2 = findActualEnclosingStatement(p2, r) {
+						if mappedP1 == p2 {
+							inMappedStmt = true
+							break
+						}
+					}
+				}
+			}
+		}
+		if !inMappedStmt {
+			d1 := effectiveDepthTo(t1, anc1, r)
+			d2 := effectiveDepthTo(c, anc2, r)
+			diff := math.Abs(float64(d1 - d2))
+			depthPenalty = min(0.30, w.DepthCoeff*diff)
+		}
+	}
+
+	return (w.Sim * sim) + (w.Dice * dice) + (w.Scope * scopeScore) + (w.Pos * posScore) + (w.Label * lblScore) + keyBonus + opScore - depthPenalty
 }
 
 // hasForeignBodyOwner reports whether t1 or c belongs to an enclosing construct
@@ -1268,6 +1303,26 @@ func hasEnclosingConstructWithMappedDescendant(t1, c *treesitter.ASTNode, m *Map
 		}
 	}
 
+	return false
+}
+
+// hasMatchingOperatorCandidateInScope reports whether another unmapped candidate in scope
+// has matching operator glue and shares mapped descendants with t1.
+func hasMatchingOperatorCandidateInScope(t1, c *treesitter.ASTNode, opLabel string, m *Mapping, r *rules.Rules) bool {
+	if t1 == nil || c == nil || opLabel == "" || m == nil {
+		return false
+	}
+	r = cmp.Or(r, rules.Get(t1.GetLanguage()))
+	anc2 := cmp.Or(NearestMatchedAncestor(c, m, true), c.Root())
+	for _, d2 := range anc2.Descendants() {
+		if d2 == c || m.HasDst(d2) || !TypesMatch(t1.Type, d2.Type, r) {
+			continue
+		}
+		op := findOperatorGlue(d2, r)
+		if op != nil && op.Label == opLabel && hasCommonDescendant(t1, d2, m) {
+			return true
+		}
+	}
 	return false
 }
 
