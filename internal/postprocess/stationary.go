@@ -291,7 +291,7 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	if src == nil || dst == nil || ms == nil || r == nil {
 		return false
 	}
-	if len(src.Children) == 0 || len(dst.Children) == 0 {
+	if len(src.Children) == 0 && len(dst.Children) == 0 {
 		return false
 	}
 	if !r.IsExpression(src.Type) || !r.IsExpression(dst.Type) {
@@ -334,7 +334,15 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 
 	var mappedSrcLeaves []*treesitter.ASTNode
 	hasSurvivingPayloadInDst := false
-	for _, d := range src.Descendants() {
+	var srcLeaves []*treesitter.ASTNode
+	if len(src.Children) == 0 {
+		srcLeaves = []*treesitter.ASTNode{src}
+	} else if src.Index != nil && src.PreSize > 0 {
+		srcLeaves = src.Index.Nodes[src.ID+1 : src.ID+src.PreSize]
+	} else {
+		srcLeaves = src.Descendants()
+	}
+	for _, d := range srcLeaves {
 		if len(d.Children) > 0 {
 			continue
 		}
@@ -345,20 +353,30 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 			continue
 		}
 		if dDst, ok := ms.Src()[d]; ok {
-			if !dstStmt.Contains(dDst) || engine.FindEnclosingStatement(dDst, r) != dstStmt {
+			if (!dstStmt.Contains(dDst) && dstStmt != dDst) || engine.FindEnclosingStatement(dDst, r) != dstStmt {
 				return false
 			}
-			if isPayloadLeaf(d, r) && dst.Contains(dDst) {
-				hasSurvivingPayloadInDst = true
+			if isPayloadLeaf(d, r) {
+				if dst == dDst || dst.Contains(dDst) {
+					hasSurvivingPayloadInDst = true
+				}
+				mappedSrcLeaves = append(mappedSrcLeaves, d)
 			}
-			mappedSrcLeaves = append(mappedSrcLeaves, d)
 		}
 	}
 	if !hasSurvivingPayloadInDst {
 		return false
 	}
 
-	for _, dDst := range dst.Descendants() {
+	var dstLeaves []*treesitter.ASTNode
+	if len(dst.Children) == 0 {
+		dstLeaves = []*treesitter.ASTNode{dst}
+	} else if dst.Index != nil && dst.PreSize > 0 {
+		dstLeaves = dst.Index.Nodes[dst.ID+1 : dst.ID+dst.PreSize]
+	} else {
+		dstLeaves = dst.Descendants()
+	}
+	for _, dDst := range dstLeaves {
 		if len(dDst.Children) > 0 {
 			continue
 		}
@@ -369,7 +387,7 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 			if _, isEv := evicted[dSrc]; isEv {
 				continue
 			}
-			if !srcStmt.Contains(dSrc) || engine.FindEnclosingStatement(dSrc, r) != srcStmt {
+			if (!srcStmt.Contains(dSrc) && srcStmt != dSrc) || engine.FindEnclosingStatement(dSrc, r) != srcStmt {
 				return false
 			}
 		}
@@ -383,10 +401,13 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 				if _, isEv := evicted[c]; isEv {
 					continue
 				}
+				if !isPayloadLeaf(c, r) {
+					continue
+				}
 				if engine.FindEnclosingStatement(c, r) != srcStmt {
 					continue
 				}
-				if cDst, ok := ms.Src()[c]; ok && dstStmt.Contains(cDst) && engine.FindEnclosingStatement(cDst, r) == dstStmt {
+				if cDst, ok := ms.Src()[c]; ok && (dstStmt.Contains(cDst) || dstStmt == cDst) && engine.FindEnclosingStatement(cDst, r) == dstStmt {
 					allMappedStmtLeaves = append(allMappedStmtLeaves, c)
 				}
 				continue
@@ -399,7 +420,7 @@ func isStationaryExpressionMove(src, dst *treesitter.ASTNode, ms *engine.Mapping
 	}
 	collectStmtLeaves(srcStmt)
 
-	// Bail if any operand crossed over another token in the statement.
+	// Bail if any operand crossed over another operand in the statement.
 	for _, d := range mappedSrcLeaves {
 		dDst := ms.Src()[d]
 		for _, o := range allMappedStmtLeaves {

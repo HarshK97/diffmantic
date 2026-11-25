@@ -1719,3 +1719,169 @@ func TestPipeline_Postprocess_SameLineCrossStatementMove_ThresholdBypass_Rust(t 
 	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
 	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
 }
+
+func TestPipeline_Postprocess_BinaryExprChainExpansion_Visual(t *testing.T) {
+	src := `package main
+
+func scorePartner(src, dst *ASTNode) int {
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsDeclaration(dst.Type)))
+	return 0
+}
+`
+
+	dst := `package main
+
+func scorePartner(src, dst *ASTNode) int {
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsLocalVarDeclaration(src.Type) || r.IsDeclaration(dst.Type) || r.IsLocalVarDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsLocalVarDeclaration(src.Type) || rules.IsDeclaration(dst.Type) || rules.IsLocalVarDeclaration(dst.Type)))
+	return 0
+}
+`
+
+	res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `package main
+
+func scorePartner(src, dst *ASTNode) int {
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsDeclaration(dst.Type)))
+	return 0
+}
+`
+
+	expectedRight := `package main
+
+func scorePartner(src, dst *ASTNode) int {
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) <ins>|| r.IsLocalVarDeclaration(src.Type) ||</ins> r.IsDeclaration(dst.Type) || <ins>r.IsLocalVarDeclaration(dst.Type)</ins>)) ||
+		(r == nil && (rules.IsDeclaration(src.Type) <ins>|| rules.IsLocalVarDeclaration(src.Type) ||</ins> rules.IsDeclaration(dst.Type) || <ins>rules.IsLocalVarDeclaration(dst.Type)</ins>))
+	return 0
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}
+
+func TestPipeline_Postprocess_BooleanExprNesting_Visual(t *testing.T) {
+	t.Run("RightSide", func(t *testing.T) {
+		src := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	for enc != nil && r != nil && r.IsImport(enc.Type) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		dst := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	// Skip imports so symbols inside them resolve their scope to the enclosing module or file.
+	for enc != nil && ((r != nil && r.IsImport(enc.Type)) || (r == nil && rules.IsImport(enc.Type))) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		expectedLeft := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	for enc != nil <upd>&&</upd> r != nil && r.IsImport(enc.Type) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		expectedRight := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	<ins>// Skip imports so symbols inside them resolve their scope to the enclosing module or file.</ins>
+	for enc != nil && <ins>((</ins>r != nil <ins>&&</ins> r.IsImport(enc.Type)<ins>)</ins> <upd>||</upd> <ins>(r == nil && rules.IsImport(enc.Type)))</ins> {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+	})
+
+	t.Run("LeftSide", func(t *testing.T) {
+		src := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	for enc != nil && r != nil && r.IsImport(enc.Type) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		dst := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	// Skip imports so symbols inside them resolve their scope to the enclosing module or file.
+	for enc != nil && ((r == nil && rules.IsImport(enc.Type)) || (r != nil && r.IsImport(enc.Type))) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		expectedLeft := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	for enc != nil <upd>&&</upd> r != nil && r.IsImport(enc.Type) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		expectedRight := `package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	<ins>// Skip imports so symbols inside them resolve their scope to the enclosing module or file.</ins>
+	for enc != nil && <ins>((r == nil && rules.IsImport(enc.Type))</ins> <upd>||</upd> <ins>(</ins>r != nil <ins>&&</ins> r.IsImport(enc.Type)<ins>))</ins> {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	return ""
+}
+`
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+	})
+}

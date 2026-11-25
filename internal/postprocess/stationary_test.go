@@ -5051,3 +5051,188 @@ func TestCrossBranchMoveNotStationary_TypeScript(t *testing.T) {
 		}
 	})
 }
+
+func TestStationaryExpression_BinaryExprChainExpansion_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package engine
+
+func scorePartner(src, dst *ASTNode, srcChildIdx int, m *Mapping) int {
+	r := cmpOr(rulesFor(src), rulesFor(dst))
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsDeclaration(dst.Type)))
+	dstChildIdx := dst.ChildIndex()
+	if isDecl {
+		return 100
+	}
+	return dstChildIdx
+}
+`)
+
+		dst := []byte(`package engine
+
+func scorePartner(src, dst *ASTNode, srcChildIdx int, m *Mapping) int {
+	r := cmpOr(rulesFor(src), rulesFor(dst))
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) || r.IsLocalVarDeclaration(src.Type) || r.IsDeclaration(dst.Type) || r.IsLocalVarDeclaration(dst.Type))) ||
+		(r == nil && (rules.IsDeclaration(src.Type) || rules.IsLocalVarDeclaration(src.Type) || rules.IsDeclaration(dst.Type) || rules.IsLocalVarDeclaration(dst.Type)))
+	dstChildIdx := dst.ChildIndex()
+	if isDecl {
+		return 100
+	}
+	return dstChildIdx
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "score.go")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "score.go")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Enclosing function and surrounding assignments should map cleanly in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "func scorePartner", "func scorePartner", "function_declaration")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "r := cmpOr(rulesFor(src), rulesFor(dst))", "r := cmpOr(rulesFor(src), rulesFor(dst))", "short_var_declaration")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "dstChildIdx := dst.ChildIndex()", "dstChildIdx := dst.ChildIndex()", "short_var_declaration")
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// Expanding the boolean expression shouldn't emit false moves on unchanged parts.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "IsDeclaration") {
+					t.Fatalf("expected stationary operand %q to not have Move action, got: %v", text, a)
+				}
+			}
+		}
+	})
+}
+
+func TestStationaryExpression_BooleanExprNesting_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	for enc != nil && r != nil && r.IsImport(enc.Type) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	if enc != nil {
+		return enc.Type
+	}
+	return ""
+}
+`)
+
+		dst := []byte(`package engine
+
+func getScopeName(n *ASTNode) string {
+	enc := GetEnclosingDeclaration(n)
+	// Skip imports so symbols inside them resolve their scope to the enclosing module or file.
+	for enc != nil && ((r != nil && r.IsImport(enc.Type)) || (r == nil && rules.IsImport(enc.Type))) {
+		enc = GetEnclosingDeclaration(enc)
+	}
+	if enc != nil {
+		return enc.Type
+	}
+	return ""
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "scope.go")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "scope.go")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Enclosing function and loop statement should map cleanly in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "func getScopeName", "func getScopeName", "function_declaration")
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "for enc != nil", "for enc != nil", "for_statement")
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// Nesting the boolean condition shouldn't emit false moves on unchanged clauses.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "r != nil") || strings.Contains(text, "IsImport") {
+					t.Fatalf("expected stationary expression %q to not have Move action, got: %v", text, a)
+				}
+			}
+		}
+	})
+}
+
+func TestStationaryExpression_BinaryExprChainExpansion_Rust_FullEngine(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		src := []byte(`fn score_partner(src_type: &str, dst_type: &str) -> i32 {
+    let is_decl = (is_declaration(src_type) || is_declaration(dst_type)) ||
+        (is_global(src_type) || is_global(dst_type));
+    if is_decl {
+        return 100;
+    }
+    0
+}
+`)
+
+		dst := []byte(`fn score_partner(src_type: &str, dst_type: &str) -> i32 {
+    let is_decl = (is_declaration(src_type) || is_local(src_type) || is_declaration(dst_type) || is_local(dst_type)) ||
+        (is_global(src_type) || is_local(src_type) || is_global(dst_type) || is_local(dst_type));
+    if is_decl {
+        return 100;
+    }
+    0
+}
+`)
+
+		srcAST, err := treesitter.Parse(src, "score.rs")
+		if err != nil || srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src AST parse error: %v", err)
+		}
+		dstAST, err := treesitter.Parse(dst, "score.rs")
+		if err != nil || dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst AST parse error: %v", err)
+		}
+
+		part := engine.NewLinePartition(src, dst)
+		mr := engine.Match(srcAST, dstAST, src, dst, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// Enclosing function declaration should map cleanly in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, src, dst, mr.Mappings.Src(), "fn score_partner", "fn score_partner", "function_item")
+
+		script := actions.GenerateEditScript(srcAST, dstAST, mr.Mappings)
+		normalized := Run(script, mr.Mappings, srcAST, dstAST)
+
+		// Expanding the boolean expression chain should not emit false moves on unchanged operands.
+		for _, a := range normalized.Actions() {
+			if a.Type == actions.Move && a.Node != nil {
+				text := string(src[a.Node.StartByte:a.Node.EndByte])
+				if strings.Contains(text, "is_declaration") || strings.Contains(text, "is_global") {
+					t.Fatalf("expected stationary operand %q to not have Move action, got: %v", text, a)
+				}
+			}
+		}
+	})
+}
