@@ -1758,8 +1758,8 @@ func scorePartner(src, dst *ASTNode) int {
 	expectedRight := `package main
 
 func scorePartner(src, dst *ASTNode) int {
-	isDecl := (r != nil && (r.IsDeclaration(src.Type) <ins>|| r.IsLocalVarDeclaration(src.Type) ||</ins> r.IsDeclaration(dst.Type) || <ins>r.IsLocalVarDeclaration(dst.Type)</ins>)) ||
-		(r == nil && (rules.IsDeclaration(src.Type) <ins>|| rules.IsLocalVarDeclaration(src.Type) ||</ins> rules.IsDeclaration(dst.Type) || <ins>rules.IsLocalVarDeclaration(dst.Type)</ins>))
+	isDecl := (r != nil && (r.IsDeclaration(src.Type) <ins>|| r.IsLocalVarDeclaration(src.Type)</ins> || r.IsDeclaration(dst.Type) <ins>|| r.IsLocalVarDeclaration(dst.Type)</ins>)) ||
+		(r == nil && (rules.IsDeclaration(src.Type) <ins>|| rules.IsLocalVarDeclaration(src.Type)</ins> || rules.IsDeclaration(dst.Type) <ins>|| rules.IsLocalVarDeclaration(dst.Type)</ins>))
 	return 0
 }
 `
@@ -1917,7 +1917,7 @@ func TestPipeline_Postprocess_BinaryExprChainExpansion_Zig_Visual(t *testing.T) 
 
 	expectedRight := `fn scorePartner(src: *Node, dst: *Node) bool {
     const is_decl = (r != null and (isDeclaration(src) <ins>or isLocalVar(src)</ins> or isDeclaration(dst) <ins>or isLocalVar(dst)</ins>)) or
-        (r == null and (rules.isDeclaration(src) <ins>or rules.isLocalVar(src) or</ins> rules.isDeclaration(dst) or <ins>rules.isLocalVar(dst)</ins>));
+        (r == null and (rules.isDeclaration(src) <ins>or rules.isLocalVar(src)</ins> or rules.isDeclaration(dst) <ins>or rules.isLocalVar(dst)</ins>));
     return is_decl;
 }
 `
