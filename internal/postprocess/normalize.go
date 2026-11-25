@@ -33,8 +33,21 @@ func normalizeMovesByStructure(es *actions.EditScript, ms *engine.Mapping) *acti
 			dstNode := cmp.Or(a.DestNode, ms.Src()[a.Node])
 			if dstNode != nil {
 				r := rules.Get(a.Node.GetLanguage())
-				if r != nil && isStationaryExpressionMove(a.Node, dstNode, ms, r, nil) {
-					toDrop[a.Node] = struct{}{}
+				if r != nil {
+					if isStationaryExpressionMove(a.Node, dstNode, ms, r, nil) {
+						toDrop[a.Node] = struct{}{}
+					} else if isTokenNode(a.Node, r) && !isParentConstructMoving(a.Node, ms, r, explicitMoves) {
+						// Syntax tokens can't move on their own. If their enclosing statement
+						// didn't move, drop the action so they stay as context; otherwise demote to delete+insert.
+						srcStmt := engine.FindEnclosingStatement(a.Node, r)
+						dstStmt := engine.FindEnclosingStatement(dstNode, r)
+						if srcStmt != nil && dstStmt != nil && ms.Src()[srcStmt] == dstStmt && isStatementStationary(srcStmt, dstStmt, ms, r) {
+							toDrop[a.Node] = struct{}{}
+						} else {
+							toDemote[a.Node] = dstNode
+							evicted[a.Node] = struct{}{}
+						}
+					}
 				}
 			}
 		}
@@ -331,6 +344,11 @@ func shouldDemoteMove(src, dst *treesitter.ASTNode, ms *engine.Mapping, r *rules
 		} else if !sameScopeDeclaration(src, dst, ms, r) {
 			return true
 		}
+	}
+
+	// Syntax tokens cannot move independently when their parent construct does not move.
+	if isTokenNode(src, r) && !isParentConstructMoving(src, ms, r, nil) {
+		return true
 	}
 
 	var evicted map[*treesitter.ASTNode]struct{}
