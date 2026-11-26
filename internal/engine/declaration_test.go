@@ -60,6 +60,43 @@ func TestGetDeclarationName(t *testing.T) {
 			t.Errorf("getDeclarationName = %q, want empty", got)
 		}
 	})
+
+	t.Run("rust destructuring let ignores rhs selector", func(t *testing.T) {
+		src := []byte("fn demo(state: &State) {\n    let (x, y) = state.pos;\n}\n")
+		tree, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		decl, err := testutil.FindNodeByText(tree, src, "let (x, y) = state.pos;", "let_declaration")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := getDeclarationName(decl); got != "x" {
+			t.Errorf("getDeclarationName = %q, want %q", got, "x")
+		}
+	})
+
+	t.Run("rust reference trait impl skips lifetime", func(t *testing.T) {
+		src := []byte("impl<'a> From<&'a str> for &'a MyType {\n    fn from(s: &'a str) -> Self { unimplemented!() }\n}\n")
+		tree, err := treesitter.Parse(src, "test.rs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		decl, err := testutil.FindNodeByText(tree, src, "impl<'a> From<&'a str> for &'a MyType", "impl_item")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := getDeclarationName(decl); got != "From for MyType" {
+			t.Errorf("getDeclarationName = %q, want %q", got, "From for MyType")
+		}
+		fn, err := testutil.FindNodeByText(tree, src, "fn from(s: &'a str) -> Self", "function_item")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := getEnclosingContainerName(fn, rules.Get("rust")); got != "From for MyType" {
+			t.Errorf("getEnclosingContainerName = %q, want %q", got, "From for MyType")
+		}
+	})
 }
 
 func TestMatchDeclarations(t *testing.T) {
@@ -641,6 +678,31 @@ static struct Node *build_node(int id) { return 0; }
 `,
 				want: []string{"Node", "id", "build_node", "Node", "id"},
 			},
+			{
+				name:     "Rust_TraitImplName",
+				filename: "impls.rs",
+				src: `impl<T: Clone> From<Vec<T>> for AlphaList<T> {
+    fn from(items: Vec<T>) -> Self { Self {} }
+}
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self { Self {} }
+}
+`,
+				want: []string{"From for AlphaList", "from", "items", "From for BetaList", "from", "items"},
+			},
+			{
+				name:     "Lua_ModuleMethodDeclarationNames",
+				filename: "methods.lua",
+				src: `local M = {}
+function M.encode(tbl, opts)
+    return tbl
+end
+function M:send(msg)
+    return msg
+end
+`,
+				want: []string{"M", "M.encode", "M:send"},
+			},
 		}
 
 		for _, tc := range tests {
@@ -1007,6 +1069,157 @@ type Bar struct {
 			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
 				testutil.TextQuery{Text: "B", Type: "field_identifier", Occurrence: 2},
 				testutil.TextQuery{Text: "B", Type: "field_identifier", Occurrence: 2},
+			)
+		})
+
+		t.Run("Rust_TraitImplDistinctTargetMatch", func(t *testing.T) {
+			src := `impl<T: Clone> From<Vec<T>> for AlphaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let len = items.len();
+        Self { items, len }
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let count = items.len();
+        Self { items, count }
+    }
+}
+`
+			dst := `impl<T: Debug> Into<Vec<T>> for GammaList<T> {
+    fn into(self) -> Vec<T> {
+        self.raw.into_iter().filter(|x| !format!("{:?}", x).is_empty()).collect()
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let count = items.len();
+        Self { items, count }
+    }
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "impls.rs")
+
+			// 1. Surviving Impl: BetaList matches BetaList in place
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "impl<T: Clone> From<Vec<T>> for BetaList<T>", "impl<T: Clone> From<Vec<T>> for BetaList<T>", "impl_item")
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "fn from(items: Vec<T>) -> Self", Type: "function_item", Occurrence: 2},
+				testutil.TextQuery{Text: "fn from(items: Vec<T>) -> Self", Type: "function_item", Occurrence: 1},
+			)
+
+			// 2. Different traits and targets: AlphaList must not pair with GammaList on shared generic <T>
+			testutil.AssertNotMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "impl<T: Clone> From<Vec<T>> for AlphaList<T>", "impl<T: Debug> Into<Vec<T>> for GammaList<T>")
+			testutil.AssertNotMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "fn from(items: Vec<T>) -> Self", Type: "function_item", Occurrence: 1},
+				testutil.TextQuery{Text: "fn into(self) -> Vec<T>", Type: "function_item", Occurrence: 1},
+			)
+
+			// 3. Deleted AlphaList and Inserted GammaList must remain unmapped
+			testutil.AssertUnmappedText(t, srcAST, []byte(src), m.Src(), "impl<T: Clone> From<Vec<T>> for AlphaList<T>", "impl_item")
+			testutil.AssertUnmappedTextQuery(t, srcAST, []byte(src), m.Src(),
+				testutil.TextQuery{Text: "fn from(items: Vec<T>) -> Self", Type: "function_item", Occurrence: 1},
+			)
+			testutil.AssertUnmappedText(t, dstAST, []byte(dst), m.Dst(), "impl<T: Debug> Into<Vec<T>> for GammaList<T>", "impl_item")
+			testutil.AssertUnmappedText(t, dstAST, []byte(dst), m.Dst(), "fn into(self) -> Vec<T>", "function_item")
+		})
+
+		t.Run("Rust_GenericImplMethodRewriteMatch", func(t *testing.T) {
+			src := `impl<T: Clone> From<Vec<T>> for AlphaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let mut buf = Vec::new();
+        for x in items {
+            buf.push(x);
+        }
+        Self(buf)
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let mut out = Vec::new();
+        for x in items {
+            out.push(x);
+        }
+        Self(out)
+    }
+}
+`
+			dst := `impl<T: Debug> From<Vec<T>> for AlphaList<T> {
+    fn from(raw: &[T]) -> Self {
+        Self::build(raw, true)
+    }
+}
+
+impl<T: Debug> From<Vec<T>> for BetaList<T> {
+    fn from(raw: &[T]) -> Self {
+        Self::create(raw, 0)
+    }
+}
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "impls.rs")
+
+			// 1. Both generic impls match their own target rather than colliding on "T"
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "impl<T: Clone> From<Vec<T>> for AlphaList<T>", "impl<T: Debug> From<Vec<T>> for AlphaList<T>", "impl_item")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "impl<T: Clone> From<Vec<T>> for BetaList<T>", "impl<T: Debug> From<Vec<T>> for BetaList<T>", "impl_item")
+
+			// 2. Both rewritten fn from methods match in place via their distinct enclosing impl container names
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "fn from(items: Vec<T>) -> Self", Type: "function_item", Occurrence: 1},
+				testutil.TextQuery{Text: "fn from(raw: &[T]) -> Self", Type: "function_item", Occurrence: 1},
+			)
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "fn from(items: Vec<T>) -> Self", Type: "function_item", Occurrence: 2},
+				testutil.TextQuery{Text: "fn from(raw: &[T]) -> Self", Type: "function_item", Occurrence: 2},
+			)
+		})
+
+		t.Run("Lua_ModuleMethodRewriteMatch", func(t *testing.T) {
+			src := `local M = {}
+
+function M.encode(tbl, opts)
+    local out = {}
+    for k, v in pairs(tbl) do
+        table.insert(out, k .. "=" .. tostring(v))
+    end
+    return table.concat(out, ",")
+end
+
+function M:send(msg)
+    self.socket:write(msg)
+    self.sent = self.sent + 1
+end
+`
+			dst := `local M = {}
+
+function M.encode(payload, config)
+    assert(type(payload) == "table", "expected table")
+    local serialized = json.stringify(payload, config.pretty)
+    if config.compress then
+        error("compression disabled")
+    end
+    io.write(serialized)
+end
+
+function M:send(packet, flags)
+    assert(self.connected, "not connected")
+    self.transport:flush(packet, flags)
+end
+`
+			srcAST, dstAST, m := runMatchForDeclTest(t, src, dst, "api.lua")
+
+			// 1. Enclosing Context: module table declaration
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "local M = {}", "local M = {}", "variable_declaration")
+
+			// 2. Targets: M.encode and M:send match in place despite rewritten signatures and bodies
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "function M.encode", "function M.encode", "function_declaration")
+			testutil.AssertMappedText(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(), "function M:send", "function M:send", "function_declaration")
+
+			// 3. Function declaration bodies match in place
+			testutil.AssertMappedTextQuery(t, srcAST, dstAST, []byte(src), []byte(dst), m.Src(),
+				testutil.TextQuery{Text: "local out = {}", Type: "block", Occurrence: 1},
+				testutil.TextQuery{Text: "assert(type(payload)", Type: "block", Occurrence: 1},
 			)
 		})
 	})

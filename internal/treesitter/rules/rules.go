@@ -43,26 +43,28 @@ type Rules struct {
 	Calls                 []string
 	Indexed               []string // Subscript nodes with prefix receivers (e.g. arr[i]).
 	LocalVarDeclarations  []string
-	Assignments           []string // Assignment expressions or statements (e.g. assignment_expression, assignment_statement).
-	ContainerDeclarations []string // Major declaration scope boundaries (functions, classes, structs, etc.).
-	Closures              []string // Anonymous functions, lambdas, and callbacks.
-	Types                 []string // Type annotations and type expressions.
-	JumpStatements        []string // Control-flow exit statements (return, break, continue, goto, throw, raise).
-	TerminalCalls         []string // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
-	DelimitedContainers   []string // Containers whose elements are separated by delimiters (like commas).
-	Selectors             []string // Member or field access expressions (e.g. selector_expression, field_expression, member_expression, attribute, field_access).
-	Expressions           []string // Expression container node types.
-	Clauses               []string // Clause wrappers connecting control-flow constructs to alternative blocks (else_clause, elif_clause, catch_clause, finally_clause).
-	CaseClauses           []string // Arms that hold statements directly without curly braces (case, default, when, match_arm).
-	Tags                  []string // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
-	Sentinels             []string // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
-	Statements            []string // Standalone statement and statement-level declaration node types.
-	Imports               []string // Import and include declaration node types.
-	Attributes            []string // Decorators, attributes, and annotations on declarations (e.g. attribute_item).
-	Declarators           []string // Declarator node types holding declaration identifiers and parameters (e.g. function_declarator).
-	OpeningDelimiters     []string // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
-	ClosingDelimiters     []string // Matching container closers used to locate headers and closing delimiter spans.
-	Separators            []string // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
+	Assignments           []string          // Assignment expressions or statements (e.g. assignment_expression, assignment_statement).
+	ContainerDeclarations []string          // Major declaration scope boundaries (functions, classes, structs, etc.).
+	Closures              []string          // Anonymous functions, lambdas, and callbacks.
+	Types                 []string          // Type annotations and type expressions.
+	JumpStatements        []string          // Control-flow exit statements (return, break, continue, goto, throw, raise).
+	TerminalCalls         []string          // Dotted callee paths for execution-terminating calls (os.Exit, sys.exit, panic, etc.).
+	DelimitedContainers   []string          // Containers whose elements are separated by delimiters (like commas).
+	Selectors             []string          // Member or field access expressions (e.g. selector_expression, field_expression, member_expression, attribute, field_access).
+	Expressions           []string          // Expression container node types.
+	Clauses               []string          // Clause wrappers connecting control-flow constructs to alternative blocks (else_clause, elif_clause, catch_clause, finally_clause).
+	CaseClauses           []string          // Arms that hold statements directly without curly braces (case, default, when, match_arm).
+	Tags                  []string          // Markup elements and tags (e.g. element, start_tag, jsx_element, jsx_opening_element).
+	Sentinels             []string          // Built-in nil, null, and boolean identifiers (e.g. NULL, None, undefined).
+	Statements            []string          // Standalone statement and statement-level declaration node types.
+	Imports               []string          // Import and include declaration node types.
+	Attributes            []string          // Decorators, attributes, and annotations on declarations (e.g. attribute_item).
+	Declarators           []string          // Declarator node types holding declaration identifiers and parameters (e.g. function_declarator).
+	Implementations       []string          // Implementation declarations (e.g. Rust's impl_item).
+	SelectorDelimiters    map[string]string // Maps selector node types to their delimiter (e.g. "." or ":").
+	OpeningDelimiters     []string          // Container openers; defaults to standard brackets, braces, and angles unless overridden per language.
+	ClosingDelimiters     []string          // Matching container closers used to locate headers and closing delimiter spans.
+	Separators            []string          // Punctuation between sibling elements (commas, match arrows, colons) absorbed as trailing trivia.
 
 	// SignificantWhitespace reports whether indentation defines blocks and scope (as in Python).
 	SignificantWhitespace bool
@@ -101,6 +103,7 @@ type Rules struct {
 	importsSet               map[string]struct{}
 	attributesSet            map[string]struct{}
 	declaratorsSet           map[string]struct{}
+	implementationsSet       map[string]struct{}
 	equivGroups              map[string][]int
 }
 
@@ -162,6 +165,7 @@ func (r *Rules) CompileSets() {
 	r.importsSet = sliceToSet(r.Imports)
 	r.attributesSet = sliceToSet(r.Attributes)
 	r.declaratorsSet = sliceToSet(r.Declarators)
+	r.implementationsSet = sliceToSet(r.Implementations)
 	if len(r.OpeningDelimiters) > 0 {
 		r.openingDelimitersSet = sliceToSet(r.OpeningDelimiters)
 	} else {
@@ -295,6 +299,29 @@ func (r *Rules) IsDeclarator(nodeType string) bool {
 		return ok
 	}
 	return slices.Contains(r.Declarators, nodeType)
+}
+
+// IsImplementation reports whether nodeType is an implementation declaration.
+func (r *Rules) IsImplementation(nodeType string) bool {
+	if r == nil || nodeType == "" {
+		return false
+	}
+	if len(r.implementationsSet) > 0 {
+		_, ok := r.implementationsSet[nodeType]
+		return ok
+	}
+	return slices.Contains(r.Implementations, nodeType)
+}
+
+// SelectorDelimiter returns the delimiter (e.g. "." or ":") for nodeType, defaulting to ".".
+func (r *Rules) SelectorDelimiter(nodeType string) string {
+	if r == nil || len(r.SelectorDelimiters) == 0 {
+		return "."
+	}
+	if delim, ok := r.SelectorDelimiters[nodeType]; ok {
+		return delim
+	}
+	return "."
 }
 
 // IsDeclaration reports whether nodeType is a declaration.
@@ -729,6 +756,16 @@ func IsComment(nodeType string) bool {
 func IsDeclarator(nodeType string) bool {
 	for _, r := range registry {
 		if r.IsDeclarator(nodeType) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsImplementation reports whether nodeType is configured as an implementation in any language rule set.
+func IsImplementation(nodeType string) bool {
+	for _, r := range registry {
+		if r.IsImplementation(nodeType) {
 			return true
 		}
 	}

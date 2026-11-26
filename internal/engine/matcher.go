@@ -883,12 +883,16 @@ type ruleLookup struct {
 }
 
 // directIdentifierName returns the container's name from its own identifier
-// children, or "". Lookup never descends into nested declarations (a struct's
-// first method is not the struct's name). Java and C put the return type before
-// the method name, so non-type identifiers win over type identifiers.
+// children (or implementation target type), or "". Lookup never descends into
+// nested declarations (a struct's first method is not the struct's name). Java
+// and C put the return type before the method name, so non-type identifiers
+// win over type identifiers.
 func directIdentifierName(n *treesitter.ASTNode, rl ruleLookup) string {
 	if n == nil {
 		return ""
+	}
+	if name := implementationName(n, rl); name != "" {
+		return name
 	}
 	for _, child := range n.Children {
 		if rl.isID(child.Type) && !rl.isType(child.Type) {
@@ -932,6 +936,19 @@ func (l ruleLookup) isType(t string) bool {
 
 func (l ruleLookup) isDeclarator(t string) bool {
 	return matchRule(l.r, t, (*rules.Rules).IsDeclarator, rules.IsDeclarator)
+}
+
+func (l ruleLookup) isImplementation(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsImplementation, rules.IsImplementation)
+}
+
+func (l ruleLookup) isSelector(t string) bool {
+	return matchRule(l.r, t, (*rules.Rules).IsSelector, rules.IsSelector)
+}
+
+func (l ruleLookup) isDeclSelector(child *treesitter.ASTNode) bool {
+	return child != nil && l.isSelector(child.Type) && !l.isType(child.Type) &&
+		(l.r == nil || !l.r.IsAssignedValueField(child.FieldName()))
 }
 
 func (l ruleLookup) isWrapper(t string) bool {
@@ -1192,7 +1209,7 @@ func findDeclarations(root *treesitter.ASTNode) []*treesitter.ASTNode {
 			// Skip outer wrappers like Python's decorated_definition, since returning both the
 			// wrapper and the wrapped declaration gives matchDeclarations duplicate keys.
 			hasDirectName := slices.ContainsFunc(n.Children, func(child *treesitter.ASTNode) bool {
-				return rl.isID(child.Type) || rl.isDeclarator(child.Type)
+				return rl.isID(child.Type) || rl.isDeclarator(child.Type) || rl.isDeclSelector(child)
 			})
 			hasInnerDecl := !rl.isLocalVar(n.Type) && !hasDirectName && slices.ContainsFunc(n.Children, func(child *treesitter.ASTNode) bool {
 				return rl.isDecl(child.Type) && (rl.isWrapper(n.Type) || !rl.isLocalVar(child.Type))
@@ -1238,6 +1255,86 @@ func identifierText(node *treesitter.ASTNode) string {
 	return sb.String()
 }
 
+// selectorText joins a selector expression's parts using the language's delimiter (e.g. "." or ":").
+func selectorText(node *treesitter.ASTNode, r *rules.Rules) string {
+	if node == nil {
+		return ""
+	}
+	if len(node.Children) == 0 {
+		return identifierText(node)
+	}
+	delim := r.SelectorDelimiter(node.Type)
+	parts := make([]string, 0, len(node.Children))
+	for _, child := range node.Children {
+		if (r != nil && r.IsSelector(child.Type)) || (r == nil && rules.IsSelector(child.Type)) {
+			if txt := selectorText(child, r); txt != "" {
+				parts = append(parts, txt)
+				continue
+			}
+		}
+		if txt := identifierText(child); txt != "" {
+			parts = append(parts, txt)
+		}
+	}
+	return strings.Join(parts, delim)
+}
+
+// implementationName resolves the target (or "Trait for Target") name for an
+// implementation block so distinct impls don't collide on a shared trait name.
+func implementationName(n *treesitter.ASTNode, rl ruleLookup) string {
+	if n == nil || !rl.isImplementation(n.Type) {
+		return ""
+	}
+	var typeNodes []*treesitter.ASTNode
+	for _, child := range n.Children {
+		if rl.isType(child.Type) {
+			typeNodes = append(typeNodes, child)
+		}
+	}
+	if len(typeNodes) == 1 {
+		return findTypeName(typeNodes[0], rl, 4)
+	}
+	if len(typeNodes) >= 2 {
+		traitName := findTypeName(typeNodes[0], rl, 4)
+		targetName := findTypeName(typeNodes[len(typeNodes)-1], rl, 4)
+		if traitName != "" && targetName != "" {
+			return traitName + " for " + targetName
+		}
+		return cmp.Or(targetName, traitName)
+	}
+	return ""
+}
+
+func findTypeName(node *treesitter.ASTNode, rl ruleLookup, depth int) string {
+	if depth <= 0 || node == nil || rl.isSkip(node) {
+		return ""
+	}
+	if rl.isType(node.Type) && (rl.isID(node.Type) || len(node.Children) == 0) {
+		if txt := identifierText(node); txt != "" {
+			return txt
+		}
+	}
+	// Prefer nested type nodes over non-type identifiers like lifetimes in `&'a MyType`.
+	for _, child := range node.Children {
+		if rl.isType(child.Type) {
+			if txt := findTypeName(child, rl, depth-1); txt != "" {
+				return txt
+			}
+		}
+	}
+	for _, child := range node.Children {
+		if !rl.isType(child.Type) {
+			if txt := findTypeName(child, rl, depth-1); txt != "" {
+				return txt
+			}
+		}
+	}
+	if rl.isID(node.Type) {
+		return identifierText(node)
+	}
+	return ""
+}
+
 func getDeclarationName(n *treesitter.ASTNode) string {
 	if n == nil {
 		return ""
@@ -1277,9 +1374,18 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 			}
 		}
 	}
-	// Prefer non-type direct identifiers over return/field type identifiers (e.g. Java method_declaration).
+	// Rust impl blocks wrap type names in generic_type and put the trait before the target type,
+	// so read type children directly here to keep different targets from colliding on the same trait.
+	if name := implementationName(n, rl); name != "" {
+		return name
+	}
+	// Prefer non-type direct identifiers or LHS/name selectors over return/field type identifiers (e.g. Java method_declaration, Lua module methods).
 	for _, child := range n.Children {
-		if rl.isID(child.Type) && !rl.isType(child.Type) {
+		if rl.isDeclSelector(child) {
+			if txt := selectorText(child, rl.r); txt != "" {
+				return txt
+			}
+		} else if rl.isID(child.Type) && !rl.isType(child.Type) {
 			if txt := identifierText(child); txt != "" {
 				return txt
 			}
@@ -1326,14 +1432,14 @@ func getDeclarationName(n *treesitter.ASTNode) string {
 	}
 	// Search non-type nested declarators (like Lua assignment_statement -> variable_list) before type wrappers (like Rust generic_type).
 	for _, child := range n.Children {
-		if !rl.isType(child.Type) {
+		if !rl.isType(child.Type) && (rl.r == nil || !rl.r.IsAssignedValueField(child.FieldName())) {
 			if txt := findIdentifier(child, 3); txt != "" {
 				return txt
 			}
 		}
 	}
 	for _, child := range n.Children {
-		if rl.isType(child.Type) {
+		if rl.isType(child.Type) && (rl.r == nil || !rl.r.IsAssignedValueField(child.FieldName())) {
 			if txt := findIdentifier(child, 3); txt != "" {
 				return txt
 			}

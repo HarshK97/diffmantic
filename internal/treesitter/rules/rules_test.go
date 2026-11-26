@@ -332,17 +332,19 @@ func TestRulesFieldRoles(t *testing.T) {
 func TestRulesHelperMethods(t *testing.T) {
 	newSampleRules := func() *Rules {
 		return &Rules{
-			Ignored:     []string{"comment", ";"},
-			Keywords:    []string{"func", "return"},
-			Identifiers: []string{"identifier"},
-			Aliased:     map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
-			Unordered:   []string{"object", "hash"},
-			Flattened:   []string{"string_literal"},
-			Blocks:      []string{"block", "compound_statement"},
-			Calls:       []string{"call_expression"},
-			Indexed:     []string{"subscript_expression", "index_expression"},
-			Tags:        []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
-			Declarators: []string{"function_declarator", "init_declarator"},
+			Ignored:            []string{"comment", ";"},
+			Keywords:           []string{"func", "return"},
+			Identifiers:        []string{"identifier"},
+			Aliased:            map[string]string{"type_alias": "aliased_type", "label_val": "aliased_label"},
+			Unordered:          []string{"object", "hash"},
+			Flattened:          []string{"string_literal"},
+			Blocks:             []string{"block", "compound_statement"},
+			Calls:              []string{"call_expression"},
+			Indexed:            []string{"subscript_expression", "index_expression"},
+			Tags:               []string{"element", "jsx_element", "start_tag", "jsx_opening_element"},
+			Declarators:        []string{"function_declarator", "init_declarator"},
+			Implementations:    []string{"impl_item"},
+			SelectorDelimiters: map[string]string{"method_index_expression": ":"},
 			EquivalentTypes: [][]string{
 				{"function_declaration", "function_definition", "variable_declaration"},
 				{"assignment_statement", "variable_declaration"},
@@ -420,6 +422,16 @@ func TestRulesHelperMethods(t *testing.T) {
 			t.Errorf("IsDeclarator failed in compiled sets")
 		}
 
+		if !r.IsImplementation("impl_item") || r.IsImplementation("other") {
+			t.Errorf("IsImplementation failed in compiled sets")
+		}
+		if got := r.SelectorDelimiter("method_index_expression"); got != ":" {
+			t.Errorf("SelectorDelimiter(method_index_expression) = %q, want %q", got, ":")
+		}
+		if got := r.SelectorDelimiter("other"); got != "." {
+			t.Errorf("SelectorDelimiter(other) = %q, want %q", got, ".")
+		}
+
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent(function_declaration, variable_declaration) = false, want true")
 		}
@@ -471,6 +483,9 @@ func TestRulesHelperMethods(t *testing.T) {
 		if !r.IsDeclarator("function_declarator") || !r.IsDeclarator("init_declarator") || r.IsDeclarator("other") {
 			t.Errorf("IsDeclarator uncompiled fallback failed")
 		}
+		if !r.IsImplementation("impl_item") || r.IsImplementation("other") {
+			t.Errorf("IsImplementation uncompiled fallback failed")
+		}
 		if !r.AreTypesEquivalent("function_declaration", "variable_declaration") {
 			t.Errorf("AreTypesEquivalent uncompiled fallback failed")
 		}
@@ -501,6 +516,16 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if r.IsDeclarator("a") {
 			t.Errorf("nil.IsDeclarator returned true")
+		}
+		if r.IsImplementation("a") {
+			t.Errorf("nil.IsImplementation returned true")
+		}
+		if got := r.SelectorDelimiter("method_index_expression"); got != "." {
+			t.Errorf("nil.SelectorDelimiter = %q, want %q", got, ".")
+		}
+		var emptyR Rules
+		if got := emptyR.SelectorDelimiter("method_index_expression"); got != "." {
+			t.Errorf("empty.SelectorDelimiter = %q, want %q", got, ".")
 		}
 		if r.IsIndexed("a") {
 			t.Errorf("nil.IsIndexed returned true")
@@ -553,6 +578,12 @@ func TestRulesHelperMethods(t *testing.T) {
 		}
 		if IsDeclarator("nonexistent_declarator_xyz") {
 			t.Errorf("IsDeclarator(nonexistent_declarator_xyz) = true, want false")
+		}
+		if !IsImplementation("impl_item") {
+			t.Errorf("IsImplementation(impl_item) = false, want true")
+		}
+		if IsImplementation("nonexistent_impl_xyz") {
+			t.Errorf("IsImplementation(nonexistent_impl_xyz) = true, want false")
 		}
 		if !IsIndexed("subscript_expression") || !IsIndexed("index_expression") {
 			t.Errorf("IsIndexed(subscript_expression) = false, want true")
