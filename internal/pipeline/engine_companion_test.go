@@ -3458,3 +3458,207 @@ func TestPipeline_InlinedVar_BinaryChain_Rust(t *testing.T) {
 	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
 	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
 }
+
+func TestPipeline_RustTraitImplNameTheft(t *testing.T) {
+	src := `impl<T: Clone> From<Vec<T>> for AlphaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let len = items.len();
+        Self { items, len }
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let count = items.len();
+        Self { items, count }
+    }
+}
+`
+	dst := `impl<T: Debug> Into<Vec<T>> for GammaList<T> {
+    fn into(self) -> Vec<T> {
+        self.raw.into_iter().filter(|x| !format!("{:?}", x).is_empty()).collect()
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let count = items.len();
+        Self { items, count }
+    }
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `<del>impl<T: Clone> From<Vec<T>> for AlphaList<T> {</del>
+<del>    fn from(items: Vec<T>) -> Self {</del>
+<del>        let len = items.len();</del>
+<del>        Self { items, len }</del>
+<del>    }</del>
+<del>}</del>
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let count = items.len();
+        Self { items, count }
+    }
+}
+`
+
+	expectedRight := `<ins>impl<T: Debug> Into<Vec<T>> for GammaList<T> {</ins>
+<ins>    fn into(self) -> Vec<T> {</ins>
+<ins>        self.raw.into_iter().filter(|x| !format!("{:?}", x).is_empty()).collect()</ins>
+<ins>    }</ins>
+<ins>}</ins>
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let count = items.len();
+        Self { items, count }
+    }
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}
+
+func TestPipeline_RustGenericImplMethodRewrite(t *testing.T) {
+	src := `impl<T: Clone> From<Vec<T>> for AlphaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let mut buf = Vec::new();
+        for x in items {
+            buf.push(x);
+        }
+        Self(buf)
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for BetaList<T> {
+    fn from(items: Vec<T>) -> Self {
+        let mut out = Vec::new();
+        for x in items {
+            out.push(x);
+        }
+        Self(out)
+    }
+}
+`
+	dst := `impl<T: Debug> From<Vec<T>> for AlphaList<T> {
+    fn from(raw: &[T]) -> Self {
+        Self::build(raw, true)
+    }
+}
+
+impl<T: Debug> From<Vec<T>> for BetaList<T> {
+    fn from(raw: &[T]) -> Self {
+        Self::create(raw, 0)
+    }
+}
+`
+	res, err := Run([]byte(src), []byte(dst), "test.rs", "test.rs", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `impl<T: <upd>Clone</upd>> From<Vec<T>> for AlphaList<T> {
+    fn from(<del>items: Vec<T></del>) -> Self {
+        <del>let mut buf = Vec::new();</del>
+        <del>for x in items {</del>
+<del>            buf.push(x);</del>
+<del>        }</del>
+        <del>Self(buf)</del>
+    }
+}
+
+impl<T: <upd>Clone</upd>> From<Vec<T>> for BetaList<T> {
+    fn from(<del>items: Vec<T></del>) -> Self {
+        <del>let mut out = Vec::new();</del>
+        <del>for x in items {</del>
+<del>            out.push(x);</del>
+<del>        }</del>
+        <del>Self(out)</del>
+    }
+}
+`
+
+	expectedRight := `impl<T: <upd>Debug</upd>> From<Vec<T>> for AlphaList<T> {
+    fn from(<ins>raw: &[T]</ins>) -> Self {
+        <ins>Self::build(raw, true)</ins>
+    }
+}
+
+impl<T: <upd>Debug</upd>> From<Vec<T>> for BetaList<T> {
+    fn from(<ins>raw: &[T]</ins>) -> Self {
+        <ins>Self::create(raw, 0)</ins>
+    }
+}
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}
+
+func TestPipeline_LuaModuleMethodDeclarationNames(t *testing.T) {
+	src := `local M = {}
+
+function M.encode(tbl, opts)
+    local out = {}
+    return out
+end
+
+function M:send(msg)
+    self.socket:write(msg)
+end
+`
+	dst := `local M = {}
+
+function M.encode(payload, config)
+    local serialized = json.stringify(payload)
+    return serialized
+end
+
+function M:send(packet, flags)
+    self.transport:flush(packet, flags)
+end
+`
+	res, err := Run([]byte(src), []byte(dst), "test.lua", "test.lua", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	expectedLeft := `local M = {}
+
+function M.encode(<del>tbl, opts</del>)
+    local <upd>out</upd> = <del>{}</del>
+    return <upd>out</upd>
+end
+
+function M:send(<del>msg</del>)
+    self.<upd>socket:write(msg)</upd>
+end
+`
+
+	expectedRight := `local M = {}
+
+function M.encode(<ins>payload, config</ins>)
+    local <upd>serialized</upd> = <ins>json.stringify(payload)</ins>
+    return <upd>serialized</upd>
+end
+
+function M:send(<ins>packet, flags</ins>)
+    self.<upd>transport:flush</upd>(<ins>packet,</ins> <upd>flags</upd>)
+end
+`
+
+	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+}

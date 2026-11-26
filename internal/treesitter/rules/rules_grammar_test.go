@@ -82,6 +82,16 @@ func TestAllLanguageRulesMatchGrammarSymbols(t *testing.T) {
 		checkField("Imports", r.Imports)
 		checkField("Attributes", r.Attributes)
 		checkField("Declarators", r.Declarators)
+		checkField("Implementations", r.Implementations)
+
+		for selType := range r.SelectorDelimiters {
+			if !grammarSymbols[selType] {
+				t.Errorf("[%s] SelectorDelimiters item %q does NOT exist in native grammar symbols", l.name, selType)
+			}
+			if !r.IsSelector(selType) {
+				t.Errorf("[%s] SelectorDelimiters item %q is not listed in Selectors", l.name, selType)
+			}
+		}
 
 		fields := treesitter.NativeLanguageFields(ptr)
 		for fieldName := range r.FieldRoles {

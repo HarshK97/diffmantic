@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Rewriting Rust generic `impl` blocks (like `impl<T> From<Vec<T>> for AlphaList<T>`) or Lua module methods (`function M.encode` and `function M:send`) won't pair unrelated trait blocks or drop rewritten methods into full deletes and inserts anymore. Rust `impl` blocks now match by their trait and target type instead of a shared `<T>`, and Lua module methods match by their full `M.encode` or `M:send` name.
 - Source move badges now use a standard arrow (`→`) instead of `➔`, fixing missing glyph boxes in minimal terminal fonts and screenshot tools.
 - Wrapping a C++ lambda inside another call (like `identity(identity([&] { ... }()))`) won't bleed insert or delete highlights over the `[&]` capture clause anymore. Argument lists now clip at their own opening delimiter instead of reaching into the nested lambda block.
 - Replacing or deleting a function won't interleave stray braces, semicolons, or return statements with a new function next to it anymore. Completely unmapped functions now render as clean stacked blocks, with the old code on the left and the new code on the right. Inserted comments also stay bonded right above the statement they belong to instead of getting pulled up into deleted blocks above them, and unrelated insertions and deletions won't align side-by-side just because they happen to share a keyword or short token.

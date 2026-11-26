@@ -175,7 +175,12 @@ var rustRules = &Rules{
 		"field_identifier",
 		"shorthand_field_identifier",
 		"scoped_identifier",
+		"scoped_type_identifier",
 		"lifetime",
+	},
+	Declarators: []string{
+		"tuple_pattern",
+		"tuple_struct_pattern",
 	},
 	Blocks: []string{
 		"block",
@@ -380,6 +385,9 @@ var rustRules = &Rules{
 		"macro_invocation",
 		"match_expression",
 		"while_expression",
+	},
+	Implementations: []string{
+		"impl_item",
 	},
 	FieldRoles: map[string]FieldRole{
 		"function": RoleCallee,
