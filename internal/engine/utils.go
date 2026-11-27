@@ -783,6 +783,32 @@ func findBodyBlock(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	return nil
 }
 
+// FindEnclosingHeaderConstruct returns the enclosing control-flow construct (like
+// an if or for statement) if n is in its header rather than its body block.
+func FindEnclosingHeaderConstruct(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rulesFor(n))
+	for curr := n; curr.Parent != nil; curr = curr.Parent {
+		if curr.FieldName() == "alternative" || findBodyBlock(curr, r) != nil {
+			return nil
+		}
+		p := curr.Parent
+		if (r != nil && r.IsBlock(p.Type)) || (r == nil && rules.IsBlock(p.Type)) {
+			return nil
+		}
+		if (r != nil && r.IsDeclaration(p.Type)) || (r == nil && rules.IsDeclaration(p.Type)) {
+			return nil
+		}
+		body := findBodyBlock(p, r)
+		if body != nil && !body.Contains(curr) && body != curr {
+			return p
+		}
+	}
+	return nil
+}
+
 // declarationHeader returns the nearest ancestor container declaration
 // if n sits in its signature/header rather than its body.
 func declarationHeader(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {

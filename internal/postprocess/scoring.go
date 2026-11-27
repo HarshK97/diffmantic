@@ -414,11 +414,50 @@ func moveStructuralScore(node *treesitter.ASTNode, r *rules.Rules, ms *engine.Ma
 	if !r.IsBlock(node.Type) {
 		body = findBodyBlock(node, r)
 	}
-	if body != nil && isTrivialJumpBody(body, r) {
+	if body != nil && isTrivialJumpBody(body, r) && !hasSubstantiveIdenticalCondition(node, body, ms, r) {
 		score -= 20
 	}
 
 	return max(score, 1)
+}
+
+// hasSubstantiveIdenticalCondition returns true when a control-flow statement has
+// a real (non-sentinel) condition variable and moved with all its leaves intact,
+// so we don't penalize short guard clauses like `if isReady { return true }`.
+func hasSubstantiveIdenticalCondition(node, body *treesitter.ASTNode, ms *engine.Mapping, r *rules.Rules) bool {
+	if node == nil || body == nil || r == nil || ms == nil {
+		return false
+	}
+	if r.IsBlock(node.Type) {
+		return false
+	}
+	hasSubstantiveID := false
+	for _, c := range node.Children {
+		if c == body {
+			break
+		}
+		for _, d := range c.PreOrder() {
+			if r.IsIdentifier(d.Type) {
+				lbl := d.Label
+				if !r.IsSentinel(lbl) {
+					hasSubstantiveID = true
+					break
+				}
+			}
+		}
+		if hasSubstantiveID {
+			break
+		}
+	}
+	if !hasSubstantiveID {
+		return false
+	}
+	dst := cmp.Or(ms.Src()[node], ms.Dst()[node])
+	if dst == nil {
+		return false
+	}
+	summary := summarizeMappedLeaves(node, dst, ms, r, nil)
+	return summary.total > 0 && summary.exact == summary.total
 }
 
 // isControlFlowInitStatement checks whether a node is a local variable declaration or assignment

@@ -3662,3 +3662,97 @@ end
 	testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
 	testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
 }
+
+func TestPipeline_ForLoopInitVarTheft_Companion(t *testing.T) {
+	src := []byte(`package p
+
+func f() bool {
+	dstDepth := 0
+	for dstDepth < 3 {
+		dstDepth++
+	}
+
+	isStationaryPos := true
+	if cond {
+		if isStationaryPos {
+			return true
+		}
+		if otherCond {
+			return true
+		}
+	}
+	return false
+}
+`)
+	dst := []byte(`package p
+
+func f() bool {
+	for totalDepth := 1; totalDepth <= 6; totalDepth++ {
+		for s := 0; s <= totalDepth; s++ {
+			if cond2 {
+				isStationaryPos := true
+				if isStationaryPos {
+					return true
+				}
+				if otherCond {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+`)
+
+	res, err := Run(src, dst, "main.go", "main.go", DiffOptions{
+		EnvelopeOpts: serialize.EnvelopeOptions{
+			IncludeActions:    true,
+			IncludeHighlights: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// dstDepth := 0 must be deleted, not moved into s := 0
+	testutil.AssertTagged(t, string(src), toTestSpans(res.Envelope.LeftHighlights), `package p
+
+func f() bool {
+	<del>dstDepth := 0</del>
+	<del>for dstDepth < 3 {</del>
+<del>		dstDepth++</del>
+<del>	}</del>
+
+	<mov>isStationaryPos := true</mov>
+	<del>if cond {</del>
+		<mov>if isStationaryPos {</mov>
+<mov>			return true</mov>
+<mov>		}</mov>
+		<mov>if otherCond {</mov>
+<mov>			return true</mov>
+<mov>		}</mov>
+	<del>}</del>
+	return false
+}
+`)
+
+	testutil.AssertTagged(t, string(dst), toTestSpans(res.Envelope.RightHighlights), `package p
+
+func f() bool {
+	<ins>for totalDepth := 1; totalDepth <= 6; totalDepth++ {</ins>
+		<ins>for s := 0; s <= totalDepth; s++ {</ins>
+			<ins>if cond2 {</ins>
+				<mov>isStationaryPos := true</mov>
+				<mov>if isStationaryPos {</mov>
+<mov>					return true</mov>
+<mov>				}</mov>
+				<mov>if otherCond {</mov>
+<mov>					return true</mov>
+<mov>				}</mov>
+			<ins>}</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+	return false
+}
+`)
+}

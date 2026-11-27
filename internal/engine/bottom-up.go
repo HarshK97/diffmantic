@@ -267,6 +267,35 @@ func computeAffinity(t1, c *treesitter.ASTNode, m *Mapping, w AffinityWeights, a
 		return -1.0
 	}
 
+	// Keep control-flow header clauses (for/if/switch inits) from pairing across
+	// incompatible constructs or stealing unrelated outer variable declarations.
+	h1 := FindEnclosingHeaderConstruct(t1, r)
+	h2 := FindEnclosingHeaderConstruct(c, r)
+	if h1 != nil && h2 != nil {
+		if !TypesMatch(h1.Type, h2.Type, r) {
+			return -1.0
+		}
+		if mh1 := m.Get(h1); mh1 != nil && mh1 != h2 {
+			return -1.0
+		}
+		if mh2 := m.Dst()[h2]; mh2 != nil && mh2 != h1 {
+			return -1.0
+		}
+	} else if (h1 != nil) != (h2 != nil) {
+		if hasDisjointAssignmentTargets(t1, c, r) {
+			return -1.0
+		}
+		var mappedOther, unmappedNode *treesitter.ASTNode
+		if h1 != nil {
+			mappedOther, unmappedNode = m.Get(h1), c
+		} else {
+			mappedOther, unmappedNode = m.Dst()[h2], t1
+		}
+		if mappedOther != nil && unmappedNode.Parent != nil && mappedOther.Parent != unmappedNode.Parent && !mappedOther.Contains(unmappedNode) {
+			return -1.0
+		}
+	}
+
 	anc1 := NearestMatchedAncestor(t1, m, false)
 	anc2 := NearestMatchedAncestor(c, m, true)
 	cMatches := areAncestorsMatched(anc1, anc2, m)
