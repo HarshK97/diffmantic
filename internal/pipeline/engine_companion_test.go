@@ -3840,3 +3840,179 @@ func setWidths(opt *Opts, config *Config) {
 `)
 	})
 }
+
+func TestPipeline_TopDown_ClosureAndSiblingDriftMonotonicity(t *testing.T) {
+	t.Run("ClosureDeletion_SiblingCompositeLiterals", func(t *testing.T) {
+		src := `package main
+
+func runSuite(t *testing.T) {
+	setupSuite()
+	t.Run("subtest", func(t *testing.T) {
+		t.Skip("skipping")
+		assertPairs(
+			Item{A: "x", B: "old", C: 1},
+			Item{A: "x", B: "old", C: 1},
+		)
+	})
+	teardownSuite()
+}
+`
+		dst := `package main
+
+func runSuite(t *testing.T) {
+	setupSuite()
+	t.Run("subtest", func(t *testing.T) {
+		assertPairs(
+			Item{A: "x", B: "new", C: 1},
+			Item{A: "x", B: "new", C: 1},
+		)
+	})
+	teardownSuite()
+}
+`
+		res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		expectedLeft := `package main
+
+func runSuite(t *testing.T) {
+	setupSuite()
+	t.Run("subtest", func(t *testing.T) {
+		<del>t.Skip("skipping")</del>
+		assertPairs(
+			Item{A: "x", B: <upd>"old"</upd>, C: 1},
+			Item{A: "x", B: <upd>"old"</upd>, C: 1},
+		)
+	})
+	teardownSuite()
+}
+`
+		expectedRight := `package main
+
+func runSuite(t *testing.T) {
+	setupSuite()
+	t.Run("subtest", func(t *testing.T) {
+		assertPairs(
+			Item{A: "x", B: <upd>"new"</upd>, C: 1},
+			Item{A: "x", B: <upd>"new"</upd>, C: 1},
+		)
+	})
+	teardownSuite()
+}
+`
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+	})
+
+	t.Run("CallArgumentDeletion_SiblingCompositeLiterals", func(t *testing.T) {
+		src := `package main
+
+func verifyItems() {
+	setup()
+	call(
+		del(),
+		Item{A: "x", B: "old", C: 1},
+		Item{A: "x", B: "old", C: 1},
+	)
+	teardown()
+}
+`
+		dst := `package main
+
+func verifyItems() {
+	setup()
+	call(
+		Item{A: "x", B: "new", C: 1},
+		Item{A: "x", B: "new", C: 1},
+	)
+	teardown()
+}
+`
+		res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		expectedLeft := `package main
+
+func verifyItems() {
+	setup()
+	call(
+		<del>del(),</del>
+		Item{A: "x", B: <upd>"old"</upd>, C: 1},
+		Item{A: "x", B: <upd>"old"</upd>, C: 1},
+	)
+	teardown()
+}
+`
+		expectedRight := `package main
+
+func verifyItems() {
+	setup()
+	call(
+		Item{A: "x", B: <upd>"new"</upd>, C: 1},
+		Item{A: "x", B: <upd>"new"</upd>, C: 1},
+	)
+	teardown()
+}
+`
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+	})
+
+	t.Run("BlockStatementDeletion_SiblingCalls", func(t *testing.T) {
+		src := `package main
+
+func processAll() {
+	setup()
+	del()
+	foo(Item{A: "x", B: "old", C: 1})
+	foo(Item{A: "x", B: "old", C: 1})
+	teardown()
+}
+`
+		dst := `package main
+
+func processAll() {
+	setup()
+	foo(Item{A: "x", B: "new", C: 1})
+	foo(Item{A: "x", B: "new", C: 1})
+	teardown()
+}
+`
+		res, err := Run([]byte(src), []byte(dst), "a.go", "b.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		expectedLeft := `package main
+
+func processAll() {
+	setup()
+	<del>del()</del>
+	foo(Item{A: "x", B: <upd>"old"</upd>, C: 1})
+	foo(Item{A: "x", B: <upd>"old"</upd>, C: 1})
+	teardown()
+}
+`
+		expectedRight := `package main
+
+func processAll() {
+	setup()
+	foo(Item{A: "x", B: <upd>"new"</upd>, C: 1})
+	foo(Item{A: "x", B: <upd>"new"</upd>, C: 1})
+	teardown()
+}
+`
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), expectedLeft)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), expectedRight)
+	})
+}

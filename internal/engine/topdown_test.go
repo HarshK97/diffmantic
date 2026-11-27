@@ -2164,3 +2164,256 @@ func computeMetrics() {
 		)
 	})
 }
+
+func TestTopDown_ClosureAndSiblingDriftMonotonicity(t *testing.T) {
+	assertZeroParseErrors := func(t *testing.T, ast *treesitter.ASTNode, label string) {
+		t.Helper()
+		if ast.HasError || ast.ParseErrorCount > 0 {
+			t.Fatalf("%s has syntax errors: count=%d", label, ast.ParseErrorCount)
+		}
+	}
+
+	t.Run("FullEngine_ClosureDeletion_SiblingCompositeLiterals", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func runSuite(t *testing.T) {
+	setupSuite()
+	t.Run("subtest", func(t *testing.T) {
+		t.Skip("skipping")
+		assertPairs(
+			Item{A: "x", B: "old", C: 1},
+			Item{A: "x", B: "old", C: 1},
+		)
+	})
+	teardownSuite()
+}
+`)
+		newSrc := []byte(`package main
+
+func runSuite(t *testing.T) {
+	setupSuite()
+	t.Run("subtest", func(t *testing.T) {
+		assertPairs(
+			Item{A: "x", B: "new", C: 1},
+			Item{A: "x", B: "new", C: 1},
+		)
+	})
+	teardownSuite()
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+		assertZeroParseErrors(t, srcAST, "srcAST")
+		assertZeroParseErrors(t, dstAST, "dstAST")
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing context: outer declaration and closure call map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func runSuite(t *testing.T)",
+			"func runSuite(t *testing.T)",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			`t.Run("subtest", func(t *testing.T)`,
+			`t.Run("subtest", func(t *testing.T)`,
+		)
+
+		// 2. Surrounding sequence: setupSuite and teardownSuite stay mapped in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setupSuite()",
+			"setupSuite()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardownSuite()",
+			"teardownSuite()",
+		)
+
+		// 3. Deleted statement stays unmapped.
+		testutil.AssertUnmappedText(t, srcAST, oldSrc, mr.Mappings.Src(),
+			`t.Skip("skipping")`,
+		)
+
+		// 4. Target & containers: identical sibling composite literals map monotonically (1->1, 2->2).
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `Item{A: "x", B: "old", C: 1}`, Occurrence: 1},
+			testutil.TextQuery{Text: `Item{A: "x", B: "new", C: 1}`, Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `Item{A: "x", B: "old", C: 1}`, Occurrence: 2},
+			testutil.TextQuery{Text: `Item{A: "x", B: "new", C: 1}`, Occurrence: 2},
+		)
+
+		// 5. Stationary operands: identical inner keyed elements map monotonically without crossing.
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 1},
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 2},
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 2},
+		)
+	})
+
+	t.Run("FullEngine_CallArgumentDeletion_SiblingCompositeLiterals", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func verifyItems() {
+	setup()
+	call(
+		del(),
+		Item{A: "x", B: "old", C: 1},
+		Item{A: "x", B: "old", C: 1},
+	)
+	teardown()
+}
+`)
+		newSrc := []byte(`package main
+
+func verifyItems() {
+	setup()
+	call(
+		Item{A: "x", B: "new", C: 1},
+		Item{A: "x", B: "new", C: 1},
+	)
+	teardown()
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+		assertZeroParseErrors(t, srcAST, "srcAST")
+		assertZeroParseErrors(t, dstAST, "dstAST")
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing context & surrounding statements map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func verifyItems()",
+			"func verifyItems()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setup()",
+			"setup()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardown()",
+			"teardown()",
+		)
+
+		// 2. Deleted argument stays unmapped.
+		testutil.AssertUnmappedText(t, srcAST, oldSrc, mr.Mappings.Src(), "del()")
+
+		// 3. Target & stationary operands preserve monotonic order (1->1, 2->2).
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `Item{A: "x", B: "old", C: 1}`, Occurrence: 1},
+			testutil.TextQuery{Text: `Item{A: "x", B: "new", C: 1}`, Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `Item{A: "x", B: "old", C: 1}`, Occurrence: 2},
+			testutil.TextQuery{Text: `Item{A: "x", B: "new", C: 1}`, Occurrence: 2},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 1},
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 2},
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 2},
+		)
+	})
+
+	t.Run("FullEngine_BlockStatementDeletion_SiblingCalls", func(t *testing.T) {
+		oldSrc := []byte(`package main
+
+func processAll() {
+	setup()
+	del()
+	foo(Item{A: "x", B: "old", C: 1})
+	foo(Item{A: "x", B: "old", C: 1})
+	teardown()
+}
+`)
+		newSrc := []byte(`package main
+
+func processAll() {
+	setup()
+	foo(Item{A: "x", B: "new", C: 1})
+	foo(Item{A: "x", B: "new", C: 1})
+	teardown()
+}
+`)
+
+		srcAST, err := treesitter.Parse(oldSrc, "old.go")
+		if err != nil {
+			t.Fatalf("parse old: %v", err)
+		}
+		dstAST, err := treesitter.Parse(newSrc, "new.go")
+		if err != nil {
+			t.Fatalf("parse new: %v", err)
+		}
+		assertZeroParseErrors(t, srcAST, "srcAST")
+		assertZeroParseErrors(t, dstAST, "dstAST")
+
+		part := NewLinePartition(oldSrc, newSrc)
+		mr := Match(srcAST, dstAST, oldSrc, newSrc, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil mappings")
+		}
+
+		// 1. Enclosing context & surrounding statements map in place.
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"func processAll()",
+			"func processAll()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"setup()",
+			"setup()",
+		)
+		testutil.AssertMappedText(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			"teardown()",
+			"teardown()",
+		)
+
+		// 2. Deleted statement stays unmapped.
+		testutil.AssertUnmappedText(t, srcAST, oldSrc, mr.Mappings.Src(), "del()")
+
+		// 3. Target statements & stationary operands preserve monotonic order (1->1, 2->2).
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `foo(Item{A: "x", B: "old", C: 1})`, Occurrence: 1},
+			testutil.TextQuery{Text: `foo(Item{A: "x", B: "new", C: 1})`, Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `foo(Item{A: "x", B: "old", C: 1})`, Occurrence: 2},
+			testutil.TextQuery{Text: `foo(Item{A: "x", B: "new", C: 1})`, Occurrence: 2},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 1},
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 1},
+		)
+		testutil.AssertMappedTextQuery(t, srcAST, dstAST, oldSrc, newSrc, mr.Mappings.Src(),
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 2},
+			testutil.TextQuery{Text: `A: "x"`, Occurrence: 2},
+		)
+	})
+}
