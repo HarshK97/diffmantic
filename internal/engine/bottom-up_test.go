@@ -5127,3 +5127,73 @@ func TestHasForeignHeaderOwner_MergedSequentialIfStatements_Zig(t *testing.T) {
 			"log_second(item.second);", "log_second(item.second);", "expression_statement")
 	})
 }
+
+func TestBottomUp_ForLoopInitVarTheft_Rejected(t *testing.T) {
+	t.Run("FullEngine", func(t *testing.T) {
+		oldSrc := `package p
+
+func f() bool {
+	dstDepth := 0
+	for dstDepth < 3 {
+		dstDepth++
+	}
+
+	isStationaryPos := true
+	if cond {
+		if isStationaryPos {
+			return true
+		}
+		if otherCond {
+			return true
+		}
+	}
+	return false
+}
+`
+		newSrc := `package p
+
+func f() bool {
+	for totalDepth := 1; totalDepth <= 6; totalDepth++ {
+		for s := 0; s <= totalDepth; s++ {
+			if cond2 {
+				isStationaryPos := true
+				if isStationaryPos {
+					return true
+				}
+				if otherCond {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+`
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+		srcAST, err := treesitter.Parse(srcBytes, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, "test.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+
+		// 1. Enclosing function maps in place
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), "func f() bool {", "func f() bool {")
+
+		// 2. Outer variable declaration must NOT be stolen by inner for-loop init clause
+		testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(), "dstDepth := 0")
+		testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(), "s := 0")
+
+		// 3. Relocated guard statements with substantive conditions must map
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), "if isStationaryPos {", "if isStationaryPos {")
+		testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(), "if otherCond {", "if otherCond {")
+	})
+}

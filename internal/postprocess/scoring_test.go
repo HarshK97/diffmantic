@@ -1123,3 +1123,144 @@ func TestMoveScoring_TokenNodeStandaloneMoveDemotion_Zig_FullEngine(t *testing.T
 		}
 	})
 }
+
+func TestFindEnclosingHeaderConstruct_ElseIfAndInit(t *testing.T) {
+	src := []byte(`package p
+
+func f(items []int, cond bool) int {
+	x := 1
+	if y := 3; cond {
+		z := 4
+		_ = z
+	}
+	for i := 0; i < len(items); i++ {
+		_ = i
+	}
+	if cond {
+		return 1
+	} else if other := 5; other > 0 {
+		return other
+	}
+	return x
+}
+`)
+	ast, err := treesitter.Parse(src, "init.go")
+	if err != nil || ast.HasError {
+		t.Fatalf("parse error: %v", err)
+	}
+	r := rules.Get("go")
+	mustFind := func(text, nodeType string) *treesitter.ASTNode {
+		t.Helper()
+		n, err := testutil.FindNodeByText(ast, src, text, nodeType)
+		if err != nil {
+			t.Fatalf("FindNodeByText(%q, %q): %v", text, nodeType, err)
+		}
+		return n
+	}
+
+	ifInit := mustFind("y := 3", "short_var_declaration")
+	if got := engine.FindEnclosingHeaderConstruct(ifInit, r); got == nil || got.Type != "if_statement" {
+		t.Fatalf("expected if_statement for if init, got %v", got)
+	}
+
+	forInit := mustFind("i := 0", "short_var_declaration")
+	if got := engine.FindEnclosingHeaderConstruct(forInit, r); got == nil || got.Type != "for_statement" {
+		t.Fatalf("expected for_statement for for init, got %v", got)
+	}
+
+	elseIfInit := mustFind("other := 5", "short_var_declaration")
+	if got := engine.FindEnclosingHeaderConstruct(elseIfInit, r); got == nil || got.Type != "if_statement" {
+		t.Fatalf("expected if_statement for else-if init, got %v", got)
+	}
+
+	bodyDecl := mustFind("x := 1", "short_var_declaration")
+	if got := engine.FindEnclosingHeaderConstruct(bodyDecl, r); got != nil {
+		t.Fatalf("expected nil for body declaration, got %s", got.Type)
+	}
+
+	nestedDecl := mustFind("z := 4", "short_var_declaration")
+	if got := engine.FindEnclosingHeaderConstruct(nestedDecl, r); got != nil {
+		t.Fatalf("expected nil for nested block declaration, got %s", got.Type)
+	}
+
+	elseIfStmt := mustFind("if other := 5; other > 0 {\n\t\treturn other\n\t}", "if_statement")
+	if got := engine.FindEnclosingHeaderConstruct(elseIfStmt, r); got != nil {
+		t.Fatalf("expected nil enclosing header construct for else-if statement, got %s", got.Type)
+	}
+}
+
+func TestHasSubstantiveIdenticalCondition(t *testing.T) {
+	src := []byte(`package p
+
+func f(isReady bool, err error) bool {
+	if isReady {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	if true {
+		return false
+	}
+	return false
+}
+`)
+	dst := []byte(`package p
+
+func f(isReady bool, err error) bool {
+	if isReady {
+		return false
+	}
+	if err != nil {
+		return false
+	}
+	if true {
+		return false
+	}
+	return false
+}
+`)
+	srcAST, err := treesitter.Parse(src, "cond.go")
+	if err != nil || srcAST.HasError {
+		t.Fatalf("src parse error: %v", err)
+	}
+	dstAST, err := treesitter.Parse(dst, "cond.go")
+	if err != nil || dstAST.HasError {
+		t.Fatalf("dst parse error: %v", err)
+	}
+	r := rules.Get("go")
+	part := engine.NewLinePartition(src, dst)
+	mr := engine.Match(srcAST, dstAST, src, dst, part)
+	if mr == nil || mr.Mappings == nil {
+		t.Fatal("Match returned nil")
+	}
+	mustFind := func(text, nodeType string) *treesitter.ASTNode {
+		t.Helper()
+		n, err := testutil.FindNodeByText(srcAST, src, text, nodeType)
+		if err != nil {
+			t.Fatalf("FindNodeByText(%q, %q): %v", text, nodeType, err)
+		}
+		return n
+	}
+
+	// Modified body (`return true` -> `return false`) should not be treated as identical.
+	srcReadyIf := mustFind("if isReady {\n\t\treturn true\n\t}", "if_statement")
+	srcReadyBody := mustFind("{\n\t\treturn true\n\t}", "block")
+	if hasSubstantiveIdenticalCondition(srcReadyIf, srcReadyBody, mr.Mappings, r) {
+		t.Fatal("expected modified-body `if isReady` to return false")
+	}
+
+	// Identical condition and body (`if err != nil`) should return true.
+	srcErrIf := mustFind("if err != nil {\n\t\treturn false\n\t}", "if_statement")
+	srcErrBody := findBodyBlock(srcErrIf, r)
+	if !hasSubstantiveIdenticalCondition(srcErrIf, srcErrBody, mr.Mappings, r) {
+		t.Fatal("expected identical `if err != nil` to return true")
+	}
+
+	// Sentinel-only (`if true`) should return false even when identical.
+	srcTrueIf := mustFind("if true {\n\t\treturn false\n\t}", "if_statement")
+	srcTrueBody := findBodyBlock(srcTrueIf, r)
+	if hasSubstantiveIdenticalCondition(srcTrueIf, srcTrueBody, mr.Mappings, r) {
+		t.Fatal("expected sentinel-only `if true` to return false")
+	}
+}
