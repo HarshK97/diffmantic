@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Deleting one plain `=` assignment while adding another (like in Python, where local bindings don't use `let` or `:=`, or plain `=` assignments in Go, JavaScript, Rust, Lua, or C/C++) won't pair two unrelated assignments together or swallow an extracted expression from a nearby line anymore. Assignments without matching variable words or similar values now show up as clean deletions and additions instead of fake updates and moves.
 - Loop or `if` init statements (like `for s := 0; ...`) won't steal unrelated variable declarations (like `dstDepth := 0`) anymore, and moved guard `if` statements with unchanged conditions (like `if isReady { return true }`) stay highlighted as moves instead of dropping into deletes and inserts.
 - Rewriting Rust generic `impl` blocks (like `impl<T> From<Vec<T>> for AlphaList<T>`) or Lua module methods (`function M.encode` and `function M:send`) won't pair unrelated trait blocks or drop rewritten methods into full deletes and inserts anymore. Rust `impl` blocks now match by their trait and target type instead of a shared `<T>`, and Lua module methods match by their full `M.encode` or `M:send` name.
 - Source move badges now use a standard arrow (`→`) instead of `➔`, fixing missing glyph boxes in minimal terminal fonts and screenshot tools.
