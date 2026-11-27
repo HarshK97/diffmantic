@@ -4024,3 +4024,195 @@ func TestPythonSandwichedStatementAwaitWrapperRecovery(t *testing.T) {
 			"await client.fetch_updates()", "await")
 	})
 }
+
+func TestPythonUnrelatedAssignmentTheftRecovery(t *testing.T) {
+	parseAndMatch := func(t *testing.T, filename, oldSrc, newSrc string) (*treesitter.ASTNode, *treesitter.ASTNode, []byte, []byte, *rules.Rules, *MatchResult) {
+		t.Helper()
+		srcBytes := []byte(oldSrc)
+		dstBytes := []byte(newSrc)
+
+		srcAST, err := treesitter.Parse(srcBytes, filename)
+		if err != nil {
+			t.Fatalf("parse src: %v", err)
+		}
+		if srcAST.HasError || srcAST.ParseErrorCount > 0 {
+			t.Fatalf("src snippet must parse cleanly: hasError=%v errors=%d", srcAST.HasError, srcAST.ParseErrorCount)
+		}
+		dstAST, err := treesitter.Parse(dstBytes, filename)
+		if err != nil {
+			t.Fatalf("parse dst: %v", err)
+		}
+		if dstAST.HasError || dstAST.ParseErrorCount > 0 {
+			t.Fatalf("dst snippet must parse cleanly: hasError=%v errors=%d", dstAST.HasError, dstAST.ParseErrorCount)
+		}
+
+		r := rules.Get(srcAST.GetLanguage())
+		part := NewLinePartition(srcBytes, dstBytes)
+		mr := Match(srcAST, dstAST, srcBytes, dstBytes, part)
+		if mr == nil || mr.Mappings == nil {
+			t.Fatal("Match returned nil")
+		}
+		return srcAST, dstAST, srcBytes, dstBytes, r, mr
+	}
+
+	t.Run("FullEngine", func(t *testing.T) {
+		t.Run("PythonIsomorphicRHS", func(t *testing.T) {
+			oldSrc := `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    opt.available_terminal_width = Term.stdout().size().one
+    empty_builtin_features = HashMap.create()
+    validate_bounds(opt)
+`
+			newSrc := `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    term_stdout = Term.stdout()
+    opt.available_terminal_width = term_stdout.size().one
+    validate_bounds(opt)
+`
+			srcAST, dstAST, srcBytes, dstBytes, r, mr := parseAndMatch(t, "test.py", oldSrc, newSrc)
+
+			// 1. Enclosing Context: function definition maps in place.
+			fnSrc, _ := testutil.FindNodeByText(srcAST, srcBytes, "def set_widths(opt, config):")
+			if fnSrc == nil || !r.IsDeclaration(fnSrc.Type) {
+				t.Fatalf("expected declaration node for set_widths, got %v", fnSrc)
+			}
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"def set_widths(opt, config):", "def set_widths(opt, config):", fnSrc.Type)
+
+			// 2. Surrounding Sequence: preceding and succeeding statements map in place.
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"apply_defaults(opt, config)", "apply_defaults(opt, config)")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"validate_bounds(opt)", "validate_bounds(opt)")
+
+			// 3. Target & Stationary Operands: updated statement and extracted Term.stdout() map cleanly.
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"opt.available_terminal_width = Term.stdout().size().one",
+				"opt.available_terminal_width = term_stdout.size().one")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"opt.available_terminal_width", "opt.available_terminal_width")
+
+			callSrc, _ := testutil.FindNodeByText(srcAST, srcBytes, "Term.stdout()")
+			if callSrc == nil || !r.IsCall(callSrc.Type) {
+				t.Fatalf("expected call node for Term.stdout(), got %v", callSrc)
+			}
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"Term.stdout()", "Term.stdout()", callSrc.Type)
+
+			// 4. Unrelated assignments must NOT pair across deletion and insertion.
+			delAssign, _ := testutil.FindNodeByText(srcAST, srcBytes, "empty_builtin_features = HashMap.create()")
+			if delAssign == nil || (!r.IsStatement(delAssign.Type) && !r.IsAssignment(delAssign.Type)) {
+				t.Fatalf("expected statement or assignment node for empty_builtin_features, got %v", delAssign)
+			}
+			testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+				"empty_builtin_features = HashMap.create()", delAssign.Type)
+			if delAssign.Parent != nil && r.IsStatement(delAssign.Parent.Type) {
+				testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+					"empty_builtin_features = HashMap.create()", delAssign.Parent.Type)
+			}
+			testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(), "empty_builtin_features")
+			testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(), "HashMap.create()")
+
+			insAssign, _ := testutil.FindNodeByText(dstAST, dstBytes, "term_stdout = Term.stdout()")
+			if insAssign == nil || (!r.IsStatement(insAssign.Type) && !r.IsAssignment(insAssign.Type)) {
+				t.Fatalf("expected statement or assignment node for term_stdout, got %v", insAssign)
+			}
+			testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+				"term_stdout = Term.stdout()", insAssign.Type)
+			if insAssign.Parent != nil && r.IsStatement(insAssign.Parent.Type) {
+				testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+					"term_stdout = Term.stdout()", insAssign.Parent.Type)
+			}
+			testutil.AssertUnmappedTextQuery(t, dstAST, dstBytes, mr.Mappings.Dst(),
+				testutil.TextQuery{Text: "term_stdout", Occurrence: 1})
+		})
+
+		t.Run("PythonNonIsomorphicRHS", func(t *testing.T) {
+			oldSrc := `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    opt.available_terminal_width = Term.stdout().size().one
+    empty_builtin_features = create_empty()
+    validate_bounds(opt)
+`
+			newSrc := `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    term_stdout = Term.stdout()
+    opt.available_terminal_width = term_stdout.size().one
+    validate_bounds(opt)
+`
+			srcAST, dstAST, srcBytes, dstBytes, r, mr := parseAndMatch(t, "test.py", oldSrc, newSrc)
+
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"def set_widths(opt, config):", "def set_widths(opt, config):")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"apply_defaults(opt, config)", "apply_defaults(opt, config)")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"validate_bounds(opt)", "validate_bounds(opt)")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"opt.available_terminal_width = Term.stdout().size().one",
+				"opt.available_terminal_width = term_stdout.size().one")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"opt.available_terminal_width", "opt.available_terminal_width")
+
+			callSrc, _ := testutil.FindNodeByText(srcAST, srcBytes, "Term.stdout()")
+			if callSrc == nil || !r.IsCall(callSrc.Type) {
+				t.Fatalf("expected call node for Term.stdout(), got %v", callSrc)
+			}
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"Term.stdout()", "Term.stdout()", callSrc.Type)
+
+			testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+				"empty_builtin_features = create_empty()")
+			testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+				"term_stdout = Term.stdout()")
+		})
+
+		t.Run("GoPlainAssignment", func(t *testing.T) {
+			oldSrc := `package p
+
+func setWidths(opt *Opts, config *Config) {
+	applyDefaults(opt, config)
+	opt.availableTerminalWidth = Term.Stdout().Size().One
+	emptyBuiltinFeatures = HashMap.Create()
+	validateBounds(opt)
+}
+`
+			newSrc := `package p
+
+func setWidths(opt *Opts, config *Config) {
+	applyDefaults(opt, config)
+	termStdout = Term.Stdout()
+	opt.availableTerminalWidth = termStdout.Size().One
+	validateBounds(opt)
+}
+`
+			srcAST, dstAST, srcBytes, dstBytes, r, mr := parseAndMatch(t, "test.go", oldSrc, newSrc)
+
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"func setWidths(opt *Opts, config *Config)", "func setWidths(opt *Opts, config *Config)")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"applyDefaults(opt, config)", "applyDefaults(opt, config)")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"validateBounds(opt)", "validateBounds(opt)")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"opt.availableTerminalWidth = Term.Stdout().Size().One",
+				"opt.availableTerminalWidth = termStdout.Size().One")
+			testutil.AssertMappedText(t, srcAST, dstAST, srcBytes, dstBytes, mr.Mappings.Src(),
+				"Term.Stdout()", "Term.Stdout()")
+
+			delAssign, _ := testutil.FindNodeByText(srcAST, srcBytes, "emptyBuiltinFeatures = HashMap.Create()")
+			if delAssign == nil || !r.IsAssignment(delAssign.Type) {
+				t.Fatalf("expected source assignment node, got %v", delAssign)
+			}
+			testutil.AssertUnmappedText(t, srcAST, srcBytes, mr.Mappings.Src(),
+				"emptyBuiltinFeatures = HashMap.Create()", delAssign.Type)
+
+			insAssign, _ := testutil.FindNodeByText(dstAST, dstBytes, "termStdout = Term.Stdout()")
+			if insAssign == nil || !r.IsAssignment(insAssign.Type) {
+				t.Fatalf("expected dest assignment node, got %v", insAssign)
+			}
+			testutil.AssertUnmappedText(t, dstAST, dstBytes, mr.Mappings.Dst(),
+				"termStdout = Term.Stdout()", insAssign.Type)
+		})
+	})
+}

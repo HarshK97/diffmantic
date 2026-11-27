@@ -974,6 +974,54 @@ func substantiveLeafSimilarity(a, b *treesitter.ASTNode, r *rules.Rules) float64
 	return 2.0 * float64(intersection) / float64(total1+total2)
 }
 
+func isAssignmentStatement(n *treesitter.ASTNode, r *rules.Rules) bool {
+	if n == nil {
+		return false
+	}
+	if r == nil {
+		r = rulesFor(n)
+	}
+	isAssign := func(typ string) bool {
+		if r != nil {
+			return r.IsAssignment(typ)
+		}
+		return rules.IsAssignment(typ)
+	}
+	if isAssign(n.Type) {
+		return true
+	}
+	isStmt := (r != nil && r.IsStatement(n.Type)) || (r == nil && rules.IsStatement(n.Type))
+	return isStmt && len(n.Children) == 1 && isAssign(n.Children[0].Type)
+}
+
+// canMatchAssignments keeps two unrelated assignments from pairing up unless
+// their LHS targets share a word or at least 30% of their substantive tokens match.
+func canMatchAssignments(src, dst *treesitter.ASTNode, r *rules.Rules) bool {
+	if src == nil || dst == nil {
+		return false
+	}
+	if r == nil {
+		r = cmp.Or(rulesFor(src), rulesFor(dst))
+	}
+	lhs1 := getAssignmentTargetNames(src, r)
+	lhs2 := getAssignmentTargetNames(dst, r)
+	for _, name1 := range lhs1 {
+		if !isSubstantiveLeaf(name1, r) {
+			continue
+		}
+		words1 := splitIdentifierWords(name1)
+		for _, name2 := range lhs2 {
+			if !isSubstantiveLeaf(name2, r) {
+				continue
+			}
+			if name1 == name2 || identifierWordOverlap(words1, splitIdentifierWords(name2)) > 0 {
+				return true
+			}
+		}
+	}
+	return substantiveLeafSimilarity(src, dst, r) >= 0.30
+}
+
 func isSubstantiveLeaf(label string, r *rules.Rules) bool {
 	if !hasWordChar(label) && !isQuotedLiteral(label) {
 		return false
@@ -1064,6 +1112,9 @@ func uniqueTypePairs(
 			isDecl := (r != nil && (r.IsDeclaration(n1.Type) || r.IsLocalVarDeclaration(n1.Type))) ||
 				(r == nil && (rules.IsDeclaration(n1.Type) || rules.IsLocalVarDeclaration(n1.Type)))
 			if isDecl && !canMatchDeclarations(n1, n2, m, r) {
+				continue
+			}
+			if !isDecl && isAssignmentStatement(n1, r) && isAssignmentStatement(n2, r) && !canMatchAssignments(n1, n2, r) {
 				continue
 			}
 			isStmt := ((r != nil && r.IsStatement(n1.Type)) || (r == nil && rules.IsStatement(n1.Type))) && !isDecl

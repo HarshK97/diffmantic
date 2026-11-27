@@ -3756,3 +3756,87 @@ func f() bool {
 }
 `)
 }
+
+func TestPipeline_PythonUnrelatedAssignmentTheft_Companion(t *testing.T) {
+	t.Run("PythonIsomorphicRHS", func(t *testing.T) {
+		src := `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    opt.available_terminal_width = Term.stdout().size().one
+    empty_builtin_features = HashMap.create()
+    validate_bounds(opt)
+`
+		dst := `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    term_stdout = Term.stdout()
+    opt.available_terminal_width = term_stdout.size().one
+    validate_bounds(opt)
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.py", "test.py", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    opt.available_terminal_width = <mov>Term.stdout()</mov><del>.</del>size().one
+    <del>empty_builtin_features = HashMap.create()</del>
+    validate_bounds(opt)
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `def set_widths(opt, config):
+    apply_defaults(opt, config)
+    <ins>term_stdout =</ins> <mov>Term.stdout()</mov>
+    opt.available_terminal_width = <ins>term_stdout.</ins>size().one
+    validate_bounds(opt)
+`)
+	})
+
+	t.Run("GoPlainAssignment", func(t *testing.T) {
+		src := `package p
+
+func setWidths(opt *Opts, config *Config) {
+	applyDefaults(opt, config)
+	opt.availableTerminalWidth = Term.Stdout().Size().One
+	emptyBuiltinFeatures = HashMap.Create()
+	validateBounds(opt)
+}
+`
+		dst := `package p
+
+func setWidths(opt *Opts, config *Config) {
+	applyDefaults(opt, config)
+	termStdout = Term.Stdout()
+	opt.availableTerminalWidth = termStdout.Size().One
+	validateBounds(opt)
+}
+`
+
+		res, err := Run([]byte(src), []byte(dst), "test.go", "test.go", DiffOptions{
+			EnvelopeOpts: serialize.EnvelopeOptions{IncludeHighlights: true},
+		})
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+
+		testutil.AssertTagged(t, src, toTestSpans(res.Envelope.LeftHighlights), `package p
+
+func setWidths(opt *Opts, config *Config) {
+	applyDefaults(opt, config)
+	opt.availableTerminalWidth = <mov>Term.Stdout()</mov><del>.</del>Size().One
+	<del>emptyBuiltinFeatures = HashMap.Create()</del>
+	validateBounds(opt)
+}
+`)
+		testutil.AssertTagged(t, dst, toTestSpans(res.Envelope.RightHighlights), `package p
+
+func setWidths(opt *Opts, config *Config) {
+	applyDefaults(opt, config)
+	<ins>termStdout =</ins> <mov>Term.Stdout()</mov>
+	opt.availableTerminalWidth = <ins>termStdout.</ins>Size().One
+	validateBounds(opt)
+}
+`)
+	})
+}

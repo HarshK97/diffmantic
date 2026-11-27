@@ -160,6 +160,8 @@ func scorePartner(src, dst *treesitter.ASTNode, srcChildIdx int, m *Mapping) int
 		if !canMatchDeclarations(src, dst, m, r) {
 			return -100
 		}
+	} else if isAssignmentStatement(src, r) && isAssignmentStatement(dst, r) && !canMatchAssignments(src, dst, r) {
+		return -100
 	}
 
 	score := 0
