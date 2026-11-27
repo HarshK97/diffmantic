@@ -193,8 +193,12 @@ func TopDown(
 				(LeafSimilarity(anchor1, anchor2) >= 0.30 || Dice(anchor1, anchor2, m.Src()) >= 0.30)
 
 			if !isCompatible {
-				d1 := GetEnclosingDeclaration(t1)
-				d2 := GetEnclosingDeclaration(t2)
+				d1 := getEnclosingDriftScope(t1, r1)
+				d2 := getEnclosingDriftScope(t2, r2)
+				if d1 == nil || d2 == nil || d1.Type != d2.Type {
+					d1 = GetEnclosingDeclaration(t1)
+					d2 = GetEnclosingDeclaration(t2)
+				}
 				if d1 != nil && d2 != nil && d1.Type == d2.Type {
 					anchor1 = d1
 					anchor2 = d2
@@ -352,18 +356,23 @@ func TopDown(
 	})
 
 	for len(scored) > 0 {
-		sp := scored[0]
+		if m.Has(scored[0].pair[0]) || m.HasDst(scored[0].pair[1]) {
+			scored = scored[1:]
+			continue
+		}
+		sp := selectMonotonicPair(scored, m)
 		pair := sp.pair
-		scored = scored[1:]
 		t1, t2 := pair[0], pair[1]
 
-		if m.Has(t1) || m.HasDst(t2) {
-			continue
-		}
-		if sp.mismatched && (Height(t1) <= 2 || declarationHeader(t1, rulesFor(t1)) != nil || !hasIdentifier(t1, rulesFor(t1))) {
-			continue
-		}
-		if hasDelimitedContainerConflict(t1, t2, m, rulesFor(t1)) {
+		if (sp.mismatched && (Height(t1) <= 2 || declarationHeader(t1, rulesFor(t1)) != nil || !hasIdentifier(t1, rulesFor(t1)))) ||
+			hasDelimitedContainerConflict(t1, t2, m, rulesFor(t1)) {
+			if scored[0].pair[0] == t1 && scored[0].pair[1] == t2 {
+				scored = scored[1:]
+			} else {
+				scored = slices.DeleteFunc(scored, func(s scoredPair) bool {
+					return s.pair[0] == t1 && s.pair[1] == t2
+				})
+			}
 			continue
 		}
 
@@ -724,8 +733,31 @@ func hasIdentifier(n *treesitter.ASTNode, r *rules.Rules) bool {
 	return false
 }
 
+func isDeclarationOrClosure(nodeType string, r *rules.Rules) bool {
+	if r != nil {
+		return r.IsDeclaration(nodeType) || r.IsClosure(nodeType)
+	}
+	return rules.IsDeclaration(nodeType) || rules.IsClosure(nodeType)
+}
+
+// getEnclosingDriftScope returns the nearest enclosing declaration or closure so we
+// measure line drift inside the closure instead of the outer function.
+func getEnclosingDriftScope(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
+	if n == nil {
+		return nil
+	}
+	r = cmp.Or(r, rulesFor(n))
+	for curr := n.Parent; curr != nil; curr = curr.Parent {
+		isLocalVar := (r != nil && r.IsLocalVarDeclaration(curr.Type)) || (r == nil && rules.IsLocalVarDeclaration(curr.Type))
+		if isDeclarationOrClosure(curr.Type, r) || isLocalVar {
+			return curr
+		}
+	}
+	return nil
+}
+
 // getEnclosingConstruct finds the top-level statement directly under the enclosing
-// declaration's body block, stopping before it escapes into the declaration itself.
+// declaration or closure body block, stopping before it escapes into the enclosing scope.
 func getEnclosingConstruct(n *treesitter.ASTNode, r *rules.Rules) *treesitter.ASTNode {
 	if n == nil {
 		return nil
@@ -737,10 +769,7 @@ func getEnclosingConstruct(n *treesitter.ASTNode, r *rules.Rules) *treesitter.AS
 		if p.Parent == nil {
 			return curr
 		}
-		if (r != nil && r.IsDeclaration(p.Type)) || rules.IsDeclaration(p.Type) {
-			return curr
-		}
-		if (r != nil && r.IsDeclaration(p.Parent.Type)) || rules.IsDeclaration(p.Parent.Type) {
+		if isDeclarationOrClosure(p.Type, r) || isDeclarationOrClosure(p.Parent.Type, r) {
 			return curr
 		}
 		curr = p
@@ -777,13 +806,186 @@ func isNodeInLHS(t *treesitter.ASTNode, lhs []*treesitter.ASTNode) bool {
 }
 
 // resolveDriftAnchor returns the baseline node used to measure relative line drift.
-// If t is inside a construct (if, for, switch, etc.), we measure from that construct.
-// If t is already at the function level, we fall back to the function declaration itself.
+// If t is inside a construct (if, for, switch, call, etc.), we measure from that construct.
+// If t sits directly in a function or closure, fall back to that scope.
 func resolveDriftAnchor(t, c *treesitter.ASTNode) *treesitter.ASTNode {
 	if c != nil && c != t {
 		return c
 	}
-	return GetEnclosingDeclaration(t)
+	return getEnclosingDriftScope(t, rulesFor(t))
+}
+
+func sameStructuralTier(a, b scoredPair) bool {
+	return a.nameMatched == b.nameMatched &&
+		a.mismatched == b.mismatched &&
+		a.isFallback == b.isFallback &&
+		a.dice == b.dice &&
+		a.ancSim == b.ancSim &&
+		a.lineageSim == b.lineageSim &&
+		a.parentLeafSim == b.parentLeafSim &&
+		a.stmtAffinity == b.stmtAffinity &&
+		(!a.nameMatched || a.slotMatch == b.slotMatch) &&
+		a.fieldScore == b.fieldScore
+}
+
+func findPairInTier(tier []scoredPair, t1, t2 *treesitter.ASTNode, m *Mapping) (scoredPair, bool) {
+	for _, s := range tier {
+		if s.pair[0] == t1 && s.pair[1] == t2 && !m.Has(t1) && !m.HasDst(t2) {
+			return s, true
+		}
+	}
+	return scoredPair{}, false
+}
+
+// enclosingSiblingContainer returns the deepest shared block or container for a and b,
+// plus the direct children that hold them.
+func enclosingSiblingContainer(a, b *treesitter.ASTNode) (container, childA, childB *treesitter.ASTNode) {
+	if a == nil || b == nil || a == b {
+		return nil, nil, nil
+	}
+	isSiblingBox := func(p *treesitter.ASTNode) bool {
+		r := rulesFor(p)
+		if r != nil {
+			return r.IsBlock(p.Type) || r.IsDelimitedContainer(p.Type) || r.IsDeclaration(p.Type) || r.IsClosure(p.Type)
+		}
+		return rules.IsBlock(p.Type) || rules.IsDelimitedContainer(p.Type) || rules.IsDeclaration(p.Type) || rules.IsClosure(p.Type)
+	}
+	if a.Parent != nil && a.Parent == b.Parent {
+		if isSiblingBox(a.Parent) {
+			return a.Parent, a, b
+		}
+		return nil, nil, nil
+	}
+	ancA := make(map[*treesitter.ASTNode]*treesitter.ASTNode, 8)
+	for curr := a; curr.Parent != nil; curr = curr.Parent {
+		ancA[curr.Parent] = curr
+	}
+	for curr := b; curr.Parent != nil; curr = curr.Parent {
+		if cA, ok := ancA[curr.Parent]; ok && cA != curr {
+			if isSiblingBox(curr.Parent) {
+				return curr.Parent, cA, curr
+			}
+			return nil, nil, nil
+		}
+	}
+	return nil, nil, nil
+}
+
+func hasMappedInterveningSibling(container, childA, childB *treesitter.ASTNode, m *Mapping, isDst bool) bool {
+	if container == nil || childA == nil || childB == nil || m == nil {
+		return false
+	}
+	idxA, idxB := childA.ChildIndex(), childB.ChildIndex()
+	if idxA > idxB {
+		idxA, idxB = idxB, idxA
+	}
+	for i := idxA + 1; i < idxB; i++ {
+		c := container.Children[i]
+		if (!isDst && m.Has(c)) || (isDst && m.HasDst(c)) {
+			return true
+		}
+	}
+	return false
+}
+
+// monotonicImprovesDrift checks whether uncrossing (sp, other) into (p12, p21)
+// lowers the worst-case line drift without increasing total drift.
+func monotonicImprovesDrift(sp, other, p12, p21 scoredPair) bool {
+	improvesMetric := func(c1, c2, m1, m2 int) (better, equal bool) {
+		cMax, mMax := max(c1, c2), max(m1, m2)
+		cSum, mSum := c1+c2, m1+m2
+		if mMax != cMax {
+			return mMax < cMax && mSum <= cSum, false
+		}
+		if mSum != cSum {
+			return mSum < cSum, false
+		}
+		return false, true
+	}
+
+	if sp.hasRelDrift && other.hasRelDrift && p12.hasRelDrift && p21.hasRelDrift {
+		if better, eq := improvesMetric(sp.relDrift, other.relDrift, p12.relDrift, p21.relDrift); !eq {
+			return better
+		}
+	}
+	better, _ := improvesMetric(sp.drift, other.drift, p12.drift, p21.drift)
+	return better
+}
+
+// selectMonotonicPair prevents greedy minimum-drift selection from inverting identical
+// siblings in the same container when an earlier deletion or insertion shifts lines.
+func selectMonotonicPair(scored []scoredPair, m *Mapping) scoredPair {
+	sp := scored[0]
+	if !sp.nameMatched {
+		return sp
+	}
+	tierEnd := 1
+	for tierEnd < len(scored) && sameStructuralTier(sp, scored[tierEnd]) {
+		tierEnd++
+	}
+	if tierEnd < 2 {
+		return sp
+	}
+	tier := scored[:tierEnd]
+	var tierMap map[[2]*treesitter.ASTNode]scoredPair
+	if len(tier) > 8 {
+		tierMap = make(map[[2]*treesitter.ASTNode]scoredPair, len(tier))
+		for _, s := range tier {
+			if !m.Has(s.pair[0]) && !m.HasDst(s.pair[1]) {
+				tierMap[s.pair] = s
+			}
+		}
+	}
+	lookupInTier := func(t1, t2 *treesitter.ASTNode) (scoredPair, bool) {
+		if tierMap != nil {
+			s, ok := tierMap[[2]*treesitter.ASTNode{t1, t2}]
+			return s, ok
+		}
+		return findPairInTier(tier, t1, t2, m)
+	}
+	for {
+		t1, t2 := sp.pair[0], sp.pair[1]
+		replaced := false
+		for i := range tier {
+			other := tier[i]
+			t1p, t2p := other.pair[0], other.pair[1]
+			if t1p == t1 || t2p == t2 || m.Has(t1p) || m.HasDst(t2p) {
+				continue
+			}
+			// Check whether (t1, t2) and (t1p, t2p) cross in document order.
+			crosses := (t1.StartByte < t1p.StartByte && t2.StartByte > t2p.StartByte) ||
+				(t1.StartByte > t1p.StartByte && t2.StartByte < t2p.StartByte)
+			if !crosses {
+				continue
+			}
+			p12, ok1 := lookupInTier(t1, t2p)
+			p21, ok2 := lookupInTier(t1p, t2)
+			if !ok1 || !ok2 {
+				continue
+			}
+			cSrc, chSrc1, chSrc2 := enclosingSiblingContainer(t1, t1p)
+			cDst, chDst1, chDst2 := enclosingSiblingContainer(t2, t2p)
+			if cSrc == nil || cDst == nil || cSrc.Type != cDst.Type {
+				continue
+			}
+			if hasMappedInterveningSibling(cSrc, chSrc1, chSrc2, m, false) ||
+				hasMappedInterveningSibling(cDst, chDst1, chDst2, m, true) {
+				continue
+			}
+			if monotonicImprovesDrift(sp, other, p12, p21) {
+				if t1.StartByte < t1p.StartByte {
+					sp = p12
+				} else {
+					sp = p21
+				}
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			return sp
+		}
+	}
 }
 
 // branchSlotIndex returns the child index of the direct child container under c that encloses t.
